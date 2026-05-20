@@ -4,14 +4,46 @@
 # notification-policies.yml — it MUST exist or Grafana fails to
 # provision alerting at boot ("receiver does not exist" → crash loop,
 # observed on fresh installs after Docker Desktop reinstall wiped
-# Grafana's runtime DB on 2026-05-05). The webhook itself authenticates
-# via app_settings.alertmanager_webhook_token; that token is set on the
-# receiver via the Grafana UI after first boot (Settings → Contact
-# points → Edit → Authorization Header). Provisioning the token from
-# env vars caused crash loops on fresh installs where the token isn't
-# generated yet (see commit bef375a6) — the receiver shape below is
-# the durable, env-free version. Stub `empty` receiver kept so the
-# default no-op route in alert_configuration still resolves.
+# Grafana's runtime DB on 2026-05-05). The receiver authenticates to
+# the worker's ``/api/webhooks/alertmanager`` route via a Bearer JWT
+# minted by ``poindexter auth mint-grafana-token --persist``.
+#
+# ## Auth plumbing (Grafana 13 — finding #2 from 2026-05-19 stress test)
+#
+# Two facts about Grafana 13.0.1's file-provisioned contact points:
+#
+# 1. ``secure_settings.authorization_credentials`` with env-var
+#    substitution silently no-ops (verified — secureFields stayed
+#    ``None`` after restart with both snake_case + camelCase, with both
+#    ``$VAR`` and literal-token values). The provisioning loader walks
+#    ``settings:`` for env-var sub but not ``secure_settings:``.
+# 2. ``PUT /api/v1/provisioning/contact-points/{uid}`` against a
+#    file-provenance entry fails 500 with
+#    "cannot change provenance from 'file' to ''" — even with
+#    ``X-Disable-Provenance: true``. Grafana refuses to downgrade
+#    provenance.
+#
+# Workaround: put the credential in plain ``settings:`` with
+# ``authorization_scheme`` + ``authorization_credentials``. Grafana
+# auto-encrypts on receipt, redacts on read, and (crucially) DOES run
+# env-var substitution over this block. The source of truth stays
+# encrypted at rest in ``app_settings.grafana_webhook_oauth_jwt`` via
+# pgcrypto; ``bash scripts/start-stack.sh`` decrypts and exports as
+# ``$GRAFANA_WEBHOOK_TOKEN`` before bringing the Grafana container up.
+#
+# On fresh installs without a minted JWT yet, ``$GRAFANA_WEBHOOK_TOKEN``
+# is empty → Grafana provisions an empty Bearer credential → the worker
+# rejects with 401 and a clear log line. That's a loud failure mode
+# the operator notices (fail-loud per ``feedback_no_silent_defaults``)
+# rather than the pre-fix silent 401-every-5-min.
+#
+# ## Rotation
+#
+# ``poindexter auth mint-grafana-token --persist --ttl 365d``
+# refreshes the JWT in-place. Restart Grafana
+# (``bash scripts/start-stack.sh up -d --force-recreate --no-deps grafana``)
+# to pick it up. Outstanding JWTs continue to verify until their own
+# ``exp`` elapses — same trade-off as every other consumer in #241.
 apiVersion: 1
 
 contactPoints:
@@ -23,6 +55,13 @@ contactPoints:
         settings:
           url: http://worker:8002/api/webhooks/alertmanager
           httpMethod: POST
+          # Bearer JWT. The env var is set by
+          # ``scripts/start-stack.sh`` from the encrypted
+          # ``app_settings.grafana_webhook_oauth_jwt`` row. Empty value
+          # on fresh installs => worker 401s loudly until operator runs
+          # ``poindexter auth mint-grafana-token --persist``.
+          authorization_scheme: Bearer
+          authorization_credentials: $GRAFANA_WEBHOOK_TOKEN
         disableResolveMessage: false
   - orgId: 1
     name: empty

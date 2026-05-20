@@ -46,6 +46,30 @@ while IFS= read -r line; do
     fi
 done < "$BOOTSTRAP"
 
+# Grafana webhook JWT — decrypt from app_settings.grafana_webhook_oauth_jwt
+# so contact-points.yml can substitute it into the Poindexter Webhook
+# receiver's Authorization header. Without this Grafana posts
+# unauthenticated and the worker rejects every alert with 401 (finding
+# #2 from the 2026-05-19 jank-audit stress test). Best-effort: failures
+# (missing key, Postgres not up yet, etc.) emit a WARNING to stderr and
+# leave the var empty — Grafana boots fine, worker logs the 401 loudly
+# per `feedback_no_silent_defaults`. The operator runs
+# `poindexter auth mint-grafana-token --persist` to provision the JWT;
+# subsequent start-stack runs pick it up automatically.
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN=python
+else
+    PYTHON_BIN=""
+fi
+if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
+    # Capture stdout (the JWT) only; let stderr pass through to the
+    # operator's terminal so missing-config warnings are visible.
+    GRAFANA_WEBHOOK_TOKEN="$("$PYTHON_BIN" "$SCRIPT_DIR/_grafana_webhook_token.py" || true)"
+    export GRAFANA_WEBHOOK_TOKEN
+fi
+
 # Default docker compose action
 ACTION="${1:-up}"
 shift 2>/dev/null || true

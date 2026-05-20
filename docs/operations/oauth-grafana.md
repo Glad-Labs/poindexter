@@ -27,8 +27,15 @@ during the migration window (Glad-Labs/poindexter#247).
 
 ## Provision the token
 
+The recommended path is `--persist`, which stashes the minted JWT
+encrypted in `app_settings.grafana_webhook_oauth_jwt` so
+`scripts/start-stack.sh` can decrypt and pass it through to Grafana
+via `$GRAFANA_WEBHOOK_TOKEN`. No manual paste-into-the-UI step —
+restart Grafana and the contact point picks up the new credential.
+
 ```bash
-poindexter auth mint-grafana-token --ttl 90d
+poindexter auth mint-grafana-token --persist --ttl 365d
+bash scripts/start-stack.sh up -d --force-recreate --no-deps grafana
 ```
 
 This:
@@ -39,6 +46,28 @@ This:
    `app_settings.grafana_oauth_client_secret`.
 2. **Every call**: mints a fresh JWT bound to that client with the
    default scopes `api:read api:write` and the requested TTL.
+3. **With `--persist`**: also stores the minted JWT encrypted in
+   `app_settings.grafana_webhook_oauth_jwt`. `scripts/start-stack.sh`
+   decrypts it on the host (via `scripts/_grafana_webhook_token.py`)
+   and exports as `$GRAFANA_WEBHOOK_TOKEN` before bringing the
+   Grafana container up. `infrastructure/grafana/provisioning/alerting/contact-points.yml`
+   substitutes that env var into `settings.authorization_credentials`
+   on the `Poindexter Webhook` receiver.
+
+### Why `settings` instead of `secure_settings`
+
+Grafana 13.0.1's file-provisioning loader does NOT run env-var
+substitution over `secure_settings:` — only `settings:`. Prior
+attempts to wire the JWT through `secure_settings.authorization_credentials`
+silently no-op'd (verified during the 2026-05-19 finding #2
+investigation; `secureFields` stayed `null` after restart with both
+camelCase and snake_case keys, and with literal-token values too).
+
+Grafana auto-encrypts plain `settings.authorization_credentials` at
+rest on its side, redacts it on read, and (crucially) DOES run env-var
+substitution over it. Our source of truth stays encrypted at rest in
+`app_settings.grafana_webhook_oauth_jwt` via pgcrypto, so the secret
+isn't duplicated unprotected anywhere on disk.
 
 Output looks like:
 
@@ -59,7 +88,12 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJwb2luZGV4dGVyIiwic3Vi...
 command mints a different JWT (the old one keeps verifying until its
 own `exp` elapses).
 
-## Paste into Grafana
+## Paste into Grafana (legacy — only if you ran `mint-grafana-token` WITHOUT `--persist`)
+
+If you minted with `--persist`, skip this section — the JWT is
+already wired through provisioning. The manual paste workflow below
+is the fallback for operators who minted with the older flow OR who
+want to override the auto-provisioned credential.
 
 > Grafana's UI labels move every few releases. The path below is for
 > Grafana 11.x. If your Grafana looks different, search for "contact
@@ -79,10 +113,10 @@ own `exp` elapses).
    alerts. If you get `401 Unauthorized`, double-check there's a single
    space between `Bearer` and the token and no trailing whitespace.
 
-We deliberately don't push the token via the Grafana API — the
-contact-point JSON contains the bearer in plaintext, and the API push
-ergonomics (token in argv, token in shell history, token in CI logs)
-aren't worth the time saved.
+We deliberately don't push the token via the Grafana API for the
+manual workflow — the contact-point JSON contains the bearer in
+plaintext, and the API push ergonomics (token in argv, token in
+shell history, token in CI logs) aren't worth the time saved.
 
 ## Verify end-to-end
 

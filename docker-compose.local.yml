@@ -140,6 +140,17 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
+      # Pre-issued long-TTL JWT for the Poindexter Webhook contact point's
+      # Authorization header (finding #2, 2026-05-19 jank-audit fix).
+      # Substituted into provisioning/alerting/contact-points.yml so
+      # Grafana posts authenticated to
+      # ``http://worker:8002/api/webhooks/alertmanager``. Decrypted from
+      # ``app_settings.grafana_webhook_oauth_jwt`` by
+      # ``bash scripts/start-stack.sh`` before docker-compose up. Empty
+      # fallback so fresh installs without a minted JWT still boot;
+      # webhook calls then 401 loudly until the operator runs
+      # ``poindexter auth mint-grafana-token --persist``.
+      GRAFANA_WEBHOOK_TOKEN: ${GRAFANA_WEBHOOK_TOKEN:-}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning

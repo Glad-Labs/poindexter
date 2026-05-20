@@ -281,3 +281,149 @@ class TestMintGrafanaHappyPath:
             )
         assert result.exit_code != 0
         assert "scope" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# --persist flag (finding #2 from 2026-05-19 jank-audit)
+# ---------------------------------------------------------------------------
+
+
+class TestMintGrafanaPersist:
+    """The --persist flag stores the minted JWT encrypted in
+    ``app_settings.grafana_webhook_oauth_jwt`` so ``scripts/start-stack.sh``
+    can decrypt and pass it to Grafana via ``$GRAFANA_WEBHOOK_TOKEN``.
+
+    The plumbing matters because Grafana 13's secure_settings env-var
+    substitution silently no-ops on file-provisioned contact points
+    (verified during the 2026-05-19 finding #2 investigation). The
+    workaround uses settings.authorization_credentials, which DOES run
+    env-var substitution — but that means we need the JWT in an env
+    var before Grafana boots, which means a decrypt step before
+    docker-compose up.
+    """
+
+    def test_persist_flag_exists_and_defaults_false(self):
+        from poindexter.cli.auth import auth_group
+
+        cmd = auth_group.commands.get("mint-grafana-token")
+        opt_names = {p.name for p in cmd.params}
+        assert "persist" in opt_names, "--persist option not registered"
+        persist_opt = next(p for p in cmd.params if p.name == "persist")
+        assert persist_opt.default is False, "--persist must default to False"
+
+    def test_persist_writes_jwt_to_app_settings(self):
+        """--persist must call plugins.secrets.set_secret with the key
+        ``grafana_webhook_oauth_jwt`` and the minted JWT plaintext."""
+        from poindexter.cli import auth as auth_mod
+
+        runner = CliRunner()
+
+        set_secret_calls: list[tuple[str, str]] = []
+
+        async def _capture_set_secret(_conn, key, value, description=""):
+            set_secret_calls.append((key, value))
+
+        async def _fake_provision(**_kwargs):
+            return ("pdx_persist_test", "secret_persist_test")
+
+        async def _get_secret(_conn, _key, *args, **kwargs):
+            return ""  # first-call path
+
+        async def _fake_pool_factory():
+            return _make_fake_pool({})
+
+        with patch.object(
+            auth_mod, "_provision_consumer_client",
+            side_effect=_fake_provision,
+        ), patch.object(
+            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+        ), patch.object(
+            auth_mod, "_pool", side_effect=_fake_pool_factory,
+        ), patch(
+            "plugins.secrets.get_secret",
+            new=AsyncMock(side_effect=_get_secret),
+        ), patch(
+            "plugins.secrets.set_secret",
+            new=AsyncMock(side_effect=_capture_set_secret),
+        ), patch(
+            "services.auth.oauth_issuer.issue_token",
+            return_value=(
+                "persist.jwt.token",
+                _make_fake_claims(
+                    "pdx_persist_test", ["api:read", "api:write"],
+                    365 * 86400,
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                auth_mod.auth_group,
+                ["mint-grafana-token", "--persist", "--ttl", "365d"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "persist.jwt.token" in result.output
+        # The JWT must have landed under the canonical key.
+        assert len(set_secret_calls) == 1, (
+            f"expected exactly one set_secret call, got {len(set_secret_calls)}: "
+            f"{set_secret_calls}"
+        )
+        key, value = set_secret_calls[0]
+        assert key == "grafana_webhook_oauth_jwt", (
+            f"set_secret key must be the canonical one, got {key!r}"
+        )
+        assert value == "persist.jwt.token"
+        # Confirmation messaging mentions the storage key + restart command.
+        assert "grafana_webhook_oauth_jwt" in result.output
+        assert "force-recreate" in result.output or "restart" in result.output.lower()
+
+    def test_no_persist_does_not_call_set_secret(self):
+        """Default (no --persist) must NOT touch app_settings — preserves
+        the original operator-paste workflow for callers who don't want
+        the auto-substituted-into-Grafana behaviour."""
+        from poindexter.cli import auth as auth_mod
+
+        runner = CliRunner()
+
+        set_secret_mock = AsyncMock(return_value=None)
+
+        async def _fake_provision(**_kwargs):
+            return ("pdx_nopersist_test", "secret_nopersist_test")
+
+        async def _get_secret(_conn, _key, *args, **kwargs):
+            return ""
+
+        async def _fake_pool_factory():
+            return _make_fake_pool({})
+
+        with patch.object(
+            auth_mod, "_provision_consumer_client",
+            side_effect=_fake_provision,
+        ), patch.object(
+            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+        ), patch.object(
+            auth_mod, "_pool", side_effect=_fake_pool_factory,
+        ), patch(
+            "plugins.secrets.get_secret",
+            new=AsyncMock(side_effect=_get_secret),
+        ), patch(
+            "plugins.secrets.set_secret", new=set_secret_mock,
+        ), patch(
+            "services.auth.oauth_issuer.issue_token",
+            return_value=(
+                "nopersist.jwt.token",
+                _make_fake_claims(
+                    "pdx_nopersist_test", ["api:read", "api:write"],
+                    90 * 86400,
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                auth_mod.auth_group, ["mint-grafana-token"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "nopersist.jwt.token" in result.output
+        # The legacy paste-into-Grafana workflow nudge stays in the output.
+        assert "Capture the token NOW" in result.output
+        # And set_secret was never called.
+        set_secret_mock.assert_not_called()

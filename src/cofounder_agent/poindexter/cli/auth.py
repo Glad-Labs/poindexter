@@ -783,7 +783,23 @@ def migrate_openclaw(name: str, scopes: str) -> None:
     show_default=True,
     help="Client display name (shown in `poindexter auth list-clients`).",
 )
-def mint_grafana_token(ttl_str: str, scopes: str, name: str) -> None:
+@click.option(
+    "--persist/--no-persist",
+    "persist",
+    default=False,
+    show_default=True,
+    help=(
+        "Also store the minted JWT encrypted in "
+        "``app_settings.grafana_webhook_oauth_jwt``. Used by "
+        "``scripts/start-stack.sh`` to substitute the token into Grafana's "
+        "provisioning YAML at boot — Grafana 13's secure_settings env-var "
+        "substitution in file provisioning is unreliable, so we settle the "
+        "credential by exporting an env var pulled from the encrypted "
+        "app_settings row. Without --persist the JWT is only printed (the "
+        "original operator-paste workflow)."
+    ),
+)
+def mint_grafana_token(ttl_str: str, scopes: str, name: str, persist: bool) -> None:
     """Mint a long-TTL JWT for Grafana contact-point webhooks (#247).
 
     Pre-issued long-TTL JWT (option B from the #247 issue) — Grafana's
@@ -823,9 +839,14 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str) -> None:
 
     GRAFANA_CLIENT_ID_KEY = "grafana_oauth_client_id"
     GRAFANA_CLIENT_SECRET_KEY = "grafana_oauth_client_secret"
+    # When --persist is passed, the minted JWT lands encrypted under
+    # this key so start-stack.sh can decrypt and pass it through to
+    # Grafana via $GRAFANA_WEBHOOK_TOKEN (settings.authorization_credentials
+    # in contact-points.yml).
+    GRAFANA_JWT_KEY = "grafana_webhook_oauth_jwt"
 
     async def _impl():
-        from plugins.secrets import get_secret
+        from plugins.secrets import get_secret, set_secret
         from services.auth.oauth_issuer import (
             InvalidScope,
             issue_token,
@@ -857,6 +878,28 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str) -> None:
                 )
             except InvalidScope as e:
                 raise click.ClickException(str(e)) from e
+
+            # --persist: stash the JWT encrypted in app_settings so
+            # ``scripts/start-stack.sh`` can decrypt + export it as
+            # $GRAFANA_WEBHOOK_TOKEN for Grafana provisioning. We can't
+            # rely on Grafana 13.0.1's secure_settings env-var
+            # substitution (verified broken 2026-05-19 jank-audit finding
+            # #2 prior-attempt notes), so the JWT lands in ``settings:``
+            # via env-var substitution — Grafana still encrypts it at
+            # rest on its side, and the source of truth here stays
+            # encrypted via pgcrypto.
+            if persist:
+                async with pool.acquire() as conn:
+                    await set_secret(
+                        conn,
+                        GRAFANA_JWT_KEY,
+                        token,
+                        description=(
+                            "Pre-issued long-TTL JWT for Grafana webhook "
+                            "Authorization header. Rotated via "
+                            "``poindexter auth mint-grafana-token --persist``."
+                        ),
+                    )
         finally:
             await pool.close()
 
@@ -884,10 +927,22 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str) -> None:
         click.echo("")
         click.echo(token)
         click.echo("")
-        click.echo(click.style(
-            "  Capture the token NOW — it is not recoverable from the DB.",
-            fg="yellow",
-        ))
+        if persist:
+            click.echo(click.style(
+                f"  Stored encrypted in app_settings.{GRAFANA_JWT_KEY} for "
+                "automated Grafana provisioning. Restart the Grafana "
+                "container to pick it up: "
+                "`bash scripts/start-stack.sh up -d --force-recreate "
+                "--no-deps grafana`.",
+                fg="cyan",
+            ))
+        else:
+            click.echo(click.style(
+                "  Capture the token NOW — it is not recoverable from the DB. "
+                "(Re-run with --persist to store it for automated "
+                "Grafana provisioning.)",
+                fg="yellow",
+            ))
         click.echo("")
         click.echo(
             "Walkthrough: see docs/operations/oauth-grafana.md for where to "
