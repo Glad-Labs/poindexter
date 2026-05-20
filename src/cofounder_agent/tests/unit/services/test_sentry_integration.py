@@ -87,6 +87,48 @@ class TestSentryIntegration:
         assert SentryIntegration._sentry_enabled is True
         mock_sentry.init.assert_called_once()
 
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_sdk_debug_off_by_default_even_in_development(self, mock_sentry):
+        """Default is debug=False everywhere — environment must not auto-enable it.
+
+        The Sentry SDK's `debug=True` mode emits ~12 lines/sec under the
+        `sentry_sdk.errors` logger name (DEBUG level, despite the name).
+        Substring-matching error dashboards count every one as a false
+        positive, producing ~290k spurious "errors"/day. Gating debug on
+        an explicit DB key keeps the default quiet.
+        """
+        from services.sentry_integration import SentryIntegration
+
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            "environment": "development",
+            # sentry_debug_logging deliberately absent → default false
+        })
+        SentryIntegration.initialize(MagicMock(), cfg)
+        kwargs = mock_sentry.init.call_args.kwargs
+        assert kwargs["debug"] is False, (
+            "SDK debug-logging must default off even in development "
+            "(false-positive error-count source)"
+        )
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_sdk_debug_opt_in_via_app_settings(self, mock_sentry):
+        """Operator can flip on SDK debug for active troubleshooting."""
+        from services.sentry_integration import SentryIntegration
+
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            "environment": "production",
+            "sentry_debug_logging": "true",
+        })
+        SentryIntegration.initialize(MagicMock(), cfg)
+        kwargs = mock_sentry.init.call_args.kwargs
+        assert kwargs["debug"] is True
+
     @patch("services.sentry_integration.sentry_sdk")
     def test_initialize_already_initialized_skips(self, mock_sentry):
         from services.sentry_integration import SentryIntegration

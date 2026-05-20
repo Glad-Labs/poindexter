@@ -133,6 +133,18 @@ class SentryIntegration:
         )
         environment = site_config.get("environment", "development") or "development"
         release = site_config.get("app_version", "3.0.1")
+        # SDK-internal debug logging is gated by an explicit DB setting,
+        # NOT by `environment`. The SDK emits ~12 lines/sec of envelope
+        # dispatch + tracing baggage chatter under the `sentry_sdk.errors`
+        # logger when `debug=True` — the name is misleading (it's the
+        # SDK's diagnostic logger, level DEBUG), and any substring-match
+        # error counter in Grafana picks them all up as false positives.
+        # Operators flip this on only when actively troubleshooting the
+        # SDK; default off everywhere.
+        sentry_debug_logging = (
+            (site_config.get("sentry_debug_logging", "false") or "false").lower()
+            in ("true", "1", "yes")
+        )
 
         # Skip initialization if DSN not configured or explicitly disabled.
         # Do NOT set _initialized here — lifespan re-runs this after site_config
@@ -182,8 +194,10 @@ class SentryIntegration:
                 include_local_variables=True,
                 # Error attachment configurations
                 max_value_length=4096,  # Max value length for variable inspection
-                # Enable debug logging in development
-                debug=environment == "development",
+                # SDK-internal debug logging — gated by app_settings.sentry_debug_logging
+                # (default false). Avoids the ~290k/day false-positive
+                # "error" count from `sentry_sdk.errors` DEBUG chatter.
+                debug=sentry_debug_logging,
             )
 
             # Set user context for authenticated requests (if available)
