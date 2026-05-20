@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-17.**  
+> **Auto-generated from live `app_settings` table on 2026-05-20.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 695 active rows across 56 categories. 5 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 4 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -91,7 +91,7 @@ The worker re-reads on every poll; no restart needed.
 | `alert_dedup_state_retention_hours` | `168` |  | Retention horizon for alert_dedup_state rows. The retention janitor deletes rows whose last_seen_at aged past this ma... |
 | `alert_force_telegram_event_types` | `` |  | Comma-separated list of event_type (or alertname) values that always route to Telegram regardless of severity. Use fo... |
 | `alert_repeat_summarize_threshold_minutes` | `30` |  | After a fingerprint has been firing continuously for this many minutes (now - first_seen_at), the dispatcher escalate... |
-| `alert_repeat_suppress_window_minutes` | `30` |  | When a brain alert with the same fingerprint (source\|severity\|normalized_message) last fired inside this window, th... |
+| `alert_repeat_suppress_window_minutes` | `120` |  | When a brain alert with the same fingerprint (source\|severity\|normalized_message) last fired inside this window, th... |
 | `task_failure_alert_dedup_window_seconds` | `900` |  | Suppress duplicate task-failure alerts for the same (task_id, error_message_hash) within this window. Default 900 (15... |
 | `task_failure_alert_severity` | `discord` |  | Channel routine task-failure alerts route to: 'discord' (default, the spam channel) or 'telegram' (escalates to opera... |
 | `task_retry_backoff_initial_seconds` | `60` |  | Exponential-backoff base for auto-retry. Attempt N becomes eligible only after backoff * 2^(N-1) seconds have passed ... |
@@ -373,7 +373,7 @@ The worker re-reads on every poll; no restart needed.
 | `ollama_client_timeout_seconds` | `1500` |  |  |
 | `openclaw_gateway_url` | `http://localhost:18789` |  | OpenClaw gateway URL |
 | `operator_id` | `operator` |  | Default operator ID |
-| `operator_url_probe_skip_keys` | `social_x_url,social_linkedin_url,oaut...` |  |  |
+| `operator_url_probe_skip_keys` | `gitea_url,google_sitemap_ping_url,ind...` |  |  |
 | `owner_email` | `` |  | Site owner email |
 | `owner_name` | `` |  | Site owner display name |
 | `pexels_api_base` | `https://api.pexels.com/v1` |  | Auto-seeded by services.settings_defaults (#379) |
