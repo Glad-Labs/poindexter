@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## [0.10.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.10.0...v0.10.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **content_db:** cast post_tags.tag_id to uuid[], not text[] (finding [#197](https://github.com/Glad-Labs/glad-labs-stack/issues/197)) ([#509](https://github.com/Glad-Labs/glad-labs-stack/issues/509)) ([e74d642](https://github.com/Glad-Labs/glad-labs-stack/commit/e74d64210ce52f7d87dc6ff887e0fbc454608933))
+* **jobs:** media_reconciliation filters on media_to_generate, not slug prefix ([#195](https://github.com/Glad-Labs/glad-labs-stack/issues/195)) ([#508](https://github.com/Glad-Labs/glad-labs-stack/issues/508)) ([4d251f0](https://github.com/Glad-Labs/glad-labs-stack/commit/4d251f0c11b3ac452f4138ed09c96c16a5f6a249))
+* **publish:** gate sections 11b/c/d on media_to_generate (finding [#196](https://github.com/Glad-Labs/glad-labs-stack/issues/196)) ([#510](https://github.com/Glad-Labs/glad-labs-stack/issues/510)) ([4a08d6c](https://github.com/Glad-Labs/glad-labs-stack/commit/4a08d6ca539f59a67517d4fb257c1d3bb15c3c9b))
+* **sync:** redact private-key CHANGELOG.md lines so release-please doesn't wedge mirror ([#506](https://github.com/Glad-Labs/glad-labs-stack/issues/506)) ([f506d59](https://github.com/Glad-Labs/glad-labs-stack/commit/f506d59a603a0299e524d040ec299c479e84acf4))
+
 ## [0.10.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.9.0...v0.10.0) (2026-05-20)
 
 
