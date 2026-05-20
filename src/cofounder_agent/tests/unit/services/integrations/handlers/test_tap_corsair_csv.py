@@ -361,19 +361,30 @@ class TestCorsairCsvHandler:
         """A new CSV in the directory (newer mtime) → cursor resets to 0
         on the new file's first poll.
         """
+        import os
+        import time as _time
+
         # Old file with a stale cursor pointing at it.
         old_body = (
             _CSV_HEADER
             + _csv_row("11/5/2026 19:05:19 PM", "50°C", "10%", "40°C", "100W", "2900RPM")
         )
-        _write_csv(tmp_path, "corsair_cue_20260511_19_05_19.csv", old_body)
+        old_path = _write_csv(tmp_path, "corsair_cue_20260511_19_05_19.csv", old_body)
         # New file appears (newer mtime — pathlib stat). Touch by writing
         # last so its mtime wins.
         new_body = (
             _CSV_HEADER
             + _csv_row("12/5/2026 09:00:00 AM", "55°C", "15%", "45°C", "150W", "3000RPM")
         )
-        _write_csv(tmp_path, "corsair_cue_20260512_09_00_00.csv", new_body)
+        new_path = _write_csv(tmp_path, "corsair_cue_20260512_09_00_00.csv", new_body)
+        # Force a deterministic mtime gap. Windows NTFS resolves mtime
+        # finely in theory but back-to-back write_bytes() calls can land
+        # in the same OS tick, which would let alphabetical glob order
+        # (older filename first) tie-break the handler's "newest file
+        # wins" logic and flip the test.
+        now = _time.time()
+        os.utime(old_path, (now - 60, now - 60))
+        os.utime(new_path, (now, now))
 
         pool, conn = _make_pool()
         row = {
