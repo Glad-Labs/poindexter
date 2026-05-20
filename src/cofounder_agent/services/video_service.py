@@ -136,6 +136,95 @@ class VideoResult:
     error: str | None = None
 
 
+async def _consume_sdxl_image_response(
+    resp: httpx.Response,
+    *,
+    sdxl_url: str,
+    output_path: str,
+    frame_label: str,
+) -> str | None:
+    """Materialise SDXL image bytes from either response shape.
+
+    The SDXL server returns either:
+
+    - **Raw image bytes** (``Content-Type: image/png``) — older behaviour;
+      caller writes the bytes directly to ``output_path``.
+    - **JSON** (``Content-Type: application/json``) with
+      ``{"filename": "sdxl_<hash>.png", "image_path": ...}`` — current
+      behaviour. The image is sitting on the SDXL container's disk; the
+      worker fetches it via ``GET <sdxl_url>/images/<filename>`` (matches
+      the helper for the featured-image path, see
+      ``services/stages/source_featured_image._download_featured_sdxl_image``).
+
+    Prior to 2026-05-20, the video-slideshow path only handled the
+    ``image/*`` branch — every JSON response was logged as a failure with
+    "SDXL returned 200 for frame N" and the image path was discarded. All
+    8 frames per cycle would silently fail, surfacing as
+    ``VideoResult.error = "No images could be generated"`` even though
+    SDXL was succeeding. Closes
+    Glad-Labs/glad-labs-stack#198 follow-up (the underlying
+    ``poindexter#459`` fix was already applied to the featured-image
+    path; this extends it to the slideshow path).
+    """
+    if resp.status_code != 200:
+        body = resp.text[:200] if resp.text else "(empty)"
+        logger.warning(
+            "[VIDEO] SDXL returned %d for %s: %s",
+            resp.status_code, frame_label, body,
+        )
+        return None
+    ct = resp.headers.get("content-type", "")
+    if ct.startswith("image/"):
+        await asyncio.to_thread(_write_bytes, output_path, resp.content)
+        return output_path
+    if ct.startswith("application/json"):
+        try:
+            data = resp.json()
+        except Exception as exc:  # noqa: BLE001 — defensive
+            logger.warning(
+                "[VIDEO] SDXL returned non-JSON for %s: %s", frame_label, exc,
+            )
+            return None
+        filename = data.get("filename") or os.path.basename(
+            data.get("image_path", "") or "",
+        )
+        if not filename:
+            logger.warning(
+                "[VIDEO] SDXL JSON missing filename/image_path for %s: %s",
+                frame_label, str(data)[:120],
+            )
+            return None
+        safe_name = os.path.basename(filename)
+        url = f"{sdxl_url.rstrip('/')}/images/{safe_name}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0, connect=5.0),
+            ) as fetch_client:
+                fetch_resp = await fetch_client.get(url)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[VIDEO] SDXL /images fetch failed for %s: %s",
+                safe_name, exc,
+            )
+            return None
+        if fetch_resp.status_code != 200:
+            logger.warning(
+                "[VIDEO] SDXL /images returned %d for %s",
+                fetch_resp.status_code, safe_name,
+            )
+            return None
+        await asyncio.to_thread(
+            _write_bytes, output_path, fetch_resp.content,
+        )
+        return output_path
+    body = resp.text[:200] if resp.text else "(empty)"
+    logger.warning(
+        "[VIDEO] SDXL unknown content-type %r for %s: %s",
+        ct, frame_label, body,
+    )
+    return None
+
+
 async def _generate_images_for_video(
     title: str, content: str, num_images: int = 4
 ) -> list[str]:
@@ -239,14 +328,16 @@ async def _generate_images_for_video(
                     },
                     timeout=60,
                 )
-                if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
-                    img_path = str(output_dir / f"frame_{i:02d}.png")
-                    await asyncio.to_thread(_write_bytes, img_path, resp.content)
-                    image_paths.append(img_path)
-                    logger.info("[VIDEO] Generated frame %d/%d (%d bytes)", i + 1, len(prompts), len(resp.content))
-                else:
-                    body = resp.text[:200] if resp.text else "(empty)"
-                    logger.warning("[VIDEO] SDXL returned %d for frame %d: %s", resp.status_code, i, body)
+                img_path = str(output_dir / f"frame_{i:02d}.png")
+                got = await _consume_sdxl_image_response(
+                    resp,
+                    sdxl_url=_sdxl_server_url(),
+                    output_path=img_path,
+                    frame_label=f"frame {i}",
+                )
+                if got:
+                    image_paths.append(got)
+                    logger.info("[VIDEO] Generated frame %d/%d", i + 1, len(prompts))
             except Exception as e:
                 logger.warning("[VIDEO] Failed to generate frame %d: %s", i, e)
 
@@ -320,14 +411,16 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
                     },
                     timeout=60,
                 )
-                if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
-                    img_path = str(output_dir / f"frame_{i:02d}.png")
-                    await asyncio.to_thread(_write_bytes, img_path, resp.content)
-                    image_paths.append(img_path)
-                    logger.info("[VIDEO] Generated frame %d/%d (%d bytes)", i + 1, len(scenes), len(resp.content))
-                else:
-                    body = resp.text[:200] if resp.text else "(empty)"
-                    logger.warning("[VIDEO] SDXL returned %d for frame %d: %s", resp.status_code, i, body)
+                img_path = str(output_dir / f"frame_{i:02d}.png")
+                got = await _consume_sdxl_image_response(
+                    resp,
+                    sdxl_url=_sdxl_server_url(),
+                    output_path=img_path,
+                    frame_label=f"frame {i}",
+                )
+                if got:
+                    image_paths.append(got)
+                    logger.info("[VIDEO] Generated frame %d/%d", i + 1, len(scenes))
             except Exception as e:
                 logger.warning("[VIDEO] Failed to generate frame %d: %s", i, e)
 
