@@ -76,6 +76,88 @@ class TestNotifyChannels:
         assert "DISCORD" in results["discord"]
 
 
+class TestSeverityRouting:
+    """Per feedback_telegram_vs_discord: Telegram = critical/error only,
+    Discord = all severities. info/warning must NOT phone-ping the operator.
+
+    Added 2026-05-20 after PR #485 fixed the Discord webhook hydration and
+    immediately surfaced spam-to-Telegram on routine probe warnings.
+    """
+
+    @pytest.fixture
+    def with_external_channels_configured(self, monkeypatch, tmp_path):
+        """Like ``isolated_notifier`` but with non-empty TG + Discord env so
+        the channel-attempt code path actually fires (instead of skipping
+        on missing config)."""
+        monkeypatch.setattr(operator_notifier, "_ALERTS_LOG", tmp_path / "alerts.log")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "FAKE-BOT-TOKEN")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+        monkeypatch.setenv("DISCORD_OPS_WEBHOOK_URL", "https://example.invalid/webhook")
+        return tmp_path
+
+    @pytest.mark.parametrize("severity", ["info", "warning"])
+    def test_telegram_skipped_for_low_severity(
+        self, with_external_channels_configured, severity, monkeypatch,
+    ):
+        """info + warning must NEVER reach _try_telegram even with env set."""
+        called = {"telegram": 0}
+
+        def _spy_telegram(text):
+            called["telegram"] += 1
+            return False, "should not be called"
+
+        monkeypatch.setattr(operator_notifier, "_try_telegram", _spy_telegram)
+        results = operator_notifier.notify_operator(
+            title="routine probe noise",
+            detail="some probe is sad",
+            source="probe_x",
+            severity=severity,
+        )
+        assert called["telegram"] == 0, (
+            f"_try_telegram should not be called for severity={severity}"
+        )
+        assert "skipped" in results["telegram"].lower()
+
+    @pytest.mark.parametrize("severity", ["error", "critical"])
+    def test_telegram_attempted_for_high_severity(
+        self, with_external_channels_configured, severity, monkeypatch,
+    ):
+        """error + critical must attempt Telegram so the operator phone-pings."""
+        called = {"telegram": 0}
+
+        def _spy_telegram(text):
+            called["telegram"] += 1
+            return True, "telegram"
+
+        monkeypatch.setattr(operator_notifier, "_try_telegram", _spy_telegram)
+        operator_notifier.notify_operator(
+            title="real failure",
+            detail="something broke",
+            source="probe_x",
+            severity=severity,
+        )
+        assert called["telegram"] == 1, (
+            f"_try_telegram MUST be called once for severity={severity}"
+        )
+
+    def test_discord_attempted_for_all_severities(
+        self, with_external_channels_configured, monkeypatch,
+    ):
+        """Discord is the spam channel — every severity goes there."""
+        called = {"discord": 0}
+
+        def _spy_discord(text):
+            called["discord"] += 1
+            return True, "discord"
+
+        monkeypatch.setattr(operator_notifier, "_try_discord", _spy_discord)
+        for sev in ("info", "warning", "error", "critical"):
+            operator_notifier.notify_operator(
+                title="t", detail="d", source="s", severity=sev,
+            )
+        assert called["discord"] == 4
+
+
 class TestSeverityEmoji:
     @pytest.mark.parametrize(
         "sev,expected_glyphs",

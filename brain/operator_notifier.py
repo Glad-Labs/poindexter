@@ -197,11 +197,38 @@ def notify_operator(
         "critical": logger.critical,
     }.get(severity, logger.error)("[operator_notifier] %s: %s", title, detail)
 
-    # Best-effort external channels — order matters: Telegram is the
-    # loudest (push notification on Matt's phone), Discord is searchable
-    # ops history.
-    tg_ok, tg_reason = _try_telegram(text)
-    results["telegram"] = tg_reason
+    # Best-effort external channels.
+    #
+    # Telegram is critical-alert-only per feedback_telegram_vs_discord.
+    # Sending warnings/errors to Telegram phone-pings the operator on
+    # routine probe failures, which trains them to ignore Telegram —
+    # the exact opposite of the channel's purpose. Discord is the
+    # searchable spam channel that receives EVERYTHING above info
+    # so the audit trail stays complete.
+    #
+    # Severity routing (added 2026-05-20 after PR #485 fixed the
+    # Discord hydration and immediately surfaced this latent
+    # spam-to-Telegram behavior — see finding #187):
+    #
+    # | severity | Telegram | Discord | alerts.log |
+    # |----------|----------|---------|------------|
+    # | critical | ✓        | ✓       | ✓          |
+    # | error    | ✓        | ✓       | ✓          |
+    # | warning  | ✗ skip   | ✓       | ✓          |
+    # | info     | ✗ skip   | ✓       | ✓          |
+    #
+    # ``error`` still hits Telegram because it represents an
+    # operator-actionable failure (something broke, please look). The
+    # split is at the ``warning``/``error`` boundary — warnings are
+    # signal-grade noise (recurring probe failures, drift detections),
+    # errors are anomalies that need eyes.
+    _TELEGRAM_SEVERITIES = {"error", "critical"}
+    if severity in _TELEGRAM_SEVERITIES:
+        tg_ok, tg_reason = _try_telegram(text)
+        results["telegram"] = tg_reason
+    else:
+        tg_ok, tg_reason = False, "skipped (severity below error)"
+        results["telegram"] = tg_reason
 
     dc_ok, dc_reason = _try_discord(text)
     results["discord"] = dc_reason
