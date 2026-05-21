@@ -108,15 +108,6 @@ def _site_float(site_config: Any, key: str, default: float) -> float:
         return default
 
 
-def _site_str(site_config: Any, key: str, default: str) -> str:
-    if site_config is None:
-        return default
-    try:
-        return str(site_config.get(key, default) or default)
-    except Exception:
-        return default
-
-
 async def _sample_summaries(
     *,
     topic: str,
@@ -152,11 +143,15 @@ async def _sample_summaries(
     prompt = _DEFAULT_SUMMARY_PROMPT.format(
         topic=topic[:200], content=truncated,
     )
-    writer_model = _site_str(
-        site_config, "pipeline_writer_model", "ollama/glm-4.7-5090:latest",
-    )
-    # Strip the ollama/ prefix so the provider gets a bare model name.
-    writer_model = writer_model.removeprefix("ollama/")
+    # poindexter#485 fail-loud sweep: was previously a literal
+    # ``ollama/glm-4.7-5090:latest`` fallback that silently masked a
+    # missing ``pipeline_writer_model`` setting. Now chains via the
+    # shared resolver — raises ValueError if neither
+    # ``pipeline_writer_model`` nor ``cost_tier.standard.model`` is
+    # set, which is the right answer (a self-consistency probe
+    # without a writer model has no work to do).
+    from services.llm_text import resolve_local_model
+    writer_model = resolve_local_model(site_config=site_config)
 
     async def _one_sample(idx: int) -> str:
         try:

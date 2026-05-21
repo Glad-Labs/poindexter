@@ -185,9 +185,21 @@ def build_voice_pipeline_task(
     """
     log = log or logging.getLogger("voice_agent")
 
-    llm_model = site_config.get(
-        "voice_agent_llm_model", "glm-4.7-5090:latest",
-    )
+    # poindexter#485 fail-loud sweep: previously fell back to Matt's
+    # specific ``glm-4.7-5090:latest`` model when the setting was
+    # missing. The baseline seed populates ``voice_agent_llm_model``
+    # on fresh installs (services/migrations/0000_baseline.seeds.sql),
+    # so an empty/missing value here means the operator explicitly
+    # cleared it — fail loud rather than silently pick a model that
+    # may not be loaded in Ollama.
+    llm_model = (site_config.get("voice_agent_llm_model", "") or "").strip()
+    if not llm_model:
+        raise ValueError(
+            "voice_agent: ``voice_agent_llm_model`` is unset — set "
+            "the Ollama model tag via `poindexter set-setting "
+            "voice_agent_llm_model <tag>` before starting the voice "
+            "agent."
+        )
     ollama_url = site_config.get(
         "voice_agent_ollama_url", "http://localhost:11434/v1",
     )

@@ -142,10 +142,14 @@ class InternalRagSource:
         snippet_max = site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )
-        model = (
-            site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-            or "glm-4.7-5090:latest"
-        ).removeprefix("ollama/")
+        # poindexter#485 fail-loud sweep: previously this baked
+        # Matt's "glm-4.7-5090:latest" model name in as a Python-side
+        # fallback. Forks installing Poindexter wouldn't have that
+        # model on Ollama and would hit a confusing "model not found"
+        # at call time. Now chains through the cost-tier API and
+        # raises ValueError if no writer model is resolvable.
+        from services.llm_text import resolve_local_model
+        model = resolve_local_model(site_config=site_config)
         joined = "\n---\n".join(s[:snippet_max] for s in snippets if s)
         from services.prompt_manager import get_prompt_manager
         prompt = get_prompt_manager().get_prompt(

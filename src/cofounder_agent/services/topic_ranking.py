@@ -230,16 +230,20 @@ async def llm_final_score(
 
     ``model`` defaults to the operator-tuned ``pipeline_writer_model``
     app_setting (already used by the rest of the content pipeline). The
-    ``ollama/`` prefix some tenants use is stripped to mirror the
-    behaviour in ``ai_content_generator.py``. Falls back to the prior
-    hardcoded ``glm-4.7-5090:latest`` if no setting is configured so
-    test fixtures that don't seed site_config keep working.
+    ``ollama/`` prefix some tenants use is stripped inside
+    :func:`services.llm_text.resolve_local_model`.
+
+    poindexter#485 fail-loud sweep: previously this baked Matt's
+    ``glm-4.7-5090:latest`` model name in as a Python-side fallback,
+    which silently masked misconfiguration on forks that don't have
+    that model loaded in Ollama. Now resolves via the shared chain
+    (``pipeline_writer_model`` → ``cost_tier.standard.model``) and
+    raises ``ValueError`` if neither is set — surfaces misconfig at
+    pipeline-entry instead of as an opaque Ollama 404 mid-call.
     """
     if model is None:
-        model = (
-            site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-            or "glm-4.7-5090:latest"
-        ).removeprefix("ollama/")
+        from services.llm_text import resolve_local_model
+        model = resolve_local_model(site_config=site_config)
     descriptions = _resolve_goal_descriptions()
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
     cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)

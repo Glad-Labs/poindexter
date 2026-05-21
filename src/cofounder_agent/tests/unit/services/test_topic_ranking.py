@@ -61,7 +61,10 @@ async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
         ScoredCandidate(id="c2", title="B", summary="y", embedding_score=0.4),
     ]
     weights = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
-    scored = await llm_final_score(candidates, weights)
+    # Pass model= explicitly so the test doesn't go through
+    # resolve_local_model (poindexter#485 fail-loud sweep) — that
+    # path is exercised in test_llm_text.py.
+    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest")
     assert scored["c1"].llm_score == 87.5
     assert scored["c2"].llm_score == 42.0
 
@@ -184,12 +187,47 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
         ScoredCandidate(id="missing", title="B", summary="y", embedding_score=0.42),
     ]
     weights = [NicheGoal("TRAFFIC", 100)]
-    scored = await llm_final_score(candidates, weights)
+    # Same pattern as above: bypass resolve_local_model for the
+    # tests that aren't exercising the model-resolution contract.
+    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest")
 
     assert scored["present"].llm_score == 91.0
     # Backfilled: embedding_score (0.42) * 100 = 42.0; breakdown is {}
     assert scored["missing"].llm_score == pytest.approx(42.0)
     assert scored["missing"].score_breakdown == {}
+
+
+# ---------------------------------------------------------------------------
+# llm_final_score — fail-loud on missing model config (poindexter#485)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_llm_final_score_raises_value_error_when_no_model_configured(monkeypatch):
+    """poindexter#485 fail-loud sweep contract.
+
+    Previously this path silently fell back to the literal
+    ``"glm-4.7-5090:latest"`` — Matt's specific custom Ollama model
+    that forks installing Poindexter wouldn't have. The fallback
+    masked misconfiguration as an opaque "model not found" at LLM
+    call time. Now it raises ``ValueError`` at resolution time.
+    """
+    from services import topic_ranking
+    from services.topic_ranking import llm_final_score, ScoredCandidate
+
+    # Clean SiteConfig with no model setting and no cost_tier fallback —
+    # mirrors a misconfigured fork. The resolver must NOT silently
+    # use a hardcoded model.
+    stub_sc = MagicMock()
+    stub_sc.get = MagicMock(return_value="")
+    monkeypatch.setattr(topic_ranking, "site_config", stub_sc)
+
+    candidates = [ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6)]
+    weights = [NicheGoal("TRAFFIC", 100)]
+
+    with pytest.raises(ValueError, match="no writer model resolvable"):
+        # Note: no model= kwarg → forces resolution
+        await llm_final_score(candidates, weights)
 
 
 # ---------------------------------------------------------------------------

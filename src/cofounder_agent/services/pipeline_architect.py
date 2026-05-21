@@ -214,11 +214,21 @@ async def compose(
             errors=["FIX: atom registry is empty — call atom_registry.discover() before compose()"],
         )
 
-    model = (
-        site_config.get("pipeline_architect_model")
-        or site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+    # poindexter#485 fail-loud sweep: was previously
+    # ``... or "glm-4.7-5090:latest"`` — Matt's specific custom model
+    # baked into a public OSS path. Architect prefers its dedicated
+    # setting; falls through to the writer-model resolver (which
+    # itself chains ``pipeline_writer_model`` → ``cost_tier.standard.model``
+    # → ValueError). The architect cannot compose pipelines without
+    # a model, so raising is the right answer for unset config.
+    architect_override = (
+        site_config.get("pipeline_architect_model") or ""
+    ).strip()
+    if architect_override:
+        model = architect_override.removeprefix("ollama/")
+    else:
+        from services.llm_text import resolve_local_model
+        model = resolve_local_model(site_config=site_config)
 
     base_user_prompt = f"INTENT: {intent}\n\n"
     if context:
