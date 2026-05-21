@@ -21,3 +21,78 @@
     {content}
 
     NARRATION:
+
+# Multi-scene long-form video script. Used by
+# ``services/stages/script_for_video.py:_build_long_form_prompt``
+# (poindexter#485 Batch 5 migration — was previously an inline Python
+# f-string). JSON braces are doubled (``{{`` / ``}}``) so str.format
+# doesn't try to interpolate them as placeholders.
+- key: video.long_form_script
+  category: video
+  description: "Long-form YouTube video script writer — multi-scene structured JSON for a ~5-minute landscape video adapted from a published article. Used by stages.script_for_video long-form pipeline."
+  output_format: json
+  template: |-
+    You are scripting a {total_minutes}-minute YouTube video that adapts a published article. Output is JSON ONLY — no preamble, no markdown fences, just a single JSON object.
+
+    Required JSON shape:
+    {{
+      "intro_hook": "<single sentence the narrator opens with>",
+      "outro_cta": "<single sentence call to action at the end>",
+      "scenes": [
+        {{
+          "narration_text": "<2-4 short conversational sentences for this scene, no markdown, no SSML>",
+          "visual_prompt": "<Stable Diffusion XL prompt — photorealistic, cinematic lighting, no people, no text>",
+          "duration_s_hint": {scene_seconds}
+        }}
+      ]
+    }}
+
+    Constraints:
+    - Produce {target_scenes} scenes (range {min_scenes}-{max_scenes} acceptable).
+    - Each narration_text MUST be conversational spoken English. Do not include URLs, code, or lists — narrate them in prose. No filler phrases ("in this video", "let's talk about").
+    - Each visual_prompt MUST end with: cinematic lighting, no people, no text, no faces, 4k.
+    - intro_hook MUST start with a question or surprising fact. Hard cap 25 words.
+    - outro_cta MUST mention the article URL by phrasing only ("link in description"). Hard cap 20 words.
+
+    ARTICLE TITLE: {title}
+
+    ARTICLE BODY:
+    {body_truncated}
+
+    Return JSON only:
+
+# Multi-scene short-form video script (TikTok/Shorts/Reels). Used by
+# ``services/stages/script_for_video.py:_build_short_form_prompt``.
+# Same JSON-brace escaping rule as the long-form sibling.
+- key: video.short_form_script
+  category: video
+  description: "Short-form vertical-video script writer — multi-scene structured JSON for a ≤60-second 9:16 video adapted from a published article. Used by stages.script_for_video short-form pipeline."
+  output_format: json
+  template: |-
+    You are scripting a 45-60 second vertical short-form video (YouTube Shorts / TikTok / Reels) that adapts a published article. Output is JSON ONLY — no preamble, no markdown fences, just a single JSON object.
+
+    Required JSON shape:
+    {{
+      "intro_hook": "<single high-tension sentence — first 3 seconds make or break retention>",
+      "scenes": [
+        {{
+          "narration_text": "<1-2 punchy sentences for this scene>",
+          "visual_prompt": "<Stable Diffusion XL prompt — photorealistic, cinematic lighting, vertical 9:16 framing, no people, no text>",
+          "duration_s_hint": {scene_seconds}
+        }}
+      ]
+    }}
+
+    Constraints:
+    - Produce exactly {target_scenes} scenes (scene 1 is the hook payoff, last scene is the CTA — viewer should leave wanting more).
+    - Total runtime ≤ 60 seconds.
+    - intro_hook is its own beat; do not double it into scene 1.
+    - visual_prompt MUST request vertical 9:16 framing.
+    - No filler phrases. Cut the narration to the bone.
+
+    ARTICLE TITLE: {title}
+
+    ARTICLE BODY:
+    {body_truncated}
+
+    Return JSON only:

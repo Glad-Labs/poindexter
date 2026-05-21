@@ -90,66 +90,47 @@ def _strip_markdown(text: str) -> str:
 
 
 def _build_long_form_prompt(title: str, body: str) -> str:
-    return (
-        f"You are scripting a {_LONG_FORM_TARGET_SCENES * _LONG_FORM_SCENE_SECONDS // 60}-minute "
-        f"YouTube video that adapts a published article. Output is JSON ONLY — "
-        f"no preamble, no markdown fences, just a single JSON object.\n\n"
-        f"Required JSON shape:\n"
-        "{\n"
-        '  "intro_hook": "<single sentence the narrator opens with>",\n'
-        '  "outro_cta": "<single sentence call to action at the end>",\n'
-        '  "scenes": [\n'
-        "    {\n"
-        '      "narration_text": "<2-4 short conversational sentences for this scene, no markdown, no SSML>",\n'
-        '      "visual_prompt": "<Stable Diffusion XL prompt — photorealistic, cinematic lighting, no people, no text>",\n'
-        f'      "duration_s_hint": {_LONG_FORM_SCENE_SECONDS}\n'
-        "    }\n"
-        "  ]\n"
-        "}\n\n"
-        f"Constraints:\n"
-        f"- Produce {_LONG_FORM_TARGET_SCENES} scenes (range {_LONG_FORM_TARGET_SCENES - 2}-{_LONG_FORM_TARGET_SCENES + 2} acceptable).\n"
-        f"- Each narration_text MUST be conversational spoken English. Do not "
-        f"include URLs, code, or lists — narrate them in prose. No filler "
-        f"phrases (\"in this video\", \"let's talk about\").\n"
-        f"- Each visual_prompt MUST end with: cinematic lighting, no people, "
-        f"no text, no faces, 4k.\n"
-        f"- intro_hook MUST start with a question or surprising fact. Hard cap 25 words.\n"
-        f"- outro_cta MUST mention the article URL by phrasing only "
-        f"(\"link in description\"). Hard cap 20 words.\n\n"
-        f"ARTICLE TITLE: {title}\n\n"
-        f"ARTICLE BODY:\n{body[:6000]}\n\n"
-        f"Return JSON only:"
+    """Build the long-form video script prompt via UnifiedPromptManager.
+
+    poindexter#485 Batch 5: migrated out of an inline Python f-string
+    into ``prompts/video.yaml`` (key ``video.long_form_script``), so
+    operators can tune the prompt at runtime through Langfuse / the
+    ``prompt_templates`` table without a code deploy. Per
+    ``feedback_prompts_must_be_db_configurable``.
+
+    The numeric module constants (``_LONG_FORM_TARGET_SCENES``,
+    ``_LONG_FORM_SCENE_SECONDS``) stay in code because they're
+    structural pipeline contracts (TTS pacing assumptions, downstream
+    scene-count expectations in ``video_service``) rather than
+    operator-tunable prose. They get passed to the template as kwargs.
+    """
+    from services.prompt_manager import get_prompt_manager
+    return get_prompt_manager().get_prompt(
+        "video.long_form_script",
+        total_minutes=_LONG_FORM_TARGET_SCENES * _LONG_FORM_SCENE_SECONDS // 60,
+        target_scenes=_LONG_FORM_TARGET_SCENES,
+        scene_seconds=_LONG_FORM_SCENE_SECONDS,
+        min_scenes=_LONG_FORM_TARGET_SCENES - 2,
+        max_scenes=_LONG_FORM_TARGET_SCENES + 2,
+        title=title,
+        body_truncated=body[:6000],
     )
 
 
 def _build_short_form_prompt(title: str, body: str) -> str:
-    return (
-        f"You are scripting a 45-60 second vertical short-form video "
-        f"(YouTube Shorts / TikTok / Reels) that adapts a published article. "
-        f"Output is JSON ONLY — no preamble, no markdown fences, just a "
-        f"single JSON object.\n\n"
-        f"Required JSON shape:\n"
-        "{\n"
-        '  "intro_hook": "<single high-tension sentence — first 3 seconds make or break retention>",\n'
-        '  "scenes": [\n'
-        "    {\n"
-        '      "narration_text": "<1-2 punchy sentences for this scene>",\n'
-        '      "visual_prompt": "<Stable Diffusion XL prompt — photorealistic, cinematic lighting, vertical 9:16 framing, no people, no text>",\n'
-        f'      "duration_s_hint": {_SHORT_FORM_SCENE_SECONDS}\n'
-        "    }\n"
-        "  ]\n"
-        "}\n\n"
-        f"Constraints:\n"
-        f"- Produce exactly {_SHORT_FORM_TARGET_SCENES} scenes "
-        f"(scene 1 is the hook payoff, last scene is the CTA — viewer "
-        f"should leave wanting more).\n"
-        f"- Total runtime ≤ 60 seconds.\n"
-        f"- intro_hook is its own beat; do not double it into scene 1.\n"
-        f"- visual_prompt MUST request vertical 9:16 framing.\n"
-        f"- No filler phrases. Cut the narration to the bone.\n\n"
-        f"ARTICLE TITLE: {title}\n\n"
-        f"ARTICLE BODY:\n{body[:4000]}\n\n"
-        f"Return JSON only:"
+    """Build the short-form video script prompt via UnifiedPromptManager.
+
+    See :func:`_build_long_form_prompt` for the migration rationale —
+    same Batch 5 (#485) move. Lives at ``video.short_form_script`` in
+    ``prompts/video.yaml``.
+    """
+    from services.prompt_manager import get_prompt_manager
+    return get_prompt_manager().get_prompt(
+        "video.short_form_script",
+        target_scenes=_SHORT_FORM_TARGET_SCENES,
+        scene_seconds=_SHORT_FORM_SCENE_SECONDS,
+        title=title,
+        body_truncated=body[:4000],
     )
 
 

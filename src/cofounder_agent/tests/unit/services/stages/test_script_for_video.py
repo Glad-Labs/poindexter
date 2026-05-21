@@ -442,3 +442,105 @@ class TestDispatcherWiring:
             result = await ScriptForVideoStage().execute(ctx, {})
 
         assert result.metrics["writer_model"] == "legacy-writer"
+
+
+# ---------------------------------------------------------------------------
+# poindexter#485 Batch 5 — prompts now load from UnifiedPromptManager
+# ---------------------------------------------------------------------------
+
+
+class TestPromptsLoadFromPromptManager:
+    """Pin the migration: ``_build_*_prompt`` calls go through
+    ``UnifiedPromptManager.get_prompt`` instead of inline f-strings.
+
+    A future regression that re-introduces an inline Python f-string
+    would skip the manager and fail the patch assertion below — the
+    test would catch it before the prompt drifted out of Langfuse's
+    edit surface.
+    """
+
+    def test_long_form_prompt_routes_through_prompt_manager(self):
+        from services.stages.script_for_video import _build_long_form_prompt
+
+        with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = "LONG_FORM_TEMPLATE_OK"
+            result = _build_long_form_prompt("Test Title", "Body text")
+
+        assert result == "LONG_FORM_TEMPLATE_OK"
+        mock_pm.return_value.get_prompt.assert_called_once()
+        call = mock_pm.return_value.get_prompt.call_args
+        assert call.args[0] == "video.long_form_script"
+        # All structural pipeline contracts are still passed as kwargs —
+        # the YAML is the prompt prose, the constants stay in code.
+        assert call.kwargs["title"] == "Test Title"
+        assert call.kwargs["body_truncated"] == "Body text"
+        assert call.kwargs["target_scenes"] == 10  # _LONG_FORM_TARGET_SCENES
+        assert call.kwargs["scene_seconds"] == 30  # _LONG_FORM_SCENE_SECONDS
+        assert call.kwargs["total_minutes"] == 5  # 10 * 30 // 60
+        assert call.kwargs["min_scenes"] == 8
+        assert call.kwargs["max_scenes"] == 12
+
+    def test_short_form_prompt_routes_through_prompt_manager(self):
+        from services.stages.script_for_video import _build_short_form_prompt
+
+        with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = "SHORT_FORM_TEMPLATE_OK"
+            result = _build_short_form_prompt("Short Title", "Short body")
+
+        assert result == "SHORT_FORM_TEMPLATE_OK"
+        call = mock_pm.return_value.get_prompt.call_args
+        assert call.args[0] == "video.short_form_script"
+        assert call.kwargs["title"] == "Short Title"
+        assert call.kwargs["body_truncated"] == "Short body"
+        assert call.kwargs["target_scenes"] == 4  # _SHORT_FORM_TARGET_SCENES
+        assert call.kwargs["scene_seconds"] == 13  # _SHORT_FORM_SCENE_SECONDS
+
+    def test_long_form_truncates_body_to_6000_chars(self):
+        """Pre-Batch-5 the f-string had ``body[:6000]`` baked in. After
+        migration the truncation moves to the caller (the YAML template
+        receives the already-truncated value). Pin the cap so a future
+        edit can't quietly lift it."""
+        from services.stages.script_for_video import _build_long_form_prompt
+
+        long_body = "x" * 7000
+        with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = ""
+            _build_long_form_prompt("T", long_body)
+
+        assert mock_pm.return_value.get_prompt.call_args.kwargs["body_truncated"] == "x" * 6000
+
+    def test_short_form_truncates_body_to_4000_chars(self):
+        from services.stages.script_for_video import _build_short_form_prompt
+
+        long_body = "y" * 5000
+        with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = ""
+            _build_short_form_prompt("T", long_body)
+
+        assert mock_pm.return_value.get_prompt.call_args.kwargs["body_truncated"] == "y" * 4000
+
+    def test_yaml_keys_are_actually_loadable(self):
+        """The video.yaml file must declare both keys this stage requires.
+
+        Failing this test indicates the YAML was edited without updating
+        the stage, or vice versa — they need to move in lockstep.
+        """
+        from services.prompt_manager import get_prompt_manager
+
+        pm = get_prompt_manager()
+        long_form = pm.get_prompt(
+            "video.long_form_script",
+            total_minutes=5, target_scenes=10, scene_seconds=30,
+            min_scenes=8, max_scenes=12,
+            title="t", body_truncated="b",
+        )
+        short_form = pm.get_prompt(
+            "video.short_form_script",
+            target_scenes=4, scene_seconds=13,
+            title="t", body_truncated="b",
+        )
+        # Both should produce non-empty prompts with the JSON schema preserved
+        assert "intro_hook" in long_form
+        assert "scenes" in long_form
+        assert "intro_hook" in short_form
+        assert "9:16" in short_form
