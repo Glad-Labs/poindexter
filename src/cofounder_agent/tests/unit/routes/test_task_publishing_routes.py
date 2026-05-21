@@ -116,7 +116,16 @@ def _unified_response_dict(**overrides):
 
 
 def _mock_model_converter():
-    """Return a patch context for ModelConverter that produces a valid UnifiedTaskResponse dict."""
+    """Return a patch context for ModelConverter that produces a valid UnifiedTaskResponse dict.
+
+    GH#337 workstream (b) is incrementally retiring this helper. Happy-path
+    tests now let the real ``ModelConverter`` run against ``_make_task()``'s
+    dict so a stale fixture shape (or a converter regression) fails loudly
+    instead of silently passing on a canned ``_unified_response_dict``.
+    Tests that still patch the converter are ones whose surrounding setup
+    (e.g. ``auto_publish_creates_post``, ``publish_post_from_task`` fixture)
+    is non-trivial to unwind in this slice; those will migrate in follow-ups.
+    """
     converter_patch = patch(
         "routes.task_publishing_routes.ModelConverter",
     )
@@ -206,17 +215,18 @@ class TestApproveTask:
         return client.post(f"/{task_id}/approve", params=params)
 
     def test_approve_happy_path(self):
+        # GH#337 workstream (b): no ModelConverter patch — the real converter
+        # runs against ``_make_task()``'s dict so a stale fixture shape (or a
+        # converter regression) will fail this test loudly instead of silently
+        # passing on a canned ``_unified_response_dict``.
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")
         # get_task called twice: first for the original, second for the updated version
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict()
-            client = TestClient(app)
-            resp = self._post_approve(client, approved="true")
+        client = TestClient(app)
+        resp = self._post_approve(client, approved="true")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -229,16 +239,14 @@ class TestApproveTask:
         assert first_call[0][1] == "approved"
 
     def test_reject_via_approved_false(self):
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="rejected")
-            client = TestClient(app)
-            resp = self._post_approve(client, approved="false")
+        client = TestClient(app)
+        resp = self._post_approve(client, approved="false")
 
         assert resp.status_code == 200
         call_args = mock_db.update_task_status.call_args
@@ -266,17 +274,16 @@ class TestApproveTask:
 
     def test_numeric_task_id_accepted(self):
         """Numeric IDs are allowed for backwards compatibility."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")
         task["id"] = "42"
+        task["task_id"] = "42"
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(id="42", task_id="42")
-            client = TestClient(app)
-            resp = self._post_approve(client, task_id="42")
+        client = TestClient(app)
+        resp = self._post_approve(client, task_id="42")
 
         assert resp.status_code == 200
 
@@ -294,6 +301,7 @@ class TestApproveTask:
 
     def test_allowed_statuses_all_accepted(self):
         """All listed allowed statuses should not trigger the 400 guard."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         allowed = [
             "awaiting_approval",
             "completed",
@@ -304,11 +312,8 @@ class TestApproveTask:
             mock_db.get_task = AsyncMock(side_effect=[task, task])
 
             app = _build_app(mock_db)
-            with _mock_model_converter() as mc:
-                mc.to_task_response.return_value = MagicMock()
-                mc.task_response_to_unified.return_value = _unified_response_dict()
-                client = TestClient(app)
-                resp = self._post_approve(client)
+            client = TestClient(app)
+            resp = self._post_approve(client)
 
             assert (
                 resp.status_code == 200
@@ -385,17 +390,15 @@ class TestApproveTask:
 
     def test_task_metadata_as_json_string(self):
         """task_metadata stored as JSON string should be parsed without error."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")
         task["task_metadata"] = json.dumps({"draft_content": "Some content"})
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict()
-            client = TestClient(app)
-            resp = self._post_approve(client)
+        client = TestClient(app)
+        resp = self._post_approve(client)
 
         assert resp.status_code == 200
 
@@ -590,46 +593,40 @@ class TestRejectTask:
         return client.post(f"/{task_id}/reject")
 
     def test_reject_happy_path(self):
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="rejected")
-            client = TestClient(app)
-            resp = self._post_reject(client)
+        client = TestClient(app)
+        resp = self._post_reject(client)
 
         assert resp.status_code == 200
         call_args = mock_db.update_task_status.call_args
         assert call_args[0][1] == "rejected"
 
     def test_reject_approved_task(self):
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="approved")
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="rejected")
-            client = TestClient(app)
-            resp = self._post_reject(client)
+        client = TestClient(app)
+        resp = self._post_reject(client)
 
         assert resp.status_code == 200
 
     def test_reject_completed_task(self):
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="completed")
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="rejected")
-            client = TestClient(app)
-            resp = self._post_reject(client)
+        client = TestClient(app)
+        resp = self._post_reject(client)
 
         assert resp.status_code == 200
 
