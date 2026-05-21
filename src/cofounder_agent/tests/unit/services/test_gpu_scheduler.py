@@ -471,3 +471,72 @@ class TestPropertiesAndConfig:
         with patch.object(gpu_scheduler, "site_config", fake_sc):
             result = gpu_scheduler._cfg_int("threshold", 30)
         assert result == 99
+
+    # ---------------------------------------------------------------
+    # poindexter#485 fail-loud sweep — bare `except: return default`
+    # in `_cfg_int` / `_cfg_float` previously masked SiteConfig
+    # failures as "using defaults". These tests pin the new contract:
+    # still falls back to the default (scheduler must keep running),
+    # but emits a warning + a finding row so the operator sees it.
+    # ---------------------------------------------------------------
+
+    def test_cfg_int_emits_finding_when_site_config_raises(self):
+        from unittest.mock import MagicMock, patch
+
+        from services import gpu_scheduler
+
+        fake_sc = MagicMock()
+        fake_sc.get_int = MagicMock(side_effect=RuntimeError("db pool exhausted"))
+
+        with patch.object(gpu_scheduler, "site_config", fake_sc), \
+             patch("utils.findings.emit_finding") as mock_emit:
+            result = gpu_scheduler._cfg_int("threshold", 42)
+
+        # Still falls back to default — scheduler can't crash on config-read failure.
+        assert result == 42
+        # But operator now sees the outage via a finding row.
+        assert mock_emit.called, "emit_finding must fire on SiteConfig.get_int failure"
+        call_kwargs = mock_emit.call_args.kwargs
+        assert call_kwargs["source"] == "gpu_scheduler.cfg_fetch"
+        assert call_kwargs["kind"] == "site_config_read_failed"
+        assert call_kwargs["severity"] == "warning"
+        assert "threshold" in call_kwargs["title"]
+        assert call_kwargs["dedup_key"] == "gpu_scheduler_cfg_int_threshold"
+
+    def test_cfg_float_emits_finding_when_site_config_raises(self):
+        from unittest.mock import MagicMock, patch
+
+        from services import gpu_scheduler
+
+        fake_sc = MagicMock()
+        fake_sc.get_float = MagicMock(side_effect=RuntimeError("connection refused"))
+
+        with patch.object(gpu_scheduler, "site_config", fake_sc), \
+             patch("utils.findings.emit_finding") as mock_emit:
+            result = gpu_scheduler._cfg_float("electricity_rate_kwh_usd", 0.12)
+
+        assert result == 0.12
+        assert mock_emit.called, "emit_finding must fire on SiteConfig.get_float failure"
+        assert mock_emit.call_args.kwargs["dedup_key"] == "gpu_scheduler_cfg_float_electricity_rate_kwh_usd"
+
+    def test_cfg_int_swallows_emit_finding_failure(self):
+        """Observability path must never gate the scheduler.
+
+        If ``emit_finding`` itself raises (audit_log uninitialised,
+        DB pool exhausted, etc.), ``_cfg_int`` must still return the
+        default. The scheduler lock lifecycle is more important than
+        the warning getting logged.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from services import gpu_scheduler
+
+        fake_sc = MagicMock()
+        fake_sc.get_int = MagicMock(side_effect=RuntimeError("simulated"))
+
+        with patch.object(gpu_scheduler, "site_config", fake_sc), \
+             patch("utils.findings.emit_finding",
+                   side_effect=RuntimeError("audit_log not ready")):
+            result = gpu_scheduler._cfg_int("threshold", 30)
+
+        assert result == 30  # scheduler keeps running even when observability breaks

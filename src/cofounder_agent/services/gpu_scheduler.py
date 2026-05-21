@@ -25,6 +25,7 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
@@ -74,19 +75,75 @@ _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
 
 
 def _cfg_int(key: str, default: int) -> int:
-    """Read an int from site_config (DB) with fallback."""
+    """Read an int from site_config (DB) with fallback.
+
+    poindexter#485 fail-loud sweep: previously a bare
+    ``except Exception: return default`` silently masked SiteConfig
+    failures (DB pool exhausted, missing column, etc.) as "using
+    defaults". The scheduler still falls back so the lock lifecycle
+    never breaks, but operators now see a warning log + persistent
+    finding row for the outage. Dedup key folds repeats into one
+    dispatcher notification per key.
+    """
     try:
         return _sc().get_int(key, default)
-    except Exception:
+    except Exception as exc:
+        _emit_cfg_fetch_finding("int", key, default, exc)
         return default
 
 
 def _cfg_float(key: str, default: float) -> float:
-    """Read a float from site_config (DB) with fallback."""
+    """Read a float from site_config (DB) with fallback.
+
+    Same fail-loud-but-recover pattern as :func:`_cfg_int`.
+    """
     try:
         return _sc().get_float(key, default)
-    except Exception:
+    except Exception as exc:
+        _emit_cfg_fetch_finding("float", key, default, exc)
         return default
+
+
+def _emit_cfg_fetch_finding(
+    kind: str, key: str, default: Any, exc: BaseException,
+) -> None:
+    """Log + emit a finding when SiteConfig.get_{int,float} raises.
+
+    Called from the scheduler's hot path so this function never raises
+    or blocks. Dedup key is keyed on (kind, key) so a transient
+    SiteConfig outage during a 5s scheduler tick produces one
+    operator-visible finding per affected setting rather than one per
+    tick.
+    """
+    logger.warning(
+        "[gpu_scheduler] SiteConfig.get_%s(%r) raised %s: %s — "
+        "falling back to default %r",
+        kind, key, type(exc).__name__, exc, default,
+    )
+    try:
+        from utils.findings import emit_finding
+        emit_finding(
+            source="gpu_scheduler.cfg_fetch",
+            kind="site_config_read_failed",
+            severity="warning",
+            title=f"gpu_scheduler cannot read {key} from SiteConfig",
+            body=(
+                f"SiteConfig.get_{kind}({key!r}) raised "
+                f"{type(exc).__name__}: {exc}. The scheduler fell back "
+                f"to its hardcoded safety default ({default!r}) so the "
+                "GPU lock lifecycle stays intact, but the operator's "
+                "tuned value is not in effect. Investigate the DB pool "
+                "/ app_settings cache + restart the worker if site_config "
+                "drift persists."
+            ),
+            dedup_key=f"gpu_scheduler_cfg_{kind}_{key}",
+        )
+    except Exception:
+        # Observability path must never gate the scheduler — log + move on.
+        logger.debug(
+            "[gpu_scheduler] emit_finding for site_config_read_failed unavailable",
+            exc_info=True,
+        )
 
 
 class GPUScheduler:
