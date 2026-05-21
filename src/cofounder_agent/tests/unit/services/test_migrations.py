@@ -244,3 +244,140 @@ class TestRunMigrationsMultipleMixed:
             result = _run(run_migrations(db))
 
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# get_migration_status — read-only health-endpoint surface
+# ---------------------------------------------------------------------------
+
+
+def _status_pool(applied_names: list[str], latest: str | None = None):
+    """Mock pool whose schema_migrations table returns the given applied
+    names and a chosen ``latest_applied`` filename."""
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(
+        return_value=[{"name": n} for n in applied_names],
+    )
+    conn.fetchval = AsyncMock(return_value=latest)
+    pool = MagicMock()
+    pool.acquire = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+    return pool
+
+
+@pytest.mark.unit
+class TestGetMigrationStatus:
+    """Read-only snapshot consumed by /api/health and the brain probe.
+
+    Brain's ``migration_drift_probe`` reads this block to detect schema
+    drift. Before the helper landed, every probe cycle emitted
+    ``probe.migration_drift_unknown`` audit events that the brain's
+    triage LLM then mistook for an "outdated worker build" on every
+    unrelated incident — see ``feedback_verify_brain_triage_before_acting``.
+    """
+
+    def test_returns_error_when_pool_unavailable(self):
+        from services.migrations import get_migration_status
+
+        result = _run(get_migration_status(None))
+        assert "error" in result
+        assert "pool unavailable" in result["error"]
+
+    def test_clean_state_reports_zero_pending(self):
+        from services.migrations import get_migration_status
+
+        # Two files on disk; both recorded as applied → 0 pending.
+        f1 = MagicMock(name="20260520_171234_a.py")
+        f1.name = "20260520_171234_a.py"
+        f2 = MagicMock(name="20260520_171235_b.py")
+        f2.name = "20260520_171235_b.py"
+        pool = _status_pool(
+            applied_names=["20260520_171234_a.py", "20260520_171235_b.py"],
+            latest="20260520_171235_b.py",
+        )
+        with patch("services.migrations.Path.glob", return_value=iter([f1, f2])):
+            result = _run(get_migration_status(pool))
+        assert result == {
+            "applied": 2,
+            "pending": 0,
+            "latest_applied": "20260520_171235_b.py",
+            "pending_files": [],
+        }
+
+    def test_pending_files_surface_in_status(self):
+        from services.migrations import get_migration_status
+
+        # Two on disk; only one applied → 1 pending. This is the case
+        # the brain probe is built to detect.
+        f1 = MagicMock()
+        f1.name = "20260520_171234_a.py"
+        f2 = MagicMock()
+        f2.name = "20260520_171235_b.py"
+        pool = _status_pool(
+            applied_names=["20260520_171234_a.py"],
+            latest="20260520_171234_a.py",
+        )
+        with patch("services.migrations.Path.glob", return_value=iter([f1, f2])):
+            result = _run(get_migration_status(pool))
+        assert result["applied"] == 1
+        assert result["pending"] == 1
+        assert result["pending_files"] == ["20260520_171235_b.py"]
+        assert result["latest_applied"] == "20260520_171234_a.py"
+
+    def test_excludes_init_py_from_on_disk_list(self):
+        """__init__.py is the runner module, not a migration."""
+        from services.migrations import get_migration_status
+
+        init = MagicMock()
+        init.name = "__init__.py"
+        real = MagicMock()
+        real.name = "20260520_171234_real.py"
+        pool = _status_pool(
+            applied_names=["20260520_171234_real.py"],
+            latest="20260520_171234_real.py",
+        )
+        with patch(
+            "services.migrations.Path.glob",
+            return_value=iter([init, real]),
+        ):
+            result = _run(get_migration_status(pool))
+        # __init__.py should NOT be counted as pending even though it
+        # has no schema_migrations row.
+        assert result["pending"] == 0
+        assert result["applied"] == 1
+
+    def test_missing_schema_migrations_table_treated_as_zero_applied(self):
+        """Fresh DB before runner initializes the table — graceful degrade."""
+        from services.migrations import get_migration_status
+
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(side_effect=Exception("table does not exist"))
+        conn.fetchval = AsyncMock(side_effect=Exception("table does not exist"))
+        pool = MagicMock()
+        pool.acquire = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        f = MagicMock()
+        f.name = "20260520_171234_a.py"
+        with patch("services.migrations.Path.glob", return_value=iter([f])):
+            result = _run(get_migration_status(pool))
+        # Nothing applied (table doesn't exist yet); 1 pending; no
+        # exception out of the health check.
+        assert result["applied"] == 0
+        assert result["pending"] == 1
+        assert result["latest_applied"] is None
+        # The "error" key is reserved for pool-level / hard failures.
+        # A missing table is "everything is pending" and IS valid state.
+        assert "error" not in result
+
+    def test_unexpected_exception_becomes_error_dict(self):
+        """Health endpoint must never raise — turn anything weird into {'error': ...}."""
+        from services.migrations import get_migration_status
+
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=RuntimeError("pool exploded"))
+        result = _run(get_migration_status(pool))
+        assert "error" in result
+        assert "RuntimeError" in result["error"]

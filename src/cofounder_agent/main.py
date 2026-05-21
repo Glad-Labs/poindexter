@@ -942,6 +942,29 @@ async def api_health():
             logger.warning("Task queue health check failed: %s", str(e), exc_info=True)
             health_data["components"]["task_executor"] = "unavailable"
 
+        # Migration drift surface. Brain's ``migration_drift_probe`` reads
+        # this block to detect "worker shipped a new migration file but
+        # the runner hasn't applied it". Before this was wired (today),
+        # the block was missing from the response entirely — every probe
+        # cycle emitted ``probe.migration_drift_unknown`` audit events
+        # that the brain's triage LLM then mistook for evidence of an
+        # "outdated worker build" on every unrelated incident. Three
+        # confirmed misdiagnoses in 48h (2026-05-19 + two on 2026-05-20)
+        # all leaned on those fake-evidence rows. See
+        # ``feedback_verify_brain_triage_before_acting``.
+        try:
+            from services.migrations import get_migration_status
+
+            pool = getattr(database_service, "pool", None) if database_service else None
+            health_data["components"]["migrations"] = await get_migration_status(pool)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning(
+                "Migrations health probe failed: %s", str(e), exc_info=True,
+            )
+            health_data["components"]["migrations"] = {
+                "error": f"{type(e).__name__}: {str(e)[:120]}",
+            }
+
         # LLM resilience layer (GH#192, generalized from GH#153) —
         # surface circuit state and in-flight call count for every
         # registered LLM provider's resilience manager. Visible in the

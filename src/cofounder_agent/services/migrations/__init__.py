@@ -22,10 +22,73 @@ Migration files are run in alphabetical order. Each migration is tracked in a
 
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
+async def get_migration_status(pool: Any) -> dict[str, Any]:
+    """Return a snapshot of migration state for ``/api/health`` consumers.
+
+    Shape::
+
+        {
+            "applied": <int>,            # count of migrations recorded in schema_migrations
+            "pending": <int>,            # on-disk files not yet recorded as applied
+            "latest_applied": <str|None>, # filename of the most-recently applied migration
+            "pending_files": [str, ...]   # filenames of pending migrations (empty when clean)
+        }
+
+    Brain's :mod:`brain.migration_drift_probe` reads this block from
+    ``/api/health`` to detect schema drift (the case where a worker has
+    shipped a new migration file but the runner hasn't applied it).
+    Before this helper landed, the block was missing entirely — every
+    probe cycle emitted ``probe.migration_drift_unknown`` audit events
+    that the brain's triage LLM then mistook for evidence of an
+    "outdated worker build" on every unrelated incident. See
+    ``feedback_verify_brain_triage_before_acting`` for the misdiagnosis
+    pattern this fix interrupts.
+
+    Returns an ``{"error": "..."}`` dict instead of raising — the
+    health endpoint must NEVER throw out of a component check. The
+    probe handles the error branch as "can't tell" rather than drift.
+    """
+    if pool is None:
+        return {"error": "pool unavailable"}
+    try:
+        migrations_dir = Path(__file__).parent
+        on_disk = sorted(
+            f.name for f in migrations_dir.glob("*.py")
+            if f.name != "__init__.py"
+        )
+        async with pool.acquire() as conn:
+            # Tolerate the table not existing yet — fresh DB during
+            # startup race. Empty applied set = everything is pending.
+            try:
+                rows = await conn.fetch(
+                    "SELECT name FROM schema_migrations",
+                )
+                applied_names = {r["name"] for r in rows}
+            except Exception:
+                applied_names = set()
+            try:
+                latest = await conn.fetchval(
+                    "SELECT name FROM schema_migrations "
+                    "ORDER BY applied_at DESC NULLS LAST, id DESC LIMIT 1",
+                )
+            except Exception:
+                latest = None
+        pending = [name for name in on_disk if name not in applied_names]
+        return {
+            "applied": len(applied_names),
+            "pending": len(pending),
+            "latest_applied": latest,
+            "pending_files": pending,
+        }
+    except Exception as exc:  # noqa: BLE001 — health endpoint must never raise
+        return {"error": f"{type(exc).__name__}: {str(exc)[:120]}"}
 
 _MIGRATIONS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
