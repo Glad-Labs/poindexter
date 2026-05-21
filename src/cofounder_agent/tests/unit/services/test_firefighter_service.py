@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -367,46 +367,107 @@ class TestRunTriage:
         assert "ms" in result
 
     @pytest.mark.asyncio
-    async def test_uses_configured_system_prompt(self):
-        cfg = SiteConfig(initial_config={"ops_triage_system_prompt": "BE BRIEF."})
+    async def test_uses_prompt_manager_supplied_system_prompt(self):
+        """poindexter#485 Batch 5: run_triage gets its system prompt
+        from UnifiedPromptManager, not from
+        ``app_settings.ops_triage_system_prompt`` anymore.
+        """
+        cfg = SiteConfig(initial_config={})
         router = MagicMock()
         router.invoke = AsyncMock(return_value={"text": "ok"})
 
-        await run_triage({}, cfg, router)
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+        ) as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = "BE BRIEF."
+            await run_triage({}, cfg, router)
 
         assert router.invoke.call_args.kwargs["system"] == "BE BRIEF."
+        mock_pm.return_value.get_prompt.assert_called_with("ops.triage.system_prompt")
 
 
 # ---------------------------------------------------------------------------
-# _default_system_prompt
+# _default_system_prompt — poindexter#485 Batch 5 migrated path
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestDefaultSystemPrompt:
-    def test_falls_back_to_seeded_default_when_missing(self):
+    """``_default_system_prompt`` now routes through UnifiedPromptManager
+    instead of reading ``app_settings.ops_triage_system_prompt`` directly.
+
+    The ``site_config`` argument is retained for call-shape compatibility
+    with pre-migration callers (notably ``run_triage``), but the
+    function no longer reads from it. Operator overrides now live in
+    the ``prompt_templates`` table (key ``ops.triage.system_prompt``)
+    or, when enabled, Langfuse.
+    """
+
+    def test_returns_value_from_prompt_manager(self):
         cfg = SiteConfig(initial_config={})
 
-        assert _default_system_prompt(cfg) == _FALLBACK_SYSTEM_PROMPT
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+        ) as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = "FROM_PROMPT_MANAGER"
+            result = _default_system_prompt(cfg)
 
-    def test_falls_back_when_setting_is_empty_string(self):
-        cfg = SiteConfig(initial_config={"ops_triage_system_prompt": ""})
+        assert result == "FROM_PROMPT_MANAGER"
+        mock_pm.return_value.get_prompt.assert_called_with("ops.triage.system_prompt")
 
-        assert _default_system_prompt(cfg) == _FALLBACK_SYSTEM_PROMPT
+    def test_ignores_legacy_app_setting_override(self):
+        """An operator who set the old ``ops_triage_system_prompt`` app_setting
+        used to win that comparison. Post-Batch-5 the prompt_manager is
+        authoritative — operators migrate the override into
+        ``prompt_templates`` instead. Pin the new contract so a future
+        regression doesn't silently re-add the legacy lookup.
+        """
+        cfg = SiteConfig(initial_config={
+            "ops_triage_system_prompt": "STALE_LEGACY_VALUE",
+        })
 
-    def test_falls_back_when_setting_is_whitespace(self):
-        cfg = SiteConfig(initial_config={"ops_triage_system_prompt": "   \n  "})
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+        ) as mock_pm:
+            mock_pm.return_value.get_prompt.return_value = "FRESH_FROM_PROMPT_MANAGER"
+            result = _default_system_prompt(cfg)
 
-        assert _default_system_prompt(cfg) == _FALLBACK_SYSTEM_PROMPT
+        assert result == "FRESH_FROM_PROMPT_MANAGER"
+        assert "STALE_LEGACY" not in result
 
-    def test_returns_configured_value_when_present(self):
-        cfg = SiteConfig(initial_config={"ops_triage_system_prompt": "Be terse."})
+    def test_falls_back_to_inline_when_prompt_manager_raises(self):
+        """Triage must produce SOME system prompt. If prompt_manager
+        itself fails (DB pool not wired during bootstrap, etc.), we
+        fall back to the inline ``_FALLBACK_SYSTEM_PROMPT`` rather
+        than passing an empty system prompt to the LLM.
+        """
+        cfg = SiteConfig(initial_config={})
 
-        assert _default_system_prompt(cfg) == "Be terse."
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+            side_effect=RuntimeError("prompt_manager not initialised"),
+        ):
+            result = _default_system_prompt(cfg)
+
+        assert result == _FALLBACK_SYSTEM_PROMPT
+
+    def test_yaml_default_matches_inline_fallback(self):
+        """The YAML default (prompts/system.yaml :: ops.triage.system_prompt)
+        and the inline ``_FALLBACK_SYSTEM_PROMPT`` should produce the
+        same operator-persona content. If a future PR edits one
+        without the other they'll drift; this test surfaces that.
+
+        Comparison strips whitespace because YAML may add a trailing
+        newline / indentation that the Python literal doesn't have.
+        """
+        from services.prompt_manager import get_prompt_manager
+
+        yaml_default = get_prompt_manager().get_prompt("ops.triage.system_prompt")
+        assert yaml_default.strip() == _FALLBACK_SYSTEM_PROMPT.strip()
 
     def test_fallback_matches_spec_keywords(self):
         # Tripwire — if someone tweaks the wording, this test reminds
-        # them to update the seed migration too (or vice versa).
+        # them to update the YAML default too (or vice versa).
         assert "Poindexter operator" in _FALLBACK_SYSTEM_PROMPT
         assert "ONE SHORT PARAGRAPH" in _FALLBACK_SYSTEM_PROMPT
         assert "Do NOT propose code" in _FALLBACK_SYSTEM_PROMPT

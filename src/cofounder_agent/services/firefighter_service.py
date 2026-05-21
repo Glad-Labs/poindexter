@@ -326,11 +326,37 @@ async def run_triage(
 def _default_system_prompt(site_config: SiteConfig) -> str:
     """Return the operator-persona system prompt.
 
-    Reads ``ops_triage_system_prompt`` from ``site_config`` (seeded by
-    the 20260506_052451 migration) and falls back to the verbatim
-    default when the key is missing or empty.
+    poindexter#485 Batch 5: was previously a direct
+    ``site_config.get("ops_triage_system_prompt")`` read. That sat
+    outside Langfuse / ``prompt_templates`` reach — operators couldn't
+    tune the prompt through the standard UI. Now routes through
+    :class:`services.prompt_manager.UnifiedPromptManager`, which
+    chains Langfuse → ``prompt_templates`` DB → ``prompts/system.yaml``
+    default. Per ``feedback_prompts_must_be_db_configurable``.
+
+    Back-compat: operators who had a customised
+    ``app_settings.ops_triage_system_prompt`` row should re-apply that
+    customisation as a ``prompt_templates`` row with key
+    ``ops.triage.system_prompt``. The ``site_config`` argument is
+    retained for tests that pre-date this migration (they pass a stub
+    SiteConfig); the argument is no longer consulted but kept to avoid
+    breaking the call shape.
+
+    ``_FALLBACK_SYSTEM_PROMPT`` stays as a last-resort fallback for the
+    case where ``get_prompt_manager()`` itself fails (audit_log /
+    DB pool not yet wired during early bootstrap, test fixtures that
+    monkey-patch the manager, etc.). Triage must produce SOME prompt;
+    a triage call with an empty system slot is worse than one with the
+    seed prompt.
     """
-    value = site_config.get("ops_triage_system_prompt", "")
-    if value and value.strip():
-        return value
-    return _FALLBACK_SYSTEM_PROMPT
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt("ops.triage.system_prompt")
+    except Exception as exc:  # noqa: BLE001 — observability path mustn't gate triage
+        logger.warning(
+            "[firefighter] prompt_manager lookup for 'ops.triage.system_prompt' "
+            "failed (%s: %s) — using inline fallback. Re-check "
+            "prompt_templates seed + UnifiedPromptManager wiring.",
+            type(exc).__name__, exc,
+        )
+        return _FALLBACK_SYSTEM_PROMPT
