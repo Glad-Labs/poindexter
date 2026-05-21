@@ -18,6 +18,7 @@ from asyncpg import Pool
 
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
+from schemas.typed_records import PaginatedTasksResult, TaskRecord
 from services.logger_config import get_logger
 from utils.json_encoder import safe_json_load
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
@@ -508,7 +509,7 @@ class TasksDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="get_task", category="task_retrieval")
-    async def get_task(self, task_id: str) -> dict | None:
+    async def get_task(self, task_id: str) -> TaskRecord | None:
         """
         Get a task from content_tasks by ID.
 
@@ -958,7 +959,7 @@ class TasksDatabase(DatabaseServiceMixin):
         category: str | None = None,
         search: str | None = None,
         site_id: str | None = None,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> PaginatedTasksResult:
         """
         Get paginated tasks from content_tasks with optional filtering.
 

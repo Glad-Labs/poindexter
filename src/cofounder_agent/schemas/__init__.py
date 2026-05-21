@@ -55,6 +55,18 @@ from .task_schemas import (
 )
 from .task_status_schemas import TaskStatusUpdateRequest
 
+# Typed dict shapes for SQL helper returns (#201 — lightweight peer of
+# the Pydantic models above; gives mypy/pyright field knowledge over
+# dict returns without per-call validation cost)
+from .typed_records import (
+    CostBreakdownRecord,
+    PaginatedTasksResult,
+    PostRecord,
+    TaskCountsRecord,
+    TaskRecord,
+    UserRecord,
+)
+
 # Unified task response (contains CreateBlogPostResponse as alias)
 from .unified_task_response import CreateBlogPostResponse, ProgressInfo, UnifiedTaskResponse
 
@@ -104,4 +116,11 @@ __all__ = [
     "ErrorResponse",
     "PaginatedResponse",
     "ModelConverter",
+    # Typed-Record layer (#201)
+    "TaskRecord",
+    "PostRecord",
+    "UserRecord",
+    "CostBreakdownRecord",
+    "TaskCountsRecord",
+    "PaginatedTasksResult",
 ]

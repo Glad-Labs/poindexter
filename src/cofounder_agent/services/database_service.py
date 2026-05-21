@@ -23,6 +23,7 @@ import os
 import asyncpg
 
 from config import get_config
+from schemas.typed_records import PaginatedTasksResult, TaskRecord
 from services.logger_config import get_logger
 
 from .admin_db import AdminDatabase
@@ -295,7 +296,7 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.add_task(task_data)
 
-    async def get_task(self, task_id: str) -> dict | None:
+    async def get_task(self, task_id: str) -> TaskRecord | None:
         """Delegate to tasks module."""
         return await self.tasks.get_task(task_id)
 
@@ -324,8 +325,13 @@ class DatabaseService:
         status: str | None = None,
         category: str | None = None,
         search: str | None = None,
-    ) -> dict:
-        """Delegate to tasks module."""
+    ) -> PaginatedTasksResult:
+        """Delegate to tasks module.
+
+        Returns ``(rows, total)`` — destructure at the call site. The
+        prior ``-> dict`` annotation was a long-standing lie; callers
+        always received the leaf's tuple. See #201.
+        """
         return await self.tasks.get_tasks_paginated(offset, limit, status, category, search)
 
     async def get_task_counts(self) -> dict:
