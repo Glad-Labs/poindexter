@@ -64,7 +64,7 @@ def set_http_client(client: httpx.AsyncClient | None) -> None:
 # Match markdown link [text](url) — capture url only. We also catch
 # bare-URL autolinks <https://...> and plain-paste https://... outside
 # markdown link syntax, since the writer occasionally emits either form.
-_MD_LINK_RE = re.compile(r"\[(?:[^\]]|\n)*?\]\((https?://[^\s)]+)\)")
+_MD_LINK_RE = re.compile(r"\[[^\]]*?\]\((https?://[^\s)]+)\)")
 _AUTOLINK_RE = re.compile(r"<(https?://[^>\s]+)>")
 _BARE_URL_RE = re.compile(
     r"(?<![\[\(<\"'])https?://[^\s)\]>\"']+",

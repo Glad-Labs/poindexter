@@ -296,10 +296,13 @@ async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
 
-    # Route to specialized scrapers for known platforms
-    if "github.com" in hostname:
+    # Route to specialized scrapers for known platforms. Exact-host /
+    # subdomain match — a substring check would route ``github.com.evil.io``
+    # through ``_scrape_github`` (per CodeQL py/incomplete-url-substring-
+    # sanitization).
+    if hostname == "github.com" or hostname.endswith(".github.com"):
         return await _scrape_github(url, timeout)
-    if "arxiv.org" in hostname:
+    if hostname == "arxiv.org" or hostname.endswith(".arxiv.org"):
         return await _scrape_arxiv(url, timeout)
 
     # Default: generic HTML article extraction
