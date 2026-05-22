@@ -169,13 +169,14 @@ class DevToCrossPostService:
             content,
         )
 
-        # Strip <script> tags — match end tag with optional whitespace
-        # (``</script >`` is valid HTML and would bypass a strict ``</script>``
-        # match per CodeQL py/bad-tag-filter).
-        content = re.sub(r'<script[^>]*>.*?</script\s*>', '', content, flags=re.DOTALL | re.IGNORECASE)
+        # Strip <script> tags — match end tag with anything-but-``>`` between
+        # the tag name and the closing ``>``. HTML / CodeQL py/bad-tag-filter
+        # accept ``</script foo>``, ``</script\t\n bar>``, etc. as valid
+        # end tags; the previous ``</script\s*>`` form let those through.
+        content = re.sub(r'<script\b[^>]*>.*?</script\b[^>]*>', '', content, flags=re.DOTALL | re.IGNORECASE)
 
-        # Strip <iframe> tags (same whitespace tolerance as <script>).
-        content = re.sub(r'<iframe[^>]*>.*?</iframe\s*>', '', content, flags=re.DOTALL | re.IGNORECASE)
+        # Strip <iframe> tags (same tolerance as <script>).
+        content = re.sub(r'<iframe\b[^>]*>.*?</iframe\b[^>]*>', '', content, flags=re.DOTALL | re.IGNORECASE)
 
         # Strip HTML comments
         content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
