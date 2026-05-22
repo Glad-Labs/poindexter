@@ -326,6 +326,14 @@ async def test_find_similar_posts_text_requires_topic():
 def stub_pr_env(monkeypatch):
     """Patch the asyncpg pool + plugins.secrets so the PR tool runs without
     the real DB / GitHub. Returns an httpx response mapper the test fills.
+
+    Repos used by the production tool now come from
+    ``app_settings.voice_agent_pr_repos`` (the post-#485 cleanup).
+    The fixture exposes ``responses["__repos__"]`` as the CSV string the
+    fake connection returns; tests that exercise the PR-listing path set
+    this alongside the URL-mapped response payloads. Default is an
+    empty string so tests that don't care about repos get the "no
+    repos configured" branch.
     """
     # Fake plugins.secrets.get_secret returning a token (or empty string).
     fake_secrets = types.ModuleType("plugins.secrets")
@@ -346,12 +354,17 @@ def stub_pr_env(monkeypatch):
     monkeypatch.setitem(sys.modules, "brain", fake_brain)
     monkeypatch.setitem(sys.modules, "brain.bootstrap", fake_bootstrap)
 
+    responses: dict[str, Any] = {"__repos__": ""}
+
     # Fake asyncpg.create_pool returning a pool whose acquire() yields a
-    # dummy connection. plugins.secrets.get_secret is faked above, so the
-    # connection itself is never read — but `async with pool.acquire()`
-    # MUST work.
+    # dummy connection. ``_Conn.fetchrow`` serves the
+    # ``voice_agent_pr_repos`` setting from ``responses["__repos__"]`` so
+    # individual tests can configure the repo list.
     class _Conn:
-        pass
+        async def fetchrow(self_inner, query, *args):
+            if "voice_agent_pr_repos" in query:
+                return {"value": responses.get("__repos__", "")}
+            return None
 
     class _AcquireCtx:
         async def __aenter__(self_inner):
@@ -377,8 +390,8 @@ def stub_pr_env(monkeypatch):
     # Disable the brain-on-path walker (it would try to add a real path).
     monkeypatch.setattr(voice_agent_livekit, "_ensure_brain_on_path", lambda: None)
 
-    # Fake httpx.AsyncClient. Mapper is a function (path -> dict).
-    responses: dict[str, Any] = {}
+    # ``responses`` is declared above (with ``__repos__`` slot) so the
+    # fake conn and fake httpx share the same mapping.
 
     class _FakeResp:
         def __init__(self, status_code: int, body: Any):
@@ -414,7 +427,11 @@ def stub_pr_env(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_recent_pull_requests_text_lists_top_three(stub_pr_env):
-    stub_pr_env["glad-labs-stack/pulls"] = [
+    # poindexter#485 follow-up: repos now come from
+    # ``app_settings.voice_agent_pr_repos`` (CSV). Configure the stub
+    # via ``__repos__`` and URL-needles via the same dict.
+    stub_pr_env["__repos__"] = "test-org/repo-a,test-org/repo-b"
+    stub_pr_env["test-org/repo-a/pulls"] = [
         {
             "number": 294,
             "title": "fix(voice): wire result_callback through every tool",
@@ -426,7 +443,7 @@ async def test_get_recent_pull_requests_text_lists_top_three(stub_pr_env):
             "merged_at": "2026-05-06T08:00:00Z",
         },
     ]
-    stub_pr_env["poindexter/pulls"] = [
+    stub_pr_env["test-org/repo-b/pulls"] = [
         {
             "number": 287,
             "title": "rewrite test topics CLI",
@@ -436,22 +453,35 @@ async def test_get_recent_pull_requests_text_lists_top_three(stub_pr_env):
 
     out = await voice_agent_livekit._get_recent_pull_requests_text()
     assert "PR 294" in out
-    assert "glad-labs-stack" in out
+    assert "repo-a" in out
     assert "PR 287" in out
-    assert "poindexter" in out
+    assert "repo-b" in out
     # Spec: no URLs in spoken output.
     assert "http" not in out
 
 
 @pytest.mark.asyncio
 async def test_get_recent_pull_requests_text_when_nothing_merged(stub_pr_env):
-    stub_pr_env["glad-labs-stack/pulls"] = [
+    stub_pr_env["__repos__"] = "test-org/repo-a,test-org/repo-b"
+    stub_pr_env["test-org/repo-a/pulls"] = [
         {"number": 100, "title": "wip", "merged_at": None},
     ]
-    stub_pr_env["poindexter/pulls"] = []
+    stub_pr_env["test-org/repo-b/pulls"] = []
 
     out = await voice_agent_livekit._get_recent_pull_requests_text()
     assert "No merged" in out
+
+
+@pytest.mark.asyncio
+async def test_get_recent_pull_requests_text_no_repos_configured(stub_pr_env):
+    """poindexter#485 follow-up: when ``app_settings.voice_agent_pr_repos``
+    is unset / empty, the tool reports the misconfiguration to the
+    operator instead of querying GitHub. New contract — OSS-safe
+    default behavior."""
+    stub_pr_env["__repos__"] = ""  # explicit default for clarity
+    out = await voice_agent_livekit._get_recent_pull_requests_text()
+    assert "voice_agent_pr_repos" in out
+    assert "app_settings" in out
 
 
 # ---------------------------------------------------------------------------

@@ -224,33 +224,21 @@ git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2
 # `glad-labs-stack#N` issue references degrade to `poindexter#N` (numbers
 # don't always match — better a broken link to the right repo than a
 # working link to the private one).
-# Files where ``Glad-Labs/glad-labs-stack`` is a LITERAL code/data
-# value rather than a cosmetic comment/link — substituting here breaks
-# production code (the voice agent's repo list collapses to two
-# poindexter entries) and test contracts (stub fixture keys stop
-# matching the URL they're supposed to mock). The 2026-05-22
-# unit-tests regression on the public mirror traced to this exact
-# pattern in ``test_voice_agent_tools.py``. The longer-term fix is to
-# migrate ``_VOICE_AGENT_PR_REPOS`` to ``app_settings`` so the public
-# OSS version is operator-configurable — until then, this skip list
-# is the safety net.
-COSMETIC_SUB_SKIP_FILES="\
-src/cofounder_agent/services/voice_agent_livekit.py
-src/cofounder_agent/tests/unit/services/test_voice_agent_tools.py
-src/cofounder_agent/tests/unit/brain/test_pr_staleness_probe.py
-src/cofounder_agent/tests/unit/services/topic_sources/test_dev_diary_source.py"
-export COSMETIC_SUB_SKIP_FILES
+# The previous version of this block needed a ``COSMETIC_SUB_SKIP_FILES``
+# escape hatch because several files held ``Glad-Labs/glad-labs-stack``
+# as a literal code/data value (voice_agent_livekit's repo tuple,
+# fixture keys in three test files). The 2026-05-22 cleanup pass
+# eliminated those literals — voice_agent_livekit reads repos from
+# ``app_settings.voice_agent_pr_repos`` now, and the test fixtures
+# moved to generic ``Test-Org/test-repo`` placeholders. The skip-list
+# is no longer needed; the substitution is back to pure cosmetic
+# behavior.
 
 python3 - <<'PYSUB'
-import os, pathlib, subprocess
+import pathlib, subprocess
 tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-skip = {line.strip() for line in os.environ.get("COSMETIC_SUB_SKIP_FILES", "").splitlines() if line.strip()}
 changed = 0
-skipped = 0
 for rel in tracked:
-    if rel in skip:
-        skipped += 1
-        continue
     p = pathlib.Path(rel)
     if not p.is_file():
         continue
@@ -272,7 +260,7 @@ for rel in tracked:
         p.write_text(new, encoding="utf-8", newline="\n")
         subprocess.run(["git", "add", rel], check=False)
         changed += 1
-print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files (skipped {skipped} files with literal references)")
+print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files")
 PYSUB
 
 # === CHANGELOG.md private-key redaction ============================
@@ -340,22 +328,6 @@ LEAK_PATTERNS=(
 LEAK_GUARD_ALLOW=(
   'scripts/regen-app-settings-doc.py'         # the redaction blocklist itself
   'scripts/ci/check_public_mirror_safety.py'  # parallel pre-merge lint with the same pattern list
-  # The four files below are deliberately excluded from the cosmetic
-  # substitution above (``COSMETIC_SUB_SKIP_FILES``) because they hold
-  # ``Glad-Labs/glad-labs-stack`` as literal code/data — not as a
-  # cosmetic comment/link. The leak guard's "cosmetic sub above should
-  # fix all" assumption no longer holds, so allowlist them here. The
-  # public OSS implication: voice_agent_livekit's PR-listing tries to
-  # query glad-labs-stack (private), which returns 404 for OSS users
-  # — handled gracefully by the fallback path. Longer-term move: lift
-  # ``_VOICE_AGENT_PR_REPOS`` into ``app_settings`` so the public
-  # default is just ``Glad-Labs/poindexter`` and Matt's operator
-  # install adds glad-labs-stack via setting — at which point these
-  # four allowlist entries can go.
-  'src/cofounder_agent/services/voice_agent_livekit.py'
-  'src/cofounder_agent/tests/unit/services/test_voice_agent_tools.py'
-  'src/cofounder_agent/tests/unit/brain/test_pr_staleness_probe.py'
-  'src/cofounder_agent/tests/unit/services/topic_sources/test_dev_diary_source.py'
 )
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do

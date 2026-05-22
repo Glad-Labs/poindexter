@@ -482,20 +482,47 @@ async def get_recent_pull_requests(params: Any) -> None:
     """Report recent merged pull requests across the operator's repos.
 
     Use this when the operator asks what shipped, what got merged, recent
-    pull requests, or recent merges. Covers the glad-labs-stack and
-    poindexter repositories and reports the three most recent merges.
+    pull requests, or recent merges. The repo list comes from
+    ``app_settings.voice_agent_pr_repos`` (CSV of owner/repo entries) and
+    the function reports the three most recent merges across whichever
+    repos the operator configured.
     """
     result = await _get_recent_pull_requests_text()
     await params.result_callback(result)
 
 
-# Read-only repo list — covers Matt's two active repos. New ones can land
-# here without app_settings churn; if the list ever grows past four it
-# should migrate to a setting per feedback_no_silent_defaults.
-_VOICE_AGENT_PR_REPOS: tuple[str, ...] = (
-    "Glad-Labs/glad-labs-stack",
-    "Glad-Labs/poindexter",
-)
+# Repo list now lives in ``app_settings.voice_agent_pr_repos`` (CSV)
+# so the public OSS install can ship without leaking Matt's internal
+# repo names + operators choose which repos the voice agent reports
+# activity for. Default is empty — graceful degradation: an operator
+# who hasn't configured this setting hears "no repos configured" from
+# the voice tool rather than seeing queries against repos they don't
+# own. Closes the leak that #538-540 papered over (per Matt 2026-05-22).
+#
+# Example seed (operator picks their own repos):
+#   poindexter set-setting voice_agent_pr_repos=your-org/repo-one,your-org/repo-two
+async def _read_voice_agent_pr_repos(conn: Any) -> list[str]:
+    """Read CSV of repo slugs from ``app_settings.voice_agent_pr_repos``.
+
+    Returns an empty list when the setting is unset or empty. Whitespace
+    around commas is stripped; blank entries are dropped. The function
+    never raises — a DB error surfaces as an empty list and the caller
+    degrades to "no repos configured".
+    """
+    try:
+        row = await conn.fetchrow(
+            "SELECT value FROM app_settings "
+            "WHERE key = 'voice_agent_pr_repos' AND is_active = true "
+            "LIMIT 1"
+        )
+    except Exception:  # noqa: BLE001 — observability, not a contract
+        return []
+    if row is None:
+        return []
+    raw = (row["value"] or "").strip()
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 async def _get_recent_pull_requests_text() -> str:
@@ -514,8 +541,16 @@ async def _get_recent_pull_requests_text() -> str:
     try:
         async with pool.acquire() as conn:
             gh_token = await get_secret(conn, "gh_token") or ""
+            repos = await _read_voice_agent_pr_repos(conn)
     finally:
         await pool.close()
+
+    if not repos:
+        return (
+            "I don't have any repositories configured for the PR list. "
+            "Set voice_agent_pr_repos in app_settings to a "
+            "comma-separated list of owner-slash-repo entries."
+        )
 
     headers = {
         "Accept": "application/vnd.github+json",
@@ -528,7 +563,7 @@ async def _get_recent_pull_requests_text() -> str:
     merged: list[dict[str, Any]] = []
     try:
         async with httpx.AsyncClient(timeout=_TOOL_TIMEOUT_SECONDS) as client:
-            for repo in _VOICE_AGENT_PR_REPOS:
+            for repo in repos:
                 url = (
                     f"https://api.github.com/repos/{repo}/pulls"
                     "?state=closed&sort=updated&direction=desc&per_page=10"
