@@ -26,7 +26,6 @@ What this is in v1 (POC):
 What this is NOT in v1 (deferred to Phase 2-5):
 
 - No atom granularity refactor — existing stages stay coarse.
-- No capability-tier abstraction — model_router stays as-is.
 - No streaming events to operator (silent multi-minute waits remain).
 - No LLM-architect composition (templates are hand-coded Python).
 - No outcome-feedback loop on the router (Phase 2).
@@ -649,9 +648,9 @@ class TemplateRunner:
     construction or schema setup degrade to MemorySaver with a logged
     warning, matching the spec for Glad-Labs/poindexter#371.
 
-    The returned :class:`TemplateRunSummary` mirrors
-    :class:`plugins.stage_runner.StageRunSummary` shape so existing call
-    sites (content_router_service, task_executor) can swap minimally.
+    The returned :class:`TemplateRunSummary` carries the per-stage outcome
+    list and aggregate metrics that ``content_router_service`` consumes
+    when dispatching tasks through this runner.
     """
 
     def __init__(

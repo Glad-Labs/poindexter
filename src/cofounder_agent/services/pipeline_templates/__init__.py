@@ -45,9 +45,8 @@ logger = logging.getLogger(__name__)
 def _registered_stages() -> dict[str, Any]:
     """Snapshot of registered Stage instances keyed by name.
 
-    Mirrors :class:`plugins.stage_runner.StageRunner.__init__` — uses
-    the public ``get_core_samples()`` so the same stages StageRunner
-    sees are available to the template factories.
+    Uses the public ``get_core_samples()`` registry so template factories
+    see the same Stage instances the rest of the substrate registers.
     """
     from plugins.registry import get_core_samples
     return {
