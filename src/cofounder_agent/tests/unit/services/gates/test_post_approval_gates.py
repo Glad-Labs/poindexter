@@ -461,3 +461,110 @@ async def test_full_workflow_multi_gate_happy_path(db_pool):
         assert adv.ready_to_distribute is True
     finally:
         await _drop_test_post(db_pool, pid)
+
+
+# ---------------------------------------------------------------------------
+# notify_gate_pending — deep-link message-shape contract (poindexter#485 follow-up)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_notify_gate_pending_includes_web_link_when_site_url_set(monkeypatch):
+    """Operator with ``site_url`` configured gets a full Web + CLI
+    alert — matches the pre-#485 behaviour for the configured case.
+    """
+    from unittest.mock import AsyncMock
+
+    from services.gates import post_approval_gates as pag
+    from services.site_config import SiteConfig
+
+    captured: dict[str, str] = {}
+
+    async def _capture(msg, *, critical=False):  # noqa: ARG001
+        captured["msg"] = msg
+
+    monkeypatch.setattr(
+        "services.integrations.operator_notify.notify_operator",
+        AsyncMock(side_effect=_capture),
+    )
+
+    sc = SiteConfig(initial_config={"site_url": "https://example.com"})
+    await pag.notify_gate_pending(
+        post_id="abc12345-0000-0000-0000-000000000000",
+        gate_name="topic",
+        site_config=sc,
+    )
+
+    msg = captured["msg"]
+    assert "Web:  https://example.com/admin/posts/abc12345-0000-0000-0000-000000000000?gate=topic" in msg
+    assert "CLI:  poindexter post approve abc12345-0000-0000-0000-000000000000 --gate topic" in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_gate_pending_omits_web_link_when_site_url_unset(monkeypatch):
+    """poindexter#485 follow-up: previously this fell back to
+    ``https://www.gladlabs.io`` when ``site_url`` was unset — both a
+    brand leak for OSS forks and a broken link for operators.
+    The fail-loud-but-graceful contract: omit the Web line entirely,
+    show only the CLI command.
+    """
+    from unittest.mock import AsyncMock
+
+    from services.gates import post_approval_gates as pag
+    from services.site_config import SiteConfig
+
+    captured: dict[str, str] = {}
+
+    async def _capture(msg, *, critical=False):  # noqa: ARG001
+        captured["msg"] = msg
+
+    monkeypatch.setattr(
+        "services.integrations.operator_notify.notify_operator",
+        AsyncMock(side_effect=_capture),
+    )
+
+    sc = SiteConfig()  # no site_url
+    await pag.notify_gate_pending(
+        post_id="abc12345-0000-0000-0000-000000000000",
+        gate_name="draft",
+        site_config=sc,
+    )
+
+    msg = captured["msg"]
+    assert "Web:" not in msg
+    assert "gladlabs.io" not in msg
+    assert "CLI:  poindexter post approve abc12345-0000-0000-0000-000000000000 --gate draft" in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_gate_pending_omits_web_link_when_site_url_empty_string(monkeypatch):
+    """Same as the no-key case — an explicit empty string is treated
+    as unset. Catches the operator who cleared ``site_url`` via
+    OpenClaw expecting "use the default" and got a broken link
+    instead.
+    """
+    from unittest.mock import AsyncMock
+
+    from services.gates import post_approval_gates as pag
+    from services.site_config import SiteConfig
+
+    captured: dict[str, str] = {}
+
+    async def _capture(msg, *, critical=False):  # noqa: ARG001
+        captured["msg"] = msg
+
+    monkeypatch.setattr(
+        "services.integrations.operator_notify.notify_operator",
+        AsyncMock(side_effect=_capture),
+    )
+
+    sc = SiteConfig(initial_config={"site_url": ""})
+    await pag.notify_gate_pending(
+        post_id="abc12345-0000-0000-0000-000000000000",
+        gate_name="final",
+        site_config=sc,
+    )
+
+    msg = captured["msg"]
+    assert "Web:" not in msg
+    assert "gladlabs.io" not in msg

@@ -30,7 +30,22 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from services.site_config import SiteConfig
+
 logger = logging.getLogger(__name__)
+
+
+# Lifespan-bound SiteConfig — wired by main.py via set_site_config().
+# Used to build the crawler User-Agent dynamically so the operator's
+# contact URL (or absence thereof) shows up correctly in HEAD requests
+# the citation verifier sends.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -127,15 +142,34 @@ def extract_urls(content: str, site_url: str | None = None) -> list[str]:
     return out
 
 
-_CITATION_HEADERS: dict[str, str] = {
-    # Some servers block the default httpx UA. Claim to be a
-    # modern browser-ish client so we get realistic reachability signals.
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; "
-        "+https://gladlabs.io)"
-    ),
-    "Accept": "*/*",
-}
+def _build_citation_headers() -> dict[str, str]:
+    """Build the User-Agent + Accept headers for HEAD probes.
+
+    The User-Agent follows the standard crawler-UA convention:
+    ``Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; +<url>)``
+    where ``<url>`` is the operator's contact URL — pulled from
+    ``app_settings.crawler_contact_url``. When the setting is unset
+    or empty the ``+url`` portion is omitted entirely so OSS forks
+    don't ship Matt's ``gladlabs.io`` as a default contact (the leak
+    this helper closes).
+
+    Some servers block the default httpx UA, so the UA string keeps
+    the "browser-ish + compatible" framing to maximize reachability
+    signal accuracy.
+    """
+    contact = ""
+    try:
+        contact = (site_config.get("crawler_contact_url", "") or "").strip()
+    except Exception:  # noqa: BLE001 — observability, not a contract
+        contact = ""
+    if contact:
+        ua = (
+            f"Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; "
+            f"+{contact})"
+        )
+    else:
+        ua = "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0)"
+    return {"User-Agent": ua, "Accept": "*/*"}
 
 
 async def _head_one(
@@ -147,7 +181,7 @@ async def _head_one(
             url,
             timeout=timeout_s,
             follow_redirects=True,
-            headers=_CITATION_HEADERS,
+            headers=_build_citation_headers(),
         )
         status = resp.status_code
         # Some servers 405 on HEAD but 200 on GET. Fall back to a lightweight GET.
@@ -156,7 +190,7 @@ async def _head_one(
                 url,
                 timeout=timeout_s,
                 follow_redirects=True,
-                headers=_CITATION_HEADERS,
+                headers=_build_citation_headers(),
             )
             status = resp.status_code
         if 200 <= status < 400:
@@ -216,7 +250,7 @@ async def verify_citations(
         else:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(timeout_s, connect=min(3.0, timeout_s)),
-                headers=_CITATION_HEADERS,
+                headers=_build_citation_headers(),
             ) as client:
                 results = await asyncio.gather(
                     *(_bound(client, u) for u in urls),

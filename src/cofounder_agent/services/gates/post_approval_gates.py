@@ -845,15 +845,22 @@ async def notify_gate_pending(
         except Exception:
             site_url = ""
 
-    base = (site_url or "https://www.gladlabs.io").rstrip("/")
-    deep_link = f"{base}/admin/posts/{post_id}?gate={gate_name}"
+    # poindexter#485 follow-up: previously this fell back to
+    # ``https://www.gladlabs.io`` when ``site_url`` was unset, which
+    # leaked Matt's domain into every OSS install's gate-alert text
+    # and pointed operators at a deep link they couldn't open. The
+    # CLI command still works without ``site_url``, so omit the Web
+    # line entirely when the setting is empty rather than fabricate a
+    # broken link.
     cli_cmd = f"poindexter post approve {post_id} --gate {gate_name}"
-
     msg_lines = [
         f"[gate] Post {post_id[:8]} waiting at gate '{gate_name}'.",
-        f"Web:  {deep_link}",
-        f"CLI:  {cli_cmd}",
     ]
+    if site_url:
+        base = site_url.rstrip("/")
+        deep_link = f"{base}/admin/posts/{post_id}?gate={gate_name}"
+        msg_lines.append(f"Web:  {deep_link}")
+    msg_lines.append(f"CLI:  {cli_cmd}")
     msg = "\n".join(msg_lines)
 
     try:

@@ -65,6 +65,7 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.webhook_delivery_service",
     # Content pipeline + QA
     "services.publish_service",
+    "services.citation_verifier",
     "services.newsletter_service",
     "services.podcast_service",
     "services.multi_model_qa",
