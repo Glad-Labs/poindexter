@@ -100,38 +100,6 @@ def _build_app(mock_db=None) -> FastAPI:
     return app
 
 
-def _unified_response_dict(**overrides):
-    """Return a minimal dict that satisfies UnifiedTaskResponse validation."""
-    base = {
-        "id": VALID_TASK_ID,
-        "task_id": VALID_TASK_ID,
-        "task_type": "blog_post",
-        "status": "approved",
-        "topic": "AI Trends",
-        "created_at": "2026-03-01T00:00:00+00:00",
-        "updated_at": "2026-03-01T00:00:00+00:00",
-    }
-    base.update(overrides)
-    return base
-
-
-def _mock_model_converter():
-    """Return a patch context for ModelConverter that produces a valid UnifiedTaskResponse dict.
-
-    GH#337 workstream (b) is incrementally retiring this helper. Happy-path
-    tests now let the real ``ModelConverter`` run against ``_make_task()``'s
-    dict so a stale fixture shape (or a converter regression) fails loudly
-    instead of silently passing on a canned ``_unified_response_dict``.
-    Tests that still patch the converter are ones whose surrounding setup
-    (e.g. ``auto_publish_creates_post``, ``publish_post_from_task`` fixture)
-    is non-trivial to unwind in this slice; those will migrate in follow-ups.
-    """
-    converter_patch = patch(
-        "routes.task_publishing_routes.ModelConverter",
-    )
-    return converter_patch
-
-
 # ===========================================================================
 # clean_generated_content — pure function tests
 # ===========================================================================
@@ -321,6 +289,7 @@ class TestApproveTask:
 
     def test_auto_publish_creates_post(self):
         """When auto_publish=true the route should also update status to published and create a post."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(
             status="awaiting_approval",
@@ -334,7 +303,6 @@ class TestApproveTask:
 
         app = _build_app(mock_db)
         with (
-            _mock_model_converter() as mc,
             patch(
                 "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
@@ -350,8 +318,6 @@ class TestApproveTask:
                 new_callable=AsyncMock,
             ),
         ):
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
             client = TestClient(app)
             resp = client.post(
                 f"/{VALID_TASK_ID}/approve",
@@ -429,6 +395,7 @@ class TestPublishTask:
         return client.post(f"/{task_id}/publish")
 
     def test_publish_happy_path(self):
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="approved", content="# Great Post\nBody here.")
         mock_db.get_task = AsyncMock(side_effect=[task, task])
@@ -436,7 +403,6 @@ class TestPublishTask:
 
         app = _build_app(mock_db)
         with (
-            _mock_model_converter() as mc,
             patch(
                 "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
@@ -449,8 +415,6 @@ class TestPublishTask:
             ),
             # publish_post_from_task is mocked by autouse fixture
         ):
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
             client = TestClient(app)
             resp = self._post_publish(client)
 
@@ -504,6 +468,7 @@ class TestPublishTask:
 
     def test_result_as_json_string_parsed(self):
         """Task result stored as JSON string should be parsed correctly."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="approved")
         task["result"] = json.dumps({"content": "Blog content", "draft_content": "Blog content"})
@@ -512,7 +477,6 @@ class TestPublishTask:
 
         app = _build_app(mock_db)
         with (
-            _mock_model_converter() as mc,
             patch(
                 "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
@@ -524,8 +488,6 @@ class TestPublishTask:
                 return_value="cat-1",
             ),
         ):
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
             client = TestClient(app)
             resp = self._post_publish(client)
 
@@ -533,6 +495,7 @@ class TestPublishTask:
 
     def test_missing_content_skips_post_creation(self):
         """When there is no content or topic, post creation is skipped but publish still succeeds."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="approved", topic="", content="")
         task["result"] = {}
@@ -540,13 +503,8 @@ class TestPublishTask:
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with _mock_model_converter() as mc:
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(
-                status="published", topic=""
-            )
-            client = TestClient(app)
-            resp = self._post_publish(client)
+        client = TestClient(app)
+        resp = self._post_publish(client)
 
         assert resp.status_code == 200
         # create_post should NOT have been called
@@ -554,6 +512,7 @@ class TestPublishTask:
 
     def test_post_creation_failure_does_not_fail_publish(self):
         """If create_post raises, the task should still be published (non-fatal)."""
+        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
         mock_db = make_mock_db()
         task = _make_task(status="approved", content="Some content.")
         mock_db.get_task = AsyncMock(side_effect=[task, task])
@@ -561,7 +520,6 @@ class TestPublishTask:
 
         app = _build_app(mock_db)
         with (
-            _mock_model_converter() as mc,
             patch(
                 "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
@@ -573,8 +531,6 @@ class TestPublishTask:
                 return_value="cat-1",
             ),
         ):
-            mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
             client = TestClient(app)
             resp = self._post_publish(client)
 
