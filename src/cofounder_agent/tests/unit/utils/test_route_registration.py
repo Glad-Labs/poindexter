@@ -10,6 +10,9 @@ Covers:
 - _ROUTE_MANIFEST / _COORDINATOR_ROUTES / _WORKER_ROUTES: structure is valid
 """
 
+import importlib.util
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 from utils.route_registration import (
@@ -17,6 +20,20 @@ from utils.route_registration import (
     _ROUTE_MANIFEST,
     _WORKER_ROUTES,
     register_all_routes,
+)
+
+
+# Marker — FinanceModule is private (Glad Labs operator overlay). The
+# sync filter strips ``src/cofounder_agent/modules/finance/`` from the
+# public ``poindexter`` mirror, so the finance-specific tests below
+# must skip on the public side rather than fail. The check uses
+# ``importlib.util.find_spec`` so the spec lookup itself doesn't try
+# to import (and therefore execute) the module — it just answers
+# "is this importable?".
+_FINANCE_MODULE_PRESENT = importlib.util.find_spec("modules.finance") is not None
+_finance_only = pytest.mark.skipif(
+    not _FINANCE_MODULE_PRESENT,
+    reason="modules.finance is private (operator overlay) — stripped from public mirror",
 )
 
 
@@ -289,11 +306,18 @@ class TestModuleV1RouteIteration:
         )
         assert result["module:content"] is True
 
+    @_finance_only
     def test_iteration_calls_register_routes_on_finance_module(self):
         """FinanceModule (also registered via _SAMPLES) appears in the
         result dict as ``module:finance`` after register_all_routes runs.
         Pins the Phase 4 wiring added 2026-05-16 (route auto-discovery
-        actually mounts ``/api/finance/*``)."""
+        actually mounts ``/api/finance/*``).
+
+        Skipped on the public ``poindexter`` mirror — FinanceModule is
+        a Glad Labs operator-overlay module and the sync filter
+        strips it. The skip means the test still validates the
+        contract on glad-labs-stack while the public mirror's
+        ``unit-tests`` workflow stays green."""
         app = _make_app()
         result = register_all_routes(app)
 
