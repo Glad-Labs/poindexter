@@ -85,12 +85,20 @@ class KnowledgeSource:
             underserved[cat] = row["post_count"]
         avg_posts = sum(underserved.values()) / max(len(underserved), 1)
 
-        # 3. Explicit topic gaps (idle-worker or operator-curated)
+        # 3. Explicit topic gaps (operator-curated or
+        # ``analyze_topic_gaps`` job-emitted). The job writes one row
+        # per gap category with ``entity='category.<slug>'``, so we
+        # filter on ``attribute='topic_gap'`` alone instead of pinning
+        # to a single ``entity`` value. The previous
+        # ``entity='content_strategy'`` filter never matched in
+        # production — see poindexter#485 follow-up + the analyse-
+        # and-emit_finding path's matching ``_upsert_topic_gap_rows``
+        # helper.
         gap_rows = await pool.fetch(
             """
             SELECT value
             FROM brain_knowledge
-            WHERE entity = 'content_strategy' AND attribute = 'topic_gap'
+            WHERE attribute = 'topic_gap'
             ORDER BY updated_at DESC NULLS LAST
             LIMIT $1
             """,
