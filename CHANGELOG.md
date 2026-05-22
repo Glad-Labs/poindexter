@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## [0.11.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.10.1...v0.11.0) (2026-05-22)
+
+
+### Features
+
+* **schemas:** add typed-Record layer for top SQL helpers ([#201](https://github.com/Glad-Labs/glad-labs-stack/issues/201)) ([#527](https://github.com/Glad-Labs/glad-labs-stack/issues/527)) ([7d060aa](https://github.com/Glad-Labs/glad-labs-stack/commit/7d060aaca228d3c6f23b79a5a1b04610dfc45ea0))
+
+
+### Bug Fixes
+
+* **dev_diary:** corrective pass — strip autolink-style &lt;url&gt; private refs ([#520](https://github.com/Glad-Labs/glad-labs-stack/issues/520)) ([83fa9ba](https://github.com/Glad-Labs/glad-labs-stack/commit/83fa9bac298e9f363d54e8e99f8936339030605a))
+* **dev_diary:** final corrective — strip inline-markdown-link refs ([#521](https://github.com/Glad-Labs/glad-labs-stack/issues/521)) ([1831cc0](https://github.com/Glad-Labs/glad-labs-stack/commit/1831cc06162a5fb4689bb38c3e43a7a4f83339c3))
+* **dev_diary:** replace private glad-labs-stack URLs with public poindexter pointer ([#192](https://github.com/Glad-Labs/glad-labs-stack/issues/192)) ([#519](https://github.com/Glad-Labs/glad-labs-stack/issues/519)) ([0aa393f](https://github.com/Glad-Labs/glad-labs-stack/commit/0aa393fade809860591b08dcdd3907b5bf97786a))
+* **discord_ops:** resolve webhook URL via secret_key_ref so app_settings rotation propagates ([#515](https://github.com/Glad-Labs/glad-labs-stack/issues/515)) ([ca061cd](https://github.com/Glad-Labs/glad-labs-stack/commit/ca061cd1e742d99d73d4c0696a62c57674233517))
+* **grafana-alert:** Content Quality Drop should measure published-only avg ([#523](https://github.com/Glad-Labs/glad-labs-stack/issues/523)) ([49e3d9f](https://github.com/Glad-Labs/glad-labs-stack/commit/49e3d9fc5513f283c54b00f1bdc31620e581bafd))
+* **health:** expose migrations block in /api/health (closes brain misdiagnosis pattern) ([#526](https://github.com/Glad-Labs/glad-labs-stack/issues/526)) ([9bcc473](https://github.com/Glad-Labs/glad-labs-stack/commit/9bcc473386f4df7266f2df2cc4021de04c27824f))
+* **media_assets:** persist task_id at insert + back-stamp post_id after publish ([#517](https://github.com/Glad-Labs/glad-labs-stack/issues/517)) ([7215659](https://github.com/Glad-Labs/glad-labs-stack/commit/721565919f47f8cc68bd920f77bf0f964146d8e2))
+* **migration 20260520_140806:** relax outbound-URL constraint to allow secret_key_ref ([#516](https://github.com/Glad-Labs/glad-labs-stack/issues/516)) ([a18c1f8](https://github.com/Glad-Labs/glad-labs-stack/commit/a18c1f81fd17bf43b67895a7c19f1a937056e288))
+* **notify_operator:** fall back to lifespan SiteConfig when caller passes None ([#514](https://github.com/Glad-Labs/glad-labs-stack/issues/514)) ([a992e8d](https://github.com/Glad-Labs/glad-labs-stack/commit/a992e8dec4dfa42a4041a67c92ec347741fed3a3))
+* **observability:** gate sentry-sdk debug logging on explicit setting (~290k false-positive errors/24h) ([#512](https://github.com/Glad-Labs/glad-labs-stack/issues/512)) ([50a8f5b](https://github.com/Glad-Labs/glad-labs-stack/commit/50a8f5bc428f131f2d5edfa824e681cd3a14d8bb))
+* **prompts:** migrate firefighter ops triage prompt to UnifiedPromptManager (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([#531](https://github.com/Glad-Labs/glad-labs-stack/issues/531)) ([c5ad1f2](https://github.com/Glad-Labs/glad-labs-stack/commit/c5ad1f2dcb2327d6f2f7dbb45986c3f39855ea53))
+* **prompts:** migrate script_for_video.py LLM prompts to UnifiedPromptManager (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485) Batch 5) ([#530](https://github.com/Glad-Labs/glad-labs-stack/issues/530)) ([b63ca54](https://github.com/Glad-Labs/glad-labs-stack/commit/b63ca54d889f5bb8ee7edce8477049e5ec616056))
+* **silent-defaults:** gpu_scheduler config-fetch helpers emit findings on SiteConfig failure (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([#529](https://github.com/Glad-Labs/glad-labs-stack/issues/529)) ([56e730e](https://github.com/Glad-Labs/glad-labs-stack/commit/56e730eb765b87c07bab9d438c393a9c605986bc))
+* **silent-defaults:** remove hardcoded glm-4.7-5090:latest model fallbacks (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([1bbbf03](https://github.com/Glad-Labs/glad-labs-stack/commit/1bbbf03a4b54bc6b746d78130ac38afb705cca79))
+* **video_service:** derive container path prefix dynamically (closes [#198](https://github.com/Glad-Labs/glad-labs-stack/issues/198) — actual root cause) ([#518](https://github.com/Glad-Labs/glad-labs-stack/issues/518)) ([b79f3c8](https://github.com/Glad-Labs/glad-labs-stack/commit/b79f3c8cfa58fe83e6a944ff3e967c31d51ff2c6))
+* **video_service:** handle SDXL JSON response in slideshow path ([#522](https://github.com/Glad-Labs/glad-labs-stack/issues/522)) ([a85619a](https://github.com/Glad-Labs/glad-labs-stack/commit/a85619a746db2e93f32748c91d153d82c582097e))
+
 ## [0.10.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.10.0...v0.10.1) (2026-05-20)
 
 
