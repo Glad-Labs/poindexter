@@ -741,7 +741,6 @@ for complete business operations including:
 
 ### Authentication
 API endpoints require `Authorization: Bearer <API_TOKEN>` header.
-Admin panel at `/admin`.
 """,
     version=config.app_version,
     lifespan=lifespan,
@@ -757,23 +756,12 @@ Admin panel at `/admin`.
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
 
-# Initialize OpenTelemetry tracing FIRST — before any other code path
-# touches the middleware stack. SQLAdmin / setup_admin below mounts a
-# Starlette sub-app, which forces FastAPI to finalize its middleware
-# stack; once finalized, FastAPIInstrumentor.instrument_app fails with
-# "Cannot add middleware after an application has started". Putting
-# the OTel hookup here keeps the stack mutable when the instrumenter
+# Initialize OpenTelemetry tracing FIRST — once any later code path
+# finalises the middleware stack, FastAPIInstrumentor.instrument_app
+# fails with "Cannot add middleware after an application has started".
+# Hooking OTel up here keeps the stack mutable when the instrumenter
 # wraps it.
 setup_telemetry(app, _site_cfg)
-
-# Initialize SQLAdmin panel at /admin
-try:
-    from admin import setup_admin
-
-    setup_admin(app, _site_cfg)
-    logger.info("[ADMIN] SQLAdmin panel mounted at /admin")
-except Exception as e:
-    logger.warning(f"[ADMIN] SQLAdmin not available: {e}")
 
 # Initialize Pyroscope continuous profiling (opt-in via
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.

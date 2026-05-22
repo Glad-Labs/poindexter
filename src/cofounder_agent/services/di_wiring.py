@@ -95,9 +95,8 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.content_router_service",
     "services.seo_content_generator",
     "services.social_poster",
-    # Cross-cutting + admin
+    # Cross-cutting
     "utils.route_utils",
-    "admin",
 )
 
 

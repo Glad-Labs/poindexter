@@ -310,15 +310,15 @@ services:
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
       HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       # OpenTelemetry — exposed as env vars so services/telemetry.py's
-      # module-level setup_telemetry() call in main.py:767 can wire the
-      # FastAPIInstrumentor middleware BEFORE the FastAPI stack is
-      # finalized (which happens when sub-apps like SQLAdmin mount).
-      # Without these env vars, the module-load setup_telemetry() reads
-      # the cold SiteConfig (no DB yet, ENABLE_TRACING default 'false')
-      # and early-returns. The later lifespan-time setup_telemetry()
-      # call DOES see enable_tracing=true (DB-loaded by then), but by
-      # then the middleware stack is closed and instrument_app silently
-      # no-ops — leaving Tempo dark. Closes Glad-Labs/poindexter#505.
+      # module-level setup_telemetry() call in main.py can wire the
+      # FastAPIInstrumentor middleware BEFORE the FastAPI middleware
+      # stack is finalised. Without these env vars, the module-load
+      # setup_telemetry() reads the cold SiteConfig (no DB yet,
+      # ENABLE_TRACING default 'false') and early-returns. The later
+      # lifespan-time setup_telemetry() call DOES see enable_tracing=true
+      # (DB-loaded by then), but by then the middleware stack is closed
+      # and instrument_app silently no-ops — leaving Tempo dark. Closes
+      # Glad-Labs/poindexter#505.
       ENABLE_TRACING: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo:4318/v1/traces"
       API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
