@@ -100,7 +100,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail — this is a belt+suspenders sanity check.",
+      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail \u2014 this is a belt+suspenders sanity check.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -533,7 +533,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline — bump to 40% green once topic-discovery dedup (GH-101) ships.",
+      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline \u2014 bump to 40% green once topic-discovery dedup (GH-101) ships.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -673,7 +673,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung — see docs/operations/troubleshooting.md.",
+      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung \u2014 see docs/operations/troubleshooting.md.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -867,7 +867,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job — see GH-106.",
+      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job \u2014 see GH-106.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1065,7 +1065,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "24h cost across cost_logs — electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
+      "description": "24h cost across cost_logs \u2014 electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1261,7 +1261,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 \u2014 any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1323,7 +1323,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline \u2014 expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1418,7 +1418,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 35
       },
       "id": 24,
       "options": {
@@ -1443,7 +1443,7 @@
           "refId": "A"
         }
       ],
-      "title": "Scheduled jobs — last run times",
+      "title": "Scheduled jobs \u2014 last run times",
       "type": "table"
     },
     {
@@ -1454,7 +1454,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 45
       },
       "panels": [],
       "id": 25
@@ -1467,11 +1467,11 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 46
       },
       "options": {
         "mode": "markdown",
-        "content": "## Postgres — poindexter_brain"
+        "content": "## Postgres \u2014 poindexter_brain"
       }
     },
     {
@@ -1482,7 +1482,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 43
+        "y": 48
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1551,7 +1551,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 43
+        "y": 48
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1620,7 +1620,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 43
+        "y": 48
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1725,7 +1725,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 43
+        "y": 48
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1795,7 +1795,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 54
       },
       "options": {
         "mode": "markdown",
@@ -1810,7 +1810,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 51
+        "y": 56
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1888,7 +1888,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 56
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1950,7 +1950,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 64
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2044,7 +2044,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 64
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2142,7 +2142,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 67
+        "y": 72
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2212,7 +2212,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 67
+        "y": 72
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2291,7 +2291,7 @@
         "h": 8,
         "w": 12,
         "x": 16,
-        "y": 67
+        "y": 72
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2374,7 +2374,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 78
       },
       "options": {
         "content": "**Real-time metrics from nvidia-smi exporter + Poindexter worker.**",
@@ -2389,7 +2389,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 75
+        "y": 80
       },
       "datasource": {
         "type": "prometheus",
@@ -2441,7 +2441,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 75
+        "y": 80
       },
       "datasource": {
         "type": "prometheus",
@@ -2491,7 +2491,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 75
+        "y": 80
       },
       "datasource": {
         "type": "prometheus",
@@ -2540,7 +2540,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 80,
+        "y": 85,
         "w": 6,
         "h": 5
       },
@@ -2599,7 +2599,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 80,
+        "y": 85,
         "w": 6,
         "h": 5
       },
@@ -2658,7 +2658,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 80,
+        "y": 85,
         "w": 6,
         "h": 5
       },
@@ -2717,7 +2717,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 80,
+        "y": 85,
         "w": 6,
         "h": 5
       },
@@ -2776,7 +2776,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 85,
+        "y": 90,
         "w": 8,
         "h": 5
       },
@@ -2839,7 +2839,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 85,
+        "y": 90,
         "w": 8,
         "h": 5
       },
@@ -2902,7 +2902,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 85,
+        "y": 90,
         "w": 8,
         "h": 5
       },
@@ -2959,7 +2959,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 90,
+        "y": 95,
         "w": 24,
         "h": 8
       },
@@ -3100,7 +3100,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 98,
+        "y": 103,
         "w": 12,
         "h": 6
       },
@@ -3147,14 +3147,14 @@
       "id": 52,
       "type": "timeseries",
       "title": "PSU Temperatures",
-      "description": "HX1500i internal temp from Corsair iCUE CSV. HWiNFO previously surfaced two PSU temps (VRM + Case); Corsair exposes only one, so the VRM line is what's shown — the trace label is kept for dashboard continuity.",
+      "description": "HX1500i internal temp from Corsair iCUE CSV. HWiNFO previously surfaced two PSU temps (VRM + Case); Corsair exposes only one, so the VRM line is what's shown \u2014 the trace label is kept for dashboard continuity.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "gridPos": {
         "x": 12,
-        "y": 98,
+        "y": 103,
         "w": 12,
         "h": 6
       },
@@ -3236,7 +3236,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 104,
+        "y": 109,
         "w": 24,
         "h": 8
       },
@@ -3276,7 +3276,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 112,
+        "y": 117,
         "w": 24,
         "h": 7
       },
@@ -3317,7 +3317,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 119,
+        "y": 124,
         "w": 6,
         "h": 5
       },
@@ -3380,7 +3380,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 119,
+        "y": 124,
         "w": 12,
         "h": 6
       },
@@ -3479,7 +3479,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 131,
+        "y": 136,
         "w": 6,
         "h": 3
       },
@@ -3528,7 +3528,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 131,
+        "y": 136,
         "w": 6,
         "h": 3
       },
@@ -3577,7 +3577,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 131,
+        "y": 136,
         "w": 6,
         "h": 3
       },
@@ -3626,7 +3626,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 131,
+        "y": 136,
         "w": 6,
         "h": 3
       },
@@ -3675,7 +3675,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 134,
+        "y": 139,
         "w": 8,
         "h": 5
       },
@@ -3729,7 +3729,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 134,
+        "y": 139,
         "w": 8,
         "h": 5
       },
@@ -3783,7 +3783,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 134,
+        "y": 139,
         "w": 8,
         "h": 5
       },
@@ -3889,7 +3889,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 157,
+        "y": 162,
         "w": 12,
         "h": 8
       },
@@ -3914,6 +3914,258 @@
       ],
       "title": "Latest Content Tasks",
       "type": "table"
+    },
+    {
+      "id": 70,
+      "type": "stat",
+      "title": "GlitchTip open issues",
+      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 29
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (details->>'issues_seen')::int AS \"Open issues\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 71,
+      "type": "stat",
+      "title": "GlitchTip alerted last cycle",
+      "description": "Novel high-count issues paged via notify_operator() on the last triage cycle. Non-zero = a new recurring error worth investigating.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 29
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (details->>'alerted_count')::int AS \"Alerted\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 72,
+      "type": "stat",
+      "title": "GlitchTip auto-resolved (24h)",
+      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing \u2014 operator's noise rules absorbing known-flapping issues.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 29
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM((details->>'auto_resolved_count')::int), 0) AS \"Auto-resolved\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\n  AND timestamp > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "type": "stat",
+      "title": "GlitchTip triage probe \u2014 last cycle",
+      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating \u2014 check `docker logs poindexter-brain`.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 600
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 29
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::int AS \"Seconds since\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle';",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
