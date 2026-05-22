@@ -807,7 +807,6 @@ async def notify_gate_pending(
     post_id: str,
     gate_name: str,
     site_config: Optional[Any] = None,
-    critical: bool = False,
 ) -> None:
     """Send the operator a "gate is waiting on you" notification.
 
@@ -817,15 +816,11 @@ async def notify_gate_pending(
     — **always to Discord only** (per Glad-Labs/poindexter#338's
     notification-batching demotion + Matt's
     ``feedback_telegram_vs_discord.md`` rule: per-flip gate pings are
-    routine progress, not a phone-pushing emergency).
-
-    The ``critical`` parameter is kept on the signature for backwards
-    compatibility with existing callers but is intentionally IGNORED —
-    we hard-pin ``critical=False`` so the dispatcher routes to
-    ``discord_ops``. Telegram pages about the gate queue come from the
-    coalesced ``brain/gate_pending_summary_probe.py`` instead, which
-    fires at most once per ``gate_pending_summary_telegram_dedup_minutes``
-    when the queue is non-empty AND past the grace window.
+    routine progress, not a phone-pushing emergency). Telegram pages
+    about the gate queue come from the coalesced
+    ``brain/gate_pending_summary_probe.py`` instead, which fires at
+    most once per ``gate_pending_summary_telegram_dedup_minutes`` when
+    the queue is non-empty AND past the grace window.
 
     Caller responsibility: invoke whenever a gate transitions INTO
     ``pending`` state (initial create, regen-complete, reopen). Not
@@ -833,11 +828,6 @@ async def notify_gate_pending(
     intentionally keeps notification side effects out of the
     transactional path. Best-effort — never raises.
     """
-    # `critical` is accepted for backwards compatibility but ignored —
-    # see docstring. Reference it once so linters don't flag it as
-    # unused, then drop on the floor.
-    del critical
-
     site_url = ""
     if site_config is not None:
         try:

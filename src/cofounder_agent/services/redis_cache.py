@@ -449,25 +449,6 @@ class RedisCache:
                 logger.error("[_close] Error closing Redis connection: %s", e, exc_info=True)
 
 
-# Convenience function for backward compatibility
-async def setup_redis_cache() -> bool:
-    """
-    Initialize Redis cache service (backward compatibility).
-
-    DEPRECATED: Use RedisCache.create() instead in main startup code.
-    This function is kept for compatibility but doesn't follow DI pattern.
-
-    Usage (old way - do not use):
-        await setup_redis_cache()
-
-    Usage (new way - recommended):
-        redis_cache = await RedisCache.create()
-        app.state.redis_cache = redis_cache
-    """
-    redis_cache = await RedisCache.create()
-    return redis_cache._enabled
-
-
 # Decorator for automatic caching
 def cached(ttl: int = CacheConfig.DEFAULT_TTL, key_prefix: str = ""):
     """
