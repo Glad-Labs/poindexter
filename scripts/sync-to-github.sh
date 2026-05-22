@@ -167,6 +167,14 @@ git rm --cached --quiet .github/COMMIT_MESSAGE_*.txt 2>/dev/null || true
 git rm --cached --quiet .github/create-tech-debt-issues.sh 2>/dev/null || true
 git rm --cached --quiet .github/tech-debt-issues.json 2>/dev/null || true
 git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
+# Dependabot config must NOT ship to the public mirror. Per
+# ``feedback_check_issue_routing_first``: automation always writes to
+# glad-labs-stack. When this file lived in the mirror, dependabot ran
+# in BOTH repos and spawned duplicate PRs in poindexter (#510-#516
+# 2026-05-18..19 were all noise — Matt flagged 2026-05-22). The
+# private repo is the dependabot-of-record; the public mirror should
+# inherit dep bumps through the normal commit→sync flow.
+git rm --cached --quiet .github/dependabot.yml 2>/dev/null || true
 git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # Deploy runs from glad-labs-stack, not poindexter
 git rm --cached --quiet .github/workflows/sync-to-public-poindexter.yml 2>/dev/null || true  # The mirror sync ITSELF lives only on glad-labs-stack — shipping it to the public mirror caused recursive runs that fail every time (no POINDEXTER_DEPLOY_KEY secret on the public side) and burn CI minutes
 git rm --cached --quiet .github/workflows/release-please.yml 2>/dev/null || true  # release-please runs on glad-labs-stack only; the workflow file's repo gate is fine but it leaks the internal repo name and is dead code on the mirror
