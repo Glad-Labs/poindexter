@@ -224,11 +224,33 @@ git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2
 # `glad-labs-stack#N` issue references degrade to `poindexter#N` (numbers
 # don't always match — better a broken link to the right repo than a
 # working link to the private one).
+# Files where ``Glad-Labs/glad-labs-stack`` is a LITERAL code/data
+# value rather than a cosmetic comment/link — substituting here breaks
+# production code (the voice agent's repo list collapses to two
+# poindexter entries) and test contracts (stub fixture keys stop
+# matching the URL they're supposed to mock). The 2026-05-22
+# unit-tests regression on the public mirror traced to this exact
+# pattern in ``test_voice_agent_tools.py``. The longer-term fix is to
+# migrate ``_VOICE_AGENT_PR_REPOS`` to ``app_settings`` so the public
+# OSS version is operator-configurable — until then, this skip list
+# is the safety net.
+COSMETIC_SUB_SKIP_FILES="\
+src/cofounder_agent/services/voice_agent_livekit.py
+src/cofounder_agent/tests/unit/services/test_voice_agent_tools.py
+src/cofounder_agent/tests/unit/brain/test_pr_staleness_probe.py
+src/cofounder_agent/tests/unit/services/topic_sources/test_dev_diary_source.py"
+export COSMETIC_SUB_SKIP_FILES
+
 python3 - <<'PYSUB'
-import pathlib, re, subprocess
+import os, pathlib, subprocess
 tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+skip = {line.strip() for line in os.environ.get("COSMETIC_SUB_SKIP_FILES", "").splitlines() if line.strip()}
 changed = 0
+skipped = 0
 for rel in tracked:
+    if rel in skip:
+        skipped += 1
+        continue
     p = pathlib.Path(rel)
     if not p.is_file():
         continue
@@ -250,7 +272,7 @@ for rel in tracked:
         p.write_text(new, encoding="utf-8", newline="\n")
         subprocess.run(["git", "add", rel], check=False)
         changed += 1
-print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files")
+print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files (skipped {skipped} files with literal references)")
 PYSUB
 
 # === CHANGELOG.md private-key redaction ============================
