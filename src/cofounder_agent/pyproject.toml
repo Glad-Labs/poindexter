@@ -204,6 +204,7 @@ llama-index-embeddings-ollama = "^0.9.0"
 # add version-skew tax.
 sentence-transformers = "^3.4"
 prefect = "^3.7.0"
+langchain-openai = ">=1.2"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
