@@ -3,10 +3,12 @@
 This document defines the database schema Poindexter runs on. The
 entire system uses PostgreSQL 16 with the pgvector extension through
 asyncpg. There is no ORM — queries are hand-written SQL, and schema
-changes are tracked as numbered migration files in
-`src/cofounder_agent/migrations/`.
+changes are tracked as migration files in
+`src/cofounder_agent/services/migrations/` (the 169 historical files
+were squashed into `0000_baseline.py` on 2026-05-08; new migrations
+use a UTC timestamp prefix per poindexter#378).
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-05-23
 **Version:** 0.1.x (alpha)
 **Architecture:** PostgreSQL 16 + pgvector + FastAPI + asyncpg background workers
 
@@ -54,39 +56,46 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 ```
 
-### 2. `content_tasks` Table
+### 2. `pipeline_tasks` Table
 
-Stores all content generation tasks created by agents and users.
-**Note:** The legacy `tasks` table exists in 0000_base_schema.py but all production code writes to `content_tasks`.
+Stores the content-generation task queue. The Prefect-orchestrated flow
+(`services/flows/content_generation.py`) claims rows via `SELECT ... FOR
+UPDATE SKIP LOCKED`; each task carries a `template_slug` that picks the
+LangGraph template (`canonical_blog` / `dev_diary`) to run.
 
 ```sql
-CREATE TABLE content_tasks (
+CREATE TABLE pipeline_tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    template_slug VARCHAR(100) NOT NULL,  -- canonical_blog / dev_diary / ...
     title VARCHAR(500) NOT NULL,
     description TEXT,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     priority VARCHAR(20) DEFAULT 'medium',
     task_type VARCHAR(50),
-    metadata JSONB DEFAULT '{}',
-    assigned_agent VARCHAR(100),
+    task_metadata JSONB DEFAULT '{}',
+    quality_score FLOAT,
+    auto_cancelled_at TIMESTAMP,
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_tasks_user_id ON tasks(user_id);
-CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
+CREATE INDEX idx_pipeline_tasks_user_id ON pipeline_tasks(user_id);
+CREATE INDEX idx_pipeline_tasks_status ON pipeline_tasks(status);
+CREATE INDEX idx_pipeline_tasks_created_at ON pipeline_tasks(created_at DESC);
+CREATE INDEX idx_pipeline_tasks_template_slug ON pipeline_tasks(template_slug);
 ```
 
-### 3. `content` Table
+### 3. `posts` Table
 
-Stores blog posts, articles, and published content.
+Stores published blog posts and the awaiting-approval queue. The
+canonical content table — the older `content` example was never the
+production shape.
 
 ```sql
-CREATE TABLE content (
+CREATE TABLE posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(500) NOT NULL,
     slug VARCHAR(500) NOT NULL UNIQUE,
@@ -94,7 +103,7 @@ CREATE TABLE content (
     excerpt VARCHAR(1000),
     cover_image_url TEXT,
     featured BOOLEAN DEFAULT FALSE,
-    publish_status VARCHAR(50) DEFAULT 'draft',
+    status VARCHAR(50) DEFAULT 'draft',  -- draft / awaiting_approval / published / archived
     quality_score FLOAT DEFAULT 0,
     seo_title VARCHAR(255),
     seo_description VARCHAR(500),
@@ -108,30 +117,30 @@ CREATE TABLE content (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_content_slug ON content(slug);
-CREATE INDEX idx_content_status ON content(publish_status);
-CREATE INDEX idx_content_published_at ON content(published_at DESC);
+CREATE INDEX idx_posts_slug ON posts(slug);
+CREATE INDEX idx_posts_status ON posts(status);
+CREATE INDEX idx_posts_published_at ON posts(published_at DESC);
 ```
 
-### 4. `admin_logs` Table
+### 4. `audit_log` Table
 
-Tracks system operations, errors, and audit events.
+Canonical historical record — every significant pipeline transition,
+QA decision, writer-fallback event, etc. lands here. Queried by
+`routes/pipeline_events_routes.py` despite the legacy URL prefix.
 
 ```sql
-CREATE TABLE admin_logs (
+CREATE TABLE audit_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_type VARCHAR(100) NOT NULL,
     user_id UUID REFERENCES users(id),
-    agent_name VARCHAR(100),
-    description TEXT,
-    metadata JSONB DEFAULT '{}',
-    status VARCHAR(50),
+    severity VARCHAR(20) DEFAULT 'info',  -- info / warning / error / critical
+    details JSONB DEFAULT '{}',
     error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_logs_type ON admin_logs(event_type);
-CREATE INDEX idx_logs_created_at ON admin_logs(created_at DESC);
+CREATE INDEX idx_audit_log_event_type ON audit_log(event_type);
+CREATE INDEX idx_audit_log_created_at ON audit_log(created_at DESC);
 ```
 
 ### 5. `writing_samples` Table

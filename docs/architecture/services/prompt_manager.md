@@ -21,7 +21,7 @@ When Langfuse isn't configured (no host + key in `app_settings`) or the lookup f
 
 ## DI seams
 
-Per CLAUDE.md "Configuration" section, the manager doesn't read from the module-level `services.site_config.site_config` singleton (that singleton survives but is never `.load()`'d in process; calling its `.get()` returns "" — see `feedback_module_singleton_gotcha`). The actual loaded SiteConfig is the one passed to `load_from_db` at worker startup; it gets captured on `self._site_config` and used by the lazy Langfuse init.
+Per CLAUDE.md "Configuration" section, the module-level `services.site_config.site_config` singleton was deleted 2026-05-09 (glad-labs-stack#330). The actual loaded SiteConfig is the one passed to `load_from_db` at worker startup; it gets captured on `self._site_config` and used by the lazy Langfuse init. Per-module utilities own their own `site_config` attribute that `main.py`'s lifespan wires via `set_site_config(loaded_instance)`.
 
 The pre-fetched secret cache (`self._langfuse_secret_key`) exists because `_init_langfuse_client` runs from the sync `get_prompt` path and can't `await site_config.get_secret(...)`. Pre-fetching during the async `load_from_db` step puts the value in hand by the time the lazy init runs.
 

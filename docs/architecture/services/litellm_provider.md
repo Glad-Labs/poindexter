@@ -2,11 +2,11 @@
 
 **File:** `src/cofounder_agent/services/llm_providers/litellm_provider.py`
 **Tested by:** smoke-tested against local Ollama 2026-05-04; unit tests pending
-**Last reviewed:** 2026-05-04
+**Last reviewed:** 2026-05-23
 
 ## What it does
 
-`LiteLLMProvider` is an `LLMProvider` plugin (under `plugins.llm_provider.LLMProvider`) backed by the LiteLLM SDK. It's the canonical replacement for `services/model_router.py` — phase 1 of poindexter#199 — and gets the worker authoritative cost tracking, retries-with-backoff, and provider-routing for free instead of hand-rolled.
+`LiteLLMProvider` is an `LLMProvider` plugin (under `plugins.llm_provider.LLMProvider`) backed by the LiteLLM SDK. It is the **primary LLM router on prod** for all four cost tiers as of 2026-05-16 (`plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'`). Provider routing, retries-with-backoff, and authoritative cost tracking are delegated to mature OSS. The legacy `services/model_router.py` + `usage_tracker.py` + `model_constants.py` trio was deleted 2026-05-08 in the Phase 2 cleanup.
 
 Three public methods, all async, mirroring the `LLMProvider` Protocol:
 
@@ -16,10 +16,10 @@ Three public methods, all async, mirroring the `LLMProvider` Protocol:
 
 ## Activation
 
-The plugin sits alongside `OllamaNativeProvider` and `OpenAICompatProvider` in `plugins/registry.py`'s core samples. To make it the live provider for a cost tier, an operator flips one app_setting:
+The plugin sits alongside `OllamaNativeProvider` and `OpenAICompatProvider` in `plugins/registry.py`'s core samples. As of 2026-05-16 all four `plugin.llm_provider.primary.{free,budget,standard,premium}` rows are set to `'litellm'` on prod — this is the canonical state. To revert a tier to the legacy native provider (e.g. for a focused regression test), an operator flips one row back:
 
 ```sql
-UPDATE app_settings SET value = 'litellm'
+UPDATE app_settings SET value = 'ollama_native'
  WHERE key = 'plugin.llm_provider.primary.standard';
 ```
 
@@ -49,19 +49,20 @@ LiteLLM prefixes provider on the model string. The provider auto-prefixes bare n
 
 ## Failure modes
 
-- **`litellm` not installed** — `import litellm` raises ImportError at first call. Operators on the OSS distribution who don't intend to use LiteLLM should leave `plugin.llm_provider.primary.standard` set to `ollama_native` (the legacy default).
+- **`litellm` not installed** — `import litellm` raises ImportError at first call. Operators who explicitly opt out of LiteLLM should flip `plugin.llm_provider.primary.{tier}` back to `ollama_native` per tier; the worker image ships `litellm` by default since it's the prod router.
 - **`acompletion` raises** — exception propagates with full traceback after a `logger.exception()`. Caller (the dispatcher) decides whether to fall back to the next provider in the chain.
 - **Empty response** — `text=''` and `finish_reason=''`; caller sees a successful Completion with no content. Surfaces as a quality-validator failure downstream rather than a hard error.
 - **Cost table miss** — LiteLLM doesn't know the model's price; `response_cost` is absent from `raw` and `cost_logs` records `0.0`. Not a fatal condition; surfaces as missing cost data on the Grafana cost panel.
 
-## Phase 2 (pending)
+## Cleanup status
 
-Once the operator has flipped the setting and a typical pipeline run completes successfully on LiteLLM, phase 2 of poindexter#199 deletes `services/model_router.py` (~580 LOC) + `services/cost_guard.py` (~738 LOC, kept thinly as a budget-cap wrapper) + `services/usage_tracker.py` (~295 LOC). LiteLLM owns provider routing, cost tracking, and rate-limiting; the hand-rolled stack is replaced.
+Phase 2 of poindexter#199 landed 2026-05-08: `services/model_router.py` (~580 LOC), `services/usage_tracker.py` (~295 LOC), and `services/model_constants.py` were all deleted. `services/cost_guard.py` was retained as a thin budget-cap + energy-tracking wrapper. LiteLLM owns provider routing, cost tracking, and rate-limiting; the hand-rolled stack is gone.
 
 ## See also
 
-- `services/model_router.md` — legacy router with deprecation banner pointing here.
+- [`model_router.md`](model_router.md) — stub redirect (the file was deleted 2026-05-08).
 - `plugins/llm_provider.py` — the `LLMProvider` Protocol this plugin implements.
 - `plugins/registry.py` — where `LiteLLMProvider` is registered alongside `OllamaNativeProvider` and `OpenAICompatProvider`.
+- [`../cost-tier-routing.md`](../cost-tier-routing.md) — cost-tier API (`resolve_tier_model`) layered over the provider plugins.
 - `~/.claude/projects/C--Users-mattm/memory/feedback_no_paid_apis.md` — local-default policy.
 - `~/.claude/projects/C--Users-mattm/memory/feedback_no_wheel_reinvention.md` — adoption rationale.

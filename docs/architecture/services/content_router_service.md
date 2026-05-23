@@ -2,20 +2,22 @@
 
 **File:** `src/cofounder_agent/services/content_router_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_content_router_service.py` (and any integration test that exercises a full pipeline run)
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-05-23
 
 ## What it does
 
 The content router is the single entry point for "given a topic, run the
-whole content pipeline." It threads a shared `result` dict through a
-sequence of stage plugins (`verify_task` → `generate_content` →
-`writer_self_review` → `quality_evaluation` → `url_validation` →
-`replace_inline_images` → `source_featured_image` → `cross_model_qa` →
-`generate_seo_metadata` → `generate_media_scripts` →
-`capture_training_data` → `finalize_task`), audits significant
-transitions to `audit_log`, and persists the final state on
-`content_tasks`. Stages communicate by reading and writing keys on the
-shared `result` dict — there's no per-stage adapter layer.
+whole content pipeline." As of 2026-05-16 (Lane C Stage 4) it is a **thin
+TemplateRunner dispatcher**: it builds the shared pipeline context
+(`image_service`, `settings`, `style_tracker`, `site_config`,
+`models_by_phase`, experiment assignment) and hands it to
+`TemplateRunner.run(template_slug, context)` keyed on
+`pipeline_tasks.template_slug`. The LangGraph template (registered in
+`services/pipeline_templates/__init__.py`) owns the node ordering —
+the router no longer threads 12 stages directly. A NULL `template_slug`
+fails loud per `feedback_no_silent_defaults`. The legacy chunked
+StageRunner path was deleted in the same Stage 4 cut along with
+`plugins/stage_runner.py` itself.
 
 The router also owns two cross-cutting concerns the stages can't see:
 the GPU mode switch (Ollama → SDXL → Ollama) around the featured image
@@ -35,8 +37,10 @@ unnoticed.
   `awaiting_approval`, `rejected`, or `failed`.
 
 The function is the only public surface — there are no classes or
-helper exports. Other modules call this via `task_executor` (worker
-loop) or `/api/tasks/generate` (HTTP entry).
+helper exports. Other modules call this via
+`services/flows/content_generation.py` (the Prefect-orchestrated
+content pipeline that owns dispatch as of 2026-05-16 Stage 4) or
+`/api/tasks/generate` (HTTP entry).
 
 ## Configuration
 

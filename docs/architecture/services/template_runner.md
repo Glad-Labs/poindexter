@@ -2,13 +2,13 @@
 
 **File:** `src/cofounder_agent/services/template_runner.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py`, `tests/unit/services/test_template_runner_state_partition.py` + integration fan-out tests
-**Last reviewed:** 2026-05-05
+**Last reviewed:** 2026-05-23
 
 ## What it does
 
-`TemplateRunner` is the LangGraph-backed orchestrator that replaces `WorkflowExecutor` (legacy phase-based engine). Phase 1 of poindexter#356 lifted LangGraph as the runner; phases 2-3 of the dynamic-pipeline-composition spec build on top with architect-LLM-composed graphs and atom-tier routing.
+`TemplateRunner` is the **sole pipeline path** as of 2026-05-16 (Lane C Stage 4). The legacy `WorkflowExecutor` + its `custom_workflows_service` / `template_execution_service` / `workflow_validator` / `phase_mapper` / `phase_registry` / `workflow_progress_service` / `phases/` chain — plus the `agents/` tree — were all deleted 2026-05-09 (~3,800 LOC). The chunked `StageRunner` flow in `content_router_service.py` and `plugins/stage_runner.py` itself followed on 2026-05-16. There is no remaining legacy orchestration engine to migrate off of.
 
-The runner is template-agnostic in intent — it takes a `StateGraph` and a `PipelineState` (a `TypedDict` shaped by the registered template), drives the graph to completion or halt, and returns a `TemplateRunSummary` with per-node metrics. Today it drives the dev_diary template directly; future architect-composed pipelines slot in via the same surface.
+The runner is template-agnostic in intent — it takes a `StateGraph` and a `PipelineState` (a `TypedDict` shaped by the registered template), drives the graph to completion or halt, and returns a `TemplateRunSummary` with per-node metrics. Today it drives the `canonical_blog` (prod default — `default_template_slug='canonical_blog'`) and `dev_diary` templates; future architect-composed pipelines slot in via the same surface.
 
 Three things make it useful beyond a vanilla LangGraph wrapper:
 
@@ -44,13 +44,9 @@ After a run completes, the runner writes per-node training signal into `capabili
 - **Halt before completion** — gates (e.g., `atoms.approval_gate`) return `_halt=True`. The runner stops cleanly; the calling pipeline picks up where it left off on the next pass once the operator approves (gate state lives in `pipeline_gate_history` per poindexter#366 phase 1).
 - **Discord delivery fails** — swallowed at debug level. The orchestrator continues; the operator just doesn't get the progress ping for that node.
 
-## Migration in flight (poindexter#367)
-
-`WorkflowExecutor` is being replaced by `TemplateRunner` in 4 sequential PRs. Today the dev_diary path uses TemplateRunner directly; the legacy custom_workflows + 5-template-execution paths still go through WorkflowExecutor. Don't extend WorkflowExecutor — new orchestration features land here.
-
 ## See also
 
-- `services/workflow_executor.md` — legacy phase engine being deleted.
+- [`../langgraph-cutover.md`](../langgraph-cutover.md) — Lane C cutover history; Stage 4 (2026-05-16) deleted the chunked StageRunner path.
 - `plugins/atom.py` — `AtomMeta` shape (capability tier, cost class, retry policy) used by future architect-composed graphs.
 - `services/atom_registry.py` — bridges legacy stages into the atom catalog so the architect-LLM can drop a stage at any point in a composed graph.
 - `docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md` — full spec.

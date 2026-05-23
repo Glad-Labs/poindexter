@@ -1,6 +1,6 @@
 # Poindexter Architecture
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-05-23
 **Version:** 0.1.x (alpha)
 **Status:** Production-ready on the author's daily-driver setup. Public alpha.
 
@@ -88,8 +88,8 @@ content with human oversight**, not "AI content factory" and not
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
 │  │       12 nodes; dev_diary template, 4 nodes)               │ │
-│  │  Provider Protocol (Ollama primary, cloud providers        │ │
-│  │     pluggable for fallback — GH-104)                       │ │
+│  │  LiteLLM router (primary on prod for all 4 cost tiers;     │ │
+│  │     Ollama default, cloud providers behind cost_guard)     │ │
 │  │  Semantic Memory (pgvector, writer-segregated)             │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
@@ -183,8 +183,8 @@ execution and multi-agent orchestration.
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- Stage-plugin pipeline (12 sequential stages with halt semantics)
-- Provider Protocol abstraction (Ollama primary; cloud providers pluggable per GH-104)
+- LangGraph-orchestrated pipeline — `canonical_blog` template (12 nodes) registered in `services/pipeline_templates/__init__.py`, dispatched by Prefect via `services/flows/content_generation.py`. The legacy stage-plugin chain was deleted 2026-05-16 (Lane C Stage 4) — see [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md).
+- LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 4 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS.
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
 - Domain-typed errors via `services/error_handler.py`
@@ -197,9 +197,9 @@ execution and multi-agent orchestration.
 | **Database**   | PostgreSQL only (no SQLite fallback)               | Content and operational data | ✅ Active |
 | **Embeddings** | pgvector (in PostgreSQL)                           | Semantic search and RAG      | ✅ Active |
 | **Storage**    | File system / Cloud Storage                        | Media files and assets       | ✅ Active |
-| **Task Queue** | REST API + async workers (dev/prod)                | Async task processing        | ✅ Active |
+| **Task Queue** | Prefect (`services/flows/content_generation.py`)   | Async task processing        | ✅ Active |
 | **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine  | ✅ Active |
-| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 7 dashboards, ~90 panels     | ✅ Active |
+| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 8 dashboards, ~90 panels     | ✅ Active |
 
 ### AI Model Providers (Ollama-only pipeline)
 
@@ -333,30 +333,31 @@ GET  /api/categories               # List categories
 GET  /api/tags                     # List tags
 ```
 
-### 3. Agent System Architecture
+### 3. Pipeline Templates + TemplateRunner
 
-**Location:** `src/cofounder_agent/agents/`
+**Location:** `src/cofounder_agent/services/template_runner.py`, `services/pipeline_templates/__init__.py`, `services/stages/`
 
-**Purpose:** Specialized role-based agents used by pipeline stages. Agents are stateless wrappers around LLM calls with typed inputs/outputs — not classical "autonomous agents" with long-lived state.
+**Purpose:** Compose and run the content pipeline as a LangGraph state machine. The `agents/` tree was deleted 2026-05-09 — there are no role-based "agents" anymore. LLM calls live inline in the stages that need them, dispatched via `services/llm_providers/dispatcher.py` (which routes to the LiteLLM provider on prod).
 
-**Actual agents in the current codebase:**
+**How a pipeline is defined:**
 
-- `blog_content_generator_agent.py` — drafts the post body, handles RAG context injection and title dedup
-- `blog_image_agent.py` — routes between SDXL and Pexels for inline + featured images
-- `blog_publisher_agent.py` — finalizes post metadata and formats for storage
-- `blog_quality_agent.py` — the LLM critic that scores drafts on clarity / accuracy / completeness / relevance / SEO / readability / engagement
-- `content_agent/` (subpackage) — research + sub-agents for fact gathering
+A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. Templates are registered in `services/pipeline_templates/__init__.py`. Today two ship in-tree:
 
-A lightweight `registry.py` wires agent instances into the pipeline. No `BaseAgent` inheritance; agents are composed, not sub-classed.
+- `canonical_blog` — the 12-node default for blog posts (verify_task → generate_content → writer_self_review → resolve_internal_link_placeholders → quality_evaluation → url_validation → replace_inline_images → source_featured_image → cross_model_qa → generate_seo_metadata → generate_media_scripts → capture_training_data → finalize_task)
+- `dev_diary` — 4-node subset for the build-in-public stream (verify_task → narrate_bundle → source_featured_image → finalize_task)
 
-**Template-driven pipeline (not agent-driven):**
+Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL value fails loud per `feedback_no_silent_defaults`.
 
-The pipeline runs through `TemplateRunner` (a LangGraph state machine) executing the `canonical_blog` template's 12 nodes. Templates are registered in `services/pipeline_templates/__init__.py`; per-task selection happens via the `pipeline_tasks.template_slug` column. Stages live in `services/stages/`; agents are called _by stages_ when an LLM invocation is needed — they don't orchestrate each other. The self-critiquing loop happens inside `services/stages/cross_model_qa.py`, not via agent-to-agent messaging. See [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md) for the cutover history and current state.
+**How a run executes:**
+
+`TemplateRunner.run(state, *, graph)` compiles the graph (optionally with `AsyncPostgresSaver` for resumable runs), drives it to completion or halt, and returns a `TemplateRunSummary` with per-node timing + metrics. Stages are adapted onto the graph via `make_stage_node(stage)` so the legacy `Stage.execute(context)` shape still works — no rewrite required to lift a stage into a template.
 
 **Usage patterns:**
 
-- **End-to-end content:** `POST /api/tasks` → Prefect `content_generation_flow` claims the row → `ContentRouterService` dispatches to TemplateRunner
-- **Ad-hoc stage use:** Not exposed via the public API. Operators call stages directly in tests and scripts.
+- **End-to-end content:** `POST /api/tasks` → Prefect `content_generation_flow` claims the row → `ContentRouterService` dispatches to `TemplateRunner.run(template_slug, context)`
+- **Ad-hoc template use:** stages are called directly in tests and scripts; not exposed via the public API.
+
+See [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md) for the full cutover history and [`architecture/services/template_runner.md`](architecture/services/template_runner.md) for the runner's invariants.
 
 ### 4. Poindexter Worker (FastAPI Backend)
 
@@ -382,12 +383,12 @@ The pipeline runs through `TemplateRunner` (a LangGraph state machine) executing
 - Langfuse callback auto-traces every call
 - The hand-rolled `model_router.py` / `usage_tracker.py` / `model_constants.py` trio was deleted in Phase 2 cleanup (2026-05-08)
 
-#### Stage Plugin System (`plugins/stage.py` + `services/stages/*`)
+#### Pipeline Templates + Stages (`services/pipeline_templates/__init__.py` + `services/stages/*`)
 
-- `Stage` protocol: `name: str`, `async def run(context) -> context`
-- `TemplateRunner` (LangGraph) orchestrates stages via the `canonical_blog` / `dev_diary` template definitions in `services/pipeline_templates/__init__.py`. Halts naturally when a node returns a terminal state (e.g. `cross_model_qa` rejecting beyond retry budget)
-- Context dict threads through every stage — the pipeline's shared memory
-- Adding a new stage = drop a file in `services/stages/`, register in `DEFAULT_STAGE_ORDER`, no other code changes
+- `Stage` protocol: `name: str`, `async def run(context) -> context` — implemented per-stage in `services/stages/`
+- `TemplateRunner` (LangGraph) orchestrates stages via the `canonical_blog` / `dev_diary` template definitions in `services/pipeline_templates/__init__.py`. Halts naturally when a node returns a terminal state (e.g. `cross_model_qa` rejecting beyond retry budget). The legacy `DEFAULT_STAGE_ORDER` list + `plugins/stage_runner.py` were deleted 2026-05-16 (Lane C Stage 4)
+- Context dict threads through every stage — the pipeline's shared memory. Live service handles ride in `RunnableConfig.configurable["__services__"]` so they don't serialize into checkpoints (poindexter#382)
+- Adding a new stage = drop a file in `services/stages/`, then register it as a node on the relevant template's `StateGraph` in `services/pipeline_templates/__init__.py`. No other code changes
 
 #### Semantic Memory (`services/embedding_service.py` + pgvector)
 
@@ -496,7 +497,7 @@ CREATE TABLE memories (
   id UUID PRIMARY KEY,
   agent_id UUID NOT NULL,
   content TEXT NOT NULL,
-  embedding VECTOR(1536),
+  embedding VECTOR(768),
   memory_type VARCHAR(50),
   created_at TIMESTAMP DEFAULT NOW(),
   accessed_at TIMESTAMP DEFAULT NOW()
@@ -530,7 +531,7 @@ The roadmap is tracked via GitHub milestones at
 
 ## Related Documentation
 
-- **[Content Pipeline](architecture/content-pipeline)** — the 12-stage Stage plugin chain + cross-model QA
+- **[LangGraph Cutover](architecture/langgraph-cutover)** — the 12-node `canonical_blog` template + cross-model QA, post-Stage-4 reality
 - **[Database Schema](architecture/database-schema)** — every table + migration system
 - **[API Reference](api/README)** — REST endpoints
 - **[Local Development](operations/local-development-setup)** — setup walkthrough

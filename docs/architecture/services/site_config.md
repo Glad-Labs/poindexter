@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/services/site_config.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_site_config.py`
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-05-23
 
 ## What it does
 
@@ -21,10 +21,17 @@ NOT cached — `get_secret()` is async and hits the DB on every call so
 they don't leak into debug dumps. Both flow through the same
 `app_settings` table; only the cache treatment differs.
 
-The module-level `site_config` singleton at the bottom of the file is
-kept for transitional callers but is being phased out (Phase H, GH#95).
-Tests should construct their own `SiteConfig(initial_config={...})`
-or use the `test_site_config` fixture in `tests/unit/conftest.py`.
+**Module-level singleton deleted 2026-05-09 (glad-labs-stack#330).**
+There is no longer a module-level `site_config` instance to import.
+Per-module utilities own their own `site_config: SiteConfig` attribute
+that `main.py`'s lifespan wires by iterating `WIRED_MODULES` in
+`services/di_wiring.py` and calling each module's `set_site_config()`
+with the loaded instance. A scheduled `reload_site_config` job refreshes
+the DB-loaded values every minute via the same wired instance.
+
+Tests construct their own `SiteConfig(initial_config={...})` or use the
+shared fixture in `tests/unit/conftest.py` (which fans out to every
+wired module via `set_site_config` at collection time).
 
 ## Public API
 
@@ -57,9 +64,10 @@ or use the `test_site_config` fixture in `tests/unit/conftest.py`.
 
 `SiteConfig` reads from `app_settings`; it doesn't read its own
 settings. The set of keys depends entirely on what's in the table —
-roughly 310 active keys as of April 2026. See
-`scripts/list_app_settings.py` (or query the table directly) for the
-current inventory.
+717 keys (62 secret) as of May 2026. See
+[`docs/reference/app-settings.md`](../../reference/app-settings.md)
+for the current inventory, or
+`scripts/list_app_settings.py` to query the table directly.
 
 The only env vars `SiteConfig` itself touches:
 
@@ -116,9 +124,10 @@ in app_settings table or as env var <KEY>.")`. This is the "fail
 WHERE key = '<key>';` — then update callers to use `get_secret()`
   instead of `get()`. The cache will skip it on next `reload()`.
 - **Test seam:** use the `test_site_config` fixture or
-  `SiteConfig(initial_config={"site_url": "https://test"})`. Do NOT
-  mutate the module-level singleton in tests — that pollutes other
-  tests that load defaults.
+  `SiteConfig(initial_config={"site_url": "https://test"})`. The
+  module-level singleton was deleted 2026-05-09; per-module
+  utilities now own their own `site_config` attribute that the
+  conftest fans out to via `set_site_config(...)`.
 - **Find the env var equivalent:** any `cfg.get("foo_bar")` falls
   back to `FOO_BAR`. Use sparingly — DB-first is the policy.
 
