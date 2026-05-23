@@ -39,16 +39,25 @@ def _make_pool(
     last_alert_received: datetime | None = None,
     last_operator_paged: datetime | None = None,
     probe_failures: list[str] | None = None,
+    warning_probe_failures: list[str] | None = None,
 ) -> Any:
-    """Async pool stub serving the four reads the probe makes:
+    """Async pool stub serving the five reads the probe makes:
 
     1. ``SELECT value FROM app_settings WHERE key = $1`` (interval, etc.)
     2. ``SELECT MAX(received_at) FROM alert_events``
     3. ``SELECT MAX(timestamp) FROM audit_log WHERE event_type='operator_paged'``
-    4. ``SELECT DISTINCT event_type FROM audit_log WHERE … probe.%``
+    4. ``SELECT DISTINCT event_type, severity FROM audit_log
+        WHERE … severity IN ('error', 'critical') AND … probe.%``
+    5. ``SELECT DISTINCT event_type FROM audit_log
+        WHERE … severity = 'warning' AND … probe.%``
+
+    ``probe_failures`` feeds query 4 (error/critical — the page-worthy
+    set). ``warning_probe_failures`` feeds query 5 (informational only,
+    must NOT trigger a page after the 2026-05-23 tightening).
     """
     settings = settings or {}
     probe_failures = probe_failures or []
+    warning_probe_failures = warning_probe_failures or []
 
     async def _fetchval(query: str, *args: Any) -> Any:
         if query.startswith("SELECT value FROM app_settings"):
@@ -60,9 +69,21 @@ def _make_pool(
         return None
 
     async def _fetch(query: str, *args: Any) -> Any:  # noqa: ARG001
-        if "probe." in query:
-            return [{"event_type": name} for name in probe_failures]
-        return []
+        if "probe." not in query:
+            return []
+        # Dispatch by which severity clause is in the SQL — the probe
+        # runs the error/critical query first, then the warning query.
+        # Discriminate on the literal severity clause, NOT a substring
+        # search for 'warning' (which collides with ``INTERVAL '1 hour'``).
+        if "('error', 'critical')" in query:
+            return [
+                {"event_type": name, "severity": "error"}
+                for name in probe_failures
+            ]
+        if "severity = 'warning'" in query:
+            return [{"event_type": name} for name in warning_probe_failures]
+        # Fallback for any other shape (defensive — shouldn't be reached).
+        return [{"event_type": name} for name in probe_failures]
 
     pool = MagicMock()
     pool.fetchval = AsyncMock(side_effect=_fetchval)
@@ -139,6 +160,34 @@ class TestProbeSilentAlerterQuietButHealthy:
         result = await bp.probe_silent_alerter(pool, notify)
         assert result["ok"] is True
         assert "no probe failures" in result["detail"]
+        notify.assert_not_called()
+
+    async def test_quiet_with_only_warning_severity_probes_no_page(self):
+        """Pre-tightening false alarm reproducer (2026-05-23 08:46 UTC):
+        alerts had been quiet for 9.6h, but the only red probes were at
+        ``severity='warning'`` (``probe.migration_drift_detected`` firing
+        every 5 min while a pending migration awaited the next worker
+        restart). Warning-severity probes intentionally don't trigger
+        notify_operator(), so "no Telegram pages" was the EXPECTED
+        state — paging on this was a false alarm.
+
+        The watchdog must NOT page when only warnings are active, and
+        the detail string must say so explicitly so the operator can
+        verify on inspection.
+        """
+        long_ago = datetime.now(timezone.utc) - timedelta(hours=12)
+        pool = _make_pool(
+            last_alert_received=long_ago,
+            probe_failures=[],                                # no error/critical
+            warning_probe_failures=[                          # but warnings active
+                "probe.migration_drift_detected",
+            ],
+        )
+        notify = AsyncMock()
+        result = await bp.probe_silent_alerter(pool, notify)
+        assert result["ok"] is True
+        assert "warning-severity" in result["detail"]
+        assert "probe.migration_drift_detected" in result["detail"]
         notify.assert_not_called()
 
 

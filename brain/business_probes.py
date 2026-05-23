@@ -478,14 +478,35 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
         }
 
     # Quiet — now correlate with probe state. If the system is genuinely
-    # idle (no probe failures), this is fine. Only page when "quiet + red".
+    # idle (no page-worthy probe failures), this is fine. Only page when
+    # "quiet + red", where "red" means a severity that SHOULD have paged.
+    #
+    # 2026-05-23 tightening (Matt feedback after a false alarm): only
+    # ERROR/CRITICAL probe events count as "should have paged". Warning-
+    # severity probes intentionally don't trigger notify_operator() —
+    # they're informational (e.g. ``probe.migration_drift_detected``
+    # which fires every 5 min while a pending migration waits for the
+    # next worker restart). Counting warnings here produced a false
+    # alarm on 2026-05-23 08:46 UTC when only migration drift was active.
     try:
         recent_failures = await pool.fetch(
+            """
+            SELECT DISTINCT event_type, severity
+            FROM audit_log
+            WHERE timestamp > NOW() - INTERVAL '1 hour'
+              AND severity IN ('error', 'critical')
+              AND event_type LIKE 'probe.%'
+            """
+        )
+        # Surfaced separately in the detail string so we can tell the
+        # operator "things are quiet but only at warning severity" —
+        # useful diagnostic without paging.
+        recent_warnings = await pool.fetch(
             """
             SELECT DISTINCT event_type
             FROM audit_log
             WHERE timestamp > NOW() - INTERVAL '1 hour'
-              AND severity IN ('warning', 'error', 'critical')
+              AND severity = 'warning'
               AND event_type LIKE 'probe.%'
             """
         )
@@ -496,7 +517,23 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
         return {"ok": False, "detail": f"db read failed: {e}"}
 
     failure_count = len(recent_failures)
+    warning_count = len(recent_warnings)
     if failure_count == 0:
+        # Quiet + no page-worthy failures = healthy. If there are warnings
+        # still firing, name them in the detail so the diagnostic isn't
+        # silent about what IS active.
+        if warning_count:
+            warning_names = sorted({dict(r)["event_type"] for r in recent_warnings})
+            return {
+                "ok": True,
+                "detail": (
+                    f"quiet {quiet_hours_actual:.1f}h with only warning-"
+                    f"severity probes active ({warning_count} type(s): "
+                    f"{', '.join(warning_names[:5])}"
+                    + (", …" if len(warning_names) > 5 else "")
+                    + ") — informational, not page-worthy, no alarm"
+                ),
+            }
         return {
             "ok": True,
             "detail": (
@@ -510,16 +547,20 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
         f"⚠️ ALERTER APPEARS SILENT — meta-watchdog fired.\n\n"
         f"Last alert_event received: {quiet_hours_actual:.1f}h ago "
         f"(threshold {quiet_hours}h).\n"
-        f"Probe failures in last 1h: {failure_count} distinct event types:\n"
+        f"ERROR/CRITICAL probe failures in last 1h: {failure_count} "
+        f"distinct event types:\n"
         f"  - " + "\n  - ".join(failure_names[:8])
         + ("\n  - …" if len(failure_names) > 8 else "")
-        + "\n\nThis is the silent-failure pattern: probes are red but no "
-        "Telegram/Discord pages have fired. Likely causes:\n"
-        "  1. Grafana → webhook ingestion broken (token? URL stale?)\n"
-        "  2. Brain alert_dispatch_loop crashed silently — check\n"
+        + "\n\nThis is the silent-failure pattern: probes that SHOULD page "
+        "are red but no Telegram/Discord pages have fired. Likely causes:\n"
+        "  1. Brain alert_dispatch_loop crashed silently — check\n"
         "     `docker logs poindexter-brain-daemon | grep dispatcher`\n"
-        "  3. All real failures suppressed by dedup window (check\n"
-        "     alert_events dispatch_result column for 'suppressed: …')\n"
+        "  2. notify_operator() target misconfigured (telegram_bot_token /\n"
+        "     telegram_chat_id / discord_ops_webhook_url in app_settings)\n"
+        "  3. Grafana → webhook ingestion broken (token? URL stale?) —\n"
+        "     only relevant if the failing probes flow through alert_events\n"
+        "  4. All real failures suppressed by dedup window — check\n"
+        "     alert_events.dispatch_result for 'suppressed: …'\n"
     )
     try:
         await _maybe_await(notify_fn(body))
