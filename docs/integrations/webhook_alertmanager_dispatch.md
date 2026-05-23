@@ -3,7 +3,7 @@
 Consumes Grafana Alertmanager webhook payloads. For every alert in the batch:
 
 1. Inserts a row into `alert_events` (persistence).
-2. Evaluates `_should_page_operator` (severity=critical OR category=infrastructure, and status=firing). If true, fans out to Discord + Telegram via `services.task_executor._notify_alert`.
+2. Evaluates `_should_page_operator` (severity=critical OR category=infrastructure, and status=firing). If true, fans out to Discord + Telegram via `services.integrations.operator_notify.notify_operator` (the legacy `services.task_executor._notify_alert` helper was deleted with `task_executor.py` in Prefect Stage 4, 2026-05-16).
 3. Looks up `plugin.remediation.<alertname>` in `app_settings` and logs the intended remediation action (concrete handlers land in follow-up work).
 
 Replaces the bespoke route in `routes/alertmanager_webhook_routes.py`.
@@ -86,4 +86,4 @@ The legacy `/api/webhooks/alertmanager` route in `routes/alertmanager_webhook_ro
 
 - RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
 - Target table: `alert_events`
-- Dispatch helper: `services.task_executor._notify_alert`
+- Dispatch helper: `services.integrations.operator_notify.notify_operator` (the bespoke `_notify_alert` shim in the handler — `integrations/handlers/webhook_alertmanager.py::_notify_operator` — wraps it with severity-aware critical-flag handling)

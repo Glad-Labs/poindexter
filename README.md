@@ -3,7 +3,7 @@
 **A plug-and-play AI/ML content creation OSS stack.** Your PC is the factory: Poindexter researches, writes, reviews, and publishes — autonomously. Local-first, Ollama-powered, zero API costs. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-7%2C900%2B_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-8%2C400%2B_passing-brightgreen)]()
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
@@ -93,7 +93,7 @@ ollama pull glm-4.7:9b         # 6 GB — lighter fallback for <16 GB VRAM
 
 Glad Labs production runs a custom RTX 5090 fine-tune (`glm-4.7-5090`, 19 GB) not on the public registry; any of the above work fine.
 
-Every model routing decision (writer / critic / research / summarizer / embedder) lives in `app_settings` and can be swapped at runtime — no restart, no redeploy. See [`docs/architecture/content-pipeline.md`](docs/architecture/content-pipeline.md) for the full routing table.
+Every model routing decision (writer / critic / research / summarizer / embedder) lives in `app_settings` and can be swapped at runtime — no restart, no redeploy. See [`docs/architecture/langgraph-cutover.md`](docs/architecture/langgraph-cutover.md) for the full routing table.
 
 ## Architecture
 
@@ -122,7 +122,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 | **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
 | **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
 | **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 670+ settings in PostgreSQL. Change with SQL or REST. No deploys.                           |
+| **DB-as-config**             | 717 settings (62 secret) in PostgreSQL. Change with SQL or REST. No deploys.                |
 | **Langfuse-managed prompts** | Edit prompts in a UI; runtime falls back to YAML defaults if Langfuse is offline            |
 | **LangGraph pipelines**      | `template_runner.py` runs declarative DAGs with checkpointing                               |
 | **Multi-modal output**       | Markdown posts, AI images (SDXL / Flux), podcast audio, text-to-video (Wan 2.1 — alpha)     |
@@ -131,7 +131,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 | **Self-healing**             | Brain daemon monitors all services, restarts failures, alerts via Telegram/Discord          |
 | **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry/GlitchTip                      |
 | **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, brain, scripts) mints scoped JWTs. No static API keys.            |
-| **7,900+ tests**             | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
+| **8,400+ tests**             | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
 
 ## Stack
 
@@ -168,7 +168,7 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
   -d '{"value": "80"}'
 ```
 
-No restart required for most settings. See [`docs/operations/configuration.md`](docs/operations/configuration.md).
+No restart required for most settings. See [`docs/operations/environment-variables.md`](docs/operations/environment-variables.md).
 
 ## Plugins
 
@@ -232,8 +232,8 @@ Poindexter is in **alpha**. Honest snapshot:
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Windows 11). Single-operator content business publishing daily.
-- 52 live posts on [gladlabs.io](https://www.gladlabs.io) (218 total drafts, 1,500+ pipeline runs).
-- 7,900+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
+- 73 live posts on [gladlabs.io](https://www.gladlabs.io) (240 total drafts, 1,617 pipeline runs).
+- 8,400+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — generates secrets, tests DB, runs migrations, writes bootstrap.toml. No `.env` file required.
 - Live in-place upgrades — schema changes, container renames, env var migrations applied to a running instance with zero data loss and no in-flight task downtime.
 - Multi-model QA scoring with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.

@@ -1,19 +1,24 @@
 # Poindexter Services Reference
 
-**Last Updated:** 2026-05-16
+**Last Updated:** 2026-05-23
 
-A skimmable catalog of every service in `src/cofounder_agent/services/`.
-Use this when you want to know "what's responsible for X" without
-reading the source.
+> **Auto-generated catalog from `src/cofounder_agent/services/`; last
+> generated 2026-05-23.** The directory holds ~159 files spanning the
+> full pipeline + integration surface. This document is a skimmable
+> tour, not an exhaustive enumeration — see
+> [CLAUDE.md's "Key services" table](../../CLAUDE.md) for the
+> load-bearing subset on the critical execution path. If you add or
+> rename a service, update both this file and the CLAUDE.md table in
+> the same PR.
+
+A skimmable catalog of representative services in
+`src/cofounder_agent/services/`. Use this when you want to know "what's
+responsible for X" without reading the source.
 
 Services are grouped by responsibility. Each entry lists the file,
 a one-line purpose, and the main class or entry-point function.
 Approximate line counts are shown as rough complexity indicators —
 not a target; just a hint.
-
-> **Auto-drift warning:** this reference is maintained by hand. If you
-> add or rename a service, update this file in the same PR. A docs
-> linter to enforce this is tracked as a follow-up.
 
 ---
 
@@ -50,12 +55,12 @@ The pipeline glue — who runs what when.
 - **`enhanced_status_change_service.py`** — Validates state transitions and logs status changes. `EnhancedStatusChangeService`. ~180 lines.
 - **`handle_task_status_change.py`** — Async handler for status-change events emitted by the dispatcher. ~120 lines.
 - **`auto_publish.py`** — Auto-publish helpers (`auto_publish_task` + `get_auto_publish_threshold`). Ported from the deleted `task_executor.py` during Stage 4. Called by `post_pipeline_actions._maybe_auto_publish`.
-- **`integrations/operator_notify.py`** — `_notify_discord` / `_notify_alert` helpers, also ported from `task_executor.py`.
+- **`integrations/operator_notify.py`** — `notify_operator(message, critical=...)` is the operator-facing entry point. The legacy `_notify_discord` direct-webhook path was inlined as `_legacy_discord_webhook` when `task_executor.py` was deleted in Stage 4. Alertmanager dispatch (in `integrations/handlers/webhook_alertmanager.py`) calls `notify_operator` directly.
 
 ## LLM & inference
 
 - **`ollama_client.py`** — Local LLM inference via Ollama with cost tracking (GPU watts × duration × rate). `OllamaClient`. ~400 lines.
-- **`ai_content_generator.py`** — Legacy generator orchestrator. Being replaced by stage-based pipeline; kept for template fallback. `AIContentGenerator`. ~350 lines.
+- **`ai_content_generator.py`** — Used by the LangGraph `generate_content` node in the `canonical_blog` template. Composes the writer prompt, runs the LLM call, and returns the draft for downstream stages. `AIContentGenerator`. ~350 lines.
 - **`gpu_scheduler.py`** — Serializes GPU access between Ollama and SDXL. Yields to gaming workloads automatically. ~100 lines.
 
 ## Image generation & selection
@@ -163,4 +168,21 @@ for the `Stage` protocol itself.
 - **Never import from `stages/*`**. Stages are wired into LangGraph templates; they
   don't call each other. Cross-stage data flows through the pipeline context dict.
 
-<!-- DOC-SYNC 2026-04-25: stale references — many *_database.py modules listed here have been renamed to *_db.py (admin_db.py, content_db.py, tasks_db.py, users_db.py, etc.); html_sanitizer.py / vector_similarity_search.py / quality_checker.py / rag_embeddings_service.py / image_generation_runner.py / stateless_decision_handler.py / transcription_service.py / writing_style_database.py / embeddings_database.py not found in src/cofounder_agent/services/. Catalog needs regeneration. -->
+---
+
+## What's NOT in this catalog (deleted services)
+
+The following modules are referenced in older docs / git history but
+no longer exist on disk. Listed here so a grep doesn't send you on a
+wild goose chase:
+
+- `task_executor.py` — the legacy polling daemon. Deleted 2026-05-16 in Prefect Stage 4 (Glad-Labs/poindexter#410). Replaced by `flows/content_generation.py`. `_notify_discord` moved to `integrations/operator_notify.py`; `_notify_alert` moved into `integrations/handlers/webhook_alertmanager.py`; `_auto_publish_task` / `_get_auto_publish_threshold` moved to `auto_publish.py`.
+- `model_router.py` / `usage_tracker.py` / `model_constants.py` — the legacy LLM-router trio. Deleted 2026-05-08 (Phase 2 cleanup). Replaced by `cost_lookup.py` (LiteLLM-backed cost lookup) + `llm_providers/dispatcher.py::resolve_tier_model` (cost-tier API). Operators tune via `app_settings.cost_tier.<tier>.model` rows.
+- `workflow_executor.py` + `custom_workflows_service.py` + `template_execution_service.py` + `workflow_validator.py` + `phase_mapper.py` + `phase_registry.py` + `workflow_progress_service.py` + `phases/` + `schemas/custom_workflow_schemas.py` + `agents/` — the workflow-executor chain. Deleted 2026-05-09 (~3,800 LOC). Replaced by `template_runner.py` (LangGraph TemplateRunner).
+- `experiment_service.py` — A/B harness. Deleted 2026-05-10 (closes Glad-Labs/poindexter#202). Replaced by `langfuse_experiments.py` (Langfuse Datasets/Traces/Scores).
+- `plugins/stage_runner.py` — the legacy chunked StageRunner. Deleted 2026-05-16 in Lane C Stage 4. `content_router_service.py` is now a thin TemplateRunner dispatcher.
+
+For the directory's current contents, run
+`ls src/cofounder_agent/services/`. For the load-bearing subset that
+drives the critical execution path, see
+[CLAUDE.md's "Key services" table](../../CLAUDE.md).

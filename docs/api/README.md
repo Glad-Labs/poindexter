@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:8002` (local worker — the only supported deployment today)
 **Status:** Alpha. Surface area is broad but not contractually stable across releases.
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-05-23
 
 ---
 
@@ -98,19 +98,16 @@ curl http://localhost:8002/api/health
 {
   "status": "healthy",
   "service": "cofounder-agent",
-  "version": "0.2.0",
-  "timestamp": "2026-04-17T10:30:00Z",
+  "version": "0.5.0",
+  "timestamp": "2026-05-23T10:30:00Z",
   "components": {
     "database": "healthy",
-    "connection_pool": { "size": 5, "idle": 5 },
-    "task_executor": {
-      "running": true,
-      "pending_task_count": 0,
-      "in_progress_count": 0
-    }
+    "connection_pool": { "size": 5, "idle": 5 }
   }
 }
 ```
+
+(`services/task_executor.py` was deleted 2026-05-16 in the Prefect Stage 4 cutover; dispatch is now Prefect-native and there is no `task_executor` component in the health payload.)
 
 ---
 
