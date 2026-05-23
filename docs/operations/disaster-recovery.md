@@ -603,6 +603,6 @@ pythonw scripts/nvidia-smi-exporter.py
 
 ## Contact
 
-- Matt Gladding: hello@gladlabs.io
+- Operator: configured via `app_settings.support_email` / `app_settings.privacy_email`
 - Telegram: brain daemon sends alerts to configured `chat_id`
 - Discord: ops channel receives Grafana alerts

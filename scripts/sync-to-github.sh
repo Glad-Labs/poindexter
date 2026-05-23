@@ -321,6 +321,21 @@ LEAK_PATTERNS=(
   '/c/Users/mattm'                  # bash-style operator home path
   'mattg-stack'                     # operator's GitHub username
   'Glad-Labs/glad-labs-stack'       # internal repo name (cosmetic sub above should fix all)
+  # === Operator identity (feedback_no_operator_info_to_public_repo, 2026-05-23) ===
+  'matthew-gladding'                # LinkedIn URL fragment (catches the full URL)
+  '[Mm]atthew [Gg]ladding'          # full name in either case
+  '[Mm]att [Gg]ladding'             # informal name variant
+  "[Mm]att''s machine"              # SQL-escaped possessive (in seed comments)
+  "[Mm]att''s production"           # same
+  "[Mm]att''s host"                 # same
+  "[Mm]att''s specific"             # same
+  'phone Matt'                      # "phone Matt" line / "phoned Matt"
+  # gladlabs.io as a DEFAULT seeded value (not as a brand reference). The
+  # narrower pattern below catches it inside an INSERT VALUES tuple but
+  # leaves brand-attribution mentions in CLAUDE.md / README / public docs
+  # alone. Specifically: a value that's a gladlabs.io URL or email landing
+  # in a seed file is the leak; a brand mention in prose is allowed.
+  "VALUES \([^)]*'[^']*gladlabs\.io"  # any seed value containing gladlabs.io
 )
 # Files that legitimately contain the patterns above because they DEFINE
 # what to strip (sync filter, regen-script blocklists). The leak guard

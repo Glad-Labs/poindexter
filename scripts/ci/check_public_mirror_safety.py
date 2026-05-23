@@ -291,6 +291,45 @@ _LEAK_PATTERNS = (
         "operator GitHub username",
         "Don't hardcode the operator's GitHub handle in OSS files.",
     ),
+    # === Operator identity (feedback_no_operator_info_to_public_repo, 2026-05-23) ===
+    LeakPattern(
+        re.compile(r"matthew-gladding"),
+        "operator LinkedIn URL fragment",
+        "Don't seed a personal LinkedIn URL — leave the setting empty so "
+        "the operator configures their own via `poindexter setup`.",
+    ),
+    LeakPattern(
+        re.compile(r"[Mm]atthew [Gg]ladding"),
+        "operator full name",
+        "Don't hardcode the operator's full name in OSS files.",
+    ),
+    LeakPattern(
+        re.compile(r"[Mm]att [Gg]ladding"),
+        "operator informal name",
+        "Don't hardcode the operator's name in OSS files.",
+    ),
+    LeakPattern(
+        re.compile(r"[Mm]att''s (?:machine|production|host|specific)"),
+        "operator-context phrasing in SQL seed comments",
+        "Rewrite to generic 'the operator's <thing>' — no personal context "
+        "in seeded descriptions.",
+    ),
+    LeakPattern(
+        re.compile(r"phone Matt"),
+        "operator-paging phrasing in comments",
+        "Rewrite to 'operator-page' or 'operator-paging line'.",
+    ),
+    LeakPattern(
+        # gladlabs.io as a DEFAULT seeded value. Catches a seed VALUES tuple
+        # carrying a gladlabs.io string. Brand attribution mentions in
+        # CLAUDE.md / README / public docs are OK (they don't match this
+        # tuple shape) — only values inside an INSERT VALUES are flagged.
+        re.compile(r"VALUES \([^)]*'[^']*gladlabs\.io"),
+        "gladlabs.io as a seeded default value",
+        "Replace with an empty string ('') in the seed. A fresh OSS "
+        "install must NOT inherit Matt's site URL / email defaults — "
+        "the operator sets these via `poindexter setup`.",
+    ),
     # Note: ``Glad-Labs/glad-labs-stack`` is intentionally NOT a CI-time
     # leak pattern. The sync filter rewrites it to ``Glad-Labs/poindexter``
     # at push time across every text file (see the Python substitution

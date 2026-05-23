@@ -81,6 +81,13 @@ _PRIVATE_VALUE_KEYS: frozenset[str] = frozenset({
     "preview_base_url",
     "oauth_issuer_url",
     "voice_agent_public_join_url",
+    # === Operator identity (feedback_no_operator_info_to_public_repo, 2026-05-23) ===
+    "owner_name",                # carries the operator's real name
+    "writing_style_reference",   # may carry "<name>'s writing style traits ..."
+    "company_founder_name",      # operator's name
+    "social_linkedin_url",       # operator's LinkedIn URL
+    "social_x_url",              # operator's X/Twitter URL
+    "social_x_handle",           # operator's X/Twitter handle
 })
 
 # Regex over VALUES that captures any operator-specific infrastructure
