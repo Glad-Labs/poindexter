@@ -7,7 +7,7 @@
 > Once the worker connects, everything — model thresholds, prompt
 > templates, QA weights, auto-publish rules, algorithm windows, SEO
 > pinging endpoints — is changed with SQL against `app_settings`
-> (310 keys as of April 2026), no redeploy needed.
+> (717 keys (62 secret) as of May 2026 — see [`docs/reference/app-settings.md`](../reference/app-settings)), no redeploy needed.
 >
 > **Preferred path:** run `poindexter setup` once on first install.
 > It writes `~/.poindexter/bootstrap.toml` with 5 bootstrap values
@@ -48,22 +48,22 @@ is no `API_TOKEN` env var.
 
 ## Optional (with sensible defaults)
 
-| Variable               | Default                             | Purpose                                                                                                               |
-| ---------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `API_BASE_URL`         | `http://localhost:8002`             | Base URL clients use to reach the worker                                                                              |
-| `COMPANY_NAME`         | `Glad Labs`                         | Publisher name used in generated content's `<author>` tag                                                             |
-| `DEFAULT_OLLAMA_MODEL` | `auto`                              | Ollama model the router picks when no override                                                                        |
-| `DEVELOPMENT_MODE`     | `true`                              | Enables dev bypasses (token, CORS). **Never set in prod.**                                                            |
-| `ENVIRONMENT`          | `production`                        | Log tag (Sentry integration removed — local monitoring via Grafana + brain probes)                                    |
-| `GRAFANA_USER`         | `admin`                             | Grafana admin username                                                                                                |
-| `LOCAL_POSTGRES_USER`  | `poindexter`                        | Local Postgres user                                                                                                   |
-| `LOCAL_POSTGRES_DB`    | `poindexter_brain`                  | Local Postgres database name                                                                                          |
-| `OLLAMA_BASE_URL`      | `http://host.docker.internal:11434` | Where `OllamaClient` reaches Ollama (pipeline generation)                                                             |
-| `OLLAMA_URL`           | `http://host.docker.internal:11434` | Where `MemoryClient` / `auto-embed.py` reaches Ollama (embeddings). Must be set to the same value as OLLAMA_BASE_URL. |
-| `PORT`                 | `8002`                              | Worker HTTP port                                                                                                      |
-| `SITE_DOMAIN`          | `gladlabs.io`                       | The operator's public site domain                                                                                     |
-| `SITE_NAME`            | `Glad Labs`                         | Site name in feeds + metadata                                                                                         |
-| `SITE_URL`             | `https://www.gladlabs.io`           | Canonical site URL                                                                                                    |
+| Variable               | Default                             | Purpose                                                                                                                                                                           |
+| ---------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `API_BASE_URL`         | `http://localhost:8002`             | Base URL clients use to reach the worker                                                                                                                                          |
+| `COMPANY_NAME`         | `Glad Labs`                         | Publisher name used in generated content's `<author>` tag                                                                                                                         |
+| `DEFAULT_OLLAMA_MODEL` | `auto`                              | Ollama model the router picks when no override                                                                                                                                    |
+| `DEVELOPMENT_MODE`     | `true`                              | Enables dev bypasses (token, CORS). **Never set in prod.**                                                                                                                        |
+| `ENVIRONMENT`          | `production`                        | Log tag — also tagged on GlitchTip events. Sentry SDK is back via self-hosted GlitchTip; `main.py` initialises it when `app_settings.sentry_dsn` is set (provisioned 2026-05-09). |
+| `GRAFANA_USER`         | `admin`                             | Grafana admin username                                                                                                                                                            |
+| `LOCAL_POSTGRES_USER`  | `poindexter`                        | Local Postgres user                                                                                                                                                               |
+| `LOCAL_POSTGRES_DB`    | `poindexter_brain`                  | Local Postgres database name                                                                                                                                                      |
+| `OLLAMA_BASE_URL`      | `http://host.docker.internal:11434` | Where `OllamaClient` reaches Ollama (pipeline generation)                                                                                                                         |
+| `OLLAMA_URL`           | `http://host.docker.internal:11434` | Where `MemoryClient` / `auto-embed.py` reaches Ollama (embeddings). Must be set to the same value as OLLAMA_BASE_URL.                                                             |
+| `PORT`                 | `8002`                              | Worker HTTP port                                                                                                                                                                  |
+| `SITE_DOMAIN`          | `gladlabs.io`                       | The operator's public site domain                                                                                                                                                 |
+| `SITE_NAME`            | `Glad Labs`                         | Site name in feeds + metadata                                                                                                                                                     |
+| `SITE_URL`             | `https://www.gladlabs.io`           | Canonical site URL                                                                                                                                                                |
 
 ## Optional (no default — feature off unless set)
 

@@ -1,8 +1,8 @@
 # Fresh DB Setup — End-to-End Walkthrough
 
-**Last Updated:** 2026-05-05
-**Verified Against:** Glad-Labs/poindexter @ d227056a + #378
-**Verifier:** dispatched code-writing agent (#378)
+**Last Updated:** 2026-05-23
+**Verified Against:** Glad-Labs/poindexter post-baseline-squash (0000_baseline.py + post-baseline timestamp migrations)
+**Verifier:** dispatched code-writing agent (#378), refreshed 2026-05-23
 
 This doc walks through standing up Poindexter against a fresh,
 empty Postgres database. It's the canonical reference for:
@@ -93,15 +93,28 @@ DATABASE_URL=postgres://postgres:postgres@localhost:15432/poindexter_brain \
 
 ```
 [smoke] runner returned ok=True
-[smoke] schema_migrations rows: 144 / files: 144
-[smoke] OK — all 144 migrations applied cleanly
+[smoke] schema_migrations rows: N / files: N
+[smoke] OK — all N migrations applied cleanly
 ```
 
-The exact count moves with every PR — verify against
-`ls src/cofounder_agent/services/migrations/*.py | wc -l` (minus the
-`__init__.py` exclusion). On Glad-Labs/glad-labs-stack
-@ d227056a + this PR (`#378`) the count is **144** files /
-**144** rows.
+The 169 historical migrations were squashed 2026-05-08 into a single
+`0000_baseline.py` (plus `0000_baseline.schema.sql` +
+`0000_baseline.seeds.sql`), so the post-baseline count is much smaller
+than it was pre-squash. Derive the expected count dynamically — the
+`-1` subtracts `__init__.py`:
+
+```bash
+python -c "from pathlib import Path; n=len(list(Path('src/cofounder_agent/services/migrations').glob('*.py')))-1; print(f'expect ~{n} migrations applied')"
+```
+
+Then verify against the DB:
+
+```bash
+docker exec poindexter-fresh psql -U postgres -d poindexter_brain \
+    -c "SELECT COUNT(*) FROM schema_migrations;"
+```
+
+The two numbers should match.
 
 **What this verifies:**
 

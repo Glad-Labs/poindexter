@@ -20,7 +20,7 @@ Any of:
 - `cost_logs` rows start appearing with `provider != 'ollama'` for
   workflows that were 100% local before.
 - Pipeline tasks fail with `LiteLLMConfigError`, `BadRequestError:
-  Unable to map your input to a model`, or `ConnectionError` against
+Unable to map your input to a model`, or `ConnectionError` against
   an unexpected host.
 - Langfuse traces stop landing entirely (vs slowing or partial loss).
 - The writer pipeline starts producing empty drafts (the LiteLLM path
@@ -46,7 +46,7 @@ poindexter settings set plugin.llm_provider.primary.flagship ollama_native
 # Reload the worker so the SiteConfig in-memory cache picks up the change.
 # (Settings cache loads at lifespan startup; runtime DB writes don't
 # invalidate it on their own.)
-docker compose restart cofounder-agent
+docker compose restart poindexter-worker
 
 # Verify
 poindexter settings list 2>&1 | findstr "plugin.llm_provider.primary"
@@ -75,7 +75,7 @@ git push origin main
 poindexter migrations down 0160_litellm_cutover_default_providers
 
 # 3. Reload the worker
-docker compose restart cofounder-agent
+docker compose restart poindexter-worker
 
 # 4. Verify both layers
 poindexter settings list 2>&1 | findstr "plugin.llm_provider.primary"
@@ -99,7 +99,7 @@ poindexter settings list 2>&1 | findstr "plugin.llm_provider.primary"
 
 # Worker logs at next pipeline run should mention "ollama_native" or
 # "OllamaClient" — not "litellm"
-docker compose logs cofounder-agent --tail 200 | findstr -i "provider"
+docker compose logs poindexter-worker --tail 200 | findstr -i "provider"
 
 # Run the dev_diary smoke (cheapest end-to-end)
 poindexter dev-diary run --dry-run
@@ -159,6 +159,7 @@ cutover:
    $env:REAL_SERVICES_TESTS = "1"
    poetry run pytest tests/integration/test_litellm_cost_parity.py -v
    ```
+
 2. Verify `litellm` is installed (`poetry run pip show litellm`) — it
    wasn't a declared dependency before #372, the cutover PR adds it.
 3. Re-apply the migration: `poindexter migrations up`.

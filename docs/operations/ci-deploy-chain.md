@@ -99,8 +99,8 @@ decorators in `test_database_service.py` and
   `chore/regen-app-settings-doc` when the file drifts; the branch
   is force-pushed every run so the PR always reflects the latest
   regen. Per [poindexter#439](https://github.com/Glad-Labs/poindexter/issues/439).
-- `src/cofounder_agent/tests/` — Python unit tests (pytest), 7,900+
-  cases across 329 test files.
+- `src/cofounder_agent/tests/` — Python unit tests (pytest), 8,400+
+  cases across 382 test files.
 - `web/public-site/next.config.js` — has a `validateEnv` check that
   rejects localhost URLs in production. `SKIP_ENV_VALIDATION=true`
   bypasses for local dev.

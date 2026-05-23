@@ -1,6 +1,6 @@
 # Local development setup
 
-**Last Updated:** 2026-04-17
+**Last Updated:** 2026-05-23
 **Status:** Alpha
 
 This is the end-to-end walkthrough for getting Poindexter running on
@@ -87,17 +87,25 @@ This reads `~/.poindexter/bootstrap.toml`, exports the values as env
 vars, and runs `docker compose -f docker-compose.local.yml up -d`.
 No `.env` file needed.
 
-This starts the core containers:
+This starts the core containers (cross-referenced against the CLAUDE.md Quick-Links table for ports + purposes):
 
-| Container                   | Purpose                            | Port  |
-| --------------------------- | ---------------------------------- | ----- |
-| `poindexter-worker`         | FastAPI backend, content pipeline  | 8002  |
-| `poindexter-brain-daemon`   | Health probes + self-healing loop  | —     |
-| `poindexter-postgres-local` | PostgreSQL 16 + pgvector           | 15432 |
-| `poindexter-grafana`        | Monitoring dashboards (7 included) | 3000  |
-| `poindexter-prometheus`     | Metric scraper                     | 9091  |
-| `poindexter-sdxl-server`    | SDXL image generation (GPU)        | 9836  |
-| `poindexter-pgadmin`        | Database GUI                       | 5480  |
+| Container                   | Purpose                                                               | Port  |
+| --------------------------- | --------------------------------------------------------------------- | ----- |
+| `poindexter-worker`         | FastAPI backend, content pipeline                                     | 8002  |
+| `poindexter-brain-daemon`   | Health probes + self-healing loop                                     | —     |
+| `poindexter-postgres-local` | PostgreSQL 16 + pgvector                                              | 15432 |
+| `poindexter-grafana`        | Monitoring dashboards (8 included)                                    | 3000  |
+| `poindexter-prometheus`     | Metric scraper                                                        | 9091  |
+| `poindexter-sdxl-server`    | SDXL image generation (GPU)                                           | 9836  |
+| `poindexter-pgadmin`        | Database GUI                                                          | 18443 |
+| `poindexter-langfuse`       | LLM trace explorer + prompt UI (UnifiedPromptManager edits land here) | 3010  |
+| `poindexter-glitchtip`      | Self-hosted Sentry — runtime errors from worker / brain / voice agent | 8080  |
+| `poindexter-prefect`        | Orchestration UI for the Prefect server (flow runs, schedules)        | 4200  |
+| `poindexter-pyroscope`      | Continuous profiler — flame graphs from worker / brain / voice        | 4040  |
+| `poindexter-loki`           | Log storage (consumed via Grafana Explore — Loki datasource)          | 3100  |
+| `poindexter-tempo`          | Trace storage (consumed via Grafana Explore — Tempo datasource)       | 3200  |
+| `poindexter-alertmanager`   | Alert-routing UI                                                      | 9093  |
+| `poindexter-livekit`        | Local LiveKit server (the public Tailscale Funnel proxies to this)    | 7880  |
 
 Stop optional containers if you don't need them:
 
@@ -153,7 +161,7 @@ poetry install
 poetry run pytest tests/unit/ -q
 ```
 
-Expected: 7,900+ passing across 329 test files. Some tests that depend
+Expected: 8,400+ passing across 382 test files. Some tests that depend
 on the `brain` module or `sentry-sdk` are skipped when running inside
 Docker (these pass on the host where all modules are available).
 

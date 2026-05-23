@@ -1,6 +1,6 @@
 # Extending Poindexter
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-05-23
 
 How to add new capabilities to Poindexter without forking the monorepo
 or touching 1,000-line files. Every extension point below corresponds
@@ -419,8 +419,11 @@ MCP and any future REST endpoints are thin wrappers.
 ### Wire the Stage into your chain
 
 Wherever your pipeline registers Stages (declarative `qa_gates` table
-for QA chains, or the legacy hard-coded list in
-`content_router_service`), drop in `ApprovalGateStage` with config:
+for QA chains, or the LangGraph template registry at
+`services/pipeline_templates/__init__.py` — `content_router_service`
+is now a thin TemplateRunner dispatcher and the legacy hardcoded list
+is gone as of the Lane C Stage 4 cutover, 2026-05-16), drop in
+`ApprovalGateStage` with config:
 
 ```python
 from services.stages.approval_gate import ApprovalGateStage
@@ -453,7 +456,7 @@ The Stage:
 2. Calls `artifact_fn(context)` to build the JSON the operator will
    review.
 3. Persists `awaiting_gate`, `gate_artifact`, `gate_paused_at` on the
-   `content_tasks` row.
+   `pipeline_tasks` row.
 4. Fires a Discord + Telegram notification through the existing
    `_notify_alert` plumbing.
 5. Returns `StageResult(ok=True, continue_workflow=False)` — the
@@ -536,8 +539,8 @@ gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
   flag on the setting row — `SiteConfig.get_secret()` redacts values
   from the in-memory cache and logs.
 - **Don't skip tests.** Every Stage / Reviewer / Adapter / Tap / Job /
-  Probe has a unit test. The repo's 5,000+ test suite is the moat
-  against drift between what the docs promise and what the code does.
+  Probe has a unit test. The repo's 8,400+ tests are the moat against
+  drift between what the docs promise and what the code does.
 
 ---
 

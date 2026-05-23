@@ -1,6 +1,6 @@
 # Poindexter CLI Reference
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-05-23
 
 The `poindexter` command is installed as a console script when you
 `pip install -e src/cofounder_agent`. It's the primary operator
@@ -648,12 +648,21 @@ poindexter migrate status --json
 Sample output:
 
 ```
-[x] 0103_add_embeddings_tsvector.py                    applied 2026-04-28
-[x] 0104_seed_voice_agent_defaults.py                  applied 2026-04-29
-[ ] 0105_seed_brand_keywords.py                        pending
+[x] 0000_baseline.py                                   applied 2026-05-08
+[x] 20260510_040315_seed_rag_engine_master_switch.py   applied 2026-05-10
+[x] 20260510_044707_seed_default_template_slug.py      applied 2026-05-10
+[x] 20260510_065631_drop_experiments_tables.py         applied 2026-05-10
+[ ] 20260523_120000_add_new_thing.py                   pending
 
-Total: 89 migrations — 87 applied, 2 pending
+Total: 5 migrations — 4 applied, 1 pending
 ```
+
+`0000_baseline.py` is the only legacy 4-digit file remaining — it
+captures the squashed history (169 migrations collapsed into one
+baseline on 2026-05-08). Every NEW migration uses a UTC timestamp
+prefix `YYYYMMDD_HHMMSS_<slug>.py` per Glad-Labs/poindexter#378
+(2026-05-05). See [`migrations.md`](migrations) for the naming
+convention.
 
 ### `migrate up [--to NAME] [--json]`
 
@@ -661,15 +670,15 @@ Apply all pending migrations. Idempotent — already-applied migrations
 are skipped via `schema_migrations`.
 
 ```bash
-poindexter migrate up                       # apply everything pending
-poindexter migrate up --to 0103             # stop at 0103 (everything ≤ 0103)
-poindexter migrate up --to 0103_xxx.py      # also accepted
+poindexter migrate up                                          # apply everything pending
+poindexter migrate up --to 20260510_065631                     # stop at that timestamp (everything ≤ it)
+poindexter migrate up --to 20260510_065631_drop_experiments_tables.py  # also accepted
 poindexter migrate up --json
 ```
 
-`--to` accepts either a numeric prefix (`0103`) or a full filename
-(`0103_add_embeddings_tsvector.py`). The summary line at the end
-reads `applied N, skipped M, failed K, pending P`.
+`--to` accepts either a timestamp prefix (`YYYYMMDD_HHMMSS`) or a full
+filename. The summary line at the end reads
+`applied N, skipped M, failed K, pending P`.
 
 ### `migrate down [--to NAME] [--all] [--yes] [--json]`
 
@@ -678,10 +687,10 @@ order. Without flags, only the most recent applied migration is
 rolled back.
 
 ```bash
-poindexter migrate down                     # roll back only the latest
-poindexter migrate down --to 0099           # roll back everything > 0099
-poindexter migrate down --all               # roll back EVERYTHING (asks first)
-poindexter migrate down --all --yes         # skip the confirmation
+poindexter migrate down                                            # roll back only the latest
+poindexter migrate down --to 20260510_044707                       # roll back everything > that timestamp
+poindexter migrate down --all                                      # roll back EVERYTHING (asks first)
+poindexter migrate down --all --yes                                # skip the confirmation
 poindexter migrate down --json
 ```
 

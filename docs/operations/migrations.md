@@ -1,6 +1,6 @@
 # Database Migrations
 
-**Last Updated:** 2026-05-05
+**Last Updated:** 2026-05-23
 **Owner:** Glad-Labs/poindexter#378
 **Runner:** `src/cofounder_agent/services/migrations/__init__.py`
 
@@ -11,12 +11,22 @@ migrations in Poindexter. If you are adding a migration, read sections
 
 ## TL;DR
 
+- **The 169 historical migrations were squashed 2026-05-08** into
+  `0000_baseline.py` + `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`.
+  That single file captures the whole pre-squash schema and seeds. The
+  runner sorts lexically so `0000_baseline.py` runs first (`0` < `2`);
+  on Matt's prod where the schema is already in place every
+  `CREATE TABLE IF NOT EXISTS` no-ops and every seed
+  `INSERT ... ON CONFLICT DO NOTHING` no-ops, leaving only the row
+  recording the baseline as applied. New migrations use the timestamp
+  convention.
 - **New migrations use a UTC timestamp prefix:** `YYYYMMDD_HHMMSS_<slug>.py`
-- Old `0xxx_<slug>.py` files stay as-is (renaming would invalidate the
-  `schema_migrations` rows of every operator's local DB).
+- `0000_baseline.py` is the only legacy 4-digit file left in tree —
+  renaming it would invalidate the `schema_migrations` rows of every
+  operator's local DB.
 - The runner sorts lexically — timestamp prefixes (starting with `2`)
-  always sort after the legacy integer prefixes (starting with `0`),
-  so the relative order is preserved.
+  always sort after the baseline (starting with `0`), so the relative
+  order is preserved.
 - Generate one with `python scripts/new-migration.py "<slug>"`.
 - The CI lint script (`scripts/ci/migrations_lint.py`) catches
   collisions, missing `up()`/`run_migration()`, and prefix-format
@@ -50,10 +60,10 @@ a deterministic, chronological order without any coordination.
 
 We considered alternatives:
 
-| Option                              | Why we passed                                             |
-| ----------------------------------- | --------------------------------------------------------- |
-| `services/migrations/.next` lockfile | Brittle — every PR conflicts on the lockfile.             |
-| Pre-commit hook validating sequence  | Catches collisions but doesn't prevent them; still needs a tie-breaker. |
+| Option                               | Why we passed                                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `services/migrations/.next` lockfile | Brittle — every PR conflicts on the lockfile.                                                                                              |
+| Pre-commit hook validating sequence  | Catches collisions but doesn't prevent them; still needs a tie-breaker.                                                                    |
 | Hard-cutover renaming all 0xxx files | Invalidates `schema_migrations` rows on every operator's local DB. Migration to rewrite those rows is feasible but high-risk for low gain. |
 
 Soft adoption (keep old, new uses timestamp) wins on risk-adjusted
@@ -70,14 +80,14 @@ mechanical lex-sort still works.
 YYYYMMDD_HHMMSS_<lowercase_slug>.py
 ```
 
-| Element     | Format        | Source                     | Example       |
-| ----------- | ------------- | -------------------------- | ------------- |
-| Date        | `YYYYMMDD`    | UTC                        | `20260505`    |
-| Separator   | `_`           | literal                    | `_`           |
-| Time        | `HHMMSS`      | UTC, 24-hour               | `081530`      |
-| Separator   | `_`           | literal                    | `_`           |
-| Slug        | `[a-z0-9_]+`  | what the migration does    | `add_x_table` |
-| Extension   | `.py`         | Python module              | `.py`         |
+| Element   | Format       | Source                  | Example       |
+| --------- | ------------ | ----------------------- | ------------- |
+| Date      | `YYYYMMDD`   | UTC                     | `20260505`    |
+| Separator | `_`          | literal                 | `_`           |
+| Time      | `HHMMSS`     | UTC, 24-hour            | `081530`      |
+| Separator | `_`          | literal                 | `_`           |
+| Slug      | `[a-z0-9_]+` | what the migration does | `add_x_table` |
+| Extension | `.py`        | Python module           | `.py`         |
 
 Full example:
 

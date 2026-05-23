@@ -124,7 +124,7 @@ After saving the contact point:
 
 ```bash
 # Watch the worker accept the next test webhook.
-docker logs -f poindexter-cofounder 2>&1 | grep -i "alertmanager webhook"
+docker logs -f poindexter-worker 2>&1 | grep -i "alertmanager webhook"
 
 # In Grafana, hit the "Test" button on the contact point.
 # Expected log line: "alertmanager webhook: received=1 persisted=1 paged=0 remediated=0"

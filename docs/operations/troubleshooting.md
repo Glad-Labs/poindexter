@@ -50,7 +50,7 @@ After these fixes, the worst-case stall for any external call is its per-call bu
 **If it happens anyway.** Clear the stuck row manually:
 
 ```sql
-UPDATE content_tasks
+UPDATE pipeline_tasks
 SET status='failed', error_message='manually cleared — stuck in_progress'
 WHERE task_id='<the-uuid>' AND status='in_progress';
 ```
@@ -92,7 +92,7 @@ The fallback (gemma3:27b) works cleanly. No task is lost. But every primary crit
 
 ```sql
 SELECT task_id, status, quality_score, LEFT(topic, 60) AS topic
-FROM content_tasks
+FROM pipeline_tasks
 WHERE status = 'awaiting_approval'
 ORDER BY created_at DESC;
 ```
@@ -113,7 +113,7 @@ The cap is read fresh on each executor poll, so no restart needed.
 
 **Root cause.** Topic discovery pulls from Hacker News and Dev.to which occasionally surface joke RFCs and satirical projects. The writer doesn't know the topic is a joke and produces a straight-faced technical takedown, which reads as "missed the joke" to any reader.
 
-**Fix.** Reject the task with `allow_revisions=false` and reason `off_brand`. After today's `_auto_retry_failed_tasks` fix (commits `acdd1640` and `bc0450f1`), rejections with `allow_revisions=false` stay permanently rejected — they don't bounce back via auto-retry.
+**Fix.** Reject the task with `allow_revisions=false` and reason `off_brand`. As of the Prefect cutover Stage 4 (2026-05-16) `task_executor.py` is deleted and the `_auto_retry_failed_tasks` sweep no longer exists — Prefect handles retries natively at the flow level, and a `rejected` task never re-enters the dispatch queue. Pre-Stage-4 the `_auto_retry_failed_tasks` fix (commits `acdd1640` and `bc0450f1`) was what kept `allow_revisions=false` rejections permanently rejected.
 
 **Prevention.** There's a feedback rule in the Claude memory system: "Don't queue or approve topics requiring straight-faced handling of RFC jokes, parody, or meta-humor; brand isn't mature enough." Future Claude sessions will flag these pre-generation. Topic discovery itself doesn't yet have this filter — a candidate improvement tracked as part of #157.
 
@@ -130,7 +130,7 @@ The cap is read fresh on each executor poll, so no restart needed.
 1. `acdd1640` added belt-and-suspenders filter excluding `approval_status='rejected'` and `metadata.allow_revisions='false'` from the retry query.
 2. `bc0450f1` did the proper semantic fix: the retry query now matches `status IN ('failed', 'failed_revisions_requested')` and uses `metadata.allow_revisions` as the single source of truth for "should this retry." On retry reset, `approval_status` is also cleared back to 'pending' so the new generation isn't judged against a stale rejection flag.
 
-**If it still bounces back after these fixes.** Check `metadata.allow_revisions` in the content_tasks row — it should be `'false'` (string, not boolean). If it's null or 'true' the reject endpoint didn't write it. That would be a regression in `approval_routes.py::reject_task` lines 98-105.
+**If it still bounces back after these fixes.** Check `metadata.allow_revisions` in the `pipeline_tasks` row — it should be `'false'` (string, not boolean). If it's null or 'true' the reject endpoint didn't write it. That would be a regression in `approval_routes.py::reject_task` lines 98-105.
 
 ---
 
@@ -494,7 +494,7 @@ Full working configuration and discussion in [`docs/operations/claude-code-permi
 
 **Root cause.** The Claude Desktop MCP config (`claude_desktop_config.json`) has wrong values:
 
-1. `POINDEXTER_API_URL` pointing at a dead Railway URL instead of `http://localhost:8002`
+1. `POINDEXTER_API_URL` pointing at a stale URL (e.g. an old hosted-staging address) instead of `http://localhost:8002`
 2. The MCP server's OAuth client (`mcp_oauth_client_id` /
    `mcp_oauth_client_secret` in `app_settings`) hasn't been provisioned
    or has been revoked

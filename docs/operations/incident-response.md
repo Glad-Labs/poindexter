@@ -46,7 +46,7 @@ Telegram silent but you SEE a problem?
 
 ## Alert index — alert name to runbook section
 
-These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (15 rules as of 2026-04-30). Brain daemon also fires a few synthetic alerts directly to Telegram.
+These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (4 rules as of 2026-05-23). Brain daemon also fires a few synthetic alerts directly to Telegram.
 
 | Alert                          | Severity | Section                                                             |
 | ------------------------------ | -------- | ------------------------------------------------------------------- |
@@ -92,7 +92,11 @@ docker compose -f docker-compose.local.yml up -d worker
 # Watch boot logs
 docker logs -f poindexter-worker 2>&1 | head -40
 # Look for: "Application startup complete." (FastAPI boot)
-# Look for: "[task_executor] poll cycle starting" (worker actually working)
+# Look for: "[flows.content_generation] cycle starting" (worker actually
+# dispatching tasks via the Prefect flow — task_executor.py was deleted
+# in the 2026-05-16 Stage 4 cutover, see prefect-cutover.md).
+# Cross-check Prefect itself:
+#   docker logs poindexter-worker | grep -i prefect
 
 # Verify
 curl -s http://localhost:8002/api/health | python -m json.tool
@@ -372,7 +376,7 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
 
 # Approval queue full?
 docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
-  "SELECT COUNT(*) FROM content_tasks WHERE status='awaiting_approval';"
+  "SELECT COUNT(*) FROM pipeline_tasks WHERE status='awaiting_approval';"
 ```
 
 **Fix.**
@@ -427,7 +431,7 @@ ollama pull glm-4.7-5090:latest
 ```sql
 -- Distinguish the cases
 docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
-  "SELECT status, COUNT(*) FROM content_tasks
+  "SELECT status, COUNT(*) FROM pipeline_tasks
    WHERE created_at > NOW() - INTERVAL '7 days'
    GROUP BY status ORDER BY status;"
 ```
