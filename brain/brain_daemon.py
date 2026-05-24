@@ -1304,6 +1304,21 @@ def _run_openclaw_doctor():
         logger.warning("[BRAIN] openclaw doctor failed: %s", e)
 
 
+def _should_auto_restart(name: str) -> bool:
+    """Whether ``restart_service(name)`` is a valid recovery path here.
+
+    ``worker`` always qualifies — it's a sibling container in Docker and
+    has a host PowerShell restart script otherwise. ``openclaw`` only
+    qualifies on bare metal, because the brain-container path through
+    ``restart_service`` would just emit a misleading "no container
+    mapping for auto-restart" Telegram alert. The host-side
+    ``_run_openclaw_doctor`` mechanism handles bare-metal recovery.
+    """
+    if name == "openclaw":
+        return not IS_DOCKER
+    return name == "worker"
+
+
 async def monitor_services(pool) -> list:
     """Check all services, log to knowledge graph, alert on failures."""
     global _last_openclaw_doctor
@@ -1326,10 +1341,21 @@ async def monitor_services(pool) -> list:
             issues.append({"service": name, "code": code, "detail": detail, "critical": config["critical"]})
             logger.warning("[BRAIN] Service %s is DOWN: %s", name, detail)
 
-            # Auto-restart local services
-            if name in ("worker", "openclaw"):
+            # Auto-restart local services. Openclaw is host-side (no
+            # container, host CLI not on the brain container's PATH), so
+            # in Docker the restart_service helper would fall through to
+            # the "no container mapping for auto-restart" notify() and
+            # spam Telegram with a misleading "down" alert even on a
+            # transient probe blip. The host-side `_run_openclaw_doctor`
+            # mechanism (line ~1377) is the recovery path on bare metal.
+            if _should_auto_restart(name):
                 await restart_service(name, pool=pool)
                 logger.info("[BRAIN] Auto-restarted %s", name)
+            elif name == "openclaw" and IS_DOCKER:
+                logger.info(
+                    "[BRAIN] Openclaw probe failed but skipping restart "
+                    "(host-side service, no in-container recovery path)",
+                )
 
             # Auto-triage: check alert_actions table before escalating
             if config["critical"]:
