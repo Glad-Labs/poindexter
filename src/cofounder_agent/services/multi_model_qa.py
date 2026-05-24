@@ -1410,8 +1410,16 @@ class MultiModelQA:
                 raw = await self.settings.get("deepeval_threshold_faithfulness")
                 if raw is not None:
                     threshold = float(raw)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as exc:
+                # poindexter#455 — symmetric to the g_eval threshold read
+                # above. Bad value in DB; surface it so the operator can
+                # fix the row instead of wondering why the threshold
+                # silently stayed at the default.
+                logger.warning(
+                    "[deepeval_faithfulness] deepeval_threshold_faithfulness=%r "
+                    "is not numeric (%s) — using default %.3f",
+                    raw, exc, threshold,
+                )
 
         # Paragraph-level chunks keep the metric's per-claim attribution
         # tractable (a single 5KB blob makes the judge punt).
@@ -1627,24 +1635,41 @@ class MultiModelQA:
         concurrency = 5
         site_url = None
         if self.settings:
+            # poindexter#455 — bad values in DB used to be silently
+            # swallowed here, so an operator typo (e.g. trailing comma)
+            # would leave the citation gate running at the default
+            # threshold without any signal in the logs. Symmetric to the
+            # deepeval_threshold_g_eval / _faithfulness reads.
             try:
                 raw = await self.settings.get("qa_citation_max_dead_ratio")
                 if raw is not None:
                     max_dead_ratio = float(raw)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "[citations] qa_citation_max_dead_ratio=%r is not "
+                    "numeric (%s) — using default %.3f",
+                    raw, exc, max_dead_ratio,
+                )
             try:
                 raw = await self.settings.get("qa_citation_min_count")
                 if raw is not None:
                     min_count = int(raw)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "[citations] qa_citation_min_count=%r is not an "
+                    "integer (%s) — using default %d",
+                    raw, exc, min_count,
+                )
             try:
                 raw = await self.settings.get("qa_citation_timeout_seconds")
                 if raw is not None:
                     timeout_s = float(raw)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "[citations] qa_citation_timeout_seconds=%r is not "
+                    "numeric (%s) — using default %.3f",
+                    raw, exc, timeout_s,
+                )
             site_url = await self.settings.get("site_url") or None
 
         try:

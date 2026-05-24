@@ -1466,6 +1466,110 @@ class TestDeepEvalFaithfulnessGate:
         assert result is None
         judge_mock.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_bad_threshold_in_db_logs_warning(self, caplog):
+        # poindexter#455: a non-numeric value in app_settings used to be
+        # silently swallowed; rail kept running at the default threshold
+        # and the operator had no signal in the logs.
+        settings = AsyncMock()
+        settings.get = AsyncMock(side_effect=lambda key: {
+            "deepeval_threshold_faithfulness": "not-a-number",
+        }.get(key))
+        qa = MultiModelQA(pool=None, settings_service=settings)
+
+        with patch(
+            "services.deepeval_rails.evaluate_faithfulness",
+            return_value=(True, 0.95, "ok"),
+        ) as judge_mock, patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ), caplog.at_level("WARNING"):
+            await qa._check_deepeval_faithfulness(
+                "body", research_sources="some research text",
+            )
+
+        assert judge_mock.call_args.kwargs["threshold"] == 0.8
+        assert any(
+            "deepeval_threshold_faithfulness" in r.message
+            and "not-a-number" in r.message
+            for r in caplog.records
+        )
+
+
+@pytest.mark.unit
+class TestCitationsThresholdReads:
+    """``_check_citations`` reads three numeric thresholds from app_settings.
+
+    poindexter#455 — bad values used to be silently swallowed. The reads
+    now log a warning so an operator typo doesn't leave the citation
+    gate quietly running at the wrong threshold.
+    """
+
+    @pytest.mark.asyncio
+    async def test_bad_max_dead_ratio_logs_warning(self, caplog):
+        settings = AsyncMock()
+        settings.get = AsyncMock(side_effect=lambda key: {
+            "qa_citation_verify_enabled": "true",
+            "qa_citation_max_dead_ratio": "oops",
+        }.get(key))
+        qa = MultiModelQA(pool=None, settings_service=settings)
+
+        # Short-circuit before the citation_verifier work — the threshold
+        # warnings fire during the settings reads earlier in the function.
+        with caplog.at_level("WARNING"), patch(
+            "services.citation_verifier.verify_citations",
+            new=AsyncMock(side_effect=RuntimeError("stop here")),
+        ):
+            await qa._check_citations("body with no urls")
+
+        assert any(
+            "qa_citation_max_dead_ratio" in r.message and "oops" in r.message
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_bad_min_count_logs_warning(self, caplog):
+        settings = AsyncMock()
+        settings.get = AsyncMock(side_effect=lambda key: {
+            "qa_citation_verify_enabled": "true",
+            "qa_citation_min_count": "twelve",
+        }.get(key))
+        qa = MultiModelQA(pool=None, settings_service=settings)
+
+        # Short-circuit before the citation_verifier work — the threshold
+        # warnings fire during the settings reads earlier in the function.
+        with caplog.at_level("WARNING"), patch(
+            "services.citation_verifier.verify_citations",
+            new=AsyncMock(side_effect=RuntimeError("stop here")),
+        ):
+            await qa._check_citations("body with no urls")
+
+        assert any(
+            "qa_citation_min_count" in r.message and "twelve" in r.message
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_bad_timeout_logs_warning(self, caplog):
+        settings = AsyncMock()
+        settings.get = AsyncMock(side_effect=lambda key: {
+            "qa_citation_verify_enabled": "true",
+            "qa_citation_timeout_seconds": "soon",
+        }.get(key))
+        qa = MultiModelQA(pool=None, settings_service=settings)
+
+        # Short-circuit before the citation_verifier work — the threshold
+        # warnings fire during the settings reads earlier in the function.
+        with caplog.at_level("WARNING"), patch(
+            "services.citation_verifier.verify_citations",
+            new=AsyncMock(side_effect=RuntimeError("stop here")),
+        ):
+            await qa._check_citations("body with no urls")
+
+        assert any(
+            "qa_citation_timeout_seconds" in r.message and "soon" in r.message
+            for r in caplog.records
+        )
+
 
 @pytest.mark.unit
 class TestGuardrailsBrandGate:
