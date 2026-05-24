@@ -1307,7 +1307,7 @@ class MultiModelQA:
         threshold = 0.7
         criterion = deepeval_rails._DEFAULT_G_EVAL_CRITERION
         try:
-            judge_model = deepeval_rails._resolve_judge_model(site_config)
+            judge_model = await deepeval_rails._resolve_judge_model(site_config)
         except ValueError as e:
             # 2026-05-12: the resolver now fails loud (raises) when no
             # judge model is configured. For this rail specifically the
@@ -1394,7 +1394,7 @@ class MultiModelQA:
 
         threshold = 0.8
         try:
-            judge_model = deepeval_rails._resolve_judge_model(site_config)
+            judge_model = await deepeval_rails._resolve_judge_model(site_config)
         except ValueError as e:
             # See _check_deepeval_g_eval — same fail-loud-but-skip-rail
             # contract. The rail is advisory; a missing judge model is

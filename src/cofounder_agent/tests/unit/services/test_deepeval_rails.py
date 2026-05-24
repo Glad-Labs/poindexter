@@ -13,7 +13,7 @@ is verified directly without the SDK.
 from __future__ import annotations
 
 from importlib.util import find_spec
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -268,7 +268,12 @@ class TestEvaluateFaithfulness:
 
 @pytest.mark.unit
 class TestResolveJudgeModel:
-    def test_none_site_config_raises(self):
+    """Resolver tests. As of Glad-Labs/poindexter#455 Phase 1 the
+    function is async + calls ``notify_operator(critical=True)`` on
+    total resolution failure, mirroring ``ragas_eval._resolve_judge_model``."""
+
+    @pytest.mark.asyncio
+    async def test_none_site_config_raises(self):
         """2026-05-12: removed the hardcoded ``glm-4.7-5090`` fallback
         because it baked Matt's specific model name into a public OSS
         file. Forks installing Poindexter wouldn't have that model and
@@ -276,40 +281,90 @@ class TestResolveJudgeModel:
         time. Now: missing site_config raises (fail-loud) rather than
         silently using an unknown model."""
         with pytest.raises(ValueError, match="site_config is required"):
-            _de_mod._resolve_judge_model(None)
+            await _de_mod._resolve_judge_model(None)
 
-    def test_override_via_explicit_setting(self):
-        sc = MagicMock()
+    @pytest.mark.asyncio
+    async def test_override_via_explicit_setting(self):
+        sc = MagicMock(_pool=None)
         sc.get = MagicMock(return_value="gpt-4o-mini")
-        assert _de_mod._resolve_judge_model(sc) == "gpt-4o-mini"
+        assert await _de_mod._resolve_judge_model(sc) == "gpt-4o-mini"
 
-    def test_falls_back_to_cost_tier_when_explicit_blank(self):
-        """No deepeval_judge_model → use cost_tier.standard.model
-        (the same tier reviewers use, so this rail picks up automatically
-        when the operator swaps writer/judge models)."""
-        sc = MagicMock()
+    @pytest.mark.asyncio
+    async def test_falls_back_to_cost_tier_setting_when_no_pool(self):
+        """No pool (tests / bootstrap) → direct ``cost_tier.standard.model``
+        read remains the cost-tier path (same data the dispatcher would
+        serve)."""
+        sc = MagicMock(_pool=None)
         sc.get = MagicMock(side_effect=lambda key, default="": {
             "deepeval_judge_model": "",
             "cost_tier.standard.model": "ollama/glm-4.7-flash:latest",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
-        assert _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+        assert await _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
 
-    def test_falls_back_to_writer_when_explicit_and_tier_blank(self):
+    @pytest.mark.asyncio
+    async def test_uses_resolve_tier_model_when_pool_available(self):
+        """When ``site_config._pool`` is set we route through the
+        dispatcher API instead of reading the setting directly — so
+        model-name normalisation matches every other reviewer rail."""
+        sc = MagicMock(_pool=MagicMock())
+        sc.get = MagicMock(side_effect=lambda key, default="": {
+            "deepeval_judge_model": "",
+            "pipeline_writer_model": "",
+        }.get(key, default))
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            AsyncMock(return_value="ollama/gemma3:27b-it-qat"),
+        ) as tier:
+            model = await _de_mod._resolve_judge_model(sc)
+        assert model == "gemma3:27b-it-qat"
+        tier.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_writer_when_explicit_and_tier_blank(self):
         """Both explicit + cost_tier blank → fall through to writer."""
-        sc = MagicMock()
+        sc = MagicMock(_pool=None)
         sc.get = MagicMock(side_effect=lambda key, default="": {
             "deepeval_judge_model": "",
             "cost_tier.standard.model": "",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
-        assert _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+        assert (
+            await _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+        )
 
-    def test_all_paths_blank_raises(self):
-        """Every resolution path empty → fail loud with a fix-the-config
-        message. Better than silently using a model that may not exist
-        on the operator's box."""
-        sc = MagicMock()
+    @pytest.mark.asyncio
+    async def test_all_paths_blank_raises_and_notifies(self):
+        """Every resolution path empty → ``notify_operator(critical=True)``
+        fires AND ValueError raises. Mirrors ragas_eval's loud-failure
+        contract per Glad-Labs/poindexter#455."""
+        sc = MagicMock(_pool=None)
         sc.get = MagicMock(return_value="")
-        with pytest.raises(ValueError, match="no judge model resolvable"):
-            _de_mod._resolve_judge_model(sc)
+        notify = AsyncMock()
+        with patch(
+            "services.integrations.operator_notify.notify_operator", notify,
+        ):
+            with pytest.raises(ValueError, match="no judge model resolvable"):
+                await _de_mod._resolve_judge_model(sc)
+        assert notify.await_count == 1
+        await_args = notify.await_args
+        assert await_args is not None
+        assert await_args.kwargs.get("critical") is True
+
+    @pytest.mark.asyncio
+    async def test_tier_failure_falls_through_to_writer(self):
+        """Dispatcher raising should not be fatal — the writer-model
+        backstop still resolves a usable judge."""
+        sc = MagicMock(_pool=MagicMock())
+        sc.get = MagicMock(side_effect=lambda key, default="": {
+            "deepeval_judge_model": "",
+            "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
+        }.get(key, default))
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            AsyncMock(side_effect=RuntimeError("no model configured")),
+        ):
+            assert (
+                await _de_mod._resolve_judge_model(sc)
+                == "glm-4.7-flash:latest"
+            )

@@ -188,17 +188,23 @@ _DEFAULT_G_EVAL_CRITERION = (
 )
 
 
-def _resolve_judge_model(site_config: Any) -> str:
+async def _resolve_judge_model(site_config: Any) -> str:
     """Pick the LLM judge model for the LLM-graded DeepEval metrics.
 
     Resolution order:
 
     1. ``app_settings.deepeval_judge_model`` — explicit per-rail override.
-    2. ``app_settings.cost_tier.standard.model`` — the same tier the
-       reviewers use, so this rail picks up automatically when the
-       operator swaps writer/judge models.
+    2. ``resolve_tier_model(pool, 'standard')`` — the same tier the
+       reviewers use, routed through the dispatcher API so model-name
+       normalisation stays consistent across all reviewer rails. Falls
+       through to a direct ``cost_tier.standard.model`` read when no
+       pool is available (tests, bootstrap).
     3. ``app_settings.pipeline_writer_model`` — last-ditch fallback;
        the writer model exists in every install by construction.
+    4. ``notify_operator(critical=True)`` + raise — per
+       ``feedback_no_silent_defaults``, every resolution path being
+       empty is a configuration bug that should page ops, not be
+       absorbed by the rail's advisory fail-soft contract.
 
     2026-05-12 cleanup (issue #487): the hardcoded ``glm-4.7-5090``
     fallback that used to live here baked Matt's specific custom
@@ -206,6 +212,11 @@ def _resolve_judge_model(site_config: Any) -> str:
     wouldn't have that model and would get a confusing "model not
     found" error from DeepEval at run time. The cost-tier path is
     operator-managed and works everywhere.
+
+    2026-05-23 (Glad-Labs/poindexter#455 Phase 1): aligned to the
+    ``ragas_eval._resolve_judge_model`` shape — dispatcher cost-tier
+    API + loud notify on total resolution failure. Function is now
+    async so it can await the tier resolution + notify side-effect.
 
     Raises:
         ValueError when every resolution path is unset — fail loud so
@@ -217,6 +228,7 @@ def _resolve_judge_model(site_config: Any) -> str:
             "deepeval._resolve_judge_model: site_config is required to "
             "resolve the judge model (no hardcoded fallback by design)"
         )
+
     try:
         explicit = (site_config.get("deepeval_judge_model", "") or "").strip()
         if explicit:
@@ -227,16 +239,33 @@ def _resolve_judge_model(site_config: Any) -> str:
             "falling through to cost-tier resolution",
             e,
         )
-    try:
-        tier = (
-            site_config.get("cost_tier.standard.model", "") or ""
-        ).strip()
-        if tier:
-            return tier.removeprefix("ollama/")
-    except Exception as e:  # noqa: BLE001
-        logger.debug(
-            "[deepeval] cost-tier lookup failed (%s); trying writer model", e,
-        )
+
+    pool = getattr(site_config, "_pool", None)
+    tier_exc: Exception | None = None
+    if pool is not None:
+        from services.llm_providers.dispatcher import resolve_tier_model
+        try:
+            tier_model = (await resolve_tier_model(pool, "standard")).strip()
+            if tier_model:
+                return tier_model.removeprefix("ollama/")
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            tier_exc = exc
+            logger.debug(
+                "[deepeval] resolve_tier_model('standard') failed (%s); "
+                "trying direct setting + writer model", exc,
+            )
+    if tier_exc is None:
+        try:
+            tier = (
+                site_config.get("cost_tier.standard.model", "") or ""
+            ).strip()
+            if tier:
+                return tier.removeprefix("ollama/")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(
+                "[deepeval] cost-tier lookup failed (%s); trying writer model", e,
+            )
+
     try:
         writer = (
             site_config.get("pipeline_writer_model", "") or ""
@@ -247,6 +276,31 @@ def _resolve_judge_model(site_config: Any) -> str:
         logger.warning(
             "[deepeval] writer-model lookup failed (%s) — no judge model "
             "can be resolved", e,
+        )
+
+    # Every path empty — page ops. Mirrors ragas_eval's critical-notify
+    # contract so a misconfigured judge model surfaces on Telegram /
+    # Discord instead of just a WARN log in the rail's "skip" branch.
+    try:
+        from services.integrations.operator_notify import notify_operator
+        await notify_operator(
+            f"deepeval_rails: judge model unresolvable — set "
+            f"``deepeval_judge_model`` OR ``cost_tier.standard.model`` "
+            f"OR ``pipeline_writer_model``. tier_exc={tier_exc!r}",
+            critical=True,
+            site_config=site_config,
+        )
+    except Exception as notify_exc:
+        # poindexter#455 — used to be silent. The notify path failing
+        # means the operator wouldn't hear the critical "deepeval can't
+        # find a judge model" alert AND wouldn't see why the notify
+        # failed. Log it so the alternate stderr / log channels at
+        # least carry the picture.
+        logger.warning(
+            "[deepeval] notify_operator failed while reporting missing "
+            "judge model — operator will only see the alert in logs: "
+            "%s: %s",
+            type(notify_exc).__name__, notify_exc,
         )
     raise ValueError(
         "deepeval_rails: no judge model resolvable from app_settings — "

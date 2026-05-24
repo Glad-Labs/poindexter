@@ -1322,7 +1322,7 @@ class TestDeepEvalGEvalGate:
         so the rail proceeds along its happy path."""
         with patch(
             "services.deepeval_rails._resolve_judge_model",
-            return_value="test-judge-model",
+            new=AsyncMock(return_value="test-judge-model"),
         ):
             yield
 
@@ -1408,7 +1408,7 @@ class TestDeepEvalFaithfulnessGate:
         # See TestDeepEvalGEvalGate — same fail-loud-but-skip pattern.
         with patch(
             "services.deepeval_rails._resolve_judge_model",
-            return_value="test-judge-model",
+            new=AsyncMock(return_value="test-judge-model"),
         ):
             yield
 
@@ -1794,7 +1794,7 @@ class TestReviewerFailureWiredIntoRails:
         # to raise.
         with patch(
             "services.deepeval_rails._resolve_judge_model",
-            return_value="test-judge-model",
+            new=AsyncMock(return_value="test-judge-model"),
         ):
             yield
 
