@@ -214,7 +214,7 @@ profiling = ["pyroscope-io"]
 # Testing
 pytest = "^9.0"
 pytest-asyncio = ">=1.0,<2.0"
-pytest-cov = "^4.0"
+pytest-cov = ">=4,<8"
 pytest-timeout = "^2.0"
 pytest-xdist = "^3.0"
 pytest-forked = "^1.6"
