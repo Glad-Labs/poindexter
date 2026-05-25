@@ -334,7 +334,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
   - **Auto-Publish Gate** — score distribution / approval-rate decisions
   - **Cost & Analytics** — LLM spend, energy, posts published
   - **Observability** — Pyroscope flame graphs, log volumes, error rates
-  - **System Health** — worker / brain / voice container health
+  - **System Health** — worker / brain / voice container health, plus the **Scheduled-publish queue** panel set (depth / next slot / past-due / upcoming-24h table, added 2026-05-25) for observability over the `poindexter schedule batch` + `poindexter publish-at` operator surface
   - **Integrations & Admin** — qa_gates / publishing_adapters / external_taps tables
   - **QA Rails — Multi-Model Review** (`/d/qa-rails`) — per-reviewer pass-rate, score distribution, latest QA passes. Powered by `audit_log` rows where `event_type='qa_pass_completed'` (one row per `MultiModelQA.review` call, full reviewer breakdown in JSON details). Created 2026-05-10 alongside the Lane D #329 close-out.
 - **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage. Routing rules in `infrastructure/grafana/provisioning/alerting/`.

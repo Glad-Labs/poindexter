@@ -396,18 +396,30 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             except Exception as e:
                 logger.error(f"[LIFESPAN] Coordinator: failed to start webhook delivery: {e}", exc_info=True)
 
-            # Start the scheduled post publisher (publishes posts at their scheduled time)
-            from services.scheduled_publisher import run_scheduled_publisher
+        # Start the scheduled post publisher in BOTH deployment modes.
+        # Captured 2026-05-25: this used to live inside the coordinator-
+        # only `else` branch, but prod runs in worker mode, so the
+        # daemon never started — `poindexter schedule batch` and
+        # `poindexter publish-at` produced ``status='scheduled'`` rows
+        # that sat in the queue forever with nothing to flip them.
+        # The daemon is idempotent (UPDATE … WHERE status='scheduled'
+        # AND published_at <= NOW() RETURNING …) so running one copy
+        # per mode is safe even if both modes ever coexist on the same
+        # DB; Postgres row locks prevent dupes.
+        from services.scheduled_publisher import run_scheduled_publisher
 
-            db_pool = services["database"].pool
+        db_pool = services["database"].pool
 
-            async def _get_pool():
-                return db_pool
+        async def _get_pool():
+            return db_pool
 
-            scheduled_publisher_task = asyncio.create_task(
-                run_scheduled_publisher(_get_pool, site_config=_site_cfg)
-            )
-            logger.info("[LIFESPAN] Coordinator: scheduled post publisher started")
+        scheduled_publisher_task = asyncio.create_task(
+            run_scheduled_publisher(_get_pool, site_config=_site_cfg)
+        )
+        logger.info(
+            "[LIFESPAN] %s: scheduled post publisher started",
+            "Worker" if deployment_mode == "worker" else "Coordinator",
+        )
 
         # Start connection pool health monitor (#819)
         db_service = services.get("database")

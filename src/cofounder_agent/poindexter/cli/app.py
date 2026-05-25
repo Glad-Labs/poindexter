@@ -32,7 +32,7 @@ from .publish_approval import (
 from .publishers import publishers_group
 from .qa_gates import qa_gates_group
 from .retention import retention_group
-from .schedule import schedule_group
+from .schedule import publish_at_command, schedule_group
 from .settings import settings_group
 from .setup import setup_command
 from .stores import stores_group
@@ -93,6 +93,11 @@ main.add_command(webhooks_group, name="webhooks")
 main.add_command(qa_gates_group, name="qa-gates")
 main.add_command(stores_group, name="stores")
 main.add_command(schedule_group, name="schedule")
+# Single-post convenience shortcut: `poindexter publish-at <id> <when>`.
+# Lives at the top level so operators don't have to remember a
+# subcommand for the most common "schedule this one post for that time"
+# operation; the group commands cover the bulk + management surface.
+main.add_command(publish_at_command, name="publish-at")
 main.add_command(migrate_group, name="migrate")
 
 # HITL approval-gate operator commands (mid-pipeline approve/reject).
