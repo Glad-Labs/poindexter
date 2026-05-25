@@ -123,9 +123,9 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.3",
-    "@typescript-eslint/parser": "^8.59.3",
-    "baseline-browser-mapping": "^2.10.30",
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "baseline-browser-mapping": "^2.10.32",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "eslint": "^10.4.0",
