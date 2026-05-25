@@ -273,3 +273,157 @@ class TestAppendSourcesSection:
             out = append_sources_section(content, ["https://new"])
 
             assert out == content, f"heading {heading!r} should be respected"
+
+
+# ---- TestCitationHeaders extensions (from auto/test-expand-2026-05-24) ----
+# The methods below were added by the daily test-expansion bot; they
+# extend the original TestCitationHeaders class above with edge cases
+# around None / falsy SiteConfig returns. Kept as a free-function-style
+# block here (rather than re-opening the class) so the rebase diff is
+# minimal and the original tests stay untouched.
+
+
+class TestCitationHeadersEdgeCases:
+    """Edge-case coverage for ``_build_citation_headers`` defensive paths.
+
+    Originally added by the 2026-05-24 auto-test-expand bot as additional
+    methods on ``TestCitationHeaders``. Promoted to a sibling class
+    during the 2026-05-25 rebase against #572 so the two PRs could
+    coexist without overlapping definitions.
+    """
+
+    def test_none_return_from_site_config_treated_as_no_contact(self):
+        """The defensive ``(value or "").strip()`` path: a SiteConfig
+        impl that returns ``None`` (drift from the typed ``str``
+        contract, or a stub) must NOT crash on ``.strip()`` — it falls
+        back to the no-contact UA. Pins the ``or ""`` shield on
+        citation_verifier.py:162.
+        """
+
+        class _NoneReturningSC:
+            def get(self, key, default=""):
+                return None
+
+        set_site_config(_NoneReturningSC())  # type: ignore[arg-type]
+        try:
+            headers = _build_citation_headers()
+            assert headers["User-Agent"] == (
+                "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0)"
+            )
+            assert "+" not in headers["User-Agent"]
+        finally:
+            set_site_config(SiteConfig())
+
+    def test_http_scheme_contact_url_accepted_verbatim(self):
+        """No scheme filtering — if the operator sets an ``http://``
+        contact URL (intranet, dev), it lands in the UA unmodified.
+        The verifier doesn't second-guess the operator's choice.
+        """
+        set_site_config(SiteConfig(initial_config={
+            "crawler_contact_url": "http://intranet.example.org",
+        }))
+
+        headers = _build_citation_headers()
+
+        assert "+http://intranet.example.org" in headers["User-Agent"]
+
+    def test_only_user_agent_and_accept_keys_returned(self):
+        """Contract: the helper returns exactly two headers. No future
+        addition (Cache-Control, From, DNT, ...) should leak in silently
+        — every new outgoing header on the citation HEAD path is an
+        operator-visible footprint and must be a deliberate change with
+        its own test.
+        """
+        set_site_config(SiteConfig())
+        assert set(_build_citation_headers().keys()) == {"User-Agent", "Accept"}
+
+        set_site_config(SiteConfig(initial_config={
+            "crawler_contact_url": "https://example.com/contact",
+        }))
+        assert set(_build_citation_headers().keys()) == {"User-Agent", "Accept"}
+
+    def test_set_site_config_takes_effect_on_next_call(self):
+        """``set_site_config`` rebinds the module-level global. The
+        next ``_build_citation_headers()`` call must observe the new
+        instance — proves the DI seam isn't accidentally captured by
+        a closure or cached on first read.
+        """
+        set_site_config(SiteConfig())
+        ua_before = _build_citation_headers()["User-Agent"]
+        assert "+" not in ua_before
+
+        set_site_config(SiteConfig(initial_config={
+            "crawler_contact_url": "https://rebound.example.org",
+        }))
+        ua_after = _build_citation_headers()["User-Agent"]
+        assert "+https://rebound.example.org" in ua_after
+
+    def test_leading_and_trailing_whitespace_both_stripped(self):
+        """``.strip()`` is two-sided: a contact URL pasted with a
+        leading tab AND trailing newline should produce a clean
+        ``+<url>)`` tail — no embedded whitespace in the UA.
+        """
+        set_site_config(SiteConfig(initial_config={
+            "crawler_contact_url": "\t  https://example.org/contact  \n",
+        }))
+
+        headers = _build_citation_headers()
+
+        assert headers["User-Agent"] == (
+            "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; "
+            "+https://example.org/contact)"
+        )
+
+    def test_returned_dict_caller_mutation_does_not_affect_next_call(self):
+        """The helper returns a fresh dict each call. A caller that
+        mutates the dict (adds a header, deletes Accept) must not see
+        the change propagate into the NEXT HEAD request's headers.
+        """
+        set_site_config(SiteConfig(initial_config={
+            "crawler_contact_url": "https://example.com",
+        }))
+
+        first = _build_citation_headers()
+        first["X-Injected"] = "should-not-persist"
+        del first["Accept"]
+
+        second = _build_citation_headers()
+
+        assert "X-Injected" not in second
+        assert second["Accept"] == "*/*"
+
+    def test_product_identifier_invariant_across_all_configs(self):
+        """``PoindexterCitationVerifier/1.0`` MUST appear in every
+        emitted User-Agent, regardless of contact-URL state. Site
+        admins parsing logs need a stable token to identify the
+        crawler — invariant across OSS / operator / broken-config
+        modes.
+        """
+        for sc in (
+            SiteConfig(),
+            SiteConfig(initial_config={
+                "crawler_contact_url": "https://example.com/contact",
+            }),
+            SiteConfig(initial_config={"crawler_contact_url": "   "}),
+        ):
+            set_site_config(sc)
+            ua = _build_citation_headers()["User-Agent"]
+            assert "PoindexterCitationVerifier/1.0" in ua, ua
+
+    def test_contact_url_with_path_and_query_preserved(self):
+        """Full URL preserved — path + query string land in the UA
+        unmodified. Operators who use a query-string contact pointer
+        (``?ref=poindexter-crawler``) should see it survive the
+        header build step verbatim.
+        """
+        set_site_config(SiteConfig(initial_config={
+            "crawler_contact_url": (
+                "https://example.org/abuse?ref=poindexter&v=1"
+            ),
+        }))
+
+        ua = _build_citation_headers()["User-Agent"]
+
+        assert (
+            "+https://example.org/abuse?ref=poindexter&v=1)" in ua
+        )
