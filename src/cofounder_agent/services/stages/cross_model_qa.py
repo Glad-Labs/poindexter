@@ -57,6 +57,9 @@ from plugins.stage import StageResult
 from services.integrations.operator_notify import notify_operator
 from services.llm_providers.dispatcher import resolve_tier_model
 from services.prompt_manager import get_prompt_manager
+from services.stages.resolve_internal_link_placeholders import (
+    scrub_unresolved_placeholders,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +269,22 @@ class CrossModelQAStage:
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)
 
+        # Defensive pre-validator scrub. The canonical_blog template
+        # runs ``resolve_internal_link_placeholders`` at stage 4, but
+        # that stage no-ops if the pool is unavailable or if its DB
+        # lookup raises (it returns ``ok=False, continue_workflow=True``
+        # to avoid halting the pipeline). When it bails, the writer's
+        # placeholders survive to here. Strip them before the first
+        # QA pass so the rewrite loop never gets primed with a
+        # ``unresolved_placeholder`` critical it can't escape.
+        content_text, pre_scrubbed = scrub_unresolved_placeholders(content_text)
+        if pre_scrubbed:
+            logger.info(
+                "[MULTI_QA] task %s: scrubbed %d placeholder(s) before "
+                "first QA pass (resolver stage may have bailed)",
+                task_id[:8], pre_scrubbed,
+            )
+
         qa_result = None
         rewrite_attempts = 0
         while True:
@@ -326,6 +345,25 @@ class CrossModelQAStage:
             )
             if revised is None:
                 break
+
+            # Safety net for the rewrite-loop poisoning bug captured
+            # 2026-05-25: the writer-resolved-and-stripped placeholders
+            # at template stage 4, but the rewriter LLM here regenerates
+            # fresh prose that often re-introduces ``[posts/<uuid>]``
+            # patterns. Without this scrub the validator critical-flags
+            # them as ``unresolved_placeholder`` on the next iteration,
+            # which forces ANOTHER rewrite, which leaks again — looping
+            # until ``qa_max_rewrites`` burns out and the post is
+            # rejected with score=0. Strip-only is the right tool here:
+            # preserving a hypothetical cross-link matters less than
+            # escaping the rewrite cycle.
+            revised, scrubbed = scrub_unresolved_placeholders(revised)
+            if scrubbed:
+                logger.info(
+                    "[QA_REWRITE] task %s: scrubbed %d placeholder(s) "
+                    "from rewriter output before re-running QA",
+                    task_id[:8], scrubbed,
+                )
 
             content_text = revised
             await database_service.update_task(task_id, {"content": content_text})

@@ -18,7 +18,85 @@ from services.stages.resolve_internal_link_placeholders import (
     _resolve_all_placeholders,
     _resolve_one,
     _strip_empty_brackets,
+    scrub_unresolved_placeholders,
 )
+
+
+# ---- scrub_unresolved_placeholders (safety-net helper) ---------------------
+# Pins the rewrite-loop-poisoning fix captured 2026-05-25 — the QA
+# rewriter LLM can re-emit ``[posts/<uuid>]`` patterns the resolver
+# already cleaned, looping the rewrite cycle until qa_max_rewrites
+# burns out and the post is rejected with score=0. This helper strips
+# placeholders without a DB lookup so cross_model_qa can sanitize the
+# rewriter output before re-running validation.
+
+
+def test_scrub_strips_uuid_placeholder_from_prose():
+    """The exact shape seen in pipeline_versions row 897f23f3 (2026-05-20)."""
+    src = (
+        "scalability and maintainability. "
+        "[posts/7dfb10ed-4409-46b7-be4a-89ef24d9ad31] "
+        "highlights this dynamic;"
+    )
+    out, n = scrub_unresolved_placeholders(src)
+    assert n == 1
+    assert "[posts/" not in out
+    assert "scalability and maintainability." in out
+    assert "highlights this dynamic;" in out
+
+
+def test_scrub_strips_multiple_placeholders_in_one_doc():
+    src = (
+        "First sentence [posts/abc-123] continues. "
+        "Second sentence [posts/def_456] also continues. "
+        "Third sentence [posts/foo-bar-baz] finishes."
+    )
+    out, n = scrub_unresolved_placeholders(src)
+    assert n == 3
+    assert "[posts/" not in out
+
+
+def test_scrub_preserves_legitimate_markdown_links():
+    """Real markdown links — ``[posts/foo](/posts/foo)`` — must survive.
+    The negative lookahead ``(?!\\()`` is what protects them; pin the
+    rule so a future regex tweak doesn't silently break working links.
+    """
+    src = (
+        "See [posts/already-resolved](/posts/already-resolved) for "
+        "background, and also [posts/another](https://gladlabs.io/posts/another)."
+    )
+    out, n = scrub_unresolved_placeholders(src)
+    assert n == 0
+    assert out == src
+
+
+def test_scrub_is_idempotent():
+    """Running the scrub twice on already-clean content is a no-op.
+    Important because cross_model_qa calls this on every rewrite-loop
+    iteration; without idempotency the second iteration could regress
+    surrounding whitespace cumulatively."""
+    src = "Some prose [posts/uuid-here] more prose."
+    once, n1 = scrub_unresolved_placeholders(src)
+    twice, n2 = scrub_unresolved_placeholders(once)
+    assert n1 == 1
+    assert n2 == 0
+    assert once == twice
+
+
+def test_scrub_on_empty_content_returns_empty():
+    out, n = scrub_unresolved_placeholders("")
+    assert out == ""
+    assert n == 0
+
+
+def test_scrub_handles_slug_form_not_just_uuid():
+    """The resolver supports both UUID and slug identifiers; the
+    safety net must too — otherwise an LLM that re-emits the slug
+    form (e.g. ``[posts/my-cool-post]``) escapes the scrub."""
+    src = "See [posts/my-cool-post] and [posts/another-one] for context."
+    out, n = scrub_unresolved_placeholders(src)
+    assert n == 2
+    assert "[posts/" not in out
 
 
 # ---- Empty-bracket scrubber (#TBD anti-LLM-tells PR) -----------------------

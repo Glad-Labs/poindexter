@@ -245,6 +245,21 @@ If the primary writer returns less than 50% of the original length
 the rewrite falls back to `qa_fallback_writer_model` (default
 `gemma3:27b`) and emits a `writer_fallback` audit event.
 
+**Rewrite-loop placeholder scrub (2026-05-25).** Every rewriter
+output is run through `scrub_unresolved_placeholders()` from
+`resolve_internal_link_placeholders.py` before the next QA pass.
+Without it, the rewriter LLM can re-emit `[posts/<uuid>]` patterns
+the template-stage-4 resolver already cleaned — the
+`unresolved_placeholder` validator rule then fires `critical`,
+which forces ANOTHER rewrite, which leaks again, until
+`qa_max_rewrites` burns out and the post is rejected with score=0.
+The scrub also runs once defensively before the first QA pass to
+cover the case where the resolver stage bailed (no pool / DB error).
+Strip-only is the right tool here: preserving a hypothetical
+cross-link matters less than escaping the rewrite cycle, and the
+resolver at template stage 4 already had its lookup-and-link shot
+at the original draft.
+
 ## What still slips through
 
 - **Plausible-but-wrong factual claims** that don't trigger a regex

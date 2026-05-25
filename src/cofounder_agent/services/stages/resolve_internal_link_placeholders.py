@@ -83,6 +83,32 @@ logger = logging.getLogger(__name__)
 _PLACEHOLDER_RE = re.compile(r"\[posts/([a-zA-Z0-9_-]+)\](?!\()")
 
 
+def scrub_unresolved_placeholders(content: str) -> tuple[str, int]:
+    """Strip ``[posts/<identifier>]`` placeholders without a DB lookup.
+
+    Returns ``(new_content, stripped_count)``. Idempotent.
+
+    Designed as the **safety net** for callers that can't afford the
+    DB roundtrip (or already missed the resolver stage). The primary
+    resolution path is still ``ResolveInternalLinkPlaceholdersStage``,
+    which preserves legitimate internal links by looking up the
+    identifier in ``posts`` first. Use this helper where preserving a
+    cross-link matters less than avoiding a downstream
+    ``unresolved_placeholder`` critical — most notably after a
+    QA-rewriter LLM call, where re-introduced placeholders would
+    otherwise loop the rewrite cycle until ``qa_max_rewrites`` burns
+    out.
+
+    Why the regex matches the resolver stage above: any change to one
+    must change the other in lockstep, otherwise the safety net and
+    the primary path drift and the validator's
+    ``unresolved_placeholder`` rule starts firing on shapes only one
+    side knows about.
+    """
+    new_content, n = _PLACEHOLDER_RE.subn("", content)
+    return new_content, n
+
+
 @dataclass
 class _Resolution:
     """The decision for one placeholder match: either link or strip."""
