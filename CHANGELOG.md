@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## [0.12.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.11.0...v0.12.0) (2026-05-25)
+
+
+### Features
+
+* **config:** make crawler User-Agent + gate-alert site URL configurable (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485) follow-up) ([#542](https://github.com/Glad-Labs/glad-labs-stack/issues/542)) ([713afcc](https://github.com/Glad-Labs/glad-labs-stack/commit/713afccc1f96e07c5afbe2f3259ba61c47e5ceb6))
+* **docs:** nightly auto-sync of source-truth stats in CLAUDE.md ([#555](https://github.com/Glad-Labs/glad-labs-stack/issues/555)) ([75bff44](https://github.com/Glad-Labs/glad-labs-stack/commit/75bff44930a77238af3c91a9c2d78f47d6dc44d5))
+* **observability:** surface GlitchTip backlog on System Health + lower alert threshold ([#548](https://github.com/Glad-Labs/glad-labs-stack/issues/548)) ([afb39ff](https://github.com/Glad-Labs/glad-labs-stack/commit/afb39ffc7b6dcc176cd40fb334688f9c12a9a01b))
+* **voice-agent:** lift voice_agent_pr_repos into app_settings (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485) follow-up) ([#541](https://github.com/Glad-Labs/glad-labs-stack/issues/541)) ([afe21cf](https://github.com/Glad-Labs/glad-labs-stack/commit/afe21cf5d1b028e9be2a3a2ac49071c1e9784bb9))
+
+
+### Bug Fixes
+
+* **brain:** silent_alerter probe ignores warning-severity probes (false-alarm fix) ([#553](https://github.com/Glad-Labs/glad-labs-stack/issues/553)) ([6a57c24](https://github.com/Glad-Labs/glad-labs-stack/commit/6a57c243958c92f7bc8fafedc984c571833204af))
+* **brain:** skip openclaw auto-restart when running in Docker ([#562](https://github.com/Glad-Labs/glad-labs-stack/issues/562)) ([3adcfe4](https://github.com/Glad-Labs/glad-labs-stack/commit/3adcfe4a9a009ec0da103b917b07b6c0f5c23010))
+* **deepeval:** align _resolve_judge_model with ragas loud-failure shape (Glad-Labs/poindexter[#455](https://github.com/Glad-Labs/glad-labs-stack/issues/455)) ([#552](https://github.com/Glad-Labs/glad-labs-stack/issues/552)) ([d89d525](https://github.com/Glad-Labs/glad-labs-stack/commit/d89d5255130be177ba23f4abcf00ae8994d843b1))
+* **deps:** bump langchain-openai to 1.2 (closes CVE-2026-41488) + triage 5 stuck deps ([#554](https://github.com/Glad-Labs/glad-labs-stack/issues/554)) ([5bdea3e](https://github.com/Glad-Labs/glad-labs-stack/commit/5bdea3eb4c30b06e482cdd67539f8fb83f658143))
+* **public-mirror:** genericise operator-specific seeds + extend leak guard ([#559](https://github.com/Glad-Labs/glad-labs-stack/issues/559)) ([70bd047](https://github.com/Glad-Labs/glad-labs-stack/commit/70bd04730b2858281fe3797907bc51163830cb5f))
+* **qa:** make multi_model_qa threshold reads loud on bad DB values (closes Glad-Labs/poindexter[#455](https://github.com/Glad-Labs/glad-labs-stack/issues/455) Phase 1) ([#561](https://github.com/Glad-Labs/glad-labs-stack/issues/561)) ([9326283](https://github.com/Glad-Labs/glad-labs-stack/commit/9326283b0e1e81c2de0500d10adfd073d04d44e9))
+* **qa:** scrub re-introduced placeholders from QA-rewriter output ([#563](https://github.com/Glad-Labs/glad-labs-stack/issues/563)) ([35c1ab8](https://github.com/Glad-Labs/glad-labs-stack/commit/35c1ab86c96e83c638d71148f3bfca0751afd243))
+* **security:** close 4 real CodeQL findings (ReDoS / tag-strip / URL substring) ([#547](https://github.com/Glad-Labs/glad-labs-stack/issues/547)) ([e15441e](https://github.com/Glad-Labs/glad-labs-stack/commit/e15441e47491b2a50d9bcbe65fe4c1a42d97c43e))
+* **security:** strict &lt;script&gt;/&lt;iframe&gt; end-tag match (CodeQL py/bad-tag-filter [#152](https://github.com/Glad-Labs/glad-labs-stack/issues/152)) ([#549](https://github.com/Glad-Labs/glad-labs-stack/issues/549)) ([ff22471](https://github.com/Glad-Labs/glad-labs-stack/commit/ff224719b51f023c8d0a4888899d75bcdf4c7ced))
+* **sync:** allowlist skip-list files in the leak guard (poindexter sync was failing) ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539)) ([37601f4](https://github.com/Glad-Labs/glad-labs-stack/commit/37601f429cb05d4f52fdf3656f44c91567cfe769))
+* **sync:** skip-list for files with literal Glad-Labs/glad-labs-stack references ([#538](https://github.com/Glad-Labs/glad-labs-stack/issues/538)) ([7767b3c](https://github.com/Glad-Labs/glad-labs-stack/commit/7767b3cbcc2c3d1433b806d32c6b895d1ae24819))
+* **sync:** strip .github/dependabot.yml from the public mirror ([#536](https://github.com/Glad-Labs/glad-labs-stack/issues/536)) ([128168e](https://github.com/Glad-Labs/glad-labs-stack/commit/128168ec5a20c7f23da3fc50b6a56ea55ccd3278))
+* **test:** skip finance-route test when private FinanceModule is stripped ([#540](https://github.com/Glad-Labs/glad-labs-stack/issues/540)) ([bb36c23](https://github.com/Glad-Labs/glad-labs-stack/commit/bb36c23cea85058690dbe9ad07686328ab19fe84))
+* **topic-sources:** re-wire analyze_topic_gaps → brain_knowledge so KnowledgeSource has input ([#543](https://github.com/Glad-Labs/glad-labs-stack/issues/543)) ([a1c3218](https://github.com/Glad-Labs/glad-labs-stack/commit/a1c32185df2deedfcd48ae4acd41f6dc9c8990eb))
+
 ## [0.11.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.10.1...v0.11.0) (2026-05-22)
 
 
