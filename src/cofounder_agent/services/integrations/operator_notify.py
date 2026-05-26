@@ -112,11 +112,30 @@ def _resolve_site_config() -> Any | None:
     :meth:`get_secret`; we go through ``shared_context`` to avoid
     re-importing the module-level singleton (which was retired in
     glad-labs-stack#330).
+
+    ``ImportError`` against the target symbol is logged at WARNING
+    (per ``feedback_no_silent_defaults``) so a regression like the
+    PR #514 one — referencing ``get_site_config`` before it existed
+    in ``shared_context`` — cannot silently swallow into a generic
+    debug-log path again. A best-effort ``None`` is still returned so
+    the calling notification path can fall back gracefully.
     """
     try:
         from services.integrations.shared_context import get_site_config
+    except ImportError as exc:
+        logger.warning(
+            "[notify_operator] shared_context.get_site_config import failed (%s) — "
+            "operator notifications will short-circuit at secret_resolver and "
+            "the discord_ops/telegram_ops handlers will raise 'no webhook URL'. "
+            "This is a framework-wiring regression — restore the setter/getter "
+            "pair in services/integrations/shared_context.py.",
+            exc,
+        )
+        return None
+    try:
         return get_site_config()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — best effort
+        logger.debug("[notify_operator] get_site_config() raised: %s", exc)
         return None
 
 

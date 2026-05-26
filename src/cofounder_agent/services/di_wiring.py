@@ -108,10 +108,34 @@ def wire_site_config_modules(site_cfg: Any) -> int:
     instance propagates fresh DB values to every wired surface (which
     is how the scheduled ``reload_site_config`` job stays effective).
 
+    Also publishes ``site_cfg`` to
+    :mod:`services.integrations.shared_context` so the operator-notify
+    helper (which doesn't have a SiteConfig in scope at most call sites)
+    can resolve the lifespan-bound instance via
+    ``shared_context.get_site_config()``. Without this, every call to
+    :func:`services.integrations.operator_notify.notify_operator` from a
+    caller that passes ``site_config=None`` ends up with the secret
+    resolver short-circuiting on "no site_config in scope" and the
+    ``discord_ops`` / ``telegram_ops`` handlers raising
+    "no webhook URL" — the 2026-05-26 regression closed by this commit.
+
     Returns the count of modules successfully wired. Failures are
     logged at WARNING and the loop continues — a missing or broken
     module shouldn't take down the whole DI wiring.
     """
+    # Publish to the integrations shared_context FIRST so the rest of
+    # the wiring loop running below already sees a fully-resolved
+    # framework state (in case any wired module's set_site_config()
+    # eagerly fans out to a notify_operator call during wiring).
+    try:
+        from services.integrations.shared_context import set_site_config as _set_shared_site_config
+        _set_shared_site_config(site_cfg)
+    except Exception as exc:  # noqa: BLE001 — defensive: keep going
+        logger.warning(
+            "[di_wiring] shared_context.set_site_config wiring failed: %s",
+            exc,
+        )
+
     wired = 0
     for modname in WIRED_MODULES:
         try:

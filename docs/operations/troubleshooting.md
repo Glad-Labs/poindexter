@@ -735,6 +735,59 @@ LIMIT 5;
 
 ---
 
+## Operator Discord (or Telegram) alerts stop landing — "no webhook URL"
+
+**Symptom.** GlitchTip fills with `ValueError: discord_post: no webhook URL — set secret_key_ref (preferred) or row.url on the dispatcher row` (or the Telegram-side equivalent). The `webhook_endpoints.discord_ops` row is correctly configured with `secret_key_ref='discord_ops_webhook_url'` and `url=NULL`; the `app_settings.discord_ops_webhook_url` row has the `enc:v1:` ciphertext prefix and the right length (262 chars for the redacted Discord webhook URL); `POINDEXTER_SECRET_KEY` is set in the worker env and decrypts the ciphertext correctly under `pgp_sym_decrypt`. Worker logs show a smoking-gun WARNING immediately before the failure:
+
+```
+services.integrations.secret_resolver WARNING - resolve_secret: row 'discord_ops'
+  references 'discord_ops_webhook_url' but no site_config in scope — treating as unconfigured
+```
+
+**Root cause.** The integrations framework's `shared_context.py` module is supposed to expose a `set_site_config()` / `get_site_config()` setter/getter pair so the lifespan-bound SiteConfig is reachable from `operator_notify._resolve_site_config()`. If those symbols are missing, `_resolve_site_config()`'s `from services.integrations.shared_context import get_site_config` raises `ImportError`. The historical `except Exception: return None` swallowed the error silently, `notify_operator` then forwarded `site_config=None` to `outbound_dispatcher.deliver`, and `resolve_secret(row, None)` short-circuited with "no site_config in scope" and returned `None`. The handler then raised "no webhook URL" — the misleading error mask. This was the 2026-05-26 regression (PR #514 reference, missing wiring).
+
+**Diagnostic playbook (in order).** Before assuming the worst:
+
+1. Confirm the `webhook_endpoints` row is healthy:
+
+   ```bash
+   docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+     "SELECT name, direction, url, secret_key_ref, last_error FROM webhook_endpoints WHERE name = 'discord_ops';"
+   ```
+
+   `url` should be NULL, `secret_key_ref='discord_ops_webhook_url'`, `last_error` will pinpoint the handler exception.
+
+2. Confirm the `app_settings` row is correctly encrypted (length 262 for the Discord webhook URL shape):
+
+   ```bash
+   docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+     "SELECT LEFT(value, 20), LENGTH(value), is_secret FROM app_settings WHERE key = 'discord_ops_webhook_url';"
+   ```
+
+   `LEFT` should be `enc:v1:` + the first ~13 base64 chars; `is_secret = t`.
+
+3. Confirm `POINDEXTER_SECRET_KEY` decrypts the ciphertext:
+
+   ```bash
+   KEY=$(docker exec poindexter-worker printenv POINDEXTER_SECRET_KEY)
+   docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+     "SELECT pgp_sym_decrypt(decode(SUBSTRING(value FROM 8), 'base64'), '$KEY')::text \
+        FROM app_settings WHERE key = 'discord_ops_webhook_url';"
+   ```
+
+   If this returns the Discord URL, the encryption layer is fine. If it raises, the key was rotated and the ciphertext needs re-encryption with the current key (or the operator lost the original key — see `poindexter setup --rotate-secrets`).
+
+4. Grep the worker log for the secret_resolver warning. The presence of "no site_config in scope" pins the DI seam as the broken link, NOT the encryption layer:
+   ```bash
+   docker logs poindexter-worker --since 1h 2>&1 | grep "no site_config in scope"
+   ```
+
+**Fix.** Restore the `set_site_config` / `get_site_config` pair in `services/integrations/shared_context.py`, wire `main.py`'s lifespan (via `services/di_wiring.py::wire_site_config_modules`) to call `set_site_config(_site_cfg)` after `_site_cfg.load(pool)` returns, and confirm the regression test at `tests/unit/services/integrations/test_shared_context_site_config.py` (which exercises the real import path, not a mock) passes. The previous pin in `test_operator_notify_site_config_fallback.py` mocked over `_resolve_site_config` itself, so the broken import never tripped — keep that test for the no-clobber invariant, but the new test is the one that guards this class of regression.
+
+**Related.** PR #514 (2026-05-20) introduced the original missing-import; the 2026-05-26 fix branch restored the wiring + added the test.
+
+---
+
 ## How to add a new entry to this doc
 
 1. You hit an issue that took more than 10 minutes to diagnose.
