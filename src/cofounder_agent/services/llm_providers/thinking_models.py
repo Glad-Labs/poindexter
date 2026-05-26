@@ -42,6 +42,34 @@ _DEFAULT_SUBSTRINGS: tuple[str, ...] = (
 )
 
 
+def strip_think_blocks(text: str) -> str:
+    """Remove every ``<think>...</think>`` (case-insensitive, multiline)
+    block from ``text``. Returns the stripped string (whitespace
+    trimmed) — empty string if every token was inside think tags.
+
+    Pre-2026-05-26, callers either rolled their own ``re.sub`` (see
+    ``image_decision_agent.py:254``) or didn't strip at all. The triage
+    path bit Matt 2026-05-26: ``ops_triage_writer_model`` resolved to
+    ``glm-4.7-5090`` which produced ~20-second runs of pure think-tag
+    output, leaving the operator-facing diagnosis empty. This helper
+    is the canonical strip so every site that uses a thinking model
+    gets consistent behaviour.
+
+    Why ``DOTALL``: ``<think>`` blocks span newlines.
+    Why case-insensitive: some providers emit ``<Think>`` or ``<THINK>``.
+    Why ``.*?`` (non-greedy): a single response can contain multiple
+    think blocks; we want to remove each individually, not the span
+    from the first open to the last close.
+    """
+    if not text:
+        return ""
+    import re
+    stripped = re.sub(
+        r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE,
+    )
+    return stripped.strip()
+
+
 def is_thinking_model(model: str, *, substrings: tuple[str, ...] | list[str] | None = None) -> bool:
     """Return True if ``model`` looks like a thinking-model identifier.
 

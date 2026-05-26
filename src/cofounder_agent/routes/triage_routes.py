@@ -147,6 +147,24 @@ class _DefaultModelRouter:
     Ollama endpoint. Returns the text wrapped in the standard envelope.
     Always uses the local-LLM path; cloud routing is not currently in
     scope for ``ops_triage`` per the v1 spec.
+
+    Model resolution order (2026-05-26 update):
+
+    1. ``app_settings.ops_triage_writer_model`` — triage-specific
+       override. Defaults to ``gemma3:27b`` (a non-thinking model)
+       so triage runs return real prose in ~5-15s. The prior code
+       silently fell through to ``pipeline_writer_model`` which on
+       Matt's prod resolved to ``glm-4.7-5090`` — a thinking-mode
+       model that consumed every triage's 400-token budget on
+       ``<think>`` blocks, leaving the operator-facing diagnosis
+       empty (``tokens=0`` in cost_logs, useless prose downstream).
+    2. ``pipeline_writer_model`` — fallback for back-compat when
+       the triage-specific setting is unset.
+
+    Defensive ``<think>`` stripping happens after the call regardless
+    of which model resolved — if an operator ever sets
+    ``ops_triage_writer_model`` to a thinking model intentionally,
+    the reasoning trace gets cleaned before reaching the alert.
     """
 
     def __init__(self, site_config: SiteConfig) -> None:
@@ -161,13 +179,26 @@ class _DefaultModelRouter:
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         del model_class, max_tokens  # tier→model resolution is the writer-model setting
+        from services.llm_providers.thinking_models import strip_think_blocks
         from services.llm_text import ollama_chat_text, resolve_local_model
 
-        model_name = resolve_local_model(None, site_config=self._site_config)
-        text = await ollama_chat_text(
+        triage_model = ""
+        try:
+            triage_model = (
+                self._site_config.get("ops_triage_writer_model", "") or ""
+            ).strip()
+        except Exception:
+            triage_model = ""
+        if triage_model:
+            model_name = triage_model.removeprefix("ollama/")
+        else:
+            model_name = resolve_local_model(None, site_config=self._site_config)
+
+        raw = await ollama_chat_text(
             prompt=user, system=system, model=model_name,
             site_config=self._site_config,
         )
+        text = strip_think_blocks(raw)
         return {"text": text, "model": f"ollama/{model_name}", "tokens": 0}
 
 

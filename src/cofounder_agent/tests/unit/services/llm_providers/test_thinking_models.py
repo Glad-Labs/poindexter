@@ -21,7 +21,82 @@ from services.llm_providers.thinking_models import (
     _DEFAULT_SUBSTRINGS,
     is_thinking_model,
     resolve_thinking_substrings,
+    strip_think_blocks,
 )
+
+
+# ---- strip_think_blocks (added 2026-05-26 to defend brain triage) ----------
+
+
+def test_strip_think_blocks_removes_single_block():
+    """The captured shape — model emits a reasoning trace inside
+    ``<think>...</think>`` then its actual prose. The brain only wants
+    the prose."""
+    raw = (
+        "<think>Reasoning about the alert... let me check cost_logs.</think>"
+        "Ollama looks healthy; the staleness is downstream from a stuck flow."
+    )
+    out = strip_think_blocks(raw)
+    assert out == "Ollama looks healthy; the staleness is downstream from a stuck flow."
+
+
+def test_strip_think_blocks_handles_multiline():
+    """Reasoning traces span newlines; the DOTALL flag must include them."""
+    raw = "<think>\nstep 1\nstep 2\nstep 3\n</think>\nFinal diagnosis here."
+    out = strip_think_blocks(raw)
+    assert out == "Final diagnosis here."
+
+
+def test_strip_think_blocks_removes_multiple_blocks():
+    """Some thinking models emit multiple ``<think>`` blocks interleaved
+    with prose. Each block is removed independently."""
+    raw = (
+        "<think>part A</think>"
+        "First sentence."
+        "<think>part B</think>"
+        " Second sentence."
+        "<think>part C</think>"
+    )
+    out = strip_think_blocks(raw)
+    assert out == "First sentence. Second sentence."
+
+
+def test_strip_think_blocks_case_insensitive():
+    """Some providers emit ``<Think>`` or ``<THINK>``. The strip must
+    catch every casing."""
+    raw = "<Think>cap-T</Think><THINK>all-caps</THINK>Real text."
+    out = strip_think_blocks(raw)
+    assert out == "Real text."
+
+
+def test_strip_think_blocks_returns_empty_when_all_inside_tags():
+    """The 2026-05-26 captured failure: the thinking model burned every
+    token on reasoning. After stripping the whole response is empty."""
+    raw = "<think>I'm thinking but never finished my answer because num_predict ran out.</think>"
+    out = strip_think_blocks(raw)
+    assert out == ""
+
+
+def test_strip_think_blocks_handles_no_tags():
+    """Most calls won't have think tags — the strip must be idempotent
+    on plain text."""
+    raw = "Plain diagnosis with no thinking tags."
+    out = strip_think_blocks(raw)
+    assert out == raw
+
+
+def test_strip_think_blocks_on_empty_returns_empty():
+    assert strip_think_blocks("") == ""
+    assert strip_think_blocks(None) == ""  # type: ignore[arg-type]
+
+
+def test_strip_think_blocks_trims_outer_whitespace():
+    """Stripped responses often have leading/trailing whitespace where
+    the think tags used to sit; the helper trims so callers don't have
+    to do it again."""
+    raw = "  <think>noise</think>\n\nDiagnosis.  \n"
+    out = strip_think_blocks(raw)
+    assert out == "Diagnosis."
 
 
 class _FakeSiteConfig:
