@@ -335,6 +335,20 @@ async def _resolve_filter_ids(filter_clause: str) -> list[str]:
     Operator-only surface; no SQL sanitisation. The trust boundary is
     that anyone who can run ``poindexter`` against the local DB
     already holds the DSN.
+
+    The query LEFT JOIN LATERALs the latest ``pipeline_versions`` row
+    so the operator can filter on version-side columns (``quality_score``
+    most commonly — that's where the auto-publish gate's signal lives,
+    not on ``pipeline_tasks``) without writing the join themselves.
+    Bare ``quality_score`` in the filter resolves to the latest version's
+    score; pipeline_tasks columns (``status``, ``topic``, ``stage`` etc.)
+    resolve directly. ``task_id`` is unambiguous because the subquery
+    doesn't expose it.
+
+    Captured 2026-05-26: the CLI's help text + example both showed
+    ``quality_score>=85`` as the canonical filter, but the underlying
+    SELECT only saw ``pipeline_tasks`` columns and asyncpg blew up with
+    ``UndefinedColumnError: column "quality_score" does not exist``.
     """
     import asyncpg
 
@@ -343,7 +357,16 @@ async def _resolve_filter_ids(filter_clause: str) -> list[str]:
     pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
     try:
         rows = await pool.fetch(
-            f"SELECT task_id FROM pipeline_tasks WHERE {filter_clause}"
+            "SELECT t.task_id "
+            "FROM pipeline_tasks t "
+            "LEFT JOIN LATERAL ("
+            "  SELECT quality_score "
+            "  FROM pipeline_versions "
+            "  WHERE task_id = t.task_id "
+            "  ORDER BY version DESC "
+            "  LIMIT 1"
+            ") v ON true "
+            f"WHERE {filter_clause}"
         )
     finally:
         await pool.close()
