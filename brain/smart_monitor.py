@@ -27,9 +27,15 @@ without redeploying — see migration ``20260506_054712_*``.
 
 Cross-platform: smartctl ships on Linux/macOS via package managers
 and on Windows via the smartmontools MSI installer. If smartctl isn't
-installed the probe degrades gracefully — one notify-on-startup
-warning, then ``status='skipped'`` cycles forever (no crash, no
-per-cycle noise).
+installed the probe degrades gracefully — one info-level log line +
+``audit_log`` row on the first cycle that notices, then
+``status='skipped'`` cycles forever (no crash, no operator page, no
+per-cycle noise). Installing smartmontools is an operator decision
+(separate from anything the probe could fix on its own), so paging
+about the missing tool would be unactionable noise — exactly the
+"Discord-only spam" the operator-notifier severity matrix is meant
+to suppress. The *real* SMART failure case (a present smartctl
+reporting a failing drive) still pages at warning or higher.
 
 Design parity with ``brain/backup_watcher.py``:
 
@@ -122,8 +128,12 @@ _alert_dedup_state: dict[tuple[str, str], float] = {}
 _firing_state: dict[tuple[str, str], str] = {}
 
 # One-shot flag — log "smartctl missing" exactly once per process so
-# we don't spam notify_operator every cycle. notify_operator() is
-# called once when the absence is first detected.
+# we don't spam the audit_log every cycle. The first cycle that
+# notices the absence emits one info-level log line + one audit_log
+# row; every subsequent cycle short-circuits to ``status='skipped'``
+# silently. Deliberately no notify_operator() call — paging about an
+# uninstalled optional dependency is unactionable noise per
+# ``feedback_telegram_vs_discord``.
 _smartctl_missing_notified: bool = False
 
 
@@ -818,9 +828,13 @@ async def run_smart_monitor_probe(
         which_fn: ``(name) -> path | None`` — defaults to
             ``shutil.which``. Tests can simulate "smartctl absent".
         notify_fn: operator notifier callable. Defaults to
-            :func:`brain.operator_notifier.notify_operator`. Only used
-            for the one-time "smartctl missing" warning; per-warning
-            paging is left to the existing alert_events dispatcher.
+            :func:`brain.operator_notifier.notify_operator`. Reserved
+            for future use — the "smartctl missing" branch deliberately
+            does NOT page (installing smartmontools is a separate
+            operator decision; paging would be unactionable noise per
+            ``feedback_telegram_vs_discord``). Per-warning paging on
+            real SMART failures is left to the existing alert_events
+            dispatcher.
         now_fn: ``() -> float`` — defaults to ``time.time``. Tests
             inject canned timestamps to exercise dedup windows.
 
@@ -846,34 +860,49 @@ async def run_smart_monitor_probe(
             "drives": {},
         }
 
-    # Resolve smartctl. If absent, degrade gracefully — log + notify
-    # exactly once so the operator hears about it, then return
-    # status='skipped' on every subsequent cycle without further noise.
+    # Resolve smartctl. If absent, degrade gracefully — info-log +
+    # one-time audit_log row so the absence is diagnosable, then
+    # return status='skipped' on every subsequent cycle without
+    # further noise.
+    #
+    # Deliberately NO notify_operator() call here: installing
+    # smartmontools is a separate operator decision (it's not
+    # something the operator can fix from a Telegram/Discord ping in
+    # the moment), so paging about it is unactionable noise. The
+    # operator-notifier severity matrix already filters warnings out
+    # of Telegram, but Discord still receives them — and the
+    # ``brain.smart_monitor`` probe fires every cycle, which would
+    # mean a Discord page on every brain cycle for the entire time
+    # the operator chose not to install smartmontools. Per
+    # ``feedback_telegram_vs_discord``: this is not a "routine
+    # progress" message either; it's just a permanent capability
+    # disclosure. Log it, record it once in audit_log, move on.
     binary = (
         config["smartctl_path"] if config["smartctl_path"] and os.path.isfile(config["smartctl_path"])
         else which_fn("smartctl")
     )
     if not binary:
+        detail = (
+            "smartctl binary not found on PATH. SMART monitor "
+            "probe will be skipped until smartmontools is "
+            "installed. On Linux: `apt install smartmontools`. "
+            "On macOS: `brew install smartmontools`. On Windows: "
+            "install the smartmontools MSI from "
+            "https://www.smartmontools.org/."
+        )
         if not _smartctl_missing_notified:
             _smartctl_missing_notified = True
-            detail = (
-                "smartctl binary not found on PATH. SMART monitor "
-                "probe will be skipped until smartmontools is "
-                "installed. On Linux: `apt install smartmontools`. "
-                "On macOS: `brew install smartmontools`. On Windows: "
-                "install the smartmontools MSI from "
-                "https://www.smartmontools.org/."
+            # Info-level — installing smartmontools is an operator
+            # decision, not a probe failure. Single audit_log row so
+            # the absence is searchable later, no notify_operator()
+            # page.
+            logger.info("[SMART_MONITOR] %s", detail)
+            await _emit_audit_event(
+                pool,
+                "probe.smart_monitor_skipped_tool_missing",
+                detail,
+                extra={"reason": "smartctl_not_on_path"},
             )
-            logger.warning("[SMART_MONITOR] %s", detail)
-            try:
-                notify_fn(
-                    title="SMART monitor disabled — smartctl not installed",
-                    detail=detail,
-                    source="brain.smart_monitor",
-                    severity="warning",
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("[SMART_MONITOR] notify_fn failed: %s", exc)
         return {
             "ok": True,  # not a brain failure — optional dep missing
             "status": "skipped",

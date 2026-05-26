@@ -2,7 +2,8 @@
 
 Covers the eight acceptance scenarios from the issue:
 
-1. smartctl absent → probe returns ``skipped``, no alert written, no crash
+1. smartctl absent → probe returns ``skipped``, no alert written,
+   no operator page (info log + one-shot audit_log row only), no crash
 2. Drive enumeration succeeds, no warnings → probe returns ``ok``, no alerts
 3. Reallocated sector > 0 → exactly one alert row, severity ``warning``
 4. SMART self-test FAILED → exactly one alert row, severity ``critical``
@@ -196,14 +197,27 @@ def _make_run_fn(scan_payload, drive_payloads):
 
 
 # ---------------------------------------------------------------------------
-# 1) smartctl absent → skipped, no alert, no crash
+# 1) smartctl absent → skipped, no alert, no operator page, no crash
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestSmartctlAbsent:
     @pytest.mark.asyncio
-    async def test_smartctl_missing_skips_gracefully_with_one_notify(self):
+    async def test_smartctl_missing_skips_without_paging_operator(self):
+        """When smartctl isn't on the host PATH the probe must not page
+        the operator. Installing smartmontools is a separate operator
+        decision — paging about it every cycle would be unactionable
+        noise (the Discord-spam case in feedback_telegram_vs_discord).
+
+        Expected behavior:
+        - ``status='skipped'`` summary, ``ok=True``
+        - ZERO calls to notify_fn (no Telegram, no Discord, no
+          alerts.log page)
+        - ZERO ``alert_events`` rows inserted
+        - Exactly ONE ``audit_log`` row recording the absence on the
+          first cycle; subsequent cycles short-circuit silently
+        """
         pool = _make_pool()
 
         notify_calls: list[dict] = []
@@ -211,7 +225,7 @@ class TestSmartctlAbsent:
         def fake_notify(**kwargs):
             notify_calls.append(kwargs)
 
-        # First cycle — smartctl absent. Should notify once.
+        # First cycle — smartctl absent.
         summary = await sm.run_smart_monitor_probe(
             pool,
             run_fn=lambda b, a: (-1, None, "should not run"),
@@ -220,13 +234,29 @@ class TestSmartctlAbsent:
         )
         assert summary["status"] == "skipped"
         assert summary["ok"] is True
-        assert len(notify_calls) == 1
-        assert "smartctl" in notify_calls[0]["title"].lower()
 
-        # No alert_events rows were written.
+        # No operator page — the bug being fixed.
+        assert notify_calls == [], (
+            f"smartctl-missing must NOT page the operator; got "
+            f"{notify_calls!r}"
+        )
+
+        # No alert_events rows either — this is not an alertable event.
         assert _executed_alert_inserts(pool) == []
 
-        # Second cycle — still absent. Must NOT notify again (one-shot).
+        # First cycle DID write an audit_log row so the absence is
+        # diagnosable from the timeline.
+        tool_missing_events = [
+            e for e in _executed_audit_events(pool)
+            if "tool_missing" in e
+        ]
+        assert len(tool_missing_events) == 1, (
+            "First skipped cycle should record one audit_log row for "
+            f"diagnosability; got {_executed_audit_events(pool)!r}"
+        )
+
+        # Second cycle — still absent. Must short-circuit silently:
+        # no new notify, no new audit row.
         summary2 = await sm.run_smart_monitor_probe(
             pool,
             run_fn=lambda b, a: (-1, None, "should not run"),
@@ -234,7 +264,72 @@ class TestSmartctlAbsent:
             notify_fn=fake_notify,
         )
         assert summary2["status"] == "skipped"
-        assert len(notify_calls) == 1, notify_calls
+        assert notify_calls == [], notify_calls
+        # Still exactly the one audit row from cycle 1.
+        tool_missing_events = [
+            e for e in _executed_audit_events(pool)
+            if "tool_missing" in e
+        ]
+        assert len(tool_missing_events) == 1, (
+            "Subsequent skipped cycles must NOT re-write the audit "
+            f"row; got {_executed_audit_events(pool)!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_real_smart_failure_still_pages_when_smartctl_present(self):
+        """The "tool missing → no page" downgrade must NOT affect the
+        case the probe exists to catch: smartctl IS installed AND the
+        drive is reporting a SMART problem. That path must still write
+        a firing ``alert_events`` row at warning-or-higher severity so
+        the dispatcher can page the operator.
+
+        Regression guard: ensures the missing-tool fix is scoped to the
+        ``which_fn=None`` branch and doesn't accidentally silence real
+        SMART failures.
+        """
+        pool = _make_pool()
+
+        run_fn = _make_run_fn(
+            scan_payload=_scan_payload("/dev/sda"),
+            drive_payloads={
+                # Two attributes over threshold + a failed self-test —
+                # cover both ATA attribute warnings and the critical
+                # smart_status path in a single payload.
+                "/dev/sda": [{
+                    "smart_status": {"passed": False},
+                    "ata_smart_attributes": {
+                        "table": [
+                            {"name": "Reallocated_Sector_Ct", "value": 80,
+                             "raw": {"value": 12}},
+                        ],
+                    },
+                }],
+            },
+        )
+
+        # which_fn returns a real path — i.e. smartctl IS installed.
+        # This is the case the probe exists for; it must still page.
+        summary = await sm.run_smart_monitor_probe(
+            pool,
+            run_fn=run_fn,
+            which_fn=lambda _name: "/usr/sbin/smartctl",
+            notify_fn=lambda **k: None,
+        )
+
+        inserts = _executed_alert_inserts(pool)
+        firing = [i for i in inserts if i["status"] == "firing"]
+        # Both the critical self-test failure AND the warning-level
+        # reallocated sector should land as separate firing rows.
+        assert len(firing) >= 1, (
+            f"Real SMART failure must write firing alert_events rows; "
+            f"got {inserts!r}"
+        )
+        severities = {i["severity"] for i in firing}
+        assert "critical" in severities or "warning" in severities, (
+            f"Real SMART failure must page at warning-or-higher; got "
+            f"severities {severities!r}"
+        )
+        assert summary["drives"]["/dev/sda"]["status"] == "warnings_fired"
 
 
 # ---------------------------------------------------------------------------

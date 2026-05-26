@@ -675,6 +675,34 @@ Until shipped, operator workaround: `poindexter settings set content_validator_w
 
 ---
 
+## `brain.smart_monitor` is silent on a host without smartmontools
+
+**Symptom.** You're running the brain on a host that doesn't have `smartmontools` installed (e.g. a fresh Windows PC, a minimal Linux VM). You expected SMART monitoring to be active but you don't see any operator pages from `brain.smart_monitor`, and the brain's probe summary shows `status='skipped'` every cycle.
+
+**Root cause.** This is intentional. The probe runs `smartctl --scan-open --json` to enumerate drives, and `shutil.which("smartctl")` returning `None` is treated as "optional dependency missing, not a probe failure." The probe writes one info-level log line and one `audit_log` row on the first cycle that notices, then short-circuits silently on every subsequent cycle (no Telegram, no Discord, no per-cycle `notify_operator()` page). Installing smartmontools is a separate operator decision — there's nothing for the operator to do in the moment a "smartctl missing" page arrives, so paging would be unactionable noise. See `feedback_telegram_vs_discord`: Telegram is critical-alert-only, Discord is the routine-progress lane; "your host doesn't have an optional tool installed" doesn't fit either bucket.
+
+**Fix.** If you want SMART monitoring, install smartmontools and the probe self-activates on the next cycle.
+
+- Linux: `apt install smartmontools` (or your distro's equivalent)
+- macOS: `brew install smartmontools`
+- Windows: install the smartmontools MSI from <https://www.smartmontools.org/> and make sure the install location is on `PATH` (or set `app_settings.smart_monitor_smartctl_path` to the absolute path of `smartctl.exe`)
+
+Verify the probe is now reading drives by querying `audit_log` for the next probe cycle:
+
+```sql
+SELECT created_at, event_type, details
+FROM audit_log
+WHERE source = 'brain.smart_monitor'
+ORDER BY created_at DESC
+LIMIT 5;
+```
+
+**Real SMART failures still page.** Once smartctl is on PATH, reallocated/pending sectors and overall SMART self-test failures continue to write firing `alert_events` rows at warning or critical severity — the dispatcher routes those through the existing Telegram + Discord path. The skip-with-no-page behavior is scoped specifically to the "tool not installed" branch.
+
+**Related.** `brain/smart_monitor.py` (the `_smartctl_missing_notified` short-circuit at the top of `run_smart_monitor_probe`), `feedback_telegram_vs_discord` (channel discipline), `feedback_no_silent_defaults` (why we still emit an info log + audit row instead of fully silent skip).
+
+---
+
 ## How to add a new entry to this doc
 
 1. You hit an issue that took more than 10 minutes to diagnose.
