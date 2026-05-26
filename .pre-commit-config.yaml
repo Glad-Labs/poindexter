@@ -62,3 +62,19 @@ repos:
         pass_filenames: false
         files: '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$'
         stages: [pre-commit]
+
+      # Block CRLF line endings in shell scripts before they hit
+      # history. The same lint runs in CI (shell-line-endings job in
+      # .github/workflows/security.yml); this hook catches it locally
+      # so a Windows contributor never even pushes the regression.
+      # Root cause: DbBackupJob crashed every 12h on
+      # `set: pipefail: invalid opt` because the worker bind-mounted
+      # a CRLF db-backup-local.sh into the container. See
+      # docs/operations/troubleshooting.md.
+      - id: check-shell-line-endings
+        name: shell scripts must be LF
+        entry: python scripts/ci/check-shell-line-endings.py
+        language: system
+        pass_filenames: false
+        files: '\.(sh|bash)$'
+        stages: [pre-commit]

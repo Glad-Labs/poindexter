@@ -13,6 +13,15 @@
 #
 # The script auto-detects whether it's running inside Docker or on the
 # host and adjusts the pg_dump connection accordingly.
+#
+# NOTE: This file MUST be checked out with LF line endings. CRLF makes
+# bash parse `set -o pipefail\r` and fail with `set: pipefail: invalid
+# option name`, crashing DbBackupJob every 12h. The .gitattributes
+# `*.sh eol=lf` rule normalizes on fresh checkouts; existing CRLF
+# working trees on Windows hosts need `git add --renormalize -- "*.sh"`
+# + commit + re-checkout to convert. See
+# docs/operations/troubleshooting.md → "DbBackupJob fails with
+# `set: pipefail: invalid opt`".
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 

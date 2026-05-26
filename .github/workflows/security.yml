@@ -152,6 +152,22 @@ jobs:
       - name: Run check-action-pins
         run: python scripts/ci/check-action-pins.py
 
+  shell-line-endings:
+    name: Lint shell scripts for LF line endings
+    runs-on: ubuntu-latest
+    # Regression gate for the DbBackupJob `set: pipefail: invalid opt`
+    # crash. ``.gitattributes`` normalizes ``*.sh`` to ``eol=lf`` on
+    # fresh checkouts, but a contributor on Windows can re-introduce
+    # CRLF (editor save-as, ``git config core.autocrlf=true`` in a
+    # personal global), and the worker bind-mounts ``./scripts`` into
+    # the container -- CRLF bytes there crash bash on ``set -euo
+    # pipefail``. Fails the build the moment any tracked
+    # ``*.sh`` / ``*.bash`` file carries ``\r``. Pure-stdlib script.
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
+      - name: Run check-shell-line-endings
+        run: python scripts/ci/check-shell-line-endings.py
+
   poetry-lock:
     name: poetry check --lock (src/cofounder_agent)
     runs-on: ubuntu-latest

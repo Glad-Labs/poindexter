@@ -6,6 +6,38 @@ Entries are ordered by frequency of occurrence, not severity.
 
 ---
 
+## DbBackupJob fails with `set: pipefail: invalid opt`
+
+**Symptom.** GlitchTip floods with errors from `DbBackupJob` (`http://localhost:8080`, project `poindexter`) every 12 hours. The traceback points at `scripts/db-backup-local.sh` line 17 with bash complaining about `set: pipefail: invalid option name` (often truncated to `set: pipefail: invalid opt` in the log UI because bash's error contains a CR that the renderer eats). Running `bash` interactively inside `poindexter-worker` and typing `set -o pipefail` works fine, so the bug is in the file the script reaches bash with — not in bash itself.
+
+**Root cause.** The script has CRLF line endings inside the container. bash reads line 17 as `set -euo pipefail\r` and parses `pipefail\r` as the argument to `-o`, which isn't a real option name. CRLF can sneak in two ways on a Windows host:
+
+1. The working tree was checked out _before_ `.gitattributes` (`*.sh text eol=lf`) landed and was never re-normalized. The index has the file as LF but the working-tree copy is still CRLF. The worker bind-mounts `./scripts` into `/opt/scripts:ro`, so the container sees the working-tree bytes — CRLF.
+2. A contributor's personal `git config --global core.autocrlf=true` overrode the per-file `eol=lf` attribute on their next checkout, re-introducing CRLF. (`.gitattributes` `eol=lf` does win over `autocrlf`, but only after a fresh checkout — existing files stay as-is until git touches them.)
+
+**Fix.** Re-normalize the tracked shell scripts and re-checkout:
+
+```bash
+git add --renormalize -- '*.sh' '*.bash'
+git commit -m "chore: re-normalize shell scripts to LF"   # no-op if already LF
+git rm --cached -r .   # forces git to re-stage everything with the active attrs
+git reset --hard       # restores the working tree using the normalized blobs
+```
+
+Then verify inside the worker:
+
+```bash
+docker exec poindexter-worker bash -c "head -1 /opt/scripts/db-backup-local.sh | od -c | head -1"
+```
+
+The output should end in `\n`, not `\r \n`. After the next 12h tick (or a manual `poindexter jobs run db_backup` invocation) GlitchTip should see no new occurrences.
+
+**Regression gate.** The `shell-line-endings` job in `.github/workflows/security.yml` runs `scripts/ci/check-shell-line-endings.py` on every PR. It binary-scans every tracked `*.sh` / `*.bash` file and fails the build the moment any of them contain `\r`. Unit tests in `src/cofounder_agent/tests/unit/scripts/test_check_shell_line_endings.py` pin the contract.
+
+**Windows editor note.** If you're editing `.sh` files on Windows, configure your editor to use LF: VS Code → `"files.eol": "\n"`, Notepad++ → Edit → EOL Conversion → Unix (LF). `.gitattributes` handles normalization at the git layer, but editors that strip-and-rewrite the file (save-as, "convert encoding") can re-introduce CRLF in the working tree between commits — the CI lint catches that next push.
+
+---
+
 ## Post is "Not Found" on the public site immediately after publishing
 
 **Symptom.** You hit approve on a post, the backend logs say it went live, IndexNow and Google sitemap were pinged, but `https://www.gladlabs.io/posts/<slug>` returns a "Post Not Found" page. Refreshing doesn't help for the first 30 seconds to a few minutes.
