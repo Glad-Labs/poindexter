@@ -169,9 +169,25 @@ class PostResponse(BaseModel):
     author_id: str | None = Field(None, description="Author UUID")
     category_id: str | None = Field(None, description="Category UUID")
     tag_ids: list[str] | None = Field(default=None, description="List of tag UUIDs")
-    status: Literal["draft", "published", "archived"] = Field(
-        default="draft", description="Publication status"
-    )
+    # Post lifecycle states beyond the canonical `draft` / `published` /
+    # `archived`. Pre-2026-05-26 the model only allowed those three, which
+    # crashed `publish_post_from_task(stage_only=True)` when it tried to
+    # insert a posts row at `status='approved'` for the schedule-batch
+    # staging pool. `scheduling_service.schedule_batch` also produces
+    # `scheduled` (set on selected rows) and queries for `awaiting_approval`
+    # as part of its eligibility; `publish_post_from_task` produces
+    # `awaiting_gates` when planned-gates short-circuit the publish.
+    # Widened to the full state machine so the model layer stops gating
+    # legitimate post statuses.
+    status: Literal[
+        "draft",
+        "approved",
+        "awaiting_approval",
+        "awaiting_gates",
+        "scheduled",
+        "published",
+        "archived",
+    ] = Field(default="draft", description="Publication status")
     seo_title: str | None = Field(None, description="SEO title tag")
     seo_description: str | None = Field(None, description="SEO meta description")
     seo_keywords: str | None = Field(None, description="Comma-separated SEO keywords")
