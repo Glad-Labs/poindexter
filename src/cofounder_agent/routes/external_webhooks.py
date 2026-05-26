@@ -1,5 +1,5 @@
 """
-External webhook handlers — part of gitea#271 Phase 3 Wave B.
+External webhook handlers — part of internal tracker Phase 3 Wave B.
 
 Receives events from third-party services and mirrors them into the
 feedback-loop tables:

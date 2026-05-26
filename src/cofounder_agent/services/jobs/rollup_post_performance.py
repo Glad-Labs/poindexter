@@ -1,6 +1,6 @@
 """RollupPostPerformanceJob — aggregate page_views + external_metrics into post_performance.
 
-Part of gitea#272 Phase 3 Wave B. The external-tap half (Google Search
+Part of internal tracker Phase 3 Wave B. The external-tap half (Google Search
 Console, GA4, Cloudflare Analytics) ships via the Singer-tap framework
 in #103; the LOCAL half — rolling up our own page_views table into
 post_performance — is pure SQL. As of Glad-Labs/poindexter#27 the job

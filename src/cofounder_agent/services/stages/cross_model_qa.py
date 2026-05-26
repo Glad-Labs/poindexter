@@ -368,7 +368,7 @@ class CrossModelQAStage:
             content_text = revised
             await database_service.update_task(task_id, {"content": content_text})
             # Snapshot the rewrite so the feedback loop sees which QA issues
-            # the model actually addressed between revisions (gitea#271 Phase 3.A2).
+            # the model actually addressed between revisions (internal tracker Phase 3.A2).
             try:
                 from services.content_revisions_logger import log_revision
                 # DI seam (glad-labs-stack#330)
@@ -541,7 +541,7 @@ class CrossModelQAStage:
             # Flip model_performance.human_approved=False for the learning
             # signal — mirror what the operator-reject and auto-curate
             # paths do, so QA rejections also contribute to model-selection
-            # feedback (gitea#271 Phase 3.A1).
+            # feedback (internal tracker Phase 3.A1).
             try:
                 await database_service.mark_model_performance_outcome(
                     task_id, human_approved=False,

@@ -85,7 +85,7 @@ class AdminDatabase(DatabaseServiceMixin):
         Returns:
             Created cost_log record
 
-        Side effect (gitea#271 Phase 3.A1): mirror-writes a row into
+        Side effect (internal tracker Phase 3.A1): mirror-writes a row into
         model_performance with the subset of fields the feedback-loop
         analytics need. The mirror is best-effort — a failure there never
         blocks the cost_logs insert, so the primary accounting path is
@@ -124,7 +124,7 @@ class AdminDatabase(DatabaseServiceMixin):
                     "Logged cost for %s: $%.6f (%s)",
                     cost_log['phase'], cost_log.get('cost_usd', 0), cost_log['model'],
                 )
-                # Mirror-writes (gitea#271 Phase 3.A1 + 3.A4). Never raise —
+                # Mirror-writes (internal tracker Phase 3.A1 + 3.A4). Never raise —
                 # these are additive observability.
                 # Skip entries from the 'system' pseudo-model (idle warmup,
                 # health probes). They have no associated task and pollute
@@ -210,7 +210,7 @@ class AdminDatabase(DatabaseServiceMixin):
     ) -> None:
         """Flip the outcome columns on every model_performance row for a task.
 
-        Part of gitea#271 Phase 3.A1 — model_performance rows are written at
+        Part of internal tracker Phase 3.A1 — model_performance rows are written at
         LLM-call time when the verdict is still unknown. Approval + publish
         are downstream events, so each call site pokes them back here.
         Best-effort: swallows errors since this is analytics, not accounting.

@@ -514,7 +514,7 @@ async def publish_post_from_task(
         or ""
     )
     seo_description = merged.get("seo_description", "") or task.get("seo_description", "")
-    # gitea#268: strip any stray HTML (notably <img> tags) from the SEO
+    # internal tracker: strip any stray HTML (notably <img> tags) from the SEO
     # description before it ships as the post's excerpt + meta description.
     # Upstream writers occasionally leak markup that the /posts cards then
     # render as literal text.
@@ -597,7 +597,7 @@ async def publish_post_from_task(
     category_id = await select_category_for_topic(post_title, db_service)
 
     # ---------------------------------------------------------------
-    # 4c. Resolve tags (gitea#267) — derive post.tag_ids from the task's
+    # 4c. Resolve tags (internal tracker) — derive post.tag_ids from the task's
     # submitted tags + seo_keywords, upsert into the `tags` table so new
     # terms auto-create, and pass to content_db.create_post which will
     # populate post_tags junction. Empty tags → no-op (downstream code
@@ -605,7 +605,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     candidate_tag_strings: list[str] = []
     # Task-level tags (now threaded via ModelConverter.to_task_response
-    # since gitea#270 fix — pulls from metadata JSONB as fallback).
+    # since internal tracker fix — pulls from metadata JSONB as fallback).
     task_tags = task.get("tags") or merged.get("tags") or []
     if isinstance(task_tags, str):
         task_tags = [t.strip() for t in task_tags.split(",") if t.strip()]

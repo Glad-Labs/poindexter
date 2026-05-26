@@ -89,7 +89,7 @@ async def _upload_json(key: str, data: str, content_type: str = "application/jso
 async def _fetch_published_posts(pool, include_content: bool = False) -> list[dict]:
     """Fetch all published posts, newest first. Includes tag slugs aggregated
     from the post_tags junction so the static export can populate
-    posts.tags[] (drives frontend /tag/[slug] pages — gitea#267)."""
+    posts.tags[] (drives frontend /tag/[slug] pages — internal tracker)."""
     content_col = ", p.content" if include_content else ""
     async with pool.acquire() as conn:
         rows = await conn.fetch(f"""
@@ -114,7 +114,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
 
 
 async def _fetch_post_by_slug(pool, slug: str) -> dict | None:
-    """Fetch a single post by slug with full content + tag slugs (gitea#267)."""
+    """Fetch a single post by slug with full content + tag slugs (internal tracker)."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
             SELECT p.id, p.title, p.slug, p.content, p.excerpt, p.featured_image_url,

@@ -349,7 +349,7 @@ class GenerateContentStage:
 
         # Snapshot the initial draft into content_revisions so the feedback
         # loop can later diff this against the QA-revised + finalized
-        # versions (gitea#271 Phase 3.A2).
+        # versions (internal tracker Phase 3.A2).
         try:
             from services.content_revisions_logger import log_revision
             await log_revision(

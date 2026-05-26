@@ -6,7 +6,7 @@ ingestion, manual topic injection via ``poindexter topics propose``,
 or any future topic source — without dragging in the full discovery
 dispatcher.
 
-Two thresholds (gitea#279, both DB-tunable via app_settings):
+Two thresholds (internal tracker, both DB-tunable via app_settings):
 
 - ``topic_dedup_existing_threshold`` (default 0.7) — match against
   already-published posts + in-flight tasks. Permissive because
@@ -21,7 +21,7 @@ Deduplicates by content-word overlap rather than exact match, with
 a configurable stop-word filter so connective words don't drive
 false positives. The :func:`_word_overlap_match` helper returns both
 the boolean decision and the actual ratio so callers can log the
-score for tuning (gitea#279 was that the legacy 0.4 default was
+score for tuning (internal tracker was that the legacy 0.4 default was
 filtering 14/14 candidates — without instrumented ratios we couldn't
 tell why).
 
@@ -81,7 +81,7 @@ def _word_overlap_match(
 
     Content-word overlap > threshold in either direction = duplicate.
     Both the boolean and the ratio are returned so callers can log
-    the actual score for tuning (gitea#279) — previously this only
+    the actual score for tuning (internal tracker) — previously this only
     returned bool and the log line said "X ≈ Y" with no numeric
     evidence, making the 0.4 default untunable without instrumentation.
     """

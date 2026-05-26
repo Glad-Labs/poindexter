@@ -204,7 +204,7 @@ class GPUScheduler:
             model: model name (for logging/tracking)
             task_id: optional pipeline task UUID — when set, a row is
                 written to ``gpu_task_sessions`` on release so the
-                feedback loop (gitea#271 Phase 3.A3) can attribute GPU
+                feedback loop (internal tracker Phase 3.A3) can attribute GPU
                 utilisation + electricity cost to the originating task.
             phase: optional pipeline phase label (e.g. "generate_content",
                 "featured_image"). Defaults to ``owner`` when unset.
@@ -242,7 +242,7 @@ class GPUScheduler:
             self._current_owner = None
             self._current_model = None
             self._lock.release()
-            # gitea#271 Phase 3.A3 — record the session so model/phase
+            # internal tracker Phase 3.A3 — record the session so model/phase
             # compute economics are queryable per task. Best-effort; a
             # write failure never breaks the GPU lock lifecycle.
             if task_id:
@@ -266,7 +266,7 @@ class GPUScheduler:
         started_at: datetime,
         duration_seconds: float,
     ) -> None:
-        """Insert a row into gpu_task_sessions for gitea#271 Phase 3.A3.
+        """Insert a row into gpu_task_sessions for internal tracker Phase 3.A3.
 
         Samples current GPU utilisation + power once at release time. A
         future enhancement can take a rolling average over the window via

@@ -469,7 +469,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ),
         # ReloadSiteConfigJob — every-minute refresh of the in-memory
         # site_config cache so SQL/UI edits to app_settings take effect
-        # without a container restart (gitea#280).
+        # without a container restart (internal tracker).
         ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),

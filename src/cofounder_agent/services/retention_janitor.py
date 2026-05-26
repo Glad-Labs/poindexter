@@ -1,7 +1,7 @@
 """
 Retention janitor — periodic cleanup of unbounded high-churn tables.
 
-Part of gitea#271 Phase 4.1. Several tables grow without bound and were
+Part of internal tracker Phase 4.1. Several tables grow without bound and were
 flagged in the schema audit as unbounded:
 
   - gpu_metrics         — per-second GPU snapshots

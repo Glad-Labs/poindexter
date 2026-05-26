@@ -5,7 +5,7 @@ in memory. Without this job, the cache is populated once at lifespan startup
 and never refreshed — so any SQL UPDATE (via the settings API, admin UI, or
 psql) is invisible to the running worker until a container restart.
 
-See gitea#280 for the root-cause writeup. This job pairs with the
+See internal tracker for the root-cause writeup. This job pairs with the
 `/api/settings/reload` endpoint: the endpoint gives interactive UIs a
 sub-second turnaround after Save; this scheduled job catches SQL / cron /
 out-of-band changes within one cycle.
@@ -29,7 +29,7 @@ class ReloadSiteConfigJob:
     """Refresh site_config's in-memory snapshot from app_settings."""
 
     name = "reload_site_config"
-    description = "Periodic refresh of site_config from app_settings (gitea#280)"
+    description = "Periodic refresh of site_config from app_settings (internal tracker)"
     # Tunable via app_settings["plugin.job.reload_site_config.schedule"] once
     # the job scheduler honors per-plugin overrides; default is every minute.
     schedule = "every 1 minute"

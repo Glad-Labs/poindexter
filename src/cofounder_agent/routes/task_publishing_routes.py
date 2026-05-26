@@ -399,7 +399,7 @@ async def approve_task(
 
         # Flip the outcome columns on every model_performance row for this
         # task so the learning signal has the human verdict attached
-        # (gitea#271 Phase 3.A1).
+        # (internal tracker Phase 3.A1).
         try:
             await db_service.mark_model_performance_outcome(
                 task_id, human_approved=approved,
@@ -465,7 +465,7 @@ async def approve_task(
                             "[approve_task] pipeline_distributions write failed for %s: %s",
                             task_id, dist_err,
                         )
-                    # Mark model_performance rows as published (gitea#271 Phase 3.A1).
+                    # Mark model_performance rows as published (internal tracker Phase 3.A1).
                     try:
                         await db_service.mark_model_performance_outcome(
                             task_id, post_published=True,

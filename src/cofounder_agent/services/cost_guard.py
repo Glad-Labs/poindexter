@@ -401,7 +401,7 @@ class CostGuard:
             # can fire when the budget tracker (and now also the
             # electricity_kwh dashboard) starts undercounting. Best-
             # effort emission — never let an audit-log error mask the
-            # original cost-write failure (gitea#322 finding 3).
+            # original cost-write failure (internal tracker finding 3).
             try:
                 from services.audit_log import audit_log_bg  # noqa: PLC0415
                 audit_log_bg(

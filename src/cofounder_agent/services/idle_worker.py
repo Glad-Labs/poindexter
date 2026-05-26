@@ -322,7 +322,7 @@ class IdleWorker:
         # 1. Manual trigger (runs BEFORE cooldown so an operator who
         # explicitly asks for "discover now" isn't silently ignored for up
         # to 30 min — they already saw the state and asked to override.
-        # Closes gitea#277. Queue-full from step 0 still applies above:
+        # Closes internal tracker. Queue-full from step 0 still applies above:
         # manual can't stuff more topics onto a wall.
         #
         # Manual ALSO runs before the auto-enabled kill-switch below so

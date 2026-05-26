@@ -342,7 +342,7 @@ class FinalizeTaskStage:
             )
 
         # Snapshot the finalized draft so the feedback loop has a clear
-        # terminal row per task (gitea#271 Phase 3.A2). The initial draft
+        # terminal row per task (internal tracker Phase 3.A2). The initial draft
         # + any QA rewrite iterations precede this row, so the diff chain
         # tells the full story.
         try:

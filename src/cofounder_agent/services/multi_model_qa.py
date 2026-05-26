@@ -424,7 +424,7 @@ class MultiModelQA:
             )
 
         # 1b. Citation verifier — HTTP HEAD every external URL in the content
-        # (GH#54 / gitea#271 Phase 6). Dead links + insufficient citation
+        # (GH#54 / internal tracker Phase 6). Dead links + insufficient citation
         # count feed the weighted average as a new reviewer. Behind a
         # DB-configurable flag so it can be silenced per-niche if needed.
         citation_review = await self._check_citations(content)

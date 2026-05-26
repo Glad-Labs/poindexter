@@ -330,6 +330,7 @@ LEAK_PATTERNS=(
   "[Mm]att''s host"                 # same
   "[Mm]att''s specific"             # same
   'phone Matt'                      # "phone Matt" line / "phoned Matt"
+  'gitea#[0-9]+'                    # dead citations to the decommissioned internal Gitea tracker
   # gladlabs.io as a DEFAULT seeded value (not as a brand reference). The
   # narrower pattern below catches it inside an INSERT VALUES tuple but
   # leaves brand-attribution mentions in CLAUDE.md / README / public docs
@@ -343,6 +344,7 @@ LEAK_PATTERNS=(
 LEAK_GUARD_ALLOW=(
   'scripts/regen-app-settings-doc.py'         # the redaction blocklist itself
   'scripts/ci/check_public_mirror_safety.py'  # parallel pre-merge lint with the same pattern list
+  'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py'  # contract test fixtures contain literal gitea#NNN shapes
 )
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do

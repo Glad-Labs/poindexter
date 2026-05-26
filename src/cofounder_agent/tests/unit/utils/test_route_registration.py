@@ -105,7 +105,7 @@ class TestRouteManifestStructure:
         Updated 2026-04-16 (#230): added topics_routes (URL-based seeding).
         Updated 2026-04-19 (Phase D4): added alertmanager_webhook_router
         for the Prometheus/Alertmanager consumer.
-        Updated 2026-04-21 (gitea#271 Phase 3.B): added external_webhooks_router
+        Updated 2026-04-21 (internal tracker Phase 3.B): added external_webhooks_router
         for Lemon Squeezy + Resend webhook sinks.
         Updated 2026-05-02 (PR #166 OAuth recovery): added oauth_metadata_router
         + oauth_token_router (RFC 8414 + RFC 6749 §4.4).

@@ -174,6 +174,11 @@ _LEAK_GUARD_ALLOW = (
     # public mirror doesn't see it, but CI runs against the source tree
     # where it's present.
     "scripts/sync-to-github.sh",
+    # Contract test for the gitea# LEAK_GUARD pattern — its fixtures
+    # have to literally contain "gitea#NNN" shapes for the assertions
+    # to verify the regex matches them. Without this allow-entry the
+    # guard self-reports on its own test.
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
 )
 
 
@@ -318,6 +323,19 @@ _LEAK_PATTERNS = (
         re.compile(r"phone Matt"),
         "operator-paging phrasing in comments",
         "Rewrite to 'operator-page' or 'operator-paging line'.",
+    ),
+    LeakPattern(
+        # Citations to the decommissioned internal Gitea tracker. The
+        # instance is gone (post-2026-04-30); these refs are dead links
+        # that double as operator-history breadcrumbs the public mirror
+        # shouldn't carry. Audit-flagged 2026-05-26 — 43 occurrences
+        # slipped through because the existing '.gitea/' rule only
+        # caught the directory, not citation form.
+        re.compile(r"gitea#\d+"),
+        "dead internal-tracker citation",
+        "Rewrite to 'internal tracker' (preserves grammar) or remove "
+        "the parenthetical entirely. Real GitHub issue refs use "
+        "the '#NNN' or 'Glad-Labs/poindexter#NNN' form.",
     ),
     LeakPattern(
         # gladlabs.io as a DEFAULT seeded value. Catches a seed VALUES tuple

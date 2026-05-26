@@ -2,7 +2,7 @@
 
 Parses a Resend-shaped email event payload and inserts a row into
 ``subscriber_events``. Migrated from ``routes/external_webhooks.py``
-(gitea#271 Phase 3.B) onto the declarative framework.
+(internal tracker Phase 3.B) onto the declarative framework.
 
 Supported event types: email.sent, email.delivered, email.opened,
 email.clicked, email.bounced, email.complained.

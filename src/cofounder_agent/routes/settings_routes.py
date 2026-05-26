@@ -394,7 +394,7 @@ async def reload_site_config(
 ):
     """Refresh the in-memory site_config snapshot from `app_settings`.
 
-    Fixes the class of bugs filed as gitea#280: any UPDATE to `app_settings`
+    Fixes the class of bugs filed as internal tracker: any UPDATE to `app_settings`
     (via this route's own PUT endpoints, a SQL client, or the OpenClaw admin
     UI) is invisible to the running worker until either a container restart
     or this endpoint fires. The 60s periodic reload job (services/jobs/

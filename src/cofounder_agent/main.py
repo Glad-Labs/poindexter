@@ -297,7 +297,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
 
         # Load prompt templates from DB (overrides YAML files). Pass
-        # site_config so the Pro tier (gitea#225) can read
+        # site_config so the Pro tier (internal tracker) can read
         # ``premium_active`` live on every ``get_prompt`` call without
         # restarting the worker after license activation.
         try:

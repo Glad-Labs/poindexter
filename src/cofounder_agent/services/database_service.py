@@ -465,7 +465,7 @@ class DatabaseService:
         human_approved: bool | None = None,
         post_published: bool | None = None,
     ) -> None:
-        """Delegate to admin module — part of gitea#271 Phase 3.A1."""
+        """Delegate to admin module — part of internal tracker Phase 3.A1."""
         await self.admin.mark_model_performance_outcome(
             task_id,
             human_approved=human_approved,

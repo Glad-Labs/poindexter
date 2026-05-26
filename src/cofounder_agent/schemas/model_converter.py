@@ -182,7 +182,7 @@ class ModelConverter:
                     data["constraint_compliance"] = data["task_metadata"]["constraint_compliance"]
 
         # Promote `tags` from metadata / task_metadata JSONB to top-level so
-        # executor + pipeline stages see submitted tags (gitea#270). Request
+        # executor + pipeline stages see submitted tags (internal tracker). Request
         # routes store tags in `metadata` JSONB; auto-populate here. Prefer
         # metadata over task_metadata (that's where task_routes writes).
         if not data.get("tags"):

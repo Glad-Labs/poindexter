@@ -124,7 +124,7 @@ class StartupManager:
             # Step 10: Register services with routes
             await self._register_route_services()
 
-            # Step 13b: Start retention janitor (gitea#271 Phase 4.1) —
+            # Step 13b: Start retention janitor (internal tracker Phase 4.1) —
             # periodically prunes unbounded high-churn tables. Runs in the
             # background; retention windows configurable per table via
             # app_settings.retention_days__<table>.

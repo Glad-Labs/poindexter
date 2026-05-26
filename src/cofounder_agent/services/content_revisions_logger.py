@@ -1,6 +1,6 @@
 """
 Content revisions logger — write-through helper for the content_revisions
-table (gitea#271 Phase 3.A2 / GH#27).
+table (internal tracker Phase 3.A2 / GH#27).
 
 Every pipeline stage that mutates ``context["content"]`` should call
 ``log_revision`` so the feedback loop sees the full QA → rewrite trajectory,

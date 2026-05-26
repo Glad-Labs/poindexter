@@ -147,7 +147,7 @@ def _word_overlap_match(
 
     Content-word overlap > threshold in either direction = duplicate. Both the
     boolean and the ratio are returned so callers can log the actual score for
-    tuning (gitea#279) — previously this only returned bool and the log line
+    tuning (internal tracker) — previously this only returned bool and the log line
     said 'X ≈ Y' with no numeric evidence, making the 0.4 default untunable
     without instrumentation.
     """

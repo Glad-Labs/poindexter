@@ -274,7 +274,7 @@ After Phase 4: one runner, one policy table, N sources all declared as data. Pha
 
 ### Phase 5 — Feedback-loop webhook handlers (deferred, tracked in [GH-111](https://github.com/Glad-Labs/poindexter/issues/111))
 
-**Split to its own issue on 2026-04-24.** The LS + Resend handlers already exist in `routes/external_webhooks.py` (gitea#271 Phase 3.B), but:
+**Split to its own issue on 2026-04-24.** The LS + Resend handlers already exist in `routes/external_webhooks.py` (internal tracker Phase 3.B), but:
 
 1. The `lemon_squeezy_webhook_secret` and `resend_webhook_secret` app_settings rows don't exist yet.
 2. The handlers use raw `site_config.get()` instead of `get_secret()` — if the secret is stored encrypted (matching the `enc:v1:` pattern), signature verification fails silently. Same bug class as GH-107.

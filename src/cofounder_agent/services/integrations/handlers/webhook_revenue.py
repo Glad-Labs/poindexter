@@ -2,7 +2,7 @@
 
 Parses a Lemon Squeezy-shaped payload and inserts a row into
 ``revenue_events``. Migrated from ``routes/external_webhooks.py``
-(gitea#271 Phase 3.B) onto the declarative framework.
+(internal tracker Phase 3.B) onto the declarative framework.
 
 See ``docs/integrations/webhook_revenue_event_writer.md`` for the
 operator setup runbook.
