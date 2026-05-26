@@ -3,9 +3,17 @@
 @import '@glad-labs/brand/tokens';
 @import '@glad-labs/brand/components/components.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 entrypoint. The v3 trio (@tailwind base/components/utilities)
+   was deprecated in v4 and removed from the @tailwindcss/postcss plugin —
+   leaving them in place lets the build start but every `@apply` below fails
+   with "Cannot apply unknown utility class" because v4 has no idea which
+   theme to load. The single `@import "tailwindcss"` replaces all three. */
+@import 'tailwindcss';
+
+/* The legacy JS config (theme tokens, content globs, @tailwindcss/typography
+   plugin) is loaded via @config so we don't have to translate every
+   `theme.extend.*` block into a v4 `@theme {}` declaration in this PR. */
+@config '../tailwind.config.cjs';
 
 @layer base {
   html {
