@@ -222,6 +222,38 @@ The throttle bug from `Glad-Labs/glad-labs-stack#345` becomes a
 work-pool concurrency limit — operator-tunable in the Prefect UI without
 touching `app_settings` or code.
 
+## Monitoring stuck flow runs (2026-05-26)
+
+Prefect's state machine holds the deployment's slot indefinitely when a
+worker process backing a flow run dies/disconnects without crashing the
+run. Captured on this date: a single `content_generation` flow run
+(`romantic-harrier`, id 019e5cb0…) sat in `state=RUNNING` for 35 hours
+with `total_run_time=0.0s`, blocking every subsequent scheduled dispatch
+behind it. The only operator signal was a downstream `cost_freshness`
+staleness alert, which the brain's reasoner pattern-matched into an
+"Ollama unresponsive" guess that was wrong.
+
+The new `brain/prefect_stuck_flow_probe.py` watches the
+`content_generation` flow for runs stuck beyond
+`app_settings.prefect_stuck_flow_threshold_minutes` (default 30) every
+brain cycle. Behaviour:
+
+- Pages operator via `notify_operator()` with the run id, age, and a
+  one-liner manual-unstick `curl` command.
+- Writes a `probe.prefect_stuck_flow_detected` row to `audit_log`.
+- _Optionally_ force-CRASHED the run when
+  `app_settings.prefect_stuck_flow_auto_crash=true` so subsequent
+  dispatches resume hands-off. Defaults to `false` until the operator
+  trusts the threshold.
+
+Manual unstick (also surfaced in the alert detail):
+
+```bash
+curl -X POST http://localhost:4200/api/flow_runs/<run_id>/set_state \
+  -H 'Content-Type: application/json' \
+  -d '{"state":{"type":"CRASHED","name":"Crashed"},"force":true}'
+```
+
 ## Ground truth
 
 - Flow + claim helper: `services/flows/content_generation.py`
@@ -234,3 +266,5 @@ touching `app_settings` or code.
 - Migration: `services/migrations/20260510_182824_seed_prefect_cutover_flag.py`
 - Tests: `tests/unit/services/flows/test_content_generation_flow.py` (8 cases)
 - Issue: `Glad-Labs/poindexter#410`
+- Stuck-flow probe: `brain/prefect_stuck_flow_probe.py` + migration
+  `services/migrations/20260526_135306_seed_prefect_stuck_flow_probe_app_settings.py`

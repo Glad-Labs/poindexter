@@ -147,6 +147,21 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_GLITCHTIP_TRIAGE_PROBE = False
 
 try:
+    # Prefect stuck-flow probe — detects content_generation flow runs
+    # stuck in state=RUNNING beyond the operator-tuned threshold (default
+    # 30 minutes). Captured 2026-05-26 after a single stuck run held the
+    # dispatch slot for 35h and the pipeline went idle without a direct
+    # alert. See brain/prefect_stuck_flow_probe.py.
+    from prefect_stuck_flow_probe import run_prefect_stuck_flow_probe
+    _HAS_PREFECT_STUCK_FLOW_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.prefect_stuck_flow_probe import run_prefect_stuck_flow_probe
+        _HAS_PREFECT_STUCK_FLOW_PROBE = True
+    except ImportError:
+        _HAS_PREFECT_STUCK_FLOW_PROBE = False
+
+try:
     # Alert dispatcher — polls alert_events for undispatched rows and
     # routes them to Telegram/Discord. Replaces the worker-side inline
     # dispatch path; the webhook handler now persists only.
@@ -324,6 +339,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Prometheus scrape secrets stop refreshing — Uptime-Kuma / GitHub / etc. scrapes start 401-ing"),
     ("_HAS_GLITCHTIP_TRIAGE_PROBE", "brain/glitchtip_triage_probe.py",
      "GlitchTip noise triage stops — known-issue auto-resolve dies, novel-issue paging dies"),
+    ("_HAS_PREFECT_STUCK_FLOW_PROBE", "brain/prefect_stuck_flow_probe.py",
+     "Prefect stuck-flow detection offline — content_generation hangs go invisible (2026-05-26 redux)"),
     ("_HAS_ALERT_DISPATCHER", "brain/alert_dispatcher.py",
      "alert_events rows pile up undispatched — Telegram/Discord stop receiving pages"),
     ("_HAS_BACKUP_WATCHER", "brain/backup_watcher.py",
@@ -2267,6 +2284,24 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] glitchtip_triage probe failed: %s", e)
+
+    # Prefect stuck-flow probe — detects content_generation flow runs
+    # stuck in state=RUNNING beyond prefect_stuck_flow_threshold_minutes
+    # (default 30). Captured 2026-05-26 after a stuck run held the
+    # dispatch slot for 35h and the pipeline went idle with no direct
+    # alert. Optionally auto-CRASHED stuck runs when the operator opts
+    # in via app_settings.prefect_stuck_flow_auto_crash=true. See
+    # brain/prefect_stuck_flow_probe.py.
+    if _HAS_PREFECT_STUCK_FLOW_PROBE:
+        try:
+            psf_summary = await run_prefect_stuck_flow_probe(pool)
+            probe_results["prefect_stuck_flow"] = {
+                "ok": bool(psf_summary.get("ok", False)),
+                "detail": psf_summary.get("detail", ""),
+                "summary": psf_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] prefect_stuck_flow probe failed: %s", e)
 
     # PR staleness probe — surfaces open PRs older than the configured
     # threshold with green CI but no merge decision. Coalesced Discord-ops
