@@ -80,6 +80,7 @@ class PublishResult:
         post_title: str | None = None,
         revalidation_success: bool = False,
         static_export_success: bool = False,
+        staged: bool = False,
         error: str | None = None,
     ):
         self.success = success
@@ -89,6 +90,12 @@ class PublishResult:
         self.post_title = post_title
         self.revalidation_success = revalidation_success
         self.static_export_success = static_export_success
+        # True when the post was created at status='approved' for
+        # later scheduling (stage_only mode in publish_post_from_task).
+        # Callers that distinguish staged vs live publishes (e.g.
+        # operator notify, social queue) check this field to skip
+        # publish-only side-effects.
+        self.staged = staged
         self.error = error
 
     def to_dict(self) -> dict[str, Any]:
@@ -100,6 +107,7 @@ class PublishResult:
             "post_title": self.post_title,
             "revalidation_success": self.revalidation_success,
             "static_export_success": self.static_export_success,
+            "staged": self.staged,
             "error": self.error,
         }
 
@@ -474,13 +482,15 @@ async def publish_post_from_task(
     trigger_revalidation: bool = True,
     queue_social: bool = True,
     draft_mode: bool = False,
+    stage_only: bool = False,
     honor_pacing: bool = False,
     background_tasks=None,
 ) -> PublishResult:
     """Create a published post from a completed content task.
 
     This is the ONE place where a task becomes a post. All code paths
-    (approve auto-publish, explicit /publish, worker auto-publish) call this.
+    (approve auto-publish, explicit /publish, worker auto-publish,
+    approve-stages-for-schedule) call this.
 
     Args:
         db_service: DatabaseService instance
@@ -489,11 +499,25 @@ async def publish_post_from_task(
         publisher: Who triggered the publish (for audit trail)
         trigger_revalidation: Whether to trigger ISR revalidation
         queue_social: Whether to queue social media post generation
+        draft_mode: Create the posts row at ``status='draft'``. Mutually
+            exclusive with ``stage_only``.
+        stage_only: Create the posts row at ``status='approved'`` with
+            ``published_at=NULL`` — the staging area
+            ``services.scheduling_service`` queries via ``schedule batch``.
+            No revalidation, no social-queue, no distribution recording —
+            those fire on the eventual publish via ``scheduled_publisher``.
+            Per the ``feedback_approve_does_not_mean_publish`` rule,
+            approving a task without ``auto_publish`` should land here.
         background_tasks: Optional FastAPI BackgroundTasks for non-blocking work
 
     Returns:
         PublishResult with post details or error info
     """
+    if stage_only and draft_mode:
+        raise ValueError(
+            "publish_post_from_task: stage_only and draft_mode are "
+            "mutually exclusive (status='approved' vs status='draft')."
+        )
     from utils.json_encoder import convert_decimals, safe_json_dumps
 
     # ---------------------------------------------------------------
@@ -695,6 +719,12 @@ async def publish_post_from_task(
     _strict_mode_status = (
         "awaiting_gates" if (_planned_gates and not draft_mode) else "published"
     )
+    # stage_only overrides the normal status decision — see the function
+    # docstring. The status flips to 'approved' so services.scheduling_service
+    # (schedule batch CLI) treats it as a staged candidate; published_at
+    # stays NULL so it doesn't go live until something promotes it.
+    if stage_only:
+        _strict_mode_status = "approved"
     # Resolve media_to_generate from the niche's configured policy.
     # ``niches.default_media_to_generate`` is the canonical seam (added
     # by migration 20260519_134736). Falls back to an empty array when
@@ -745,8 +775,10 @@ async def publish_post_from_task(
     if scheduled_at:
         post_data["published_at"] = scheduled_at
 
-    # Mark non-draft posts as eligible for feed distribution
-    if not draft_mode:
+    # Mark posts as eligible for feed distribution only when they will
+    # be visible immediately. Staged posts (status='approved') and drafts
+    # stay out of the feed until they're scheduled+published.
+    if not draft_mode and not stage_only:
         post_data["distributed_at"] = scheduled_at or datetime.now(timezone.utc)
 
     try:
@@ -806,6 +838,37 @@ async def publish_post_from_task(
     if scheduled_at:
         publish_meta["scheduled_publish_at"] = scheduled_at.isoformat()
     merged["publish_metadata"] = publish_meta
+
+    # stage_only short-circuit: the posts row exists at status='approved'
+    # with published_at=NULL, the pipeline_task already sits at 'approved'
+    # from the approve_task handler that called us. We leave it there
+    # (do NOT flip to 'published'), record the post_id back on the task
+    # for later traceability, then return. Skipping the post-publish
+    # webhook/cloud-sync/distribution side-effects entirely — those
+    # fire when scheduled_publisher promotes the staged row to
+    # 'published'. See `feedback_approve_does_not_mean_publish`.
+    if stage_only:
+        try:
+            await db_service.update_task_status(
+                task_id, "approved", result=safe_json_dumps(convert_decimals(merged))
+            )
+        except Exception as e:
+            logger.warning(
+                "[publish_service] stage_only: failed to backstamp post_id "
+                "onto task %s result: %s", task_id, e,
+            )
+        logger.info(
+            "[publish_service] stage_only post created at status='approved' "
+            "(task_id=%s post_id=%s slug=%s) — eligible for schedule batch",
+            task_id, post_id, slug,
+        )
+        return PublishResult(
+            success=True,
+            post_id=post_id,
+            post_slug=slug,
+            published_url=f"/posts/{slug}",
+            staged=True,
+        )
 
     try:
         await db_service.update_task_status(

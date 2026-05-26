@@ -68,4 +68,13 @@ regexes = [
   # entropy heuristic fires on the literal "/api/openapi.json" string
   # in `services/main.py`. They're URL paths, not secrets.
   '''/api/(openapi\.json|docs|redoc)''',
+  # Docstring curl examples — operator-facing API docs include
+  # `Authorization: Bearer YOUR_JWT_TOKEN` / `Bearer YOUR_API_TOKEN`
+  # placeholder values. They're documentation, not secrets, but
+  # gitleaks's curl-auth-header rule fires anyway. The baseline-by-
+  # line-number approach broke whenever a docstring shifted lines
+  # (e.g. PR #595 added 43 lines above three of these examples).
+  # This content-anchored allowlist survives line shifts.
+  # 2026-05-26.
+  '''Authorization:\s*Bearer\s+(YOUR_[A-Z_]+|<[a-z_]+>|REDACTED|placeholder|example|dev-token|\$[A-Z_]+)''',
 ]

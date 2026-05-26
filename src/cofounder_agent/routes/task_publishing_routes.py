@@ -429,6 +429,49 @@ async def approve_task(
             except Exception as e:
                 logger.warning("Failed to parse publish_at '%s': %s — publishing immediately", publish_at, e)
 
+        # When the operator approves without an auto_publish flag AND
+        # without an explicit publish_at slot, stage the post into the
+        # posts table at status='approved' so it becomes eligible for
+        # `poindexter schedule batch` (which queries posts, not
+        # pipeline_tasks). Without this the approve handler left a
+        # pipeline_tasks.status='approved' row with no corresponding
+        # posts row, and schedule batch reported "No eligible posts"
+        # — Matt's 2026-05-26 paper cut. See feedback_approve_does_not_mean_publish.
+        if approved and not auto_publish and not publish_at:
+            logger.info(
+                "Staging approved task %s (approve → posts.status='approved')",
+                task_id,
+            )
+            try:
+                from services.publish_service import publish_post_from_task
+
+                stage_result = await publish_post_from_task(
+                    db_service, task, task_id,
+                    publisher="operator",
+                    trigger_revalidation=False,
+                    queue_social=False,
+                    draft_mode=False,
+                    stage_only=True,
+                    honor_pacing=False,
+                )
+                if stage_result.success:
+                    merged_result["post_id"] = stage_result.post_id
+                    merged_result["post_slug"] = stage_result.post_slug
+                    merged_result["staged"] = True
+                else:
+                    logger.warning(
+                        "[approve_task] stage_only post creation failed for "
+                        "task %s: %s — posts.status='approved' bridge is broken, "
+                        "schedule batch will not see this task",
+                        task_id, stage_result.error,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "[approve_task] stage_only path raised for task %s: %s — "
+                    "posts row was NOT created, schedule batch will not see this",
+                    task_id, e,
+                )
+
         if approved and auto_publish:
             logger.info("Publishing approved task %s (approve → go-live)", task_id)
             try:
