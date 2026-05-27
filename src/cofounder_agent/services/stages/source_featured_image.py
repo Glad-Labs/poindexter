@@ -208,10 +208,34 @@ class SourceFeaturedImageStage:
 
         updates: dict[str, Any] = {"stages": stages}
 
-        # Strategy 1: SDXL (only when the service is available).
-        sdxl_attempted = (
-            image_service.sdxl_available or not image_service.sdxl_initialized
-        )
+        # Strategy 1: attempt the SDXL HTTP server.
+        #
+        # 2026-05-27 fix: the previous gate checked
+        # ``image_service.sdxl_available or not image_service.sdxl_initialized``,
+        # which is a leftover from the in-process diffusers era. The
+        # worker container no longer installs the ``ml`` extras (diffusers
+        # + torch + sentence-transformers moved out to dedicated
+        # containers), so ``sdxl_available`` is permanently False here
+        # and the gate skipped SDXL on every run — silently falling
+        # back to Pexels.
+        #
+        # The real SDXL path goes through ``_try_sdxl_featured`` ->
+        # ``_render_sdxl`` -> HTTP POST to ``sdxl_server_url``. That
+        # path returns None gracefully on transport / 5xx errors, so the
+        # gate adds no value beyond letting the operator switch SDXL off
+        # via ``app_settings.sdxl_enabled``. Default behaviour is to
+        # attempt SDXL; operators flip the setting to ``false`` only when
+        # the SDXL server is intentionally down.
+        sdxl_enabled = True
+        if site_config is not None:
+            try:
+                raw = str(
+                    site_config.get("sdxl_enabled", "true") or "true"
+                ).strip().lower()
+                sdxl_enabled = raw in ("true", "1", "yes", "on")
+            except Exception:  # noqa: BLE001 — defensive
+                sdxl_enabled = True
+        sdxl_attempted = sdxl_enabled
         if sdxl_attempted:
             # Pull / lazily-create the style-rotation tracker. Production
             # keeps one long-lived instance per worker process (stashed on
