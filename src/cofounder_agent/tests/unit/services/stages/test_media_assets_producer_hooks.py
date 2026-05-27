@@ -27,9 +27,15 @@ from services.stages.source_featured_image import (
 )
 
 
-def _fake_site_config(pool: Any | None = None):
+def _fake_site_config(pool: Any | None = None, *, sdxl_enabled: bool = True):
+    """SiteConfig stub. ``sdxl_enabled=False`` disables the SDXL HTTP path
+    via the ``app_settings.sdxl_enabled`` gate added in #603 — tests that
+    want to exercise the Pexels fallback must pass False (otherwise the
+    SDXL HTTP server, if reachable in the dev env, will produce an
+    image and the test asserts the wrong source URL)."""
+    overrides = {"sdxl_enabled": "true" if sdxl_enabled else "false"}
     return SimpleNamespace(
-        get=lambda k, d="": d if d is not None else "",
+        get=lambda k, d="": overrides.get(k, d if d is not None else ""),
         get_int=lambda _k, d=0: d,
         get_float=lambda _k, d=0.0: d,
         get_bool=lambda _k, d=False: d,
@@ -84,7 +90,11 @@ class TestSourceFeaturedImageRecordsAsset:
 
     async def test_pexels_success_records_media_asset(self):
         pool = MagicMock()
-        sc = _fake_site_config(pool=pool)
+        # sdxl_enabled=False so the new app_settings-driven SDXL gate
+        # (#603) skips the HTTP path. Without this the test runs against
+        # the dev SDXL server (if present) and the assertions about
+        # pexels-shaped URLs fail.
+        sc = _fake_site_config(pool=pool, sdxl_enabled=False)
         pexels_img = SimpleNamespace(
             url="https://pex.example/photo.jpg",
             photographer="Alex",
@@ -125,7 +135,9 @@ class TestSourceFeaturedImageRecordsAsset:
         assert kwargs["provider_plugin"] == "image.pexels"
 
     async def test_no_image_found_does_not_record(self):
-        sc = _fake_site_config(pool=MagicMock())
+        # sdxl_enabled=False — exercises the no-image-found path without
+        # contention from the new app_settings-driven SDXL gate (#603).
+        sc = _fake_site_config(pool=MagicMock(), sdxl_enabled=False)
         image_service = SimpleNamespace(
             sdxl_available=False, sdxl_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
@@ -274,7 +286,9 @@ class TestFeaturedImageDataContextUpdates:
         assert meta["sdxl_generation_time_ms"] == 100
 
     async def test_pexels_branch_populates_featured_image_data(self):
-        sc = _fake_site_config(pool=MagicMock())
+        # sdxl_enabled=False — exercises the pexels-only branch under
+        # the new app_settings-driven SDXL gate (#603).
+        sc = _fake_site_config(pool=MagicMock(), sdxl_enabled=False)
         pexels_img = SimpleNamespace(
             url="https://pex.example/p.jpg",
             photographer="Alex",

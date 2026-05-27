@@ -643,9 +643,21 @@ class TestSourceFeaturedImageAdapter:
             sdxl_available=False, sdxl_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
+        # sdxl_enabled=false — the new app_settings-driven SDXL gate (#603)
+        # checks this row before deciding to hit the SDXL HTTP server. Without
+        # explicitly disabling it, the test runs against the dev SDXL server
+        # (if reachable) and the pexels assertions below fail.
+        site_config = SimpleNamespace(
+            get=lambda k, d="": "false" if k == "sdxl_enabled" else (d if d is not None else ""),
+            get_int=lambda _k, d=0: d,
+            get_float=lambda _k, d=0.0: d,
+            get_bool=lambda _k, d=False: d,
+            _pool=None,
+        )
         ctx: dict[str, Any] = {
             "topic": "Cats", "tags": ["kittens"],
             "generate_featured_image": True, "image_service": image_service,
+            "site_config": site_config,
         }
         # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the SDXL path to miss so the Pexels fallback runs.
