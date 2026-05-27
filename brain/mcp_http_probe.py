@@ -32,6 +32,7 @@ Design parity with brain/discord_bot_probe.py + brain/pr_staleness_probe.py.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -308,6 +309,29 @@ async def run_mcp_http_probe(
 
     if 200 <= status_code < 400:
         logger.info("[MCP_HTTP_PROBE] %s ok (HTTP %s)", probe_url, status_code)
+        # Success-path audit_log row — per feedback_total_visibility a
+        # healthy probe must leave a footprint operators can confirm.
+        # Failure paths write alert_events via _handle_failure; this row
+        # is the "I ran clean" signal. Best-effort: never fail the probe
+        # on an observability write.
+        try:
+            await pool.execute(
+                "INSERT INTO audit_log (event_type, source, details, severity) "
+                "VALUES ($1, $2, $3::jsonb, $4)",
+                "probe_completed",
+                "brain.mcp_http_probe",
+                json.dumps({
+                    "status": "ok",
+                    "status_code": status_code,
+                    "url": probe_url,
+                }),
+                "info",
+            )
+        except Exception as exc:
+            logger.warning(
+                "[MCP_HTTP_PROBE] audit_log write failed (non-critical): %s",
+                exc,
+            )
         return {
             "ok": True,
             "status": "ok",

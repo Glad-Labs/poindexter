@@ -42,6 +42,7 @@ Design parity with brain/pr_staleness_probe.py + brain/glitchtip_triage_probe.py
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any, Callable, Optional
@@ -247,6 +248,28 @@ async def run_discord_bot_probe(
 
     if status_code == 200:
         logger.info("[DISCORD_BOT_PROBE] Discord bot reachable (HTTP 200)")
+        # Success-path audit_log row — per feedback_total_visibility a
+        # healthy probe must be distinguishable from a dead one. Failure
+        # paths above write alert_events; this row is the "I ran clean"
+        # signal Grafana operators can confirm. Best-effort write —
+        # never let observability take down the probe.
+        try:
+            await pool.execute(
+                "INSERT INTO audit_log (event_type, source, details, severity) "
+                "VALUES ($1, $2, $3::jsonb, $4)",
+                "probe_completed",
+                "brain.discord_bot_probe",
+                json.dumps({
+                    "status": "ok",
+                    "status_code": 200,
+                }),
+                "info",
+            )
+        except Exception as exc:
+            logger.warning(
+                "[DISCORD_BOT_PROBE] audit_log write failed (non-critical): %s",
+                exc,
+            )
         return {"ok": True, "status": "ok", "detail": "Discord bot reachable", "status_code": 200}
 
     if status_code in (401, 403):

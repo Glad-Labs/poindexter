@@ -55,6 +55,7 @@ Design parity with the rest of the brain:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
@@ -529,7 +530,7 @@ async def run_gate_pending_summary_probe(
         "telegram_fired" if telegram_sent
         else ("queue_empty" if count == 0 else "deduped_or_grace")
     )
-    return {
+    summary = {
         "ok": True,
         "status": status,
         "count": count,
@@ -545,6 +546,31 @@ async def run_gate_pending_summary_probe(
             f"discord_sent={discord_sent}"
         ),
     }
+    # Success-path audit_log row — per feedback_total_visibility a healthy
+    # probe must leave a footprint operators can confirm in Grafana. The
+    # row also captures the "skipped via dedup" case (status field), so a
+    # quiet cycle is distinguishable from a dead probe. Best-effort:
+    # observability writes never fail the probe.
+    try:
+        await pool.execute(
+            "INSERT INTO audit_log (event_type, source, details, severity) "
+            "VALUES ($1, $2, $3::jsonb, $4)",
+            "probe_completed",
+            "brain.gate_pending_summary_probe",
+            json.dumps({
+                "status": status,
+                "count": count,
+                "telegram_sent": telegram_sent,
+                "discord_sent": discord_sent,
+            }),
+            "info",
+        )
+    except Exception as exc:
+        logger.warning(
+            "[GATE_SUMMARY] audit_log write failed (non-critical): %s",
+            exc,
+        )
+    return summary
 
 
 # ---------------------------------------------------------------------------
