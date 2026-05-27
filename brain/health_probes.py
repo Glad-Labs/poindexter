@@ -140,6 +140,7 @@ PROBE_SCHEDULES = {
     "public_site": 300,          # 5 min
     "scheduled_tasks": 3600,     # 1 hour
     "disk_space": 3600,          # 1 hour
+    "gpu_temperature": 300,      # 5 min — temp can spike fast under SDXL + LLM
     # P0 — pipeline health
     "stuck_tasks": 1800,         # 30 min
     "approval_queue": 3600,      # 1 hour
@@ -469,6 +470,70 @@ async def probe_scheduled_tasks(_pool) -> dict:
         return {"ok": False, "detail": "schtasks timed out after 15s"}
     except Exception as e:
         return {"ok": False, "detail": f"scheduled task check failed: {str(e)[:150]}"}
+
+
+async def probe_gpu_temperature(pool) -> dict:
+    """Probe: alert when GPU core temperature crosses the operator-tuned
+    threshold.
+
+    Reads ``gpu_temperature_high_threshold_c`` from app_settings (default
+    85 — see baseline seed). The 5-minute brain cycle samples the latest
+    row in ``gpu_metrics``; any temperature above the threshold flips the
+    probe to ``ok=False`` so the alert dispatcher pages on Telegram.
+
+    The threshold setting was seeded by the 2026-02-07 baseline but had
+    no probe consumer until #236 — operators tuning the row got no
+    behavior change. Wired here so the setting becomes load-bearing.
+    """
+    try:
+        row = await pool.fetchrow(
+            "SELECT temperature, timestamp FROM gpu_metrics "
+            "ORDER BY timestamp DESC LIMIT 1"
+        )
+        if row is None or row["temperature"] is None:
+            # No GPU metrics yet (fresh install, no GPU exporter wired).
+            # Return ok=True with a detail describing the absence so the
+            # operator can debug — never a hard fail when GPU is simply
+            # not present. The integer comparison below short-circuits.
+            return {
+                "ok": True,
+                "detail": "no gpu_metrics rows yet — exporter not wired or no GPU",
+            }
+        threshold_row = await pool.fetchrow(
+            "SELECT value FROM app_settings "
+            "WHERE key = 'gpu_temperature_high_threshold_c'"
+        )
+        try:
+            threshold_c = int(threshold_row["value"]) if threshold_row else 85
+        except (TypeError, ValueError):
+            threshold_c = 85
+        try:
+            temp_c = int(row["temperature"])
+        except (TypeError, ValueError):
+            return {
+                "ok": True,
+                "detail": f"gpu_metrics.temperature unparseable: {row['temperature']!r}",
+            }
+        if temp_c > threshold_c:
+            return {
+                "ok": False,
+                "detail": (
+                    f"GPU at {temp_c}C exceeds threshold "
+                    f"{threshold_c}C (gpu_temperature_high_threshold_c). "
+                    f"Most consumer NVIDIA cards throttle ~90C — check "
+                    f"airflow / fan curve / current workload."
+                ),
+                "temperature_c": temp_c,
+                "threshold_c": threshold_c,
+            }
+        return {
+            "ok": True,
+            "detail": f"GPU {temp_c}C / {threshold_c}C threshold",
+            "temperature_c": temp_c,
+            "threshold_c": threshold_c,
+        }
+    except Exception as e:
+        return {"ok": False, "detail": f"gpu_temperature probe failed: {str(e)[:150]}"}
 
 
 async def probe_disk_space(_pool) -> dict:
@@ -1039,6 +1104,7 @@ PROBES = {
     "public_site": probe_public_site,
     "scheduled_tasks": probe_scheduled_tasks,
     "disk_space": probe_disk_space,
+    "gpu_temperature": probe_gpu_temperature,
     "r2_connectivity": probe_r2_connectivity,
     # Pipeline health (P0)
     "stuck_tasks": probe_stuck_tasks,
