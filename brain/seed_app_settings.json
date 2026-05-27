@@ -354,22 +354,16 @@
     },
 
     {
-      "key": "daily_budget_usd",
-      "value": "1.00",
-      "category": "pipeline",
-      "description": "Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled)"
-    },
-    {
-      "key": "daily_spend_limit",
+      "key": "daily_spend_limit_usd",
       "value": "1.00",
       "category": "cost",
-      "description": "Hard cap on daily AI spend in USD"
+      "description": "Hard cap on daily AI spend in USD (read by services/cost_guard.py)"
     },
     {
-      "key": "monthly_spend_limit",
+      "key": "monthly_spend_limit_usd",
       "value": "20.00",
       "category": "cost",
-      "description": "Hard cap on monthly AI spend in USD"
+      "description": "Hard cap on monthly AI spend in USD (read by services/cost_guard.py)"
     },
     {
       "key": "cost_alert_threshold_pct",

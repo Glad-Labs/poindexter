@@ -847,12 +847,12 @@
       "receiver": "site_config"
     },
     {
-      "key": "monthly_spend_limit",
+      "key": "monthly_spend_limit_usd",
       "value": "100.0",
       "value_type": "str",
       "getter": "get",
-      "file": "src\\cofounder_agent\\services\\model_router.py",
-      "line": 226,
+      "file": "src\\cofounder_agent\\services\\cost_guard.py",
+      "line": 317,
       "receiver": "site_config"
     },
     {
@@ -3539,13 +3539,13 @@
       "line": 72,
       "receiver": "site_config"
     },
-    "monthly_spend_limit": {
-      "key": "monthly_spend_limit",
+    "monthly_spend_limit_usd": {
+      "key": "monthly_spend_limit_usd",
       "value": "100.0",
       "value_type": "str",
       "getter": "get",
-      "file": "src\\cofounder_agent\\services\\model_router.py",
-      "line": 226,
+      "file": "src\\cofounder_agent\\services\\cost_guard.py",
+      "line": 317,
       "receiver": "site_config"
     },
     "newsletter_batch_delay_seconds": {

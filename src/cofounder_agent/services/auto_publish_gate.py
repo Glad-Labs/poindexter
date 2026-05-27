@@ -16,10 +16,16 @@ Flow:
 
 1. finalize_task calls :func:`evaluate` with the task's quality_score
    + niche + category + content snapshot.
-2. evaluate reads three settings:
-   - ``dev_diary_auto_publish_threshold`` (default -1 = disabled)
-   - ``dev_diary_auto_publish_dry_run`` (default true = log-only)
-   - ``dev_diary_auto_publish_min_clean_runs`` (default 3)
+2. evaluate reads four NICHE-PREFIXED settings (key shape
+   ``{niche_slug}_auto_publish_*``, e.g.
+   ``dev_diary_auto_publish_threshold``,
+   ``glad-labs_auto_publish_threshold``):
+   - ``{niche}_auto_publish_threshold`` (default -1 = disabled)
+   - ``{niche}_auto_publish_dry_run`` (default true = log-only)
+   - ``{niche}_auto_publish_min_clean_runs`` (default 3)
+   - ``{niche}_auto_publish_max_edit_distance`` (default 50)
+   If ``niche_slug`` is None/empty, the gate returns disabled — every
+   niche must explicitly opt in via its own threshold key.
 3. Reads the trailing N rows from ``published_post_edit_metrics``
    for this niche; "clean" means char_diff_count <
    max_edit_distance.
@@ -37,6 +43,15 @@ from approval_service.approve when an operator approves a post,
 diffing the pre-approve content snapshot against the post-approve
 content snapshot and writing one row to published_post_edit_metrics.
 That feeds the next gate evaluation's "trailing N clean runs" check.
+
+2026-05-27 niche-leak fix: prior versions of this module read a
+HARDCODED ``dev_diary_auto_publish_threshold`` regardless of the
+caller's niche_slug. That bug let the dev_diary opt-in cross-pollinate
+to every other niche — verified live when "Claude Is Not Your
+Architect. Stop." (niche=glad-labs, score 92) auto-published 2026-05-26
+13:45 UTC without operator approval. Each niche now owns its own keys
+and the absence of an explicit key is a loud "disabled" return per
+``feedback_no_silent_defaults``.
 
 Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 """
@@ -105,24 +120,41 @@ async def evaluate(
             quality_score=quality_score,
         )
 
-    threshold_raw = site_config.get("dev_diary_auto_publish_threshold", "-1")
+    # 2026-05-27 niche-leak fix: every key is now niche-prefixed. A
+    # missing niche_slug returns disabled per
+    # ``feedback_no_silent_defaults`` — no implicit cross-niche fallback.
+    niche = (niche_slug or "").strip()
+    if not niche:
+        logger.debug(
+            "[auto_publish_gate] no niche_slug — gate disabled (no cross-niche fallback)"
+        )
+        return AutoPublishDecision(
+            would_fire=False, dry_run=True, gate_state="disabled",
+            reason="niche_slug missing — every niche must opt in via its own key",
+            quality_score=quality_score,
+        )
+
+    threshold_key = f"{niche}_auto_publish_threshold"
+    dry_run_key = f"{niche}_auto_publish_dry_run"
+    min_clean_key = f"{niche}_auto_publish_min_clean_runs"
+    max_edit_key = f"{niche}_auto_publish_max_edit_distance"
+
+    threshold_raw = site_config.get(threshold_key, "-1")
     try:
         threshold = float(threshold_raw)
     except (TypeError, ValueError):
         threshold = -1.0
 
-    dry_run_raw = site_config.get("dev_diary_auto_publish_dry_run", "true")
+    dry_run_raw = site_config.get(dry_run_key, "true")
     dry_run = str(dry_run_raw).strip().lower() in ("true", "1", "yes", "on")
 
-    min_clean_raw = site_config.get("dev_diary_auto_publish_min_clean_runs", "3")
+    min_clean_raw = site_config.get(min_clean_key, "3")
     try:
         min_clean = int(float(min_clean_raw))
     except (TypeError, ValueError):
         min_clean = 3
 
-    max_edit_raw = site_config.get(
-        "dev_diary_auto_publish_max_edit_distance", "50"
-    )
+    max_edit_raw = site_config.get(max_edit_key, "50")
     try:
         max_edit_distance = int(float(max_edit_raw))
     except (TypeError, ValueError):
@@ -138,7 +170,7 @@ async def evaluate(
     # Gate condition 1: threshold opt-in.
     if threshold < 0:
         base.gate_state = "disabled"
-        base.reason = "auto_publish_threshold < 0 — gate disabled by default"
+        base.reason = f"{threshold_key} < 0 — gate disabled by default"
         return base
 
     # Gate condition 2: quality floor.

@@ -207,8 +207,8 @@ INSERT INTO app_settings (key, value, category, description, is_secret) VALUES
 ('content_max_refinement_attempts', '3', 'content', 'Max quality refinement attempts', false),
 
 -- Cost limits
-('daily_spend_limit', '2.0', 'cost', 'Max daily cloud API spend (USD)', false),
-('monthly_spend_limit', '10.0', 'cost', 'Max monthly cloud API spend (USD)', false),
+('daily_spend_limit_usd', '2.0', 'cost', 'Max daily cloud API spend (USD; read by services/cost_guard.py)', false),
+('monthly_spend_limit_usd', '10.0', 'cost', 'Max monthly cloud API spend (USD; read by services/cost_guard.py)', false),
 ('cost_alert_threshold_pct', '80', 'cost', 'Alert when spend exceeds this %', false),
 ('ollama_electricity_cost_per_1k_tokens', '0.000256', 'cost', 'Ollama electricity cost per 1K tokens', false),
 

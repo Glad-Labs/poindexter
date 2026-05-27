@@ -196,11 +196,11 @@ The worker re-reads on every poll; no restart needed.
 | Key                                     | Default    | Classification | Description                                                                                                              |
 | --------------------------------------- | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `cost_alert_threshold_pct`              | `80`       |                | Alert when spend exceeds this % of limit                                                                                 |
-| `daily_spend_limit`                     | `2.0`      |                | Maximum daily AI spend in USD                                                                                            |
+| `daily_spend_limit_usd`                 | `2.0`      |                | Maximum daily AI spend in USD (read by services/cost_guard.py)                                                           |
 | `electricity_rate_kwh`                  | `0.16`     |                | Operator electricity rate (USD per kWh); used by the cost dashboard's energy column. US national average ~$0.16 (EIA ... |
 | `gpu_idle_watts`                        | `45`       |                | GPU idle power draw in watts                                                                                             |
 | `gpu_inference_watts`                   | `400`      |                | GPU average inference power draw in watts                                                                                |
-| `monthly_spend_limit`                   | `10.0`     |                | Maximum monthly AI spend in USD                                                                                          |
+| `monthly_spend_limit_usd`               | `10.0`     |                | Maximum monthly AI spend in USD (read by services/cost_guard.py)                                                         |
 | `ollama_electricity_cost_per_1k_tokens` | `0.000256` |                | Ollama electricity cost per 1K tokens (USD)                                                                              |
 | `system_idle_watts`                     | `120`      |                | Total system idle power draw in watts (CPU+RAM+disk+GPU)                                                                 |
 
@@ -800,7 +800,6 @@ The worker re-reads on every poll; no restart needed.
 | `brain_auto_cancel_grace_minutes`            | `10`                                       |                | Extra grace period the brain daemon adds on top of stale_task_timeout_minutes before flipping a stuck task to failed....        |
 | `content_quality_minimum`                    | `75`                                       |                | Minimum quality score to even queue for approval. Below this = auto-reject.                                                     |
 | `content_weekly_cap`                         | `3`                                        |                | Maximum new posts per week (0=unlimited). Topic discovery respects this.                                                        |
-| `daily_budget_usd`                           | `5.00`                                     |                | Daily LLM API spend budget in USD                                                                                               |
 | `daily_post_limit`                           | `1`                                        |                | Maximum posts to generate per day                                                                                               |
 | `default_model_tier`                         | `budget`                                   |                | Default model cost tier (free/budget/standard/premium/flagship)                                                                 |
 | `default_template_slug`                      | ``                                         |                | Lane C cutover switch: when set, every new pipeline_tasks row without an explicit caller-supplied template_slug gets ...        |

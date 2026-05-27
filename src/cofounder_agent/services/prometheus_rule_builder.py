@@ -252,7 +252,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "summary": "Daily AI spend exceeded hard cap",
         "description": (
             "Cost budget blown. Pipeline should have stopped itself but "
-            "didn't. Check cost_guard logic + app_settings daily_spend_limit."
+            "didn't. Check cost_guard logic + app_settings daily_spend_limit_usd."
         ),
     },
     "MonthlySpendHigh": {

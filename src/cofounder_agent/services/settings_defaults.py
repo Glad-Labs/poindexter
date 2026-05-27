@@ -76,7 +76,7 @@ DEFAULTS: dict[str, str] = {
     'site_url': '',
 
     # ----- Cost / billing -----
-    'monthly_spend_limit': '100.0',
+    'monthly_spend_limit_usd': '100.0',
 
     # ----- LLM model selection -----
     'default_ollama_model': 'gemma3:27b',

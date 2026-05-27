@@ -109,7 +109,7 @@ def _api_patch(path: str, json_data: dict, timeout: float = 30) -> dict:
 # ---------------------------------------------------------------------------
 _SETTINGS_DEFAULTS = {
     "auto_publish_threshold": 75,
-    "daily_spend_limit": 5.0,
+    "daily_spend_limit_usd": 5.0,
     "publish_interval": 300,       # 5 minutes
     "generate_interval": 28800,    # 8 hours
     "sync_interval": 900,          # 15 minutes
@@ -415,7 +415,7 @@ def main():
             try:
                 cost_check = _api_get("/api/metrics/costs/today", timeout=10)
                 daily_spend = cost_check.get("total_cost", 0) or 0
-                spend_limit = _setting("daily_spend_limit")
+                spend_limit = _setting("daily_spend_limit_usd")
                 if daily_spend >= spend_limit:
                     logger.warning("COST GUARD: Daily spend $%.2f >= $%.2f — skipping content gen", daily_spend, spend_limit)
                     last_generate = now
