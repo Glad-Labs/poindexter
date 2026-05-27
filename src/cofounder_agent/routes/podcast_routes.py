@@ -108,11 +108,26 @@ async def podcast_feed(
     if pool:
         try:
             async with pool.acquire() as conn:
+                # Filter on the canonical seam: only include posts whose
+                # niche policy opted into podcast generation. Matches
+                # ``backfill_podcasts.py``'s array-overlap query so the
+                # feed and the backfill agree on what counts as a real
+                # podcast episode. ``posts.media_to_generate`` is stamped
+                # at publish time from ``niches.default_media_to_generate``
+                # (see ``publish_service.publish_post_from_task``); the
+                # dev_diary niche's policy is ``{}``, which excludes those
+                # posts from the feed even when an orphan MP3 still sits
+                # on disk from before the per-niche policy landed
+                # (2026-05-19). Slug-pattern filtering on the dev_diary
+                # post slugs is the hack Matt rejected — see
+                # ``feedback_filter_on_seams_not_slugs``.
                 rows = await conn.fetch(
                     """
                     SELECT id::text, title, slug, excerpt, published_at
                     FROM posts
-                    WHERE id::text = ANY($1) AND status = 'published'
+                    WHERE id::text = ANY($1)
+                      AND status = 'published'
+                      AND 'podcast' = ANY(media_to_generate)
                     ORDER BY published_at DESC
                     """,
                     post_ids,

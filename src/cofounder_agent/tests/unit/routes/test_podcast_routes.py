@@ -174,6 +174,40 @@ class TestPodcastFeed:
             assert "application/rss+xml" in resp.headers["content-type"]
             assert "<item>" not in resp.text
 
+    def test_feed_sql_filters_on_media_to_generate(self):
+        """The RSS feed must only list posts that opted into podcasts.
+
+        Pinned per ``feedback_filter_on_seams_not_slugs``: the canonical
+        seam is ``posts.media_to_generate`` populated at publish time
+        from ``niches.default_media_to_generate``. dev_diary's policy
+        is ``{}``, so dev_diary posts must NOT appear in the feed even
+        when an orphan MP3 still sits on disk from before the per-niche
+        policy landed (2026-05-19).
+
+        Slug-pattern filtering (``slug NOT LIKE 'what-we-shipped%'``)
+        is the hack Matt rejected — this test catches a regression to
+        either no filter at all OR slug-based filter.
+        """
+        import inspect
+        from routes.podcast_routes import podcast_feed
+
+        source = inspect.getsource(podcast_feed)
+        assert "'podcast' = ANY(media_to_generate)" in source, (
+            "RSS feed query must filter on media_to_generate — see "
+            "feedback_filter_on_seams_not_slugs and the per-niche "
+            "policy column added in migration "
+            "20260519_134736_niches_default_media_to_generate.py."
+        )
+        # Defense against slug-based regressions.
+        assert "what-we-shipped" not in source, (
+            "Don't filter by slug pattern — use the media_to_generate "
+            "array on posts."
+        )
+        assert "NOT LIKE" not in source.upper().replace("NOT NULL", ""), (
+            "SQL LIKE/NOT LIKE on slug is the rejected hack — filter "
+            "on the canonical media_to_generate seam instead."
+        )
+
 
 # ---------------------------------------------------------------------------
 # GET /api/podcast/episodes/{post_id}.mp3
