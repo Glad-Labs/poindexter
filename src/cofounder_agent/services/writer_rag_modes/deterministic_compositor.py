@@ -39,6 +39,7 @@ Bundle schema (from services.topic_sources.dev_diary_source.DevDiaryContext):
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -47,8 +48,52 @@ from services.prompt_manager import get_prompt_manager
 logger = logging.getLogger(__name__)
 
 
-_REPO_BASE = "https://github.com/Glad-Labs/glad-labs-stack"
-_FOOTER = "_Auto-compiled by Poindexter from today's commits and PRs._"
+# 2026-05-27: the deterministic links section was deleted (Matt — "we
+# don't need the Sources with PR#s at all"). Public readers can browse
+# the public mirror if they want to inspect commit-level work; the
+# narrative itself stands as the post. The footer now embeds a single
+# link to the public repo — no per-PR listing.
+_FOOTER = (
+    "_Auto-compiled by Poindexter from today's commits and PRs. "
+    "[See the work: github.com/Glad-Labs/poindexter]"
+    "(https://github.com/Glad-Labs/poindexter)._"
+)
+
+# Defense-in-depth: even if the writer LLM hallucinates a private-repo
+# URL into the narrative, scrub it post-compose. The dev_diary source
+# pulls PR data from Glad-Labs/glad-labs-stack (private) so PR bodies in
+# the bundle context can contain stack URLs the model copies verbatim.
+# Matched patterns mirror the 2026-05-20 cleanup migrations
+# (20260520_172353 / _174023 / _175633).
+_STACK_PR_AUTOLINK = re.compile(
+    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+)
+_STACK_PR_MARKDOWN = re.compile(
+    r"\[PR #(\d+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/\d+\)"
+)
+_STACK_COMMIT_AUTOLINK = re.compile(
+    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-f]{7,40})>"
+)
+_STACK_COMMIT_MARKDOWN = re.compile(
+    r"\[`([0-9a-f]{7,40})`\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/[0-9a-f]{7,40}\)"
+)
+
+
+def _strip_private_repo_urls(text: str) -> str:
+    """Rewrite glad-labs-stack URLs to plain-text PR/commit references.
+
+    PR numbers don't transfer between the private repo and the public
+    poindexter mirror (the mirror is force-pushed code only, no PRs of
+    its own). So linking to the public mirror would 404 the reader.
+    Plain text keeps the reference intact without a broken link.
+    """
+    if not text:
+        return text
+    text = _STACK_PR_MARKDOWN.sub(r"PR #\1", text)
+    text = _STACK_PR_AUTOLINK.sub(r"PR #\1", text)
+    text = _STACK_COMMIT_MARKDOWN.sub(r"`\1`", text)
+    text = _STACK_COMMIT_AUTOLINK.sub(r"`\1`", text)
+    return text
 
 
 def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
@@ -102,33 +147,15 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
     return text[:12000]
 
 
-def _format_links_section(bundle: dict[str, Any]) -> str:
-    """Render the deterministic links list (PRs + commits, with URLs)."""
-    prs = bundle.get("merged_prs") or []
-    commits = bundle.get("notable_commits") or []
-    if not prs and not commits:
-        return ""
-
-    lines: list[str] = ["## PRs and commits", ""]
-    for pr in prs:
-        number = pr.get("number")
-        title = (pr.get("title") or "").strip() or f"PR #{number}"
-        url = (pr.get("url") or "").strip() or f"{_REPO_BASE}/pull/{number}"
-        author = (pr.get("author") or "").strip()
-        author_suffix = f" — {author}" if author else ""
-        lines.append(f"- [PR #{number}]({url}) {title}{author_suffix}")
-
-    if commits:
-        lines.append("")
-        lines.append("**Other commits:**")
-        for c in commits:
-            sha = (c.get("sha") or "").strip()
-            subject = (c.get("subject") or "").strip()
-            if sha and subject:
-                commit_url = f"{_REPO_BASE}/commit/{sha}"
-                lines.append(f"- [`{sha}`]({commit_url}) {subject}")
-    lines.append("")
-    return "\n".join(lines)
+# Deletion 2026-05-27: ``_format_links_section`` was previously
+# rendering a deterministic ``## PRs and commits`` section listing every
+# merged PR + commit. Matt asked us to drop it entirely — the narrative
+# stands alone and the footer link is sufficient for readers who want to
+# inspect commit-level work. Existing posts with a "## Sources" tail are
+# from ``finalize_task.py``'s ``append_sources_section`` (a separate
+# stage that extracts URLs from the narrative). With ``_strip_private_repo_urls``
+# rewriting glad-labs-stack URLs to plain "PR #N" text, that extractor
+# now finds nothing to cite, so no Sources section is appended.
 
 
 def _fallback_narrative(bundle: dict[str, Any]) -> str:
@@ -235,6 +262,11 @@ async def compose_post(
     narrative = await _generate_narrative(bundle, site_config=site_config, pool=pool)
     if not narrative:
         narrative = _fallback_narrative(bundle)
+    # Even when the narrative LLM is well-prompted, PR bodies in the
+    # bundle context can contain glad-labs-stack URLs that the model
+    # parrots into prose. Defense-in-depth: strip on the narrative
+    # before assembly so the public reader never sees a private link.
+    narrative = _strip_private_repo_urls(narrative)
 
     parts: list[str] = []
     parts.append(f"# What we shipped on {date}")
@@ -242,13 +274,13 @@ async def compose_post(
     if narrative:
         parts.append(narrative)
         parts.append("")
-    links = _format_links_section(bundle)
-    if links:
-        parts.append(links)
     parts.append(_FOOTER)
     parts.append("")
 
-    return "\n".join(parts)
+    # Final guard — runs on the assembled post, catches stack URLs
+    # that slipped through any path above (test fixture, fallback
+    # narrative, future code change).
+    return _strip_private_repo_urls("\n".join(parts))
 
 
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
