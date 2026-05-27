@@ -151,6 +151,20 @@ services:
       # webhook calls then 401 loudly until the operator runs
       # ``poindexter auth mint-grafana-token --persist``.
       GRAFANA_WEBHOOK_TOKEN: ${GRAFANA_WEBHOOK_TOKEN:-}
+    env_file:
+      # Auto-managed by scripts/start-stack.sh. Holds the decrypted
+      # GRAFANA_WEBHOOK_TOKEN so plain ``docker restart`` /
+      # ``docker compose up -d`` (outside start-stack.sh) still
+      # picks up the JWT instead of falling back to the empty
+      # default (which causes ~200 401s/day on the worker — see
+      # Glad-Labs/glad-labs-stack#231 hardening of the 2026-05-27
+      # alertmanager-spam fix).
+      #
+      # The ``required: false`` flag keeps fresh installs from
+      # crashing when the file doesn't exist yet (first
+      # start-stack.sh run creates it).
+      - path: .poindexter-grafana.env
+        required: false
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning

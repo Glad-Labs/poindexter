@@ -69,6 +69,10 @@ screenshots/
 .env
 .env.local
 .env.*.local
+# Auto-managed by scripts/start-stack.sh — holds decrypted Grafana
+# webhook JWT (Glad-Labs/glad-labs-stack#231 hardening). Per-operator
+# runtime secret, must never land in git.
+.poindexter-*.env
 .env.development
 .env.test
 .env.staging
