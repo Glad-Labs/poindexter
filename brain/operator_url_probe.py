@@ -777,6 +777,33 @@ async def run_operator_url_probe(
         summary["url_failures"], summary["total_urls_probed"],
         summary["tailscale_drift_count"], summary["notifications_sent"],
     )
+
+    # Success-path audit_log row — per ``feedback_total_visibility`` a
+    # probe that runs cleanly must be distinguishable from one that
+    # never fired. Failures already get notify_operator above; this row
+    # is the "I ran" signal operators can confirm in Grafana even when
+    # no failures triggered an alert. Best-effort: an audit-write
+    # failure must NOT break the probe itself.
+    try:
+        await pool.execute(
+            "INSERT INTO audit_log (event_type, source, details, severity) "
+            "VALUES ($1, $2, $3::jsonb, $4)",
+            "probe_completed",
+            "brain.operator_url_probe",
+            json.dumps({
+                "total_urls_probed": summary["total_urls_probed"],
+                "url_failures": summary["url_failures"],
+                "tailscale_drift_count": summary["tailscale_drift_count"],
+                "notifications_sent": summary["notifications_sent"],
+            }),
+            "info",
+        )
+    except Exception as exc:
+        logger.warning(
+            "[OPERATOR_URL_PROBE] audit_log write failed (non-critical): %s",
+            exc,
+        )
+
     return summary
 
 

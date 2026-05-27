@@ -419,6 +419,115 @@ class TestRunOperatorUrlProbe:
         assert any("Tailscale IP drift" in n["title"] for n in notifies)
 
 
+@pytest.mark.unit
+class TestProbeCompletedAuditLog:
+    """Closes cycle-4 audit #245: a healthy probe must leave an
+    ``audit_log`` row so operators can confirm it ran. Without this
+    the success path is silent and looks identical to a dead probe.
+    """
+
+    @pytest.mark.asyncio
+    async def test_writes_probe_completed_row_on_success(self, tmp_path: Path):
+        pool = _make_pool([])
+
+        async def fake_probe(targets, *, concurrency=10, overrides=None):
+            return []  # zero targets → zero failures → success path
+
+        with patch.object(oup, "probe_urls", side_effect=fake_probe), \
+             patch.object(oup, "_run_tailscale_status", return_value=None):
+            await oup.run_operator_url_probe(
+                pool, dashboards_dir=tmp_path,
+                notify_fn=lambda **k: None,
+            )
+
+        # The mock pool's execute() was called at least once for the audit_log
+        # INSERT. Find that call and assert its shape.
+        audit_calls = [
+            call for call in pool.execute.await_args_list
+            if call.args and "audit_log" in call.args[0]
+        ]
+        assert audit_calls, (
+            "expected an audit_log INSERT for probe_completed — got: "
+            f"{pool.execute.await_args_list}"
+        )
+        # Args: (sql, event_type, source, details_json, severity)
+        call_args = audit_calls[0].args
+        assert call_args[1] == "probe_completed"
+        assert call_args[2] == "brain.operator_url_probe"
+        details = json.loads(call_args[3])
+        assert "total_urls_probed" in details
+        assert "url_failures" in details
+        assert "tailscale_drift_count" in details
+        assert "notifications_sent" in details
+        assert call_args[4] == "info"
+
+    @pytest.mark.asyncio
+    async def test_writes_row_even_when_failures_are_present(self, tmp_path: Path):
+        """A probe with failures STILL writes the success row — the row
+        records 'I ran a cycle', not 'all targets passed'. Failures
+        get their own notify_operator calls already covered above."""
+        dash = {
+            "title": "D",
+            "links": [{"title": "broken", "url": "http://broken.local"}],
+            "panels": [],
+        }
+        (tmp_path / "d.json").write_text(json.dumps(dash))
+        pool = _make_pool([])
+
+        async def fake_probe(targets, *, concurrency=10, overrides=None):
+            return [
+                {"surface": t["surface"], "url": t["url"], "ok": False,
+                 "status": 0, "detail": "broken"}
+                for t in targets
+            ]
+
+        with patch.object(oup, "probe_urls", side_effect=fake_probe), \
+             patch.object(oup, "_run_tailscale_status", return_value=None):
+            summary = await oup.run_operator_url_probe(
+                pool, dashboards_dir=tmp_path,
+                notify_fn=lambda **k: None,
+            )
+
+        assert summary["url_failures"] == 1
+        audit_calls = [
+            c for c in pool.execute.await_args_list
+            if c.args and "audit_log" in c.args[0]
+        ]
+        assert len(audit_calls) == 1
+        details = json.loads(audit_calls[0].args[3])
+        assert details["url_failures"] == 1
+
+    @pytest.mark.asyncio
+    async def test_audit_write_failure_is_non_fatal(self, tmp_path: Path):
+        """If audit_log INSERT raises, the probe still returns its
+        summary — observability writes must never fail the cycle."""
+        pool = _make_pool([])
+        # First execute call succeeds (any internal DB writes), but the
+        # audit_log INSERT raises. The probe should swallow it and
+        # return normally. We use a side_effect that raises on the
+        # specific audit_log query.
+        original_execute = pool.execute
+
+        async def execute_with_audit_failure(*args, **kwargs):
+            if args and "audit_log" in args[0]:
+                raise RuntimeError("simulated DB outage")
+            return await original_execute(*args, **kwargs)
+
+        pool.execute = AsyncMock(side_effect=execute_with_audit_failure)
+
+        async def fake_probe(targets, *, concurrency=10, overrides=None):
+            return []
+
+        with patch.object(oup, "probe_urls", side_effect=fake_probe), \
+             patch.object(oup, "_run_tailscale_status", return_value=None):
+            # Must NOT raise.
+            summary = await oup.run_operator_url_probe(
+                pool, dashboards_dir=tmp_path,
+                notify_fn=lambda **k: None,
+            )
+        assert summary["url_failures"] == 0  # probe still produced a summary
+
+
 # ---------------------------------------------------------------------------
 # Interval gate
 # ---------------------------------------------------------------------------
