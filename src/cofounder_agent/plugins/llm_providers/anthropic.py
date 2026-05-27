@@ -318,6 +318,12 @@ class AnthropicProvider:
     supports_streaming = False  # Pipeline doesn't currently stream — see ticket.
     supports_embeddings = False
 
+    # Class-level latch so the "_db_service missing" warning fires
+    # exactly once per process. Operators reading the logs see the
+    # gap on the first call; subsequent calls don't drown them in
+    # repeats. Reset by tests via ``cls._cost_guard_check_warned = False``.
+    _cost_guard_check_warned: bool = False
+
     def __init__(self, site_config: Any = None) -> None:
         # SiteConfig is optional. Plugin discovery instantiates with no
         # args. Per-call config still flows in via ``_provider_config``
@@ -530,15 +536,35 @@ class AnthropicProvider:
             )
             return
 
-        # In production this path would resolve a live db_service from
-        # the site_config DI seam. Until that wire-up lands the check
-        # is best-effort; the post-call log_cost write is the gate that
-        # ALWAYS runs, so accounting stays correct either way.
+        # In production this path resolves a live db_service from the
+        # site_config DI seam. When it's missing (test/CLI/bootstrap)
+        # we still proceed — but warn loudly + notify the operator once
+        # per process so the gap is visible. The post-call log_cost
+        # write always runs, so spend accounting stays correct; the
+        # risk this warning surfaces is "the pre-flight check is silent
+        # and we only catch overage AFTER the call returns" — bad in a
+        # runaway-loop scenario.
+        #
+        # Closes cycle-4 audit finding: previous behavior was a bare
+        # ``return`` here which contradicted the docstring's "fail loud
+        # per no-silent-fallback" claim. Operators with a broken DI
+        # seam got zero feedback that the budget gate was inert.
         sc = self._site_config
         db_service = None
         if sc is not None:
             db_service = getattr(sc, "_db_service", None)
         if db_service is None:
+            if not type(self)._cost_guard_check_warned:
+                logger.warning(
+                    "[AnthropicProvider] cost-guard pre-check inert — "
+                    "site_config._db_service is None. Pre-flight budget "
+                    "check is skipped; only post-call log_cost will run "
+                    "(spend is still recorded but a runaway loop could "
+                    "overshoot the cap before the next iteration sees "
+                    "it). Wire site_config._db_service in lifespan to "
+                    "restore the pre-flight gate."
+                )
+                type(self)._cost_guard_check_warned = True
             return
 
         try:

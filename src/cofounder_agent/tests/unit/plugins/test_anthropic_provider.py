@@ -384,6 +384,60 @@ class TestAnthropicCostGuardExhausted:
 # ---------------------------------------------------------------------------
 
 
+class TestAnthropicCostGuardWarnsOnMissingDbService:
+    """Closes cycle-4 audit #244: when site_config._db_service is None
+    the pre-flight cost-guard used to ``return`` silently — contradicting
+    the docstring's 'fail loud per no-silent-fallback' claim. New
+    behavior emits a single warning + sets a class-level latch so the
+    log noise is bounded to one entry per process.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_warn_latch(self):
+        AnthropicProvider._cost_guard_check_warned = False
+        yield
+        AnthropicProvider._cost_guard_check_warned = False
+
+    @pytest.mark.asyncio
+    async def test_warns_once_when_db_service_missing(self, caplog):
+        """First call with missing db_service emits the warning."""
+        sc = _enabled_site_config()
+        # SiteConfig in tests doesn't carry _db_service unless the
+        # caller wires it — this is the exact bug class the audit hit.
+        assert getattr(sc, "_db_service", None) is None
+
+        p = AnthropicProvider(site_config=sc)
+        with caplog.at_level("WARNING", logger="plugins.llm_providers.anthropic"):
+            await p._cost_guard_check(
+                model="claude-haiku-4-5", estimated_cost_usd=0.001,
+            )
+        msgs = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("cost-guard pre-check inert" in m for m in msgs), msgs
+        assert any("_db_service is None" in m for m in msgs), msgs
+        assert AnthropicProvider._cost_guard_check_warned is True
+
+    @pytest.mark.asyncio
+    async def test_warning_fires_only_once_per_process(self, caplog):
+        """Repeated calls with the gap don't re-warn — log volume stays
+        bounded. The latch is cleared by the autouse fixture between
+        tests so each test starts fresh."""
+        sc = _enabled_site_config()
+        p = AnthropicProvider(site_config=sc)
+
+        with caplog.at_level("WARNING", logger="plugins.llm_providers.anthropic"):
+            await p._cost_guard_check(model="claude-haiku-4-5", estimated_cost_usd=0.001)
+            await p._cost_guard_check(model="claude-haiku-4-5", estimated_cost_usd=0.001)
+            await p._cost_guard_check(model="claude-haiku-4-5", estimated_cost_usd=0.001)
+
+        warns = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "cost-guard pre-check inert" in r.message
+        ]
+        assert len(warns) == 1, (
+            f"expected exactly 1 inert-cost-guard warning, got {len(warns)}"
+        )
+
+
 class TestAnthropicPromptCaching:
     @pytest.mark.asyncio
     async def test_anthropic_prompt_caching_applied_to_system_message(self):
