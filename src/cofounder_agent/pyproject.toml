@@ -203,7 +203,15 @@ llama-index-embeddings-ollama = "^0.9.0"
 # ``llama-index-postprocessor-sbert-rerank`` adapter — that would only
 # add version-skew tax.
 sentence-transformers = "^3.4"
-prefect = "^3.7.0"
+# Pinned to match the server-side image (``prefecthq/prefect:3.6.29``)
+# below in docker-compose.local.yml. Client/server version drift kills
+# the work-pool poll path silently: the worker prints a "server is older
+# than your client" warning, then fails to claim any flow runs, then sits
+# idle. Whole content pipeline went dark for ~28 hours 2026-05-25
+# through 2026-05-27 because of this exact mismatch (the ``^3.7.0``
+# caret was bumping the worker past the server's 3.6.x). Bump together
+# when upgrading.
+prefect = "~3.6.29"
 langchain-openai = ">=1.2"
 
 [tool.poetry.extras]

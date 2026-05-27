@@ -536,7 +536,12 @@ services:
       retries: 5
 
   prefect-server:
-    image: prefecthq/prefect:3-latest
+    # Pinned alongside the prefect client pin in src/cofounder_agent/pyproject.toml.
+    # The ``3-latest`` tag is non-deterministic and silently drifted past
+    # the worker's version 2026-05-25, killing the content pipeline for 28h
+    # (worker prints "server is older" warning, then fails to claim runs).
+    # Bump both image tags + the pyproject pin together when upgrading.
+    image: prefecthq/prefect:3.6.29
     container_name: poindexter-prefect-server
     restart: unless-stopped
     depends_on:
@@ -573,7 +578,9 @@ services:
       start_period: 90s
 
   prefect-services:
-    image: prefecthq/prefect:3-latest
+    # Same pin as prefect-server — must match each other and the worker's
+    # prefect package version (src/cofounder_agent/pyproject.toml).
+    image: prefecthq/prefect:3.6.29
     container_name: poindexter-prefect-services
     restart: unless-stopped
     depends_on:
