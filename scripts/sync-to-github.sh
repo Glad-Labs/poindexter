@@ -371,6 +371,16 @@ LEAK_GUARD_ALLOW=(
   'scripts/ci/check_public_mirror_safety.py'  # parallel pre-merge lint with the same pattern list
   'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py'  # contract test fixtures contain literal gitea#NNN shapes
   'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py'  # contract test fixtures contain operator name in synthetic strings + docstrings
+  # 2026-05-27: same pattern as the two files above — this contract test
+  # file legitimately contains literal ``mercury_`` and ``VALUES(...
+  # gladlabs.io...)`` strings as fixtures (because it tests that THE
+  # GUARD CATCHES THOSE PATTERNS). The CI-side _LEAK_GUARD_ALLOW in
+  # check_public_mirror_safety.py already allowlists it (PR #623); this
+  # is the parallel entry for the sync-script-side guard, which is a
+  # separate codepath. Without it, every push since PR #619 has been
+  # silently failing the public-mirror sync (5+ consecutive failures
+  # before this fix).
+  'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py'
 )
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do

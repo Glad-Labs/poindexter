@@ -496,3 +496,45 @@ def test_publish_result_to_dict_carries_failure_payload() -> None:
         "success", "post_id", "post_slug", "published_url", "post_title",
         "revalidation_success", "static_export_success", "staged", "error",
     }
+
+
+@pytest.mark.asyncio
+async def test_publish_promote_triggers_r2_export() -> None:
+    """The promote-on-publish path MUST call export_post so the R2 static
+    index gets updated immediately. Without this, the static_export
+    reconciliation probe sees DB ahead of R2 and fires a drift alert
+    on every operator publish (Matt 2026-05-27 incident — DB=80 vs
+    R2=79 after dev_diary publish)."""
+    from services.publish_service import publish_post_from_task
+
+    db = _make_db_service()
+    existing = {
+        "id": "66666666-6666-6666-6666-666666666666",
+        "slug": "test-post-for-stage-only-contract-11111111",
+        "title": "Test post",
+        "status": "approved",
+    }
+    db.pool.fetchrow = AsyncMock(return_value=existing)
+    db.pool.execute = AsyncMock(return_value="UPDATE 1")
+
+    export_calls: list[tuple[Any, str]] = []
+
+    async def fake_export_post(pool: Any, slug: str) -> bool:
+        export_calls.append((pool, slug))
+        return True
+
+    with patch(
+        "services.static_export_service.export_post",
+        side_effect=fake_export_post,
+    ):
+        result = await publish_post_from_task(
+            db, _make_task(), "11111111-1111-1111-1111-111111111111",
+            publisher="operator-test",
+            stage_only=False,
+            draft_mode=False,
+        )
+
+    assert result.success is True
+    assert result.static_export_success is True
+    assert len(export_calls) == 1
+    assert export_calls[0][1] == existing["slug"]

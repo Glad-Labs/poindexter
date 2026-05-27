@@ -621,12 +621,37 @@ async def publish_post_from_task(
                 "published: task=%s post_id=%s slug=%s",
                 task_id, existing["id"], existing["slug"],
             )
+            # Push to R2 inline. Skipping this is what caused the
+            # 2026-05-27 R2 drift alert — the short-circuit returned
+            # before reaching the main path's ``export_post`` call,
+            # leaving R2 one post stale until the
+            # static_export_reconciliation probe caught up. Mirror the
+            # same try/except shape as the main path (lines ~1090).
+            promote_export_success = False
+            try:
+                from services.static_export_service import export_post
+
+                promote_export_success = await export_post(pool, existing["slug"])
+                if not promote_export_success:
+                    logger.warning(
+                        "[STATIC_EXPORT] Promote-path export_post returned "
+                        "failure for %s — R2 stays stale until next "
+                        "reconciliation cycle",
+                        existing["slug"],
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "[STATIC_EXPORT] Promote-path export_post raised for "
+                    "%s: %s",
+                    existing["slug"], exc, exc_info=True,
+                )
             return PublishResult(
                 success=True,
                 post_id=str(existing["id"]),
                 post_slug=existing["slug"],
                 published_url=f"/posts/{existing['slug']}",
                 post_title=existing.get("title", topic),
+                static_export_success=promote_export_success,
             )
         logger.warning(
             "[publish_service] Post already exists for task %s "
