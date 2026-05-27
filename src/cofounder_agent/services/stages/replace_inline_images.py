@@ -65,6 +65,14 @@ logger = logging.getLogger(__name__)
 _PLACEHOLDER_RE = re.compile(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]")
 _HEADING_RE = re.compile(r"^#{2,4}\s+(.+)$", re.MULTILINE)
 
+# 2026-05-27: bold-text pseudo-headings (``**Section Title**`` as a
+# standalone line) are the writer's default structural pattern despite
+# the prompt asking for real H2 markdown. Match them as a fallback so
+# downstream image placement still finds anchor points. Bounded to
+# 80 chars + entire-line match so a mid-paragraph ``**word**`` isn't
+# mistaken for a section heading.
+_BOLD_HEADING_RE = re.compile(r"^\*\*(.{1,80}?)\*\*\s*$", re.MULTILINE)
+
 
 INLINE_STYLES: tuple[str, ...] = (
     "photorealistic scene, cinematic lighting",
@@ -262,10 +270,25 @@ async def _plan_and_inject_placeholders(
         }
 
     # Inject placeholders at agent-selected positions.
-    headings = list(_HEADING_RE.finditer(content_text))
-    heading_map = {
-        re.sub(r"^#+\s*", "", h.group()).strip().lower(): h for h in headings
+    # 2026-05-27: include bold-text pseudo-headings (``**Title**`` on
+    # its own line) when real markdown H2/H3 aren't present. Without
+    # this fallback, every canonical_blog post that used bold-text
+    # section dividers got zero inline images because the heading_map
+    # was empty.
+    real_headings = list(_HEADING_RE.finditer(content_text))
+    heading_map: dict[str, re.Match[str]] = {
+        re.sub(r"^#+\s*", "", h.group()).strip().lower(): h
+        for h in real_headings
     }
+    if not heading_map:
+        bold_headings = list(_BOLD_HEADING_RE.finditer(content_text))
+        heading_map = {h.group(1).strip().lower(): h for h in bold_headings}
+        if heading_map:
+            logger.info(
+                "[IMAGE_AGENT] No real H2/H3 — anchored %d image "
+                "placeholders to bold-text pseudo-headings",
+                len(heading_map),
+            )
 
     insert_positions: list[tuple[int, int, str, str]] = []
     for i, img in enumerate(plan.images):
@@ -274,12 +297,20 @@ async def _plan_and_inject_placeholders(
                 img.section_heading.lower() in heading_text
                 or heading_text in img.section_heading.lower()
             ):
+                # Default: anchor at the next paragraph break after the
+                # heading. Fall back to end-of-content when this is the
+                # last section (no trailing ``\n\n``) — otherwise the
+                # final section gets no image, which matches the prod
+                # symptom: short canonical_blog posts had the writer
+                # bleed the closing section to EOF, leaving image plans
+                # unplaced.
                 para_end = content_text.find("\n\n", h_match.end())
-                if para_end > 0:
-                    source_hint = f"{img.source}:{img.style}"
-                    insert_positions.append(
-                        (para_end, i + 1, img.prompt, source_hint),
-                    )
+                if para_end < 0:
+                    para_end = len(content_text)
+                source_hint = f"{img.source}:{img.style}"
+                insert_positions.append(
+                    (para_end, i + 1, img.prompt, source_hint),
+                )
                 break
 
     # Insert in reverse so earlier positions stay valid.

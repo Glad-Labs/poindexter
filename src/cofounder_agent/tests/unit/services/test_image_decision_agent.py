@@ -171,8 +171,68 @@ Sub body.
 class TestPlanImagesShortCircuits:
     @pytest.mark.asyncio
     async def test_no_sections_returns_empty(self):
-        # Content with no h2/h3 headings should skip planning entirely
+        # Content with no h2/h3 headings AND no bold pseudo-headings
+        # short-circuits — nothing to anchor images to.
         result = await plan_images("Just a paragraph with no headings.", "topic")
+        assert isinstance(result, ImagePlanResult)
+        assert result.images == []
+        assert result.featured_image is None
+
+    @pytest.mark.asyncio
+    async def test_bold_pseudo_headings_do_not_short_circuit(self):
+        """Regression for the 2026-05-27 finding: 12 consecutive published
+        canonical_blog posts had 0 inline images because writers emit
+        ``**Section Title**`` standalone-line headings instead of real
+        ``## Section Title`` markdown. The agent's section-detection
+        falls back to bold-text pseudo-headings before short-circuiting.
+
+        Verify by checking the short-circuit DOESN'T fire. The Ollama
+        path is mocked to fail fast so the test focuses on the
+        section-extraction layer, not the downstream LLM call."""
+        content = (
+            "Intro paragraph here.\n\n"
+            "**First Real Section**\n\n"
+            "Body of the first section.\n\n"
+            "**Another Section**\n\n"
+            "Body of the second section.\n"
+        )
+
+        # Force the downstream HTTP path to fail loudly — if we get past
+        # the short-circuit, the test wants to see the agent try to call
+        # Ollama (and fail). Pretty proof the short-circuit didn't fire.
+        with patch(
+            "services.image_decision_agent.site_config", _patched_site_config(),
+        ), patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.get = AsyncMock(side_effect=RuntimeError("ollama-not-reachable"))
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+            mock_client_cls.return_value.__aexit__.return_value = None
+
+            result = await plan_images(content, "the topic")
+
+        # Empty result is fine — the assertion that matters is the
+        # agent attempted to reach Ollama (proof the short-circuit
+        # didn't fire on this bold-text-heading content).
+        assert mock_client.get.called, (
+            "Agent short-circuited on bold-text pseudo-headings — "
+            "the 2026-05-27 fix regressed. Expected the agent to "
+            "treat ``**Title**`` standalone lines as L2 sections."
+        )
+        assert isinstance(result, ImagePlanResult)
+
+    @pytest.mark.asyncio
+    async def test_inline_bold_not_treated_as_heading(self):
+        """A ``**phrase**`` mid-paragraph is NOT a heading — it's a
+        bold word in prose. Only entire-line bold counts."""
+        content = (
+            "This sentence contains **bold inline text** in the middle.\n"
+            "Another paragraph with **more bold text** scattered through it.\n"
+        )
+
+        # Same no-headings expectation as the original short-circuit test.
+        # If this test fails by NOT short-circuiting, our regex is too
+        # permissive and would inject images mid-paragraph.
+        result = await plan_images(content, "topic")
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
         assert result.featured_image is None

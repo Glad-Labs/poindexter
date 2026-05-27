@@ -136,9 +136,43 @@ async def plan_images(
             return ImagePlanResult()
         model = fallback.removeprefix("ollama/")
 
-    # Extract section headings for context
+    # Extract section headings for context.
+    #
+    # 2026-05-27 fix: writers sometimes emit ``**Section Title**``
+    # bold-text fake headings instead of real ``## Section Title``
+    # markdown. The 12 most-recent canonical_blog posts had 0–4 H2s
+    # — most had a single H2 OR none at all, with bold-text pseudo-
+    # headings carrying the structural load instead. The image
+    # decision agent's regex matched only real markdown headings, so
+    # ``plan_images`` returned an empty plan for every post that used
+    # bold-text section dividers — visible in prod as 0 inline images
+    # across 12 consecutive published posts.
+    #
+    # Two passes: real markdown first (preserves any explicit H2/H3
+    # structure the writer gave us), then bold-text pseudo-headings
+    # as L2-equivalent when nothing real survives. The bold-text
+    # fallback only counts a line that is ENTIRELY a bold-wrapped
+    # phrase ``**…**`` and short (<=80 chars). A `**foo**` mid-
+    # paragraph isn't a heading, so we anchor to start- and end-of-
+    # line with the multiline flag.
     headings = re.findall(r'^(#{2,3})\s+(.+)$', content, re.MULTILINE)
     sections = [{"level": len(h[0]), "title": h[1].strip()} for h in headings]
+
+    if not sections:
+        bold_headings = re.findall(
+            r'^\*\*(.{1,80}?)\*\*\s*$', content, re.MULTILINE,
+        )
+        sections = [
+            {"level": 2, "title": title.strip()}
+            for title in bold_headings
+            if title.strip()
+        ]
+        if sections:
+            logger.info(
+                "[IMAGE_AGENT] No real H2/H3 — fell back to %d "
+                "bold-text pseudo-headings as L2",
+                len(sections),
+            )
 
     if not sections:
         logger.info("[IMAGE_AGENT] No sections found — skipping image planning")
