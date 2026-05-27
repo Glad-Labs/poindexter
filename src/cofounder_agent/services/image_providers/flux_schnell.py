@@ -152,7 +152,15 @@ class FluxSchnellProvider:
         upload_target = str(config.get("upload_to", "") or "")
         if upload_target == "cloudinary":
             try:
-                url = await _upload_to_cloudinary(output_path, prompt, site_config)
+                from services.cloudinary_upload_service import (
+                    upload_to_cloudinary,
+                )
+                url = await upload_to_cloudinary(
+                    output_path,
+                    prompt,
+                    site_config=site_config,
+                    provider_tag="flux_schnell",
+                )
             except Exception as e:
                 logger.warning(
                     "[FluxSchnellProvider] Cloudinary upload failed "
@@ -399,46 +407,11 @@ def _materialize_sidecar_json(
 
 
 # ---------------------------------------------------------------------------
-# Upload helpers — same contract as SdxlProvider's helpers. Shared upload
-# infrastructure (cloudinary / r2_upload_service) is reused so this
-# provider doesn't drift from the legacy SDXL upload behavior.
+# Upload helpers — Cloudinary lives in ``services.cloudinary_upload_service``
+# as a shared module (mirrors the R2 pattern); imported lazily at the call
+# site above. Only R2 has a provider-local helper because it threads
+# extra metadata (``key`` namespacing under ``flux_schnell/`` prefix).
 # ---------------------------------------------------------------------------
-
-
-async def _upload_to_cloudinary(
-    path: str, prompt: str, site_config: Any,
-) -> str:
-    """Upload a generated PNG to Cloudinary and return the secure URL."""
-    import cloudinary
-    import cloudinary.uploader
-
-    if site_config is None:
-        raise RuntimeError(
-            "Cloudinary upload requires site_config; "
-            "image_service dispatcher must seed '_site_config' (GH#95)",
-        )
-
-    cloudinary.config(
-        cloud_name=site_config.get("cloudinary_cloud_name"),
-        api_key=await site_config.get_secret("cloudinary_api_key"),
-        api_secret=await site_config.get_secret("cloudinary_api_secret"),
-    )
-
-    def _upload() -> dict:
-        return cloudinary.uploader.upload(
-            path,
-            folder="generated/",
-            resource_type="image",
-            tags=["flux_schnell", "provider"],
-            context={"alt": prompt[:200]},
-        )
-
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, _upload)
-    url = result.get("secure_url", "")
-    if not url:
-        raise RuntimeError("Cloudinary returned empty secure_url")
-    return str(url)
 
 
 async def _upload_to_r2(path: str, prompt: str, site_config: Any) -> str:

@@ -158,7 +158,7 @@ class TestSdxlProviderFetch:
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx), \
              patch(
-                "services.image_providers.sdxl._upload_to_cloudinary",
+                "services.cloudinary_upload_service.upload_to_cloudinary",
                 new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
              ) as up:
             results = await SdxlProvider().fetch("x", {"upload_to": "cloudinary"})

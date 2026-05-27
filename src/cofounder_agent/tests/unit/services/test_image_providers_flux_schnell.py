@@ -381,7 +381,7 @@ class TestFluxSchnellProviderFetch:
 
     async def test_upload_to_cloudinary_triggers_upload(self, tmp_path):
         with _mock_httpx_post(_image_response(content=b"\x89PNG")), patch(
-            "services.image_providers.flux_schnell._upload_to_cloudinary",
+            "services.cloudinary_upload_service.upload_to_cloudinary",
             new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
         ) as up:
             results = await FluxSchnellProvider().fetch(
@@ -416,7 +416,7 @@ class TestFluxSchnellProviderFetch:
     ):
         output_path = str(tmp_path / "o.png")
         with _mock_httpx_post(_image_response(content=b"\x89PNG")), patch(
-            "services.image_providers.flux_schnell._upload_to_cloudinary",
+            "services.cloudinary_upload_service.upload_to_cloudinary",
             new=AsyncMock(side_effect=RuntimeError("auth failed")),
         ):
             results = await FluxSchnellProvider().fetch(
