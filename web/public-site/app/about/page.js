@@ -264,6 +264,15 @@ export default function AboutPage() {
               </Button>
               <Button
                 as="a"
+                href="https://open.spotify.com/show/033obxyUXdxhXyQ6erC07G"
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="secondary"
+              >
+                🎧 Listen on Spotify
+              </Button>
+              <Button
+                as="a"
                 href="https://x.com/_gladlabs"
                 target="_blank"
                 rel="noopener noreferrer"
