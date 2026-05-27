@@ -78,7 +78,7 @@ enabled:          false until operator flips on
          "client_id": "...",
          "client_secret": "...",
          "refresh_token": "...",
-         "site_urls": ["https://www.gladlabs.io"],
+         "site_urls": ["https://your-site.example.com"],
          "start_date": "2026-04-01"
        }'::jsonb,
        'streams', jsonb_build_array('performance_report_date'),

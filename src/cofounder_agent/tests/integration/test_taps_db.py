@@ -221,8 +221,8 @@ class TestBrainKnowledgeTap:
                 """
                 INSERT INTO brain_knowledge (entity, attribute, value, source, confidence)
                 VALUES
-                  ('gladlabs', 'site_url', 'https://gladlabs.io', 'app_settings', 1.0),
-                  ('matt', 'role', 'founder', 'user_profile', 0.9)
+                  ('site', 'site_url', 'https://example.com', 'app_settings', 1.0),
+                  ('operator', 'role', 'founder', 'user_profile', 0.9)
                 """
             )
 

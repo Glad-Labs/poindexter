@@ -268,6 +268,14 @@ class LeakPattern:
     regex: re.Pattern[str]
     label: str
     why: str  # Short reason — surfaces in the error so the PR author knows
+    multiline: bool = False
+    """When True, the pattern is scanned against the WHOLE file body (one
+    ``re.search`` call over the file text) instead of line-by-line. Use
+    for shapes that legitimately span multiple lines — e.g. SQL ``VALUES``
+    tuples in test fixtures where the keyword and the literal land on
+    different lines. The scan reports the line containing the START of
+    the match. Default False so existing patterns keep their line-by-line
+    semantics. Closes cycle-4 audit #243."""
 
 
 _LEAK_PATTERNS = (
@@ -363,11 +371,20 @@ _LEAK_PATTERNS = (
         # carrying a gladlabs.io string. Brand attribution mentions in
         # CLAUDE.md / README / public docs are OK (they don't match this
         # tuple shape) — only values inside an INSERT VALUES are flagged.
-        re.compile(r"VALUES \([^)]*'[^']*gladlabs\.io"),
+        # ``multiline=True`` + ``re.DOTALL`` so VALUES tuples that span
+        # lines (pretty-printed SQL in test fixtures, baseline.seeds.sql
+        # blocks) are caught too — closes cycle-4 audit #243 finding
+        # where ``test_taps_db.py:224`` slipped through because ``VALUES``
+        # and ``gladlabs.io`` landed on consecutive lines.
+        re.compile(
+            r"VALUES\s*\([^)]*?'[^']*?gladlabs\.io",
+            re.DOTALL,
+        ),
         "gladlabs.io as a seeded default value",
         "Replace with an empty string ('') in the seed. A fresh OSS "
         "install must NOT inherit Matt's site URL / email defaults — "
         "the operator sets these via `poindexter setup`.",
+        multiline=True,
     ),
     # Note: ``Glad-Labs/glad-labs-stack`` is intentionally NOT a CI-time
     # leak pattern. The sync filter rewrites it to ``Glad-Labs/poindexter``
@@ -457,6 +474,9 @@ class Hit:
 
 def scan(repo_root: Path) -> list[Hit]:
     hits: list[Hit] = []
+    # Partition patterns once — every file uses the same split.
+    line_patterns = tuple(p for p in _LEAK_PATTERNS if not p.multiline)
+    multiline_patterns = tuple(p for p in _LEAK_PATTERNS if p.multiline)
     for rel in _list_tracked_files(repo_root):
         if not would_ship(rel):
             continue
@@ -471,12 +491,32 @@ def scan(repo_root: Path) -> list[Hit]:
             # Unreadable files (binary, encoding mismatch) don't carry
             # operator-private content in any case the lint cares about.
             continue
+        # Pass 1 — line-by-line for line-scoped patterns (vast majority).
         for line_no, line in enumerate(text.splitlines(), start=1):
             if _line_would_be_stripped(rel, line):
                 continue
-            for pat in _LEAK_PATTERNS:
+            for pat in line_patterns:
                 if pat.regex.search(line):
                     hits.append(Hit(rel, line_no, line.rstrip(), pat))
+        # Pass 2 — whole-file scan for multi-line patterns. Re-uses
+        # ``_line_would_be_stripped`` against the line containing the
+        # start of the match so substrate-line-strip exemptions still
+        # apply. Reports the line containing the FIRST character of the
+        # match for operator-readable error output.
+        for pat in multiline_patterns:
+            for match in pat.regex.finditer(text):
+                start = match.start()
+                line_no = text.count("\n", 0, start) + 1
+                # Recover the line for both stripping check + the
+                # error report.
+                line_start = text.rfind("\n", 0, start) + 1
+                line_end = text.find("\n", start)
+                if line_end == -1:
+                    line_end = len(text)
+                line_text = text[line_start:line_end]
+                if _line_would_be_stripped(rel, line_text):
+                    continue
+                hits.append(Hit(rel, line_no, line_text.rstrip(), pat))
     return hits
 
 
