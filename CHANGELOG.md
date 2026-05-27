@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.13.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.13.0...v0.13.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **dev_diary:** strip private-repo URLs from compositor output ([#631](https://github.com/Glad-Labs/glad-labs-stack/issues/631)) ([2a16776](https://github.com/Glad-Labs/glad-labs-stack/commit/2a167766654abde6e1ad05bdc9c32f1049aff24d))
+* **writer:** unwrap markdown-fenced JSON envelopes + recognize "body" key ([#632](https://github.com/Glad-Labs/glad-labs-stack/issues/632)) ([ab80b19](https://github.com/Glad-Labs/glad-labs-stack/commit/ab80b1993dcf24273b414e165adf859bab66590e))
+
 ## [0.13.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.12.0...v0.13.0) (2026-05-27)
 
 
