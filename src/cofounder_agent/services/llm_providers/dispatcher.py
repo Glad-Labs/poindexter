@@ -252,7 +252,14 @@ async def dispatch_embed(
         try:
             provider = await get_provider(pool, tier)
             span.set_attribute("llm.provider.name", provider.name)
-            return await provider.embed(text=text, model=model)
+            # Symmetric with dispatch_complete — inject _provider_config so
+            # the embed call honors the same paid-endpoint policy +
+            # base_url config as completion. Closes a runaway-cost bypass
+            # where embeddings on a paid backend escaped the gate.
+            provider_config = await get_provider_config(pool, provider.name)
+            return await provider.embed(
+                text=text, model=model, _provider_config=provider_config,
+            )
         except Exception as exc:
             span.record_exception(exc)
             raise

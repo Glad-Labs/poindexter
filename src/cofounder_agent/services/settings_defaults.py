@@ -112,6 +112,13 @@ DEFAULTS: dict[str, str] = {
     'plugin.audio_gen_provider.stable-audio-open-1.0.server_url': '',
     'plugin.image_provider.flux_schnell.server_url': '',
     'plugin.llm_provider.gemini.enabled': 'false',
+    # Refuse paid base_url targets unless explicitly opted in. The default
+    # base_url is host.docker.internal:11434/v1 (Ollama) so most installs
+    # never trip this gate; setting it true is required to dispatch to
+    # Groq / OpenRouter / Together / Fireworks / Anthropic-OAI-compat.
+    # Enforced by services/llm_providers/openai_compat.py per
+    # feedback_no_paid_apis.
+    'plugin.llm_provider.openai_compat.allow_paid_base_url': 'false',
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
     'sdxl_server_url': 'http://host.docker.internal:9836',
     'stable_audio_open_server_url': '',

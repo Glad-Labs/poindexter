@@ -24,6 +24,13 @@ Config (``plugin.llm_provider.openai_compat`` in ``app_settings``):
 - ``api_key`` — optional; paid vendors require, local backends don't
 - ``timeout_seconds`` (default 120)
 - ``default_embed_model`` (default ``"nomic-embed-text"``)
+- ``allow_paid_base_url`` (default ``false``) — opt-in gate per
+  ``feedback_no_paid_apis``. Non-local ``base_url`` values (Groq /
+  OpenRouter / Together / Fireworks / anything that isn't
+  localhost / 127.0.0.1 / host.docker.internal) refuse to fire
+  unless this flag is explicitly ``true``. Prevents the
+  $300-Gemini-overnight class of incident where a one-row edit
+  swings the dispatch target to a paid vendor with no budget gate.
 """
 
 from __future__ import annotations
@@ -35,8 +42,22 @@ from typing import Any
 import httpx
 
 from plugins.llm_provider import Completion, Token
+from services.cost_guard import is_local_base_url
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_bool(value: Any) -> bool:
+    """app_settings.value is TEXT; coerce common truthy strings.
+
+    Matches the pattern used by SiteConfig.get_bool — operators write
+    ``true`` / ``True`` / ``1`` / ``yes`` interchangeably.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
 
 
 class OpenAICompatProvider:
@@ -74,7 +95,35 @@ class OpenAICompatProvider:
             "api_key": cfg.get("api_key") or "",
             "timeout": timeout,
             "default_embed_model": cfg.get("default_embed_model", "nomic-embed-text"),
+            "allow_paid_base_url": _coerce_bool(cfg.get("allow_paid_base_url")),
         }
+
+    def _enforce_paid_endpoint_policy(self, base_url: str, allow_paid: bool) -> None:
+        """Refuse non-local ``base_url`` unless the operator opted in.
+
+        Per ``feedback_no_paid_apis``: "OpenAI/Anthropic/Gemini/OAI-compat
+        allowed as opt-in fallbacks ONLY when explicitly enabled in
+        app_settings AND gated by cost_guard." Local backends (Ollama,
+        vllm, llama.cpp, LM Studio) cost zero dollars regardless of
+        traffic so the policy doesn't apply to them.
+
+        Raised as ``RuntimeError`` (not ``CostGuardExhausted``) because
+        the call is being refused on the configuration axis, not the
+        budget axis. The error message names the exact app_setting an
+        operator must flip to authorise the paid path.
+        """
+        if is_local_base_url(base_url):
+            return
+        if allow_paid:
+            return
+        raise RuntimeError(
+            f"OpenAICompatProvider refuses non-local base_url "
+            f"{base_url!r} — set "
+            f"plugin.llm_provider.openai_compat.allow_paid_base_url=true "
+            f"in app_settings to authorise paid endpoints. Default is "
+            f"false per feedback_no_paid_apis to prevent unmonitored "
+            f"spend when the dispatch target is swapped via DB edit."
+        )
 
     def _headers(self, api_key: str) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -89,6 +138,9 @@ class OpenAICompatProvider:
         **kwargs: Any,
     ) -> Completion:
         cfg = self._resolve_config(kwargs)
+        self._enforce_paid_endpoint_policy(
+            cfg["base_url"], cfg["allow_paid_base_url"],
+        )
 
         payload: dict[str, Any] = {
             "model": model,
@@ -131,6 +183,9 @@ class OpenAICompatProvider:
         **kwargs: Any,
     ) -> AsyncIterator[Token]:
         cfg = self._resolve_config(kwargs)
+        self._enforce_paid_endpoint_policy(
+            cfg["base_url"], cfg["allow_paid_base_url"],
+        )
 
         payload: dict[str, Any] = {
             "model": model,
@@ -173,9 +228,20 @@ class OpenAICompatProvider:
                     if text or finish:
                         yield Token(text=text, finish_reason=finish, raw=chunk)
 
-    async def embed(self, text: str, model: str) -> list[float]:
-        """Embed via the OpenAI-compat /v1/embeddings endpoint."""
-        cfg = self._resolve_config({})
+    async def embed(self, text: str, model: str, **kwargs: Any) -> list[float]:
+        """Embed via the OpenAI-compat /v1/embeddings endpoint.
+
+        ``**kwargs`` exists so the dispatcher can inject
+        ``_provider_config`` (carrying the operator-set base_url, api_key,
+        allow_paid_base_url flag) symmetrically with ``complete()`` /
+        ``stream()``. Without that the paid-endpoint policy could be
+        bypassed by routing through the embed path on a paid backend
+        — same runaway-cost class the policy was added to prevent.
+        """
+        cfg = self._resolve_config(kwargs)
+        self._enforce_paid_endpoint_policy(
+            cfg["base_url"], cfg["allow_paid_base_url"],
+        )
         embed_model = model or cfg["default_embed_model"]
 
         async with httpx.AsyncClient(timeout=cfg["timeout"]) as http:

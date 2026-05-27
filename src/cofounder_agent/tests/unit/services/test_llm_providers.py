@@ -86,7 +86,15 @@ class TestOpenAICompatComplete:
             completion = await provider.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="gemma3:27b",
-                _provider_config={"base_url": "http://vllm-host:8080/v1"},
+                _provider_config={
+                    "base_url": "http://vllm-host:8080/v1",
+                    # Non-local base_url — opt into the paid-endpoint
+                    # policy added 2026-05-27 (#615). vllm running on
+                    # a non-local host is technically self-hosted but
+                    # the policy doesn't infer that — operator must
+                    # flip the flag.
+                    "allow_paid_base_url": "true",
+                },
             )
 
         assert completion.text == "hello"
@@ -126,7 +134,11 @@ class TestOpenAICompatComplete:
             await provider.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="x",
-                _provider_config={"base_url": "http://api.groq.com/openai/v1", "api_key": "gsk_test"},
+                _provider_config={
+                    "base_url": "http://api.groq.com/openai/v1",
+                    "api_key": "gsk_test",
+                    "allow_paid_base_url": "true",  # paid endpoint opt-in
+                },
             )
 
         headers = post_mock.await_args.kwargs["headers"]
