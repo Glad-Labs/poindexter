@@ -243,18 +243,70 @@ async def ollama_chat_text(
     return output
 
 
-def maybe_unwrap_json(prose: str) -> str:
-    """Defensive unwrap for models that wrap prose in JSON envelopes.
+_ENVELOPE_PROSE_KEYS: tuple[str, ...] = (
+    # Highest-priority keys first: full-body keys beat fragment keys when
+    # both are present, since canonical_blog envelopes pair "title" + "body".
+    "body",
+    "content",
+    "markdown",
+    "article",
+    "post",
+    "thought",
+    "response",
+    "text",
+    "answer",
+    "output",
+)
 
-    Some local models emit ``{"thought": "<actual prose>"}`` even when
-    the request didn't set ``format=json``. Walk common envelope keys
-    and extract the inner string. If the input doesn't look like JSON
-    or is JSON-without-prose-keys, return it unchanged.
+
+def _strip_markdown_fence(s: str) -> str:
+    r"""Strip a single outer ```json / ``` fence if present.
+
+    The writer prompt forbids fenced JSON envelopes, but local models
+    still emit them periodically — the 2026-05-27 canonical_blog
+    incident put two posts into awaiting_approval with the literal
+    "```json\n{\"title\": \"...\", \"body\": \"...\"}\n```" shape.
+    Bare ``{ ... }`` is already handled by the caller; this helper
+    targets the fence-wrapped variant.
+    """
+    s = s.strip()
+    # ``` or ```json (case-insensitive) opening fence
+    if s.startswith("```"):
+        first_nl = s.find("\n")
+        if first_nl == -1:
+            return s
+        opening = s[:first_nl].strip().lower()
+        # Accept ```, ```json, ```JSON, ```jsonc — anything that LOOKS
+        # like a JSON fence. Reject non-JSON fences (```python etc.)
+        # because unwrapping those would discard real prose content.
+        if opening in {"```", "```json", "```jsonc", "```json5"}:
+            body = s[first_nl + 1:].rstrip()
+            if body.endswith("```"):
+                body = body[: -3].rstrip()
+            return body
+    return s
+
+
+def maybe_unwrap_json(prose: str) -> str:
+    r"""Defensive unwrap for models that wrap prose in JSON envelopes.
+
+    Some local models emit ``{"thought": "<actual prose>"}`` or
+    ``{"title": "...", "body": "<actual markdown>"}`` even when the
+    request didn't set ``format=json``. They also frequently wrap that
+    envelope in a "```json ... ```" markdown fence even though the
+    prompt forbids it. This helper peels both layers and extracts the
+    prose value under the first matching known key.
+
+    If the input doesn't look like JSON (after fence stripping), or
+    parses but has no recognized prose key, return ``prose`` unchanged
+    so plain-markdown output survives untouched.
     """
     import json
 
-    s = (prose or "").strip()
-    if not s or not (s.startswith("{") and s.endswith("}")):
+    if not prose:
+        return prose
+    s = _strip_markdown_fence(prose)
+    if not (s.startswith("{") and s.endswith("}")):
         return prose
     try:
         envelope = json.loads(s)
@@ -262,7 +314,7 @@ def maybe_unwrap_json(prose: str) -> str:
         return prose
     if not isinstance(envelope, dict):
         return prose
-    for key in ("thought", "content", "response", "text", "answer", "output"):
+    for key in _ENVELOPE_PROSE_KEYS:
         v = envelope.get(key)
         if isinstance(v, str) and v.strip():
             return v

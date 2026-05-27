@@ -277,3 +277,49 @@ class TestMaybeUnwrapJson:
 
     def test_handles_empty_string(self):
         assert maybe_unwrap_json("") == ""
+
+    def test_unwraps_body_envelope(self):
+        # 2026-05-27: the canonical_blog regression. The writer emitted
+        # ``{"title": "T", "body": "<actual markdown>"}`` and the previous
+        # key list missed it because "body" wasn't listed — leaving the raw
+        # JSON envelope in pipeline_versions.content.
+        wrapped = '{"title": "Headline", "body": "# Headline\\n\\nProse here."}'
+        assert maybe_unwrap_json(wrapped) == "# Headline\n\nProse here."
+
+    def test_unwraps_markdown_fenced_json_envelope(self):
+        # Same incident — the model wrapped the envelope in a fenced code
+        # block. Before the fix, ``startswith("{")`` was False so the
+        # function bailed and returned the fenced envelope verbatim.
+        wrapped = (
+            "```json\n"
+            '{"title": "Headline", "body": "# Real markdown\\n\\nBody."}\n'
+            "```"
+        )
+        assert maybe_unwrap_json(wrapped) == "# Real markdown\n\nBody."
+
+    def test_unwraps_bare_fenced_envelope(self):
+        # Some models open with ``` (no language tag) instead of ```json.
+        wrapped = (
+            "```\n"
+            '{"content": "the inner prose"}\n'
+            "```"
+        )
+        assert maybe_unwrap_json(wrapped) == "the inner prose"
+
+    def test_does_not_unwrap_non_json_fence(self):
+        # ```python ... ``` blocks must survive — that's real prose
+        # the user/writer intended to ship, not an envelope.
+        snippet = "```python\nprint('hi')\n```"
+        assert maybe_unwrap_json(snippet) == snippet
+
+    def test_body_key_wins_over_title_key(self):
+        # The canonical_blog envelope has BOTH "title" and "body".
+        # "body" is the document; "title" is metadata. Body wins.
+        wrapped = '{"title": "Just the title", "body": "Full markdown post here."}'
+        assert maybe_unwrap_json(wrapped) == "Full markdown post here."
+
+    def test_unwraps_markdown_key(self):
+        # Some models prefer "markdown" as the prose key, especially when
+        # the system prompt mentions markdown explicitly.
+        wrapped = '{"markdown": "# Heading\\n\\nProse."}'
+        assert maybe_unwrap_json(wrapped) == "# Heading\n\nProse."
