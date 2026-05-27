@@ -80,6 +80,30 @@ async def run_all(pool: Any) -> RunnerSummary:
             seen.add(name)
             unique_sources.append(src)
 
+    # Per-source timeout — without this, one hanging upstream
+    # (HackerNews API stall, DevTo proxy block, web_search 30s
+    # connect-timeout × N retries) blocks the entire discovery pass
+    # behind ``asyncio.gather`` below. Default 60s is generous enough
+    # for slow remote APIs but tight enough that the operator notices
+    # within a single run cycle. Operators can tune globally via
+    # ``topic_source_per_source_timeout_s`` or per-source via
+    # ``plugin.topic_source.<name>.config.timeout_s``.
+    global_timeout_s = 60.0
+    try:
+        from plugins.config import PluginConfig
+        runner_cfg = await PluginConfig.load(pool, "topic_source", "_runner")
+        global_timeout_s = float(
+            runner_cfg.config.get("per_source_timeout_s")
+            or runner_cfg.config.get("timeout_s")
+            or global_timeout_s
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "TopicSources runner: timeout config lookup failed, using "
+            "default %.1fs: %s",
+            global_timeout_s, exc,
+        )
+
     async def _run_one(source: Any) -> tuple[SourceStats, list[DiscoveredTopic]]:
         import time
         stats = SourceStats(name=getattr(source, "name", type(source).__name__))
@@ -88,12 +112,30 @@ async def run_all(pool: Any) -> RunnerSummary:
             stats.enabled = False
             return stats, []
 
+        # Resolve per-source timeout override; fall back to the global
+        # value. Cast to float because asyncio.wait_for rejects strings
+        # silently with a confusing TypeError.
+        try:
+            source_timeout_s = float(source_config.get("timeout_s") or global_timeout_s)
+        except (TypeError, ValueError):
+            source_timeout_s = global_timeout_s
+
         start = time.monotonic()
         topics: list[DiscoveredTopic] = []
         try:
-            result = await source.extract(pool, source_config)
+            result = await asyncio.wait_for(
+                source.extract(pool, source_config),
+                timeout=source_timeout_s,
+            )
             if result:
                 topics = list(result)
+        except asyncio.TimeoutError:
+            stats.error = f"timed out after {source_timeout_s:.0f}s"
+            logger.warning(
+                "TopicSource %s: extract timed out after %.0fs — other "
+                "sources still ran",
+                stats.name, source_timeout_s,
+            )
         except Exception as e:
             stats.error = str(e)[:200]
             logger.exception(
