@@ -47,7 +47,7 @@ A **Stage** is a pipeline step that runs on a single content task.
 Stages are wired into LangGraph templates in
 `services/pipeline_templates/__init__.py`; `TemplateRunner` orchestrates
 them via the template's edge list (the `canonical_blog` template lists
-its 12 nodes in `_CANONICAL_BLOG_ORDER`).
+its 13 nodes in `_CANONICAL_BLOG_ORDER`).
 
 ### 1a. Minimum viable Stage
 

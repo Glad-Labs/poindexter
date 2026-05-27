@@ -3,7 +3,7 @@
 FastAPI orchestrator for the Poindexter AI content pipeline. Coordinates specialized agents through a model router with task management, QA gates, and real-time monitoring.
 
 **Version:** 0.1.0
-**Runtime:** Python 3.10+ with FastAPI
+**Runtime:** Python 3.13+ with FastAPI
 **Port:** 8002
 **Database:** PostgreSQL via asyncpg (raw SQL, no ORM)
 **Dependencies:** Poetry (`pyproject.toml`)

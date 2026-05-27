@@ -280,7 +280,7 @@ curl -s http://localhost:8002/api/health | python -m json.tool
 | -------------------------------------- | ---------------------------- |
 | Docker Desktop 4.26+ with WSL2 backend | Runs all containers          |
 | Git + Git Bash (Windows)               | start-stack.sh uses bash     |
-| Python 3.12+                           | poindexter CLI               |
+| Python 3.13+                           | poindexter CLI               |
 | Node.js 22+                            | Public site dev/build        |
 | Ollama 0.1.40+                         | Local LLM inference          |
 | NVIDIA driver supporting CUDA 12.8+    | SDXL + Wan video on RTX 5090 |

@@ -122,7 +122,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 | **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
 | **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
 | **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 717 settings (62 secret) in PostgreSQL. Change with SQL or REST. No deploys.                |
+| **DB-as-config**             | 800+ settings (60 secret) in PostgreSQL. Change with SQL or REST. No deploys.               |
 | **Langfuse-managed prompts** | Edit prompts in a UI; runtime falls back to YAML defaults if Langfuse is offline            |
 | **LangGraph pipelines**      | `template_runner.py` runs declarative DAGs with checkpointing                               |
 | **Multi-modal output**       | Markdown posts, AI images (SDXL / Flux), podcast audio, text-to-video (Wan 2.1 — alpha)     |
@@ -135,7 +135,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 
 ## Stack
 
-- **Backend:** Python 3.12 / FastAPI / asyncpg
+- **Backend:** Python 3.13 / FastAPI / asyncpg
 - **LLM (default):** [Ollama](https://ollama.com) — local inference, your GPU
 - **LLM (optional):** [LiteLLM](https://github.com/BerriAI/litellm) provider plugin — Anthropic, OpenAI, Groq, OpenRouter, Bedrock, Vertex (gated by `cost_guard`)
 - **Orchestration:** [LangGraph](https://github.com/langchain-ai/langgraph) (declarative pipelines via `template_runner`)
@@ -147,7 +147,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 - **Voice (optional):** LiveKit + Whisper (STT) + Kokoro (TTS)
 - **Storage:** any S3-compatible (Cloudflare R2, AWS S3, Backblaze B2, MinIO)
 - **CI/CD:** GitHub Actions
-- **Infrastructure:** Docker Compose (~12 containers)
+- **Infrastructure:** Docker Compose (~32 containers including the full observability + voice + image-gen sidecars; a minimal worker-only deploy needs ~8)
 
 ## Configuration
 
@@ -172,16 +172,21 @@ No restart required for most settings. See [`docs/operations/environment-variabl
 
 ## Plugins
 
-Poindexter is built on a small extension framework. Six plugin types let you customize the system without touching core code:
+Poindexter is built on a small extension framework. Eighteen plugin types let you customize the system without touching core code — the most commonly extended ones:
 
-| Type            | Role                                                         |
-| --------------- | ------------------------------------------------------------ |
-| **Tap**         | Pulls data into the system (RSS, Slack, social feeds, etc.)  |
-| **Probe**       | Reports state to the brain (health checks, business metrics) |
-| **Job**         | Scheduled work (cron-like, lives in the worker)              |
-| **Stage**       | A step in the content pipeline (research, draft, QA, etc.)   |
-| **Pack**        | Bundle of prompts + style rules (your "brand voice")         |
-| **LLMProvider** | Inference backend (Ollama is default; LiteLLM, vLLM, etc.)   |
+| Type               | Role                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| **Tap**            | Pulls data into the system (RSS, Slack, social feeds, etc.)                            |
+| **Probe**          | Reports state to the brain (health checks, business metrics)                           |
+| **Job**            | Scheduled work (cron-like, lives in the worker)                                        |
+| **Stage**          | A step in the content pipeline (research, draft, QA, etc.)                             |
+| **TopicSource**    | Discovers candidate topics (HackerNews, dev.to, web search, etc.)                      |
+| **LLMProvider**    | Inference backend (Ollama is default; LiteLLM, OpenAI-compat, etc.)                    |
+| **ImageProvider**  | Featured + inline images (SDXL, Flux, Pexels, etc.)                                    |
+| **PublishAdapter** | Where finished posts go (S3-compatible, Discord, custom CMS, etc.)                     |
+| **Module**         | Bundles the above + migrations + routes into a versioned business function (Module v1) |
+
+The full set also includes Reviewers, Adapters, Packs, AudioGenProviders, VideoProviders, TTSProviders, CaptionProviders, and MediaCompositors. See `plugins/registry.py::ENTRY_POINT_GROUPS` for the canonical list.
 
 Each plugin lives in its own pip package and registers via setuptools `entry_points`.
 
@@ -232,7 +237,7 @@ Poindexter is in **alpha**. Honest snapshot:
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Windows 11). Single-operator content business publishing daily.
-- 73 live posts on [gladlabs.io](https://www.gladlabs.io) (240 total drafts, 1,617 pipeline runs).
+- 78 live posts on [gladlabs.io](https://www.gladlabs.io) (222 total drafts, 1,626 pipeline runs).
 - 8,400+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — generates secrets, tests DB, runs migrations, writes bootstrap.toml. No `.env` file required.
 - Live in-place upgrades — schema changes, container renames, env var migrations applied to a running instance with zero data loss and no in-flight task downtime.

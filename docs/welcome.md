@@ -32,9 +32,11 @@ in 30 minutes without any of the reading below.
   Covers the QA stages (`cross_model_qa` with its rewrite loop) plus
   the six OSS rails (DeepEval ×3, guardrails-ai ×2, Ragas).
 - **[Plugin architecture](architecture/plugin-architecture)** —
-  the six plugin Protocols (Tap, Probe, Job, Stage, Pack,
-  LLMProvider) and the phased refactor that's consolidating
-  the codebase around them.
+  the eighteen plugin Protocols (Tap, Probe, Job, Stage,
+  TopicSource, LLMProvider, ImageProvider, PublishAdapter,
+  Module, and the rest in `plugins/registry.py::ENTRY_POINT_GROUPS`)
+  and the phased refactor that's consolidating the codebase
+  around them.
 - **[Database schema](architecture/database-schema)** — every
   table, the modular database service layer, and the migration
   system.

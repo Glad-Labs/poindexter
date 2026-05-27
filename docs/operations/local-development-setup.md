@@ -20,7 +20,7 @@ when something doesn't come up.
 | Ollama         | 0.1.40+  | Local LLM inference                      | Yes         |
 | Node.js        | 22+      | Frontend (Next.js) and lint-staged hooks | Yes         |
 | Git + Git Bash | any      | start-stack.sh uses `bash`               | Yes         |
-| Python         | 3.12+    | CLI + running worker outside Docker      | Yes         |
+| Python         | 3.13+    | CLI + running worker outside Docker      | Yes         |
 | GPU            | 8GB VRAM | Ollama inference is far faster with CUDA | Recommended |
 
 **Windows note.** Run all commands from Git Bash or WSL. Native

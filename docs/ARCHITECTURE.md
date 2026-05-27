@@ -87,9 +87,10 @@ content with human oversight**, not "AI content factory" and not
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
-│  │       12 nodes; dev_diary template, 4 nodes)               │ │
-│  │  LiteLLM router (primary on prod for all 4 cost tiers;     │ │
-│  │     Ollama default, cloud providers behind cost_guard)     │ │
+│  │       13 nodes; dev_diary template, 4 nodes)               │ │
+│  │  LiteLLM router (primary on prod for all 5 cost tiers;     │ │
+│  │     Ollama default, cloud providers behind cost_guard +    │ │
+│  │     allow_paid_base_url opt-in per feedback_no_paid_apis)  │ │
 │  │  Semantic Memory (pgvector, writer-segregated)             │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
@@ -176,15 +177,15 @@ execution and multi-agent orchestration.
 
 | Component             | Technology                      | Port  | Status        |
 | --------------------- | ------------------------------- | ----- | ------------- |
-| **Poindexter Worker** | FastAPI + Python 3.12 + Uvicorn | 8002  | ✅ Production |
+| **Poindexter Worker** | FastAPI + Python 3.13 + Uvicorn | 8002  | ✅ Production |
 | **CMS Data**          | PostgreSQL (Direct Access)      | 15432 | ✅ Production |
 
 **Backend Features:**
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` template (12 nodes) registered in `services/pipeline_templates/__init__.py`, dispatched by Prefect via `services/flows/content_generation.py`. The legacy stage-plugin chain was deleted 2026-05-16 (Lane C Stage 4) — see [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md).
-- LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 4 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS.
+- LangGraph-orchestrated pipeline — `canonical_blog` template (13 nodes) registered in `services/pipeline_templates/__init__.py`, dispatched by Prefect via `services/flows/content_generation.py`. The legacy stage-plugin chain was deleted 2026-05-16 (Lane C Stage 4) — see [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md).
+- LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
 - Domain-typed errors via `services/error_handler.py`
@@ -343,7 +344,7 @@ GET  /api/tags                     # List tags
 
 A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. Templates are registered in `services/pipeline_templates/__init__.py`. Today two ship in-tree:
 
-- `canonical_blog` — the 12-node default for blog posts (verify_task → generate_content → writer_self_review → resolve_internal_link_placeholders → quality_evaluation → url_validation → replace_inline_images → source_featured_image → cross_model_qa → generate_seo_metadata → generate_media_scripts → capture_training_data → finalize_task)
+- `canonical_blog` — the 13-node default for blog posts (verify_task → generate_content → writer_self_review → resolve_internal_link_placeholders → quality_evaluation → url_validation → replace_inline_images → source_featured_image → cross_model_qa → generate_seo_metadata → generate_media_scripts → capture_training_data → finalize_task)
 - `dev_diary` — 4-node subset for the build-in-public stream (verify_task → narrate_bundle → source_featured_image → finalize_task)
 
 Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL value fails loud per `feedback_no_silent_defaults`.
@@ -531,7 +532,7 @@ The roadmap is tracked via GitHub milestones at
 
 ## Related Documentation
 
-- **[LangGraph Cutover](architecture/langgraph-cutover)** — the 12-node `canonical_blog` template + cross-model QA, post-Stage-4 reality
+- **[LangGraph Cutover](architecture/langgraph-cutover)** — the 13-node `canonical_blog` template + cross-model QA, post-Stage-4 reality
 - **[Database Schema](architecture/database-schema)** — every table + migration system
 - **[API Reference](api/README)** — REST endpoints
 - **[Local Development](operations/local-development-setup)** — setup walkthrough

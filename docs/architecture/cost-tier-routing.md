@@ -6,16 +6,17 @@
 
 Pre-2026-05-09, ~22 production call sites embedded specific LLM model identifiers as Python literals — `"gemma3:27b"`, `"gemma3:27b-it-qat"`, `"llama3:latest"`, `"qwen3-coder:30b"`, etc. Each was hardcoded for the model that worked best at that call site at that time. The cost: every operator who runs a fork of Poindexter had to either accept Matt's specific model selection or fork the code to swap it. There was no DB-tunable seam.
 
-The cost-tier API makes the model selection a configuration concern, not a code concern. Every call site declares **what kind of model** it needs (small/free, mid/budget, default/standard, premium), and the operator's `app_settings` rows decide **which specific model** maps to that tier.
+The cost-tier API makes the model selection a configuration concern, not a code concern. Every call site declares **what kind of model** it needs (small/free, mid/budget, default/standard, premium, flagship), and the operator's `app_settings` rows decide **which specific model** maps to that tier.
 
-## The four tiers
+## The five tiers
 
-| Tier       | Default model                | When to use                                                                                                |
-| ---------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `free`     | `ollama/qwen3:8b`            | Smallest local, ~zero cost. Use for image-decision, search-query gen, anything where a 7B model is plenty. |
-| `budget`   | `ollama/gemma3:27b-it-qat`   | Quantized 27B; fast local. Use for cold-data summarization, retention work, eval judges.                   |
-| `standard` | `ollama/gemma3:27b`          | Default writer + critic. Use for blog generation, QA review, post-pipeline rewrites.                       |
-| `premium`  | `anthropic/claude-haiku-4-5` | Cloud cross-model QA critic; cost_guard-gated. Use sparingly for high-stakes calls.                        |
+| Tier       | Default model                | When to use                                                                                                                                                                   |
+| ---------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `free`     | `ollama/qwen3:8b`            | Smallest local, ~zero cost. Use for image-decision, search-query gen, anything where a 7B model is plenty.                                                                    |
+| `budget`   | `ollama/gemma3:27b-it-qat`   | Quantized 27B; fast local. Use for cold-data summarization, retention work, eval judges.                                                                                      |
+| `standard` | `ollama/gemma3:27b`          | Default writer + critic. Use for blog generation, QA review, post-pipeline rewrites.                                                                                          |
+| `premium`  | `anthropic/claude-haiku-4-5` | Cloud cross-model QA critic; cost_guard-gated AND paid-base-url-gated. Use sparingly for high-stakes calls.                                                                   |
+| `flagship` | _(unseeded)_                 | Reserved for top-of-stack workloads (e.g. a frontier-model critic for niche-launch QA). Operator seeds the row when a use case lands; the validator already accepts the name. |
 
 The defaults are seeded by `services/migrations/20260509_203928_seed_cost_tier_model_mappings.py`. Operators tune by updating the row:
 

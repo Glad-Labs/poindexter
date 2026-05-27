@@ -52,7 +52,16 @@ Every custom system originally proposed has a mature, free, OSS equivalent alrea
 
 Net result: ~3000 lines of god-file code deleted, Singer catalog unlocked, zero new services to run, observability consolidated in the Grafana stack.
 
-## The six plugin Protocols
+## The original six plugin Protocols
+
+The Phase A–J design described below locks in the **original six**
+plugin Protocols. Since this design landed, the substrate has grown
+beyond that initial set — see `plugins/registry.py::ENTRY_POINT_GROUPS`
+for the canonical list (currently 18 groups, including specialised
+Provider variants like `image_providers`, `video_providers`,
+`audio_gen_providers`, `tts_providers`, `caption_providers`,
+`media_compositors`, `publish_adapters`, and the Module v1 group
+that bundles capability plugins into business-function units).
 
 All live under `src/cofounder_agent/plugins/` as the canonical contracts. All discovered via `importlib.metadata.entry_points`.
 

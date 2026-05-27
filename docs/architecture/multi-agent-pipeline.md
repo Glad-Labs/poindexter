@@ -8,15 +8,18 @@ hierarchy) that no longer matches the shipped code.
 
 ## Where to look now
 
-The Phase E refactor replaced the agent-centric model with a 12-stage
-`Stage` plugin chain. The plugin roadmap locked in Phase J will add an
-`LLMProvider` family that pluralizes inference backends. All current
-and future pipeline work is documented in:
+The Phase E refactor replaced the agent-centric model with a stage
+plugin chain, which Lane C (2026-05-10..16) further evolved into a
+LangGraph-based template (`canonical_blog`, currently 13 nodes; the
+4-node `dev_diary` template lives alongside it). The plugin roadmap
+locked in Phase J added an `LLMProvider` family that pluralizes
+inference backends. All current and future pipeline work is documented
+in:
 
 - **[Content pipeline — Stage architecture](./content-pipeline)** —
-  the authoritative description of the 12-stage pipeline that runs
-  every content task today. Includes stage-by-stage behavior,
-  halt semantics, and the rewrite loop.
+  the authoritative description of the 13-node pipeline that runs
+  every content task today. Includes node-by-node behavior, halt
+  semantics, and the rewrite loop.
 - **[Plugin architecture](./plugin-architecture)** — the evolution
   plan from god-files to plugin Protocols (Tap, Probe, Job, Stage,
   Pack, LLMProvider). Umbrella issue [GH-64](https://github.com/Glad-Labs/poindexter/issues/64).

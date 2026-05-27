@@ -15,7 +15,7 @@ pip install poindexter
 uv tool install poindexter
 ```
 
-Python 3.10 – 3.13 supported.
+Python 3.13 required (see `pyproject.toml`'s `>=3.13,<3.14`).
 
 ## Quick start
 
