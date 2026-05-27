@@ -606,9 +606,37 @@ def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]
 
 
 async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
-    """Fetch the 5 most-recently-published posts' image_style from metadata."""
+    """Fetch the 5 most-recently-published posts' image_style from metadata.
+
+    2026-05-27 fix (Glad-Labs/glad-labs-stack#234): previously opened a
+    raw ``asyncpg.connect`` on every image-stage run (one per published
+    post). Under burst load the unbounded connections starved the
+    Postgres connection budget. Now uses the lifespan pool attached to
+    ``site_config._pool`` (set by ``SiteConfig.load`` +
+    ``build_and_wire_for_subprocess``). Falls back to the raw connect
+    path only when the pool isn't wired (tests, early-boot CLI).
+    """
     if site_config is None:
         return []
+
+    _QUERY = """
+        SELECT metadata->>'image_style' as style
+        FROM posts WHERE status = 'published'
+        AND metadata->>'image_style' IS NOT NULL
+        ORDER BY published_at DESC LIMIT 5
+    """
+
+    pool = getattr(site_config, "_pool", None)
+    if pool is not None:
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(_QUERY)
+            return [r["style"] for r in rows if r["style"]]
+        except Exception:
+            # Pool errors are recoverable — fall through to the
+            # legacy raw-connect path rather than failing the stage.
+            pass
+
     try:
         import asyncpg
 
@@ -617,12 +645,7 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
             return []
         conn = await asyncpg.connect(cloud_url)
         try:
-            rows = await conn.fetch("""
-                SELECT metadata->>'image_style' as style
-                FROM posts WHERE status = 'published'
-                AND metadata->>'image_style' IS NOT NULL
-                ORDER BY published_at DESC LIMIT 5
-            """)
+            rows = await conn.fetch(_QUERY)
             return [r["style"] for r in rows if r["style"]]
         finally:
             await conn.close()

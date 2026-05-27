@@ -76,6 +76,7 @@ DEFAULTS: dict[str, str] = {
     'site_url': '',
 
     # ----- Cost / billing -----
+    'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',
 
     # ----- LLM model selection -----
