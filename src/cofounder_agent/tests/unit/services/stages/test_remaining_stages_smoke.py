@@ -640,14 +640,20 @@ class TestSourceFeaturedImageAdapter:
             source="pexels", width=800, height=600,
         )
         image_service = SimpleNamespace(
-            sdxl_available=False, sdxl_initialized=True,  # sdxl not attempted
+            sdxl_available=False, sdxl_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
         ctx: dict[str, Any] = {
             "topic": "Cats", "tags": ["kittens"],
             "generate_featured_image": True, "image_service": image_service,
         }
-        result = await SourceFeaturedImageStage().execute(ctx, {})
+        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the SDXL path to miss so the Pexels fallback runs.
+        with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=None),
+        ):
+            result = await SourceFeaturedImageStage().execute(ctx, {})
         assert result.ok is True
         u = result.context_updates
         assert u["featured_image_url"] == "https://pex.example/photo.jpg"

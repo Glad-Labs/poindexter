@@ -105,7 +105,12 @@ class TestSourceFeaturedImageRecordsAsset:
             "site_config": sc,
         }
         recorder = AsyncMock(return_value="asset-row-2")
+        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the SDXL path to miss so the Pexels fallback runs.
         with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=None),
+        ), patch(
             "services.media_asset_recorder.record_media_asset",
             recorder,
         ):
@@ -135,7 +140,12 @@ class TestSourceFeaturedImageRecordsAsset:
             "site_config": sc,
         }
         recorder = AsyncMock()
+        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the SDXL path to miss so search_featured_image is reached.
         with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=None),
+        ), patch(
             "services.media_asset_recorder.record_media_asset",
             recorder,
         ):
@@ -284,7 +294,12 @@ class TestFeaturedImageDataContextUpdates:
             "image_service": image_service,
             "site_config": sc,
         }
+        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the SDXL path to miss so the Pexels branch populates featured_image_data.
         with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=None),
+        ), patch(
             "services.media_asset_recorder.record_media_asset",
             AsyncMock(return_value="row"),
         ):
