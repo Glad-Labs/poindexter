@@ -112,8 +112,10 @@ class TestRouteManifestStructure:
         Updated 2026-05-05 (#389): added voice_routes (LiveKit web join page).
         Updated 2026-05-06 (#347 step 3): added triage_router (firefighter
         ops LLM diagnosis route).
+        Updated 2026-05-27 (#239): added module_probes_router (Module v1
+        brain-probe inventory at /api/modules/probes).
         """
-        assert len(_WORKER_ROUTES) == 18
+        assert len(_WORKER_ROUTES) == 19
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

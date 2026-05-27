@@ -514,12 +514,21 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # body is just ``del arg``), so a `None` is the canonical
         # "subsystem not present" sentinel.
         try:
+            from plugins.probe_registry import BrainProbeRegistry
             from plugins.registry import get_modules as _get_modules
 
             _modules_for_lifecycle = _get_modules()
+            # Shared registry — every module's ``register_probes`` writes
+            # into the same instance so ``/api/modules/probes`` can return
+            # the complete worker-wide view. Stashed on ``app.state`` so
+            # request handlers + the brain daemon's HTTP poller can read
+            # it. The registry is conceptually immutable after lifespan
+            # completes (no production code mutates it post-startup).
+            brain_probe_registry = BrainProbeRegistry()
+            app.state.brain_probe_registry = brain_probe_registry
             if _modules_for_lifecycle:
                 logger.info(
-                    "[LIFESPAN] Module v1: invoking lifecycle no-op hooks "
+                    "[LIFESPAN] Module v1: invoking lifecycle hooks "
                     "for %d module(s)",
                     len(_modules_for_lifecycle),
                 )
@@ -551,9 +560,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                             "failed: %s",
                             _mod_name, _dash_err, exc_info=True,
                         )
-                    # Brain probes — daemon runs in a different process.
+                    # Brain probes — hand the shared registry so the
+                    # module can contribute zero or more probes. A
+                    # module that doesn't contribute probes still gets
+                    # called; the no-op stub just ignores the argument.
                     try:
-                        _mod.register_probes(None)
+                        _mod.register_probes(brain_probe_registry)
                     except Exception as _probe_err:
                         logger.warning(
                             "[LIFESPAN] Module v1: %s.register_probes "
@@ -565,6 +577,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                         "complete (cli/dashboards/probes)",
                         _mod_name,
                     )
+                logger.info(
+                    "[LIFESPAN] Module v1: %d brain probe(s) registered: %s",
+                    len(brain_probe_registry),
+                    [p.fqid for p in brain_probe_registry.probes()] or "(none)",
+                )
         except Exception as e:
             logger.warning(
                 "[LIFESPAN] Module v1 lifecycle iteration failed "

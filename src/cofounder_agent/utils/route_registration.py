@@ -73,6 +73,7 @@ _WORKER_ROUTES = [
     ("routes.triage_routes", "router", "triage_router", "firefighter ops LLM diagnosis route (#347 step 3)"),
     ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (internal tracker Phase 3.B)"),
     ("routes.voice_routes", "router", "voice_router", "voice agent web client (LiveKit web join page, poindexter#389)"),
+    ("routes.module_probes_routes", "router", "module_probes_router", "Module v1 brain-probe inventory (/api/modules/probes, #239)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

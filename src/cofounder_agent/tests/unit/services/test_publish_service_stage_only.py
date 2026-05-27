@@ -223,3 +223,147 @@ async def test_publish_result_exposes_staged_field() -> None:
     assert staged.staged is True
     assert live.to_dict()["staged"] is False
     assert staged.to_dict()["staged"] is True
+
+
+# --- Edge-case + error-path coverage for the pure helpers backing the
+# publish path. The stage_only contract above sits on top of these; if
+# any of these silently swallow a wrong-shaped input the whole path
+# misbehaves without raising.
+
+
+def test_parse_json_field_returns_dict_for_valid_json_string() -> None:
+    """task_metadata / result columns come back as either dicts (asyncpg
+    JSONB) or strings (some legacy code paths fetchrow's raw text).
+    The helper must accept both so publish_post_from_task doesn't have
+    to branch on type at every call site."""
+    from services.publish_service import _parse_json_field
+
+    parsed = _parse_json_field('{"content": "body", "seo_keywords": ["a"]}', "task_metadata")
+    assert parsed == {"content": "body", "seo_keywords": ["a"]}
+
+
+def test_parse_json_field_swallows_invalid_json_to_empty_dict() -> None:
+    """A malformed JSON string must NOT raise — the publish path treats
+    a corrupt metadata column as 'no metadata' and proceeds with the
+    fallbacks. Raising here would 500 the whole publish for one bad row
+    instead of degrading gracefully."""
+    from services.publish_service import _parse_json_field
+
+    assert _parse_json_field("not-json{", "task_metadata", "task-id") == {}
+    assert _parse_json_field("", "task_metadata") == {}
+
+
+def test_parse_json_field_none_and_non_dict_return_empty() -> None:
+    """None (NULL JSONB column) and unexpected scalar types (int, list)
+    both collapse to {}. Lists in particular would crash the downstream
+    `.get("content")` calls in the publish path — this helper is the
+    defensive shim that keeps that from happening."""
+    from services.publish_service import _parse_json_field
+
+    assert _parse_json_field(None) == {}
+    assert _parse_json_field(42) == {}
+    assert _parse_json_field(["not", "a", "dict"]) == {}
+
+
+def test_parse_json_field_passes_through_dict_unchanged() -> None:
+    """asyncpg already deserialises JSONB to dict — re-parsing would
+    waste cycles AND lose any non-JSON-roundtrippable types the column
+    might carry. The dict branch must be the identity transform."""
+    from services.publish_service import _parse_json_field
+
+    original = {"content": "x", "nested": {"k": "v"}}
+    assert _parse_json_field(original) is original
+
+
+def test_should_run_post_publish_hooks_worker_mode(monkeypatch) -> None:
+    """DEPLOYMENT_MODE=worker is the trigger for the six post-publish
+    hooks (podcast / video / R2 / RSS / YouTube / newsletter). Anything
+    else and the hooks no-op — this is the seam that decides whether
+    distribution actually happens on a publish."""
+    from services import publish_service
+
+    monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
+    assert publish_service._should_run_post_publish_hooks() is True
+
+
+def test_should_run_post_publish_hooks_case_insensitive(monkeypatch) -> None:
+    """Operators sometimes export DEPLOYMENT_MODE=WORKER (uppercase) —
+    the docker-compose YAML conventions and Matt's PowerShell helpers
+    don't enforce case. The .lower() in the helper must keep this
+    working; a regression to a case-sensitive compare would silently
+    disable distribution on those hosts."""
+    from services import publish_service
+
+    monkeypatch.setenv("DEPLOYMENT_MODE", "WORKER")
+    assert publish_service._should_run_post_publish_hooks() is True
+
+
+def test_should_run_post_publish_hooks_unset_defaults_off(monkeypatch) -> None:
+    """When DEPLOYMENT_MODE is unset the default is 'coordinator' →
+    False. Coordinator hosts (future cloud read-path) must NOT run the
+    distribution hooks; they don't own the local pipeline + GPU + FS.
+    This pins the safer default."""
+    from services import publish_service
+
+    monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+    assert publish_service._should_run_post_publish_hooks() is False
+
+
+@pytest.mark.asyncio
+async def test_post_has_pending_gates_db_error_returns_false() -> None:
+    """Any DB error in the gate probe must return False (err on the
+    side of publishing). The alternative — silently swallowing
+    distribution on a transient DB blip for every post — is worse.
+    This pins the defensive contract documented in the helper's
+    docstring."""
+    from services.publish_service import _post_has_pending_gates
+
+    pool = MagicMock()
+    bad_acq_cm = MagicMock()
+    bad_acq_cm.__aenter__ = AsyncMock(side_effect=RuntimeError("connection lost"))
+    bad_acq_cm.__aexit__ = AsyncMock(return_value=None)
+    pool.acquire = MagicMock(return_value=bad_acq_cm)
+
+    result = await _post_has_pending_gates(pool, "post-id-123")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_post_has_pending_gates_returns_true_when_row_present() -> None:
+    """The happy path: a pending gate row means the publish path must
+    defer distribution hooks until the operator clears the gate
+    (Glad-Labs/poindexter#24). Pinned here so a future refactor that
+    accidentally inverts the boolean fails loud."""
+    from services.publish_service import _post_has_pending_gates
+
+    pool = MagicMock()
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(return_value={"?column?": 1})
+    acq_cm = MagicMock()
+    acq_cm.__aenter__ = AsyncMock(return_value=conn)
+    acq_cm.__aexit__ = AsyncMock(return_value=None)
+    pool.acquire = MagicMock(return_value=acq_cm)
+
+    assert await _post_has_pending_gates(pool, "post-id-123") is True
+
+
+def test_publish_result_to_dict_carries_failure_payload() -> None:
+    """PublishResult.to_dict() is the wire format the operator API +
+    Discord notify use. On failure, the error field MUST round-trip so
+    the operator sees the actual cause — not a generic 'publish failed'.
+    Pins the full set of fields (a missing key in to_dict() would
+    silently drop the diagnostic)."""
+    from services.publish_service import PublishResult
+
+    failure = PublishResult(success=False, error="boom: schema mismatch on insert")
+    payload = failure.to_dict()
+    assert payload["success"] is False
+    assert payload["error"] == "boom: schema mismatch on insert"
+    assert payload["staged"] is False
+    assert payload["post_id"] is None
+    assert payload["revalidation_success"] is False
+    assert payload["static_export_success"] is False
+    assert set(payload.keys()) >= {
+        "success", "post_id", "post_slug", "published_url", "post_title",
+        "revalidation_success", "static_export_success", "staged", "error",
+    }

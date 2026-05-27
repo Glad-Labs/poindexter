@@ -83,8 +83,16 @@ class ContentModule:
         del grafana  # intentional no-op until Phase 4
 
     def register_probes(self, brain: object) -> None:
-        """Phase 4 — not wired in Phase 3-lite."""
-        del brain  # intentional no-op until Phase 4
+        """Phase 4 — ``brain`` is a
+        :class:`plugins.probe_registry.BrainProbeRegistry`. ContentModule
+        has no concrete probes today (the pipeline's QA gates are
+        operator-side concerns and ship via Grafana, not brain probes).
+        When a content-specific brain probe is added (e.g. "stale
+        pipeline_tasks rows", "embedding backlog depth"), it will
+        register here as ``brain.register(module="content", name=...,
+        callable=...)``. Phase 1 docstring contract: ``brain`` is typed
+        as ``object`` to match the Protocol shape; the call site casts."""
+        del brain
 
     async def healthcheck(self, pool: object) -> object:
         """Phase 1 contract allows ``None`` — Phase 4 will aggregate

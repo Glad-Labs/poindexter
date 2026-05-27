@@ -323,6 +323,23 @@ No business behaviour changes yet — this is _scaffolding_.
 - Add `Module.register_dashboards(provisioner)` to seed.
 - Update Grafana provisioning workflow.
 
+### Phase 4 (closeout) — `register_probes` wire-up (#239, 2026-05-27)
+
+- `plugins/probe_registry.py` defines `BrainProbeRegistry` — a
+  worker-side collector that modules write into during
+  `register_probes(registry)`. Rejects duplicate FQIDs per
+  `feedback_no_silent_defaults`.
+- `main.py` lifespan constructs the shared registry, hands it to
+  every discovered module, then stashes it on `app.state` for
+  request handlers.
+- `GET /api/modules/probes` returns the registered probe specs
+  (module / name / description / interval). 503 when the registry
+  is missing — never silently empty.
+- Cross-process bridge to the brain daemon (poll the endpoint,
+  run the probes on the brain's side) is intentionally deferred:
+  no module ships a concrete probe yet, so the discovery half is
+  enough to unblock the next module that needs one.
+
 ### Phase 5 — `visibility` + sync rewrite (~0.5 day)
 
 - Add `visibility` field to manifest.

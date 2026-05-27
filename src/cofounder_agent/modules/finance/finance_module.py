@@ -90,8 +90,15 @@ class FinanceModule:
         del grafana
 
     def register_probes(self, brain: object) -> None:
-        """Phase 4 — finance probes (Mercury API reachability,
-        token expiry) will register here."""
+        """Phase 4 — ``brain`` is a
+        :class:`plugins.probe_registry.BrainProbeRegistry`. Finance probes
+        (Mercury API reachability, token expiry, balance-staleness)
+        will register here as ``brain.register(module="finance",
+        name=..., callable=...)``. F1 ships with zero registered
+        probes — the Mercury read-only integration is healthchecked
+        via ``/api/finance/healthcheck`` (Grafana scrapes it). A
+        future PR moves that to a brain probe so an operator without
+        Grafana still gets paged on Mercury auth loss."""
         del brain
 
     async def healthcheck(self, pool: object) -> object:
