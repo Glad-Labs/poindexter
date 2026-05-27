@@ -35,6 +35,21 @@ metrics_generator:
     remote_write:
       - url: http://prometheus:9090/api/v1/write
         send_exemplars: true
+  # local-blocks needs its OWN trace WAL — separate from the main trace
+  # ingest path AND from the metrics_generator.storage remote-write WAL
+  # above. Without traces_storage.path the processor refuses to initialize:
+  #   "local blocks processor requires traces wal"
+  traces_storage:
+    path: /var/tempo/generator/traces
+  # local-blocks is required for TraceQL metric queries (rate / count_over_time
+  # / histogram_over_time). Without it, Grafana's TraceQL panel + the Explore
+  # "rate() by(rootServiceName)" service-graph view emit:
+  #   "localblocks processor not found"
+  # flush_to_storage:true persists past the in-memory window so queries can
+  # reach further than the live ingest buffer.
+  processor:
+    local_blocks:
+      flush_to_storage: true
 
 storage:
   trace:
@@ -50,4 +65,4 @@ storage:
 overrides:
   defaults:
     metrics_generator:
-      processors: [service-graphs, span-metrics]
+      processors: [service-graphs, span-metrics, local-blocks]
