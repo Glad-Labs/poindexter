@@ -116,6 +116,52 @@ class TestConfigureStandardLogging:
         root = logging.getLogger()
         assert len(root.handlers) >= 1
 
+    def test_console_handler_targets_stderr_not_stdout(self):
+        """Cycle-5 #MCP-stdio-fix: the console handler MUST write to
+        stderr so importing this module from the MCP servers
+        (mcp-server/server.py, mcp-server-gladlabs/server.py) doesn't
+        pollute the stdio JSON-RPC channel.
+
+        Pre-fix the handler opened sys.stdout.fileno() — the first
+        INFO-level log record landed on stdout as "INFO:...". The MCP
+        client tried to parse that as JSON and raised "Unexpected
+        non-whitespace character after JSON at position 4 (line 1
+        column 5)" (the ':' after 'INFO').
+
+        Regression guard: any StreamHandler the root logger gains
+        from configure_standard_logging must be writing to a stream
+        whose underlying fd matches sys.stderr's fd (or have no
+        fileno at all — in-memory streams used by tests).
+        """
+        import sys
+
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        stderr_fd = sys.stderr.fileno() if sys.stderr is not None else None
+
+        stream_handlers = [
+            h for h in root.handlers if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
+        assert stream_handlers, "expected at least one StreamHandler"
+        for handler in stream_handlers:
+            stream = getattr(handler, "stream", None)
+            assert stream is not None
+            handler_fd = (
+                stream.fileno()
+                if hasattr(stream, "fileno") and not stream.closed
+                else None
+            )
+            # Either we know the fd and it's stderr's, OR the stream
+            # has no real fd (test-only in-memory stream — fine).
+            if handler_fd is not None and stderr_fd is not None:
+                assert handler_fd == stderr_fd, (
+                    f"console handler stream fd={handler_fd} but stderr "
+                    f"fd={stderr_fd}; the handler must NOT write to "
+                    f"stdout because the MCP servers depend on stdout "
+                    f"being JSON-RPC-clean"
+                )
+
 
 # ---------------------------------------------------------------------------
 # configure_structlog

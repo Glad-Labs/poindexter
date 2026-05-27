@@ -425,10 +425,35 @@ def configure_standard_logging() -> None:
 
     # Use a UTF-8 stream to avoid UnicodeEncodeError on Windows (cp1252)
     # when log messages contain emoji or other non-ASCII characters.
-    # Under pythonw.exe, stdout is None — skip console handler entirely.
+    # Under pythonw.exe, stderr is None — skip console handler entirely.
+    #
+    # The stream MUST be stderr, not stdout, because:
+    #
+    # 1. The MCP servers (``mcp-server/server.py``,
+    #    ``mcp-server-gladlabs/server.py``) import ``get_logger`` from
+    #    this module. Importing this module triggers
+    #    ``configure_standard_logging()`` at line 472 (module-init
+    #    side effect). The MCP servers run JSON-RPC over stdio —
+    #    stdout MUST contain only JSON-RPC frames. Adding a stdout
+    #    StreamHandler globally pollutes that channel; the first log
+    #    record at INFO level emits ``INFO:...`` onto stdout, which
+    #    the MCP client parses as JSON and raises
+    #    ``Unexpected non-whitespace character after JSON at position 4
+    #    (line 1 column 5)`` (the ``:`` after ``INFO``). Cycle-5
+    #    audit found this 2026-05-27 via Matt's MCP client error.
+    #
+    # 2. Python's stdlib ``logging.basicConfig()`` defaults to stderr
+    #    for exactly this reason — separating program output (stdout)
+    #    from diagnostics (stderr) is a 50-year-old Unix convention.
+    #
+    # 3. Worker FastAPI / brain daemon / Prefect worker subprocess
+    #    don't care which channel logs go to — Docker captures both
+    #    via ``docker logs``, Loki ingests both via promtail, and the
+    #    JSON-format output (line 410-412) is byte-identical on either
+    #    channel.
     handlers: list[logging.Handler] = []
-    if sys.stdout is not None:
-        utf8_stream = open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
+    if sys.stderr is not None:
+        utf8_stream = open(sys.stderr.fileno(), mode="w", encoding="utf-8", closefd=False)
         handlers.append(logging.StreamHandler(utf8_stream))
 
     if LOG_TO_FILE:
