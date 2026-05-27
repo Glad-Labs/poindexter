@@ -327,83 +327,46 @@ git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev
 #
 # Even after all the path strips above, content-level leaks can slip in
 # (e.g. a new release-please CHANGELOG entry mentioning a private module,
-# or a hand-written doc adding the operator's Tailnet IP). This guard
-# greps the staged tree for known operator-private patterns and aborts
-# the push if it finds any — better to fail loudly than to ship the leak.
+# or a hand-written doc adding the operator's Tailnet IP).
 #
-# Add new patterns when a new private module / personal value is found.
-# See 2026-05-14 audit which seeded this list: bank balance, hardware
-# cost, Tailnet IP, Tailscale Funnel, operator-overlay module names.
-echo "[sync] Running leak guard..."
-LEAK_PATTERNS=(
-  '100\.81\.93\.12'                # Tailnet IP
-  'taild4f626\.ts\.net'            # Tailscale Funnel hostname
-  '\bnightrider\b'                  # Tailscale Funnel hostname fragment (also a test-fixture leak)
-  '7877\.14'                        # Hardware cost total
-  '362\.75'                         # Mercury balance literal
-  'mercury_'                        # any mercury_* key name (catches the whole family)
-  'C:[\\/]Users[\\/]mattm'          # operator's Windows home path
-  '/c/Users/mattm'                  # bash-style operator home path
-  'mattg-stack'                     # operator's GitHub username
-  'Glad-Labs/glad-labs-stack'       # internal repo name (cosmetic sub above should fix all)
-  # === Operator identity (feedback_no_operator_info_to_public_repo, 2026-05-23) ===
-  'matthew-gladding'                # LinkedIn URL fragment (catches the full URL)
-  '[Mm]atthew (?:[A-Z]\.\s+)?[Gg]ladding'  # full name in either case (incl. middle initial e.g. "M. ")
-  '[Mm]att [Gg]ladding'             # informal name variant
-  "[Mm]att''s machine"              # SQL-escaped possessive (in seed comments)
-  "[Mm]att''s production"           # same
-  "[Mm]att''s host"                 # same
-  "[Mm]att''s specific"             # same
-  'phone Matt'                      # "phone Matt" line / "phoned Matt"
-  'gitea#[0-9]+'                    # dead citations to the decommissioned internal Gitea tracker
-  # gladlabs.io as a DEFAULT seeded value (not as a brand reference). The
-  # narrower pattern below catches it inside an INSERT VALUES tuple but
-  # leaves brand-attribution mentions in CLAUDE.md / README / public docs
-  # alone. Specifically: a value that's a gladlabs.io URL or email landing
-  # in a seed file is the leak; a brand mention in prose is allowed.
-  "VALUES \([^)]*'[^']*gladlabs\.io"  # any seed value containing gladlabs.io
-)
-# Files that legitimately contain the patterns above because they DEFINE
-# what to strip (sync filter, regen-script blocklists). The leak guard
-# would self-report on these without this exclude list.
-LEAK_GUARD_ALLOW=(
-  'scripts/regen-app-settings-doc.py'         # the redaction blocklist itself
-  'scripts/ci/check_public_mirror_safety.py'  # parallel pre-merge lint with the same pattern list
-  'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py'  # contract test fixtures contain literal gitea#NNN shapes
-  'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py'  # contract test fixtures contain operator name in synthetic strings + docstrings
-  # 2026-05-27: same pattern as the two files above — this contract test
-  # file legitimately contains literal ``mercury_`` and ``VALUES(...
-  # gladlabs.io...)`` strings as fixtures (because it tests that THE
-  # GUARD CATCHES THOSE PATTERNS). The CI-side _LEAK_GUARD_ALLOW in
-  # check_public_mirror_safety.py already allowlists it (PR #623); this
-  # is the parallel entry for the sync-script-side guard, which is a
-  # separate codepath. Without it, every push since PR #619 has been
-  # silently failing the public-mirror sync (5+ consecutive failures
-  # before this fix).
-  'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py'
-)
-LEAK_FOUND=0
-for pat in "${LEAK_PATTERNS[@]}"; do
-  # `git ls-files | xargs grep` reads only what's tracked in the temp
-  # branch (the stripped tree), so a pattern in a private-only file
-  # already removed from index won't trip the guard.
-  hits=$(git ls-files | xargs grep -l -E "$pat" 2>/dev/null || true)
-  # Drop allowlisted self-referential files from the hit list.
-  for allow in "${LEAK_GUARD_ALLOW[@]}"; do
-    hits=$(echo "$hits" | grep -v -F "$allow" || true)
-  done
-  if [[ -n "$hits" ]]; then
-    echo "[sync] LEAK DETECTED — pattern: $pat"
-    echo "$hits" | sed 's/^/    /'
-    LEAK_FOUND=1
-  fi
-done
-if [[ "$LEAK_FOUND" -ne 0 ]]; then
+# SINGLE SOURCE OF TRUTH: the pattern list + allowlist live in
+# ``scripts/ci/check_public_mirror_safety.py`` (which is also the
+# pre-merge CI gate via .github/workflows/public-mirror-safety.yml).
+# This step just invokes that script against the post-filter temp
+# branch — same patterns, same allowlist, one place to update.
+#
+# Pre-2026-05-27 this script duplicated the pattern + allowlist arrays
+# inline. The duplication caused 5+ consecutive sync failures when
+# PR #619 added a test-fixture file that was allowlisted on the CI
+# side but not here. Consolidating both lists into one Python module
+# removed that drift class entirely.
+echo "[sync] Running leak guard (delegating to scripts/ci/check_public_mirror_safety.py)..."
+if ! python3 scripts/ci/check_public_mirror_safety.py; then
   echo "[sync] Aborting push — fix leaks in source or add to strip filter."
   git checkout -f "$BRANCH"
   git branch -D "$TEMP_BRANCH"
   exit 1
 fi
+
+# Belt-and-suspenders post-rewrite check: ``Glad-Labs/glad-labs-stack``
+# is intentionally NOT in the Python guard's pattern list because the
+# Python guard runs on the pre-rewrite source tree where release-please
+# CHANGELOG entries legitimately contain that string. By the time we
+# reach this point in sync-to-github.sh, the cosmetic sed pass earlier
+# (the ``Glad-Labs/glad-labs-stack`` → ``Glad-Labs/poindexter`` rewrite)
+# has already run on the temp branch, so any surviving occurrence is
+# a real leak — e.g. binary file the sed missed, an alternate-case
+# variant the rewrite didn't normalize, a file the rewrite passed over.
+INTERNAL_REPO_HITS=$(git ls-files | xargs grep -l -E 'Glad-Labs/glad-labs-stack' 2>/dev/null || true)
+if [[ -n "$INTERNAL_REPO_HITS" ]]; then
+  echo "[sync] LEAK DETECTED — post-rewrite check found internal repo references that survived the sed rewrite:"
+  echo "$INTERNAL_REPO_HITS" | sed 's/^/    /'
+  echo "[sync] Aborting push — fix leaks in source or extend the sync rewrite pass."
+  git checkout -f "$BRANCH"
+  git branch -D "$TEMP_BRANCH"
+  exit 1
+fi
+
 echo "[sync] Leak guard passed."
 
 # Force-push this clean branch to GitHub as main, but with a LEASE.

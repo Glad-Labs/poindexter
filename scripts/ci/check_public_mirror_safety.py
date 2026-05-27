@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
 """Lint the source tree for content that would leak to the public mirror.
 
-Runs in CI on every PR + push to ``main`` on glad-labs-stack. Catches the
-same class of leak the sync-time guard in ``scripts/sync-to-github.sh``
-catches — operator-private values (Tailnet IPs, bank balances, hardware
-costs, internal repo URLs) showing up in files that ship to the public
-Glad-Labs/poindexter mirror — but does it BEFORE the PR merges, so the
-fix lands with the offending change instead of breaking the sync after
-the fact.
+**Single source of truth for leak-guard patterns + allowlist.** This
+module owns the canonical ``_LEAK_PATTERNS`` and ``_LEAK_GUARD_ALLOW``
+arrays. Both enforcement layers consume them:
 
-Why a separate pre-merge check
-==============================
+- **Pre-merge (CI):** ``.github/workflows/public-mirror-safety.yml``
+  runs this script on every PR + push to ``main``. Fail-loud blocks
+  the PR so the fix lands with the offending change.
+- **Sync-time:** ``scripts/sync-to-github.sh`` invokes this script
+  against the post-filter temp branch right before force-pushing to
+  ``Glad-Labs/poindexter``. Belt-and-suspenders for anything that
+  bypassed CI (direct push to main, hand-edit on the mirror, etc.).
 
-The sync-time guard (``sync-to-github.sh``) only runs on push to
-``origin/main``. By then the offending commit has merged. Reverting +
-fixing is a churn cycle the operator could have avoided if CI had said
-"this PR adds a Tailnet IP to a doc that ships public" while the PR was
-still open.
+Pre-2026-05-27 the bash sync script duplicated the pattern + allowlist
+arrays inline. The duplication caused 5+ consecutive sync failures when
+a test-fixture file was allowlisted on the CI side but not on the
+sync-script side. Consolidating into this module removed that drift
+class entirely.
 
 How it works
 ============
 
 1. **Classify every tracked file** as either ``WOULD_SHIP`` (sync filter
-   keeps it) or ``WOULD_STRIP`` (sync filter removes it). The
-   classifier mirrors the path patterns in ``sync-to-github.sh`` —
-   they're the single source of truth for what's private.
+   keeps it) or ``WOULD_STRIP`` (sync filter removes it). The classifier
+   mirrors the path patterns in ``sync-to-github.sh``. When the script
+   runs from the post-filter temp branch, ``git ls-files`` already
+   returns the stripped tree — both layers converge on the same
+   file set.
 
 2. **Run LEAK_PATTERNS against WOULD_SHIP files only.** A pattern hit in
    a WOULD_STRIP file is fine (that file never ships) — only flag the
@@ -36,19 +39,6 @@ How it works
 4. **Report + exit nonzero on any violation**, with file + line + the
    pattern that matched so the PR author can fix in place.
 
-Why the patterns live here AND in sync-to-github.sh
-====================================================
-
-Two enforcement layers with the same patterns is intentional:
-
-- CI catches PRs before they merge (best signal for the author).
-- Sync guard catches anything that slips past CI (e.g. a commit pushed
-  directly to ``main`` without a PR, or a CI bypass).
-
-If the lists diverge, the sync guard is authoritative — fix the lint
-first. A leak that fires at sync time is the public mirror failing to
-update; a leak that fires at lint time is just a noisy PR check.
-
 Adding a new pattern
 ====================
 
@@ -57,9 +47,18 @@ personal default, etc.):
 
 1. Strip the value from source (or add to ``WOULD_STRIP_PATHS`` if it's
    a whole-file leak).
-2. Add the pattern to ``LEAK_PATTERNS`` here AND in
-   ``sync-to-github.sh::LEAK_PATTERNS``.
-3. Run this script locally to verify.
+2. Add the pattern to ``_LEAK_PATTERNS`` below — one place, both
+   layers pick it up automatically.
+3. Run this script locally to verify (``python3
+   scripts/ci/check_public_mirror_safety.py``).
+
+The lone exception: ``Glad-Labs/glad-labs-stack`` lives inline in
+``sync-to-github.sh`` instead of here. It's a post-rewrite belt-and-
+suspenders check, scoped to the sync-time pass after the cosmetic sed
+rewrite. Keeping it here would false-positive on every release-please
+CHANGELOG entry in the source tree (those legitimately reference the
+internal repo, the sync filter rewrites them to ``poindexter`` before
+push).
 """
 
 from __future__ import annotations
@@ -193,7 +192,9 @@ _LEAK_GUARD_ALLOW = (
     # seeded URLs, multi-line mercury_ VALUES tuples) so the assertions
     # can verify the patterns fire on them. Same self-referential
     # exemption as the two test files above. Closes the post-#619 main
-    # breakage where this file was added but not allowlisted.
+    # breakage where this file was added but not allowlisted. Since
+    # 2026-05-27 sync-to-github.sh delegates to this module, so this
+    # entry is the only place the allowlist needs to live.
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
 )
 
@@ -266,7 +267,9 @@ def _line_would_be_stripped(rel_path: str, line: str) -> bool:
 
 # ---------------------------------------------------------------------------
 # Leak patterns — values / strings that must never appear in public files.
-# Keep in lock-step with ``sync-to-github.sh::LEAK_PATTERNS``.
+# Single source of truth: both the CI pre-merge check and the sync-time
+# guard in ``sync-to-github.sh`` invoke this module's ``main()`` to scan
+# this list.
 # ---------------------------------------------------------------------------
 
 
