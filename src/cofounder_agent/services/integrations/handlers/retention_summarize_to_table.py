@@ -213,7 +213,9 @@ def _day_bucket(ts: datetime) -> tuple[datetime, datetime]:
 # Prompt construction
 # ---------------------------------------------------------------------------
 
-_SUMMARY_PROMPT = (
+_SUMMARY_PROMPT_KEY = "ops.retention.summarize_to_table"
+
+_SUMMARY_PROMPT_FALLBACK = (
     "You are compressing one calendar day of {source_table} rows so the "
     "system remembers the gist without storing every row. Below are "
     "{n} representative rows from {bucket_start_iso}, each separated by "
@@ -226,6 +228,44 @@ _SUMMARY_PROMPT = (
     "Rows:\n{joined}\n\n"
     "Summary:"
 )
+"""Inline bootstrap fallback. Production reads come from
+``ops.retention.summarize_to_table`` via Langfuse → YAML; this
+constant protects the cold-start / test path per
+``feedback_prompts_must_be_db_configurable``."""
+
+
+def _resolve_summary_prompt_template() -> str:
+    """Pull the retention-summary prompt template via UnifiedPromptManager
+    *without* substituting any placeholders. The caller does the
+    ``.replace()`` dance for ``{bucket_start_iso}`` / ``{row_count}`` and
+    then hands the half-formatted template to
+    :func:`build_summary_text_via_llm`, which fills the remaining
+    ``{n}`` / ``{source_table}`` / ``{joined}`` placeholders. Returns the
+    inline fallback when the manager is unreachable (mirrors the
+    self_review + self_consistency_rail pattern, ``feedback_prompts_must_be_db_configurable``).
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        # Two passes: (1) fetch the *raw* template (no placeholders
+        # filled), (2) skip the manager's auto-format by going through
+        # the underlying prompts dict + langfuse-first path manually.
+        pm = get_prompt_manager()
+        # Langfuse first (operator's edit surface). Falls through to YAML
+        # if Langfuse isn't configured / fails.
+        template = pm._fetch_from_langfuse(_SUMMARY_PROMPT_KEY)
+        if template is None and _SUMMARY_PROMPT_KEY in pm.prompts:
+            template = pm.prompts[_SUMMARY_PROMPT_KEY]["template"]
+        if template is None:
+            raise KeyError(_SUMMARY_PROMPT_KEY)
+        return template
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[retention.summarize_to_table] prompt_manager lookup for "
+            "%r failed (%s) — using inline fallback",
+            _SUMMARY_PROMPT_KEY, exc,
+        )
+        return _SUMMARY_PROMPT_FALLBACK
 
 
 def _row_to_excerpt(row: dict[str, Any], cols: Sequence[str]) -> str:
@@ -468,7 +508,7 @@ async def summarize_to_table(
             summary_method = "joined_preview"
             summary_text: str | None = None
             if previews and summary_model:
-                prompt_template = _SUMMARY_PROMPT.replace(
+                prompt_template = _resolve_summary_prompt_template().replace(
                     "{bucket_start_iso}",
                     bucket_start_dt.date().isoformat(),
                 ).replace("{row_count}", str(row_count))

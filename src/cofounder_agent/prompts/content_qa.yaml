@@ -194,3 +194,58 @@
 
     Return ONLY the revised article text. Do not include meta-commentary,
     notes about what you changed, or markdown code fences around the output.
+
+# Writer-self-review pass — the writer model reviews its own draft
+# for cross-section contradictions before the multi-model QA stage.
+# Operator-tunable via Langfuse / YAML override; the inline fallback
+# in services/self_review.py stays as a bootstrap safety net per
+# feedback_prompts_must_be_db_configurable + the firefighter pattern.
+- key: qa.self_review.contradictions_review
+  category: content_qa
+  description: "Writer-self-review pass — model reads its own draft and identifies cross-section contradictions before QA. Output: a numbered list of 'SECTION X conflicts with SECTION Y' lines, or exactly PASS when none found."
+  output_format: text
+  template: |-
+    You are reviewing your own draft for internal contradictions.
+
+    TITLE: {title}
+    TOPIC: {topic}
+
+    DRAFT:
+    {draft}
+
+    Read every section. Identify any claim in one section that contradicts a claim, code example, or recommendation in another section. Ignore stylistic variation; focus on factual or logical conflicts.
+
+    If you find contradictions, output a numbered list of specific corrections needed (one per line, format: 'SECTION X conflicts with SECTION Y: <details>'). If you find none, reply with exactly: PASS
+
+- key: qa.self_review.contradictions_revise
+  category: content_qa
+  description: "Writer-self-review follow-up — given the contradiction list from qa.self_review.contradictions_review, fix only those specific issues without touching the rest of the draft."
+  output_format: markdown
+  template: |-
+    Here is your draft. Fix these specific contradictions and nothing else:
+
+    CONTRADICTIONS TO FIX:
+    {review_text}
+
+    ORIGINAL DRAFT:
+    {draft}
+
+    Output only the revised draft. Keep the structure, length, and tone identical. Only change what's needed to resolve the contradictions.
+
+# Self-consistency rail — HalluCounter-style probe that samples N
+# short summaries of the article at non-zero temperature and measures
+# inter-sample cosine similarity. Used by services/self_consistency_rail.py
+# (Lane D #329 adjacent OSS QA rail).
+- key: qa.self_consistency.summarize
+  category: content_qa
+  description: "Self-consistency rail — produces a short article summary grounded strictly in the article body. Sampled N times at temperature>0; pairwise cosine similarity of the resulting summaries drives the rail's verdict."
+  output_format: text
+  template: |-
+    Summarize the following article in two sentences. Stay strictly grounded in the article — do not introduce facts that aren't explicitly stated. Output only the summary, no preamble.
+
+    Article topic: {topic}
+
+    Article:
+    {content}
+
+    Summary:

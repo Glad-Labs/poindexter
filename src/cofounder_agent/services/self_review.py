@@ -38,6 +38,50 @@ def set_site_config(sc: SiteConfig) -> None:
 logger = logging.getLogger(__name__)
 
 
+# Inline fallbacks — used when UnifiedPromptManager is unavailable
+# (bootstrap / tests / Langfuse + YAML both missing). Per
+# feedback_prompts_must_be_db_configurable the live edit surface is
+# Langfuse → YAML; these constants only protect the cold-start path.
+_REVIEW_PROMPT_FALLBACK = (
+    "You are reviewing your own draft for internal contradictions.\n\n"
+    "TITLE: {title}\n"
+    "TOPIC: {topic}\n\n"
+    "DRAFT:\n{draft}\n\n"
+    "Read every section. Identify any claim in one section that contradicts "
+    "a claim, code example, or recommendation in another section. "
+    "Ignore stylistic variation; focus on factual or logical conflicts.\n\n"
+    "If you find contradictions, output a numbered list of specific corrections "
+    "needed (one per line, format: 'SECTION X conflicts with SECTION Y: <details>'). "
+    "If you find none, reply with exactly: PASS"
+)
+
+_REVISE_PROMPT_FALLBACK = (
+    "Here is your draft. Fix these specific contradictions and nothing else:\n\n"
+    "CONTRADICTIONS TO FIX:\n{review_text}\n\n"
+    "ORIGINAL DRAFT:\n{draft}\n\n"
+    "Output only the revised draft. Keep the structure, length, and tone "
+    "identical. Only change what's needed to resolve the contradictions."
+)
+
+
+def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
+    """Pull a prompt via UnifiedPromptManager; format the inline fallback
+    if the manager is unreachable. Mirrors the
+    ``atoms/review_with_critic._resolve_system_prompt`` pattern so
+    operator-edited prompts in Langfuse win without forcing a restart.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(key, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[self_review] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback",
+            key, exc,
+        )
+        return fallback.format(**kwargs)
+
+
 async def _resolve_self_review_model(pool: Any) -> str:
     """Resolve writer-self-review model via cost-tier API + fallback chain.
 
@@ -116,17 +160,12 @@ async def self_review_and_revise(
         return draft, stats
     review_model = str(resolved_model).removeprefix("ollama/")
 
-    review_prompt = (
-        "You are reviewing your own draft for internal contradictions.\n\n"
-        f"TITLE: {title}\n"
-        f"TOPIC: {topic}\n\n"
-        f"DRAFT:\n{draft}\n\n"
-        "Read every section. Identify any claim in one section that contradicts "
-        "a claim, code example, or recommendation in another section. "
-        "Ignore stylistic variation; focus on factual or logical conflicts.\n\n"
-        "If you find contradictions, output a numbered list of specific corrections "
-        "needed (one per line, format: 'SECTION X conflicts with SECTION Y: <details>'). "
-        "If you find none, reply with exactly: PASS"
+    review_prompt = _resolve_prompt(
+        "qa.self_review.contradictions_review",
+        title=title,
+        topic=topic,
+        draft=draft,
+        fallback=_REVIEW_PROMPT_FALLBACK,
     )
 
     # v2.3: Provider Protocol instead of concrete OllamaClient. The
@@ -165,12 +204,11 @@ async def self_review_and_revise(
         if not contradictions:
             return draft, stats
 
-        revise_prompt = (
-            "Here is your draft. Fix these specific contradictions and nothing else:\n\n"
-            f"CONTRADICTIONS TO FIX:\n{review_text}\n\n"
-            f"ORIGINAL DRAFT:\n{draft}\n\n"
-            "Output only the revised draft. Keep the structure, length, and tone "
-            "identical. Only change what's needed to resolve the contradictions."
+        revise_prompt = _resolve_prompt(
+            "qa.self_review.contradictions_revise",
+            review_text=review_text,
+            draft=draft,
+            fallback=_REVISE_PROMPT_FALLBACK,
         )
         revised = await provider.complete(
             messages=[{"role": "user", "content": revise_prompt}],

@@ -72,3 +72,23 @@
     links section after your output. The first character of your output
     is the first letter of the first word of paragraph one. Plain
     markdown prose, no headings, no lists.
+
+# Retention-handler day-bucket summary prompt. Used by
+# ``services/integrations/handlers/retention_summarize_to_table.py`` to
+# compress one calendar day of rows (e.g. audit_log) into a single
+# summary row. Operator-tunable via Langfuse / YAML override;
+# the inline fallback in the handler stays as a bootstrap safety net per
+# feedback_prompts_must_be_db_configurable.
+- key: ops.retention.summarize_to_table
+  category: utility
+  description: "Compress one calendar day of rows from a source table into a single paragraph summary. Replaces N rows with 1 summary row to bound storage growth while preserving the gist for retrieval."
+  output_format: text
+  template: |-
+    You are compressing one calendar day of {source_table} rows so the system remembers the gist without storing every row. Below are {n} representative rows from {bucket_start_iso}, each separated by '---'.
+
+    Write a single paragraph (3-6 sentences) summarizing what happened that day. Preserve specific event types, sources, severity, decisions, and outcomes. Drop boilerplate and repetition. The summary will be stored as a single row replacing all {row_count} raw rows for the day, so dense factual content beats prose.
+
+    Rows:
+    {joined}
+
+    Summary:

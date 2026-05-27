@@ -62,6 +62,31 @@ _DEFAULT_SUMMARY_PROMPT = (
     "Article topic: {topic}\n\n"
     "Article:\n{content}\n\nSummary:"
 )
+"""Inline bootstrap fallback — used only when the
+:class:`UnifiedPromptManager` is unavailable. Production reads come from
+``qa.self_consistency.summarize`` via Langfuse → YAML; this constant
+protects the cold-start / test path."""
+
+_SUMMARY_PROMPT_KEY = "qa.self_consistency.summarize"
+
+
+def _resolve_summary_prompt(*, topic: str, content: str) -> str:
+    """Fetch the summary prompt via UnifiedPromptManager, fall back to
+    the inline constant if the manager isn't reachable. Mirrors the
+    ``atoms/review_with_critic._resolve_system_prompt`` pattern so
+    operator-edited prompts in Langfuse win without a restart."""
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(
+            _SUMMARY_PROMPT_KEY, topic=topic, content=content,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[self_consistency] prompt_manager lookup for %r failed "
+            "(%s) — using inline fallback",
+            _SUMMARY_PROMPT_KEY, exc,
+        )
+        return _DEFAULT_SUMMARY_PROMPT.format(topic=topic, content=content)
 
 
 def is_enabled(site_config: Any) -> bool:
@@ -140,7 +165,7 @@ async def _sample_summaries(
     from services.llm_providers.dispatcher import dispatch_complete
 
     truncated = content[:4000]
-    prompt = _DEFAULT_SUMMARY_PROMPT.format(
+    prompt = _resolve_summary_prompt(
         topic=topic[:200], content=truncated,
     )
     # poindexter#485 fail-loud sweep: was previously a literal
