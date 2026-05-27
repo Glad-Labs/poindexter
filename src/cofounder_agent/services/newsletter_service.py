@@ -69,20 +69,49 @@ async def _cfg() -> dict:
 
 
 async def _get_active_subscribers(pool) -> list[dict]:
-    """Fetch all active, verified subscribers."""
+    """Fetch all active, verified subscribers.
+
+    Includes ``unsubscribe_token`` because every email needs a
+    per-subscriber unsubscribe URL post-#252 — the public endpoint
+    refuses email-keyed unsubscribes and requires the token. Migration
+    20260527_180559 guarantees the column is NOT NULL on every row.
+    """
     rows = await pool.fetch(
-        "SELECT id, email, first_name FROM newsletter_subscribers "
+        "SELECT id, email, first_name, unsubscribe_token FROM newsletter_subscribers "
         "WHERE unsubscribed_at IS NULL AND verified = TRUE "
         "ORDER BY id"
     )
     return [dict(r) for r in rows]
 
 
-def _build_html(title: str, excerpt: str, slug: str, first_name: str | None = None) -> str:
-    """Build a simple, clean newsletter email body."""
+def _unsubscribe_url(token: str) -> str:
+    """Per-subscriber unsubscribe URL.
+
+    Centralised so the email template and the ``List-Unsubscribe``
+    header stay in sync — both consume the token, and they have to
+    agree on shape or one-click clients (Gmail/Apple Mail) silently
+    fall back to the inline link.
+    """
+    return f"{_site_url()}/newsletter/unsubscribe?token={token}"
+
+
+def _build_html(
+    title: str,
+    excerpt: str,
+    slug: str,
+    first_name: str | None = None,
+    *,
+    unsubscribe_token: str,
+) -> str:
+    """Build a simple, clean newsletter email body.
+
+    ``unsubscribe_token`` is keyword-only + required: the token has no
+    sensible default and a typo'd positional call would silently ship
+    emails with a broken unsubscribe link.
+    """
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
     post_url = f"{_site_url()}/posts/{slug}"
-    unsubscribe_url = f"{_site_url()}/newsletter/unsubscribe"
+    unsubscribe_url = _unsubscribe_url(unsubscribe_token)
 
     return f"""\
 <!DOCTYPE html>
@@ -139,8 +168,24 @@ async def _send_via_resend(cfg: dict, to_email: str, subject: str, html: str) ->
         return False
 
 
-async def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> bool:
-    """Send a single email via SMTP."""
+async def _send_via_smtp(
+    cfg: dict,
+    to_email: str,
+    subject: str,
+    html: str,
+    *,
+    unsubscribe_token: str,
+) -> bool:
+    """Send a single email via SMTP.
+
+    ``unsubscribe_token`` is required so the ``List-Unsubscribe`` header
+    carries a tokenized URL — RFC 8058 one-click clients (Gmail, Apple
+    Mail) POST to that URL when the user clicks "unsubscribe" in their
+    inbox UI. Without the token the one-click flow hits the public
+    endpoint with no credential and fails the #252 gate, which would
+    silently break inbox-native unsubscribe even after we fix the
+    inline link.
+    """
     try:
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
@@ -151,7 +196,8 @@ async def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> b
         msg["From"] = f"{cfg['from_name']} <{cfg['from_email']}>"
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg["List-Unsubscribe"] = f"<{_site_url()}/newsletter/unsubscribe>"
+        msg["List-Unsubscribe"] = f"<{_unsubscribe_url(unsubscribe_token)}>"
+        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         msg.attach(MIMEText(html, "html"))
 
         await aiosmtplib.send(
@@ -216,8 +262,6 @@ async def send_post_newsletter(
         result["skipped_reason"] = "no_smtp_host"
         return result
 
-    send_fn = _send_via_resend if provider == "resend" else _send_via_smtp
-
     subscribers = await _get_active_subscribers(pool)
     result["total_subscribers"] = len(subscribers)
 
@@ -238,8 +282,22 @@ async def send_post_newsletter(
         batch = subscribers[i : i + batch_size]
 
         for sub in batch:
-            html = _build_html(title, excerpt, slug, sub.get("first_name"))
-            success = await send_fn(cfg, sub["email"], subject, html)
+            token = sub["unsubscribe_token"]
+            html = _build_html(
+                title, excerpt, slug, sub.get("first_name"),
+                unsubscribe_token=token,
+            )
+            # Per-provider dispatch — SMTP also needs the token for the
+            # ``List-Unsubscribe`` header (RFC 8058 one-click). Resend
+            # only consumes the inline link inside ``html`` so the
+            # token's already baked in there.
+            if provider == "resend":
+                success = await _send_via_resend(cfg, sub["email"], subject, html)
+            else:
+                success = await _send_via_smtp(
+                    cfg, sub["email"], subject, html,
+                    unsubscribe_token=token,
+                )
 
             if success:
                 result["sent"] += 1

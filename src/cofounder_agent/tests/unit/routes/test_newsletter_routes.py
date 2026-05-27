@@ -152,12 +152,20 @@ class TestSubscribeToNewsletter:
 
 @pytest.mark.unit
 class TestUnsubscribeFromNewsletter:
-    def test_valid_unsubscribe_returns_200(self):
+    """Cycle-5 audit (#252) hardened the unsubscribe endpoint to require a
+    per-subscriber token. Pre-fix, anyone who knew an email could
+    unsubscribe arbitrary subscribers via rate-limit-only protection.
+    Post-fix, the endpoint refuses without ``unsubscribe_token`` and
+    looks up by token alone — email is no longer accepted."""
+
+    _VALID_TOKEN = "v_token_abc123def456ghi789jkl012mno345pqr"
+
+    def test_valid_token_unsubscribes_and_returns_200(self):
         pool = _make_pool_mock(execute_return="UPDATE 1")
         client = TestClient(_build_app(_make_db(pool)))
         resp = client.post(
             "/api/newsletter/unsubscribe",
-            json={"email": "test@example.com"},
+            json={"unsubscribe_token": self._VALID_TOKEN},
         )
         assert resp.status_code == 200
 
@@ -166,31 +174,91 @@ class TestUnsubscribeFromNewsletter:
         client = TestClient(_build_app(_make_db(pool)))
         data = client.post(
             "/api/newsletter/unsubscribe",
-            json={"email": "test@example.com"},
+            json={"unsubscribe_token": self._VALID_TOKEN},
         ).json()
         assert data["success"] is True
 
-    def test_email_not_found_returns_200_with_generic_message(self):
-        """When email not found, returns 200 with success=True to prevent enumeration."""
+    def test_missing_token_returns_422(self):
+        """The cycle-5 gate — request without a token must fail
+        validation (FastAPI/pydantic 422) before reaching the DB."""
+        pool = _make_pool_mock()
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post("/api/newsletter/unsubscribe", json={})
+        assert resp.status_code == 422
+        # The endpoint must NOT have queried the DB on a malformed request.
+        pool.execute.assert_not_called()
+
+    def test_email_only_payload_rejected_with_422(self):
+        """The old contract accepted ``{email, reason}``. Pre-fix
+        callers who haven't migrated to the new contract must fail
+        loud — silently falling through to a no-op would let a stale
+        frontend ship and silently break unsubscribe."""
+        pool = _make_pool_mock()
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post(
+            "/api/newsletter/unsubscribe",
+            json={"email": "test@example.com"},
+        )
+        assert resp.status_code == 422
+        pool.execute.assert_not_called()
+
+    def test_invalid_token_returns_200_with_generic_message(self):
+        """Unknown token returns the SAME response as a successful
+        unsubscribe — refusing to confirm token validity prevents the
+        endpoint from being used as a token-validity oracle. Without
+        this, an attacker grinding random tokens could distinguish hits
+        from misses by status / response body."""
         pool = _make_pool_mock(execute_return="UPDATE 0")
         client = TestClient(_build_app(_make_db(pool)))
         resp = client.post(
             "/api/newsletter/unsubscribe",
-            json={"email": "notfound@example.com"},
+            json={"unsubscribe_token": "wrong_token_value_42"},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
-        assert "If this email was subscribed" in data["message"]
+        assert "If this link was valid" in data["message"]
+
+    def test_already_unsubscribed_returns_generic_message(self):
+        """Re-unsubscribing (UPDATE 0 because the WHERE clause filters
+        ``unsubscribed_at IS NULL``) must also return the generic
+        message — same oracle protection applies."""
+        pool = _make_pool_mock(execute_return="UPDATE 0")
+        client = TestClient(_build_app(_make_db(pool)))
+        resp = client.post(
+            "/api/newsletter/unsubscribe",
+            json={"unsubscribe_token": self._VALID_TOKEN},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
 
     def test_with_reason_returns_200(self):
         pool = _make_pool_mock(execute_return="UPDATE 1")
         client = TestClient(_build_app(_make_db(pool)))
         resp = client.post(
             "/api/newsletter/unsubscribe",
-            json={"email": "test@example.com", "reason": "Too many emails"},
+            json={
+                "unsubscribe_token": self._VALID_TOKEN,
+                "reason": "Too many emails",
+            },
         )
         assert resp.status_code == 200
+
+    def test_lookup_query_uses_token_not_email(self):
+        """Regression guard against re-introducing email-keyed lookup.
+        The UPDATE statement must filter on ``unsubscribe_token``,
+        never on ``email`` — that's the cycle-5 fix."""
+        pool = _make_pool_mock(execute_return="UPDATE 1")
+        client = TestClient(_build_app(_make_db(pool)))
+        client.post(
+            "/api/newsletter/unsubscribe",
+            json={"unsubscribe_token": self._VALID_TOKEN, "reason": "spam"},
+        )
+        pool.execute.assert_awaited_once()
+        sql = pool.execute.await_args.args[0]
+        assert "unsubscribe_token = $1" in sql
+        # The first positional arg after the SQL is the token, NOT an email.
+        assert pool.execute.await_args.args[1] == self._VALID_TOKEN
 
     def test_db_error_returns_500(self):
         pool = _make_pool_mock()
@@ -198,9 +266,64 @@ class TestUnsubscribeFromNewsletter:
         client = TestClient(_build_app(_make_db(pool)), raise_server_exceptions=False)
         resp = client.post(
             "/api/newsletter/unsubscribe",
-            json={"email": "test@example.com"},
+            json={"unsubscribe_token": self._VALID_TOKEN},
         )
         assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Token mint — subscribe path stamps an unsubscribe_token on every new row
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSubscribeMintsToken:
+    """The other half of #252 — every new subscriber row must carry an
+    ``unsubscribe_token`` so the unsubscribe path has something to look
+    up. A subscribe that silently NULL'd the column would crash the
+    NOT NULL constraint added by migration 20260527_180559."""
+
+    def test_subscribe_insert_includes_unsubscribe_token_column(self):
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=42)
+        client = TestClient(_build_app(_make_db(pool)))
+        client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+        pool.fetchval.assert_awaited_once()
+        sql = pool.fetchval.await_args.args[0]
+        assert "unsubscribe_token" in sql, (
+            "subscribe INSERT must include unsubscribe_token column — "
+            "the migration's NOT NULL constraint will reject otherwise"
+        )
+
+    def test_subscribe_mints_high_entropy_token(self):
+        """The minted token must look like ``secrets.token_urlsafe(32)``
+        output — ≈43 base64url chars. A trivially short or predictable
+        token would weaken the unsubscribe-as-auth contract."""
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+        client = TestClient(_build_app(_make_db(pool)))
+        client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+        args = pool.fetchval.await_args.args
+        # The 10th positional arg (after the SQL) is the token. Counting:
+        # email, first_name, last_name, company, interest, ip, user_agent,
+        # marketing_consent, verified, unsubscribe_token = positions 1..10.
+        token = args[10]
+        assert isinstance(token, str)
+        assert len(token) >= 32, f"token too short: {len(token)} chars"
+        # base64url alphabet only — no padding, no slashes, no plus signs.
+        assert all(c.isalnum() or c in "-_" for c in token), (
+            f"token has non-base64url chars: {token!r}"
+        )
+
+    def test_resubscribe_rotates_the_token(self):
+        """ON CONFLICT branch of the INSERT must update the token —
+        treating re-subscribe as a fresh relationship means an old
+        unsubscribe link from a prior subscription becomes dead, which
+        is the safer default."""
+        pool = _make_pool_mock(fetchrow_return=None, fetchval_return=1)
+        client = TestClient(_build_app(_make_db(pool)))
+        client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+        sql = pool.fetchval.await_args.args[0]
+        # The ON CONFLICT branch must reassign unsubscribe_token.
+        assert "unsubscribe_token = EXCLUDED.unsubscribe_token" in sql
 
 
 # ---------------------------------------------------------------------------

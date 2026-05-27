@@ -46,24 +46,34 @@ def _seed_newsletter_site_config():
 # ---------------------------------------------------------------------------
 
 
+_FAKE_TOKEN = "fake_unsubscribe_token_abcdef0123456789"
+
+
 class TestBuildHtml:
     def test_includes_title_and_link(self):
-        html = _build_html("My Post", "An excerpt", "my-post-slug")
+        html = _build_html("My Post", "An excerpt", "my-post-slug", unsubscribe_token=_FAKE_TOKEN)
         assert "My Post" in html
         assert "my-post-slug" in html
         assert "test.example.com/posts/my-post-slug" in html
 
     def test_includes_first_name_greeting(self):
-        html = _build_html("T", "E", "s", first_name="Matt")
+        html = _build_html("T", "E", "s", first_name="Matt", unsubscribe_token=_FAKE_TOKEN)
         assert "Hi Matt," in html
 
     def test_generic_greeting_when_no_name(self):
-        html = _build_html("T", "E", "s")
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN)
         assert "Hi there," in html
 
     def test_includes_unsubscribe_link(self):
-        html = _build_html("T", "E", "s")
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN)
         assert "unsubscribe" in html.lower()
+
+    def test_unsubscribe_link_contains_per_subscriber_token(self):
+        """Cycle-5 #252 — the email body's unsubscribe URL must carry
+        the subscriber's token; without it the endpoint refuses the
+        unsubscribe request."""
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN)
+        assert f"token={_FAKE_TOKEN}" in html
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +86,8 @@ class TestGetActiveSubscribers:
     async def test_returns_list_of_dicts(self):
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[
-            {"id": 1, "email": "a@b.com", "first_name": "Alice"},
-            {"id": 2, "email": "c@d.com", "first_name": None},
+            {"id": 1, "email": "a@b.com", "first_name": "Alice", "unsubscribe_token": "tok_a"},
+            {"id": 2, "email": "c@d.com", "first_name": None, "unsubscribe_token": "tok_b"},
         ])
         result = await _get_active_subscribers(pool)
         assert len(result) == 2
@@ -89,6 +99,17 @@ class TestGetActiveSubscribers:
         pool.fetch = AsyncMock(return_value=[])
         result = await _get_active_subscribers(pool)
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_select_includes_unsubscribe_token(self):
+        """Cycle-5 #252: every send needs the per-subscriber token to
+        render the unsubscribe URL. Dropping the column from the SELECT
+        would silently render emails with broken unsubscribe links."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+        await _get_active_subscribers(pool)
+        sql = pool.fetch.await_args.args[0]
+        assert "unsubscribe_token" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +159,8 @@ class TestSendNewsletterSuccess:
     async def test_sends_to_all_subscribers(self):
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[
-            {"id": 1, "email": "a@b.com", "first_name": "Alice"},
-            {"id": 2, "email": "c@d.com", "first_name": "Bob"},
+            {"id": 1, "email": "a@b.com", "first_name": "Alice", "unsubscribe_token": "tok_a"},
+            {"id": 2, "email": "c@d.com", "first_name": "Bob", "unsubscribe_token": "tok_b"},
         ])
         pool.execute = AsyncMock()
 
@@ -184,9 +205,9 @@ class TestSendNewsletterSuccess:
     async def test_handles_partial_failure(self):
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[
-            {"id": 1, "email": "a@b.com", "first_name": "A"},
-            {"id": 2, "email": "bad@fail.com", "first_name": "B"},
-            {"id": 3, "email": "c@d.com", "first_name": "C"},
+            {"id": 1, "email": "a@b.com", "first_name": "A", "unsubscribe_token": "tok_1"},
+            {"id": 2, "email": "bad@fail.com", "first_name": "B", "unsubscribe_token": "tok_2"},
+            {"id": 3, "email": "c@d.com", "first_name": "C", "unsubscribe_token": "tok_3"},
         ])
         pool.execute = AsyncMock()
 
@@ -333,7 +354,10 @@ class TestSendViaSmtp:
         fake_aiosmtplib.send = AsyncMock()
 
         with patch.dict("sys.modules", {"aiosmtplib": fake_aiosmtplib}):
-            result = await _send_via_smtp(cfg, "to@example.com", "Subject", "<html/>")
+            result = await _send_via_smtp(
+                cfg, "to@example.com", "Subject", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+            )
 
         assert result is True
         fake_aiosmtplib.send.assert_awaited_once()
@@ -356,7 +380,10 @@ class TestSendViaSmtp:
         fake_aiosmtplib.send = AsyncMock(side_effect=ConnectionError("smtp down"))
 
         with patch.dict("sys.modules", {"aiosmtplib": fake_aiosmtplib}):
-            result = await _send_via_smtp(cfg, "to@example.com", "S", "<html/>")
+            result = await _send_via_smtp(
+                cfg, "to@example.com", "S", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+            )
 
         assert result is False
 
@@ -379,7 +406,10 @@ class TestSendViaSmtp:
         fake_aiosmtplib.send = AsyncMock()
 
         with patch.dict("sys.modules", {"aiosmtplib": fake_aiosmtplib}):
-            await _send_via_smtp(cfg, "to@example.com", "S", "<html/>")
+            await _send_via_smtp(
+                cfg, "to@example.com", "S", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+            )
 
         kwargs = fake_aiosmtplib.send.await_args.kwargs
         assert kwargs["username"] is None
@@ -468,7 +498,7 @@ class TestSendNewsletterSmtpProvider:
 
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[
-            {"id": 1, "email": "a@x.com", "first_name": "Alice"},
+            {"id": 1, "email": "a@x.com", "first_name": "Alice", "unsubscribe_token": "tok_smtp"},
         ])
         pool.execute = AsyncMock()
 

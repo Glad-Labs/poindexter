@@ -5,6 +5,8 @@ Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
 
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
@@ -17,6 +19,19 @@ logger = get_logger(__name__)
 
 
 router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
+
+
+def _mint_unsubscribe_token() -> str:
+    """Per-subscriber unsubscribe credential.
+
+    ``secrets.token_urlsafe(32)`` is 43 base64url chars ≈ 256 bits of
+    entropy — generous against guess-and-replay. The endpoint looks up
+    by token, so an attacker has to brute-force a real token-space
+    collision to unsubscribe anyone they don't already have the URL
+    for. Rate-limit + UNIQUE index on the column make that
+    operationally infeasible.
+    """
+    return secrets.token_urlsafe(32)
 
 
 class NewsletterSubscribeRequest(BaseModel):
@@ -41,9 +56,16 @@ class NewsletterSubscribeResponse(BaseModel):
 
 
 class NewsletterUnsubscribeRequest(BaseModel):
-    """Newsletter unsubscribe request"""
+    """Newsletter unsubscribe request.
 
-    email: str
+    Cycle-5 audit (#252) hardened this: token is required and is the
+    sole lookup key. Email is no longer accepted — accepting it let
+    anyone who guessed an address unsubscribe arbitrary subscribers.
+    The token ships per-subscriber in the email template's
+    unsubscribe link (and the List-Unsubscribe header).
+    """
+
+    unsubscribe_token: str
     reason: str | None = None
 
 
@@ -88,16 +110,25 @@ async def subscribe_to_newsletter(
 
             interest_str = json.dumps(payload.interest_categories)
 
+        # Mint a per-subscriber unsubscribe credential. On re-subscribe
+        # (the ON CONFLICT branch below) we deliberately rotate the
+        # token — re-subscribing semantically begins a new relationship
+        # and a fresh credential is the safer default (old link from a
+        # prior subscription becomes dead).
+        unsubscribe_token = _mint_unsubscribe_token()
+
         # Insert new subscriber
         subscriber_id = await (getattr(db, "cloud_pool", None) or db.pool).fetchval(
             """
             INSERT INTO newsletter_subscribers
             (email, first_name, last_name, company, interest_categories,
-             ip_address, user_agent, marketing_consent, verified)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ip_address, user_agent, marketing_consent, verified,
+             unsubscribe_token)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (email) DO UPDATE
             SET unsubscribed_at = NULL,
                 verified = TRUE,
+                unsubscribe_token = EXCLUDED.unsubscribe_token,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id
             """,
@@ -110,6 +141,7 @@ async def subscribe_to_newsletter(
             user_agent,
             payload.marketing_consent,
             True,  # Mark as verified immediately on public signup
+            unsubscribe_token,
         )
 
         logger.info("Newsletter subscriber added: %s (ID: %s)", payload.email, subscriber_id)
@@ -133,31 +165,51 @@ async def subscribe_to_newsletter(
 async def unsubscribe_from_newsletter(
     request: Request, payload: NewsletterUnsubscribeRequest, db=Depends(get_database_dependency)
 ):
-    """Unsubscribe email from newsletter. Returns generic response to prevent email enumeration."""
+    """Unsubscribe via per-subscriber token. Cycle-5 audit (#252) made
+    the token mandatory — the previous email-keyed lookup let anyone
+    who knew/guessed an address unsubscribe arbitrary subscribers
+    (rate-limit-only protection is trivially bypassable from
+    distributed sources). The token ships in the email template's
+    unsubscribe URL and the ``List-Unsubscribe`` header.
+
+    Returns a generic response in both the hit and miss cases so that
+    an attacker grinding through random tokens cannot tell which ones
+    were valid.
+    """
     try:
-        # Update subscriber as unsubscribed
+        # Token lookup. Reject unknown tokens by returning the same
+        # generic response — leaks zero information about valid tokens.
         result = await (getattr(db, "cloud_pool", None) or db.pool).execute(
             """
             UPDATE newsletter_subscribers
             SET unsubscribed_at = CURRENT_TIMESTAMP,
                 unsubscribe_reason = $2,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE email = $1 AND unsubscribed_at IS NULL
+            WHERE unsubscribe_token = $1 AND unsubscribed_at IS NULL
             """,
-            payload.email,
+            payload.unsubscribe_token,
             payload.reason,
         )
 
         if result == "UPDATE 0":
+            # Either an invalid token OR already unsubscribed. Log the
+            # token PREFIX only (8 chars is enough to grep audit logs
+            # for repeated probe attempts but doesn't itself leak a
+            # working credential into log files).
+            token_prefix = payload.unsubscribe_token[:8] if payload.unsubscribe_token else ""
             logger.info(
-                "[newsletter_unsubscribe] No active subscription found for email (not revealing to client)"
+                "[newsletter_unsubscribe] No active subscription for token prefix %r "
+                "(invalid token, or already unsubscribed)",
+                token_prefix,
             )
         else:
-            logger.info("[newsletter_unsubscribe] Successfully unsubscribed: %s", payload.email)
+            logger.info("[newsletter_unsubscribe] Successfully unsubscribed (token consumed)")
 
-        # Always return the same response to prevent email enumeration
+        # Always return the same response — refusing to confirm whether
+        # the token was valid stops attackers from using the endpoint
+        # as a token-validity oracle.
         return NewsletterSubscribeResponse(
-            success=True, message="If this email was subscribed, it has been removed."
+            success=True, message="If this link was valid, the subscription has been removed."
         )
 
     except Exception as e:
