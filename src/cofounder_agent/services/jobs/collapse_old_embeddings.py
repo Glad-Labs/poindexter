@@ -288,9 +288,13 @@ def build_summary_text(previews: Iterable[str], *, chars_per_member: int = 200) 
     return " | ".join(parts)
 
 
+_SUMMARY_PROMPT_KEY = "memory.collapse_old_embeddings.summary"
+
 # Default summarization prompt — kept tight to avoid burning tokens on
 # preamble. Per-source-table override available via app_settings key
-# ``embedding_collapse_summary_prompt_<source_table>``.
+# ``embedding_collapse_summary_prompt_<source_table>``. Lives here as
+# the inline fallback only; Langfuse → YAML own the live edit surface
+# per feedback_prompts_must_be_db_configurable.
 _DEFAULT_SUMMARY_PROMPT = (
     "You are compressing a cluster of older memories so the system "
     "remembers the gist without storing every detail. Below are "
@@ -304,6 +308,34 @@ _DEFAULT_SUMMARY_PROMPT = (
     "Excerpts:\n{joined}\n\n"
     "Summary:"
 )
+
+
+def _resolve_summary_prompt_template() -> str:
+    """Pull the raw memory-collapse prompt template via
+    UnifiedPromptManager — the caller fills ``{n}`` / ``{source_table}``
+    / ``{joined}`` placeholders downstream via
+    ``build_summary_text_via_llm`` so we return the template unfilled.
+
+    Mirrors the retention_summarize_to_table resolver shape (#237/#612).
+    Falls back to the inline constant on any lookup failure.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        pm = get_prompt_manager()
+        template = pm._fetch_from_langfuse(_SUMMARY_PROMPT_KEY)
+        if template is None and _SUMMARY_PROMPT_KEY in pm.prompts:
+            template = pm.prompts[_SUMMARY_PROMPT_KEY]["template"]
+        if template is None:
+            raise KeyError(_SUMMARY_PROMPT_KEY)
+        return template
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[collapse_old_embeddings] prompt_manager lookup for "
+            "%r failed (%s) — using inline fallback",
+            _SUMMARY_PROMPT_KEY, exc,
+        )
+        return _DEFAULT_SUMMARY_PROMPT
 
 
 async def build_summary_text_via_llm(
@@ -342,7 +374,7 @@ async def build_summary_text_via_llm(
     if not pieces:
         return None
 
-    template = prompt_template or _DEFAULT_SUMMARY_PROMPT
+    template = prompt_template or _resolve_summary_prompt_template()
     prompt = template.format(
         n=len(pieces),
         source_table=source_table,

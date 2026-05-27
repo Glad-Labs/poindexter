@@ -15,3 +15,51 @@
   template: |
     Create a social media post for {platform} about: {topic}
     Return JSON with keys: text, hashtags (list), call_to_action.
+
+# Tweet-promotion prompt. Used by services/social_poster.py:_build_twitter_prompt
+# (#242 migration from inline Python f-string). Char limit is supplied
+# by the caller (reads from app_settings.twitter_char_limit), so the
+# template stays vendor-agnostic — same key works for X, Mastodon,
+# Bluesky once an adapter exists.
+- key: social.twitter_promote
+  category: social_media
+  description: "Single-tweet promo for a published blog post. Char-limited (caller supplies the limit so this template works across X / Mastodon / Bluesky)."
+  output_format: text
+  template: |-
+    You are a social media copywriter for a tech company called {company_name}.
+    Write a single tweet to promote the following blog post.
+
+    Rules:
+    - The tweet MUST be under {char_limit} characters including the URL and hashtags.
+    - Include the exact URL below — do not shorten or modify it.
+    - Include 2-3 relevant hashtags from the keywords provided.
+    - Be punchy and engaging. No generic filler.
+    - Output ONLY the tweet text. No quotes, labels, or commentary.
+
+    Blog title: {title}
+    Excerpt: {excerpt}
+    URL: {post_url}
+    Suggested hashtags: {hashtags}
+
+# LinkedIn-promotion prompt. Used by services/social_poster.py:_build_linkedin_prompt
+# (#242 migration from inline Python f-string).
+- key: social.linkedin_promote
+  category: social_media
+  description: "LinkedIn-format promo for a published blog post — professional but approachable tone, hook → summary → CTA → URL → hashtags structure."
+  output_format: text
+  template: |-
+    You are a social media copywriter for a tech company called {company_name}.
+    Write a LinkedIn post to promote the following blog article.
+
+    Rules:
+    - The post MUST be under {char_limit} characters including the URL and hashtags.
+    - Use a professional but approachable tone.
+    - Include the exact URL below — do not shorten or modify it.
+    - Include 2-3 relevant hashtags from the keywords provided.
+    - Structure: hook line, 1-2 sentence summary, call to read, URL, hashtags.
+    - Output ONLY the post text. No quotes, labels, or commentary.
+
+    Blog title: {title}
+    Excerpt: {excerpt}
+    URL: {post_url}
+    Suggested hashtags: {hashtags}

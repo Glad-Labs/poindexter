@@ -92,3 +92,22 @@
     {joined}
 
     Summary:
+
+# Memory cluster summary — used by services/jobs/collapse_old_embeddings.py
+# (#242 migration from inline _DEFAULT_SUMMARY_PROMPT). Compresses a cluster
+# of older same-source memories into one paragraph that gets re-embedded;
+# the original rows are deleted. Per-source-table overrides supported via
+# app_settings.embedding_collapse_summary_prompt_<source_table>.
+- key: memory.collapse_old_embeddings.summary
+  category: utility
+  description: "Compress N older same-source memory excerpts into a single dense paragraph for re-embedding. Future semantic search reads the summary instead of the originals — favor facts/names/decisions over prose."
+  output_format: text
+  template: |-
+    You are compressing a cluster of older memories so the system remembers the gist without storing every detail. Below are {n} excerpts from the same source ({source_table}), each separated by '---'.
+
+    Write a single paragraph (3-6 sentences) summarizing what these excerpts collectively say. Preserve specific names, dates, decisions, errors, and outcomes. Drop boilerplate, repetition, and verbose phrasing. The summary will be embedded and used for future semantic search, so dense factual content beats prose.
+
+    Excerpts:
+    {joined}
+
+    Summary:

@@ -101,6 +101,37 @@ from services.quality_scorers import (
 logger = get_logger(__name__)
 
 
+_QUALITY_EVAL_PROMPT_FALLBACK = (
+    "You are a content quality evaluator. Score the following content on 7 dimensions, "
+    "each from 0 to 10 (integers only). Respond ONLY with a JSON object — no markdown, "
+    "no explanation.\n\n"
+    "Topic: {topic}\n\n"
+    "Content:\n{content_excerpt}\n\n"
+    "Return JSON with these keys:\n"
+    '{{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, '
+    '"seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", '
+    '"suggestions": ["suggestion1", "suggestion2"]}}'
+)
+
+
+def _resolve_quality_prompt(key: str, **kwargs: Any) -> str:
+    """Fetch a QA prompt via UnifiedPromptManager with inline fallback.
+
+    Mirrors the resolver pattern from ``atoms/review_with_critic`` per
+    ``feedback_prompts_must_be_db_configurable``.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(key, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[quality_service] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback",
+            key, exc,
+        )
+        return _QUALITY_EVAL_PROMPT_FALLBACK.format(**kwargs)
+
+
 class UnifiedQualityService:
     """
     Unified service for all content quality assessment.
@@ -354,16 +385,10 @@ class UnifiedQualityService:
         # Truncate very long content to avoid excessive token usage
         content_excerpt = content[:4000] if len(content) > 4000 else content
 
-        evaluation_prompt = (
-            "You are a content quality evaluator. Score the following content on 7 dimensions, "
-            "each from 0 to 10 (integers only). Respond ONLY with a JSON object — no markdown, "
-            "no explanation.\n\n"
-            f"Topic: {topic}\n\n"
-            f"Content:\n{content_excerpt}\n\n"
-            "Return JSON with these keys:\n"
-            '{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, '
-            '"seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", '
-            '"suggestions": ["suggestion1", "suggestion2"]}'
+        evaluation_prompt = _resolve_quality_prompt(
+            "qa.quality_evaluation_llm_rubric",
+            topic=topic,
+            content_excerpt=content_excerpt,
         )
 
         try:

@@ -178,42 +178,83 @@ class SocialPost:
 # ---------------------------------------------------------------------------
 
 
+_TWITTER_PROMPT_FALLBACK = (
+    "You are a social media copywriter for a tech company called {company_name}.\n"
+    "Write a single tweet to promote the following blog post.\n\n"
+    "Rules:\n"
+    "- The tweet MUST be under {char_limit} characters including the URL and hashtags.\n"
+    "- Include the exact URL below — do not shorten or modify it.\n"
+    "- Include 2-3 relevant hashtags from the keywords provided.\n"
+    "- Be punchy and engaging. No generic filler.\n"
+    "- Output ONLY the tweet text. No quotes, labels, or commentary.\n\n"
+    "Blog title: {title}\n"
+    "Excerpt: {excerpt}\n"
+    "URL: {post_url}\n"
+    "Suggested hashtags: {hashtags}\n"
+)
+
+_LINKEDIN_PROMPT_FALLBACK = (
+    "You are a social media copywriter for a tech company called {company_name}.\n"
+    "Write a LinkedIn post to promote the following blog article.\n\n"
+    "Rules:\n"
+    "- The post MUST be under {char_limit} characters including the URL and hashtags.\n"
+    "- Use a professional but approachable tone.\n"
+    "- Include the exact URL below — do not shorten or modify it.\n"
+    "- Include 2-3 relevant hashtags from the keywords provided.\n"
+    "- Structure: hook line, 1-2 sentence summary, call to read, URL, hashtags.\n"
+    "- Output ONLY the post text. No quotes, labels, or commentary.\n\n"
+    "Blog title: {title}\n"
+    "Excerpt: {excerpt}\n"
+    "URL: {post_url}\n"
+    "Suggested hashtags: {hashtags}\n"
+)
+
+
+def _resolve_social_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
+    """Fetch a social-media prompt via UnifiedPromptManager with inline
+    fallback. Mirrors the resolver pattern from
+    ``atoms/review_with_critic._resolve_system_prompt`` per
+    ``feedback_prompts_must_be_db_configurable``.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(key, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[social_poster] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback",
+            key, exc,
+        )
+        return fallback.format(**kwargs)
+
+
 def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
     post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
-    return (
-        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
-        "Write a single tweet to promote the following blog post.\n\n"
-        "Rules:\n"
-        f"- The tweet MUST be under {_twitter_char_limit()} characters including the URL and hashtags.\n"
-        "- Include the exact URL below — do not shorten or modify it.\n"
-        "- Include 2-3 relevant hashtags from the keywords provided.\n"
-        "- Be punchy and engaging. No generic filler.\n"
-        "- Output ONLY the tweet text. No quotes, labels, or commentary.\n\n"
-        f"Blog title: {title}\n"
-        f"Excerpt: {excerpt}\n"
-        f"URL: {post_url}\n"
-        f"Suggested hashtags: {hashtags}\n"
+    return _resolve_social_prompt(
+        "social.twitter_promote",
+        fallback=_TWITTER_PROMPT_FALLBACK,
+        company_name=site_config.get("company_name", ""),
+        char_limit=_twitter_char_limit(),
+        title=title,
+        excerpt=excerpt,
+        post_url=post_url,
+        hashtags=hashtags,
     )
 
 
 def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
     post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
-    return (
-        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
-        "Write a LinkedIn post to promote the following blog article.\n\n"
-        "Rules:\n"
-        f"- The post MUST be under {_linkedin_char_limit()} characters including the URL and hashtags.\n"
-        "- Use a professional but approachable tone.\n"
-        "- Include the exact URL below — do not shorten or modify it.\n"
-        "- Include 2-3 relevant hashtags from the keywords provided.\n"
-        "- Structure: hook line, 1-2 sentence summary, call to read, URL, hashtags.\n"
-        "- Output ONLY the post text. No quotes, labels, or commentary.\n\n"
-        f"Blog title: {title}\n"
-        f"Excerpt: {excerpt}\n"
-        f"URL: {post_url}\n"
-        f"Suggested hashtags: {hashtags}\n"
+    return _resolve_social_prompt(
+        "social.linkedin_promote",
+        fallback=_LINKEDIN_PROMPT_FALLBACK,
+        company_name=site_config.get("company_name", ""),
+        char_limit=_linkedin_char_limit(),
+        title=title,
+        excerpt=excerpt,
+        post_url=post_url,
+        hashtags=hashtags,
     )
 
 

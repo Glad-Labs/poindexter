@@ -249,3 +249,23 @@
     {content}
 
     Summary:
+
+# LLM-based quality evaluation rubric. Used by
+# services/quality_service.py::UnifiedQualityService._evaluate_llm
+# (#242 migration from inline Python f-string). Scores 7 quality
+# dimensions; the LLM result is a fallback layer behind the programmatic
+# pattern-based path that handles the bulk of routine scoring.
+- key: qa.quality_evaluation_llm_rubric
+  category: content_qa
+  description: "LLM-based quality scoring — 7 dimensions (clarity, accuracy, completeness, relevance, seo_quality, readability, engagement) on 0-10 each. Replaces the inline f-string in quality_service.UnifiedQualityService when llm_client is wired."
+  output_format: json
+  template: |-
+    You are a content quality evaluator. Score the following content on 7 dimensions, each from 0 to 10 (integers only). Respond ONLY with a JSON object — no markdown, no explanation.
+
+    Topic: {topic}
+
+    Content:
+    {content_excerpt}
+
+    Return JSON with these keys:
+    {{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, "seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", "suggestions": ["suggestion1", "suggestion2"]}}
