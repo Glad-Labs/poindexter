@@ -128,3 +128,236 @@ class TestLogQueryPerformance:
         result = await count_query()
         assert result["total"] == 42
 
+
+# ---------------------------------------------------------------------------
+# Logging-branch coverage — the existing class only asserts on return values,
+# so the slow/error/info/debug log paths in lines 177-196 of services/decorators.py
+# had zero coverage before this class. Each test patches the module logger and
+# verifies the exact branch fires.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLogQueryPerformanceLogging:
+    @pytest.mark.asyncio
+    async def test_slow_query_emits_warning(self, monkeypatch):
+        """A query exceeding the slow_threshold_ms must hit logger.warning
+        with the SLOW QUERY marker — never log.info or log.error."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+
+        # slow_threshold_ms=0 guarantees every call is "slow"
+        @log_query_performance(operation="forced_slow", category="test", slow_threshold_ms=0)
+        async def any_query():
+            return "ok"
+
+        await any_query()
+
+        assert mock_logger.warning.called, "expected logger.warning on slow path"
+        warn_msg = mock_logger.warning.call_args.args[0]
+        assert "SLOW QUERY" in warn_msg
+        assert "forced_slow" in warn_msg
+        mock_logger.error.assert_not_called()
+        mock_logger.info.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_error_path_logs_with_exc_info(self, monkeypatch):
+        """When the wrapped fn raises, logger.error must be called with
+        exc_info set to the captured exception (not True, not None)."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+
+        sentinel = RuntimeError("boom")
+
+        @log_query_performance(operation="explodes", category="test")
+        async def explodes():
+            raise sentinel
+
+        with pytest.raises(RuntimeError):
+            await explodes()
+
+        assert mock_logger.error.called
+        kwargs = mock_logger.error.call_args.kwargs
+        assert kwargs.get("exc_info") is sentinel, (
+            "decorator must pass the captured exception explicitly (LOG014 contract)"
+        )
+        # error context must include error=True flag
+        assert kwargs["extra"]["error"] is True
+        assert kwargs["extra"]["operation"] == "explodes"
+
+    @pytest.mark.asyncio
+    async def test_log_all_queries_emits_info_for_fast_query(self, monkeypatch):
+        """When log_all_queries=True and the query is fast, logger.info
+        must fire — not debug."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+
+        @log_query_performance(operation="chatty_op", category="test")
+        async def fast():
+            return "ok"
+
+        await fast()
+
+        assert mock_logger.info.called
+        assert not mock_logger.warning.called
+        assert not mock_logger.error.called
+
+    @pytest.mark.asyncio
+    async def test_fast_query_default_logs_debug_not_info(self, monkeypatch):
+        """The default (log_all_queries=False, fast query) hits logger.debug
+        — the quiet branch on line 194. Regression guard for that path."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("services.decorators._log_all_queries", lambda: False)
+
+        @log_query_performance(operation="quiet_op", category="test")
+        async def fast():
+            return "ok"
+
+        await fast()
+
+        assert mock_logger.debug.called
+        assert not mock_logger.info.called
+        assert not mock_logger.warning.called
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("sensitive_key", ["token", "secret", "api_key"])
+    async def test_filters_each_sensitive_kwarg(self, monkeypatch, sensitive_key):
+        """Each entry in the sensitive-kwargs blocklist must be stripped
+        from logger context. Only `password` was tested before this."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        # Force the info branch so kwargs make it into `extra`
+        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+
+        @log_query_performance(operation="sensitive", category="test")
+        async def safe_call(**kwargs):
+            return "ok"
+
+        await safe_call(visible="yes", **{sensitive_key: "leak-me-not"})
+
+        extra = mock_logger.info.call_args.kwargs["extra"]
+        params = extra.get("params", {})
+        assert sensitive_key not in params, f"{sensitive_key} leaked into log context"
+        assert params.get("visible") == "yes", "non-sensitive kwargs must survive"
+
+    @pytest.mark.asyncio
+    async def test_empty_list_result_count_is_zero(self, monkeypatch):
+        """An empty list return value yields result_count=0, not absent.
+        Distinguishes "no rows" from "couldn't compute"."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+
+        @log_query_performance(operation="empty_list", category="test")
+        async def no_rows():
+            return []
+
+        await no_rows()
+
+        extra = mock_logger.info.call_args.kwargs["extra"]
+        assert extra.get("result_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_dict_with_non_list_results_skips_result_count(self, monkeypatch):
+        """If `results` is present but not a list, result_count must NOT
+        be set (defensive — no len() on a non-sized object)."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+
+        @log_query_performance(operation="weird_dict", category="test")
+        async def weird():
+            return {"results": "not-a-list"}
+
+        await weird()
+
+        extra = mock_logger.info.call_args.kwargs["extra"]
+        assert "result_count" not in extra
+
+    @pytest.mark.asyncio
+    async def test_no_kwargs_omits_params_key(self, monkeypatch):
+        """When called with only positional args, the log extra must not
+        include a `params` key (avoids logging empty dicts)."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        monkeypatch.setattr("services.decorators._log_all_queries", lambda: True)
+
+        @log_query_performance(operation="positional_only", category="test")
+        async def pos(a, b):
+            return a + b
+
+        await pos(1, 2)
+
+        extra = mock_logger.info.call_args.kwargs["extra"]
+        assert "params" not in extra
+
+    @pytest.mark.asyncio
+    async def test_explicit_threshold_overrides_site_config(self, monkeypatch):
+        """slow_threshold_ms passed at decoration time must win over the
+        site_config setting — confirms the per-decorator override path."""
+        from unittest.mock import MagicMock
+
+        mock_logger = MagicMock()
+        monkeypatch.setattr("services.decorators.logger", mock_logger)
+        # site_config would report 999999 (never slow), but the decorator
+        # override is 0 (always slow) — override must win.
+        monkeypatch.setattr("services.decorators._slow_query_threshold_ms", lambda: 999_999)
+
+        @log_query_performance(operation="override_wins", category="test", slow_threshold_ms=0)
+        async def fn():
+            return "ok"
+
+        await fn()
+
+        assert mock_logger.warning.called
+        warn_extra = mock_logger.warning.call_args.kwargs["extra"]
+        assert warn_extra["slow"] is True
+
+    def test_set_site_config_rewires_module_attr(self):
+        """set_site_config() must replace the module-level `site_config`
+        so subsequent _sc() / _enable_query_monitoring() reads see the new
+        instance. Regression guard for the post-#330 DI seam."""
+        from services import decorators as dec_mod
+        from services.site_config import SiteConfig
+
+        original = dec_mod.site_config
+        try:
+            sentinel = SiteConfig(initial_config={"enable_query_monitoring": "false"})
+            dec_mod.set_site_config(sentinel)
+            assert dec_mod.site_config is sentinel
+            assert dec_mod._sc() is sentinel
+            # The new instance has monitoring disabled — verify the
+            # convenience reader picks that up.
+            assert dec_mod._enable_query_monitoring() is False
+        finally:
+            dec_mod.set_site_config(original)
+
+    def test_functools_wraps_preserves_function_metadata(self):
+        """@functools.wraps must preserve __name__ and __doc__ so
+        tracing / debugging tools see the original function, not `wrapper`."""
+
+        @log_query_performance(operation="meta", category="test")
+        async def get_things_by_owner():
+            """Fetch all things for an owner."""
+            return []
+
+        assert get_things_by_owner.__name__ == "get_things_by_owner"
+        assert get_things_by_owner.__doc__ == "Fetch all things for an owner."
