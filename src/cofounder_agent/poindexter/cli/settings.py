@@ -179,7 +179,17 @@ def settings_get(key: str, json_output: bool) -> None:
 @click.argument("value")
 @click.option("--category", default="general", show_default=True)
 @click.option("--description", default="", help="Optional human-readable description.")
-def settings_set(key: str, value: str, category: str, description: str) -> None:
+@click.option(
+    "--allow-new",
+    is_flag=True,
+    help="Allow creating a brand-new setting key. Without this flag, only "
+         "existing keys can be updated — prevents phantom-key creation when "
+         "operators paste the ``category/key`` display form from the list "
+         "output.",
+)
+def settings_set(
+    key: str, value: str, category: str, description: str, allow_new: bool,
+) -> None:
     """Upsert a setting by key — creates it if missing, updates if present.
 
     Uses a direct DB upsert rather than the HTTP `PUT /api/settings/{key}`
@@ -187,6 +197,15 @@ def settings_set(key: str, value: str, category: str, description: str) -> None:
     the POST-then-PUT dance isn't worth the round-trips. Writing a value
     also re-activates a previously disabled setting — the same behavior
     `admin_db.set_setting` provides.
+
+    2026-05-27 phantom-key guard: the ``settings list`` output renders
+    every row as ``{category}/{key} = {value}``. Operators copy that
+    visible form and run ``settings set pipeline/daily_post_limit 4``,
+    which UPSERTs a NEW row with the literal key ``pipeline/daily_post_limit``
+    instead of updating the canonical key ``daily_post_limit``. The
+    consumer (auto_publish.py) only reads the canonical key, so the
+    "set" is silently dead. Caught after Matt's daily_post_limit looked
+    set to 4 but the pipeline still throttled to 1.
     """
 
     async def _upsert() -> bool:
@@ -197,6 +216,47 @@ def settings_set(key: str, value: str, category: str, description: str) -> None:
         dsn = resolve_dsn()
         conn = await asyncpg.connect(dsn)
         try:
+            # Phantom-key guard. If the key contains ``/`` AND that exact
+            # key does NOT exist in the table, the user probably pasted
+            # the ``category/key`` display form. Refuse + suggest the
+            # canonical key (if one exists with the suffix), unless
+            # --allow-new is explicitly passed.
+            if "/" in key and not allow_new:
+                existing = await conn.fetchval(
+                    "SELECT 1 FROM app_settings WHERE key = $1", key,
+                )
+                if existing is None:
+                    canonical = key.split("/")[-1]
+                    canonical_row = await conn.fetchrow(
+                        "SELECT key, category FROM app_settings WHERE key = $1",
+                        canonical,
+                    )
+                    msg_lines = [
+                        f"Refusing to create new key {key!r} (contains '/').",
+                        "",
+                        "The ``settings list`` output renders rows as "
+                        "``category/key = value`` — that 'category/' part is a "
+                        "DISPLAY prefix, not part of the actual key. Setting "
+                        "it as-written would create a phantom row that no "
+                        "consumer reads.",
+                        "",
+                    ]
+                    if canonical_row is not None:
+                        msg_lines.append(
+                            f"Did you mean: poindexter settings set "
+                            f"{canonical_row['key']} {value}"
+                        )
+                        msg_lines.append(
+                            f"  (canonical key, category=={canonical_row['category']!r})"
+                        )
+                    else:
+                        msg_lines.append(
+                            "If you genuinely want to create a new key with "
+                            "'/' in it, re-run with --allow-new."
+                        )
+                    click.echo("\n".join(msg_lines), err=True)
+                    sys.exit(2)
+
             await conn.execute(
                 """
                 INSERT INTO app_settings (key, value, category, description, is_active)

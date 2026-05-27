@@ -2,11 +2,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Docker CLI for restarting sibling containers via mounted socket
+# Docker CLI for restarting sibling containers via mounted socket.
+# Also installs the ``compose`` CLI plugin so ``docker compose -f path up -d``
+# works from inside the brain — compose_drift_probe needs this for its
+# auto-recover path. The bare ``docker`` static tarball only ships the
+# main CLI; without the plugin, ``docker compose ...`` falls through to
+# the root parser with a cryptic ``unknown shorthand flag: 'f' in -f``
+# (caught 2026-05-27 by Matt's compose_drift_probe auto-recover failure).
+ARG DOCKER_COMPOSE_VERSION=v2.33.1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates && \
     curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz | \
     tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+    docker compose version && \
     apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Brain has its own pyproject.toml + poetry.lock so the dep set is lockable
