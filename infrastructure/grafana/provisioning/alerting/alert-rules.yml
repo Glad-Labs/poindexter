@@ -522,7 +522,7 @@ groups:
               from: 21600
               to: 0
             model:
-              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE cost_type = 'local_compute' AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
+              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE provider = 'ollama' AND cost_type = 'inference' AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
               format: table
               editorMode: code
           - refId: B
