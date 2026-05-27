@@ -235,3 +235,164 @@ class TestContentGenerationFlow:
                 task_id="no-topic-task",
                 database_service=db,
             )
+
+
+# ---------------------------------------------------------------------------
+# Cycle-5 #253: flow-crash recovery
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestFlowCrashMarksTaskFailed:
+    """Pre-#253, an unhandled exception in ``process_content_generation_task``
+    propagated to Prefect and left the claimed task ``status='in_progress'``
+    forever (the sweep_stale_tasks safety net was also broken, so the row
+    needed manual intervention). The fix wraps the pipeline call in a
+    try/except that marks the task failed before re-raising, so:
+
+    * Prefect still sees the failure (re-raise preserves UI / metrics)
+    * The DB row reflects the real terminal state immediately
+    * The brain daemon + approval queue + cost dashboards don't show
+      a phantom in-progress task
+    """
+
+    @pytest.mark.asyncio
+    async def test_pipeline_crash_marks_task_failed_then_reraises(self):
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        boom = RuntimeError("LLM provider returned 500")
+        pipeline_mock = AsyncMock(side_effect=boom)
+
+        with patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ):
+            with pytest.raises(RuntimeError, match="LLM provider returned 500"):
+                await content_generation_flow.fn(
+                    task_id="crash-task-1",
+                    topic="A topic that crashes the pipeline",
+                    database_service=db,
+                )
+
+        # The mark-failed helper opens an extra acquire() and runs an
+        # UPDATE on pipeline_tasks. We can check the conn from the same
+        # _make_pool double — its execute() was called with the failed
+        # UPDATE statement.
+        async with pool.acquire() as conn:
+            # Find any execute call whose SQL matches the failed UPDATE
+            update_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert update_calls, "expected an UPDATE ... SET status='failed' call"
+            sql, error_message, task_id = update_calls[0].args
+            assert "UPDATE pipeline_tasks" in sql
+            assert "WHERE task_id = $2 AND status = 'in_progress'" in sql
+            assert "LLM provider returned 500" in error_message
+            assert error_message.startswith("flow crashed: RuntimeError:")
+            assert task_id == "crash-task-1"
+
+    @pytest.mark.asyncio
+    async def test_helper_truncates_error_message(self):
+        """The error_message column is bounded; the helper truncates to
+        2KB so an attacker-controlled exception text can't bloat the DB."""
+        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        huge_error = RuntimeError("A" * 10_000)
+        await _mark_task_failed_on_flow_crash(
+            database_service=db,
+            task_id="t-truncate",
+            error=huge_error,
+        )
+
+        async with pool.acquire() as conn:
+            update_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert update_calls, "expected an UPDATE ... SET status='failed' call"
+            _, error_message, _ = update_calls[0].args
+            assert len(error_message) == 2048
+
+    @pytest.mark.asyncio
+    async def test_helper_noop_when_task_id_none(self):
+        """Schedule-driven retries with an exhausted queue have
+        task_id=None at the call site — helper must be a no-op rather
+        than crashing or running a NULL UPDATE."""
+        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        await _mark_task_failed_on_flow_crash(
+            database_service=db,
+            task_id=None,
+            error=RuntimeError("anything"),
+        )
+
+        async with pool.acquire() as conn:
+            update_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert not update_calls, (
+                "helper must not run an UPDATE when task_id is None"
+            )
+
+    @pytest.mark.asyncio
+    async def test_helper_swallows_db_errors(self):
+        """The helper is the eager-cleanup path; the sweep is the
+        safety net. If the helper's UPDATE itself fails (network blip,
+        pool exhausted, etc.) it must NOT mask the original pipeline
+        exception — log + return so the caller's re-raise propagates."""
+        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+
+        # Build a DB service whose pool acquire raises
+        db = MagicMock()
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            raise RuntimeError("conn lost mid-cleanup")
+            yield  # unreachable but satisfies typing
+        pool.acquire = _acquire
+        db.pool = pool
+
+        # Must not raise — best-effort path
+        await _mark_task_failed_on_flow_crash(
+            database_service=db,
+            task_id="t-db-error",
+            error=RuntimeError("the original crash"),
+        )
+
+    @pytest.mark.asyncio
+    async def test_helper_targets_only_in_progress_rows(self):
+        """The WHERE clause must include ``AND status = 'in_progress'`` —
+        regression guard against accidentally re-failing a row that
+        already transitioned to ``awaiting_approval`` / ``published``
+        between the pipeline call and the cleanup."""
+        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        await _mark_task_failed_on_flow_crash(
+            database_service=db,
+            task_id="t-guard",
+            error=RuntimeError("test"),
+        )
+
+        async with pool.acquire() as conn:
+            update_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert update_calls
+            sql = update_calls[0].args[0]
+            assert "WHERE task_id = $2 AND status = 'in_progress'" in sql

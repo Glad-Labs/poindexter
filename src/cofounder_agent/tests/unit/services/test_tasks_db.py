@@ -1026,10 +1026,13 @@ class TestSweepStaleTasks:
 
     @pytest.mark.asyncio
     async def test_resets_under_max_retries(self):
-        # Two stale tasks: one with retry_count=0 (reset), one with retry_count=3 (fail)
+        """Cycle-5 #253: sweep partitions stale rows by retry_count.
+        Under max_retries → bumped to pending; at/over → marked failed.
+        Reads the real ``retry_count`` integer column on
+        ``pipeline_tasks`` (no JSON arithmetic, no view dependency)."""
         stale_rows = [
-            {"task_id": "t-1", "task_metadata": json.dumps({"retry_count": 0})},
-            {"task_id": "t-2", "task_metadata": json.dumps({"retry_count": 3})},
+            {"task_id": "t-1", "retry_count": 0},
+            {"task_id": "t-2", "retry_count": 3},
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=stale_rows)
@@ -1054,6 +1057,77 @@ class TestSweepStaleTasks:
         assert conn.execute.await_count == 2
 
     @pytest.mark.asyncio
+    async def test_writes_target_pipeline_tasks_not_content_tasks_view(self):
+        """Cycle-5 #253 regression guard: the SELECT + the two UPDATE
+        statements must hit ``pipeline_tasks`` directly, not the
+        ``content_tasks`` view (which is a JOIN of pipeline_tasks ×
+        pipeline_versions and isn't updatable in PostgreSQL)."""
+        stale_rows = [
+            {"task_id": "t-reset", "retry_count": 1},
+            {"task_id": "t-fail", "retry_count": 99},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock()
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+
+        # Verify the SELECT targets pipeline_tasks, not content_tasks.
+        select_sql = conn.fetch.await_args.args[0]
+        assert "FROM pipeline_tasks" in select_sql
+        assert "FROM content_tasks" not in select_sql
+
+        # Both UPDATE calls must also target pipeline_tasks.
+        update_sqls = [call.args[0] for call in conn.execute.await_args_list]
+        assert all("UPDATE pipeline_tasks" in sql for sql in update_sqls)
+        assert all("UPDATE content_tasks" not in sql for sql in update_sqls)
+
+    @pytest.mark.asyncio
+    async def test_reset_increments_retry_count_atomically(self):
+        """The reset branch must increment retry_count in-SQL (atom column
+        arithmetic), not via read-modify-write at the Python layer.
+        The atom form is concurrency-safe + avoids the JSON-arithmetic
+        path the old (broken) sweeper used."""
+        stale_rows = [{"task_id": "t-1", "retry_count": 0}]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock()
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+
+        reset_sql = conn.execute.await_args.args[0]
+        assert "retry_count = retry_count + 1" in reset_sql
+        # The old jsonb_set form must NOT be back.
+        assert "jsonb_set" not in reset_sql
+        assert "task_metadata" not in reset_sql
+
+    @pytest.mark.asyncio
     async def test_db_error_returns_zero_counts(self):
         pool = MagicMock()
         pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
@@ -1062,11 +1136,13 @@ class TestSweepStaleTasks:
         assert result == {"reset": 0, "failed": 0}
 
     @pytest.mark.asyncio
-    async def test_handles_empty_metadata(self):
-        # Task with NULL/empty metadata - retry_count defaults to 0
+    async def test_handles_null_retry_count(self):
+        """Defensive: if the column comes back NULL (shouldn't happen
+        post-migration since the column is NOT NULL DEFAULT 0, but guard
+        the consumer-side cast against it anyway)."""
         stale_rows = [
-            {"task_id": "t-1", "task_metadata": None},
-            {"task_id": "t-2", "task_metadata": ""},
+            {"task_id": "t-1", "retry_count": None},
+            {"task_id": "t-2", "retry_count": 0},
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=stale_rows)

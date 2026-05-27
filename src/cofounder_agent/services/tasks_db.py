@@ -1487,8 +1487,20 @@ class TasksDatabase(DatabaseServiceMixin):
         Find and reset stale in-progress tasks atomically.
 
         Tasks stuck in 'in_progress' beyond the threshold are either reset
-        to 'pending' (if retry count < max_retries) or marked 'failed'.
+        to 'pending' (if retry_count < max_retries) or marked 'failed'.
         All updates happen in a single transaction with batched queries.
+
+        Cycle-5 #253: the prior implementation read + wrote the
+        ``content_tasks`` *view* (a JOIN of pipeline_tasks x
+        pipeline_versions). PostgreSQL refuses UPDATE on views with
+        multiple base tables and the ``task_metadata`` column the
+        sweeper expected was a computed expression
+        (``pv.stage_data->'task_metadata'``) — the sweeper silently
+        failed on every fire, stale rows piled up in ``in_progress``
+        forever, retries never incremented, max-retries-exceeded never
+        triggered. This rewrite targets ``pipeline_tasks`` directly
+        and uses the real ``retry_count`` column added by migration
+        20260527_183209.
 
         Args:
             stale_threshold_minutes: Minutes after which an in_progress task is stale
@@ -1502,11 +1514,14 @@ class TasksDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    # Fetch all stale tasks in one query — lightweight columns only
+                    # Fetch stale rows directly from pipeline_tasks. The
+                    # ``retry_count`` column is a real integer (NOT NULL
+                    # DEFAULT 0 since migration 20260527_183209) — no
+                    # JSON arithmetic, no view dependency.
                     stale_rows = await conn.fetch(
                         """
-                        SELECT task_id, task_metadata
-                        FROM content_tasks
+                        SELECT task_id, retry_count
+                        FROM pipeline_tasks
                         WHERE status = 'in_progress'
                           AND updated_at < $1
                         """,
@@ -1522,8 +1537,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
                     for row in stale_rows:
                         task_id = row["task_id"]
-                        meta = json.loads(row["task_metadata"]) if row["task_metadata"] else {}
-                        retry_count = meta.get("retry_count", 0)
+                        retry_count = row["retry_count"] or 0
                         if retry_count < max_retries:
                             reset_ids.append(task_id)
                         else:
@@ -1531,29 +1545,29 @@ class TasksDatabase(DatabaseServiceMixin):
 
                     now = datetime.now(timezone.utc)
 
-                    # Batch reset: set back to pending with incremented retry count
+                    # Batch reset: set back to pending with incremented
+                    # retry_count. The atom-column form lets the
+                    # database handle the increment, no read-modify-write.
                     if reset_ids:
                         await conn.execute(
                             """
-                            UPDATE content_tasks
+                            UPDATE pipeline_tasks
                             SET status = 'pending',
-                                updated_at = $1,
-                                task_metadata = jsonb_set(
-                                    COALESCE(task_metadata::jsonb, '{}'::jsonb),
-                                    '{retry_count}',
-                                    (COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) + 1)::text::jsonb
-                                )
+                                retry_count = retry_count + 1,
+                                updated_at = $1
                             WHERE task_id = ANY($2::text[])
                             """,
                             now,
                             reset_ids,
                         )
 
-                    # Batch fail: mark as failed
+                    # Batch fail: mark as failed; retry_count is left
+                    # at its final value so the audit trail shows how
+                    # many sweeps it survived before the kill.
                     if fail_ids:
                         await conn.execute(
                             """
-                            UPDATE content_tasks
+                            UPDATE pipeline_tasks
                             SET status = 'failed',
                                 updated_at = $1,
                                 error_message = 'Exceeded maximum retries after stale sweep'

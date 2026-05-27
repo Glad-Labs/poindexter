@@ -244,18 +244,52 @@ async def content_generation_flow(
     if not topic:
         raise ValueError("content_generation_flow requires a topic")
 
-    result = await process_content_generation_task(
-        topic=topic,
-        style=style,
-        tone=tone,
-        target_length=target_length,
-        tags=tags,
-        generate_featured_image=generate_featured_image,
-        database_service=database_service,
-        task_id=task_id,
-        category=category,
-        target_audience=target_audience,
-    )
+    # Cycle-5 #253: wrap the pipeline call so a crash here doesn't
+    # strand the claimed row in ``status='in_progress'`` forever.
+    # Without this, an unhandled exception inside
+    # ``process_content_generation_task`` propagates straight to
+    # Prefect's retry machinery, which leaves the task in_progress
+    # while the flow run gets marked failed in the Prefect UI — the
+    # operator sees the flow failure but the next sweep is the only
+    # thing that can recover the task (and the sweep itself was
+    # broken pre-#253, so in practice rows stayed in_progress until
+    # manual intervention).
+    #
+    # We mark the task ``failed`` first, then re-raise so:
+    # 1. Prefect's @flow(retries=2) machinery still runs (transient
+    #    errors get retried — schedule-driven retry will claim the
+    #    next pending task, not this one, since it's no longer
+    #    pending; operator-triggered retry can be observed in the
+    #    Prefect UI as a separate failure event).
+    # 2. The Prefect UI / Grafana flow-run dashboard still records
+    #    the failure for observability.
+    # 3. The pipeline_tasks row reflects the real terminal state,
+    #    so the brain daemon / approval queue / cost dashboards
+    #    don't show it as still-running.
+    try:
+        result = await process_content_generation_task(
+            topic=topic,
+            style=style,
+            tone=tone,
+            target_length=target_length,
+            tags=tags,
+            generate_featured_image=generate_featured_image,
+            database_service=database_service,
+            task_id=task_id,
+            category=category,
+            target_audience=target_audience,
+        )
+    except Exception as exc:
+        await _mark_task_failed_on_flow_crash(
+            database_service=database_service,
+            task_id=task_id,
+            error=exc,
+        )
+        # Re-raise so Prefect knows the flow failed and the operator
+        # sees it in the UI. The task row is already correctly marked
+        # failed in the DB — Prefect's retry won't re-pick this task
+        # (it's no longer status='pending').
+        raise
 
     # Glad-Labs/poindexter#478: post-pipeline-success side-effects
     # (webhook + auto-curator + auto-publish + operator notification)
@@ -292,6 +326,67 @@ async def content_generation_flow(
     return {"claimed": True, "task_id": task_id, "result": result}
 
 
+async def _mark_task_failed_on_flow_crash(
+    *,
+    database_service: Any,
+    task_id: str | None,
+    error: BaseException,
+) -> None:
+    """Mark a stranded ``in_progress`` task as ``failed`` after a flow crash.
+
+    Cycle-5 #253: belt-and-braces companion to the rewritten
+    ``sweep_stale_tasks``. The sweep is the safety net (catches flow
+    runs that died ungracefully — OOM, container kill, prefect-worker
+    crash); this helper is the eager-cleanup path for the case where
+    the flow's own Python frame is still alive when the exception
+    fires.
+
+    Best-effort: catches its own exceptions and logs rather than
+    re-raising. The caller's ``raise`` (which propagates the original
+    pipeline error to Prefect) is what matters for observability — a
+    failure to flip the DB row to 'failed' is a degraded but not
+    catastrophic state, because the sweep will catch it after the
+    stale threshold.
+
+    Truncates the error message to 2KB to bound the column size and
+    avoid logging an attacker-controlled message verbatim into the DB.
+    """
+    if task_id is None:
+        return
+    pool = getattr(database_service, "pool", None)
+    if pool is None:
+        logger.warning(
+            "[CONTENT_FLOW] cannot mark task=%s failed — no DB pool on "
+            "database_service; rely on sweep_stale_tasks to recover",
+            task_id,
+        )
+        return
+    error_message = f"flow crashed: {type(error).__name__}: {error!s}"[:2048]
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE pipeline_tasks
+                SET status = 'failed',
+                    error_message = $1,
+                    updated_at = NOW()
+                WHERE task_id = $2 AND status = 'in_progress'
+                """,
+                error_message,
+                task_id,
+            )
+        logger.warning(
+            "[CONTENT_FLOW] task=%s marked failed after flow crash: %s",
+            task_id, error_message,
+        )
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        logger.exception(
+            "[CONTENT_FLOW] failed to mark task=%s failed after flow "
+            "crash; the stale-sweep will retry recovery on next fire",
+            task_id,
+        )
+
+
 async def _build_default_database_service() -> Any:
     """Construct a ``DatabaseService`` from the bootstrap-resolved DSN.
 
@@ -319,4 +414,5 @@ async def _build_default_database_service() -> Any:
 __all__ = [
     "claim_pending_task",
     "content_generation_flow",
+    "_mark_task_failed_on_flow_crash",
 ]
