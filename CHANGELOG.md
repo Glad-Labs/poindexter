@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+## [0.13.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.12.0...v0.13.0) (2026-05-27)
+
+
+### Features
+
+* **brain:** operator_url_probe writes audit_log row on success ([#245](https://github.com/Glad-Labs/glad-labs-stack/issues/245)) ([#620](https://github.com/Glad-Labs/glad-labs-stack/issues/620)) ([b626002](https://github.com/Glad-Labs/glad-labs-stack/commit/b62600276289a514e5ab0e66415c19e508780205))
+* **brain:** per-cycle heartbeat audit_log row ([#605](https://github.com/Glad-Labs/glad-labs-stack/issues/605)) ([d7a2946](https://github.com/Glad-Labs/glad-labs-stack/commit/d7a294664ff0cb5b386c21e18aaffe1983f82850))
+* **brain:** probe for stuck Prefect content_generation flow runs ([#580](https://github.com/Glad-Labs/glad-labs-stack/issues/580)) ([71bef83](https://github.com/Glad-Labs/glad-labs-stack/commit/71bef83ce98f74aa1feb7b2a7d2dbb4a76bac414))
+* **brain:** success-path audit_log rows in 3 remaining silent probes ([#250](https://github.com/Glad-Labs/glad-labs-stack/issues/250)) ([#621](https://github.com/Glad-Labs/glad-labs-stack/issues/621)) ([8027eb9](https://github.com/Glad-Labs/glad-labs-stack/commit/8027eb983a5409fc0ed624182ef2dd7e65108a34))
+* **brain:** wire gpu_temperature_high_threshold_c app_setting to probe ([#236](https://github.com/Glad-Labs/glad-labs-stack/issues/236)) ([#614](https://github.com/Glad-Labs/glad-labs-stack/issues/614)) ([2f906c5](https://github.com/Glad-Labs/glad-labs-stack/commit/2f906c5407554a66a85d79f59719bf32c6605caa))
+* **modules:** wire register_probes via BrainProbeRegistry (closes [#239](https://github.com/Glad-Labs/glad-labs-stack/issues/239)) ([#611](https://github.com/Glad-Labs/glad-labs-stack/issues/611)) ([7855d72](https://github.com/Glad-Labs/glad-labs-stack/commit/7855d72917b8c2b766e2ac14bbf0c2d9954eb2ec))
+* **observability:** scheduled-publish queue panels + wire publish-at CLI ([#574](https://github.com/Glad-Labs/glad-labs-stack/issues/574)) ([c7966f0](https://github.com/Glad-Labs/glad-labs-stack/commit/c7966f0b6fffdce62e4add01ba7f67431bc00674))
+
+
+### Bug Fixes
+
+* **brain:** COPY new prefect_stuck_flow_probe.py into the brain image ([#581](https://github.com/Glad-Labs/glad-labs-stack/issues/581)) ([3e25b27](https://github.com/Glad-Labs/glad-labs-stack/commit/3e25b27004d260828dc47b6445e7bc8f523c9dab))
+* **brain:** silence openclaw_gateway_url probe pending upstream fix ([#594](https://github.com/Glad-Labs/glad-labs-stack/issues/594)) ([#600](https://github.com/Glad-Labs/glad-labs-stack/issues/600)) ([b07f7de](https://github.com/Glad-Labs/glad-labs-stack/commit/b07f7de8a64afe8c69339bd3b273b0f97f3365dd))
+* **ci:** leak guard catches multi-line VALUES tuples + 2 stragglers ([#243](https://github.com/Glad-Labs/glad-labs-stack/issues/243)) ([#619](https://github.com/Glad-Labs/glad-labs-stack/issues/619)) ([08c04e3](https://github.com/Glad-Labs/glad-labs-stack/commit/08c04e36c2805d7645e1245abaf41fc60ea88ef9))
+* **cli:** LATERAL-join pipeline_versions so approve-batch --filter quality_score works ([#592](https://github.com/Glad-Labs/glad-labs-stack/issues/592)) ([01396f6](https://github.com/Glad-Labs/glad-labs-stack/commit/01396f6e2310319d66767f4e4ce269a90df9f18b))
+* **cost-guard:** AnthropicProvider warns when db_service missing ([#244](https://github.com/Glad-Labs/glad-labs-stack/issues/244)) ([#618](https://github.com/Glad-Labs/glad-labs-stack/issues/618)) ([82aa1dc](https://github.com/Glad-Labs/glad-labs-stack/commit/82aa1dc9c8676e0dad1ac35cba064f8fbfe36b07))
+* **cost-guard:** refuse paid base_url in OpenAICompatProvider by default ([#615](https://github.com/Glad-Labs/glad-labs-stack/issues/615)) ([2a33aa6](https://github.com/Glad-Labs/glad-labs-stack/commit/2a33aa6e149001e16c3972a08ad6db41e82e8d38))
+* **db-backup:** re-checkout backup script with LF + lint shell scripts for CRLF ([#590](https://github.com/Glad-Labs/glad-labs-stack/issues/590)) ([4d1d86b](https://github.com/Glad-Labs/glad-labs-stack/commit/4d1d86b46e4dc5b559fdbd9d8c89b6f38a8f1846))
+* **grafana-alert:** Ollama Unresponsive should query inference rows, not local_compute ([#578](https://github.com/Glad-Labs/glad-labs-stack/issues/578)) ([bcf4b72](https://github.com/Glad-Labs/glad-labs-stack/commit/bcf4b72adcfcf00a44a635eeb78faefc2dac1926))
+* **images:** recognise bold-text pseudo-headings as section anchors ([#599](https://github.com/Glad-Labs/glad-labs-stack/issues/599)) ([849feb2](https://github.com/Glad-Labs/glad-labs-stack/commit/849feb254c65bc0be4dfc56d23b02c270aab2179))
+* **integrations:** restore set_site_config/get_site_config in shared_context ([#591](https://github.com/Glad-Labs/glad-labs-stack/issues/591)) ([322303b](https://github.com/Glad-Labs/glad-labs-stack/commit/322303be81de489b32bb5247728111289f35f032))
+* **mcp:** console logging goes to stderr so MCP stdio JSON-RPC stays clean ([#627](https://github.com/Glad-Labs/glad-labs-stack/issues/627)) ([3a5b44f](https://github.com/Glad-Labs/glad-labs-stack/commit/3a5b44fec611c6d5a0ccfea9fab5a1a666923a26))
+* Prefect flow crash strands pipeline_tasks + sweep targets defunct view ([#253](https://github.com/Glad-Labs/glad-labs-stack/issues/253)) ([#626](https://github.com/Glad-Labs/glad-labs-stack/issues/626)) ([ba95148](https://github.com/Glad-Labs/glad-labs-stack/commit/ba9514863df5051dd1de8977daa1ec7fb47d8d74))
+* **prefect:** pin server + client to 3.6.29 (kills 2-day silent outage) ([#628](https://github.com/Glad-Labs/glad-labs-stack/issues/628)) ([b044561](https://github.com/Glad-Labs/glad-labs-stack/commit/b04456166285461ad4221ad371eead2165c2926b))
+* **prompts:** demand real ## H2 markdown headings in writer output ([#602](https://github.com/Glad-Labs/glad-labs-stack/issues/602)) ([95f049c](https://github.com/Glad-Labs/glad-labs-stack/commit/95f049c0a333a1cb4ad82cd3ac44613ac5825cc4))
+* **prompts:** migrate 3 inline prompts to UnifiedPromptManager ([#237](https://github.com/Glad-Labs/glad-labs-stack/issues/237)) ([#612](https://github.com/Glad-Labs/glad-labs-stack/issues/612)) ([7bec668](https://github.com/Glad-Labs/glad-labs-stack/commit/7bec668dcf9fe145c370eadd69d181cfc82bf6cc))
+* **prompts:** migrate 4 more inline prompts to UnifiedPromptManager (cycle-4) ([#617](https://github.com/Glad-Labs/glad-labs-stack/issues/617)) ([2495dac](https://github.com/Glad-Labs/glad-labs-stack/commit/2495dac0de9be3c4b9ece7178d553450d1726230))
+* **public-mirror:** strip 43 dead gitea# refs + add LEAK_GUARD pattern ([#586](https://github.com/Glad-Labs/glad-labs-stack/issues/586)) ([9cf2b5b](https://github.com/Glad-Labs/glad-labs-stack/commit/9cf2b5b15f1a02f4dfde85681a297468b6b950ff))
+* **public-site:** defend lib/logger.js from Next.js 16 bundler trace ([#582](https://github.com/Glad-Labs/glad-labs-stack/issues/582)) ([e26f409](https://github.com/Glad-Labs/glad-labs-stack/commit/e26f409a1234cc6ee4b648636e4d8cd64c5a4cae))
+* **public-site:** migrate globals.css to Tailwind v4 [@import](https://github.com/import) + [@config](https://github.com/config) ([#585](https://github.com/Glad-Labs/glad-labs-stack/issues/585)) ([a2908c9](https://github.com/Glad-Labs/glad-labs-stack/commit/a2908c9b105bda05fa142a816bc8ba9cf4c1a0d5))
+* **public-site:** migrate PostCSS to Tailwind v4 (@tailwindcss/postcss) ([#584](https://github.com/Glad-Labs/glad-labs-stack/issues/584)) ([d15576a](https://github.com/Glad-Labs/glad-labs-stack/commit/d15576a7942f3eff8747db0895ec9ee9e3094492))
+* **publish:** auto_publish gate niche-leak + cost_guard key rename ([#598](https://github.com/Glad-Labs/glad-labs-stack/issues/598)) ([e5e2ae1](https://github.com/Glad-Labs/glad-labs-stack/commit/e5e2ae1af2abb9e666298547ff76acb90ae8c7f9))
+* **publish:** wire approve→posts.status='approved' bridge for schedule batch ([#595](https://github.com/Glad-Labs/glad-labs-stack/issues/595)) ([d4a9926](https://github.com/Glad-Labs/glad-labs-stack/commit/d4a9926e4f0868c68d91071559ddc90e2db2c56a))
+* **qa:** wire DeepEval g_eval + faithfulness to OllamaModel judge ([#601](https://github.com/Glad-Labs/glad-labs-stack/issues/601)) ([2380ce7](https://github.com/Glad-Labs/glad-labs-stack/commit/2380ce743f8ff60cf3104966cd6e1d2def79df85))
+* **schemas:** widen PostResponse.status Literal to full lifecycle ([#596](https://github.com/Glad-Labs/glad-labs-stack/issues/596)) ([1925062](https://github.com/Glad-Labs/glad-labs-stack/commit/19250629c66bb23d5a5c19c2adb5f717326372f4))
+* **security:** close public-mirror operator-name leaks — 2026-05-27 audit ([921bcb5](https://github.com/Glad-Labs/glad-labs-stack/commit/921bcb5199d396441301bbd840a86bbb8dbb44d8))
+* **security:** gate paid LiteLLM endpoints behind allow_paid_base_url (cycle-5 [#251](https://github.com/Glad-Labs/glad-labs-stack/issues/251)) ([#623](https://github.com/Glad-Labs/glad-labs-stack/issues/623)) ([0866def](https://github.com/Glad-Labs/glad-labs-stack/commit/0866deff06fb99dc52baa5d8317f7dc5afb78719))
+* **seeds:** repoint video_server_url at wan-server (:9840), not retired :9837 ([#593](https://github.com/Glad-Labs/glad-labs-stack/issues/593)) ([f5bf276](https://github.com/Glad-Labs/glad-labs-stack/commit/f5bf276ace1786c8eb7264e12ba73405889172d5))
+* **seeds:** zero plugin_job_last_run_* baseline epochs (fresh-install footgun) ([#587](https://github.com/Glad-Labs/glad-labs-stack/issues/587)) ([9fafd7c](https://github.com/Glad-Labs/glad-labs-stack/commit/9fafd7cb62061d38fadf8aadb03cf95eb329ee96))
+* **smart_monitor:** downgrade smartctl-missing to info, drop operator page ([#588](https://github.com/Glad-Labs/glad-labs-stack/issues/588)) ([efe683e](https://github.com/Glad-Labs/glad-labs-stack/commit/efe683e7b4a567df782b7ff202bef079614d77d9))
+* **stages:** pool reuse + seed sdxl_enabled / daily_spend_limit_usd ([#606](https://github.com/Glad-Labs/glad-labs-stack/issues/606)) ([cd32e37](https://github.com/Glad-Labs/glad-labs-stack/commit/cd32e371a7fe9c3e3a8d0996fd7443819d0c43a4))
+* **stages:** SDXL gate ignores stale local-diffusers flag ([#603](https://github.com/Glad-Labs/glad-labs-stack/issues/603)) ([fad8c2c](https://github.com/Glad-Labs/glad-labs-stack/commit/fad8c2cc9abaa1b11da180298fe0c6e07e053aae))
+* **tempo:** enable local-blocks processor for TraceQL metric queries ([#630](https://github.com/Glad-Labs/glad-labs-stack/issues/630)) ([52d7515](https://github.com/Glad-Labs/glad-labs-stack/commit/52d75157bacf09c2f84089b89c8365dc1b0c80a1))
+* **triage:** swap brain triage off thinking-mode model + strip &lt;think&gt; ([#583](https://github.com/Glad-Labs/glad-labs-stack/issues/583)) ([cb04ee6](https://github.com/Glad-Labs/glad-labs-stack/commit/cb04ee6e5550e99b72499e34280b4ed75699efba))
+
 ## [0.12.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.11.0...v0.12.0) (2026-05-25)
 
 
