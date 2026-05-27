@@ -2384,6 +2384,43 @@ async def run_cycle(pool):
 
     all_issues = issues + ext_issues
 
+    # 2026-05-27 fix (Glad-Labs/glad-labs-stack#225): write a per-cycle
+    # heartbeat audit_log row so operators can detect dead probes via
+    # "no recent heartbeat in N minutes" rather than waiting for the
+    # absence-of-noise to be noticed. Pre-fix, the silent probes
+    # (gate_auto_expire, gate_pending_summary, prefect_stuck_flow,
+    # discord_bot, mcp_http, docker_port_forward, business_probes,
+    # backup_watcher) only wrote audit_log rows on issue — 8 days
+    # without a row looked identical to "all clean" and "probe dead."
+    # Now every cycle leaves a trace.
+    try:
+        probe_status_map = {
+            name: ("ok" if r.get("ok") else "issue")
+            for name, r in probe_results.items()
+        }
+        await pool.execute(
+            """
+            INSERT INTO audit_log (event_type, source, details, severity)
+            VALUES ($1, $2, $3::jsonb, $4)
+            """,
+            "brain.cycle_heartbeat",
+            "brain.brain_daemon",
+            json.dumps({
+                "probes_run": len(probe_results),
+                "probes_failed": len(probe_failures),
+                "internal_issues": len(issues),
+                "external_issues": len(ext_issues),
+                "probe_status": probe_status_map,
+                "cycle_completed_at": datetime.now(timezone.utc).isoformat(),
+            }),
+            "info",
+        )
+    except Exception as heartbeat_exc:  # noqa: BLE001 — defensive
+        logger.debug(
+            "[BRAIN] cycle heartbeat audit_log write failed: %s",
+            heartbeat_exc,
+        )
+
     # Log cycle result
     await pool.execute("""
         INSERT INTO brain_decisions (decision, reasoning, context, confidence)

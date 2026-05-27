@@ -81,6 +81,11 @@ screenshots/
 .env.local.mstr
 .env.local.backup
 .env.vercel
+# Auto-managed by scripts/start-stack.sh — operator-specific runtime
+# secrets (decrypted Grafana JWT, etc.). PR #604 carries the canonical
+# .poindexter-*.env entry; mirror here for branches that branch off
+# main before #604 merges.
+.poindexter-*.env
 # Non-.env secrets
 credentials.json
 service-account-key.json
