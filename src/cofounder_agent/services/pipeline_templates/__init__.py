@@ -6,13 +6,16 @@ compiles the graph (with a checkpointer) at run time.
 
 Phase 1 has two templates:
 
-- ``canonical_blog`` — the 12-stage canonical content pipeline, identical
-  to today's StageRunner-driven flow. Each existing stage wraps as a
-  LangGraph node via :func:`services.template_runner.make_stage_node`.
+- ``canonical_blog`` — the 13-stage canonical content pipeline. Each
+  existing stage wraps as a LangGraph node via
+  :func:`services.template_runner.make_stage_node`. Count updated
+  2026-05-15 when ``resolve_internal_link_placeholders`` was added
+  to close the ``[posts/<slug>]`` leak path.
 - ``dev_diary`` — minimal narrative post for daily build-in-public
-  output. Three nodes: verify_task → generate_content → finalize_task.
-  Skips QA, auto-curator, SEO metadata, media scripts — none of which
-  fit a status-report artifact.
+  output. Four nodes: verify_task → narrate_bundle (atom) →
+  source_featured_image → finalize_task. Skips QA, auto-curator,
+  SEO metadata, media scripts — none of which fit a status-report
+  artifact.
 
 Phase 4+ adds architect-LLM-composed templates (cached here via the
 ``pipeline_templates`` table, with python_factory pointing at a runtime
@@ -85,7 +88,7 @@ _CANONICAL_BLOG_ORDER: tuple[str, ...] = (
 def canonical_blog(
     *, pool: Any, record_sink: list[TemplateRunRecord] | None = None,
 ) -> StateGraph:
-    """The canonical 12-stage blog pipeline as a LangGraph.
+    """The canonical 13-stage blog pipeline as a LangGraph.
 
     Each stage runs as a wrapped node; conditional edges between them
     short-circuit to END when a node sets ``state['_halt']`` (mirroring
