@@ -1352,6 +1352,7 @@ class MultiModelQA:
                 criterion=criterion,
                 judge_model=judge_model,
                 threshold=threshold,
+                site_config=self.settings,
             )
         except Exception as exc:
             _surface_reviewer_failure("deepeval_g_eval", exc)
@@ -1436,6 +1437,7 @@ class MultiModelQA:
                 chunks,
                 judge_model=judge_model,
                 threshold=threshold,
+                site_config=self.settings,
             )
         except Exception as exc:
             _surface_reviewer_failure("deepeval_faithfulness", exc)

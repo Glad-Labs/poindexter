@@ -48,11 +48,106 @@ brand-voice adherence) follow the same template.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
+# DeepEval's telemetry writes to ``.deepeval/.deepeval_telemetry.txt`` in
+# the process cwd. In the worker container the cwd is the read-only app
+# root, so every metric measure raises ``OSError: Read-only file system``.
+# Opt out by default — the metrics carry no operator-visible benefit
+# (anonymous usage data sent to deepeval.com) and the resulting OSError
+# was the surface symptom that swallowed every g_eval call.
+os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "1")
+
+
+# Marker prefixes for app_settings-resolved judge-model strings. Anything
+# starting with one of these maps to the corresponding DeepEval model
+# class; bare strings without a prefix are treated as OpenAI model names
+# (matches DeepEval's default ``initialize_model`` behaviour).
+_OLLAMA_MODEL_PREFIXES = ("ollama/", "ollama:")
+
+
+def _resolve_local_llm_base_url(site_config: Any | None) -> str:
+    """Return the Ollama base URL configured in app_settings, or the
+    Docker-internal default that works in every container in the stack.
+
+    Reads ``ollama_base_url`` (the canonical setting consumed by every
+    other Ollama caller in the codebase) — falling back to the
+    ``host.docker.internal`` default keeps tests + bootstrap working
+    without a SiteConfig in scope.
+    """
+    if site_config is None:
+        return "http://host.docker.internal:11434"
+    try:
+        return (
+            site_config.get(
+                "ollama_base_url", "http://host.docker.internal:11434",
+            )
+            or "http://host.docker.internal:11434"
+        )
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        return "http://host.docker.internal:11434"
+
+
+def _build_deepeval_judge_model(
+    judge_model: str, *, site_config: Any | None = None,
+) -> Any:
+    """Translate an app_settings judge-model string into a DeepEval model.
+
+    Per ``feedback_no_paid_apis`` the default policy is local-only, and
+    DeepEval's stock string-based model resolver assumes OpenAI — passing
+    ``"gemma3:27b"`` as a string crashes inside
+    ``deepeval.metrics.utils.initialize_model`` with
+    ``OPENAI_API_KEY is not configured``. The fix: detect the ``ollama/``
+    prefix Matt's app_settings ship by convention and wrap the model in
+    DeepEval's ``OllamaModel`` so the metric talks to the local
+    Ollama server.
+
+    Returns either an ``OllamaModel`` instance or the bare string
+    (for stock OpenAI-compatible behaviour) so callers can pass the
+    return value directly into ``GEval(model=...)`` etc.
+
+    Detected 2026-05-27: the `audit_log` rows for every published post
+    showed ``[advisory] deepeval-error: DeepEvalError`` from
+    ``deepeval_g_eval`` — the rail was scoring 100 advisory on every
+    article because the OpenAI-key check raised before the LLM judge
+    could run, and the rail's defensive ``except Exception`` returned
+    ``(True, 1.0, "deepeval-error: DeepEvalError")``.
+    """
+    if not judge_model:
+        return judge_model
+
+    lowered = judge_model.lower()
+    if lowered.startswith(_OLLAMA_MODEL_PREFIXES):
+        try:
+            from deepeval.models import OllamaModel
+        except ImportError:
+            logger.warning(
+                "[deepeval] OllamaModel unavailable (deepeval too old?) — "
+                "falling back to bare string %r; expect OPENAI_API_KEY "
+                "error from the judge metric",
+                judge_model,
+            )
+            return judge_model
+
+        model_name = judge_model
+        for prefix in _OLLAMA_MODEL_PREFIXES:
+            if lowered.startswith(prefix):
+                model_name = judge_model[len(prefix):]
+                break
+
+        return OllamaModel(
+            model=model_name,
+            base_url=_resolve_local_llm_base_url(site_config),
+            temperature=0.2,
+        )
+
+    return judge_model
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +342,12 @@ async def _resolve_judge_model(site_config: Any) -> str:
         try:
             tier_model = (await resolve_tier_model(pool, "standard")).strip()
             if tier_model:
-                return tier_model.removeprefix("ollama/")
+                # 2026-05-27: keep the ``ollama/`` prefix so
+                # ``_build_deepeval_judge_model`` can route the metric
+                # through ``OllamaModel`` instead of falling back to
+                # OpenAI (the cause of every ``deepeval-error:
+                # DeepEvalError`` audit_log row).
+                return tier_model
         except (RuntimeError, ValueError, AttributeError) as exc:
             tier_exc = exc
             logger.debug(
@@ -260,7 +360,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
                 site_config.get("cost_tier.standard.model", "") or ""
             ).strip()
             if tier:
-                return tier.removeprefix("ollama/")
+                return tier
         except Exception as e:  # noqa: BLE001
             logger.debug(
                 "[deepeval] cost-tier lookup failed (%s); trying writer model", e,
@@ -271,7 +371,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
             site_config.get("pipeline_writer_model", "") or ""
         ).strip()
         if writer:
-            return writer.removeprefix("ollama/")
+            return writer
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "[deepeval] writer-model lookup failed (%s) — no judge model "
@@ -316,6 +416,7 @@ def evaluate_g_eval(
     criterion: str = _DEFAULT_G_EVAL_CRITERION,
     judge_model: str = "",
     threshold: float = 0.7,
+    site_config: Any | None = None,
 ) -> tuple[bool, float, str]:
     """Run DeepEval's G-Eval (LLM-judge) against ``content``.
 
@@ -338,6 +439,12 @@ def evaluate_g_eval(
         logger.warning("[deepeval] deepeval not installed (%s) — skipping g-eval", e)
         return True, 1.0, "deepeval-not-installed"
 
+    # Wrap ``ollama/...`` judge-model strings in a real OllamaModel so
+    # DeepEval doesn't fall back to its OpenAI client and raise
+    # ``DeepEvalError: OPENAI_API_KEY is not configured`` (the 2026-05-27
+    # audit's "g_eval always errors" finding).
+    resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
+
     try:
         metric = _GEvalMetric(
             name="ContentGroundedness",
@@ -346,7 +453,7 @@ def evaluate_g_eval(
                 LLMTestCaseParams.INPUT,
                 LLMTestCaseParams.ACTUAL_OUTPUT,
             ],
-            model=judge_model,
+            model=resolved_model,
             threshold=threshold,
         )
         case = LLMTestCase(input=topic or "blog post", actual_output=content)
@@ -365,6 +472,7 @@ def evaluate_faithfulness(
     *,
     judge_model: str = "",
     threshold: float = 0.8,
+    site_config: Any | None = None,
 ) -> tuple[bool, float, str]:
     """Run DeepEval's ``FaithfulnessMetric`` on ``content``.
 
@@ -394,10 +502,11 @@ def evaluate_faithfulness(
         )
         return True, 1.0, "deepeval-not-installed"
 
+    resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
     try:
         metric = FaithfulnessMetric(
             threshold=threshold,
-            model=judge_model,
+            model=resolved_model,
             include_reason=True,
         )
         case = LLMTestCase(

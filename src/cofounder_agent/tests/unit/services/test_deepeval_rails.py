@@ -215,6 +215,56 @@ class TestEvaluateGEval:
         assert score == 1.0
         assert "deepeval-error" in reason
 
+    def test_ollama_judge_model_wrapped_in_ollama_model(self, monkeypatch):
+        """Regression: before the 2026-05-27 fix, the resolver stripped
+        the ``ollama/`` prefix and DeepEval's stock model loader treated
+        the bare string as an OpenAI model — every g_eval call hit
+        ``DeepEvalError: OPENAI_API_KEY is not configured`` and the
+        rail returned ``(True, 1.0, "deepeval-error: DeepEvalError")``.
+
+        Verify the judge_model arg gets wrapped in DeepEval's
+        ``OllamaModel`` for the ``ollama/...`` prefix family. The
+        substituted metric class records the model it was constructed
+        with so the assertion can introspect it directly."""
+        captured: dict[str, object] = {}
+
+        def factory(*_a, **kw):
+            captured["model"] = kw["model"]
+            return _FakeMetric(0.9, reason="ok", **kw)
+
+        monkeypatch.setattr("deepeval.metrics.GEval", factory)
+        evaluate_g_eval(
+            "post", topic="x",
+            judge_model="ollama/gemma3:27b",
+            threshold=0.7,
+        )
+
+        from deepeval.models import OllamaModel
+        assert isinstance(captured["model"], OllamaModel), (
+            f"expected OllamaModel-wrapped judge for ollama/ prefix, "
+            f"got {type(captured['model']).__name__}: {captured['model']!r}"
+        )
+
+    def test_bare_openai_model_string_passthrough(self, monkeypatch):
+        """Non-``ollama/`` model strings (e.g. ``gpt-4o``) must NOT
+        be wrapped — they go straight through to DeepEval which
+        already handles OpenAI via its stock model loader. Wrapping
+        a bare GPT model name in OllamaModel would crash with
+        ``model not found`` against the Ollama server."""
+        captured: dict[str, object] = {}
+
+        def factory(*_a, **kw):
+            captured["model"] = kw["model"]
+            return _FakeMetric(0.9, reason="ok", **kw)
+
+        monkeypatch.setattr("deepeval.metrics.GEval", factory)
+        evaluate_g_eval(
+            "post", topic="x",
+            judge_model="gpt-4o-mini",
+            threshold=0.7,
+        )
+        assert captured["model"] == "gpt-4o-mini"
+
 
 @pytest.mark.unit
 class TestEvaluateFaithfulness:
@@ -300,7 +350,9 @@ class TestResolveJudgeModel:
             "cost_tier.standard.model": "ollama/glm-4.7-flash:latest",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
-        assert await _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+        # 2026-05-27: resolver preserves the ``ollama/`` prefix so
+        # ``_build_deepeval_judge_model`` can route through OllamaModel.
+        assert await _de_mod._resolve_judge_model(sc) == "ollama/glm-4.7-flash:latest"
 
     @pytest.mark.asyncio
     async def test_uses_resolve_tier_model_when_pool_available(self):
@@ -317,7 +369,8 @@ class TestResolveJudgeModel:
             AsyncMock(return_value="ollama/gemma3:27b-it-qat"),
         ) as tier:
             model = await _de_mod._resolve_judge_model(sc)
-        assert model == "gemma3:27b-it-qat"
+        # 2026-05-27: resolver preserves the ``ollama/`` prefix.
+        assert model == "ollama/gemma3:27b-it-qat"
         tier.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -329,8 +382,9 @@ class TestResolveJudgeModel:
             "cost_tier.standard.model": "",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
+        # 2026-05-27: resolver preserves the ``ollama/`` prefix.
         assert (
-            await _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+            await _de_mod._resolve_judge_model(sc) == "ollama/glm-4.7-flash:latest"
         )
 
     @pytest.mark.asyncio
@@ -364,7 +418,8 @@ class TestResolveJudgeModel:
             "services.llm_providers.dispatcher.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
         ):
+            # 2026-05-27: resolver preserves the ``ollama/`` prefix.
             assert (
                 await _de_mod._resolve_judge_model(sc)
-                == "glm-4.7-flash:latest"
+                == "ollama/glm-4.7-flash:latest"
             )
