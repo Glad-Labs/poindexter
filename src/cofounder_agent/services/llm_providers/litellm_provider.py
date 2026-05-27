@@ -55,6 +55,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from plugins.llm_provider import Completion, Token
+from services.cost_guard import is_local_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,38 @@ logger = logging.getLogger(__name__)
 # ``configure_langfuse_callback`` multiple times (e.g. main.py +
 # CLI re-init paths).
 _LANGFUSE_CALLBACK_REGISTERED = False
+
+
+# Conservative-deny allowlist for the paid-endpoint policy. Anything not
+# here is treated as paid and refused unless the operator opts in via
+# ``plugin.llm_provider.litellm.allow_paid_base_url=true``.
+#
+# Why allowlist instead of denylist: LiteLLM keeps adding cloud vendors
+# (the registry crossed 100+ in 2026). A denylist drifts every release;
+# the local-provider set is small and stable.
+_LOCAL_MODEL_PREFIXES: frozenset[str] = frozenset({
+    "ollama",
+    "ollama_chat",
+    "vllm",
+    "lm_studio",
+    "openai_compat",
+    "custom",
+    "text-completion-openai-compatible",
+})
+
+
+def _coerce_bool(value: Any) -> bool:
+    """app_settings.value is TEXT; coerce common truthy strings.
+
+    Matches the pattern used by SiteConfig.get_bool and OpenAICompatProvider's
+    sibling helper — operators write ``true`` / ``True`` / ``1`` / ``yes``
+    interchangeably across rows.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
 
 
 class LangfuseConfigError(RuntimeError):
@@ -249,6 +282,13 @@ class LiteLLMProvider:
         self._api_base: str | None = None
         self._timeout = 120.0
         self._drop_params = True
+        # Paid-endpoint opt-in flag — per ``feedback_no_paid_apis``. False
+        # means any non-local ``api_base`` OR non-local model prefix
+        # (``openai/``, ``anthropic/``, ``gemini/``, ...) refuses to fire.
+        # Mirrors the gate added to ``OpenAICompatProvider`` so the same
+        # protection extends to the LiteLLM router that's now the default
+        # for every cost tier.
+        self._allow_paid_base_url = False
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -284,6 +324,12 @@ class LiteLLMProvider:
         prefix = provider_config.get("default_prefix")
         if prefix:
             self._default_prefix = prefix
+        # Re-read on every call so flipping the app_setting takes effect on
+        # the next dispatch without a worker restart, same contract as
+        # ``api_base`` / ``timeout_seconds`` above.
+        self._allow_paid_base_url = _coerce_bool(
+            provider_config.get("allow_paid_base_url"),
+        )
         if not self._configured:
             self._apply_global_litellm_config()
             self._configured = True
@@ -318,6 +364,80 @@ class LiteLLMProvider:
             return model
         return f"{self._default_prefix.rstrip('/')}/{model}"
 
+    def _enforce_paid_endpoint_policy(self, resolved_model: str) -> None:
+        """Refuse paid LiteLLM targets unless the operator opted in.
+
+        LiteLLM routes to a paid backend via either axis:
+
+        1. ``api_base`` pointing at a cloud host (api.openai.com,
+           api.anthropic.com, generativelanguage.googleapis.com,
+           openrouter.ai, api.groq.com, ...).
+        2. Model namespace prefix (``openai/gpt-4o``, ``anthropic/
+           claude-haiku-4-5``, ``gemini/...``) — LiteLLM auto-discovers
+           ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY`` / ``GEMINI_API_KEY``
+           from env, so a bare model string fires a paid call without
+           any explicit ``api_base``. This is the bypass that closed
+           cycle-4's #615 fix on OpenAICompatProvider — same incident
+           class, one layer up the stack.
+
+        The gate refuses both unless ``plugin.llm_provider.litellm.
+        allow_paid_base_url=true`` is set. Local backends (Ollama / vllm
+        / lm_studio / generic OAI-compat HTTP) cost zero dollars
+        regardless of traffic and are always allowed.
+
+        Conservative-deny by allowlist: anything not in
+        ``_LOCAL_MODEL_PREFIXES`` is treated as paid. LiteLLM keeps
+        adding cloud vendors (100+ as of 2026); a denylist drifts every
+        release, the local set is small and stable.
+
+        Raised as ``RuntimeError`` (not ``CostGuardExhausted``) because
+        the call is being refused on the configuration axis, not the
+        budget axis. The error message names the exact app_setting an
+        operator must flip to authorise the paid path.
+        """
+        if self._allow_paid_base_url:
+            return
+
+        # Axis 1 — explicit api_base. ``resolved_model`` starting with
+        # http:// also flows through this branch since LiteLLM treats
+        # that as an inline base URL.
+        candidate_url: str | None = None
+        if resolved_model.startswith("http"):
+            candidate_url = resolved_model
+        elif self._api_base:
+            candidate_url = self._api_base
+        if candidate_url and not is_local_base_url(candidate_url):
+            raise RuntimeError(
+                f"LiteLLMProvider refuses non-local api_base "
+                f"{candidate_url!r} — set "
+                f"plugin.llm_provider.litellm.allow_paid_base_url=true "
+                f"in app_settings to authorise paid endpoints. Default "
+                f"is false per feedback_no_paid_apis to prevent "
+                f"unmonitored spend when the dispatch target is "
+                f"swapped via DB edit."
+            )
+
+        # Axis 2 — model namespace prefix. LiteLLM's "<provider>/<model>"
+        # convention is the auth-discovery seam (``openai/`` reads
+        # ``OPENAI_API_KEY``, etc.). Anything not in the local allowlist
+        # is treated as paid.
+        if resolved_model.startswith("http"):
+            return  # already handled by axis 1, no prefix to extract
+        prefix = resolved_model.split("/", 1)[0].lower()
+        if prefix in _LOCAL_MODEL_PREFIXES:
+            return
+        raise RuntimeError(
+            f"LiteLLMProvider refuses paid model prefix {prefix!r} "
+            f"(resolved_model={resolved_model!r}) — LiteLLM routes "
+            f"this through a cloud vendor and auto-discovers the API "
+            f"key from env. Set "
+            f"plugin.llm_provider.litellm.allow_paid_base_url=true in "
+            f"app_settings to authorise paid endpoints, or fix the "
+            f"caller / cost_tier.<tier>.model row to use a local "
+            f"prefix ({', '.join(sorted(_LOCAL_MODEL_PREFIXES))}). "
+            f"Default-deny per feedback_no_paid_apis."
+        )
+
     async def complete(
         self,
         messages: list[dict[str, str]],
@@ -330,6 +450,7 @@ class LiteLLMProvider:
         import litellm
 
         resolved_model = self._resolve_model(model)
+        self._enforce_paid_endpoint_policy(resolved_model)
         timeout = float(kwargs.pop("timeout_s", self._timeout))
         completion_kwargs: dict[str, Any] = {
             "model": resolved_model,
@@ -412,6 +533,7 @@ class LiteLLMProvider:
         import litellm
 
         resolved_model = self._resolve_model(model)
+        self._enforce_paid_endpoint_policy(resolved_model)
         timeout = float(kwargs.pop("timeout_s", self._timeout))
         completion_kwargs: dict[str, Any] = {
             "model": resolved_model,
@@ -435,12 +557,26 @@ class LiteLLMProvider:
             finish_reason = getattr(choice, "finish_reason", None)
             yield Token(text=text, finish_reason=finish_reason)
 
-    async def embed(self, text: str, model: str) -> list[float]:
+    async def embed(self, text: str, model: str, **kwargs: Any) -> list[float]:
+        """Embed via ``litellm.aembedding``.
+
+        ``**kwargs`` exists so the dispatcher can inject ``_provider_config``
+        (carrying ``api_base`` / ``allow_paid_base_url`` / ``timeout_seconds``)
+        symmetrically with ``complete()`` / ``stream()``. Without that, the
+        paid-endpoint policy would be bypassed by routing through the embed
+        path on a paid backend — same runaway-cost class the policy was
+        added to prevent. The dispatcher already supplies the kwarg (see
+        ``dispatch_embed`` after PR #615).
+        """
+        provider_config = kwargs.pop("_provider_config", {}) or {}
+        self._configure_from(provider_config)
+
         import litellm
 
         # LiteLLM's embedding API takes the same model namespace as
         # acompletion — "ollama/nomic-embed-text" routes to local Ollama.
         resolved_model = self._resolve_model(model)
+        self._enforce_paid_endpoint_policy(resolved_model)
         response = await litellm.aembedding(
             model=resolved_model,
             input=[text],

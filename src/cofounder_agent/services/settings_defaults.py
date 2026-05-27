@@ -119,6 +119,13 @@ DEFAULTS: dict[str, str] = {
     # Enforced by services/llm_providers/openai_compat.py per
     # feedback_no_paid_apis.
     'plugin.llm_provider.openai_compat.allow_paid_base_url': 'false',
+    # Same gate, one layer up: LiteLLM is the default router for every
+    # cost tier (free/budget/standard/premium/flagship) and auto-discovers
+    # OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY from env. A bare
+    # model string like 'openai/gpt-4o' with a stray env var fires a paid
+    # call. Default-deny refuses both non-local api_base AND non-local
+    # model prefixes; flip to 'true' to authorise any paid LiteLLM path.
+    'plugin.llm_provider.litellm.allow_paid_base_url': 'false',
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
     'sdxl_server_url': 'http://host.docker.internal:9836',
     'stable_audio_open_server_url': '',

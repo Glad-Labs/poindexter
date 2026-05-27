@@ -188,6 +188,13 @@ _LEAK_GUARD_ALLOW = (
     # assertions can verify the pattern fires on them. Same self-referential
     # exemption as the gitea test above.
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
+    # Contract test for the multi-line VALUES tuple + bare-gladlabs.io regex
+    # added in #619 — fixtures contain literal leak shapes (gladlabs.io
+    # seeded URLs, multi-line mercury_ VALUES tuples) so the assertions
+    # can verify the patterns fire on them. Same self-referential
+    # exemption as the two test files above. Closes the post-#619 main
+    # breakage where this file was added but not allowlisted.
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
 )
 
 

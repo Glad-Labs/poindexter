@@ -180,9 +180,15 @@ class TestLiteLLMProviderComplete:
             return_value=_shaped_completion_response(),
         )
         p = _provider_instance()
+        # ``anthropic/`` is a paid prefix; the cycle-5 paid-base-url gate
+        # refuses it unless the test explicitly opts in. The test is
+        # exercising response-shape mapping (not the paid-vendor
+        # integration policy), so granting opt-in keeps it focused on
+        # what it's actually testing.
         out = await p.complete(
             messages=[{"role": "user", "content": "hi"}],
             model="anthropic/claude-haiku-4-5",
+            _provider_config={"allow_paid_base_url": "true"},
         )
         assert isinstance(out, Completion)
         assert out.text == "hello"
@@ -221,9 +227,13 @@ class TestLiteLLMProviderComplete:
             return_value=_shaped_completion_response(response_cost=0.00042),
         )
         p = _provider_instance()
+        # response_cost is only attached by LiteLLM on cloud calls, so this
+        # test specifically needs a paid-vendor model. Opt in to the gate
+        # — the test is checking the cost-surfacing seam, not the policy.
         out = await p.complete(
             messages=[{"role": "user", "content": "hi"}],
             model="anthropic/claude-haiku-4-5",
+            _provider_config={"allow_paid_base_url": "true"},
         )
         assert out.raw["response_cost"] == 0.00042
 
@@ -261,6 +271,7 @@ class TestLiteLLMProviderComplete:
             await p.complete(
                 messages=[{"role": "user", "content": "hi"}],
                 model="anthropic/claude-haiku-4-5",
+                _provider_config={"allow_paid_base_url": "true"},
             )
 
     @pytest.mark.asyncio
@@ -352,10 +363,19 @@ class TestLiteLLMProviderComplete:
             return_value=_shaped_completion_response(),
         )
         p = _provider_instance()
+        # ``my-vllm`` + ``other-host`` aren't in is_local_base_url's
+        # localhost/127.0.0.1/host.docker.internal allowlist (custom
+        # hostnames are a real prod shape — k8s ClusterIP DNS, tailnet,
+        # etc.), so the cycle-5 paid-base-url gate refuses them by
+        # default. This test is about api_base/http-URL handling, not
+        # the policy, so opt in.
         await p.complete(
             messages=[{"role": "user", "content": "hi"}],
             model="http://my-vllm:8080/v1",
-            _provider_config={"api_base": "http://other-host/"},
+            _provider_config={
+                "api_base": "http://other-host/",
+                "allow_paid_base_url": "true",
+            },
         )
         kwargs = mock_litellm.acompletion.await_args.kwargs
         assert "api_base" not in kwargs

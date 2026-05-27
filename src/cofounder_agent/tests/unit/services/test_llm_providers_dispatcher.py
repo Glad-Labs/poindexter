@@ -250,8 +250,13 @@ class TestDispatchEmbed:
                 pool, text="hello", model="nomic-embed-text",
             )
         assert vec == [0.4, 0.5, 0.6]
+        # PR #615 made dispatch_embed symmetric with dispatch_complete —
+        # both inject ``_provider_config`` so the paid-endpoint policy
+        # (added in cycle-5 #251 for LiteLLM, cycle-4 #615 for openai_compat)
+        # gates the embed path too. The empty dict is what _FakePool returns
+        # when no plugin.llm_provider.<name>.config rows are seeded.
         provider.embed.assert_awaited_once_with(
-            text="hello", model="nomic-embed-text",
+            text="hello", model="nomic-embed-text", _provider_config={},
         )
 
     async def test_default_tier_is_free(self):
