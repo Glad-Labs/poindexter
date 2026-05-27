@@ -193,6 +193,7 @@ git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # 
 git rm --cached --quiet skills/poindexter/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet .env.example 2>/dev/null || true                      # Legacy; customers use poindexter setup
+git rm --cached --quiet scripts/bootstrap.sh 2>/dev/null || true              # References stripped files (.env.example, docker-compose.local.yml) and dead Woodpecker CI; poindexter setup --auto covers fresh-install flow
 
 # === Premium Grafana dashboards (Seed Package — keep only pipeline-merged free) ===
 git rm --cached --quiet infrastructure/grafana/dashboards/approval-queue.json 2>/dev/null || true
@@ -295,6 +296,30 @@ if dropped:
   git add CHANGELOG.md 2>/dev/null || true
 fi
 
+# === docs.json: rewrite operator-branded URLs to poindexter-neutral equivalents ===
+# docs.json is the Mintlify config that ships with the public mirror (the public docs at
+# gladlabs.mintlify.app are operator-hosted and DO reference gladlabs.io intentionally on
+# the private side, but the public OSS tree must not embed an operator's domain — a fork
+# would inherit the wrong branding). Rewrite the two operator URLs in place so poindexter
+# forks get neutral placeholders they can swap out via `poindexter setup`.
+# Scope: only docs.json — the broader gladlabs.io leak-guard pattern only catches SQL
+# VALUES tuples; this targeted rewrite handles the JSON "href"/"website" shapes.
+if [ -f docs.json ]; then
+  python3 -c "
+import pathlib, json
+p = pathlib.Path('docs.json')
+txt = p.read_text(encoding='utf-8')
+# Rewrite the operator-branded gladlabs.io URLs to poindexter-neutral placeholders.
+# The cosmetic substitution above already rewrote glad-labs-stack -> poindexter;
+# these replacements fix the remaining domain-specific links.
+txt = txt.replace('https://gladlabs.io/product', 'https://github.com/Glad-Labs/poindexter')
+txt = txt.replace('https://www.gladlabs.io', 'https://github.com/Glad-Labs/poindexter')
+p.write_text(txt, encoding='utf-8', newline='\n')
+print('[sync] docs.json: rewrote gladlabs.io URLs to poindexter-neutral equivalents')
+"
+  git add docs.json 2>/dev/null || true
+fi
+
 # Commit the removal + substitutions (temporary — only pushed to github, never to origin/glad-labs-stack)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
 
@@ -323,7 +348,7 @@ LEAK_PATTERNS=(
   'Glad-Labs/glad-labs-stack'       # internal repo name (cosmetic sub above should fix all)
   # === Operator identity (feedback_no_operator_info_to_public_repo, 2026-05-23) ===
   'matthew-gladding'                # LinkedIn URL fragment (catches the full URL)
-  '[Mm]atthew [Gg]ladding'          # full name in either case
+  '[Mm]atthew (?:[A-Z]\.\s+)?[Gg]ladding'  # full name in either case (incl. middle initial e.g. "M. ")
   '[Mm]att [Gg]ladding'             # informal name variant
   "[Mm]att''s machine"              # SQL-escaped possessive (in seed comments)
   "[Mm]att''s production"           # same
@@ -345,6 +370,7 @@ LEAK_GUARD_ALLOW=(
   'scripts/regen-app-settings-doc.py'         # the redaction blocklist itself
   'scripts/ci/check_public_mirror_safety.py'  # parallel pre-merge lint with the same pattern list
   'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py'  # contract test fixtures contain literal gitea#NNN shapes
+  'src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py'  # contract test fixtures contain operator name in synthetic strings + docstrings
 )
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do

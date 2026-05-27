@@ -290,6 +290,6 @@ See [CONTRIBUTING.md](CONTRIBUTING). Issues and PRs welcome.
 
 ## License
 
-[Apache License 2.0](LICENSE) — Copyright 2025-2026 Matthew M. Gladding
+[Apache License 2.0](LICENSE) — Copyright 2025-2026 Glad Labs LLC
 
 Relicensed from AGPL-3.0 to Apache 2.0 on 2026-04-29 — see [CHANGELOG](CHANGELOG.md).

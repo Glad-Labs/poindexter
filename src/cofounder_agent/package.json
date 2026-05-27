@@ -4,7 +4,7 @@
   "private": true,
   "description": "Poindexter cofounder agent — FastAPI backend with autonomous agents, multi-provider LLM routing, and comprehensive error handling. Built by Glad Labs LLC.",
   "license": "Apache-2.0",
-  "author": "Matthew M. Gladding (Glad Labs, LLC)",
+  "author": "Glad Labs LLC",
   "scripts": {
     "//": "=== BUILD & CLEANUP ===",
     "dev": "python -m uvicorn main:app --reload --host 0.0.0.0 --port ${PORT:-8002} --log-level info",

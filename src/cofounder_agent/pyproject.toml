@@ -2,7 +2,7 @@
 name = "poindexter-backend"
 version = "0.5.0"
 description = "Poindexter backend — FastAPI + specialized AI agents. Built by Glad Labs LLC."
-authors = ["Matthew M. Gladding <hello@gladlabs.io>"]
+authors = ["Glad Labs LLC <hello@gladlabs.io>"]
 readme = "README.md"
 packages = [
     { include = "cofounder_agent", from = ".." },

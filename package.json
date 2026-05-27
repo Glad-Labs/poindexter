@@ -4,7 +4,7 @@
   "private": true,
   "description": "Poindexter — AI content pipeline with autonomous agents. Built by Glad Labs LLC.",
   "license": "Apache-2.0",
-  "author": "Matthew M. Gladding (Glad Labs, LLC)",
+  "author": "Glad Labs LLC",
   "workspaces": [
     "packages/brand",
     "web/public-site",

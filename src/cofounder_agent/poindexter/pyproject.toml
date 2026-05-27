@@ -29,7 +29,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.15"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "Matthew M. Gladding", email = "hello@gladlabs.io" },
+    { name = "Glad Labs LLC", email = "hello@gladlabs.io" },
 ]
 maintainers = [
     { name = "Glad Labs LLC", email = "hello@gladlabs.io" },

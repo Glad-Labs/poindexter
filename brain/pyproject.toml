@@ -20,7 +20,7 @@
 name = "poindexter-brain"
 version = "0.5.0"
 description = "Poindexter brain daemon — standalone monitor, self-healer, knowledge graph supervisor."
-authors = ["Matthew M. Gladding <hello@gladlabs.io>"]
+authors = ["Glad Labs LLC <hello@gladlabs.io>"]
 readme = "README.md"
 package-mode = false
 

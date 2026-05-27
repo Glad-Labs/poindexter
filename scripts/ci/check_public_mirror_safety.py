@@ -155,6 +155,10 @@ _STRIP_FILES = (
     "skills/poindexter/gladlabs-config.json",
     "skills/openclaw/gladlabs-config.json",
     ".env.example",
+    # bootstrap.sh references stripped files (.env.example, docker-compose.local.yml)
+    # and the dead Woodpecker CI (WOODPECKER_SECRET=...). poindexter setup --auto
+    # covers the fresh-install flow. Stripped 2026-05-27 per security audit.
+    "scripts/bootstrap.sh",
     "infrastructure/grafana/dashboards/approval-queue.json",
     "infrastructure/grafana/dashboards/cost-analytics.json",
     "infrastructure/grafana/dashboards/infrastructure-data.json",
@@ -179,6 +183,11 @@ _LEAK_GUARD_ALLOW = (
     # to verify the regex matches them. Without this allow-entry the
     # guard self-reports on its own test.
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
+    # Contract test for the operator-name LEAK_GUARD regex — must contain
+    # the operator name in synthetic test strings and docstrings so the
+    # assertions can verify the pattern fires on them. Same self-referential
+    # exemption as the gitea test above.
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
 )
 
 
@@ -204,6 +213,18 @@ _SUBSTRATE_LINE_STRIPS: dict[str, tuple[str, ...]] = {
     "src/cofounder_agent/poindexter/cli/app.py": (
         "from .finance import finance_group",
         'main.add_command(finance_group, name="finance")',
+    ),
+    # docs.json: the sync filter rewrites the two operator-branded gladlabs.io
+    # URLs to poindexter-neutral equivalents before pushing (see docs.json
+    # rewrite block in sync-to-github.sh, 2026-05-27 audit). The CI lint runs
+    # against the pre-rewrite source tree and would false-positive on those
+    # lines if we don't tell it they'll be substituted at sync time.
+    # The gladlabs.io leak-guard pattern uses a SQL VALUES shape, so it doesn't
+    # currently flag docs.json's JSON href/website strings — this entry is here
+    # as belt-and-suspenders documentation. Mirror sync-to-github.sh's rewrite.
+    "docs.json": (
+        '"href": "https://gladlabs.io/product"',
+        '"website": "https://www.gladlabs.io"',
     ),
     # release-please's auto-generated CHANGELOG entries can pick up commit
     # messages that mention private app_settings keys, hardware values, or
@@ -304,7 +325,7 @@ _LEAK_PATTERNS = (
         "the operator configures their own via `poindexter setup`.",
     ),
     LeakPattern(
-        re.compile(r"[Mm]atthew [Gg]ladding"),
+        re.compile(r"[Mm]atthew (?:[A-Z]\.\s+)?[Gg]ladding"),
         "operator full name",
         "Don't hardcode the operator's full name in OSS files.",
     ),

@@ -1,6 +1,6 @@
 # How Poindexter itself is tested and deployed
 
-**Last Updated:** 2026-05-08
+**Last Updated:** 2026-05-27
 
 > **What this doc is.** A transparency record of how Poindexter (the
 > project, not your self-host) is tested and shipped to gladlabs.io.
@@ -50,8 +50,20 @@ in ~30s, using a write-enabled deploy key (private key stored as
 
 `scripts/sync-to-github.sh` strips private files (web/public-site,
 web/storefront, mcp-server-gladlabs, marketing, premium dashboards,
-writing_samples, gladlabs-config, .shared-context, CLAUDE.md, docs/,
-etc.) before pushing.
+writing_samples, gladlabs-config, .shared-context, CLAUDE.md,
+`scripts/bootstrap.sh`, docs/, etc.) before pushing.
+
+The sync filter also performs content-level rewrites:
+
+- **docs.json**: operator-branded `gladlabs.io` URLs are rewritten to
+  poindexter-neutral GitHub URLs so OSS forks don't inherit operator branding.
+- **CHANGELOG.md**: lines mentioning private app*settings keys (mercury*,
+  Tailnet hostnames, hardware costs) are redacted before the mirror push.
+- **Operator-name regex**: the leak guard uses
+  `[Mm]atthew (?:[A-Z]\.\s+)?[Gg]ladding` (with optional middle-initial
+  group) to catch both the plain and middle-initial forms of the operator
+  name. Added in the 2026-05-27 security audit — the middle-initial form
+  was slipping past the old `[Mm]atthew [Gg]ladding` pattern.
 
 **Bypass:** include `[skip-public-sync]` in the commit message to
 keep a particular commit private (in-progress branches, sensitive
