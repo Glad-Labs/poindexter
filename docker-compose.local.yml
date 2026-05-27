@@ -541,7 +541,12 @@ services:
     # the worker's version 2026-05-25, killing the content pipeline for 28h
     # (worker prints "server is older" warning, then fails to claim runs).
     # Bump both image tags + the pyproject pin together when upgrading.
-    image: prefecthq/prefect:3.6.29
+    #
+    # 2026-05-27: prefer the ``-python3.12`` suffix — Prefect does NOT
+    # publish a bare ``3.6.29`` Docker tag (only ``3-latest`` and the
+    # python-version-suffixed variants exist), so an unsuffixed pin
+    # would 404 on pull (caught by the compose_drift_probe).
+    image: prefecthq/prefect:3.6.29-python3.12
     container_name: poindexter-prefect-server
     restart: unless-stopped
     depends_on:
@@ -580,7 +585,7 @@ services:
   prefect-services:
     # Same pin as prefect-server — must match each other and the worker's
     # prefect package version (src/cofounder_agent/pyproject.toml).
-    image: prefecthq/prefect:3.6.29
+    image: prefecthq/prefect:3.6.29-python3.12
     container_name: poindexter-prefect-services
     restart: unless-stopped
     depends_on:

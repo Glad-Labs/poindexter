@@ -209,6 +209,135 @@ async def test_stage_only_and_draft_mode_are_mutually_exclusive() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publish_promotes_existing_approved_post_to_published() -> None:
+    """Regression for 2026-05-27 ``poindexter tasks publish`` silent
+    no-op. After ``approve`` creates a post at ``status='approved'``,
+    the operator's follow-up ``publish`` must transition that same row
+    to ``status='published'`` + set ``published_at`` — NOT return
+    "skipping duplicate" (the old behavior left the post invisible to
+    the site forever).
+
+    Caught manually 2026-05-27 on task 677cc2df: CLI returned HTTP 200
+    with ``status=approved`` and Matt's blog post never went live.
+    """
+    from services.publish_service import publish_post_from_task
+
+    db = _make_db_service()
+    # Existing post already staged at status='approved' (what
+    # approve_task created). The idempotency guard's SELECT picks
+    # this up FIRST and used to bail.
+    existing = {
+        "id": "33333333-3333-3333-3333-333333333333",
+        "slug": "test-post-for-stage-only-contract-11111111",
+        "title": "Test post for stage_only contract",
+        "status": "approved",
+    }
+    db.pool.fetchrow = AsyncMock(return_value=existing)
+    db.pool.execute = AsyncMock(return_value="UPDATE 1")
+
+    result = await publish_post_from_task(
+        db, _make_task(), "11111111-1111-1111-1111-111111111111",
+        publisher="operator-test",
+        stage_only=False,
+        draft_mode=False,
+    )
+
+    # Result mirrors the existing post (no duplicate row created).
+    assert result.success is True
+    assert result.post_id == existing["id"]
+    assert result.post_slug == existing["slug"]
+    # The promotion UPDATE fired — must be the publish-status SQL, not
+    # a generic touch. Find the call that mentions status='published'.
+    publish_update_calls = [
+        c for c in db.pool.execute.await_args_list
+        if "status = 'published'" in (c.args[0] if c.args else "")
+    ]
+    assert len(publish_update_calls) == 1, (
+        f"Expected one promote UPDATE; got {len(publish_update_calls)}: "
+        f"{[c.args[0][:80] for c in db.pool.execute.await_args_list]}"
+    )
+    # And create_post must NOT have been called — promotion happens in
+    # place, no duplicate row.
+    assert db.create_post.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_publish_skips_when_post_already_published() -> None:
+    """Idempotency: a second publish call on a row already at
+    status='published' must be a clean no-op (no extra UPDATE, no
+    duplicate post creation). Without this, retries from the CLI or
+    a stuck scheduled_publisher cycle would double-stamp published_at
+    and re-fire revalidation needlessly."""
+    from services.publish_service import publish_post_from_task
+
+    db = _make_db_service()
+    existing = {
+        "id": "44444444-4444-4444-4444-444444444444",
+        "slug": "test-post-for-stage-only-contract-11111111",
+        "title": "Already published",
+        "status": "published",
+    }
+    db.pool.fetchrow = AsyncMock(return_value=existing)
+    db.pool.execute = AsyncMock(return_value="UPDATE 1")
+
+    result = await publish_post_from_task(
+        db, _make_task(), "11111111-1111-1111-1111-111111111111",
+        publisher="operator-test",
+        stage_only=False,
+        draft_mode=False,
+    )
+
+    assert result.success is True
+    assert result.post_id == existing["id"]
+    # No promotion UPDATE should run for an already-published row.
+    publish_update_calls = [
+        c for c in db.pool.execute.await_args_list
+        if "status = 'published'" in (c.args[0] if c.args else "")
+    ]
+    assert publish_update_calls == [], (
+        "Re-publishing an already-published post must NOT issue a "
+        "promotion UPDATE — that would re-stamp published_at."
+    )
+    assert db.create_post.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_stage_only_does_not_promote_existing_approved() -> None:
+    """The promote-on-publish path must not fire when the SECOND call is
+    itself stage_only (e.g. operator approves the same task twice).
+    The existing approved row stays at 'approved', no published_at,
+    no UPDATE."""
+    from services.publish_service import publish_post_from_task
+
+    db = _make_db_service()
+    existing = {
+        "id": "55555555-5555-5555-5555-555555555555",
+        "slug": "test-post-for-stage-only-contract-11111111",
+        "title": "Already staged",
+        "status": "approved",
+    }
+    db.pool.fetchrow = AsyncMock(return_value=existing)
+    db.pool.execute = AsyncMock(return_value="UPDATE 1")
+
+    result = await publish_post_from_task(
+        db, _make_task(), "11111111-1111-1111-1111-111111111111",
+        publisher="operator-test",
+        stage_only=True,
+        draft_mode=False,
+    )
+
+    assert result.success is True
+    publish_update_calls = [
+        c for c in db.pool.execute.await_args_list
+        if "status = 'published'" in (c.args[0] if c.args else "")
+    ]
+    assert publish_update_calls == [], (
+        "Second stage_only call must NOT promote — only the publish "
+        "endpoint (stage_only=False) flips approved → published."
+    )
+
+
+@pytest.mark.asyncio
 async def test_publish_result_exposes_staged_field() -> None:
     """The staged field on PublishResult lets callers distinguish a
     staged post (status='approved') from a live publish. Without it

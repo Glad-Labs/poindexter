@@ -573,18 +573,65 @@ async def publish_post_from_task(
         return PublishResult(success=False, error=msg)
 
     # ---------------------------------------------------------------
-    # 1b. Idempotency guard — prevent duplicate posts for the same task
-    #     Slugs contain task_id[:8] suffix, so we can match on that.
+    # 1b. Idempotency / approve-then-publish promotion guard.
+    #
+    # Slugs contain task_id[:8] suffix, so we can match on that.
+    #
+    # 2026-05-27 fix: the guard used to return "skipping duplicate"
+    # whenever any post existed — but the operator flow is two-step:
+    #   1. ``approve`` calls this with stage_only=True → row at
+    #      status='approved' (published_at NULL, distributed_at NULL).
+    #   2. ``publish`` calls this with stage_only=False → expected to
+    #      promote the existing approved row to status='published'.
+    #
+    # The old guard caught the publish call and silently returned
+    # success without touching the row. Result: operator's
+    # ``poindexter tasks publish <id>`` looked successful (HTTP 200)
+    # but the post stayed at status='approved' forever, invisible to
+    # the site. Surfaced by Matt 2026-05-27 on task 677cc2df.
+    #
+    # Behavior matrix now:
+    # - existing.status='published' → idempotent no-op (real duplicate)
+    # - existing.status='approved' AND stage_only=True → no-op (re-stage)
+    # - existing.status='approved' AND stage_only=False → PROMOTE in
+    #   place to 'published' + set published_at + distributed_at, return
+    #   the existing post (no duplicate row created)
+    # - existing.status='draft' → no-op (mid-edit, leave alone)
     # ---------------------------------------------------------------
     _task_suffix = task_id[:8]
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
     existing = await pool.fetchrow(
-        "SELECT id, slug, title FROM posts WHERE slug LIKE '%' || $1", _task_suffix
+        "SELECT id, slug, title, status FROM posts WHERE slug LIKE '%' || $1",
+        _task_suffix,
     )
     if existing:
+        existing_status = (existing.get("status") or "").lower()
+        if existing_status == "approved" and not stage_only and not draft_mode:
+            now_ts = datetime.now(timezone.utc)
+            await pool.execute(
+                "UPDATE posts SET status = 'published', "
+                "published_at = COALESCE(published_at, $2), "
+                "distributed_at = COALESCE(distributed_at, $2), "
+                "updated_at = $2 "
+                "WHERE id = $1",
+                existing["id"], now_ts,
+            )
+            logger.info(
+                "[publish_service] Promoted existing approved post to "
+                "published: task=%s post_id=%s slug=%s",
+                task_id, existing["id"], existing["slug"],
+            )
+            return PublishResult(
+                success=True,
+                post_id=str(existing["id"]),
+                post_slug=existing["slug"],
+                published_url=f"/posts/{existing['slug']}",
+                post_title=existing.get("title", topic),
+            )
         logger.warning(
-            "[publish_service] Post already exists for task %s (post_id=%s, slug=%s) — skipping duplicate",
-            task_id, existing["id"], existing["slug"],
+            "[publish_service] Post already exists for task %s "
+            "(post_id=%s, slug=%s, status=%s) — skipping duplicate",
+            task_id, existing["id"], existing["slug"], existing_status,
         )
         return PublishResult(
             success=True,
