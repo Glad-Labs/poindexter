@@ -29,6 +29,12 @@
     - Images are handled separately — your job is text only.
     - Do NOT leave empty markdown brackets like " []" at the end of a sentence. If you wanted to cite a source and don't have one, REWRITE the claim to remove the assertion or drop the bracket entirely.
 
+    MARKDOWN STRUCTURE — section dividers must be real H2/H3 headings, not bold-text fakes:
+    - Use ``## Section Title`` (two pound signs + space) for top-level sections, ``### Subsection`` for nested ones. Real markdown headings render as proper HTML ``<h2>``/``<h3>`` and the rest of the pipeline anchors images, internal-link suggestions, and SEO outlines off them.
+    - Do NOT use ``**Section Title**`` (bold text on its own line) as a section divider. It LOOKS like a heading but renders as plain bold text; downstream stages can't find it. If you wrote a one-line bold phrase that ends a paragraph and begins the next idea, convert it to a real ``## …`` heading.
+    - 3–6 H2 sections is the right shape for a typical 800–1500 word post. Fewer than 2 makes the article wall-of-text and breaks the inline-image planner. More than 8 fragments the reading flow.
+    - The TITLE of the post is supplied separately — do NOT lead the body with an H1 (``# Title``). Start with an intro paragraph, then the first ``## Section Title``.
+
     STYLE — avoid sounding like an LLM:
     - Vary sentence length deliberately. Mix 4-word sentences with 25-word ones. The default "every sentence is 15-18 words" cadence is a giveaway. One-sentence paragraphs are good for emphasis.
     - Vary paragraph length. Some 4-5 sentences, others 1-2. Uniform paragraph blocks read as machine-generated.
@@ -46,6 +52,7 @@
     - Did you name a person, publication, or organisation that does not appear in research_context with a URL? Remove the name.
     - Any sentence still ending in " []" or "[]." with nothing in the brackets? Strip the brackets or rewrite the sentence.
     - Used any of the banned LLM-tell words above? Replace with a more specific verb/noun.
+    - Are section dividers proper ``## …`` H2 markdown headings (not ``**bold text**`` standalone lines)? If you used bold-text fake headings, convert each one to a real ``## …`` heading.
 
 - key: blog_generation.seo_and_social
   category: blog_generation
