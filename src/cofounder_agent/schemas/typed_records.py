@@ -58,6 +58,7 @@ class TaskRecord(TypedDict, total=False):
     task_type: str | None
     status: str | None
     category: str | None
+    niche_slug: str | None
     priority: int | None
     style: str | None
     tone: str | None

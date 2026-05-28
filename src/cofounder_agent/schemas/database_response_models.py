@@ -114,6 +114,18 @@ class TaskResponse(BaseModel):
     error_message: str | None = Field(None, description="Error message if failed")
     tags: list[str] | None = Field(default_factory=list, description="Task tags")
 
+    # 2026-05-27: was previously stripped by Pydantic's extra='ignore' default
+    # → publish_service.publish_post_from_task at line 808 reads
+    # ``task.get("niche_slug")``, got ``""``, skipped the niches-policy
+    # lookup, stamped ``media_to_generate=[]`` on every post for ~8 days.
+    # Result: backfill_podcasts and backfill_videos found 0 eligible
+    # candidates on every run from 2026-05-19 onward — see the audit on
+    # 2026-05-27. Adding this field as an explicit pass-through closes
+    # the gap. Mirrors the column on pipeline_tasks + content_tasks view.
+    niche_slug: str | None = Field(
+        None, description="Niche slug (e.g. 'glad-labs', 'dev_diary') — drives per-niche media policy"
+    )
+
     task_metadata: dict[str, Any] | None = Field(
         default=None, description="Additional task metadata (JSON)"
     )
