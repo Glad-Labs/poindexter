@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from typing import Any
 
 import click
 
@@ -76,10 +77,24 @@ def cmd_pending(medium: str | None, limit: int, as_json: bool):
 
     if as_json:
         # Serialize created_at via isoformat — datetime isn't json-native.
+        # Same for quality_evaluated_at, and unwrap numeric Decimal.
+        from decimal import Decimal
         for r in rows:
-            ts = r.get("created_at")
-            if ts is not None:
-                r["created_at"] = ts.isoformat()
+            for ts_key in ("created_at", "quality_evaluated_at"):
+                ts = r.get(ts_key)
+                if ts is not None:
+                    r[ts_key] = ts.isoformat()
+            if isinstance(r.get("quality_score"), Decimal):
+                r["quality_score"] = float(r["quality_score"])
+            # quality_signals comes back as a JSON string from asyncpg;
+            # parse for the JSON-output case so consumers don't get a
+            # nested-quoted string.
+            qs = r.get("quality_signals")
+            if isinstance(qs, str):
+                try:
+                    r["quality_signals"] = json.loads(qs)
+                except (json.JSONDecodeError, TypeError):
+                    pass
         click.echo(json.dumps(rows, indent=2))
         return
 
@@ -95,6 +110,44 @@ def cmd_pending(medium: str | None, limit: int, as_json: bool):
         slug = r.get("slug") or ""
         click.secho(f"  {post_id_short}  {med:<14} {title}", fg="yellow")
         click.secho(f"    slug={slug}", fg="bright_black")
+
+        # Surface Layer 1 quality signals when present so the operator
+        # can decide without spinning up a separate player. If
+        # quality_score is None the eval hasn't run yet (legacy row
+        # or pre-eval generation); render "—" to make that visible.
+        score = r.get("quality_score")
+        signals_raw = r.get("quality_signals")
+        signals: dict[str, Any] = {}
+        if isinstance(signals_raw, str):
+            try:
+                signals = json.loads(signals_raw)
+            except (json.JSONDecodeError, TypeError):
+                signals = {}
+        elif isinstance(signals_raw, dict):
+            signals = signals_raw
+
+        if score is None and not signals:
+            click.secho(
+                "    quality: not evaluated yet (re-run backfill to populate)",
+                fg="bright_black",
+            )
+        else:
+            dur = signals.get("duration_seconds")
+            sil = signals.get("silence_ratio")
+            size = signals.get("file_size_bytes")
+            parts: list[str] = []
+            if dur is not None:
+                parts.append(f"dur={dur:.0f}s")
+            if sil is not None:
+                parts.append(f"silence={sil:.0%}")
+            if size is not None:
+                parts.append(f"size={size // 1024}KB")
+            score_str = f"{float(score):.2f}" if score is not None else "—"
+            summary = " ".join(parts) if parts else "(no signals)"
+            click.secho(
+                f"    quality_score={score_str}  {summary}",
+                fg="bright_black",
+            )
 
 
 @media_group.command(name="approve")

@@ -101,18 +101,25 @@ class BackfillVideosJob:
                     # downstream dispatch fires immediately on niches
                     # the operator trusts.
                     try:
-                        from services import media_approval_service
+                        from services import (
+                            media_approval_service,
+                            media_quality_service,
+                        )
                         approval_conn = await asyncpg.connect(cloud_url)
                         try:
                             await media_approval_service.record_pending(
                                 approval_conn, post_id, "video",
                             )
+                            await media_quality_service.evaluate_video(
+                                approval_conn, post_id, str(video_path),
+                                medium="video",
+                            )
                         finally:
                             await approval_conn.close()
                     except Exception as gate_err:
                         logger.warning(
-                            "[BACKFILL_VIDEOS] media_approval insert "
-                            "failed for %s: %s", post_id[:8], gate_err,
+                            "[BACKFILL_VIDEOS] media_approval / quality "
+                            "eval failed for %s: %s", post_id[:8], gate_err,
                         )
                     # After a successful local generation, dispatch to
                     # any enabled ``publishing_adapters`` rows whose

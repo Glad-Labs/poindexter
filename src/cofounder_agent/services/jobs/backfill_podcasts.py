@@ -48,7 +48,7 @@ class BackfillPodcastsJob:
         except ImportError:
             return JobResult(ok=False, detail="asyncpg not available", changes_made=0)
 
-        from services.podcast_service import PodcastService
+        from services.podcast_service import PODCAST_DIR, PodcastService
 
         post_limit = int(config.get("post_limit", 20))
         max_per_cycle = int(config.get("max_per_cycle", 2))
@@ -128,27 +128,34 @@ class BackfillPodcastsJob:
                         "[BACKFILL_PODCASTS] Generated podcast for: %s",
                         post["title"][:40],
                     )
-                    # Record the medium as awaiting approval before any
-                    # distribution surface (RSS feed, R2 upload) sees it.
-                    # Failure here MUST NOT block the R2 upload below —
-                    # the upload is durable storage of the file itself;
-                    # the gate just controls whether the file enters the
-                    # public feed. Worst case: file is on disk + R2 but
-                    # no row in media_approvals → operator can re-run
-                    # backfill to insert the row, or manually approve.
+                    # Record the medium as awaiting approval, then run
+                    # the Layer 1 quality eval. Both share a single
+                    # connection — record_pending must land before eval
+                    # so the eval's UPDATE has a row to write to.
+                    # Failures here MUST NOT block the R2 upload below
+                    # (the upload is durable storage of the file itself
+                    # — the gate just controls whether the file enters
+                    # the public feed).
                     try:
+                        from services import media_quality_service
                         approval_conn = await asyncpg.connect(cloud_url)
                         try:
                             await media_approval_service.record_pending(
                                 approval_conn, post["id"], "podcast",
                             )
+                            await media_quality_service.evaluate_podcast(
+                                approval_conn,
+                                post["id"],
+                                str(PODCAST_DIR / f"{post['id']}.mp3"),
+                            )
                         finally:
                             await approval_conn.close()
                     except Exception as gate_err:
                         logger.warning(
-                            "[BACKFILL_PODCASTS] media_approval insert "
-                            "failed for %s (file generated, gate row "
-                            "missing — re-run backfill to retry): %s",
+                            "[BACKFILL_PODCASTS] media_approval / "
+                            "quality eval failed for %s (file generated, "
+                            "gate row may be missing — re-run backfill "
+                            "to retry): %s",
                             post["id"][:8], gate_err,
                         )
                     # Upload the fresh episode to R2 too.

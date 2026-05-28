@@ -240,6 +240,9 @@ async def list_pending(
             ma.post_id::text AS post_id,
             ma.medium,
             ma.created_at,
+            ma.quality_score,
+            ma.quality_signals,
+            ma.quality_evaluated_at,
             p.title,
             p.slug
         FROM media_approvals ma
