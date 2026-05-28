@@ -28,9 +28,17 @@ def _make_request(
     ``request.app.state.site_config`` (DI seam, glad-labs-stack#330) —
     replaces the legacy os.environ pattern from before middleware
     migrated off the singleton import.
+
+    Both ``request.url.path`` and ``request.scope["path"]`` are seeded
+    with the same value. Production middleware reads ``scope["path"]``
+    per CVE-2026-48710 (BadHost); seeding both keeps the helper useful
+    for any future tests that still touch ``request.url``.
     """
     req = MagicMock()
     req.url.path = path
+    # Real ASGI scope is a dict — populating ``scope["path"]`` is the
+    # canonical seam middleware reads for auth decisions.
+    req.scope = {"path": path}
     req.method = method
     headers = {}
     if auth_header is not None:

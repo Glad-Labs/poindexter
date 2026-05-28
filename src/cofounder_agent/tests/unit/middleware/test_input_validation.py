@@ -19,13 +19,23 @@ def _make_request(
     headers=None,
     query="",
 ):
-    """Return a minimal mock Request."""
+    """Return a minimal mock Request.
+
+    Both ``request.url.path`` and ``request.scope["path"]`` are seeded
+    with the same value. Production middleware reads ``scope["path"]``
+    per CVE-2026-48710 (BadHost); seeding both keeps the helper useful
+    for any code that still introspects ``request.url`` for non-security
+    purposes (length / null-byte / traversal hardening rules).
+    """
     req = MagicMock()
     req.url.path = path
     req.url.query = query
     req.url.__str__ = MagicMock(
         return_value=f"http://localhost{path}?{query}" if query else f"http://localhost{path}"
     )
+    # Real ASGI scope is a dict — populating ``scope["path"]`` is the
+    # canonical seam the middleware reads after the BadHost fix.
+    req.scope = {"path": path}
     req.method = method
     _headers = {
         "content-type": "application/json",

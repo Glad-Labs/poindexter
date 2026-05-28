@@ -37,6 +37,18 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
     - GET /api/public/*
     - /api/auth/* (login/logout)
     - /health
+
+    Scope-path policy (CVE-2026-48710 "BadHost"):
+    All auth-bypass decisions in this middleware MUST use
+    ``request.scope["path"]`` (the raw ASGI path the server routed
+    against). ``request.url.path`` is reconstructed from the Host
+    header and can be shifted by a crafted
+    ``Host: target/public-prefix`` so the reconstructed path starts
+    with a public prefix while the ASGI router still dispatches the
+    protected handler. Starlette >= 1.0.1 closes the underlying
+    parse hole; using ``scope["path"]`` here is the defence-in-depth
+    pattern that survives any future URL-reconstruction regression.
+    Do not reintroduce ``request.url.path`` for security decisions.
     """
 
     # Routes that require authentication
@@ -72,6 +84,15 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process incoming request with token validation"""
 
+        # CVE-2026-48710 ("BadHost"): use the raw ASGI scope path for every
+        # auth decision. ``request.url.path`` is reconstructed from the Host
+        # header by Starlette and can be shifted by a crafted
+        # ``Host: target/public-prefix`` so the reconstructed path starts
+        # with a public prefix while the ASGI router still dispatches the
+        # protected handler. ``scope["path"]`` is the path the server
+        # actually routed against and cannot be shifted by header content.
+        path = request.scope["path"]
+
         try:
             # DI seam (glad-labs-stack#330) — read site_config from
             # app.state, populated by main.py's lifespan.
@@ -84,7 +105,6 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
                 and sc.get("disable_auth_for_dev", "false").lower() == "true"
                 and sc.get("development_mode", "false").lower() == "true"
             ):
-                path = request.url.path
                 if path.startswith(self._NOISY_PATH_PREFIXES):
                     logger.debug(
                         "[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for %s", path
@@ -100,12 +120,12 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
             # Skip validation for public routes
-            if any(request.url.path.startswith(path) for path in self.PUBLIC_PATHS):
+            if any(path.startswith(public) for public in self.PUBLIC_PATHS):
                 return await call_next(request)
 
             # Skip validation for protected paths not matched (let them through)
             # Validation happens at dependency level via get_current_user()
-            is_protected = any(request.url.path.startswith(path) for path in self.PROTECTED_PATHS)
+            is_protected = any(path.startswith(protected) for protected in self.PROTECTED_PATHS)
 
             if not is_protected:
                 # Not a protected endpoint, proceed
@@ -116,7 +136,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
 
             if not auth_header:
                 logger.warning(
-                    f"[TokenValidation] Missing auth header for protected path: {request.url.path}"
+                    f"[TokenValidation] Missing auth header for protected path: {path}"
                 )
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -126,7 +146,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
             # Token format validation
             if not auth_header.startswith("Bearer "):
                 logger.warning(
-                    f"[TokenValidation] Invalid auth header format for {request.url.path}"
+                    f"[TokenValidation] Invalid auth header format for {path}"
                 )
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,

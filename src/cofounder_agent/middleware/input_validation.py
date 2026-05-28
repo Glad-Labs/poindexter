@@ -26,6 +26,17 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     - Content-Type validation
     - JSON payload structure
     - Request header validation
+
+    Scope-path policy (CVE-2026-48710 "BadHost"):
+    Path-driven gating decisions (skip-validation list, secure-endpoint
+    content-type enforcement) read ``request.scope["path"]`` — the raw
+    ASGI path the server routed against. ``request.url.path`` is
+    reconstructed from the Host header and can be shifted by a crafted
+    ``Host: target/skip-prefix``. URL-shape checks (length / null bytes /
+    traversal patterns) on ``request.url.path`` / ``request.url.query``
+    are kept as-is — they are hardening rules applied to whatever the
+    re-parsed URL looks like, not security gates that an attacker would
+    benefit from shifting.
     """
 
     # Maximum request body size (10MB)
@@ -53,6 +64,14 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:  # type: ignore[override]
         """Process incoming request with validation"""
 
+        # CVE-2026-48710 ("BadHost"): use the raw ASGI scope path for any
+        # path-driven gating decision. ``request.url.path`` is reconstructed
+        # from the Host header and can be shifted by a crafted
+        # ``Host: target/skip-prefix`` so the reconstructed path looks like
+        # one of SKIP_VALIDATION_PATHS while the ASGI router still
+        # dispatches a non-skip handler.
+        path = request.scope["path"]
+
         try:
             # Skip validation for WebSocket connections (upgrade requests)
             # WebSocket handshakes use the HTTP Upgrade mechanism
@@ -60,7 +79,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
             # Skip validation for certain paths
-            if request.url.path in self.SKIP_VALIDATION_PATHS:
+            if path in self.SKIP_VALIDATION_PATHS:
                 return await call_next(request)
 
             # Validate request headers
@@ -89,9 +108,11 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
                 content={"detail": str(e)},
             )
         except Exception as e:
-            # Log unexpected errors
+            # Log unexpected errors — pure logging, not a security boundary,
+            # so request.url.path is fine here (it is, however, attacker-controlled
+            # content, so do not interpret the value for any control-flow purpose).
             logger.error(
-                f"Request validation middleware error for {request.url.path}: {type(e).__name__}: {e!s}",
+                f"Request validation middleware error for {path}: {type(e).__name__}: {e!s}",
                 exc_info=True,
             )
             return JSONResponse(
@@ -102,8 +123,9 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     def _validate_headers(self, request: Request) -> None:
         """Validate request headers"""
 
-        # Check for required headers in secure endpoints
-        if request.url.path.startswith("/api/") and request.method not in ["GET", "HEAD"]:
+        # Check for required headers in secure endpoints — gate on the raw
+        # ASGI scope path (CVE-2026-48710), not the Host-reconstructed URL.
+        if request.scope["path"].startswith("/api/") and request.method not in ["GET", "HEAD"]:
             # Validate Content-Type
             content_type = request.headers.get("content-type", "")
 
