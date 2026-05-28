@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+## [0.14.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.13.1...v0.14.0) (2026-05-28)
+
+
+### Features
+
+* **grafana:** add 8 missing Mission Control panels (media_approvals, shot list, quality eval, drift, cloud spend, GlitchTip, Langfuse, style mix) ([#661](https://github.com/Glad-Labs/glad-labs-stack/issues/661)) ([048ea64](https://github.com/Glad-Labs/glad-labs-stack/commit/048ea6454ad3c4232acda4e043add71ebac3b7cb))
+* **media:** Layer 1 quality eval — deterministic signals + auto-reject ([#648](https://github.com/Glad-Labs/glad-labs-stack/issues/648)) ([05ebac8](https://github.com/Glad-Labs/glad-labs-stack/commit/05ebac8c8869314ec672583d0feafd2ae59b2791))
+* **media:** per-medium operator approval gate before distribution ([#647](https://github.com/Glad-Labs/glad-labs-stack/issues/647)) ([8b204f4](https://github.com/Glad-Labs/glad-labs-stack/commit/8b204f441dfa1ec365417c56d6fe1ebf03ec020e))
+* **observability:** emit image_style_picked audit_log on every pick ([#662](https://github.com/Glad-Labs/glad-labs-stack/issues/662)) ([a21962d](https://github.com/Glad-Labs/glad-labs-stack/commit/a21962d8e1114ed20350a3dac22a091ab2bb4e76))
+* **prompts:** migrate 2 vision QA prompts to UnifiedPromptManager ([#669](https://github.com/Glad-Labs/glad-labs-stack/issues/669)) ([fc76ce6](https://github.com/Glad-Labs/glad-labs-stack/commit/fc76ce6148b04fb9bc9d298bcb40a43c0f2dd4b6))
+* **publishing:** wire YouTube adapter to the video backfill pipeline ([#643](https://github.com/Glad-Labs/glad-labs-stack/issues/643)) ([4f2dbc2](https://github.com/Glad-Labs/glad-labs-stack/commit/4f2dbc2821a413114d86c49d457453054d5590d1))
+* **release:** mirror release-please Releases from glad-labs-stack to public Poindexter ([#671](https://github.com/Glad-Labs/glad-labs-stack/issues/671)) ([b27daf3](https://github.com/Glad-Labs/glad-labs-stack/commit/b27daf3a8aa89ac36d02cad02b3fc40c412f807d))
+* **site:** surface Glad Labs Podcast on Spotify in footer + About CTA ([#640](https://github.com/Glad-Labs/glad-labs-stack/issues/640)) ([68925c7](https://github.com/Glad-Labs/glad-labs-stack/commit/68925c72a24c3eeac622e1b5eda9025f9bb9c41c))
+* **topic_sources:** per-source timeout in runner (closes [#254](https://github.com/Glad-Labs/glad-labs-stack/issues/254)) ([#637](https://github.com/Glad-Labs/glad-labs-stack/issues/637)) ([323b449](https://github.com/Glad-Labs/glad-labs-stack/commit/323b449729b6f36cde813e0d28b07b3408051e7d))
+* **video:** shot list schema + director stage (PR 1 of [#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#650](https://github.com/Glad-Labs/glad-labs-stack/issues/650)) ([af25d40](https://github.com/Glad-Labs/glad-labs-stack/commit/af25d40853544829f28d3eddd7dbe6752dff713a))
+* **video:** shot-list renderer + Wan2.1 schema fix + narration sibling (PR 2 of [#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#664](https://github.com/Glad-Labs/glad-labs-stack/issues/664)) ([37e84c1](https://github.com/Glad-Labs/glad-labs-stack/commit/37e84c1aae6dc12ec1bde57c8f41b99aef79f5a7))
+
+
+### Bug Fixes
+
+* **analytics:** restore page-views beacon (silent since 2026-04-09) ([#658](https://github.com/Glad-Labs/glad-labs-stack/issues/658)) ([f69c935](https://github.com/Glad-Labs/glad-labs-stack/commit/f69c9357b2c0acaa128281da94e36148e289b06e))
+* APScheduler misfire_grace + edge_tts type:ignore ([#660](https://github.com/Glad-Labs/glad-labs-stack/issues/660)) ([5cc1204](https://github.com/Glad-Labs/glad-labs-stack/commit/5cc12048c20fb1492f78f9d53ac5efabbbeb90d2))
+* **backup:** mount ~/.poindexter/backups so DbBackupJob mkdir succeeds ([#654](https://github.com/Glad-Labs/glad-labs-stack/issues/654)) ([a9aec83](https://github.com/Glad-Labs/glad-labs-stack/commit/a9aec83ebdf38fbacbae0a797eac5780da443b30))
+* **brief:** correct cost partition + brain probe pattern ([#673](https://github.com/Glad-Labs/glad-labs-stack/issues/673)) ([acc00fe](https://github.com/Glad-Labs/glad-labs-stack/commit/acc00feedf3d2f7ef5046c8f6a1311f84769a93e))
+* **grafana:** mission control — readable titles + global time + dedup alerts + single-value pie → stat ([#657](https://github.com/Glad-Labs/glad-labs-stack/issues/657)) ([4769f2e](https://github.com/Glad-Labs/glad-labs-stack/commit/4769f2e18b7d899f2ac3efc9042d71913c9c9a3a))
+* **grafana:** remove retired Pipecat button + fix LiveKit URL ([#663](https://github.com/Glad-Labs/glad-labs-stack/issues/663)) ([0c3687e](https://github.com/Glad-Labs/glad-labs-stack/commit/0c3687e2bebef9bd14749fa0e18ffd81cba9b8e6))
+* **grafana:** repair 3 dashboard bugs (broken datasource UID, panel overlaps, dead Ragas panels) ([#655](https://github.com/Glad-Labs/glad-labs-stack/issues/655)) ([4873603](https://github.com/Glad-Labs/glad-labs-stack/commit/4873603d0df5d3ae309feb50bf43b28e52408b2d))
+* **grafana:** title overflow at 960px + red/green -&gt; orange/blue for deuteranomaly ([#665](https://github.com/Glad-Labs/glad-labs-stack/issues/665)) ([8ab89f3](https://github.com/Glad-Labs/glad-labs-stack/commit/8ab89f3646f3fabae0443bf34bb0e12276111c2d))
+* **mirror:** strip mission-control.json from public Poindexter mirror ([#668](https://github.com/Glad-Labs/glad-labs-stack/issues/668)) ([00bd85c](https://github.com/Glad-Labs/glad-labs-stack/commit/00bd85c1b86f212a591076b77e73ef5a1dfb10f8))
+* **operator:** guard against phantom settings keys + install compose plugin in brain ([#639](https://github.com/Glad-Labs/glad-labs-stack/issues/639)) ([846747d](https://github.com/Glad-Labs/glad-labs-stack/commit/846747d8185985bb3e04c171954e6fd21a7a3ffe))
+* **podcast:** exclude dev_diary from RSS feed via media_to_generate ([#646](https://github.com/Glad-Labs/glad-labs-stack/issues/646)) ([e5df2c8](https://github.com/Glad-Labs/glad-labs-stack/commit/e5df2c8a7d5e0e651a95633244d818ef718dbcb4))
+* **prefect:** use real 3.6.29-python3.12 tag (3.6.29 was phantom) ([#636](https://github.com/Glad-Labs/glad-labs-stack/issues/636)) ([8ad509b](https://github.com/Glad-Labs/glad-labs-stack/commit/8ad509bb6fcd3ccb164c662bf6fe5b6fd1e8df16))
+* **publish:** also push to R2 from promote-on-publish path ([#641](https://github.com/Glad-Labs/glad-labs-stack/issues/641)) ([f824066](https://github.com/Glad-Labs/glad-labs-stack/commit/f8240669ca67100735adffcb30b5fb8ef5994d54))
+* **publish:** sync pipeline_tasks.status when scheduled_publisher promotes posts ([#653](https://github.com/Glad-Labs/glad-labs-stack/issues/653)) ([03d68cc](https://github.com/Glad-Labs/glad-labs-stack/commit/03d68cc3458f5ac5b4bc8ff9b23def2b3f232ff6))
+* **qa:** revive five silent OSS QA rails + LlamaIndex hybrid+rerank ([#659](https://github.com/Glad-Labs/glad-labs-stack/issues/659)) ([f409190](https://github.com/Glad-Labs/glad-labs-stack/commit/f409190767161d35dd43afcda2614cbebb1c2aec))
+* **release-mirror:** split into two scoped tokens to surface install errors ([#672](https://github.com/Glad-Labs/glad-labs-stack/issues/672)) ([dddcb31](https://github.com/Glad-Labs/glad-labs-stack/commit/dddcb31a27b4c851a2322dd9a3ba846dc82abddb))
+* **schemas:** add niche_slug to TaskResponse — restores media generation ([#642](https://github.com/Glad-Labs/glad-labs-stack/issues/642)) ([07bbf3f](https://github.com/Glad-Labs/glad-labs-stack/commit/07bbf3f0b1c64782569d185d609db622c0295512))
+* **scripts:** silence ffmpeg/ffprobe/nvidia-smi popups on Windows ([#666](https://github.com/Glad-Labs/glad-labs-stack/issues/666)) ([268a8b9](https://github.com/Glad-Labs/glad-labs-stack/commit/268a8b9736c4f9115044e670a92ff85c534dcbff))
+
 ## [0.13.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.13.0...v0.13.1) (2026-05-27)
 
 ### Bug Fixes
