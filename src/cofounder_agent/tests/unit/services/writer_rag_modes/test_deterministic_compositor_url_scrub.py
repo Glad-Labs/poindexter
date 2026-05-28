@@ -3,7 +3,7 @@ URLs pointing at the private glad-labs-stack repo.
 
 Why this matters: ``dev_diary_source`` reads PR metadata from
 ``app_settings.gh_repo`` which on production is set to
-``Glad-Labs/glad-labs-stack`` (the public poindexter mirror is force-pushed
+``Glad-Labs/poindexter`` (the public poindexter mirror is force-pushed
 code only — it has no PRs/issues of its own). PR bodies in the bundle
 context can contain stack URLs that leak into the writer narrative if
 nothing scrubs them on the way out. Linking to the private repo from a
@@ -31,28 +31,28 @@ pytestmark = pytest.mark.asyncio
 
 
 def test_strip_markdown_pr_link() -> None:
-    text = "We shipped [PR #602](https://github.com/Glad-Labs/glad-labs-stack/pull/602) today."
+    text = "We shipped [PR #602](https://github.com/Glad-Labs/poindexter/pull/602) today."
     out = _strip_private_repo_urls(text)
     assert out == "We shipped PR #602 today."
     assert "glad-labs-stack" not in out
 
 
 def test_strip_autolink_pr_reference() -> None:
-    text = "- <https://github.com/Glad-Labs/glad-labs-stack/pull/578>"
+    text = "- <https://github.com/Glad-Labs/poindexter/pull/578>"
     out = _strip_private_repo_urls(text)
     assert out == "- PR #578"
     assert "github.com" not in out
 
 
 def test_strip_markdown_commit_link() -> None:
-    text = "Tweaked in [`abc1234`](https://github.com/Glad-Labs/glad-labs-stack/commit/abc1234) earlier."
+    text = "Tweaked in [`abc1234`](https://github.com/Glad-Labs/poindexter/commit/abc1234) earlier."
     out = _strip_private_repo_urls(text)
     assert out == "Tweaked in `abc1234` earlier."
     assert "glad-labs-stack" not in out
 
 
 def test_strip_autolink_commit_reference() -> None:
-    text = "Commit <https://github.com/Glad-Labs/glad-labs-stack/commit/0123456789abcdef0123456789abcdef01234567> landed."
+    text = "Commit <https://github.com/Glad-Labs/poindexter/commit/0123456789abcdef0123456789abcdef01234567> landed."
     out = _strip_private_repo_urls(text)
     assert "<http" not in out
     assert "glad-labs-stack" not in out
@@ -96,8 +96,8 @@ async def test_compose_post_strips_narrative_url_leaks(monkeypatch) -> None:
     async def fake_generate_narrative(bundle, *, site_config=None, pool=None):
         # Simulate a model that copies a PR body URL into prose.
         return (
-            "We shipped [PR #602](https://github.com/Glad-Labs/glad-labs-stack/pull/602) "
-            "and noted commit <https://github.com/Glad-Labs/glad-labs-stack/commit/abc1234>."
+            "We shipped [PR #602](https://github.com/Glad-Labs/poindexter/pull/602) "
+            "and noted commit <https://github.com/Glad-Labs/poindexter/commit/abc1234>."
         )
 
     monkeypatch.setattr(
@@ -108,7 +108,7 @@ async def test_compose_post_strips_narrative_url_leaks(monkeypatch) -> None:
     bundle = {
         "date": "2026-05-27",
         "merged_prs": [
-            {"number": 602, "title": "x", "url": "https://github.com/Glad-Labs/glad-labs-stack/pull/602"},
+            {"number": 602, "title": "x", "url": "https://github.com/Glad-Labs/poindexter/pull/602"},
         ],
         "notable_commits": [],
     }

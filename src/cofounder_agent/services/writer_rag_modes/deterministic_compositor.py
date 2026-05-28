@@ -61,21 +61,21 @@ _FOOTER = (
 
 # Defense-in-depth: even if the writer LLM hallucinates a private-repo
 # URL into the narrative, scrub it post-compose. The dev_diary source
-# pulls PR data from Glad-Labs/glad-labs-stack (private) so PR bodies in
+# pulls PR data from Glad-Labs/poindexter (private) so PR bodies in
 # the bundle context can contain stack URLs the model copies verbatim.
 # Matched patterns mirror the 2026-05-20 cleanup migrations
 # (20260520_172353 / _174023 / _175633).
 _STACK_PR_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+    r"<https?://github\.com/Glad-Labs/poindexter/pull/(\d+)>"
 )
 _STACK_PR_MARKDOWN = re.compile(
-    r"\[PR #(\d+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/\d+\)"
+    r"\[PR #(\d+)\]\(https?://github\.com/Glad-Labs/poindexter/pull/\d+\)"
 )
 _STACK_COMMIT_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-f]{7,40})>"
+    r"<https?://github\.com/Glad-Labs/poindexter/commit/([0-9a-f]{7,40})>"
 )
 _STACK_COMMIT_MARKDOWN = re.compile(
-    r"\[`([0-9a-f]{7,40})`\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/[0-9a-f]{7,40}\)"
+    r"\[`([0-9a-f]{7,40})`\]\(https?://github\.com/Glad-Labs/poindexter/commit/[0-9a-f]{7,40}\)"
 )
 
 

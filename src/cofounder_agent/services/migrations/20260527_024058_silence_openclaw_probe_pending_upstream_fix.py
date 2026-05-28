@@ -59,7 +59,7 @@ async def up(pool) -> None:
         )
         logger.info(
             "Migration 20260527_024058: appended %s to operator_url_probe_skip_keys "
-            "(pending Glad-Labs/glad-labs-stack#594 upstream OpenClaw fix)",
+            "(pending Glad-Labs/poindexter#594 upstream OpenClaw fix)",
             _SKIP_KEY_TO_ADD,
         )
 
