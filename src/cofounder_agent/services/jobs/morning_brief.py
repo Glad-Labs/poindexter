@@ -254,28 +254,70 @@ async def _gather_brief_data(pool: Any, lookback_hours: int) -> dict[str, Any]:
             interval,
         )
 
-        # Cost split — cloud (cost_usd > 0) vs local-zero. Local LLMs log
-        # cost_usd=0 so the sum is naturally 0.0 for an all-local day.
+        # Cost split — partition LLM inference calls by provider; report
+        # electricity separately so it doesn't masquerade as cloud spend.
+        # Reason this changed (2026-05-28 audit): the brief showed
+        # "$1.19 cloud (287 calls, 0 local)" when reality was 283
+        # electricity-tracker rows + 4 local Ollama inference calls + 0
+        # cloud LLM calls. Two distinct bugs:
+        #   1. local Ollama calls have cost_usd > 0 (LiteLLM estimates
+        #      per-token cost even for local), so the old "cost_usd > 0
+        #      ⇒ cloud" heuristic mislabeled them.
+        #   2. electricity_idle / electricity_active rows in cost_logs
+        #      have cost_usd > 0 and got counted as "cloud calls".
+        # Fix: partition on provider, filter to cost_type='inference'.
         cost_row = await conn.fetchrow(
             """
+            WITH inference AS (
+                SELECT provider, cost_usd
+                FROM cost_logs
+                WHERE created_at >= NOW() - ($1::text)::interval
+                  AND COALESCE(cost_type, 'inference') = 'inference'
+            )
             SELECT
-                COALESCE(SUM(cost_usd) FILTER (WHERE cost_usd > 0), 0)::float AS cloud_usd,
-                COUNT(*) FILTER (WHERE cost_usd > 0)                          AS cloud_calls,
-                COUNT(*) FILTER (WHERE COALESCE(cost_usd, 0) = 0)             AS local_calls
-            FROM cost_logs
-            WHERE created_at >= NOW() - ($1::text)::interval
+                COALESCE(SUM(cost_usd) FILTER (
+                    WHERE provider <> 'ollama'
+                ), 0)::float AS cloud_usd,
+                COUNT(*) FILTER (
+                    WHERE provider <> 'ollama'
+                )                                    AS cloud_calls,
+                COUNT(*) FILTER (
+                    WHERE provider = 'ollama'
+                )                                    AS local_calls
+            FROM inference
             """,
             interval,
         )
 
-        # Brain probe failures from audit_log.
+        # Electricity-cost rows are reported separately. They're real
+        # money (host PC power draw at $0.12/kWh-ish) but they're
+        # operating cost, not LLM spend — the brief should call that out
+        # so the "cloud cost" line isn't inflated.
+        electricity_usd = (
+            await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(cost_usd), 0)::float
+                FROM cost_logs
+                WHERE created_at >= NOW() - ($1::text)::interval
+                  AND provider = 'electricity'
+                """,
+                interval,
+            )
+            or 0.0
+        )
+
+        # Brain probe activity — old pattern was `brain.probe.%` which
+        # matches zero rows in prod. Real probe events emit under
+        # `probe.<name>` (e.g. `probe.compose_drift_ok`,
+        # `probe.glitchtip_triage_cycle`), `probe_completed`, or
+        # `brain.cycle_heartbeat`. Updated 2026-05-28 audit.
         brain_probe_failures = (
             await conn.fetchval(
                 """
                 SELECT COUNT(*)
                 FROM audit_log
                 WHERE timestamp >= NOW() - ($1::text)::interval
-                  AND event_type LIKE 'brain.probe.%'
+                  AND (event_type LIKE 'probe%' OR event_type = 'brain.cycle_heartbeat')
                   AND COALESCE(severity, '') IN ('error', 'critical', 'warning')
                 """,
                 interval,
@@ -283,14 +325,13 @@ async def _gather_brief_data(pool: Any, lookback_hours: int) -> dict[str, Any]:
             or 0
         )
 
-        # Total brain probe cycles for the "X failed across N cycles" line.
         brain_probe_cycles = (
             await conn.fetchval(
                 """
                 SELECT COUNT(*)
                 FROM audit_log
                 WHERE timestamp >= NOW() - ($1::text)::interval
-                  AND event_type LIKE 'brain.probe.%'
+                  AND (event_type LIKE 'probe%' OR event_type = 'brain.cycle_heartbeat')
                 """,
                 interval,
             )
@@ -326,6 +367,7 @@ async def _gather_brief_data(pool: Any, lookback_hours: int) -> dict[str, Any]:
         "cost_cloud_usd": cost_cloud_usd,
         "cost_cloud_calls": cost_cloud_calls,
         "cost_local_calls": cost_local_calls,
+        "cost_electricity_usd": float(electricity_usd),
         "brain_probe_failures": int(brain_probe_failures),
         "brain_probe_cycles": int(brain_probe_cycles),
     }
@@ -460,16 +502,34 @@ def _format_brief(
     else:
         lines.append(f"⚠️ **Alerts ({lookback_hours}h):** none")
 
-    # Cost
+    # Cost — cloud + local inference + electricity reported as three
+    # distinct numbers so the "$X cloud" line can't include power draw
+    # or local-Ollama estimates.
     cloud_usd = data["cost_cloud_usd"]
-    if cloud_usd > 0:
+    cloud_calls = data["cost_cloud_calls"]
+    local_calls = data["cost_local_calls"]
+    elec_usd = data.get("cost_electricity_usd", 0.0)
+
+    if cloud_calls or local_calls:
+        cost_parts = []
+        if cloud_calls:
+            cost_parts.append(f"${cloud_usd:.2f} cloud ({cloud_calls} calls)")
+        if local_calls:
+            cost_parts.append(f"{local_calls} local calls")
+        if elec_usd > 0:
+            cost_parts.append(f"${elec_usd:.2f} electricity")
         lines.append(
-            f"\U0001F4B5 **Cost ({lookback_hours}h):** ${cloud_usd:.2f} cloud "
-            f"({data['cost_cloud_calls']} calls, {data['cost_local_calls']} local)"
+            f"\U0001F4B5 **Cost ({lookback_hours}h):** " + ", ".join(cost_parts)
+        )
+    elif elec_usd > 0:
+        # No LLM activity but power draw still logged.
+        lines.append(
+            f"\U0001F4B5 **Cost ({lookback_hours}h):** $0.00 LLM, "
+            f"${elec_usd:.2f} electricity"
         )
     else:
         lines.append(
-            f"\U0001F4B5 **Cost ({lookback_hours}h):** $0.00 cloud (local-only)"
+            f"\U0001F4B5 **Cost ({lookback_hours}h):** $0.00 (no activity)"
         )
 
     # Failed tasks

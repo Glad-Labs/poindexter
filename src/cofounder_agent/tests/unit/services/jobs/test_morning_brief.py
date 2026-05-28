@@ -182,7 +182,12 @@ class TestHappyPath:
         assert "Awaiting approval (24h):** 1 new" in body
         assert "AI Agent stack for indie devs" in body
         assert "Alerts (24h):** 0 critical, 5 warnings" in body
-        assert "Cost (24h):** $0.00 cloud (local-only)" in body
+        # Cost line: fixture simulates an all-local day (1440 Ollama
+        # calls, zero cloud). The pre-2026-05-28 brief said
+        # "$0.00 cloud (local-only)"; the new format names the actual
+        # number of local calls so operators can spot local LLM activity
+        # gaps too — see PR fix(brief) for the audit.
+        assert "Cost (24h):** 1440 local calls" in body
         assert "Failed tasks (24h):** 0" in body
         assert "Open PRs >24h with green CI:** 0" in body
         assert "Brain probes:** 0 failed across 1,440 cycles" in body
