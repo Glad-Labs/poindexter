@@ -165,9 +165,31 @@ from services.langfuse_shim import langfuse_context, observe
 
 
 @observe(as_type="generation", name="topic_ranking._ollama_chat_json")
-async def _ollama_chat_json(prompt: str, *, model: str) -> str:
-    """One-shot Ollama chat call; returns the assistant's content as a string.
-    Indirection so tests can monkeypatch.
+async def _ollama_chat_json(
+    prompt: str, *, model: str, pool: object | None = None,
+) -> str:
+    """One-shot LLM chat call returning the assistant's content as a string.
+
+    Routes through :func:`services.llm_providers.dispatcher.dispatch_complete`
+    when a ``pool`` is reachable (production / worker path — picks up
+    the configured provider per ``plugin.llm_provider.primary.<tier>``).
+    Falls back to a direct ``httpx`` POST to local Ollama's ``/api/chat``
+    when no pool is available (tests / bootstrap).
+
+    Indirection so tests can monkeypatch this helper directly. The
+    keyword-only ``pool`` arg is auto-discovered from
+    ``site_config._pool`` when not supplied, so existing call sites
+    (``llm_final_score``, ``story_spine``, ``ai_content_generator``,
+    ``internal_rag_source``) get the dispatcher routing for free
+    without threading a new arg through every caller.
+
+    2026-05-28 (finish-PR-#4 sweep): retires the last direct-httpx
+    ``/api/chat`` survivor in ``services/``. The legacy payload used
+    ``"format": "json"`` to force structured-JSON output from Ollama;
+    the dispatcher path now achieves the same thing via
+    ``response_format={"type": "json_object"}``, which LiteLLM maps to
+    Ollama's ``format=json`` automatically. The direct-httpx fallback
+    below preserves the original wire shape for the bootstrap path.
 
     The base URL is resolved from ``local_llm_api_url`` (the existing
     Ollama base-URL app_setting, seeded by migration 0116) and the
@@ -182,14 +204,55 @@ async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     through here, so wrapping at this layer covers all three call sites
     at once.
     """
+    messages = [{"role": "user", "content": prompt}]
+    timeout = site_config.get_float(
+        "niche_ollama_chat_timeout_seconds", 60.0,
+    )
+
+    # Auto-discover the pool via the same DI seam ai_content_generator
+    # uses (``site_config._pool``). Lets every existing caller pick up
+    # dispatcher routing without a signature change; tests + bootstrap
+    # paths that don't wire ``_pool`` keep the httpx fallback.
+    resolved_pool = pool if pool is not None else getattr(site_config, "_pool", None)
+
+    if resolved_pool is not None:
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        langfuse_context.update_current_observation(
+            model=model,
+            input=messages,
+            metadata={"via": "dispatcher", "timeout": timeout, "format": "json"},
+        )
+        completion = await dispatch_complete(
+            pool=resolved_pool,
+            messages=messages,
+            model=model,
+            tier="standard",
+            timeout_s=int(timeout),
+            # LiteLLM maps this to Ollama's ``format=json`` automatically;
+            # other backends (OpenAI / Anthropic / etc.) honor the OpenAI
+            # response-format convention natively.
+            response_format={"type": "json_object"},
+        )
+        content = getattr(completion, "text", "") or ""
+        langfuse_context.update_current_observation(
+            output=content,
+            usage={
+                "input": int(getattr(completion, "prompt_tokens", 0) or 0),
+                "output": int(getattr(completion, "completion_tokens", 0) or 0),
+                "unit": "TOKENS",
+            },
+        )
+        return content
+
+    # Test / bootstrap fallback — direct httpx → local Ollama. Same
+    # behavior as before the dispatcher cutover. Used when there's no
+    # DB pool reachable (unit tests stub site_config but not a full
+    # asyncpg pool; bootstrap scripts run before any pool is established).
     import httpx
     base_url = (
         site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
     )
-    timeout = site_config.get_float(
-        "niche_ollama_chat_timeout_seconds", 60.0,
-    )
-    messages = [{"role": "user", "content": prompt}]
     payload = {
         "model": model,
         "messages": messages,
@@ -199,7 +262,7 @@ async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     langfuse_context.update_current_observation(
         model=model,
         input=messages,
-        metadata={"base_url": base_url, "timeout": timeout, "format": "json"},
+        metadata={"via": "httpx", "base_url": base_url, "timeout": timeout, "format": "json"},
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base_url}/api/chat", json=payload)

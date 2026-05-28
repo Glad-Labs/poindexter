@@ -460,7 +460,17 @@ class LiteLLMProvider:
         }
         if self._api_base and not resolved_model.startswith("http"):
             completion_kwargs["api_base"] = self._api_base
-        for key in ("temperature", "max_tokens", "top_p"):
+        # ``response_format`` forwarding (2026-05-28): the topic_ranking +
+        # writer-RAG JSON callers need to force structured-JSON output. The
+        # OpenAI convention is ``response_format={"type": "json_object"}``;
+        # LiteLLM maps that to Ollama's ``format=json`` automatically when
+        # the resolved provider is ollama / ollama_chat, and forwards it
+        # unchanged to OpenAI / Anthropic / etc. With ``drop_params=True``
+        # set globally, providers that don't recognize the param ignore it
+        # rather than 4xx — so this is the safe seam to retire the legacy
+        # direct-httpx ``"format": "json"`` payload key that the
+        # ``_ollama_chat_json`` survivors were using.
+        for key in ("temperature", "max_tokens", "top_p", "response_format"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
 
