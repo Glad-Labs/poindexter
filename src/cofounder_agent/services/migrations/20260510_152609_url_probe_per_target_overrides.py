@@ -105,7 +105,7 @@ _OVERRIDES_DESCRIPTION = (
     "Use this to mark outbound-only APIs (sitemap pings, public-bucket "
     "URLs, etc.) where 4xx responses mean 'host alive, request shape "
     "wrong' rather than 'service down'. Without an override the global "
-    "default (200-399 = alive) applies. Per Glad-Labs/glad-labs-stack#347 "
+    "default (200-399 = alive) applies. Per Glad-Labs/poindexter#347 "
     "no-silencing rule: this is the visible alternative to the muted "
     "skip-list approach."
 )
