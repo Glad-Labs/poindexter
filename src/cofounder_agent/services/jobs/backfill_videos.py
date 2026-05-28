@@ -93,13 +93,34 @@ class BackfillVideosJob:
                 if result.success:
                     generated += 1
                     logger.info("[BACKFILL_VIDEOS] Generated video for: %s", post["title"][:40])
+                    # Insert the awaiting-approval gate row so the
+                    # YouTube publish adapter won't upload the video
+                    # until the operator decides. Per-niche auto-approve
+                    # (``niche.<slug>.media.video.auto_approve = true``)
+                    # auto-resolves the row to ``approved`` so the
+                    # downstream dispatch fires immediately on niches
+                    # the operator trusts.
+                    try:
+                        from services import media_approval_service
+                        approval_conn = await asyncpg.connect(cloud_url)
+                        try:
+                            await media_approval_service.record_pending(
+                                approval_conn, post_id, "video",
+                            )
+                        finally:
+                            await approval_conn.close()
+                    except Exception as gate_err:
+                        logger.warning(
+                            "[BACKFILL_VIDEOS] media_approval insert "
+                            "failed for %s: %s", post_id[:8], gate_err,
+                        )
                     # After a successful local generation, dispatch to
                     # any enabled ``publishing_adapters`` rows whose
                     # platform is one of the video destinations
-                    # (currently just youtube). Mirrors the bluesky/
-                    # mastodon pattern for social posts — the registry
-                    # owns the rate-limit + failure-tracking columns on
-                    # the adapter row.
+                    # (currently just youtube). The dispatcher checks
+                    # ``media_approvals.status='approved'`` before
+                    # firing each adapter — un-approved videos sit on
+                    # disk waiting for operator decision.
                     await _dispatch_video_publishers(
                         pool=pool,
                         site_config=sc,
@@ -198,6 +219,37 @@ async def _dispatch_video_publishers(
         logger.debug(
             "[BACKFILL_VIDEOS] no enabled video adapters in "
             "publishing_adapters — skipping",
+        )
+        return
+
+    # Per-medium operator approval gate. The media file is generated
+    # locally but won't reach the external surface (YouTube, etc.)
+    # until the operator approves — or until per-niche auto-approve
+    # was set, in which case ``record_pending`` already wrote the row
+    # as ``approved`` above. Missing row = not approved (conservative
+    # default per ``feedback_no_silent_defaults``).
+    try:
+        from services import media_approval_service
+        if hasattr(pool, "acquire"):
+            async with pool.acquire() as conn:
+                approved = await media_approval_service.is_approved(
+                    conn, post_id, "video",
+                )
+        else:
+            approved = await media_approval_service.is_approved(
+                pool, post_id, "video",
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[BACKFILL_VIDEOS] media_approval lookup failed for %s "
+            "(treating as NOT approved — operator must re-decide): %s",
+            post_id, exc,
+        )
+        return
+    if not approved:
+        logger.info(
+            "[BACKFILL_VIDEOS] video for %s awaiting operator approval "
+            "— skipping platform dispatch", post_id,
         )
         return
 

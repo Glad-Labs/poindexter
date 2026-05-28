@@ -29,6 +29,7 @@ from .publish_approval import (
     reject_publish_command,
     show_pending_publish_command,
 )
+from .media import media_group
 from .publishers import publishers_group
 from .qa_gates import qa_gates_group
 from .retention import retention_group
@@ -82,6 +83,7 @@ main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
 main.add_command(dev_diary_group, name="dev-diary")
 main.add_command(publishers_group, name="publishers")
+main.add_command(media_group, name="media")
 
 # Declarative-data-plane operator surfaces. Each module manages one of
 # the table+handler pairs (taps, retention, webhooks, qa_gates, etc.).

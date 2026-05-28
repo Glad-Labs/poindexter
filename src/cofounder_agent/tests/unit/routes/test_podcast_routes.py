@@ -208,6 +208,37 @@ class TestPodcastFeed:
             "on the canonical media_to_generate seam instead."
         )
 
+    def test_feed_sql_filters_on_media_approval(self):
+        """RSS feed must filter on the per-medium operator approval.
+
+        Per ``feedback_human_approval``, audio reaching Apple Podcasts
+        / Spotify needs an operator decision behind it. The
+        ``media_approvals`` table (migration 20260527_233118) is the
+        canonical gate — a missing row OR ``status != 'approved'`` means
+        the episode stays off the feed.
+
+        Pinned to catch regressions where someone removes the gate to
+        "fix" a missing episode without realizing why the gate is
+        there. The right fix is approve the row, not strip the filter.
+        """
+        import inspect
+        from routes.podcast_routes import podcast_feed
+
+        source = inspect.getsource(podcast_feed)
+        assert "media_approvals" in source, (
+            "RSS feed query must reference media_approvals — see "
+            "feedback_human_approval and "
+            "services/media_approval_service.py."
+        )
+        assert "ma.status = 'approved'" in source, (
+            "RSS feed query must require status='approved' — pending "
+            "/ rejected media must NOT reach Apple/Spotify."
+        )
+        assert "ma.medium = 'podcast'" in source, (
+            "RSS feed query must scope the approval check to the "
+            "podcast medium (not video / video_short)."
+        )
+
 
 # ---------------------------------------------------------------------------
 # GET /api/podcast/episodes/{post_id}.mp3

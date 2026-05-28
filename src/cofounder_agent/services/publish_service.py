@@ -1172,15 +1172,66 @@ async def publish_post_from_task(
         try:
             from services.podcast_service import generate_podcast_episode
 
+            async def _gen_podcast_with_gate(pid, ptitle, pcontent, script):
+                """Run generation, then record the approval-gate row on success.
+
+                Wrapper keeps ``record_pending`` from firing on the
+                fire-and-forget side BEFORE the file actually exists.
+                A failed generation leaves no row, which is the
+                correct state — backfill_podcasts.py will retry the
+                generation later and insert the row at that point.
+                """
+                try:
+                    result = await generate_podcast_episode(
+                        pid, ptitle, pcontent,
+                        pre_generated_script=script,
+                    )
+                except Exception as gen_err:
+                    logger.warning(
+                        "[PODCAST] Generation failed for post %s "
+                        "(no gate row written; backfill will retry): %s",
+                        pid, gen_err,
+                    )
+                    return
+                if not (result and getattr(result, "success", False)):
+                    logger.warning(
+                        "[PODCAST] Generation returned non-success for %s; "
+                        "no gate row written", pid,
+                    )
+                    return
+                try:
+                    from services import media_approval_service
+                    _pool = (
+                        getattr(db_service, "cloud_pool", None)
+                        or db_service.pool
+                    )
+                    if _pool is None:
+                        logger.warning(
+                            "[PODCAST] no db pool to record approval gate "
+                            "for post %s — operator must insert manually",
+                            pid,
+                        )
+                        return
+                    async with _pool.acquire() as _conn:
+                        await media_approval_service.record_pending(
+                            _conn, pid, "podcast",
+                        )
+                except Exception as gate_err:
+                    logger.warning(
+                        "[PODCAST] gate insert failed for %s "
+                        "(file exists, no gate row): %s",
+                        pid, gate_err,
+                    )
+
             if background_tasks:
                 background_tasks.add_task(
-                    generate_podcast_episode, post_id, post_title, post_content,
-                    pre_generated_script=_pre_script,
+                    _gen_podcast_with_gate, post_id, post_title, post_content,
+                    _pre_script,
                 )
             else:
                 _spawn_background(
-                    generate_podcast_episode(post_id, post_title, post_content,
-                                            pre_generated_script=_pre_script),
+                    _gen_podcast_with_gate(post_id, post_title, post_content,
+                                          _pre_script),
                     name=f"podcast_episode({post_id})",
                 )
             logger.info("[PODCAST] Queued episode generation for post %s", post_id)

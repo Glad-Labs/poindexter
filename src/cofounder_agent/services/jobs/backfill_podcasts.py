@@ -104,6 +104,15 @@ class BackfillPodcastsJob:
             pass
 
         # Pass 2: generate new episodes.
+        # Re-open the cloud connection — it was closed at line 81 after
+        # the posts query so we don't sit on it during long generation.
+        # The approval-gate insert needs a connection at the END of each
+        # successful generation, so we acquire fresh per-episode and
+        # release immediately. This is a 4-hour-cadence backfill — the
+        # extra connect/disconnect cost is irrelevant compared to the
+        # ~30s per-episode generation latency.
+        from services import media_approval_service
+
         for post in posts:
             if svc.episode_exists(post["id"]):
                 continue
@@ -119,6 +128,29 @@ class BackfillPodcastsJob:
                         "[BACKFILL_PODCASTS] Generated podcast for: %s",
                         post["title"][:40],
                     )
+                    # Record the medium as awaiting approval before any
+                    # distribution surface (RSS feed, R2 upload) sees it.
+                    # Failure here MUST NOT block the R2 upload below —
+                    # the upload is durable storage of the file itself;
+                    # the gate just controls whether the file enters the
+                    # public feed. Worst case: file is on disk + R2 but
+                    # no row in media_approvals → operator can re-run
+                    # backfill to insert the row, or manually approve.
+                    try:
+                        approval_conn = await asyncpg.connect(cloud_url)
+                        try:
+                            await media_approval_service.record_pending(
+                                approval_conn, post["id"], "podcast",
+                            )
+                        finally:
+                            await approval_conn.close()
+                    except Exception as gate_err:
+                        logger.warning(
+                            "[BACKFILL_PODCASTS] media_approval insert "
+                            "failed for %s (file generated, gate row "
+                            "missing — re-run backfill to retry): %s",
+                            post["id"][:8], gate_err,
+                        )
                     # Upload the fresh episode to R2 too.
                     try:
                         from services.r2_upload_service import upload_podcast_episode
