@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.14.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.3...v0.14.4) (2026-05-28)
+
+
+### Bug Fixes
+
+* **security:** patch CVE-2026-48710 (Starlette BadHost auth bypass) ([#690](https://github.com/Glad-Labs/glad-labs-stack/issues/690)) ([e577055](https://github.com/Glad-Labs/glad-labs-stack/commit/e5770555a326c1dad843d1f30e1fb363544b6af5))
+
 ## [0.14.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.2...v0.14.3) (2026-05-28)
 
 
