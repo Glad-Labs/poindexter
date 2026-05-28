@@ -154,6 +154,17 @@ class PluginScheduler:
             replace_existing=True,
             coalesce=True,
             max_instances=1 if not getattr(job, "idempotent", False) else 3,
+            # APScheduler default misfire_grace_time=1 silently drops
+            # ``next_run_time=now()`` fires that land >1s past — which
+            # happens every time the worker restarts and a long-interval
+            # job's next fire was already in the past. ``None`` removes
+            # the grace deadline entirely, so missed fires execute on
+            # the next tick instead of being silently dropped.
+            # See ``feedback_apscheduler_misfire_grace_gotcha`` —
+            # `collapse_old_embeddings` had not fired in 30 days
+            # despite a 7-day interval because each worker restart
+            # silently dropped the catch-up.
+            misfire_grace_time=None,
         )
         self._registered.append(job.name)
         return True

@@ -680,7 +680,7 @@ class PodcastService:
     ) -> EpisodeResult:
         """Generate audio using edge-tts with a specific voice."""
         try:
-            import edge_tts
+            import edge_tts  # type: ignore[import-not-found]
         except ImportError:
             return EpisodeResult(
                 success=False,
