@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.14.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.1...v0.14.2) (2026-05-28)
+
+
+### Bug Fixes
+
+* **cost:** auto-log cost_logs row on every dispatch_complete call ([#681](https://github.com/Glad-Labs/glad-labs-stack/issues/681)) ([775168d](https://github.com/Glad-Labs/glad-labs-stack/commit/775168d50d85581f2630343488aa4c7a5fb4a170))
+* **dev_diary:** stop leaking private-repo URLs into published posts ([#680](https://github.com/Glad-Labs/glad-labs-stack/issues/680)) ([59f046d](https://github.com/Glad-Labs/glad-labs-stack/commit/59f046df71e230e25782629d60778079c7d545e8))
+
 ## [0.14.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.0...v0.14.1) (2026-05-28)
 
 
