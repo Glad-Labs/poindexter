@@ -110,7 +110,7 @@ Each call site in the codebase that selects a model now uses the resolve-tier-mo
 
 Per the Lane B inventory, several occurrences are deliberately NOT routed through `resolve_tier_model`:
 
-- **`task_executor.py:1362`** — `qwen3-coder:30b` for retry-writer adjustment. This is intent-based ("switch writers on retry"), not a tier choice. Migrated to a named setting (`task_executor_first_retry_writer_model`) instead.
+- **Retry-writer adjustment (was `task_executor.py:1362` pre-2026-05-16)** — `qwen3-coder:30b` for retry-writer adjustment. This is intent-based ("switch writers on retry"), not a tier choice. Migrated to a named setting (`task_executor_first_retry_writer_model`); the file itself was deleted in Prefect Stage 4 (2026-05-16) but the setting still drives the Prefect-side retry policy.
 - **Model-class detection sites** (5 sites doing `if "qwen3" in model.lower()`) — these branch on whether a model is a "thinking" model (produces `<think>...</think>` blocks). NOT a tier migration target. A separate `is_thinking_model` registry is on the deferred backlog.
 - **Reference / canonical-default tables** — `cost_guard.py` energy-per-1K-Wh table, `plugins/llm_providers/anthropic.py:_PER_MODEL_RATES`, `plugins/llm_providers/<name>.default_model`, `services/settings_defaults.py` seed defaults. Already overridable per-row via the existing `app_settings` paths; not fallback codepaths.
 

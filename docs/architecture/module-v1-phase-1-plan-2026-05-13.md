@@ -820,7 +820,7 @@ Run: `grep -n 'plugin\|Plugin\|registry' CLAUDE.md`
 Look for the "MCP Server" or "Plugin" section — there should be a list of cross-cutting infrastructure. If there isn't a clearly-right insertion point, add a one-line note under "Reference Documentation":
 
 ```markdown
-- **Module v1 (Glad-Labs/poindexter#490):** [`docs/architecture/module-v1.md`](docs/architecture/module-v1.md) — Phase 1 (Module Protocol + get_modules() registry) shipped 2026-MM-DD. The 20th entry-point group joins the existing 19 in `plugins/registry.py`.
+- **Module v1 (Glad-Labs/poindexter#490):** [`docs/architecture/module-v1.md`](./module-v1.md) — Phase 1 (Module Protocol + get_modules() registry) shipped 2026-MM-DD. The 20th entry-point group joins the existing 19 in `plugins/registry.py`.
 ```
 
 Replace `2026-MM-DD` with the actual date when committing.

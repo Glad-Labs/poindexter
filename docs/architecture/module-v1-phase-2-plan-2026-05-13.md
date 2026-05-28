@@ -929,13 +929,13 @@ Expected: `All checks passed!`.
 Find the existing Module v1 line (added in Phase 1) under "Reference Documentation":
 
 ```markdown
-- **Module v1 (Glad-Labs/poindexter#490):** [`docs/architecture/module-v1.md`](docs/architecture/module-v1.md) — Phase 1 (Module Protocol + `get_modules()` registry + manifest validation) shipped 2026-05-13. ...
+- **Module v1 (Glad-Labs/poindexter#490):** [`docs/architecture/module-v1.md`](./module-v1.md) — Phase 1 (Module Protocol + `get_modules()` registry + manifest validation) shipped 2026-05-13. ...
 ```
 
 Replace it with the Phase-2-aware version:
 
 ```markdown
-- **Module v1 (Glad-Labs/poindexter#490):** [`docs/architecture/module-v1.md`](docs/architecture/module-v1.md) — Phase 1 (Module Protocol + `get_modules()` registry + manifest validation) shipped 2026-05-13. Phase 2 (per-module migration runner + `module_schema_migrations` table + boot wiring) shipped 2026-05-13. Each Module bundles lower-level plugin contributions (stages / reviewers / probes / jobs / taps / adapters / providers / packs) plus DB migrations, Grafana panels, HTTP routes, and CLI subcommands. Phases 3-5 (ContentModule package, route/dashboard auto-discovery, visibility flag) get their own plans.
+- **Module v1 (Glad-Labs/poindexter#490):** [`docs/architecture/module-v1.md`](./module-v1.md) — Phase 1 (Module Protocol + `get_modules()` registry + manifest validation) shipped 2026-05-13. Phase 2 (per-module migration runner + `module_schema_migrations` table + boot wiring) shipped 2026-05-13. Each Module bundles lower-level plugin contributions (stages / reviewers / probes / jobs / taps / adapters / providers / packs) plus DB migrations, Grafana panels, HTTP routes, and CLI subcommands. Phases 3-5 (ContentModule package, route/dashboard auto-discovery, visibility flag) get their own plans.
 ```
 
 - [ ] **Step 4: Tick the Phase 2 checkbox on umbrella poindexter#490**

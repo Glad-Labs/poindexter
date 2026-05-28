@@ -724,8 +724,8 @@ If you see all three, your Module is live.
   shipped status, deferred phases
 - [Services reference](../reference/services) — catalog of every
   service in the worker
-- [Content pipeline](../architecture/content-pipeline) — how the
-  Stage chain fits together
+- [LangGraph cutover](../architecture/langgraph-cutover) — how the
+  Stage chain fits together as the `canonical_blog` template
 - [App settings reference](../reference/app-settings) — every
   DB-backed config key
 - [Database migrations convention](migrations.md) — Glad-Labs/poindexter#378

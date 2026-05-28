@@ -371,7 +371,7 @@ See [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md) for
 #### Main API (`main.py`)
 
 - FastAPI application
-- ~70 REST endpoints (see [API reference](../api/README) for the inventory)
+- ~70 REST endpoints (see [API reference](api/README) for the inventory)
 - Error handling and logging
 - CORS middleware
 - Request/response validation via Pydantic models

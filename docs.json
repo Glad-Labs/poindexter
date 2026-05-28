@@ -27,13 +27,21 @@
             "group": "Architecture",
             "pages": [
               "docs/ARCHITECTURE",
-              "docs/architecture/content-pipeline",
+              "docs/architecture/langgraph-cutover",
+              "docs/architecture/prefect-cutover",
               "docs/architecture/multi-agent-pipeline",
               "docs/architecture/anti-hallucination",
               "docs/architecture/database-schema",
               "docs/architecture/plugin-architecture",
-              "docs/architecture/declarative-data-plane-rfc-2026-04-24",
-              "docs/architecture/niches-and-rag-modes"
+              "docs/architecture/module-v1",
+              "docs/architecture/rag-retrieval-stack",
+              "docs/architecture/niches-and-rag-modes",
+              "docs/architecture/cost-tier-routing",
+              "docs/architecture/poindexter-as-engine",
+              "docs/architecture/prompt-management",
+              "docs/architecture/static-export-pipeline",
+              "docs/architecture/url-scraper-ssrf-guard",
+              "docs/architecture/worker-container-filesystem"
             ]
           },
           {
@@ -43,9 +51,11 @@
               "docs/architecture/services/content_validator",
               "docs/architecture/services/cost_guard",
               "docs/architecture/services/internal_link_coherence",
+              "docs/architecture/services/litellm_provider",
               "docs/architecture/services/model_router",
               "docs/architecture/services/multi_model_qa",
               "docs/architecture/services/newsletter_service",
+              "docs/architecture/services/prompt_manager",
               "docs/architecture/services/publish_service",
               "docs/architecture/services/qa_gates_db",
               "docs/architecture/services/quality_service",
@@ -53,21 +63,32 @@
               "docs/architecture/services/settings_service",
               "docs/architecture/services/site_config",
               "docs/architecture/services/social_poster",
-              "docs/architecture/services/topic_batch_service",
-              "docs/architecture/services/workflow_executor"
+              "docs/architecture/services/template_runner",
+              "docs/architecture/services/topic_batch_service"
             ]
           },
           {
             "group": "Operations",
             "pages": [
+              "docs/operations/local-development-setup",
+              "docs/operations/fresh-db-setup",
               "docs/operations/troubleshooting",
               "docs/operations/disaster-recovery",
               "docs/operations/incident-response",
+              "docs/operations/backups",
               "docs/operations/secret-rotation",
+              "docs/operations/oauth-grafana",
               "docs/operations/commit-signing",
               "docs/operations/ci-deploy-chain",
               "docs/operations/extending-poindexter",
-              "docs/operations/niche-topic-discovery-operator-guide"
+              "docs/operations/migrations",
+              "docs/operations/niche-topic-discovery-operator-guide",
+              "docs/operations/litellm-cutover-rollback",
+              "docs/operations/ports",
+              "docs/operations/voice-bridge",
+              "docs/operations/voice-stt-tts",
+              "docs/operations/claude-code-permissions",
+              "docs/operations/environment-variables"
             ]
           },
           {
@@ -77,11 +98,16 @@
               "docs/integrations/outbound_discord_post",
               "docs/integrations/outbound_telegram_post",
               "docs/integrations/outbound_vercel_isr",
+              "docs/integrations/publishing_bluesky",
+              "docs/integrations/publishing_mastodon",
               "docs/integrations/tap_builtin_topic_source",
               "docs/integrations/tap_external_metrics_writer",
               "docs/integrations/tap_singer_subprocess",
               "docs/integrations/retention_downsample",
               "docs/integrations/retention_ttl_prune",
+              "docs/integrations/webhook_alertmanager_dispatch",
+              "docs/integrations/webhook_revenue_event_writer",
+              "docs/integrations/webhook_subscriber_event_writer",
               "docs/integrations/setup-gsc-and-ga4"
             ]
           },

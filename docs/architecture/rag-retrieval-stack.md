@@ -84,11 +84,11 @@ the module imports cleanly without llama-index installed.
 `services/embeddings_db.py` as the wire-in spot. In practice the
 right seam is `MemoryClient.search` because it's already the
 shared call site for every consumer (research_context,
-brain_decisions retrieval, similarity dedup in task_executor,
-the operator's `recall_decision` MCP tool). Routing there once
-benefits everything; wiring at `embeddings_db.search_similar`
-would only catch the small subset that goes through the database
-service directly.
+brain_decisions retrieval, similarity dedup in the Prefect
+content-generation flow, the operator's `recall_decision` MCP
+tool). Routing there once benefits everything; wiring at
+`embeddings_db.search_similar` would only catch the small subset
+that goes through the database service directly.
 
 ## Activation runbook
 

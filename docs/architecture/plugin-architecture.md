@@ -265,7 +265,7 @@ Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Railway, Woodpecker
 
 - Bare `except Exception:` sweep (125 swallowing blocks across services + routes)
 - `memory_system.py` dead code (966 lines — pyproject.toml marks it superseded by pgvector)
-- `unified_orchestrator.py` + `task_executor.py` vs `content_router_service.py` — which is canonical? Resolve before Phase E.
+- ~~`unified_orchestrator.py` + `task_executor.py` vs `content_router_service.py`~~ — resolved 2026-05-16: Prefect Stage 4 deleted `task_executor.py` and `unified_orchestrator.py`; `content_router_service.py` is now a thin TemplateRunner dispatcher.
 - Routes decomposition (`task_publishing_routes.py` 1049 lines, `cms_routes.py` 959 lines)
 - 50-migration consolidation pass
 - Dependency license audit
