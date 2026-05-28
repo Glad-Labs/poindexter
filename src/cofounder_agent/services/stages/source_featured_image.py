@@ -246,11 +246,45 @@ class SourceFeaturedImageStage:
                 from services.image_style_rotation import ImageStyleTracker
                 style_tracker = ImageStyleTracker()
 
+            # Capture the chosen style on the version-row update AND emit
+            # an audit_log row so operators can verify rotation from
+            # Grafana (see Mission Control "Image style mix" panel —
+            # 2026-05-28). Per ``feedback_total_visibility``.
+            async def _on_style(style: str) -> None:
+                updates["image_style"] = style
+                db = context.get("database_service")
+                pool = getattr(db, "pool", None) if db else None
+                if pool is None:
+                    return
+                try:
+                    await pool.execute(
+                        "INSERT INTO audit_log (timestamp, event_type, source, "
+                        "task_id, details, severity) VALUES (now(), $1, $2, $3, $4::jsonb, $5)",
+                        "image_style_picked",
+                        "stages.source_featured_image",
+                        task_id,
+                        '{"style":"' + style.replace('"', '\\"') + '","topic":"' + topic.replace('"', '\\"')[:200] + '"}',
+                        "info",
+                    )
+                except Exception:  # noqa: BLE001 — telemetry only
+                    pass
+
+            def _on_style_picked_sync(s: str) -> None:
+                # The downstream API expects a sync callable. Schedule the
+                # audit_log emit as a fire-and-forget asyncio task so the
+                # render path stays non-blocking.
+                import asyncio
+                updates["image_style"] = s
+                try:
+                    asyncio.create_task(_on_style(s))
+                except RuntimeError:
+                    pass  # no running loop — tests/bootstrap
+
             sdxl_image = await _try_sdxl_featured(
                 topic=topic,
                 existing_prompt=context.get("featured_image_prompt", ""),
                 task_id=task_id,
-                on_style_picked=lambda s: updates.update({"image_style": s}),
+                on_style_picked=_on_style_picked_sync,
                 style_tracker=style_tracker,
                 site_config=site_config,
             )
