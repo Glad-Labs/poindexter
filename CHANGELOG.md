@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.14.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.2...v0.14.3) (2026-05-28)
+
+
+### Bug Fixes
+
+* **dev_diary:** carry over public-repo footer from PR [#631](https://github.com/Glad-Labs/glad-labs-stack/issues/631) to narrate_bundle ([#683](https://github.com/Glad-Labs/glad-labs-stack/issues/683)) ([a61f40e](https://github.com/Glad-Labs/glad-labs-stack/commit/a61f40eca0ca2569b6e3f7bf4e29d9d11fd30fbd))
+
 ## [0.14.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.1...v0.14.2) (2026-05-28)
 
 ### Bug Fixes
