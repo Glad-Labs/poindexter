@@ -161,6 +161,11 @@ _STRIP_FILES = (
     "infrastructure/grafana/dashboards/cost-analytics.json",
     "infrastructure/grafana/dashboards/infrastructure-data.json",
     "infrastructure/grafana/dashboards/link-registry.json",
+    # mission-control.json embeds the operator's Tailscale Funnel voice URL +
+    # other operator-specific dashboard links (Pyroscope, Loki, Tempo). It's
+    # the operator's top-level view and not part of the public Poindexter
+    # product surface.
+    "infrastructure/grafana/dashboards/mission-control.json",
     "infrastructure/grafana/dashboards/quality-content.json",
 )
 

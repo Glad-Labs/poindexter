@@ -199,6 +199,7 @@ git rm --cached --quiet infrastructure/grafana/dashboards/approval-queue.json 2>
 git rm --cached --quiet infrastructure/grafana/dashboards/cost-analytics.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/link-registry.json 2>/dev/null || true
+git rm --cached --quiet infrastructure/grafana/dashboards/mission-control.json 2>/dev/null || true   # embeds operator-only Tailscale Funnel voice URL + Pyroscope/Loki/Tempo links
 git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2>/dev/null || true
 
 # === Gitleaks baseline — SHIPPED to public mirror, NOT stripped ===
