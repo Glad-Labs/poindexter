@@ -12,7 +12,7 @@ A previous migration (``20260526_214206``) repointed
 right backend for the slideshow path. It wasn't. The result:
 every ``generate_video_for_post`` call has been 422'ing for ~a
 week (caught by the ``media_reconciliation:media_drift`` brain
-alert listing 4 specific posts missing videos — Glad-Labs/glad-labs-stack#649).
+alert listing 4 specific posts missing videos — Glad-Labs/poindexter#649).
 
 This migration repoints ``video_server_url`` back to ``:9837`` so
 the slideshow path renders again. The Wan 2.1 server stays
