@@ -92,6 +92,20 @@ FLOW_NAMES_DEFAULT = "content_generation"
 THRESHOLD_MINUTES_SETTING_KEY = "prefect_stuck_flow_threshold_minutes"
 THRESHOLD_MINUTES_DEFAULT = 30
 
+# Stranded-PENDING threshold. A flow that's been PENDING/Submitting
+# for more than a few minutes almost always means the worker died
+# between claiming and forking — the run holds the concurrency slot
+# forever and the work pool blocks. Captured 2026-05-25 → 2026-05-27:
+# smoky-chowchow sat PENDING for 50+ hours. See
+# Glad-Labs/poindexter#518. Typical submit completes in seconds;
+# 5min is conservative. Tune lower for tighter detection.
+PENDING_THRESHOLD_MINUTES_SETTING_KEY = "prefect_stuck_flow_pending_threshold_minutes"
+PENDING_THRESHOLD_MINUTES_DEFAULT = 5
+
+# State.type values the probe watches. PENDING covers Submitting +
+# any other PENDING sub-state names Prefect emits.
+WATCHED_STATE_TYPES: list[str] = ["RUNNING", "PENDING"]
+
 # Opt-in auto-remediation. When enabled, every detected stuck run gets
 # its state force-transitioned to CRASHED so subsequent scheduled runs
 # can dispatch immediately instead of waiting on operator intervention.
@@ -152,10 +166,11 @@ async def _read_bool(pool, key: str, default: bool) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_running_flow_runs(
-    client: Any, base_url: str, flow_names: list[str],
+async def _fetch_flow_runs_in_states(
+    client: Any, base_url: str, flow_names: list[str], state_types: list[str],
 ) -> list[dict[str, Any]]:
-    """POST ``/flow_runs/filter`` for RUNNING runs across the named flows.
+    """POST ``/flow_runs/filter`` for runs in the named states across
+    the named flows.
 
     Returns the raw list of run dicts. Prefect's filter accepts a flow
     name filter directly so we don't pull every running flow and post-
@@ -166,7 +181,7 @@ async def _fetch_running_flow_runs(
         "sort": "START_TIME_ASC",
         "limit": 50,
         "flow_runs": {
-            "state": {"type": {"any_": ["RUNNING"]}},
+            "state": {"type": {"any_": list(state_types)}},
         },
         "flows": {
             "name": {"any_": flow_names},
@@ -183,6 +198,12 @@ async def _fetch_running_flow_runs(
         )
         return []
     return resp.json() or []
+
+
+# Back-compat alias — keep the old name resolvable for any out-of-tree
+# importers (the brain daemon imports the high-level entry point, but
+# this helper has been around long enough to warrant a soft landing).
+_fetch_running_flow_runs = _fetch_flow_runs_in_states
 
 
 async def _crash_flow_run(
@@ -248,6 +269,28 @@ def _age_minutes(start_time_iso: str | None) -> int | None:
         start = start.replace(tzinfo=timezone.utc)
     delta = datetime.now(timezone.utc) - start
     return int(delta.total_seconds() // 60)
+
+
+def _run_age_minutes(run: dict[str, Any]) -> int | None:
+    """Pick the right timestamp for a run's "age in current state".
+
+    RUNNING runs have a ``start_time`` (set on the PENDING → RUNNING
+    transition), so we keep the existing semantics for back-compat.
+    PENDING runs never transitioned to RUNNING so ``start_time`` is
+    null; fall back to ``state.timestamp`` (when the run entered
+    PENDING) and finally ``created`` so we never silently skip.
+    """
+    state = run.get("state") or {}
+    state_type = state.get("type") or ""
+    if state_type == "RUNNING":
+        candidates = (run.get("start_time"), state.get("timestamp"), run.get("created"))
+    else:
+        candidates = (state.get("timestamp"), run.get("start_time"), run.get("created"))
+    for ts in candidates:
+        age = _age_minutes(ts)
+        if age is not None:
+            return age
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -330,9 +373,16 @@ async def run_prefect_stuck_flow_probe(
     if not flow_names:
         flow_names = [FLOW_NAMES_DEFAULT]
 
-    threshold_min = await _read_int(
+    running_threshold_min = await _read_int(
         pool, THRESHOLD_MINUTES_SETTING_KEY, THRESHOLD_MINUTES_DEFAULT,
     )
+    pending_threshold_min = await _read_int(
+        pool, PENDING_THRESHOLD_MINUTES_SETTING_KEY, PENDING_THRESHOLD_MINUTES_DEFAULT,
+    )
+    thresholds_by_state = {
+        "RUNNING": running_threshold_min,
+        "PENDING": pending_threshold_min,
+    }
     auto_crash = await _read_bool(pool, AUTO_CRASH_SETTING_KEY, False)
 
     timeout = httpx.Timeout(HTTP_READ_TIMEOUT_S, connect=HTTP_CONNECT_TIMEOUT_S)
@@ -353,23 +403,32 @@ async def run_prefect_stuck_flow_probe(
 
     try:
         async with client_cm as client:
-            running = await _fetch_running_flow_runs(client, base_url, flow_names)
-            seen = len(running)
+            watched = await _fetch_flow_runs_in_states(
+                client, base_url, flow_names, WATCHED_STATE_TYPES,
+            )
+            seen = len(watched)
 
-            for run in running:
+            for run in watched:
                 run_id = str(run.get("id") or "")
                 if not run_id:
                     continue
                 name = run.get("name") or "(unnamed)"
-                age = _age_minutes(run.get("start_time"))
-                if age is None or age < threshold_min:
+                state_type = (run.get("state") or {}).get("type") or "UNKNOWN"
+                threshold_for_state = thresholds_by_state.get(state_type)
+                if threshold_for_state is None:
+                    # Prefect returned a state we didn't ask for — skip
+                    # rather than apply a default that could surprise the
+                    # operator.
+                    continue
+                age = _run_age_minutes(run)
+                if age is None or age < threshold_for_state:
                     continue
 
                 # Detail string used in both notify_operator + audit_log.
                 detail = (
                     f"Prefect flow run '{name}' (id {run_id[:12]}…) has "
-                    f"been in state=RUNNING for {age} minutes — threshold "
-                    f"is {threshold_min}. While it holds the deployment's "
+                    f"been in state={state_type} for {age} minutes — threshold "
+                    f"is {threshold_for_state}. While it holds the deployment's "
                     f"slot, subsequent scheduled runs queue up and the "
                     f"content pipeline stays idle. Manual unstick: "
                     f"curl -X POST {base_url}/flow_runs/{run_id}/set_state "
@@ -379,6 +438,7 @@ async def run_prefect_stuck_flow_probe(
                 stuck_runs.append({
                     "id": run_id,
                     "name": name,
+                    "state": state_type,
                     "age_minutes": age,
                     "start_time": run.get("start_time"),
                 })
@@ -388,13 +448,13 @@ async def run_prefect_stuck_flow_probe(
                     "probe.prefect_stuck_flow_detected",
                     detail,
                     payload={
-                        "run_id": run_id, "name": name,
-                        "age_minutes": age, "threshold_minutes": threshold_min,
+                        "run_id": run_id, "name": name, "state": state_type,
+                        "age_minutes": age, "threshold_minutes": threshold_for_state,
                     },
                 )
 
                 notify_fn(
-                    title=f"Prefect flow stuck: {name} ({age}m)",
+                    title=f"Prefect flow stuck in {state_type}: {name} ({age}m)",
                     detail=detail,
                     source="brain.prefect_stuck_flow_probe",
                     severity="warning",
@@ -405,15 +465,24 @@ async def run_prefect_stuck_flow_probe(
                         client, base_url, run_id, age,
                     )
                     if crashed:
-                        crashed_runs.append({"id": run_id, "name": name, "age_minutes": age})
+                        crashed_runs.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
                         await _emit_audit_event(
                             pool,
                             "probe.prefect_stuck_flow_auto_crashed",
-                            f"Auto-crashed {name} ({run_id[:12]}…) after {age}m",
-                            payload={"run_id": run_id, "name": name, "age_minutes": age},
+                            f"Auto-crashed {name} ({run_id[:12]}…) in {state_type} after {age}m",
+                            payload={
+                                "run_id": run_id, "name": name,
+                                "state": state_type, "age_minutes": age,
+                            },
                         )
                     else:
-                        crash_failed.append({"id": run_id, "name": name, "age_minutes": age})
+                        crash_failed.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
     except Exception as exc:
         logger.warning(
             "[PREFECT_STUCK_FLOW] cycle raised: %s — returning unknown", exc,
@@ -430,8 +499,9 @@ async def run_prefect_stuck_flow_probe(
         "ok": True,
         "status": "ran",
         "detail": (
-            f"Scanned {seen} running flow(s); "
-            f"{len(stuck_runs)} stuck >= {threshold_min}m; "
+            f"Scanned {seen} watched flow(s); "
+            f"{len(stuck_runs)} stuck "
+            f"(RUNNING>={running_threshold_min}m, PENDING>={pending_threshold_min}m); "
             f"{len(crashed_runs)} auto-crashed; "
             f"{len(crash_failed)} crash failed"
         ),
@@ -458,14 +528,16 @@ class PrefectStuckFlowProbe:
     name: str = "prefect_stuck_flow"
     description: str = (
         "Detects Prefect content_generation flow runs stuck in state=RUNNING "
-        "beyond app_settings.prefect_stuck_flow_threshold_minutes (default 30m). "
-        "Pages on every stuck run and optionally auto-crashes when "
-        "prefect_stuck_flow_auto_crash=true so subsequent dispatches resume "
-        "without operator intervention."
+        "beyond app_settings.prefect_stuck_flow_threshold_minutes (default 30m) "
+        "or PENDING beyond app_settings.prefect_stuck_flow_pending_threshold_minutes "
+        "(default 5m). Pages on every stuck run and optionally auto-crashes "
+        "when prefect_stuck_flow_auto_crash=true so subsequent dispatches "
+        "resume without operator intervention."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
     async def check(self, pool, config):  # type: ignore[override]
+        del config  # settings come from pool/app_settings, not the probe registry config
         try:
             from probe_interface import ProbeResult
         except ImportError:  # pragma: no cover

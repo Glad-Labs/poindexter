@@ -2287,11 +2287,14 @@ async def run_cycle(pool):
 
     # Prefect stuck-flow probe — detects content_generation flow runs
     # stuck in state=RUNNING beyond prefect_stuck_flow_threshold_minutes
-    # (default 30). Captured 2026-05-26 after a stuck run held the
-    # dispatch slot for 35h and the pipeline went idle with no direct
-    # alert. Optionally auto-CRASHED stuck runs when the operator opts
-    # in via app_settings.prefect_stuck_flow_auto_crash=true. See
-    # brain/prefect_stuck_flow_probe.py.
+    # (default 30) OR stranded in state=PENDING beyond
+    # prefect_stuck_flow_pending_threshold_minutes (default 5).
+    # RUNNING capture: 2026-05-26, romantic-harrier sat 35h holding
+    # the dispatch slot. PENDING capture: 2026-05-25 → 2026-05-27,
+    # smoky-chowchow sat 50+h holding the work-pool concurrency slot
+    # (Glad-Labs/poindexter#518). Optionally auto-CRASHED stuck runs
+    # when the operator opts in via prefect_stuck_flow_auto_crash=true.
+    # See brain/prefect_stuck_flow_probe.py.
     if _HAS_PREFECT_STUCK_FLOW_PROBE:
         try:
             psf_summary = await run_prefect_stuck_flow_probe(pool)
