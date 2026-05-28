@@ -1347,39 +1347,5 @@ async def generate_with_context(
     return await _ollama_chat_json(prompt, model=model)
 
 
-async def generate_with_outline(
-    *, topic: str, outline: dict, snippets: list[dict],
-) -> str:
-    """Expand a structured outline into a full blog post draft.
-
-    Used by the STORY_SPINE writer mode after it preprocesses the top
-    snippets into a {hook, what_happened, why_it_matters, ...} skeleton.
-
-    Per-snippet length cap is operator-tunable via
-    ``writer_rag_context_snippet_max_chars``. Writer model is resolved
-    via the cost-tier API (Lane B sweep) — operators tune
-    ``app_settings.cost_tier.standard.model`` or the legacy
-    ``pipeline_writer_model`` per-call-site backstop.
-    """
-    from services.topic_ranking import _ollama_chat_json
-
-    snippet_max_chars = site_config.get_int(
-        "writer_rag_context_snippet_max_chars", 500,
-    )
-    model = await _resolve_rag_writer_model()
-    snippet_block = "\n".join(
-        f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
-        for s in snippets if s.get('snippet')
-    )
-    outline_block = "\n".join(f"{k.replace('_',' ').title()}: {v}" for k, v in outline.items())
-    prompt = get_prompt_manager().get_prompt(
-        "writer_rag_modes.story_spine.expand_prompt",
-        topic=topic,
-        outline_block=outline_block,
-        snippet_block=snippet_block,
-    )
-    return await _ollama_chat_json(prompt, model=model)
-
-
 if __name__ == "__main__":
     asyncio.run(test_generation())

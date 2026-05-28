@@ -85,7 +85,7 @@ async def test_create_applies_defaults_for_optional_kwargs(db_pool):
     assert n.active is True
     assert n.target_audience_tags == []
     assert n.writer_prompt_override is None
-    assert n.writer_rag_mode == "TOPIC_ONLY"
+    assert n.writer_rag_mode == "TWO_PASS"
     assert n.batch_size == 5
     assert n.discovery_cadence_minute_floor == 60
 

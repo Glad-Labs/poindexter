@@ -20,9 +20,7 @@ _VALID_GOAL_TYPES = frozenset({
     "REVENUE", "COMMUNITY", "NICHE_DEPTH",
 })
 
-_VALID_RAG_MODES = frozenset({
-    "TOPIC_ONLY", "CITATION_BUDGET", "STORY_SPINE", "TWO_PASS",
-})
+_VALID_RAG_MODES = frozenset({"TWO_PASS"})
 
 
 @dataclass(frozen=True)
@@ -64,7 +62,7 @@ class NicheService:
         self, *, slug: str, name: str,
         target_audience_tags: list[str] | None = None,
         writer_prompt_override: str | None = None,
-        writer_rag_mode: str = "TOPIC_ONLY",
+        writer_rag_mode: str = "TWO_PASS",
         batch_size: int = 5,
         discovery_cadence_minute_floor: int = 60,
     ) -> Niche:

@@ -29,43 +29,9 @@ def pm() -> UnifiedPromptManager:
     return UnifiedPromptManager()
 
 
-@pytest.mark.unit
-class TestStorySpineOutlinePrompt:
-    """Pins writer_rag_modes.story_spine.outline_prompt rendering."""
-
-    def test_key_present_in_registry(self, pm: UnifiedPromptManager):
-        assert "writer_rag_modes.story_spine.outline_prompt" in pm.prompts
-
-    def test_render_matches_inline_fallback(self, pm: UnifiedPromptManager):
-        from services.writer_rag_modes.story_spine import _OUTLINE_PROMPT_FALLBACK
-
-        kwargs = dict(
-            snippet_limit=15,
-            topic="FastAPI architecture",
-            angle="hard-won opinions",
-            snippet_block="snippet 1\n---\nsnippet 2",
-        )
-        rendered_yaml = pm.get_prompt(
-            "writer_rag_modes.story_spine.outline_prompt", **kwargs,
-        )
-        rendered_inline = _OUTLINE_PROMPT_FALLBACK.format(**kwargs)
-        assert rendered_yaml == rendered_inline
-
-    def test_render_includes_substituted_values(self, pm: UnifiedPromptManager):
-        rendered = pm.get_prompt(
-            "writer_rag_modes.story_spine.outline_prompt",
-            snippet_limit=12,
-            topic="Postgres tuning",
-            angle="for indie builders",
-            snippet_block="some context here",
-        )
-        assert "12 snippets" in rendered
-        assert "Postgres tuning" in rendered
-        assert "for indie builders" in rendered
-        assert "some context here" in rendered
-        # JSON shape preserved verbatim (curly literals not doubled in output).
-        assert '"hook"' in rendered
-        assert '"close"' in rendered
+# TestStorySpineOutlinePrompt deleted 2026-05-28 with the STORY_SPINE
+# writer mode itself. The two_pass mode is the only live writer mode;
+# its prompt tests live below.
 
 
 @pytest.mark.unit

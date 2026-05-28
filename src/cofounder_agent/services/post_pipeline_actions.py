@@ -170,40 +170,42 @@ async def _read_preview_token(database_service: Any, task_id: str) -> str | None
     return str(token)
 
 
-async def _bypass_curator_for_deterministic_compositor(
+async def _bypass_curator_for_dev_diary(
     database_service: Any, task_id: str, quality_score: float,
 ) -> bool:
-    """Return True when this task is a ``DETERMINISTIC_COMPOSITOR``
-    niche (e.g. ``dev_diary``) whose deterministic restatement of the
-    context bundle would be unfairly underrated by the LLM-tuned
-    quality scorer.
+    """Return True when this task is in the ``dev_diary`` niche.
 
-    Preserved verbatim from the inline block — the compositor produces
-    no creative writing, no hooks, no CTAs, so an LLM scorer flags
-    the footer as "truncated content" and rejects perfectly good
-    operator-visible posts. Operator review is the only gate for
-    these niches.
+    dev_diary posts are bundle-grounded narrative — the LLM-tuned
+    quality scorer rates them on writing-craft signals that don't fit
+    a build-in-public status report (no creative hook, no SEO CTA),
+    so an LLM scorer underrates perfectly good operator-visible posts.
+    Operator review is the only gate for this niche.
+
+    Before 2026-05-28 this bypass keyed off ``writer_rag_mode ==
+    'DETERMINISTIC_COMPOSITOR'`` — a sentinel that's no longer
+    meaningful (the compositor writer was deleted, dev_diary now runs
+    through ``atoms/narrate_bundle``). niche_slug is the durable seam.
     """
     pool = getattr(database_service, "pool", None)
     if pool is None:
         return False
     try:
         async with pool.acquire() as _conn:
-            wrm = await _conn.fetchval(
-                "SELECT writer_rag_mode FROM pipeline_tasks WHERE task_id = $1",
+            niche_slug = await _conn.fetchval(
+                "SELECT niche_slug FROM pipeline_tasks WHERE task_id = $1",
                 str(task_id),
             )
     except Exception as exc:  # noqa: BLE001 — defensive
         logger.warning(
-            "[POST_PIPELINE] curator-bypass writer_rag_mode lookup "
+            "[POST_PIPELINE] curator-bypass niche_slug lookup "
             "failed for %s — defaulting to bypass=False: %s",
             task_id, exc,
         )
         return False
-    if str(wrm or "").upper() == "DETERMINISTIC_COMPOSITOR":
+    if str(niche_slug or "").lower() == "dev_diary":
         logger.info(
-            "[CURATE] Bypassing auto-curator for DETERMINISTIC_COMPOSITOR "
-            "task %s (score=%.1f) — deterministic output, operator review only",
+            "[CURATE] Bypassing auto-curator for dev_diary task %s "
+            "(score=%.1f) — bundle-grounded narrative, operator review only",
             task_id, quality_score,
         )
         return True
@@ -250,7 +252,7 @@ async def _auto_curate(
         )
         min_score = float(_DEFAULT_MIN_CURATION_SCORE)
 
-    bypass = await _bypass_curator_for_deterministic_compositor(
+    bypass = await _bypass_curator_for_dev_diary(
         database_service, task_id, quality_score,
     )
     if bypass:

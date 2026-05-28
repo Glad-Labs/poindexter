@@ -10,26 +10,6 @@
 # Variables use {name} placeholders matched against str.format kwargs.
 # Curly literals inside JSON-shaped templates must be doubled: {{ and }}.
 
-- key: writer_rag_modes.story_spine.outline_prompt
-  category: blog_generation
-  description: "STORY_SPINE outline-stage prompt — reads top-N embeddings snippets and emits a structured JSON outline (hook / what_happened / why_it_matters / what_we_learned / close)."
-  output_format: json
-  template: |
-    Read these {snippet_limit} snippets from an AI-operated content business's records.
-    Produce a structured outline for a blog post about: "{topic}" (angle: "{angle}").
-
-    Outline format (return JSON):
-    {{
-      "hook": "<opening hook, one sentence>",
-      "what_happened": "<the timeline of events as drawn from snippets>",
-      "why_it_matters": "<the lesson or insight>",
-      "what_we_learned": "<concrete takeaways>",
-      "close": "<call-to-action or final framing>"
-    }}
-
-    Snippets:
-    {snippet_block}
-
 - key: writer_rag_modes.two_pass.revise_prompt
   category: blog_generation
   description: "TWO_PASS revision-stage prompt — rewrites a draft, substituting [EXTERNAL_NEEDED: ...] markers with the corresponding external facts."
@@ -60,18 +40,6 @@
 
     Return the full post body in Markdown.
 
-- key: writer_rag_modes.story_spine.expand_prompt
-  category: blog_generation
-  description: "STORY_SPINE expand-stage prompt — turns the structured outline (hook / what_happened / why_it_matters / what_we_learned / close) plus background snippets into a full blog draft. Sibling to writer_rag_modes.story_spine.outline_prompt which produces the outline."
-  output_format: markdown
-  template: |
-    Expand the following outline into a full blog post.
-
-    Topic: {topic}
-    Outline:
-    {outline_block}
-
-    Background snippets to draw on:
-    {snippet_block}
-
-    Return the full post body in Markdown.
+# story_spine.outline_prompt + story_spine.expand_prompt deleted
+# 2026-05-28 with the STORY_SPINE writer mode itself. Only the
+# two_pass + generic generate_with_context prompts remain.

@@ -306,15 +306,18 @@ class TestAutoCurator:
         assert len(reject_calls) == 0
 
     @pytest.mark.asyncio
-    async def test_bypasses_deterministic_compositor(self):
-        """``DETERMINISTIC_COMPOSITOR`` niches (e.g. dev_diary) bypass
-        the auto-curator entirely. The deterministic restatement of the
-        context bundle is intentionally lower-scored by the LLM QA but
-        is the operator-intended output."""
+    async def test_bypasses_dev_diary_niche(self):
+        """``dev_diary`` niche tasks bypass the auto-curator entirely.
+
+        Bundle-grounded narrative is intentionally lower-scored by the
+        LLM QA (no SEO hook, no creative CTA) but is the operator-
+        intended output. 2026-05-28: bypass keys off niche_slug now
+        (previously keyed off the now-deleted DETERMINISTIC_COMPOSITOR
+        writer_rag_mode sentinel)."""
         from services.post_pipeline_actions import run_post_pipeline_actions
 
-        # writer_rag_mode='DETERMINISTIC_COMPOSITOR' — fetchval returns it
-        pool, conn = _make_pool(fetchval_return="DETERMINISTIC_COMPOSITOR")
+        # niche_slug='dev_diary' — fetchval returns it
+        pool, conn = _make_pool(fetchval_return="dev_diary")
         db = _make_db_service(pool=pool)
         site = _make_site_config()
         settings = _make_settings_service(values={"min_curation_score": "70"})

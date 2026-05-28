@@ -142,12 +142,8 @@ DEFAULTS: dict[str, str] = {
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     'rag_rrf_k': '60',
     'rag_source_filter': '',
-    'writer_rag_citation_budget_snippet_limit': '12',
     'writer_rag_context_snippet_max_chars': '500',
     'writer_rag_research_topic_max_sources': '2',
-    'writer_rag_story_spine_snippet_limit': '15',
-    'writer_rag_story_spine_snippet_max_chars': '600',
-    'writer_rag_topic_only_snippet_limit': '8',
     'writer_rag_two_pass_research_max_sources': '2',
     'writer_rag_two_pass_snippet_limit': '20',
 

@@ -37,10 +37,12 @@ class TestDevDiaryNicheSeed:
         assert row["slug"] == "dev_diary"
         assert row["name"] == "Dev Diary"
         assert row["writer_prompt_override"] is not None
-        # dev_diary switched from TWO_PASS to a zero-LLM compositor in
-        # 2026-05-04 (see project_dev_diary_compositor memory). The seed
-        # in 0000_baseline.seeds.sql captures the post-switch state.
-        assert row["writer_rag_mode"] == "DETERMINISTIC_COMPOSITOR"
+        # dev_diary doesn't use the writer_rag_mode dispatcher at all —
+        # its template runs through atoms/narrate_bundle directly,
+        # skipping generate_content. The 2026-05-28 cleanup retired
+        # DETERMINISTIC_COMPOSITOR (the prior sentinel value) and made
+        # the column nullable for niches that don't use the dispatcher.
+        assert row["writer_rag_mode"] is None
         assert row["discovery_cadence_minute_floor"] == 1440  # daily
         assert row["batch_size"] == 1
         assert row["active"] is True
