@@ -168,7 +168,14 @@ def test_alias_table_covers_every_known_inline_reviewer():
     """Documentation-as-test: when a new inline reviewer ships, this
     test forces the implementer to either add it to the alias table
     (if it has a qa_gates row) or to the explicit allow-list of
-    reviewers that intentionally lack a row."""
+    reviewers that intentionally lack a row.
+
+    2026-05-27: the assertion list was bare ("programmatic_validator",
+    "ollama_critic") which let the deepeval/guardrails/ragas reviewers
+    fall through without forcing a writer update. Every known inline
+    reviewer that ships a qa_gates row is now pinned here so a future
+    reviewer can't silently regress to `total_runs=0`.
+    """
     inline_reviewers_with_row = set(_REVIEWER_TO_GATE)
     inline_reviewers_without_row = {
         # Hardcoded-stage gates with no qa_gates row by design:
@@ -180,5 +187,61 @@ def test_alias_table_covers_every_known_inline_reviewer():
     # If you trip this assertion, either:
     #   (a) add the reviewer name + gate name to _REVIEWER_TO_GATE, OR
     #   (b) add the name to inline_reviewers_without_row above.
-    assert "programmatic_validator" in documented
-    assert "ollama_critic" in documented
+    must_be_documented = {
+        # Hardcoded gates seeded in 0000_baseline + the qa_gates seed
+        # migrations. Every one of these emits a ReviewerResult; if
+        # the gate row is to track total_runs accurately the writer
+        # MUST know about the alias.
+        "programmatic_validator",
+        "ollama_critic",
+        "internal_consistency",
+        "image_relevance",
+        "web_factcheck",
+        "url_verifier",
+        # Lane D #329 OSS rails — migrations 20260510_022034,
+        # 20260510_030530, 20260510_032959. The reviewers ship in
+        # multi_model_qa.py; missing entries here = the gates ran but
+        # the operator dashboard showed last_run_at=NEVER. Discovered
+        # 2026-05-27.
+        "deepeval_brand_fabrication",
+        "deepeval_g_eval",
+        "deepeval_faithfulness",
+        "guardrails_brand",
+        "guardrails_competitor",
+        "ragas_eval",
+    }
+    missing = must_be_documented - documented
+    assert not missing, (
+        f"qa_gates_db_writer._REVIEWER_TO_GATE is missing aliases for "
+        f"{sorted(missing)!r}. Either add them to _REVIEWER_TO_GATE so "
+        f"record_chain_run() bumps the gate counters, or add them to "
+        f"inline_reviewers_without_row above if they intentionally "
+        f"have no qa_gates row."
+    )
+
+
+@pytest.mark.asyncio
+async def test_new_oss_rails_bump_their_gate_counters():
+    """Regression test for the 2026-05-27 silent-skip discovery: the
+    deepeval/guardrails/ragas reviewers were producing ReviewerResults
+    on every QA pass but record_chain_run was silently dropping them
+    because their names weren't in _REVIEWER_TO_GATE. Pin the wiring
+    so the bug can't reappear."""
+    pool = _FakePool()
+    await record_chain_run(pool, [
+        _Review("deepeval_g_eval", approved=True, advisory=True),
+        _Review("deepeval_faithfulness", approved=True, advisory=True),
+        _Review("deepeval_brand_fabrication", approved=True, advisory=True),
+        _Review("guardrails_brand", approved=True, advisory=True),
+        _Review("guardrails_competitor", approved=True, advisory=True),
+        _Review("ragas_eval", approved=True, advisory=True),
+    ])
+    bumped_gates = {args[0] for _, args in pool.executes}
+    assert bumped_gates == {
+        "deepeval_g_eval",
+        "deepeval_faithfulness",
+        "deepeval_brand_fabrication",
+        "guardrails_brand",
+        "guardrails_competitor",
+        "ragas_eval",
+    }

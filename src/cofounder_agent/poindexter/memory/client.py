@@ -722,6 +722,45 @@ class MemoryClient:
             return False
         return str(row["value"] or "").strip().lower() in ("true", "1", "yes", "on")
 
+    async def _rag_extras_flags(self) -> tuple[bool, bool]:
+        """Return ``(hybrid_enabled, rerank_enabled)`` from app_settings.
+
+        2026-05-27 — added because ``_search_via_rag_engine`` was calling
+        ``get_rag_retriever`` without passing ``site_config``, which made
+        the retriever fall into its tests/bootstrap default branch where
+        ``hybrid`` and ``rerank`` are forced ``False``. Net effect: even
+        with ``rag_engine_enabled=true`` AND ``rag_hybrid_enabled=true``
+        AND ``rag_rerank_enabled=true`` in app_settings (the prod state
+        per CLAUDE.md from 2026-05-16), the LlamaIndex retriever ran
+        vector-only — the BM25+RRF and cross-encoder rerank wrappers
+        were dormant code. This was the "hybrid+rerank wiring is in
+        flight" footnote on the rag_engine row in CLAUDE.md's services
+        table.
+
+        Read directly through the pool (same shape as
+        ``_rag_engine_enabled``) so MemoryClient stays standalone — it
+        doesn't have a SiteConfig wired in like the FastAPI worker does.
+        Best-effort: any read failure returns ``(False, False)`` and the
+        retriever runs vector-only — same behavior as before this fix,
+        which is the safe degrade.
+        """
+        try:
+            pool = await self._require_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT key, value FROM app_settings "
+                    "WHERE key IN ('rag_hybrid_enabled', 'rag_rerank_enabled') "
+                    "AND is_active = true"
+                )
+        except Exception:
+            return (False, False)
+        values = {r["key"]: str(r["value"] or "").strip().lower() for r in rows}
+        truthy = ("true", "1", "yes", "on")
+        return (
+            values.get("rag_hybrid_enabled", "") in truthy,
+            values.get("rag_rerank_enabled", "") in truthy,
+        )
+
     async def _search_via_rag_engine(
         self,
         query: str,
@@ -740,11 +779,21 @@ class MemoryClient:
         from services.rag_engine import get_rag_retriever
 
         pool = await self._require_pool()
+        # 2026-05-27: explicitly pass `hybrid` + `rerank` so the retriever
+        # honors the operator's app_settings flags. Without these,
+        # get_rag_retriever falls into its "site_config is None" branch
+        # where both default to False — even with the master switch on,
+        # the BM25+RRF and cross-encoder rerank wrappers would never
+        # instantiate. The wrappers themselves have been wired since
+        # 2026-05-10; only this call site was missing the flag pass.
+        hybrid, rerank = await self._rag_extras_flags()
         retriever = await get_rag_retriever(
             pool,
             top_k=limit,
             min_similarity=min_similarity,
             source_filter=[source_table] if source_table else None,
+            hybrid=hybrid,
+            rerank=rerank,
         )
         nodes = await retriever.aretrieve(query)
 

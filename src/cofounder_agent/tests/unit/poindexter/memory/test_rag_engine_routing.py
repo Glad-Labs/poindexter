@@ -315,3 +315,140 @@ class TestRagEngineHitConversion:
         assert kwargs["source_filter"] == ["posts"]
         assert kwargs["min_similarity"] == 0.5
         assert kwargs["top_k"] == 10
+
+
+# ---------------------------------------------------------------------------
+# 2026-05-27 — hybrid+rerank flag propagation tests
+#
+# Background: until 2026-05-27, `_search_via_rag_engine` called
+# `get_rag_retriever(pool, top_k=..., ...)` WITHOUT passing the
+# `site_config` arg or explicit `hybrid` / `rerank` flags. The factory
+# then fell into its "no site_config" branch and forced both flags
+# to False — even on prod where `rag_engine_enabled=true` AND
+# `rag_hybrid_enabled=true` AND `rag_rerank_enabled=true` were all
+# set. The BM25+RRF and cross-encoder rerank wrappers shipped 2026-05-10
+# but never instantiated in production. The fix: read the flags directly
+# from app_settings inside MemoryClient and pass them explicitly.
+# ---------------------------------------------------------------------------
+
+
+class _FakePoolWithMultiSettings:
+    """Like _FakePoolWithSetting but returns multiple key/value pairs.
+
+    Used to exercise `_rag_extras_flags`, which reads two rows
+    (rag_hybrid_enabled + rag_rerank_enabled) in a single SELECT.
+    """
+
+    def __init__(self, values: dict[str, str]):
+        self._values = values
+
+    def acquire(self):
+        outer = self
+
+        class _Conn:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *_a):
+                return False
+
+            async def fetchrow(self_inner, sql, *_args):
+                if "rag_engine_enabled" in sql:
+                    v = outer._values.get("rag_engine_enabled")
+                    return {"value": v} if v is not None else None
+                return None
+
+            async def fetch(self_inner, sql, *_args):
+                # The extras read selects both hybrid + rerank rows.
+                if "rag_hybrid_enabled" in sql or "rag_rerank_enabled" in sql:
+                    return [
+                        {"key": k, "value": v}
+                        for k, v in outer._values.items()
+                        if k in ("rag_hybrid_enabled", "rag_rerank_enabled")
+                    ]
+                return []
+
+        return _Conn()
+
+
+@pytest.mark.unit
+class TestRagExtrasFlagsRead:
+    """`_rag_extras_flags` returns (hybrid_enabled, rerank_enabled) from
+    app_settings. Both default False when unset — same safe-degrade
+    as the rest of the rag_engine machinery."""
+
+    @pytest.mark.asyncio
+    async def test_both_true(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_hybrid_enabled": "true",
+            "rag_rerank_enabled": "true",
+        }))
+        assert await client._rag_extras_flags() == (True, True)
+
+    @pytest.mark.asyncio
+    async def test_hybrid_only(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_hybrid_enabled": "true",
+            "rag_rerank_enabled": "false",
+        }))
+        assert await client._rag_extras_flags() == (True, False)
+
+    @pytest.mark.asyncio
+    async def test_rerank_only(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_hybrid_enabled": "false",
+            "rag_rerank_enabled": "true",
+        }))
+        assert await client._rag_extras_flags() == (False, True)
+
+    @pytest.mark.asyncio
+    async def test_both_missing_defaults_false(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({}))
+        assert await client._rag_extras_flags() == (False, False)
+
+
+@pytest.mark.unit
+class TestExtrasFlagsThreadedIntoRetriever:
+    """End-to-end: when prod has all three RAG flags on, the retriever
+    factory MUST receive hybrid=True + rerank=True. Pre-2026-05-27 this
+    silently defaulted to False because the call site didn't pass them."""
+
+    @pytest.mark.asyncio
+    async def test_hybrid_and_rerank_flags_propagate(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_engine_enabled": "true",
+            "rag_hybrid_enabled": "true",
+            "rag_rerank_enabled": "true",
+        }))
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
+        get_mock = AsyncMock(return_value=retriever)
+        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+            await client._search_via_rag_engine(
+                "query",
+                source_table=None,
+                min_similarity=0.0,
+                limit=5,
+            )
+        kwargs = get_mock.call_args.kwargs
+        assert kwargs["hybrid"] is True
+        assert kwargs["rerank"] is True
+
+    @pytest.mark.asyncio
+    async def test_extras_off_when_settings_say_off(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_engine_enabled": "true",
+            "rag_hybrid_enabled": "false",
+            "rag_rerank_enabled": "false",
+        }))
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
+        get_mock = AsyncMock(return_value=retriever)
+        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+            await client._search_via_rag_engine(
+                "query",
+                source_table=None,
+                min_similarity=0.0,
+                limit=5,
+            )
+        kwargs = get_mock.call_args.kwargs
+        assert kwargs["hybrid"] is False
+        assert kwargs["rerank"] is False

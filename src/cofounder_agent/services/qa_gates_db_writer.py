@@ -44,6 +44,21 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     "url_verifier": "url_verifier",
     "web_factcheck": "web_factcheck",
     "deepeval_brand_fabrication": "deepeval_brand_fabrication",
+    # 2026-05-27 fix — these five gates were seeded in migrations
+    # 20260510_022034 / 20260510_030530 / 20260510_032959 but never
+    # added to this mapping. Result: every QA pass ran the reviewer,
+    # produced a ReviewerResult, fed the score into the weighted
+    # average — but record_chain_run() silently dropped the row
+    # because the reviewer name had no gate alias. Operator dashboard
+    # showed `total_runs=0` for ~17 days. The reviewer names match
+    # the gate names exactly (no historic divergence to preserve), so
+    # the mapping is identity. Test coverage added below in
+    # test_alias_table_covers_every_known_inline_reviewer.
+    "deepeval_g_eval": "deepeval_g_eval",
+    "deepeval_faithfulness": "deepeval_faithfulness",
+    "guardrails_brand": "guardrails_brand",
+    "guardrails_competitor": "guardrails_competitor",
+    "ragas_eval": "ragas_eval",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",
