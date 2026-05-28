@@ -45,18 +45,26 @@ class _FakeAcquireCM:
     async def __aenter__(self):
         if self._pool._raise:
             raise RuntimeError("connection pool exploded")
-        return _FakeConn(self._pool._setting_value)
+        return _FakeConn(
+            self._pool._setting_value,
+            executions=getattr(self._pool, "_executions", None),
+        )
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
 
 class _FakeConn:
-    def __init__(self, setting_value: str | None):
+    def __init__(self, setting_value: str | None, executions: list | None = None):
         self._setting_value = setting_value
+        self._executions = executions
 
     async def fetchval(self, _query: str, _key: str):
         return self._setting_value
+
+    async def execute(self, query: str, *args):
+        if self._executions is not None:
+            self._executions.append((query, args))
 
 
 class _FakeProvider:
@@ -293,3 +301,131 @@ class TestDispatchEmbed:
         with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             with pytest.raises(RuntimeError, match="embed down"):
                 await dispatcher.dispatch_embed(pool, text="hello", model="m")
+
+
+# ---------------------------------------------------------------------------
+# dispatch_complete auto-logging to cost_logs
+# ---------------------------------------------------------------------------
+
+
+def _make_logging_pool(setting_value: str = "ollama_native") -> tuple[_FakePool, list]:
+    """Pool that records every conn.execute(...) call in `executions`."""
+    executions: list = []
+    pool = _FakePool(setting_value=setting_value)
+    pool._executions = executions  # noqa: SLF001 — test fixture
+    return pool, executions
+
+
+@pytest.mark.unit
+class TestDispatchCompleteAutoLog:
+    """The dispatcher auto-writes a cost_logs row for every call.
+
+    Closes the cost-capture gap where 11 of 13 dispatch_complete callers
+    (atoms, topic_ranking, media-script generators, etc.) never logged.
+    Only cross_model_qa + generate_content explicitly logged before;
+    everything else was invisible to cost dashboards.
+    """
+
+    async def test_happy_path_writes_cost_log_row(self):
+        pool, executions = _make_logging_pool()
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult(
+            prompt_tokens=12, completion_tokens=34,
+        )
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+                task_id="task-abc",
+                phase="atom.narrate_bundle",
+            )
+        # One INSERT INTO cost_logs row.
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        assert len(cost_inserts) == 1, executions
+        query, args = cost_inserts[0]
+        # Args: task_id, phase, model, provider, in, out, total, cost_usd,
+        # cost_type, duration_ms, success, error
+        assert args[0] == "task-abc"
+        assert args[1] == "atom.narrate_bundle"
+        assert args[2] == "gemma3:27b"
+        assert args[3] == "ollama_native"
+        assert args[4] == 12   # input_tokens
+        assert args[5] == 34   # output_tokens
+        assert args[7] == 0.0  # cost_usd (no response_cost on raw)
+        assert args[8] == "inference"
+        assert args[10] is True   # success
+        assert args[11] is None   # error
+
+    async def test_response_cost_from_raw_populates_cost_usd(self):
+        pool, executions = _make_logging_pool(setting_value="litellm")
+        provider = _FakeProvider(name="litellm")
+        result = _FakeCompletionResult(prompt_tokens=100, completion_tokens=50)
+        result.raw = {"response_cost": 0.000123}  # type: ignore[attr-defined]
+        provider.complete.return_value = result
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool, messages=[{"role": "user", "content": "hi"}],
+                model="claude-3-haiku-20240307",
+            )
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        assert len(cost_inserts) == 1
+        # cost_usd is at index 7.
+        assert cost_inserts[0][1][7] == 0.000123
+        assert cost_inserts[0][1][3] == "litellm"
+
+    async def test_phase_defaults_to_dispatch_complete_when_not_supplied(self):
+        pool, executions = _make_logging_pool()
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult()
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool, messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+            )
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        assert len(cost_inserts) == 1
+        assert cost_inserts[0][1][1] == "dispatch_complete"
+        assert cost_inserts[0][1][0] is None  # task_id
+
+    async def test_failure_path_writes_failure_row_then_reraises(self):
+        pool, executions = _make_logging_pool()
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.side_effect = RuntimeError("upstream timeout")
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            with pytest.raises(RuntimeError, match="upstream timeout"):
+                await dispatcher.dispatch_complete(
+                    pool, messages=[{"role": "user", "content": "hi"}],
+                    model="gemma3:27b", task_id="t1", phase="atom.X",
+                )
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        assert len(cost_inserts) == 1
+        args = cost_inserts[0][1]
+        assert args[10] is False  # success
+        assert "upstream timeout" in (args[11] or "")  # error_message
+        assert args[7] == 0.0  # cost_usd
+
+    async def test_log_write_failure_does_not_break_call(self):
+        # Pool whose execute() raises — auto-log must swallow it.
+        pool = _FakePool(setting_value="ollama_native")
+        # Acquire a conn whose execute throws.
+        class _BrokenConn:
+            async def fetchval(self, *_a, **_k):
+                return "ollama_native"
+            async def execute(self, *_a, **_k):
+                raise RuntimeError("disk full")
+        class _BrokenCM:
+            async def __aenter__(self_inner):
+                return _BrokenConn()
+            async def __aexit__(self_inner, *_a):
+                return False
+        pool.acquire = lambda: _BrokenCM()  # type: ignore[method-assign]
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult(prompt_tokens=1)
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            # The call must still return — auto-log failure is observability-only.
+            result = await dispatcher.dispatch_complete(
+                pool, messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+            )
+        assert result.prompt_tokens == 1

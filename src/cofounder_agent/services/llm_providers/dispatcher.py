@@ -49,6 +49,7 @@ flow:
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from plugins.config import PluginConfig
@@ -203,6 +204,9 @@ async def dispatch_complete(
     messages: list[dict[str, str]],
     model: str,
     tier: str = "standard",
+    *,
+    task_id: str | None = None,
+    phase: str = "dispatch_complete",
     **kwargs: Any,
 ) -> Any:
     """One-shot ``complete`` call using the tier's configured provider.
@@ -210,11 +214,23 @@ async def dispatch_complete(
     Convenience wrapper that combines ``get_provider`` +
     ``get_provider_config`` + ``provider.complete``. New call sites
     should use this instead of importing OllamaClient directly.
+
+    On success, writes a row to ``cost_logs`` so every LLM call routed
+    through the dispatcher shows up in cost accounting. Callers can
+    supply ``task_id`` + ``phase`` for richer attribution; missing
+    values fall back to ``None`` / ``"dispatch_complete"`` so historical
+    callers don't need to be updated. The write is best-effort — a
+    failure never breaks the call path.
     """
     with _tracer.start_as_current_span("llm.dispatch_complete") as span:
         span.set_attribute("llm.tier", tier)
         span.set_attribute("llm.model", model)
         span.set_attribute("llm.messages.count", len(messages))
+        if task_id:
+            span.set_attribute("llm.task_id", task_id)
+        span.set_attribute("llm.phase", phase)
+        started = time.monotonic()
+        provider = None
         try:
             provider = await get_provider(pool, tier)
             span.set_attribute("llm.provider.name", provider.name)
@@ -230,10 +246,106 @@ async def dispatch_complete(
             finish = getattr(result, "finish_reason", "")
             if finish:
                 span.set_attribute("llm.finish_reason", finish)
+            duration_ms = int((time.monotonic() - started) * 1000)
+            await _record_dispatch_cost(
+                pool=pool,
+                provider=provider,
+                model=model,
+                result=result,
+                task_id=task_id,
+                phase=phase,
+                duration_ms=duration_ms,
+                success=True,
+            )
             return result
         except Exception as exc:
             span.record_exception(exc)
+            # Log a failure row too so cost-tracking dashboards see
+            # the call attempt — important for understanding how often
+            # paid providers are failing closed vs swallowing budget.
+            duration_ms = int((time.monotonic() - started) * 1000)
+            await _record_dispatch_cost(
+                pool=pool,
+                provider=provider,
+                model=model,
+                result=None,
+                task_id=task_id,
+                phase=phase,
+                duration_ms=duration_ms,
+                success=False,
+                error=str(exc)[:300],
+            )
             raise
+
+
+async def _record_dispatch_cost(
+    *,
+    pool: Any,
+    provider: Any,
+    model: str,
+    result: Any,
+    task_id: str | None,
+    phase: str,
+    duration_ms: int,
+    success: bool,
+    error: str | None = None,
+) -> None:
+    """Write a cost_logs row for the dispatch_complete call.
+
+    Best-effort — never raises out of the call path. Uses LiteLLM's
+    ``response_cost`` when present (the litellm provider stamps it on
+    ``result.raw``); falls back to 0.0 for providers that don't report
+    cost (e.g., a pure local Ollama path with no LiteLLM cost table).
+
+    The 0.0 fallback matters: a row with provider='ollama', cost_usd=0.0
+    still tells morning_brief + Grafana "we made a local call" — without
+    it, local volume is invisible. Electricity attribution happens via
+    the separate ``electricity`` provider rows written by
+    ``services.jobs.update_utility_rates``.
+    """
+    if pool is None:
+        return
+    try:
+        provider_name = getattr(provider, "name", "unknown") if provider else "unknown"
+        raw: dict[str, Any] = getattr(result, "raw", {}) or {} if result is not None else {}
+        # LiteLLM stamps response_cost on the response when it knows the
+        # model. For pure-local Ollama paths the field is absent — record
+        # 0.0 so the row still shows up in volume counts.
+        cost_usd = 0.0
+        rc = raw.get("response_cost") if isinstance(raw, dict) else None
+        if rc is not None:
+            try:
+                cost_usd = float(rc)
+            except (TypeError, ValueError):
+                cost_usd = 0.0
+        prompt_tokens = int(getattr(result, "prompt_tokens", 0) or 0) if result is not None else 0
+        completion_tokens = int(getattr(result, "completion_tokens", 0) or 0) if result is not None else 0
+        total_tokens = int(getattr(result, "total_tokens", 0) or 0) if result is not None else 0
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO cost_logs (
+                    task_id, phase, model, provider,
+                    input_tokens, output_tokens, total_tokens,
+                    cost_usd, cost_type, duration_ms, success,
+                    error_message, created_at, updated_at
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()
+                )
+                """,
+                task_id, phase, model, provider_name,
+                prompt_tokens, completion_tokens, total_tokens,
+                cost_usd, "inference", duration_ms, success,
+                error,
+            )
+    except Exception as e:
+        # Demote to debug so we don't pollute logs on every call when
+        # something's structurally wrong (schema drift, pool exhausted).
+        # The cost_log_write_failed audit_log path is reserved for
+        # cost_guard.record; the dispatcher's auto-log is additive
+        # observability and not load-bearing for budget enforcement.
+        logger.debug("dispatcher: cost_logs auto-write skipped: %s", e)
 
 
 async def dispatch_embed(
