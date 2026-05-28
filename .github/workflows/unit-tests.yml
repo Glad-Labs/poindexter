@@ -8,6 +8,13 @@
 # Splits unit tests by directory (matches the Gitea split) so cross-directory
 # singleton pollution (ServiceContainer, site_config, etc.) doesn't make
 # tests flaky. Services dir uses --forked for the same reason.
+#
+# The job ALWAYS triggers (branch protection requires this status check —
+# a `paths:` filter that prevents the workflow from running would block
+# every docs-only PR forever, see migrations-smoke.yml for the same
+# reasoning). Instead, a `detect-changes` step gates the heavy install +
+# pytest steps on whether any backend code actually changed. Docs-only
+# PRs land the required check in ~30s; backend PRs run the full suite.
 name: unit-tests
 
 on:
@@ -36,36 +43,117 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
         with:
-          fetch-depth: 1
+          # Need >=2 so `git diff` against the previous commit works on
+          # push events. For PRs, the detect-changes step additionally
+          # fetches the base sha. Keeping the checkout shallow keeps the
+          # short-circuit path (docs-only PR) fast.
+          fetch-depth: 2
+
+      - name: Detect whether this change touches tested code
+        id: changes
+        # Skip the 9-14 minute pytest run when the diff has no backend
+        # code or poetry changes — docs-only PRs, infra-yaml-only PRs,
+        # marketing-site PRs, etc. We keep the workflow trigger
+        # unconditional (branch protection requires it as a status check)
+        # and gate the install + pytest steps below on
+        # `needs_tests == 'true'`. SKIPPED steps inside a SUCCESS job
+        # still satisfy the required-check contract.
+        #
+        # Falls open: any state we can't classify (manual dispatch,
+        # initial push, missing base sha, fetch failure) runs the full
+        # suite. Better a wasted run than a silently-skipped regression.
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — running full suite."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$PR_BASE"
+          else
+            base="$PUSH_BEFORE"
+          fi
+
+          # Empty / all-zero base = initial push or unknown — be safe.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "No usable base sha — running full suite."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fetch the base sha if the shallow checkout above didn't include it.
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            if ! git fetch --no-tags --depth=1 origin "$base" 2>/dev/null; then
+              echo "Could not fetch base sha $base — running full suite."
+              echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          changed=$(git diff --name-only "$base" HEAD)
+          echo "Files changed vs $base:"
+          echo "$changed" | sed 's/^/  /'
+
+          # `src/cofounder_agent/**` covers all Python code, tests,
+          # pyproject.toml, and poetry.lock — the whole testable surface.
+          # `.github/workflows/unit-tests.yml` self-includes so workflow
+          # edits get smoke-tested by actually running.
+          if echo "$changed" | grep -qE '^src/cofounder_agent/|^\.github/workflows/unit-tests\.yml$'; then
+            echo "Backend code or this workflow changed — running full suite."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only non-backend files changed — skipping pytest steps."
+            echo "needs_tests=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skipped — no backend changes in this PR
+        if: steps.changes.outputs.needs_tests != 'true'
+        run: |
+          echo "::notice::Backend code unchanged in this PR; pytest steps skipped to save ~9-14 minutes of CI."
+          echo "To force a full run, push a commit that touches .github/workflows/unit-tests.yml or use workflow_dispatch."
 
       - name: Setup Python
+        if: steps.changes.outputs.needs_tests == 'true'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
         with:
           python-version: "3.13"
           cache: "pip"
 
       - name: Install Poetry
+        if: steps.changes.outputs.needs_tests == 'true'
         run: pip install "poetry==2.2.1"
 
       - name: Install dependencies
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: |
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
 
       - name: Unit tests — middleware
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/middleware/ -q --tb=short -p no:cacheprovider
 
       - name: Unit tests — routes
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/routes/ -q --tb=short -p no:cacheprovider
 
       - name: Unit tests — plugins
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider
 
       - name: Unit tests — cli
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/cli/ -q --tb=short -p no:cacheprovider
 
@@ -82,9 +170,11 @@ jobs:
       # #400 (queue cap in auto-discovery), with the failing test cases
       # removed in-line and the rest of each file restored to CI.
       - name: Unit tests — services (forked)
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/services/ -q --tb=short --forked -p no:cacheprovider
 
       - name: Unit tests — utils
+        if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/utils/ -q --tb=short -p no:cacheprovider
