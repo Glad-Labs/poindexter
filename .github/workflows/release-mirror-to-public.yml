@@ -39,32 +39,53 @@ jobs:
         if: github.repository == 'Glad-Labs/glad-labs-stack'
 
         steps:
-            # Mint an installation token from the "Glad Labs Release Bot"
-            # GitHub App. SAME secrets as release-please.yml — the App
-            # must be installed on BOTH Glad-Labs/glad-labs-stack and
-            # Glad-Labs/poindexter with `contents: write` + `metadata: read`.
-            # If the App is only installed on the source repo, this token
-            # will be scoped accordingly and the `gh release create` on the
-            # public mirror will fail with 403 — fix is to install the App
-            # on the public repo too (org settings → Installed GitHub Apps
-            # → Configure → add Glad-Labs/poindexter to repository access).
-            - name: "🔑 Mint App token (read source, write public)"
-              id: app_token
+            # Mint App tokens. SAME secrets as release-please.yml — the
+            # "Glad Labs Release Bot" App must be installed on BOTH
+            # Glad-Labs/glad-labs-stack and Glad-Labs/poindexter with
+            # `contents: write` + `metadata: read`.
+            #
+            # Two tokens, not one multi-repo token: the multi-repo form
+            # (`owner: Glad-Labs` + `repositories: |\nstack\npoindexter`)
+            # surfaces as "Invalid keyData" when the App isn't installed on
+            # one of the requested repos — a misleading 404-installation-
+            # not-found wrapped in a crypto error. Two scoped mints surface
+            # the actual failure at the right step ("App not installed on
+            # Glad-Labs/poindexter") and each token is least-privilege per
+            # feedback_oauth_scope_hygiene.
+            #
+            # Troubleshooting:
+            #   * "Invalid keyData" or "Resource not accessible by
+            #     integration" on the target-write step → the App isn't
+            #     installed on poindexter. Fix: Org Settings → Installed
+            #     GitHub Apps → Glad Labs Release Bot → Configure → add
+            #     "poindexter" to Repository access.
+            #   * Same error on the source-read step → the App got
+            #     uninstalled from glad-labs-stack. Same path, add it
+            #     back.
+            - name: "🔑 Mint source-read token (stack)"
+              id: source_token
               uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
               with:
                   app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
                   private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-                  # owner+repositories grants the token explicit access to
-                  # both repos — required when the App is installed
-                  # org-wide but the per-repo access list is enumerated.
+
+            - name: "🔑 Mint target-write token (poindexter)"
+              id: target_token
+              uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+              with:
+                  app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+                  private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
                   owner: Glad-Labs
-                  repositories: |
-                      glad-labs-stack
-                      poindexter
+                  repositories: poindexter
 
             - name: "📦 Mirror release(s)"
               env:
-                  GH_TOKEN: ${{ steps.app_token.outputs.token }}
+                  # Two GH_TOKENs aren't directly supported by gh CLI, so we
+                  # swap GH_TOKEN per-call via inline assignment in the
+                  # script below. Default to the target token — that's
+                  # what the bulk of the work needs.
+                  SOURCE_TOKEN: ${{ steps.source_token.outputs.token }}
+                  TARGET_TOKEN: ${{ steps.target_token.outputs.token }}
                   SOURCE_REPO: Glad-Labs/glad-labs-stack
                   TARGET_REPO: Glad-Labs/poindexter
                   EVENT_NAME: ${{ github.event_name }}
@@ -108,28 +129,25 @@ jobs:
                       echo "[mirror] Processing $tag..."
 
                       # Skip if it already exists on the target.
-                      if gh release view "$tag" --repo "$TARGET_REPO" >/dev/null 2>&1; then
+                      if GH_TOKEN="$TARGET_TOKEN" gh release view "$tag" --repo "$TARGET_REPO" >/dev/null 2>&1; then
                           echo "[mirror]   ↳ already exists on $TARGET_REPO, skipping"
                           return 0
                       fi
 
-                      # Fetch the source release.
+                      # Fetch the source release (source token has read access on stack).
                       local src_json
-                      src_json=$(gh release view "$tag" --repo "$SOURCE_REPO" --json name,body,isPrerelease,createdAt)
+                      src_json=$(GH_TOKEN="$SOURCE_TOKEN" gh release view "$tag" --repo "$SOURCE_REPO" --json name,body,isPrerelease,createdAt)
                       local name body is_prerelease
                       name=$(echo "$src_json" | python3 -c "import sys, json; print(json.load(sys.stdin)['name'])")
                       body=$(echo "$src_json" | python3 -c "import sys, json; print(json.load(sys.stdin)['body'])" | rewrite_body)
                       is_prerelease=$(echo "$src_json" | python3 -c "import sys, json; print('true' if json.load(sys.stdin)['isPrerelease'] else 'false')")
 
-                      # Create the tag + Release on the target, pointing at
-                      # the current main HEAD (whatever the mirror sync
-                      # landed last). --target main is critical: omit it
-                      # and gh tries to default to the source repo's tag
-                      # SHA, which doesn't exist on the target.
+                      # Create the tag + Release on the target. --target main
+                      # points at the public mirror's current main HEAD.
                       local prerelease_flag=""
                       [[ "$is_prerelease" == "true" ]] && prerelease_flag="--prerelease"
 
-                      echo "$body" | gh release create "$tag" \
+                      echo "$body" | GH_TOKEN="$TARGET_TOKEN" gh release create "$tag" \
                           --repo "$TARGET_REPO" \
                           --target main \
                           --title "$name" \
@@ -140,7 +158,7 @@ jobs:
 
                   if [[ "$MODE" == "backfill" ]]; then
                       echo "[mirror] Backfill mode — replaying every source release missing from target."
-                      gh release list --repo "$SOURCE_REPO" --limit 100 --json tagName \
+                      GH_TOKEN="$SOURCE_TOKEN" gh release list --repo "$SOURCE_REPO" --limit 100 --json tagName \
                           | python3 -c "import sys, json; [print(r['tagName']) for r in reversed(json.load(sys.stdin))]" \
                           | while read -r tag; do
                               [[ -z "$tag" ]] && continue
