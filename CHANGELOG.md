@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.16.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.15.0...v0.16.0) (2026-05-28)
+
+
+### Features
+
+* **lab:** Phase 0 — instrument outcomes tables + lab_outcomes_v1 view ([#695](https://github.com/Glad-Labs/glad-labs-stack/issues/695)) ([4c1ab4a](https://github.com/Glad-Labs/glad-labs-stack/commit/4c1ab4a9b1bf9c40b0693151c935e8813025ae05))
+
 ## [0.15.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.4...v0.15.0) (2026-05-28)
 
 
