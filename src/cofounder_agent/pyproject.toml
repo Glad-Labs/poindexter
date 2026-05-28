@@ -324,6 +324,7 @@ replace_inline_images = "cofounder_agent.services.stages.replace_inline_images:R
 source_featured_image = "cofounder_agent.services.stages.source_featured_image:SourceFeaturedImageStage"
 generate_seo_metadata = "cofounder_agent.services.stages.generate_seo_metadata:GenerateSeoMetadataStage"
 generate_media_scripts = "cofounder_agent.services.stages.generate_media_scripts:GenerateMediaScriptsStage"
+generate_video_shot_list = "cofounder_agent.services.stages.generate_video_shot_list:GenerateVideoShotListStage"
 capture_training_data = "cofounder_agent.services.stages.capture_training_data:CaptureTrainingDataStage"
 finalize_task = "cofounder_agent.services.stages.finalize_task:FinalizeTaskStage"
 cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQAStage"

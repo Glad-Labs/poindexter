@@ -617,6 +617,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("stages", "services.stages.source_featured_image", "SourceFeaturedImageStage"),
         ("stages", "services.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
         ("stages", "services.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
+        ("stages", "services.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
         ("stages", "services.stages.capture_training_data", "CaptureTrainingDataStage"),
         ("stages", "services.stages.finalize_task", "FinalizeTaskStage"),
         ("stages", "services.stages.cross_model_qa", "CrossModelQAStage"),

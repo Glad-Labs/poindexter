@@ -78,6 +78,14 @@ _CANONICAL_BLOG_ORDER: tuple[str, ...] = (
     "cross_model_qa",
     "generate_seo_metadata",
     "generate_media_scripts",
+    # Director — produces shot list for the post's video. Runs after
+    # generate_media_scripts so the podcast_script is available (the
+    # shot list aligns its narration_offset_s to it). Non-critical
+    # (halts_on_failure=False); a director failure leaves
+    # context["video_shot_list"] absent and the legacy renderer path
+    # keeps running. Lands the shot list in audit_log for operator
+    # review (PR 1 of #649 sequenced plan; PR 2 wires the renderer).
+    "generate_video_shot_list",
     "capture_training_data",
     "finalize_task",
 )
