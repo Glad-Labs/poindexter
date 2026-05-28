@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.14.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.0...v0.14.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **brain:** detect stranded PENDING/Submitting Prefect flows (closes Glad-Labs/poindexter[#518](https://github.com/Glad-Labs/glad-labs-stack/issues/518)) ([#676](https://github.com/Glad-Labs/glad-labs-stack/issues/676)) ([a867f29](https://github.com/Glad-Labs/glad-labs-stack/commit/a867f29d425605a8bb1a107369b223ce33f29587))
+
 ## [0.14.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.13.1...v0.14.0) (2026-05-28)
 
 
