@@ -2,7 +2,7 @@
 
 ISSUE: The prior migration 20260520_172353 only matched markdown-link
 style ``[text](url)`` — but the LLM had emitted Markdown autolinks
-``<https://github.com/Glad-Labs/glad-labs-stack/...>``. Survey post-merge:
+``<https://github.com/Glad-Labs/poindexter/...>``. Survey post-merge:
 56 autolinks + 1 markdown link + 0 bare URLs across the 12 affected
 posts, so the prior backfill caught 1/57 (~2%). The "See the work"
 footer was appended successfully (the WHERE clause hit on the autolinks
@@ -10,10 +10,10 @@ too), but the URL substitution was a no-op for the autolink shape.
 
 This corrective pass:
 
-- Replaces ``<https://github.com/Glad-Labs/glad-labs-stack/pull/N>`` with
+- Replaces ``<https://github.com/Glad-Labs/poindexter/pull/N>`` with
   the plain-text ``PR #N`` representation matching what the original
   migration intended.
-- Replaces ``<https://github.com/Glad-Labs/glad-labs-stack/commit/SHA>``
+- Replaces ``<https://github.com/Glad-Labs/poindexter/commit/SHA>``
   with the plain-text `` `SHA[:7]` `` form (truncating to the standard
   short-SHA length so the result reads naturally).
 - Also reruns the markdown-link patterns from the prior migration so this
@@ -49,21 +49,21 @@ async def up(pool) -> None:
                                      regexp_replace(
                                          regexp_replace(
                                              content,
-                                             '<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>',
+                                             '<https?://github\.com/Glad-Labs/poindexter/pull/(\d+)>',
                                              'PR #\1', 'g'
                                          ),
-                                         '<https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*>',
+                                         '<https?://github\.com/Glad-Labs/poindexter/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*>',
                                          '`\1`', 'g'
                                      ),
-                                     '\[PR #(\d+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/\d+\)',
+                                     '\[PR #(\d+)\]\(https?://github\.com/Glad-Labs/poindexter/pull/\d+\)',
                                      'PR #\1', 'g'
                                  ),
-                                 '\[`([0-9a-fA-F]{7})[0-9a-fA-F]*`\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/[0-9a-fA-F]+\)',
+                                 '\[`([0-9a-fA-F]{7})[0-9a-fA-F]*`\]\(https?://github\.com/Glad-Labs/poindexter/commit/[0-9a-fA-F]+\)',
                                  '`\1`', 'g'
                              ),
                    updated_at = NOW()
              WHERE status = 'published'
-               AND content ~ 'github\.com/Glad-Labs/glad-labs-stack/(pull|commit)/'
+               AND content ~ 'github\.com/Glad-Labs/poindexter/(pull|commit)/'
             """,
         )
         logger.info(

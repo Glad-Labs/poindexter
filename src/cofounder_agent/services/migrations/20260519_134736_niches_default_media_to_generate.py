@@ -1,6 +1,6 @@
 """Add ``niches.default_media_to_generate`` + backfill ``posts.media_to_generate``.
 
-ISSUE: Glad-Labs/glad-labs-stack#480 (per-niche job enable/disable).
+ISSUE: Glad-Labs/poindexter#480 (per-niche job enable/disable).
 
 Why: ``posts.media_to_generate`` is the canonical seam for "which derived
 media (podcast / video / etc.) should this post spawn?" — but the
@@ -11,7 +11,7 @@ ignored the field entirely and generated podcasts/videos for every
 published post, including ``dev_diary`` posts where Matt explicitly
 doesn't want them.
 
-Earlier PR Glad-Labs/glad-labs-stack#481 plugged the dev_diary leak
+Earlier PR Glad-Labs/poindexter#481 plugged the dev_diary leak
 with a slug-pattern filter — a hack Matt rightly rejected via Telegram
 2026-05-19. The proper seam is per-niche config + populating the
 field at insert time. This migration adds the config home and
