@@ -385,7 +385,7 @@
           "refId": "A"
         }
       ],
-      "title": "GPU exporter",
+      "title": "GPU",
       "type": "stat"
     },
     {
@@ -604,7 +604,7 @@
           "refId": "A"
         }
       ],
-      "title": "Uptime-kuma",
+      "title": "Uptime",
       "type": "stat"
     },
     {
@@ -670,11 +670,11 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Tasks (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, COUNT(*) AS \"Tasks\" FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
-      "title": "Tasks generated (last 24h)",
+      "title": "Tasks (24h)",
       "type": "timeseries"
     },
     {
@@ -741,7 +741,7 @@
           "refId": "A"
         }
       ],
-      "title": "Approval queue fill",
+      "title": "Approval %",
       "type": "gauge"
     },
     {
@@ -809,7 +809,7 @@
           "refId": "A"
         }
       ],
-      "title": "Hours since last publish",
+      "title": "Last publish (h)",
       "type": "bargauge"
     },
     {
@@ -817,7 +817,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Alerts firing (not resolved) in the last hour. Each row in alert_events with status='firing' is one Alertmanager fire event.",
+      "description": "Distinct alerts firing in the dashboard time range. Deduped by fingerprint — a single alert that re-fires every 15 min counts once, not four times. Change the dashboard time range to widen/narrow the window.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -853,11 +853,11 @@
       "id": 10,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -869,13 +869,13 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('minute', received_at) AS time, COUNT(*) AS \"Firing (1h)\" FROM alert_events WHERE status='firing' AND received_at > NOW() - INTERVAL '1 hour' GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT COUNT(DISTINCT fingerprint) AS \"Firing\" FROM alert_events WHERE status='firing' AND $__timeFilter(received_at);",
           "refId": "A"
         }
       ],
-      "title": "Alerts firing (1h)",
+      "title": "Alerts (1h)",
       "type": "stat"
     },
     {
@@ -937,7 +937,7 @@
           "refId": "A"
         }
       ],
-      "title": "Plaintext secrets (should be 0)",
+      "title": "Plain secrets",
       "type": "stat"
     },
     {
@@ -981,11 +981,11 @@
       "id": 12,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -997,13 +997,13 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Hard rejects (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%') GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT COUNT(*) AS \"Hard rejects\" FROM content_tasks WHERE $__timeFilter(created_at) AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%');",
           "refId": "A"
         }
       ],
-      "title": "Hard rejects (24h)",
+      "title": "Hard rejects",
       "type": "stat"
     },
     {
@@ -1057,9 +1057,9 @@
     },
     {
       "id": 15,
-      "title": "Published mix by category",
-      "type": "piechart",
-      "description": "Donut of published posts by category.",
+      "title": "Top category",
+      "type": "stat",
+      "description": "Most-published category (name + count). Was a pie chart, but the data is monotype right now — one category dominates, so the slice was always 100%. Stat is honest about that.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1073,30 +1073,32 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
           "unit": "short"
         }
       },
       "options": {
-        "displayLabels": ["name", "percent"],
-        "legend": {
-          "displayMode": "list",
-          "placement": "right",
-          "showLegend": true,
-          "values": ["value"]
-        },
-        "pieType": "donut",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "textMode": "value_and_name"
       },
       "targets": [
         {
@@ -1106,16 +1108,16 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(c.name, 'uncategorized') AS metric,        COUNT(*)::int AS value FROM posts p LEFT JOIN categories c ON c.id = p.category_id WHERE p.status='published' GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT COALESCE(c.name, 'uncategorized') AS metric, COUNT(*)::int AS value FROM posts p LEFT JOIN categories c ON c.id = p.category_id WHERE p.status='published' GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
           "refId": "A"
         }
       ]
     },
     {
       "id": 16,
-      "title": "LLM spend (last 7 days)",
+      "title": "LLM spend",
       "type": "timeseries",
-      "description": "Daily LLM cost in USD from cost_logs.",
+      "description": "Daily LLM cost in USD from cost_logs. Range respects the dashboard time picker — change it at the top right to widen or narrow the window.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1179,7 +1181,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day', created_at) AS time,        SUM(cost_usd)::float AS \"USD\" FROM cost_logs WHERE created_at > NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, SUM(cost_usd)::float AS \"USD\" FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ]
@@ -1192,13 +1194,13 @@
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Mission Control",
   "uid": "mission-control",
-  "version": 7,
+  "version": 8,
   "weekStart": ""
 }
