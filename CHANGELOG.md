@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.15.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.4...v0.15.0) (2026-05-28)
+
+
+### Features
+
+* **media:** operator review surface — cli open + discord ping + grafana panels ([#693](https://github.com/Glad-Labs/glad-labs-stack/issues/693)) ([ca37752](https://github.com/Glad-Labs/glad-labs-stack/commit/ca37752196e46d2fd877812210148136c017c89e))
+
 ## [0.14.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.3...v0.14.4) (2026-05-28)
 
 
