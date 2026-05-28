@@ -8,14 +8,14 @@ If you're reading on the Mintlify docs site, the rendered version with
 search and navigation lives at the [welcome page](welcome.md). If
 you're on GitHub, this index is the table of contents.
 
-The engine is free and Apache 2.0; the convenience (tuned prompts,
-extra dashboards, the full book) is paid via
-[Poindexter Pro](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9).
+The engine is Apache 2.0 and free. A Pro add-on (tuned prompts,
+extra dashboards, the full book) lives at
+[gladlabs.io/product](https://gladlabs.io/product).
 
 ## Start here
 
 - [welcome.md](welcome.md) — overview + curated reading path
-- [ARCHITECTURE.md](ARCHITECTURE.md) — system end-to-end (regions,
+- [architecture/overview.md](architecture/overview.md) — system end-to-end (regions,
   data flow, technology choices)
 - [../README.md](../README.md) — project README (quick-start, status)
 
@@ -23,14 +23,9 @@ extra dashboards, the full book) is paid via
 
 The shape of the system — pipelines, plugins, modules, retrieval.
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — top-level architecture
-- [architecture/langgraph-cutover.md](architecture/langgraph-cutover.md) —
-  the `canonical_blog` / `dev_diary` LangGraph templates (primary
-  pipeline path as of 2026-05-16)
-- [architecture/prefect-cutover.md](architecture/prefect-cutover.md) —
-  Prefect-native dispatch (replaces the deleted `task_executor.py`)
+- [architecture/overview.md](architecture/overview.md) — top-level architecture
 - [architecture/multi-agent-pipeline.md](architecture/multi-agent-pipeline.md) —
-  redirect doc; points at langgraph-cutover for the live pipeline
+  cross-model QA + writer/critic pipeline
 - [architecture/anti-hallucination.md](architecture/anti-hallucination.md) —
   prompts + LLM QA + programmatic validator (three independent layers)
 - [architecture/database-schema.md](architecture/database-schema.md) —
@@ -158,17 +153,7 @@ publishing adapters, webhooks, retention.
   to refresh.
 - [reference/services.md](reference/services.md) — catalog of every
   service in `src/cofounder_agent/services/`, grouped by responsibility
-- [api/README.md](api/README.md) — REST endpoint inventory
-
-## Audits + retrospectives
-
-Point-in-time snapshots. Several recommendations have since landed;
-each carries a status banner up top.
-
-- [audits/2026-05-06-grafana-cleanup.md](audits/2026-05-06-grafana-cleanup.md)
-- [audits/2026-05-06-oss-stack-utilization.md](audits/2026-05-06-oss-stack-utilization.md)
-- [audits/2026-05-06-test-coverage-audit.md](audits/2026-05-06-test-coverage-audit.md)
-- [security/audit-2026-05-12.md](security/audit-2026-05-12.md)
+- [api/index.mdx](api/index.mdx) — REST endpoint inventory
 
 ## Where the docs are NOT
 

@@ -85,7 +85,7 @@ Running the seeded `embeddings.claude_sessions` policy once against the current 
 ## Related
 
 - RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
-- DB plan: `docs/architecture/database-and-embeddings-plan-2026-04-24.md`
+- Database schema reference: `docs/architecture/database-schema.md`
 - Sibling handlers: `retention.downsample`, `retention.temporal_summarize` (deferred)
 - GH-110 (retention framework issue)
 - GH-106 (original embeddings retention issue)

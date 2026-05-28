@@ -1,0 +1,87 @@
+---
+title: "Architecture"
+description: "How Poindexter is built — pipelines, plugins, modules, retrieval."
+---
+
+Poindexter is modeled after human brain anatomy. Each region runs as an
+independent process or container and the parts communicate exclusively through
+shared PostgreSQL tables — no direct imports across region boundaries. The
+result is a system you can monitor, restart, and reason about region by region.
+
+For the full mastery-grade walk-through (regions, data flow, technology
+choices, principles, and the request lifecycle), start with the
+[architecture overview](./overview). The cards below jump straight to the
+topic you need.
+
+## Core concepts
+
+<CardGroup cols={2}>
+  <Card title="System overview" icon="diagram-project" href="/docs/architecture/overview">
+    The brain-region model end-to-end. Components, data flow, technology
+    choices, and the principles each subsystem upholds.
+  </Card>
+  <Card title="Multi-agent pipeline" icon="robot" href="/docs/architecture/multi-agent-pipeline">
+    Writer / critic / gate-reviewer orchestration and the cross-model QA
+    rewrite loop.
+  </Card>
+  <Card title="Anti-hallucination layers" icon="shield-check" href="/docs/architecture/anti-hallucination">
+    Three independent layers — prompts, LLM QA, programmatic validator — and
+    the six OSS rails (DeepEval ×3, guardrails-ai ×2, Ragas).
+  </Card>
+  <Card title="Plugin architecture" icon="puzzle-piece" href="/docs/architecture/plugin-architecture">
+    Twenty plugin entry-point groups (Tap, Probe, Job, Stage, LLMProvider,
+    PublishAdapter, Module, and more) and how they compose.
+  </Card>
+</CardGroup>
+
+## Retrieval and routing
+
+<CardGroup cols={2}>
+  <Card title="RAG retrieval stack" icon="magnifying-glass" href="/docs/architecture/rag-retrieval-stack">
+    LlamaIndex `BaseRetriever` over the existing pgvector embeddings table.
+    Hybrid (BM25 + vector + RRF) plus cross-encoder rerank.
+  </Card>
+  <Card title="Niches and RAG modes" icon="layer-group" href="/docs/architecture/niches-and-rag-modes">
+    Per-niche writer modes — TOPIC_ONLY, CITATION_BUDGET, STORY_SPINE,
+    TWO_PASS — and when each is appropriate.
+  </Card>
+  <Card title="Cost-tier routing" icon="dollar-sign" href="/docs/architecture/cost-tier-routing">
+    `cost_tier.{free,budget,standard,premium}.model` resolution. Operators
+    tune models per tier instead of hardcoding names in code.
+  </Card>
+  <Card title="Prompt management" icon="file-pen" href="/docs/architecture/prompt-management">
+    UnifiedPromptManager — Langfuse-first, then YAML defaults. Every
+    production prompt lives in the DB and traces through Langfuse.
+  </Card>
+</CardGroup>
+
+## Data and infrastructure
+
+<CardGroup cols={2}>
+  <Card title="Database schema" icon="database" href="/docs/architecture/database-schema">
+    Every table, the modular database service layer, and the migration system.
+  </Card>
+  <Card title="Module v1" icon="cube" href="/docs/architecture/module-v1">
+    Business modules (ContentModule, FinanceModule overlay) — the orthogonal
+    axis to capability plugins.
+  </Card>
+  <Card title="Static export pipeline" icon="cloud-arrow-up" href="/docs/architecture/static-export-pipeline">
+    Push-only JSON export to any S3-compatible storage (R2, S3, B2, MinIO).
+  </Card>
+  <Card title="Worker container filesystem" icon="folder-tree" href="/docs/architecture/worker-container-filesystem">
+    Layout inside the worker container — bind mounts, generated assets,
+    secret hygiene.
+  </Card>
+</CardGroup>
+
+## Specialized topics
+
+<CardGroup cols={2}>
+  <Card title="URL scraper SSRF guard" icon="lock" href="/docs/architecture/url-scraper-ssrf-guard">
+    SSRF protection on outbound HTTP — what's blocked and why.
+  </Card>
+  <Card title="Poindexter as engine" icon="gear" href="/docs/architecture/poindexter-as-engine">
+    The "engine plus employees" mental model and where it diverges from a
+    classic agent framework.
+  </Card>
+</CardGroup>

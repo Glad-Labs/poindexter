@@ -275,7 +275,7 @@ Pro exists for the obvious case: you've installed the OSS, you've seen output th
 
 Full technical docs live under [`docs/`](docs/welcome). Recommended path:
 
-- **[Architecture overview](docs/ARCHITECTURE)** — how the regions fit together
+- **[Architecture overview](docs/architecture/overview)** — how the regions fit together
 - **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline)** — the content pipeline + cross-model QA
 - **[Database schema](docs/architecture/database-schema)** — every table + migration system
 - **[CLI reference](docs/operations/cli-reference)** — every `poindexter` subcommand

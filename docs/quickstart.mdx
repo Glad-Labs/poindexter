@@ -1,0 +1,179 @@
+---
+title: "Quickstart"
+description: "From git clone to first generated post in about thirty minutes."
+---
+
+This walkthrough takes a clean machine to a running Poindexter pipeline. It
+covers the four checkpoints that matter — bootstrap, Docker stack up, health
+verified, and a first task generated. For the long-form version with every
+verification command, see
+[operations/local-development-setup](/docs/operations/local-development-setup).
+
+<Note>
+Poindexter is built and tested against Windows 11 + WSL2 + Docker Desktop with
+an NVIDIA GPU. macOS and Linux should work — the steps are identical — but the
+SDXL image server expects CUDA, so on machines without an NVIDIA card the
+image-generation step degrades to placeholders. Everything else is platform
+neutral.
+</Note>
+
+<Warning>
+The full stack pulls about **21 GB** of LLM weights on first run and the SDXL
+image server expects roughly **16 GB of VRAM** to run alongside Ollama. If
+you're on a smaller card, stop the SDXL container and let Pexels fill the
+image slot.
+</Warning>
+
+## Prerequisites
+
+| Tool | Version | Required |
+| --- | --- | --- |
+| Docker Desktop | 4.26+ | Yes |
+| Ollama | 0.1.40+ | Yes |
+| Python | 3.13+ | Yes |
+| Node.js | 22+ | Frontend only |
+| GPU | 8 GB VRAM+ | Recommended |
+
+## Steps
+
+<Steps>
+  <Step title="Clone and bootstrap">
+    Install the Python package, then run the bootstrap CLI. The wizard writes
+    `~/.poindexter/bootstrap.toml` (database URL plus the few machine secrets
+    Docker needs) and provisions the initial OAuth client.
+
+    <Tabs>
+      <Tab title="Windows (Git Bash)">
+        ```bash
+        git clone https://github.com/Glad-Labs/poindexter.git
+        cd poindexter
+        pip install -e src/cofounder_agent
+        poindexter setup --auto
+        ```
+      </Tab>
+      <Tab title="macOS / Linux">
+        ```bash
+        git clone https://github.com/Glad-Labs/poindexter.git
+        cd poindexter
+        pip install -e src/cofounder_agent
+        poindexter setup --auto
+        ```
+      </Tab>
+    </Tabs>
+
+    <Tip>
+    `--auto` spins up a local Docker Postgres with a generated password. To
+    point at an existing Postgres, run `poindexter setup --db-url
+    postgresql://...` instead.
+    </Tip>
+  </Step>
+
+  <Step title="Pull AI models">
+    Ollama serves the writer and reviewer LLMs plus the embedding model. The
+    pulls below total about 21 GB — they only happen once.
+
+    ```bash
+    ollama pull gemma3:27b        # QA reviews + fallback critic (16 GB)
+    ollama pull qwen3:8b          # fast tasks: SEO, image decisions (5 GB)
+    ollama pull nomic-embed-text  # embeddings (274 MB)
+    ```
+
+    For better writing quality, pull a larger writer model too:
+
+    ```bash
+    ollama pull qwen3:30b         # 18 GB
+    ```
+  </Step>
+
+  <Step title="Bring the stack up">
+    The launcher reads `bootstrap.toml`, exports the values as env vars for
+    the Compose file, and starts the worker, brain daemon, Postgres, Grafana,
+    SDXL server, Prefect, Langfuse, GlitchTip, and the observability stack.
+
+    <Tabs>
+      <Tab title="Windows (Git Bash)">
+        ```bash
+        bash scripts/start-stack.sh up -d
+        ```
+      </Tab>
+      <Tab title="macOS / Linux">
+        ```bash
+        bash scripts/start-stack.sh up -d
+        ```
+      </Tab>
+    </Tabs>
+
+    First boot takes a few minutes — Docker pulls all the images, Postgres
+    runs the baseline migration, and the worker waits for Ollama to warm up.
+  </Step>
+
+  <Step title="Verify health">
+    Three quick checks confirm the stack is healthy.
+
+    ```bash
+    # Worker — expect "status": "healthy"
+    curl http://localhost:8002/api/health
+    ```
+
+    Open Grafana at [http://localhost:3000](http://localhost:3000) and load
+    the **Mission Control** dashboard. The default credentials are printed
+    during `poindexter setup`. Every panel should report green or "no data
+    yet" — never red.
+
+    Open Prefect at [http://localhost:4200](http://localhost:4200) and
+    confirm the `content_generation` deployment is registered.
+
+    <Warning>
+    If `/api/health` returns a non-healthy component, check `docker logs
+    poindexter-worker` and consult
+    [operations/troubleshooting](/docs/operations/troubleshooting) before
+    moving on.
+    </Warning>
+  </Step>
+
+  <Step title="Trigger a first task">
+    Mint a JWT for the CLI OAuth client provisioned during setup, then POST
+    a topic. The pipeline pulls the task through
+    `pending → in_progress → awaiting_approval` in a few minutes.
+
+    ```bash
+    JWT=$(poindexter auth mint-token \
+      --client-id <pdx_xxx> --client-secret <secret>)
+
+    curl -X POST http://localhost:8002/api/tasks \
+      -H "Authorization: Bearer $JWT" \
+      -H "Content-Type: application/json" \
+      -d '{"topic": "Why Docker changed everything", "category": "technology"}'
+    ```
+
+    Follow along live:
+
+    ```bash
+    docker logs -f poindexter-worker
+    ```
+
+    When the task lands in `awaiting_approval`, approve it from the CLI:
+
+    ```bash
+    poindexter tasks approve <task_id>
+    ```
+  </Step>
+</Steps>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Architecture overview" icon="diagram-project" href="/docs/architecture/overview">
+    The brain-region model, the LangGraph pipeline, the six QA rails — how the
+    parts fit.
+  </Card>
+  <Card title="Operations runbooks" icon="gauge-high" href="/docs/operations/index">
+    Day-2 work: troubleshooting, incident response, backups, secret rotation.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/docs/operations/cli-reference">
+    Every `poindexter` subcommand with flags and examples.
+  </Card>
+  <Card title="Extend with plugins" icon="puzzle-piece" href="/docs/operations/extending-poindexter">
+    Add a Stage, Reviewer, Publishing Adapter, Tap, or Module.
+  </Card>
+</CardGroup>

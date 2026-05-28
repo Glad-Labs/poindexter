@@ -1,0 +1,81 @@
+---
+title: "Poindexter"
+description: "Open-source AI content pipeline. Self-host, full local-LLM control, multi-niche."
+---
+
+<Note>
+Poindexter is an open-source, self-hosted AI content pipeline. It researches,
+writes, reviews, and publishes long-form content on your own hardware — with a
+human-in-the-loop approval queue and six independent QA rails that catch
+hallucinations before anything ships.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Get up and running" icon="rocket" href="/docs/quickstart">
+    From `git clone` to your first generated post in about thirty minutes. Includes the bootstrap CLI, Docker stack, and a health-check walkthrough.
+  </Card>
+  <Card title="Understand the architecture" icon="diagram-project" href="/docs/architecture/overview">
+    The brain-region mental model, the LangGraph pipeline, the six anti-hallucination layers, and how the pieces compose.
+  </Card>
+  <Card title="Operate it in production" icon="gauge-high" href="/docs/operations/index">
+    Day-2 runbooks: incident response, backups, secret rotation, disaster recovery, and the CI/deploy chain.
+  </Card>
+  <Card title="Extend with plugins" icon="puzzle-piece" href="/docs/operations/extending-poindexter">
+    Add a new Stage, Reviewer, Publishing Adapter, Tap, or Module — twenty plugin entry-point groups, all step-by-step.
+  </Card>
+</CardGroup>
+
+## What is Poindexter?
+
+Poindexter is a single-operator content engine. One person, one machine, a
+local Ollama install, and a Postgres database. The pipeline pulls topics from
+configurable sources, drafts with a writer LLM, reviews adversarially with a
+different LLM, runs six OSS QA rails over the result, and hands you a queue of
+posts to approve from your phone. Everything tunable lives in the
+`app_settings` table — no `.env` to babysit.
+
+The engine is Apache 2.0. A separate **Glad Labs Pro** add-on at
+[gladlabs.io/product](https://gladlabs.io/product) bundles tuned prompts,
+extra Grafana dashboards, and a long-form book — the engine itself stays free
+and runs without it.
+
+## By the numbers
+
+<CardGroup cols={3}>
+  <Card title="6 OSS QA rails" icon="shield-check">
+    DeepEval (×3), guardrails-ai (×2), and Ragas — every generated post is
+    judged by all six before it can be auto-published.
+  </Card>
+  <Card title="39 scheduled jobs" icon="clock">
+    PluginScheduler boots taps, retention sweeps, memory hygiene, and content
+    surfaces on declarative DB rows. No hand-rolled cron.
+  </Card>
+  <Card title="20 plugin entry points" icon="plug">
+    Tap, Probe, Job, Stage, TopicSource, LLMProvider, ImageProvider,
+    PublishAdapter, Module, and more — every surface is a registered
+    Protocol.
+  </Card>
+  <Card title="$0/month infra" icon="dollar-sign">
+    Fully self-hosted. Ollama on your GPU, Postgres on the box, no paid API
+    in the critical path.
+  </Card>
+  <Card title="8 Grafana dashboards" icon="chart-line">
+    Mission Control, Pipeline, Auto-Publish Gate, Cost, Observability,
+    System Health, Integrations, and QA Rails — pre-provisioned.
+  </Card>
+  <Card title="13-stage pipeline" icon="list-check">
+    `canonical_blog` LangGraph template: write → self-review → QA →
+    image-source → SEO → media scripts → finalize.
+  </Card>
+</CardGroup>
+
+## Contribute
+
+<CardGroup cols={2}>
+  <Card title="GitHub" icon="github" href="https://github.com/Glad-Labs/poindexter">
+    Issues, discussions, pull requests. Apache 2.0 licensed.
+  </Card>
+  <Card title="Contributing guide" icon="code-pull-request" href="https://github.com/Glad-Labs/poindexter/blob/main/CONTRIBUTING.md">
+    How to set up a dev environment and ship your first PR.
+  </Card>
+</CardGroup>

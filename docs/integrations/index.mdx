@@ -1,0 +1,123 @@
+---
+title: "Integrations"
+description: "Per-handler operator documentation for Poindexter's declarative integrations framework."
+---
+
+Every handler registered under `services.integrations` has a dedicated doc
+explaining what external system it talks to, the config fields on the
+integration row, the secrets it reads from `app_settings`, the expected
+payload contract, and the operator runbook (add, test, rotate, disable).
+
+The framework itself is described in the
+[declarative-data-plane RFC](/docs/architecture/declarative-data-plane-rfc-2026-04-24).
+
+## Surfaces
+
+The integrations registry namespaces handlers by surface so the same short
+name can be reused across surfaces. Five surfaces are in flight today.
+
+| Surface | Source-of-truth table | Dispatcher | Purpose |
+| --- | --- | --- | --- |
+| `webhook` | `webhook_endpoints` (direction=`inbound`) | `routes/external_webhooks.py` | External SaaS sends an event in (Lemon Squeezy, Resend, Alertmanager). |
+| `outbound` | `webhook_endpoints` (direction=`outbound`) | `services/integrations/outbound_dispatcher.py` | We send an event out (Discord, Telegram, Vercel ISR purge). |
+| `tap` | `external_taps` | `services/integrations/tap_runner.py` | Pull external data on a schedule (HackerNews, Dev.to, GA4, GSC, Singer subprocesses). |
+| `retention` | `retention_policies` | `services/integrations/retention_runner.py` | Sweep aging data — TTL-prune, downsample, summarize-to-table. |
+| `publishing` | `publishing_adapters` | `services/social_poster.py:_distribute_to_adapters` | Push generated content to social platforms (Bluesky, Mastodon). |
+
+## Handler catalog
+
+<AccordionGroup>
+  <Accordion title="webhook surface (inbound)">
+    External services post events to the worker. Each handler is responsible
+    for verifying the signature, normalizing the payload, and writing to the
+    appropriate landing table.
+
+    - [`webhook.revenue_event_writer`](/docs/integrations/webhook_revenue_event_writer) — Lemon Squeezy order/subscription events → `revenue_events`
+    - [`webhook.subscriber_event_writer`](/docs/integrations/webhook_subscriber_event_writer) — Resend email events → `subscriber_events`
+    - [`webhook.alertmanager_dispatch`](/docs/integrations/webhook_alertmanager_dispatch) — Grafana Alertmanager alerts → `alert_events` + operator notification fan-out
+  </Accordion>
+
+  <Accordion title="outbound surface">
+    Poindexter sends events to external services. Outbound rows route
+    through a single dispatcher; the per-handler doc covers retry and
+    rate-limit behavior.
+
+    - [`outbound.discord_post`](/docs/integrations/outbound_discord_post) — POST to a Discord webhook URL
+    - [`outbound.telegram_post`](/docs/integrations/outbound_telegram_post) — Telegram Bot API send
+    - [`outbound.vercel_isr`](/docs/integrations/outbound_vercel_isr) — Vercel ISR cache revalidation
+  </Accordion>
+
+  <Accordion title="tap surface">
+    Scheduled pulls of external data into Postgres. Taps are scheduled by
+    PluginScheduler from rows in `external_taps`.
+
+    - [`tap.builtin_topic_source`](/docs/integrations/tap_builtin_topic_source) — first-party TopicSources (HackerNews, Dev.to, codebase, web_search, knowledge, dev_diary)
+    - [`tap.external_metrics_writer`](/docs/integrations/tap_external_metrics_writer) — write Singer-tap output into `external_metrics`
+    - [`tap.singer_subprocess`](/docs/integrations/tap_singer_subprocess) — generic Singer-protocol subprocess runner (GA4, GSC)
+  </Accordion>
+
+  <Accordion title="retention surface">
+    Sweep aging data. Each policy is a row in `retention_policies` keyed
+    on table + TTL + handler.
+
+    - [`retention.ttl_prune`](/docs/integrations/retention_ttl_prune) — drop rows older than the row's `ttl_days`
+    - [`retention.downsample`](/docs/integrations/retention_downsample) — aggregate raw rows into a coarser rollup table, then delete the originals
+    - `retention.summarize_to_table` — LLM-based summarization of aging rows (handler implemented; doc pending)
+  </Accordion>
+
+  <Accordion title="publishing surface">
+    Push generated content to social platforms. Adapters are rows in
+    `publishing_adapters`; adding a new platform is an insert plus a
+    handler registration.
+
+    - [`publishing.bluesky`](/docs/integrations/publishing_bluesky) — post to a Bluesky account via the AT Protocol
+    - [`publishing.mastodon`](/docs/integrations/publishing_mastodon) — post to a Mastodon (or any Fediverse) instance
+  </Accordion>
+
+  <Accordion title="Setup guides">
+    External service setup that doesn't fit any single handler doc.
+
+    - [Google Search Console + Analytics 4 setup](/docs/integrations/setup-gsc-and-ga4) — provision the credentials the tap subprocesses need.
+  </Accordion>
+</AccordionGroup>
+
+## Adding a new platform
+
+The point of the declarative-data-plane is that adding a new social platform
+equals an insert plus a `<surface>.<name>` handler registration. No edit to
+the dispatcher.
+
+<Steps>
+  <Step title="Write the handler module">
+    Drop a new module under `services/integrations/handlers/`
+    (e.g. `publishing_linkedin.py`) and register it.
+
+    ```python
+    from services.integrations.registry import register_handler
+
+    @register_handler("publishing", "linkedin")
+    async def linkedin_post(payload, *, site_config, row, pool):
+        ...
+    ```
+  </Step>
+
+  <Step title="Import at startup">
+    Add the module to `services/integrations/handlers/__init__.py:load_all()`
+    so it's registered when the worker boots.
+  </Step>
+
+  <Step title="Seed the adapter row">
+    Add a migration that inserts the `publishing_adapters` row — copy the
+    shape from `services/migrations/20260509_175447_add_publishing_adapters.py`.
+  </Step>
+
+  <Step title="Document the handler">
+    Add `docs/integrations/publishing_linkedin.md` mirroring the existing
+    per-handler doc structure (config, secrets, contract, runbook).
+  </Step>
+
+  <Step title="Enable it">
+    `poindexter publishers list` shows the new row;
+    `poindexter publishers enable linkedin_main` activates it.
+  </Step>
+</Steps>

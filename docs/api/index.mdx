@@ -1,10 +1,32 @@
-# Poindexter API Reference
-
-**Base URL:** `http://localhost:8002` (local worker — the only supported deployment today)
-**Status:** Alpha. Surface area is broad but not contractually stable across releases.
-**Last Updated:** 2026-05-23
-
 ---
+title: "API Reference"
+description: "REST endpoints exposed by the Poindexter worker — base URL, auth, and per-endpoint contracts."
+---
+
+<Info>
+**Base URL:** `http://localhost:8002` (local worker — the only supported deployment today).
+**Status:** Alpha. Surface area is broad but not contractually stable across releases.
+**Last updated:** 2026-05-23.
+</Info>
+
+## Jump to a group
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="#authentication">
+    OAuth 2.1 Client Credentials grant. `poindexter setup` provisions the
+    initial CLI client.
+  </Card>
+  <Card title="Tasks" icon="list-check" href="#tasks">
+    Create, list, approve, and reject content tasks. The lifecycle is
+    `pending → in_progress → awaiting_approval`.
+  </Card>
+  <Card title="Posts" icon="newspaper" href="#posts">
+    Public post list + search, plus authenticated update / soft-delete.
+  </Card>
+  <Card title="Settings" icon="sliders" href="#settings">
+    Read and update `app_settings` rows over the REST surface.
+  </Card>
+</CardGroup>
 
 ## Overview
 

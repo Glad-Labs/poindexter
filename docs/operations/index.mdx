@@ -1,0 +1,93 @@
+---
+title: "Operations"
+description: "Run Poindexter on your own hardware — setup, day-2 work, runbooks, and platform reference."
+---
+
+Operations docs are the runbooks Matt actually opens when something needs
+attention. Every page is grounded in a real incident or a real configuration
+change that hit production at least once.
+
+## Setup
+
+<CardGroup cols={2}>
+  <Card title="Local development setup" icon="rocket" href="/docs/operations/local-development-setup">
+    End-to-end walkthrough — `poindexter setup`, model pulls, stack startup,
+    and per-layer verification.
+  </Card>
+  <Card title="Fresh DB setup" icon="database" href="/docs/operations/fresh-db-setup">
+    Bring up Postgres from scratch and verify the migration runner against
+    an empty schema.
+  </Card>
+  <Card title="Environment variables" icon="key" href="/docs/operations/environment-variables">
+    The small set of env vars Docker still needs for bootstrap. Everything
+    else lives in `app_settings`.
+  </Card>
+</CardGroup>
+
+## Day-2 operations
+
+<CardGroup cols={2}>
+  <Card title="Troubleshooting" icon="wrench" href="/docs/operations/troubleshooting">
+    Real production issues we've hit — symptom, root cause, fix.
+  </Card>
+  <Card title="Incident response" icon="bell" href="/docs/operations/incident-response">
+    On-call runbook — what to do when the brain daemon pages Telegram.
+  </Card>
+  <Card title="Backups" icon="floppy-disk" href="/docs/operations/backups">
+    Postgres backup + restore. Tested against the actual prod database.
+  </Card>
+  <Card title="Disaster recovery" icon="life-ring" href="/docs/operations/disaster-recovery">
+    Per-service recovery, ordered by severity.
+  </Card>
+  <Card title="Secret rotation" icon="key" href="/docs/operations/secret-rotation">
+    Per-secret runbook — OAuth client secrets, storage credentials, API
+    tokens.
+  </Card>
+  <Card title="Migrations" icon="arrow-up-right-dots" href="/docs/operations/migrations">
+    The `YYYYMMDD_HHMMSS_` prefix convention plus the migration runner
+    contract.
+  </Card>
+</CardGroup>
+
+## Runbooks
+
+<CardGroup cols={2}>
+  <Card title="LiteLLM cutover rollback" icon="rotate-left" href="/docs/operations/litellm-cutover-rollback">
+    Rollback procedure for the LiteLLM cutover if the router misbehaves.
+  </Card>
+  <Card title="OAuth Grafana" icon="chart-line" href="/docs/operations/oauth-grafana">
+    Grafana JWT issuance via the OAuth bridge.
+  </Card>
+  <Card title="Voice bridge" icon="microphone" href="/docs/operations/voice-bridge">
+    LiveKit + Whisper + Kokoro voice loop — the tap-to-join surface.
+  </Card>
+  <Card title="Voice STT/TTS" icon="ear-listen" href="/docs/operations/voice-stt-tts">
+    STT/TTS provider configuration and quality tuning.
+  </Card>
+  <Card title="Niche topic discovery" icon="compass" href="/docs/operations/niche-topic-discovery-operator-guide">
+    The `poindexter topics` workflow — discover, rank, approve, dispatch.
+  </Card>
+</CardGroup>
+
+## Reference
+
+<CardGroup cols={2}>
+  <Card title="CLI reference" icon="terminal" href="/docs/operations/cli-reference">
+    Every `poindexter` subcommand with flags, examples, and JSON output mode.
+  </Card>
+  <Card title="Ports" icon="network-wired" href="/docs/operations/ports">
+    Local-services port map — what listens where.
+  </Card>
+  <Card title="CI / deploy chain" icon="code-branch" href="/docs/operations/ci-deploy-chain">
+    How Poindexter itself is tested and shipped via GitHub Actions + Vercel.
+  </Card>
+  <Card title="Extending Poindexter" icon="puzzle-piece" href="/docs/operations/extending-poindexter">
+    Add a Stage, Reviewer, Adapter, Provider, Tap, Probe, Job, or Module.
+  </Card>
+  <Card title="Claude Code permissions" icon="robot" href="/docs/operations/claude-code-permissions">
+    Allowlist Claude Code needs for autonomous operation.
+  </Card>
+  <Card title="Commit signing" icon="signature" href="/docs/operations/commit-signing">
+    How Poindexter commits are GPG-signed and why. For contributors.
+  </Card>
+</CardGroup>

@@ -5,10 +5,8 @@
 **Status:** Production-ready on the author's daily-driver setup. Public alpha.
 
 > This document is the mastery-grade reference for how Poindexter is
-> built. It is intentionally long. For a guided setup in 30 minutes,
-> see [Poindexter Pro](https://www.gladlabs.ai/guide) which includes
-> the full setup book. For running the stack locally right now, see
-> [operations/local-development-setup.md](operations/local-development-setup).
+> built. It is intentionally long. For running the stack locally right
+> now, see [../operations/local-development-setup.md](../operations/local-development-setup).
 
 ---
 
@@ -214,7 +212,7 @@ execution and multi-agent orchestration.
 
 **Current chain:** Ollama primary → `pipeline_fallback_model` (also Ollama, default gemma3:27b) → HuggingFace transformers (emergency, CPU).
 
-Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](architecture/plugin-architecture)).
+Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](plugin-architecture)).
 
 Use cost tiers (`free`/`budget`/`standard`/`premium`) for model selection — never hardcode model names. Cost tiers live in `app_settings` and map to Ollama models at runtime.
 
@@ -358,7 +356,7 @@ Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL valu
 - **End-to-end content:** `POST /api/tasks` → Prefect `content_generation_flow` claims the row → `ContentRouterService` dispatches to `TemplateRunner.run(template_slug, context)`
 - **Ad-hoc template use:** stages are called directly in tests and scripts; not exposed via the public API.
 
-See [`architecture/services/template_runner.md`](architecture/services/template_runner.md) for the runner's invariants.
+See [`services/template_runner.md`](services/template_runner) for the runner's invariants.
 
 ### 4. Poindexter Worker (FastAPI Backend)
 
@@ -371,7 +369,7 @@ See [`architecture/services/template_runner.md`](architecture/services/template_
 #### Main API (`main.py`)
 
 - FastAPI application
-- ~70 REST endpoints (see [API reference](api/README) for the inventory)
+- ~70 REST endpoints (see [API reference](../api/index) for the inventory)
 - Error handling and logging
 - CORS middleware
 - Request/response validation via Pydantic models
@@ -532,6 +530,6 @@ The roadmap is tracked via GitHub milestones at
 
 ## Related Documentation
 
-- **[Database Schema](architecture/database-schema)** — every table + migration system
-- **[API Reference](api/README)** — REST endpoints
-- **[Local Development](operations/local-development-setup)** — setup walkthrough
+- **[Database Schema](database-schema)** — every table + migration system
+- **[API Reference](../api/index)** — REST endpoints
+- **[Local Development](../operations/local-development-setup)** — setup walkthrough

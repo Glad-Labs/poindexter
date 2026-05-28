@@ -15,29 +15,33 @@
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Get Started",
+            "group": "Get started",
             "pages": [
               "docs/welcome",
+              "docs/quickstart",
               "docs/operations/local-development-setup",
-              "docs/operations/cli-reference",
               "docs/operations/environment-variables"
             ]
           },
           {
-            "group": "Architecture",
+            "group": "Concepts",
             "pages": [
-              "docs/ARCHITECTURE",
-              "docs/architecture/langgraph-cutover",
-              "docs/architecture/prefect-cutover",
+              "docs/architecture/index",
+              "docs/architecture/overview",
               "docs/architecture/multi-agent-pipeline",
               "docs/architecture/anti-hallucination",
-              "docs/architecture/database-schema",
               "docs/architecture/plugin-architecture",
               "docs/architecture/module-v1",
+              "docs/architecture/poindexter-as-engine"
+            ]
+          },
+          {
+            "group": "Architecture deep dives",
+            "pages": [
+              "docs/architecture/database-schema",
               "docs/architecture/rag-retrieval-stack",
               "docs/architecture/niches-and-rag-modes",
               "docs/architecture/cost-tier-routing",
-              "docs/architecture/poindexter-as-engine",
               "docs/architecture/prompt-management",
               "docs/architecture/static-export-pipeline",
               "docs/architecture/url-scraper-ssrf-guard",
@@ -45,79 +49,102 @@
             ]
           },
           {
-            "group": "Service reference",
-            "pages": [
-              "docs/architecture/services/content_router_service",
-              "docs/architecture/services/content_validator",
-              "docs/architecture/services/cost_guard",
-              "docs/architecture/services/internal_link_coherence",
-              "docs/architecture/services/litellm_provider",
-              "docs/architecture/services/model_router",
-              "docs/architecture/services/multi_model_qa",
-              "docs/architecture/services/newsletter_service",
-              "docs/architecture/services/prompt_manager",
-              "docs/architecture/services/publish_service",
-              "docs/architecture/services/qa_gates_db",
-              "docs/architecture/services/quality_service",
-              "docs/architecture/services/research-and-web-research",
-              "docs/architecture/services/settings_service",
-              "docs/architecture/services/site_config",
-              "docs/architecture/services/social_poster",
-              "docs/architecture/services/template_runner",
-              "docs/architecture/services/topic_batch_service"
-            ]
-          },
-          {
             "group": "Operations",
             "pages": [
-              "docs/operations/local-development-setup",
+              "docs/operations/index",
               "docs/operations/fresh-db-setup",
               "docs/operations/troubleshooting",
-              "docs/operations/disaster-recovery",
               "docs/operations/incident-response",
               "docs/operations/backups",
+              "docs/operations/disaster-recovery",
               "docs/operations/secret-rotation",
-              "docs/operations/oauth-grafana",
-              "docs/operations/commit-signing",
-              "docs/operations/ci-deploy-chain",
-              "docs/operations/extending-poindexter",
-              "docs/operations/migrations",
-              "docs/operations/niche-topic-discovery-operator-guide",
+              "docs/operations/migrations"
+            ]
+          },
+          {
+            "group": "Runbooks",
+            "pages": [
               "docs/operations/litellm-cutover-rollback",
-              "docs/operations/ports",
+              "docs/operations/oauth-grafana",
               "docs/operations/voice-bridge",
               "docs/operations/voice-stt-tts",
-              "docs/operations/claude-code-permissions",
-              "docs/operations/environment-variables"
+              "docs/operations/niche-topic-discovery-operator-guide"
             ]
           },
           {
-            "group": "Integrations",
+            "group": "Platform",
             "pages": [
-              "docs/integrations/README",
-              "docs/integrations/outbound_discord_post",
-              "docs/integrations/outbound_telegram_post",
-              "docs/integrations/outbound_vercel_isr",
-              "docs/integrations/publishing_bluesky",
-              "docs/integrations/publishing_mastodon",
-              "docs/integrations/tap_builtin_topic_source",
-              "docs/integrations/tap_external_metrics_writer",
-              "docs/integrations/tap_singer_subprocess",
-              "docs/integrations/retention_downsample",
-              "docs/integrations/retention_ttl_prune",
+              "docs/operations/cli-reference",
+              "docs/operations/ports",
+              "docs/operations/ci-deploy-chain",
+              "docs/operations/extending-poindexter",
+              "docs/operations/claude-code-permissions",
+              "docs/operations/commit-signing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Catalogs",
+            "pages": ["docs/reference/app-settings", "docs/reference/services"]
+          },
+          {
+            "group": "API",
+            "pages": ["docs/api/index"]
+          }
+        ]
+      },
+      {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["docs/integrations/index"]
+          },
+          {
+            "group": "Inbound webhooks",
+            "pages": [
               "docs/integrations/webhook_alertmanager_dispatch",
               "docs/integrations/webhook_revenue_event_writer",
-              "docs/integrations/webhook_subscriber_event_writer",
-              "docs/integrations/setup-gsc-and-ga4"
+              "docs/integrations/webhook_subscriber_event_writer"
             ]
           },
           {
-            "group": "Reference",
+            "group": "Outbound",
             "pages": [
-              "docs/reference/app-settings",
-              "docs/reference/services",
-              "docs/api/README"
+              "docs/integrations/outbound_discord_post",
+              "docs/integrations/outbound_telegram_post",
+              "docs/integrations/outbound_vercel_isr"
             ]
+          },
+          {
+            "group": "Publishing",
+            "pages": [
+              "docs/integrations/publishing_bluesky",
+              "docs/integrations/publishing_mastodon"
+            ]
+          },
+          {
+            "group": "Taps",
+            "pages": [
+              "docs/integrations/tap_builtin_topic_source",
+              "docs/integrations/tap_external_metrics_writer",
+              "docs/integrations/tap_singer_subprocess"
+            ]
+          },
+          {
+            "group": "Retention",
+            "pages": [
+              "docs/integrations/retention_downsample",
+              "docs/integrations/retention_ttl_prune"
+            ]
+          },
+          {
+            "group": "Setup guides",
+            "pages": ["docs/integrations/setup-gsc-and-ga4"]
           }
         ]
       }
@@ -130,7 +157,7 @@
           "icon": "github"
         },
         {
-          "anchor": "Glad Labs Pro",
+          "anchor": "Pro",
           "href": "https://gladlabs.io/product",
           "icon": "star"
         }
