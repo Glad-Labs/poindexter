@@ -35,26 +35,65 @@ jobs:
           !contains(github.event.head_commit.message, '[skip ci]')
 
         steps:
+            # Mint an installation token from the "Glad Labs Release Bot"
+            # GitHub App. WHY this exists: GitHub's security model
+            # deliberately suppresses workflow triggers from PRs authored
+            # by ``GITHUB_TOKEN`` (prevents runaway workflow chains). If
+            # release-please opens the PR using the default token,
+            # ``migrations-smoke`` (the only required status check) never
+            # fires on it → the merge stays BLOCKED forever even with
+            # auto-merge enabled. A GitHub App is a real principal in
+            # GitHub's eyes, so its PRs trigger workflows normally.
+            #
+            # App permissions required (set when creating the App):
+            #   - Contents: read & write  (branches + commits)
+            #   - Pull requests: read & write  (open / label / auto-merge)
+            #   - Metadata: read  (mandatory baseline)
+            #
+            # Secrets required on this repo:
+            #   - RELEASE_PLEASE_APP_ID — numeric App ID from the GH App
+            #     settings page
+            #   - RELEASE_PLEASE_APP_PRIVATE_KEY — full ``-----BEGIN RSA
+            #     PRIVATE KEY-----`` ... ``-----END RSA PRIVATE KEY-----``
+            #     PEM contents from "Generate a private key"
+            - name: "\U0001F511 Mint App token"
+              id: app_token
+              uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+              with:
+                  app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+                  private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
             - name: "\U0001F4E6 Run Release Please"
               id: release
               uses: googleapis/release-please-action@c3fc4de07084f75a2b61a5b933069bda6edf3d5c # v4
               with:
+                  # App-minted token (NOT GITHUB_TOKEN) — required so the
+                  # opened PR triggers downstream workflows (especially
+                  # ``migrations-smoke``, the lone branch-protection gate).
+                  token: ${{ steps.app_token.outputs.token }}
                   release-type: node
                   # Manifest mode: reads config from release-please-config.json
                   # and tracks versions in .release-please-manifest.json
                   config-file: release-please-config.json
                   manifest-file: .release-please-manifest.json
 
-            # Auto-merge the release PR if branch protection's required
-            # checks all pass. Combined with required test-backend +
-            # migrations-smoke + Mintlify checks, this means: every commit
-            # with a feat:/fix: that lands on public main triggers a
-            # release-please PR within minutes, runs through CI, and
-            # auto-merges → tag + GitHub Release. Zero manual touch.
+            # Auto-merge the release PR once branch-protection's required
+            # checks all pass. Combined with required ``migrations-smoke``
+            # (which now actually fires, see App-token note above), this
+            # means: every commit with feat:/fix: that lands on main
+            # triggers a release-please PR within minutes, runs through
+            # CI, and auto-merges → tag + GitHub Release. Zero manual
+            # touch.
+            #
+            # ``gh pr merge --auto`` MUST also be invoked with the App
+            # token — the GITHUB_TOKEN can enable auto-merge but the
+            # actual merge action when checks complete needs to be
+            # performed by something with bypass-or-pass-checks authority.
+            # The App has it; the default token does not.
             - name: "\U0001F501 Enable auto-merge on the release PR"
               if: ${{ steps.release.outputs.pr }}
               env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GH_TOKEN: ${{ steps.app_token.outputs.token }}
                   # Pipe the JSON via env var (NOT inline interpolation).
                   # The release-please PR body contains apostrophes,
                   # backticks, and parens from the changelog — inlining
