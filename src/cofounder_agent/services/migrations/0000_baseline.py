@@ -1,20 +1,21 @@
-"""Baseline migration — schema + seed data as of v0.5.0.
+"""Baseline migration — schema + seed data as of v0.6.0.
 
-This single migration replaces the 169 legacy ``0xxx_*.py`` and
-``20260*_*.py`` files that previously evolved the schema incrementally.
-Squashed 2026-05-08 because:
+This single migration replaces the 169 legacy ``0xxx_*.py`` files
+(squashed 2026-05-08 under Glad-Labs/poindexter#30) PLUS the 61
+timestamped ``20260509_*`` through ``20260528_*`` migrations that
+accumulated since (squashed 2026-05-28 — Phase C). 230 total
+historical migrations folded into this one file.
 
-- Running 169 migrations on every fresh DB took ~5 seconds and was a
-  ticking time bomb — a stale column reference like the one in
-  ``20260508_215727_seed_qa_gate_deepeval_brand_fabrication.py`` (which
-  inserted into a non-existent ``app_settings.value_type``) crashed the
-  unit-tier ``db_pool`` fixture and silently broke every db-backed test.
-  The audit on ``Glad-Labs/poindexter#30`` flagged that drift directly.
-- Glad Labs runs solo with one prod DB; the per-step audit trail of
-  149 historical migrations carried zero operational value. The git log
-  is the audit trail.
-- Open-source onboarding (``poindexter setup``) wants ONE step from
-  empty Postgres to a working schema, not 169.
+Why the second flatten:
+
+- Fresh-DB setup time grows linearly with migration count; CI
+  migrations-smoke was applying 62 files (baseline + 61) in series.
+- A stale column reference in any one timestamped migration can crash
+  the unit-tier ``db_pool`` fixture and silently break every db-backed
+  test — same failure mode that motivated Phase A in 2026-05-08.
+- Matt is still the only user; the per-step audit trail of post-baseline
+  migrations carried no operational value beyond what the git log
+  already provides.
 
 Two sibling files carry the actual SQL (kept out of this Python module
 so diffs are readable):
@@ -23,9 +24,15 @@ so diffs are readable):
   with ``CREATE TABLE → CREATE TABLE IF NOT EXISTS`` etc., so the same
   file no-ops on Matt's prod and bootstraps a fresh DB.
 - ``0000_baseline.seeds.sql`` — non-secret ``app_settings`` rows,
-  ``qa_gates``, ``content_validator_rules``. Secrets stay out by design;
-  ``poindexter setup`` writes per-operator credentials into bootstrap.toml
-  + ``app_settings`` at install time.
+  ``qa_gates``, ``content_validator_rules``, ``niches``. Secrets stay
+  out by design; ``poindexter setup`` writes per-operator credentials
+  into bootstrap.toml + ``app_settings`` at install time.
+
+The Phase C flatten was parity-checked against the live result of
+applying ``0000_baseline + 61 timestamped`` on a throwaway DB
+(``flatten_old``) versus applying this baseline alone
+(``flatten_new``); schema dumps + seeded-data tables were
+byte-equivalent after timestamp/restrict-token normalization.
 
 New schema changes from here on go in fresh timestamped migrations
 (``YYYYMMDD_HHMMSS_<slug>.py``) — same convention as before; the runner
