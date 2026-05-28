@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-26.**  
+> **Auto-generated from live `app_settings` table on 2026-05-28.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 698 active rows across 58 categories. 5 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [finance](#finance) (7 keys)
 - [firefighter](#firefighter) (9 keys)
 - [gates](#gates) (10 keys)
-- [general](#general) (268 keys)
+- [general](#general) (269 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (12 keys)
@@ -63,7 +63,7 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (35 keys)
+- [pipeline](#pipeline) (34 keys)
 - [plugins](#plugins) (7 keys)
 - [plugin_telemetry](#plugin-telemetry) (50 keys)
 - [podcast](#podcast) (1 key)
@@ -491,6 +491,7 @@ The worker re-reads on every poll; no restart needed.
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_source_filter` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `scheduled_publisher_poll_seconds` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
+| `sdxl_enabled` | `true` |  | Master toggle for the SDXL featured/inline image pipeline. When false, source_featured_image skips the SDXL HTTP serv... |
 | `sdxl_server_url` | `http://host.docker.internal:9836` |  | SDXL image generation server |
 | `self_consistency_enabled` | `true` |  |  |
 | `semantic_dedup_threshold` | `0.92` |  |  |
@@ -526,7 +527,7 @@ The worker re-reads on every poll; no restart needed.
 | `video_compositor` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_feed_name` | `Glad Labs Video` |  | Video RSS feed title |
 | `video_negative_prompt` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `video_server_url` | `http://host.docker.internal:9840` |  | Video generation server (poindexter-wan-server container, exposes port 9840). Was port 9837 historically — the wan-se... |
+| `video_server_url` | `http://host.docker.internal:9837` |  | Slideshow video generation server (Ken Burns assembly via ffmpeg, exposes port 9837). The wan-server (Wan2.1 T2V mode... |
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `voice_agent_brain` | `ollama` |  | LLM stage the always-on voice agent uses. 'ollama' (default) wires the local glm-4.7-5090 + three read-only Poindexte... |
 | `voice_agent_brain_mode` | `claude-code` |  |  |
@@ -846,7 +847,6 @@ The worker re-reads on every poll; no restart needed.
 | `template_runner_use_postgres_checkpointer` | `true` |  | When true, services/template_runner.py compiles each LangGraph with an AsyncPostgresSaver checkpointer (durable state... |
 | `topic_dedup_existing_threshold` | `0.7` |  | Word-overlap ratio above which a candidate topic is treated as a duplicate of an existing published post or in-flight... |
 | `topic_dedup_intra_batch_threshold` | `0.65` |  | Word-overlap ratio above which two candidates from the same scrape batch are treated as duplicates (internal tracker)... |
-| `video_scene_visuals_max_concurrent` | `1` |  | Max concurrent scene resolutions in video.scene_visuals stage (poindexter#164). Default 1 = sequential (prior behavio... |
 | `worker_heartbeat_interval_seconds` | `30` |  | Worker heartbeat cadence. While processing a single task the Prefect content_generation_flow stamps pipeline_tasks.up... |
 
 ## plugins
