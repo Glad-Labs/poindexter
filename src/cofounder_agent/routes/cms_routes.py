@@ -904,7 +904,15 @@ async def track_page_view(request: Request) -> JSONResponse:
 
     Body: {"path": "/posts/slug-here", "slug": "slug-here", "referrer": "..."}
     Returns: 204 No Content
+
+    Also writes a ``page_view_received`` row to ``audit_log`` so silent
+    beacon failure surfaces in Grafana: if the audit-event rate falls to
+    zero while Cloudflare reports real traffic, the beacon path has
+    broken somewhere between the browser and this endpoint. This is the
+    drift detector for the silent-since-2026-04-09 regression.
     """
+    import json as _json
+
     try:
         body = await request.json()
         path = body.get("path", "")[:500]
@@ -929,6 +937,26 @@ async def track_page_view(request: Request) -> JSONResponse:
                     "UPDATE posts SET view_count = COALESCE(view_count, 0) + 1 WHERE slug = $1",
                     slug,
                 )
+
+        # Drift detector — append to audit_log so Grafana can chart beacon
+        # rate. A flatline here while Cloudflare shows traffic means the
+        # beacon path has regressed (the 2026-04-09 silent-failure mode).
+        # Wrapped in its own try/except — never let the drift signal break
+        # the beacon itself.
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO audit_log (event_type, source, details, severity)
+                    VALUES ($1, $2, $3::jsonb, $4)
+                    """,
+                    "page_view_received",
+                    "track_page_view",
+                    _json.dumps({"path": path, "slug": slug, "has_referrer": bool(referrer)}),
+                    "info",
+                )
+        except Exception:
+            logger.debug("[TRACK_VIEW] audit_log drift-row insert failed (non-fatal)", exc_info=True)
     except Exception:
         logger.warning("[TRACK_VIEW] Page view tracking failed (non-fatal)", exc_info=True)
 

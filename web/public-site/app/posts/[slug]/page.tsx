@@ -11,6 +11,7 @@ import {
 import { generateBlogPostingSchema } from '../../../lib/structured-data';
 import { GiscusWrapper } from '../../../components/GiscusWrapper';
 import AdUnit from '../../../components/AdUnit';
+import { ViewTracker } from '../../../components/ViewTracker';
 import sanitizeHtml from 'sanitize-html';
 import {
   buildMetaDescription,
@@ -192,6 +193,8 @@ export default async function PostPage({
 
   return (
     <>
+      {/* Own-analytics beacon — fires once on mount, writes to page_views */}
+      <ViewTracker slug={post.slug} />
       {/* Schema */}
       <BlogPostingSchema
         headline={post.seo_title || post.title}

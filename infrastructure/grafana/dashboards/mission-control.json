@@ -1185,6 +1185,73 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 17,
+      "title": "Page-views received (drift detector)",
+      "type": "stat",
+      "description": "Page-view beacon hits over the global dashboard time range. Powered by the audit_log drift detector (event_type='page_view_received') written by routes/cms_routes.py::track_page_view on every successful beacon. If this flatlines to 0 while Cloudflare reports traffic, the beacon path has regressed — same silent-failure mode that ran from 2026-04-09 to 2026-05-27. Red at 0, yellow at <10, green at 10+.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Page-views received\" FROM audit_log WHERE event_type = 'page_view_received' AND $__timeFilter(timestamp)",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

@@ -961,7 +961,11 @@ class TestTrackPageView:
         assert len(stored_path) <= 500
 
     def test_slug_triggers_view_count_update(self):
-        """Non-empty slug triggers an UPDATE posts SET view_count."""
+        """Non-empty slug triggers an UPDATE posts SET view_count.
+
+        Sequence (post-2026-05-27 beacon-restore): INSERT page_views,
+        UPDATE posts, INSERT audit_log (drift detector).
+        """
         conn = MagicMock()
         conn.execute = AsyncMock()
         cm = MagicMock()
@@ -974,11 +978,65 @@ class TestTrackPageView:
             client = TestClient(_build_app())
             client.post("/api/track/view", json={"path": "/posts/x", "slug": "x"})
 
-        # Two execute calls: INSERT page_views + UPDATE posts
-        assert conn.execute.await_count == 2
+        # Three execute calls: INSERT page_views + UPDATE posts + INSERT audit_log
+        assert conn.execute.await_count == 3
         second_sql = conn.execute.await_args_list[1].args[0]
         assert "UPDATE posts" in second_sql
         assert "view_count" in second_sql
+
+    def test_audit_log_drift_row_written(self):
+        """Every successful beacon writes an audit_log row with
+        event_type='page_view_received' — the drift detector that surfaces
+        silent beacon failure in Grafana (the 2026-04-09 regression class).
+        """
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.post(
+                "/api/track/view",
+                json={"path": "/posts/y", "slug": "y", "referrer": "https://google.com"},
+            )
+
+        assert resp.status_code == 204
+        # Last execute call is the audit_log insert
+        last_call = conn.execute.await_args_list[-1]
+        last_sql = last_call.args[0]
+        assert "INSERT INTO audit_log" in last_sql
+        # Confirm event_type + source positional args
+        assert last_call.args[1] == "page_view_received"
+        assert last_call.args[2] == "track_page_view"
+        # severity is the last positional arg
+        assert last_call.args[-1] == "info"
+
+    def test_audit_log_failure_is_non_fatal(self):
+        """If the audit_log insert fails, the beacon still returns 204 —
+        the drift detector must never break the beacon itself.
+        """
+        conn = MagicMock()
+        # First two calls succeed, audit_log insert raises
+        conn.execute = AsyncMock(side_effect=[None, None, RuntimeError("audit_log down")])
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.post(
+                "/api/track/view",
+                json={"path": "/posts/z", "slug": "z"},
+            )
+
+        # Still 204 — audit_log failure must not surface
+        assert resp.status_code == 204
 
 
 # ---------------------------------------------------------------------------
