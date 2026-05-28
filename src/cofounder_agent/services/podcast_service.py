@@ -420,15 +420,7 @@ async def _build_script_with_llm(title: str, content: str) -> str:
     script_body = _normalize_for_speech(script_body)
     spoken_title = _normalize_for_speech(title)
 
-    _pname = site_config.get("podcast_name", "the podcast")
-    _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
-    intro = f"Welcome to {_pname}. Today's episode: {spoken_title}."
-    outro = (
-        f"Thanks for listening to {_pname}. "
-        f"Visit {_domain_tts} for more episodes, articles, and insights. "
-        "See you next time."
-    )
-    return f"{intro}\n\n{script_body}\n\n{outro}"
+    return _wrap_with_intro_outro(script_body, spoken_title)
 
 
 def _build_script_fallback(title: str, content: str) -> str:
@@ -437,15 +429,41 @@ def _build_script_fallback(title: str, content: str) -> str:
     plain_text = _normalize_for_speech(plain_text)
     spoken_title = _normalize_for_speech(title)
 
-    _pname = site_config.get("podcast_name", "the podcast")
-    _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
-    intro = f"Welcome to {_pname}. Today's episode: {spoken_title}."
-    outro = (
-        f"Thanks for listening to {_pname}. "
-        f"Visit {_domain_tts} for more episodes, articles, and insights. "
-        "See you next time."
-    )
-    return f"{intro}\n\n{plain_text}\n\n{outro}"
+    return _wrap_with_intro_outro(plain_text, spoken_title)
+
+
+def _wrap_with_intro_outro(script_body: str, spoken_title: str) -> str:
+    """Prepend / append intro / outro to the spoken body for the podcast.
+
+    Default on — the podcast IS a show, so "Welcome to {name}" makes
+    sense there.
+
+    TODO (Matt 2026-05-28): the video composer currently reuses the
+    podcast MP3 as the video soundtrack (see
+    ``video_service.generate_video_for_post:467``). When intro/outro
+    are present, the video opens with "Welcome to {podcast_name}"
+    over a slideshow that isn't framed as a podcast episode. Follow-up
+    PR should split podcast (with wrappers) from video narration (body
+    only) — either via two TTS passes during episode generation or by
+    trimming intro/outro from the MP3 before video mux. Tracked as a
+    separate task to avoid coupling that fix with this refactor.
+    """
+    if site_config.get("podcast_include_intro", "true").lower() == "true":
+        _pname = site_config.get("podcast_name", "the podcast")
+        intro = f"Welcome to {_pname}. Today's episode: {spoken_title}."
+        script_body = f"{intro}\n\n{script_body}"
+
+    if site_config.get("podcast_include_outro", "true").lower() == "true":
+        _pname = site_config.get("podcast_name", "the podcast")
+        _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
+        outro = (
+            f"Thanks for listening to {_pname}. "
+            f"Visit {_domain_tts} for more episodes, articles, and insights. "
+            "See you next time."
+        )
+        script_body = f"{script_body}\n\n{outro}"
+
+    return script_body
 
 
 def _estimate_duration_from_text(text: str) -> int:
