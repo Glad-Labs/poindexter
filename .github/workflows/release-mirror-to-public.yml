@@ -1,0 +1,155 @@
+name: Mirror Release to Public Poindexter
+
+# Fires when release-please cuts a GitHub Release on glad-labs-stack
+# (or when an operator triggers a manual backfill via workflow_dispatch).
+# Creates a matching tag + GitHub Release on Glad-Labs/poindexter so the
+# public Releases page stays in sync.
+#
+# Why this exists:
+#   release-please runs on glad-labs-stack (NOT on the public mirror —
+#   see release-please.yml for the SHA-after-force-push rationale).
+#   Without this workflow the public mirror's Releases page got frozen
+#   at v0.1.1 (2026-04-12) while the source repo ran ahead to v0.13.1.
+#   Tags are stable refs independent of branch state, so they survive
+#   the public mirror's nightly force-rebuild from the sync workflow.
+
+on:
+    release:
+        types: [published]
+    workflow_dispatch:
+        inputs:
+            mode:
+                description: "single | backfill (replay all missing releases)"
+                required: false
+                default: "single"
+            single_tag:
+                description: "(single mode only) tag to mirror, e.g. v0.13.1"
+                required: false
+
+permissions:
+    contents: read
+
+jobs:
+    mirror-release:
+        runs-on: ubuntu-latest
+
+        # Only fires from the source repo. Avoids any chance of recursive
+        # mirror-of-mirror activity if this workflow somehow leaks onto the
+        # public mirror.
+        if: github.repository == 'Glad-Labs/glad-labs-stack'
+
+        steps:
+            # Mint an installation token from the "Glad Labs Release Bot"
+            # GitHub App. SAME secrets as release-please.yml — the App
+            # must be installed on BOTH Glad-Labs/glad-labs-stack and
+            # Glad-Labs/poindexter with `contents: write` + `metadata: read`.
+            # If the App is only installed on the source repo, this token
+            # will be scoped accordingly and the `gh release create` on the
+            # public mirror will fail with 403 — fix is to install the App
+            # on the public repo too (org settings → Installed GitHub Apps
+            # → Configure → add Glad-Labs/poindexter to repository access).
+            - name: "🔑 Mint App token (read source, write public)"
+              id: app_token
+              uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+              with:
+                  app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+                  private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+                  # owner+repositories grants the token explicit access to
+                  # both repos — required when the App is installed
+                  # org-wide but the per-repo access list is enumerated.
+                  owner: Glad-Labs
+                  repositories: |
+                      glad-labs-stack
+                      poindexter
+
+            - name: "📦 Mirror release(s)"
+              env:
+                  GH_TOKEN: ${{ steps.app_token.outputs.token }}
+                  SOURCE_REPO: Glad-Labs/glad-labs-stack
+                  TARGET_REPO: Glad-Labs/poindexter
+                  EVENT_NAME: ${{ github.event_name }}
+                  MODE: ${{ github.event.inputs.mode || 'single' }}
+                  SINGLE_TAG: ${{ github.event.inputs.single_tag || github.event.release.tag_name }}
+              run: |
+                  set -euo pipefail
+
+                  # Wait for the public mirror to catch up to the source
+                  # commit that the release-please PR squash-merged.
+                  # release-please's release-published event fires
+                  # immediately after the GitHub Release is created on
+                  # glad-labs-stack; the sync-to-public-poindexter workflow
+                  # then takes ~30s to filter + force-push. If we try to
+                  # tag the public mirror before that push lands, the tag
+                  # points at the *prior* HEAD and is one commit behind.
+                  # Sleep here is a coarse hammer; if it ever becomes
+                  # flaky, replace with a polling loop on the public
+                  # mirror's main SHA matching the expected version-bump
+                  # commit.
+                  if [[ "$EVENT_NAME" == "release" ]]; then
+                      echo "[mirror] Sleeping 90s to let sync-to-public-poindexter land the version bump..."
+                      sleep 90
+                  fi
+
+                  rewrite_body() {
+                      # Replace internal repo references with the public one.
+                      # Mirrors the cosmetic-substitution pass in
+                      # scripts/sync-to-github.sh so the body reads naturally
+                      # on the public Releases page.
+                      python3 -c "
+                  import sys
+                  text = sys.stdin.read()
+                  text = text.replace('Glad-Labs/glad-labs-stack', 'Glad-Labs/poindexter')
+                  sys.stdout.write(text)
+                  "
+                  }
+
+                  mirror_one() {
+                      local tag="$1"
+                      echo "[mirror] Processing $tag..."
+
+                      # Skip if it already exists on the target.
+                      if gh release view "$tag" --repo "$TARGET_REPO" >/dev/null 2>&1; then
+                          echo "[mirror]   ↳ already exists on $TARGET_REPO, skipping"
+                          return 0
+                      fi
+
+                      # Fetch the source release.
+                      local src_json
+                      src_json=$(gh release view "$tag" --repo "$SOURCE_REPO" --json name,body,isPrerelease,createdAt)
+                      local name body is_prerelease
+                      name=$(echo "$src_json" | python3 -c "import sys, json; print(json.load(sys.stdin)['name'])")
+                      body=$(echo "$src_json" | python3 -c "import sys, json; print(json.load(sys.stdin)['body'])" | rewrite_body)
+                      is_prerelease=$(echo "$src_json" | python3 -c "import sys, json; print('true' if json.load(sys.stdin)['isPrerelease'] else 'false')")
+
+                      # Create the tag + Release on the target, pointing at
+                      # the current main HEAD (whatever the mirror sync
+                      # landed last). --target main is critical: omit it
+                      # and gh tries to default to the source repo's tag
+                      # SHA, which doesn't exist on the target.
+                      local prerelease_flag=""
+                      [[ "$is_prerelease" == "true" ]] && prerelease_flag="--prerelease"
+
+                      echo "$body" | gh release create "$tag" \
+                          --repo "$TARGET_REPO" \
+                          --target main \
+                          --title "$name" \
+                          --notes-file - \
+                          $prerelease_flag
+                      echo "[mirror]   ↳ created $tag on $TARGET_REPO"
+                  }
+
+                  if [[ "$MODE" == "backfill" ]]; then
+                      echo "[mirror] Backfill mode — replaying every source release missing from target."
+                      gh release list --repo "$SOURCE_REPO" --limit 100 --json tagName \
+                          | python3 -c "import sys, json; [print(r['tagName']) for r in reversed(json.load(sys.stdin))]" \
+                          | while read -r tag; do
+                              [[ -z "$tag" ]] && continue
+                              mirror_one "$tag"
+                          done
+                  else
+                      if [[ -z "$SINGLE_TAG" ]]; then
+                          echo "[mirror] No tag supplied (single mode) — nothing to do."
+                          exit 0
+                      fi
+                      mirror_one "$SINGLE_TAG"
+                  fi
