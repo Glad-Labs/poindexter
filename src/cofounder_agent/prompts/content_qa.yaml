@@ -269,3 +269,44 @@
 
     Return JSON with these keys:
     {{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, "seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", "suggestions": ["suggestion1", "suggestion2"]}}
+
+- key: qa.vision_image_relevance
+  category: content_qa
+  description: "Vision-QA: per-image relevance scoring. A vision-capable Ollama model rates each inline image 0-100 on how well it represents the article's subject. Used by MultiModelQA.review_images_with_vision_model. Migrated from inline string 2026-05-28."
+  output_format: json
+  template: |-
+    You are reviewing images attached to a blog post for relevance.
+
+    TITLE: {title}
+    TOPIC: {topic}
+
+    ARTICLE SNIPPET:
+    {content_snippet}
+
+    For EACH image attached, rate 0-100 how well the image represents the article's subject and would help a reader understand the content. A generic stock photo with no connection to the topic scores below 50. An image that directly illustrates a concept from the article scores 80+.
+
+    Respond with ONLY valid JSON:
+    {{"scores": [int,...], "reasons": ["short reason per image", ...], "overall": int}}
+
+- key: qa.vision_preview_screenshot
+  category: content_qa
+  description: "Vision-QA: full-page screenshot review. A vision-capable Ollama model rates the rendered preview 0-100 on layout, image rendering, and visual professionalism. Used by MultiModelQA.review_preview_screenshot. Migrated from inline string 2026-05-28."
+  output_format: json
+  template: |-
+    You are the final visual reviewer for a blog post before it goes live. The attached image is a full-page screenshot of the post as it will appear to readers.
+
+    TITLE: {title}
+    TOPIC: {topic}
+
+    Rate 0-100 how professional and readable the rendered page looks. Deductions for:
+      - Broken or missing images (placeholder icons, alt text showing)
+      - Layout problems (overflowing tables, code blocks spilling outside the container)
+      - Empty or near-empty sections
+      - Mangled HTML (raw tags visible, unclosed quotes, escaped entities)
+      - Visually unbalanced pages (a wall of text with no breaks)
+      - Anything that would make a reader bounce in 3 seconds
+
+    A clean, professional post scores 80+. A post with any ONE serious visual defect scores below 60.
+
+    Respond with ONLY valid JSON:
+    {{"score": int, "approved": true/false, "issues": ["specific visual problem 1", ...]}}

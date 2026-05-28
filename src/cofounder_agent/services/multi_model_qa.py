@@ -2071,17 +2071,11 @@ class MultiModelQA:
 
         # Build a context snippet from the content (first ~1500 chars + title).
         content_snippet = content[:1500]
-        prompt = (
-            "You are reviewing images attached to a blog post for relevance.\n\n"
-            f"TITLE: {title}\n"
-            f"TOPIC: {topic}\n\n"
-            f"ARTICLE SNIPPET:\n{content_snippet}\n\n"
-            "For EACH image attached, rate 0-100 how well the image represents "
-            "the article's subject and would help a reader understand the content. "
-            "A generic stock photo with no connection to the topic scores below 50. "
-            "An image that directly illustrates a concept from the article scores 80+.\n\n"
-            "Respond with ONLY valid JSON:\n"
-            '{"scores": [int,...], "reasons": ["short reason per image", ...], "overall": int}'
+        prompt = get_prompt_manager().get_prompt(
+            "qa.vision_image_relevance",
+            title=title,
+            topic=topic,
+            content_snippet=content_snippet,
         )
 
         # Ollama /api/chat with images — single message, images array.
@@ -2266,24 +2260,10 @@ class MultiModelQA:
 
         b64 = base64.b64encode(png_bytes).decode("ascii")
 
-        prompt = (
-            "You are the final visual reviewer for a blog post before it goes "
-            "live. The attached image is a full-page screenshot of the post "
-            "as it will appear to readers.\n\n"
-            f"TITLE: {title}\n"
-            f"TOPIC: {topic}\n\n"
-            "Rate 0-100 how professional and readable the rendered page looks. "
-            "Deductions for:\n"
-            "  - Broken or missing images (placeholder icons, alt text showing)\n"
-            "  - Layout problems (overflowing tables, code blocks spilling outside the container)\n"
-            "  - Empty or near-empty sections\n"
-            "  - Mangled HTML (raw tags visible, unclosed quotes, escaped entities)\n"
-            "  - Visually unbalanced pages (a wall of text with no breaks)\n"
-            "  - Anything that would make a reader bounce in 3 seconds\n\n"
-            "A clean, professional post scores 80+. A post with any ONE serious "
-            "visual defect scores below 60.\n\n"
-            "Respond with ONLY valid JSON:\n"
-            '{"score": int, "approved": true/false, "issues": ["specific visual problem 1", ...]}'
+        prompt = get_prompt_manager().get_prompt(
+            "qa.vision_preview_screenshot",
+            title=title,
+            topic=topic,
         )
 
         try:
