@@ -1338,7 +1338,7 @@ async def generate_with_context(
     )
     instructions = extra_instructions or ""
     prompt = get_prompt_manager().get_prompt(
-        "writer_rag_modes.generate_with_context",
+        "atoms.two_pass_writer.generate_with_context",
         topic=topic,
         angle=angle,
         instructions=instructions,

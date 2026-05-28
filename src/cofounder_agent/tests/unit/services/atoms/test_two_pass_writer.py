@@ -20,7 +20,7 @@ Deviations from plan:
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from services.writer_rag_modes import two_pass
+from services.atoms import two_pass_writer as two_pass
 
 pytestmark = pytest.mark.asyncio
 

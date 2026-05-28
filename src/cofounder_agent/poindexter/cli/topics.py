@@ -338,9 +338,7 @@ def niche_list() -> None:
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
             for n in await NicheService(pool).list_active():
-                click.echo(
-                    f"{n.slug:20s} {n.name:30s} mode={n.writer_rag_mode}"
-                )
+                click.echo(f"{n.slug:20s} {n.name:30s}")
         finally:
             await pool.close()
 
@@ -367,7 +365,6 @@ def niche_show(slug: str) -> None:
                         "slug": n.slug,
                         "name": n.name,
                         "active": n.active,
-                        "writer_rag_mode": n.writer_rag_mode,
                         "batch_size": n.batch_size,
                         "discovery_cadence_minute_floor":
                             n.discovery_cadence_minute_floor,

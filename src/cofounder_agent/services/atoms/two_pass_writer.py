@@ -1,15 +1,27 @@
-"""TWO_PASS — internal-first draft, then conditional external fact-augmentation
-loop. Implemented as a LangGraph state machine because:
+"""``atoms.two_pass_writer`` — internal-first draft, then conditional
+external fact-augmentation loop.
+
+The canonical_blog template's writer atom. dev_diary uses the simpler
+``atoms.narrate_bundle`` (no RAG, single-call narrative); this atom
+handles the RAG-grounded long-form path for the ``glad-labs`` niche
+and any future niche that drafts from embeddings + optional external
+research.
+
+Implemented as a LangGraph state machine because the writer needs:
 
 - Multi-pass with conditional re-entry (revise can surface new
-  [EXTERNAL_NEEDED] markers that need another research pass)
-- Bounded loop (_MAX_REVISION_LOOPS=3 prevents runaway)
-- Future-friendly: when we add an auto-researcher agent or a draft-critic
-  loop, they slot in as new nodes/edges rather than refactoring orchestration
+  ``[EXTERNAL_NEEDED]`` markers that need another research pass)
+- Bounded loop (``_MAX_REVISION_LOOPS=3`` prevents runaway)
+- Future-friendly: when we add an auto-researcher agent or a
+  draft-critic loop, they slot in as new nodes/edges rather than
+  refactoring orchestration
 
-Spec §"OSS leverage decisions" — TWO_PASS is the only writer mode using
-LangGraph; the simpler modes (TOPIC_ONLY, CITATION_BUDGET, STORY_SPINE)
-stay plain Python because they don't have branching.
+History: lived at ``services/writer_rag_modes/two_pass.py`` until
+2026-05-28, when the parent ``writer_rag_modes/`` namespace was
+retired with its 4 dead siblings (TOPIC_ONLY / CITATION_BUDGET /
+STORY_SPINE / DETERMINISTIC_COMPOSITOR). The dispatcher-with-one-
+mode was the obvious drift signal — once TWO_PASS was the only
+mode left, the dispatcher was pure ceremony.
 
 State flow:
 
@@ -63,10 +75,55 @@ _SITE_CONFIG_REGISTRY: dict[str, Any] = {}
 logger = get_logger(__name__)
 
 
+# Private repo URL scrub — defense in depth, mirrors the same set used
+# by ``atoms.narrate_bundle`` (PR #680). Glad-Labs/glad-labs-stack is
+# the private operator repo; only Glad-Labs/poindexter is public. The
+# two_pass writer is grounded by embedding snippets + external web
+# research — neither source feeds private-repo URLs into the prompt,
+# but the model can still echo a URL from training data. This scrub
+# runs on every returned draft before the caller persists it.
+_PRIVATE_REPO_PULL_INLINE = re.compile(
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)"
+)
+_PRIVATE_REPO_COMMIT_INLINE = re.compile(
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
+)
+_PRIVATE_REPO_PULL_AUTOLINK = re.compile(
+    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+)
+_PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
+    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
+)
+_PRIVATE_REPO_PULL_BARE = re.compile(
+    r"https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)"
+)
+_PRIVATE_REPO_COMMIT_BARE = re.compile(
+    r"https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
+)
+_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/glad-labs-stack\b")
+
+
+def _scrub_private_repo_refs(text: str) -> str:
+    """Strip private-repo URLs from generated content (defense in depth)."""
+    if not text:
+        return text
+    text = _PRIVATE_REPO_PULL_INLINE.sub(r"\1 (PR #\2)", text)
+    text = _PRIVATE_REPO_COMMIT_INLINE.sub(r"\1 (`\2`)", text)
+    text = _PRIVATE_REPO_PULL_AUTOLINK.sub(r"(PR #\1)", text)
+    text = _PRIVATE_REPO_COMMIT_AUTOLINK.sub(r"(`\1`)", text)
+    text = _PRIVATE_REPO_PULL_BARE.sub(r"(PR #\1)", text)
+    text = _PRIVATE_REPO_COMMIT_BARE.sub(r"(`\1`)", text)
+    text = _PRIVATE_REPO_MENTION.sub("Glad-Labs/poindexter", text)
+    return text
+
+
 # Prompt key in UnifiedPromptManager + YAML registry. YAML default at
 # prompts/writer_rag_modes.yaml; Langfuse overrides take effect on the
 # next get_prompt call. Per feedback_prompts_must_be_db_configurable.
-_REVISE_PROMPT_KEY = "writer_rag_modes.two_pass.revise_prompt"
+_REVISE_PROMPT_KEY = "atoms.two_pass_writer.revise_prompt"
 
 
 def _resolve_revise_prompt(*, draft: str, aug_block: str) -> str:
@@ -423,7 +480,25 @@ def _build_graph():
 _GRAPH = _build_graph()
 
 
-async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
+async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw: Any) -> dict[str, Any]:
+    """Run the two-pass writer graph and return the final draft + metadata.
+
+    Kwargs that flow into graph state:
+
+    - ``site_config`` — for snippet-limit / model resolution settings.
+    - ``writer_prompt_override`` — niche-level prompt prepended to the
+      writer instruction.
+    - ``context_bundle`` — when set (currently only by dev_diary, which
+      now uses ``narrate_bundle`` directly so this is effectively
+      dormant for live traffic), the writer includes a GROUND TRUTH
+      section in the prompt with structured facts.
+
+    Defense in depth: every returned ``draft`` runs through the private-
+    repo URL scrub before returning, mirroring the post-LLM scrub layer
+    added to ``narrate_bundle`` in PR #680. Any GitHub URL the model
+    might echo from training data gets rewritten to ``(PR #N)`` plain
+    text before the caller persists the post.
+    """
     thread_id = f"two_pass-{niche_id}-{topic[:32]}"
     _POOL_REGISTRY[thread_id] = pool
     _SITE_CONFIG_REGISTRY[thread_id] = kw.get("site_config")
@@ -439,12 +514,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)
         return {
-            "draft": final["draft"],
+            "draft": _scrub_private_repo_refs(final["draft"]),
             "snippets_used": final.get("snippets", []),
             "external_lookups": final.get("external_lookups", []),
             "revision_loops": final.get("revision_loops", 0),
             "loop_capped": final.get("loop_capped", False),
-            "mode": "TWO_PASS",
         }
     finally:
         _POOL_REGISTRY.pop(thread_id, None)

@@ -20,7 +20,12 @@ _VALID_GOAL_TYPES = frozenset({
     "REVENUE", "COMMUNITY", "NICHE_DEPTH",
 })
 
-_VALID_RAG_MODES = frozenset({"TWO_PASS"})
+# NOTE: ``writer_rag_mode`` was retired 2026-05-28 along with the
+# ``writer_rag_modes/`` directory itself. Routing is now niche-driven:
+# tasks with a ``niche_slug`` go through ``atoms.two_pass_writer``,
+# tasks without one stay on the legacy ``content_generator`` path.
+# The ``_VALID_RAG_MODES`` allowlist + the dataclass field below were
+# removed with the column drop migration.
 
 
 @dataclass(frozen=True)
@@ -31,7 +36,6 @@ class Niche:
     active: bool
     target_audience_tags: list[str]
     writer_prompt_override: str | None
-    writer_rag_mode: str
     batch_size: int
     discovery_cadence_minute_floor: int
     # Per-niche default template_slug — preferred resolution seam
@@ -62,23 +66,20 @@ class NicheService:
         self, *, slug: str, name: str,
         target_audience_tags: list[str] | None = None,
         writer_prompt_override: str | None = None,
-        writer_rag_mode: str = "TWO_PASS",
         batch_size: int = 5,
         discovery_cadence_minute_floor: int = 60,
     ) -> Niche:
-        if writer_rag_mode not in _VALID_RAG_MODES:
-            raise ValueError(f"invalid writer_rag_mode: {writer_rag_mode!r}")
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO niches (slug, name, target_audience_tags,
-                                    writer_prompt_override, writer_rag_mode,
+                                    writer_prompt_override,
                                     batch_size, discovery_cadence_minute_floor)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING *
                 """,
                 slug, name, list(target_audience_tags or []),
-                writer_prompt_override, writer_rag_mode,
+                writer_prompt_override,
                 batch_size, discovery_cadence_minute_floor,
             )
         return _row_to_niche(row)
@@ -156,7 +157,6 @@ def _row_to_niche(row: Any) -> Niche:
         id=row["id"], slug=row["slug"], name=row["name"], active=row["active"],
         target_audience_tags=list(row["target_audience_tags"] or []),
         writer_prompt_override=row["writer_prompt_override"],
-        writer_rag_mode=row["writer_rag_mode"],
         batch_size=row["batch_size"],
         discovery_cadence_minute_floor=row["discovery_cadence_minute_floor"],
         default_template_slug=default_template_slug,

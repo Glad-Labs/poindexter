@@ -847,12 +847,11 @@ class TopicBatchService:
                     """
                     INSERT INTO pipeline_tasks
                       (task_id, task_type, topic, status, stage,
-                       niche_slug, writer_rag_mode, topic_batch_id,
-                       template_slug)
+                       niche_slug, topic_batch_id, template_slug)
                     VALUES ($1, 'blog_post', $2, 'pending', 'pending',
-                            $3, $4, $5, $6)
+                            $3, $4, $5)
                     """,
-                    task_id, topic, niche.slug, niche.writer_rag_mode,
+                    task_id, topic, niche.slug,
                     batch_id, template_slug,
                 )
                 await conn.execute(

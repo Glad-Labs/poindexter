@@ -252,17 +252,10 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
         "_dev_diary_bundle": bundle_dict,
     }
 
-    # Pull writer_rag_mode from the niche row so the task routes
-    # through the writer_rag_modes dispatcher (TWO_PASS / DETERMINISTIC_
-    # COMPOSITOR / etc.) when the legacy generate_content stage runs
-    # inside the template. NULL is fine — generate_content falls back
-    # to its legacy path when unset.
-    async with pool.acquire() as _niche_conn:
-        niche_mode = await _niche_conn.fetchval(
-            "SELECT writer_rag_mode FROM niches WHERE slug = $1",
-            _NICHE_SLUG,
-        )
-
+    # dev_diary template runs through atoms/narrate_bundle directly —
+    # no generate_content stage, no writer_rag_mode dispatch. The column
+    # itself was retired 2026-05-28 along with the writer_rag_modes/
+    # directory. niche_slug is the durable routing seam.
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -271,13 +264,13 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
                     task_id, task_type, status, topic, stage,
                     style, tone, target_length,
                     target_audience, category, niche_slug,
-                    writer_rag_mode, template_slug,
+                    template_slug,
                     created_at, updated_at
                 ) VALUES (
                     $1, 'blog_post', 'pending', $2, 'pending',
                     'first_person', 'candid', 600,
                     $3, $4, $5,
-                    $6, $7,
+                    $6,
                     NOW(), NOW()
                 )
                 """,
@@ -295,7 +288,6 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
                 # generic-default writer prompt instead of the
                 # dev-diary-specific one).
                 _NICHE_SLUG,
-                niche_mode,
                 # template_slug routes the task through the v1
                 # LangGraph TemplateRunner. The 'dev_diary' template
                 # skips QA, auto-curator, SEO, and media-script stages —

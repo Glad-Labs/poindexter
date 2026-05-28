@@ -691,7 +691,6 @@ def _make_niche(slug: str = "test-niche") -> Niche:
         active=True,
         target_audience_tags=[],
         writer_prompt_override=None,
-        writer_rag_mode="TOPIC_ONLY",
         batch_size=5,
         discovery_cadence_minute_floor=60,
     )

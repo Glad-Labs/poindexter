@@ -133,19 +133,22 @@ class GenerateContentStage:
         # same sources the writer consulted.
         context["research_context"] = research_context
 
-        # Task 14 (RAG pivot): if the task carries a writer_rag_mode set by
-        # the niche topic-discovery handoff, route to the new writer-mode
-        # dispatcher instead of the legacy generator. The legacy path stays
-        # intact for tasks with no writer_rag_mode (column is nullable per
-        # migration 0114, so pre-niche tasks remain backward-compatible).
-        writer_rag_mode = await self._read_writer_rag_mode(database_service, task_id)
-        if writer_rag_mode:
+        # Niche-driven tasks route through the two_pass writer atom (RAG
+        # snippets + optional external research + revision loop). The
+        # legacy ``content_generator.generate_blog_post`` path stays for
+        # manual / pre-niche tasks that arrive without a niche_slug.
+        #
+        # Pre-2026-05-28 this dispatched via writer_rag_modes by reading
+        # ``pipeline_tasks.writer_rag_mode`` — that whole dispatcher (and
+        # its column) was retired with the dead-mode cleanup. niche_slug
+        # is the durable seam.
+        niche_slug = await self._read_niche_slug(database_service, task_id)
+        if niche_slug:
             logger.info(
-                "STAGE 2: writer_rag_mode=%s — dispatching to writer_rag_modes",
-                writer_rag_mode,
+                "STAGE 2: niche=%s — dispatching to atoms.two_pass_writer",
+                niche_slug,
             )
-            content_text, model_used, metrics = await self._generate_via_writer_mode(
-                writer_rag_mode=writer_rag_mode,
+            content_text, model_used, metrics = await self._generate_via_two_pass_atom(
                 topic=topic,
                 style=style,
                 tone=tone,
@@ -442,39 +445,40 @@ class GenerateContentStage:
 
         return research_context
 
-    async def _read_writer_rag_mode(
+    async def _read_niche_slug(
         self, database_service: Any, task_id: str,
     ) -> str | None:
-        """Return the task's writer_rag_mode if set, else None.
+        """Return the task's niche_slug if set, else None.
 
-        Task 14: niches set this column when handing tasks off via
-        TopicBatchService; legacy/manual tasks leave it NULL and stay on the
-        legacy generator path.
+        Tasks dispatched by niche topic-discovery (TopicBatchService) +
+        the dev_diary job carry a niche_slug; legacy / manual / CLI
+        tasks leave it NULL and stay on the legacy generator path.
 
-        Reads pipeline_tasks.writer_rag_mode directly rather than going
-        through ``database_service.get_task()`` — that helper passes rows
-        through ``ModelConverter.to_task_response()``, which is built
-        against the public TaskResponse schema and silently drops fields
-        not declared there. ``writer_rag_mode`` is one of the dropped
-        fields, so the helper-based read returned None for every dev_diary
-        task even when the column was set, sending the writer down the
-        legacy path. Direct SQL avoids that schema gate.
+        Reads pipeline_tasks.niche_slug directly rather than going
+        through ``database_service.get_task()`` — that helper passes
+        rows through ``ModelConverter.to_task_response()``, which is
+        built against the public TaskResponse schema and silently drops
+        fields not declared there. Direct SQL avoids that schema gate.
+
+        Replaces the prior ``_read_writer_rag_mode`` (2026-05-28: the
+        ``writer_rag_mode`` column was retired with the dead-mode
+        cleanup; niche_slug is the durable routing seam).
         """
         try:
             pool = getattr(database_service, "pool", None)
             if pool is None:
                 return None
             async with pool.acquire() as conn:
-                mode = await conn.fetchval(
-                    "SELECT writer_rag_mode FROM pipeline_tasks WHERE task_id = $1",
+                slug = await conn.fetchval(
+                    "SELECT niche_slug FROM pipeline_tasks WHERE task_id = $1",
                     str(task_id),
                 )
-            if not mode:
+            if not slug:
                 return None
-            return str(mode).strip().upper() or None
+            return str(slug).strip() or None
         except Exception as e:
             logger.warning(
-                "Failed to read writer_rag_mode for task %s: %s — falling back to legacy path",
+                "Failed to read niche_slug for task %s: %s — falling back to legacy path",
                 task_id, e,
             )
             return None
@@ -616,10 +620,9 @@ class GenerateContentStage:
             )
             return None
 
-    async def _generate_via_writer_mode(
+    async def _generate_via_two_pass_atom(
         self,
         *,
-        writer_rag_mode: str,
         topic: str,
         style: str,
         tone: str,
@@ -628,16 +631,19 @@ class GenerateContentStage:
         task_id: str,
         site_config: Any = None,
     ) -> tuple[str, str, dict[str, Any]]:
-        """Run dispatch_writer_mode and shape the result into the
+        """Run ``atoms.two_pass_writer`` and shape the result into the
         (content_text, model_used, metrics) tuple the rest of this stage
         already expects.
 
-        The dispatcher returns a richer dict ({draft, snippets_used, mode,
-        ...}); we surface mode-specific extras inside ``metrics`` so the
-        downstream QA / persistence stages can see them but the main flow
-        stays unchanged.
+        The atom returns a richer dict ({draft, snippets_used, ...});
+        we surface the writer-specific extras inside ``metrics`` so the
+        downstream QA / persistence stages can see them but the main
+        flow stays unchanged.
+
+        Pre-2026-05-28 this dispatched through the now-deleted
+        ``writer_rag_modes.dispatch_writer_mode("TWO_PASS")`` indirection.
         """
-        from services.writer_rag_modes import dispatch_writer_mode
+        from services.atoms import two_pass_writer
 
         # The writer modes use "angle" rather than separate style/tone/tags;
         # collapse the available descriptors into a single angle string.
@@ -649,7 +655,7 @@ class GenerateContentStage:
         pool = getattr(database_service, "pool", None)
         if pool is None:
             raise ValueError(
-                "writer_rag_mode dispatch requires database_service.pool but it is None"
+                "atoms.two_pass_writer requires database_service.pool but it is None"
             )
 
         # niche_id is not strictly needed by the modes themselves — the modes
@@ -695,40 +701,38 @@ class GenerateContentStage:
             "ollama", model=scheduler_model_label,
             task_id=task_id, phase="generate_content",
         ):
-            result = await dispatch_writer_mode(
-                mode=writer_rag_mode,
+            result = await two_pass_writer.run(
                 topic=topic,
                 angle=angle,
                 niche_id=None,
                 pool=pool,
                 writer_prompt_override=writer_prompt_override,
                 context_bundle=context_bundle,
-                # DI seam (glad-labs-stack#330) — threaded so each writer
-                # mode handler reads from the injected SiteConfig instead
-                # of importing the legacy module-level singleton.
+                # DI seam (glad-labs-stack#330) — threaded so the atom
+                # reads from the injected SiteConfig instead of
+                # importing the legacy module-level singleton.
                 site_config=site_config,
             )
 
         draft = result.get("draft") or ""
-        # The writer-mode helpers all call _ollama_chat_json with this model.
-        # If a future mode picks a different model it should put it on the
-        # result dict so we can surface the real value. Falls back to the
-        # scheduler label (same resolver) instead of a hardcoded model name.
+        # The atom's writer helpers all call ollama_chat_text with this
+        # model. Falls back to the scheduler label (same resolver) if
+        # the atom doesn't surface model_used.
         model_used = result.get("model_used") or scheduler_model_label
         metrics: dict[str, Any] = {
-            "writer_rag_mode": writer_rag_mode,
+            "writer_atom": "atoms.two_pass_writer",
             "snippets_used_count": len(result.get("snippets_used") or []),
             "models_used_by_phase": {"generate_content": model_used},
             "model_selection_log": {
                 "generate_content": {
                     "preferred": model_used,
                     "actual": model_used,
-                    "source": "writer_rag_mode_dispatch",
+                    "source": "atoms.two_pass_writer",
                 },
             },
         }
-        # TWO_PASS-specific extras (LangGraph state machine output).
-        for k in ("external_lookups", "revision_loops", "loop_capped", "spine"):
+        # Two-pass extras (LangGraph state machine output).
+        for k in ("external_lookups", "revision_loops", "loop_capped"):
             if k in result:
                 metrics[k] = result[k]
         return draft, model_used, metrics

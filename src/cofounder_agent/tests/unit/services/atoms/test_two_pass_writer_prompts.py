@@ -36,27 +36,27 @@ def pm() -> UnifiedPromptManager:
 
 @pytest.mark.unit
 class TestTwoPassRevisePrompt:
-    """Pins writer_rag_modes.two_pass.revise_prompt rendering."""
+    """Pins atoms.two_pass_writer.revise_prompt rendering."""
 
     def test_key_present_in_registry(self, pm: UnifiedPromptManager):
-        assert "writer_rag_modes.two_pass.revise_prompt" in pm.prompts
+        assert "atoms.two_pass_writer.revise_prompt" in pm.prompts
 
     def test_render_matches_inline_fallback(self, pm: UnifiedPromptManager):
-        from services.writer_rag_modes.two_pass import _REVISE_PROMPT_FALLBACK
+        from services.atoms.two_pass_writer import _REVISE_PROMPT_FALLBACK
 
         kwargs = dict(
             draft="draft body with [EXTERNAL_NEEDED: timestamp]",
             aug_block="[EXTERNAL_NEEDED: timestamp] → 2026-05-12T17:00Z",
         )
         rendered_yaml = pm.get_prompt(
-            "writer_rag_modes.two_pass.revise_prompt", **kwargs,
+            "atoms.two_pass_writer.revise_prompt", **kwargs,
         )
         rendered_inline = _REVISE_PROMPT_FALLBACK.format(**kwargs)
         assert rendered_yaml == rendered_inline
 
     def test_render_preserves_marker_syntax(self, pm: UnifiedPromptManager):
         rendered = pm.get_prompt(
-            "writer_rag_modes.two_pass.revise_prompt",
+            "atoms.two_pass_writer.revise_prompt",
             draft="A claim [EXTERNAL_NEEDED: source]",
             aug_block="[EXTERNAL_NEEDED: source] → it was 2024",
         )

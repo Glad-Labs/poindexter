@@ -259,13 +259,12 @@ async def test_resolve_advances_to_content_task(db_pool, monkeypatch):
     Seeds an isolated niche + open batch + 2 candidates directly via
     SQL (avoids re-running the discovery flow), ranks them, then calls
     ``resolve_batch`` and asserts a ``content_tasks`` row landed with
-    the right niche_slug / writer_rag_mode / topic_batch_id provenance.
+    the right niche_slug / topic_batch_id provenance.
     """
     nsvc = NicheService(db_pool)
     niche = await nsvc.create(
         slug="e2e-resolve-niche",
         name="E2E Resolve",
-        writer_rag_mode="TWO_PASS",
         batch_size=3,
     )
 
@@ -314,7 +313,6 @@ async def test_resolve_advances_to_content_task(db_pool, monkeypatch):
 
     assert task_row is not None, "resolve_batch must insert a content_tasks row"
     assert task_row["niche_slug"] == "e2e-resolve-niche"
-    assert task_row["writer_rag_mode"] == "TWO_PASS"
     assert task_row["topic_batch_id"] == batch_id
     assert task_row["topic"] == "E2E Topic 0"
     assert task_row["status"] == "pending"

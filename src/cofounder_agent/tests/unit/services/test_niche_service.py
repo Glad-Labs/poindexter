@@ -17,11 +17,9 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 async def test_create_niche_inserts_row(db_pool):
     svc = NicheService(db_pool)
-    niche = await svc.create(slug="glad-labs", name="Glad Labs",
-                             writer_rag_mode="TWO_PASS", batch_size=5)
+    niche = await svc.create(slug="glad-labs", name="Glad Labs", batch_size=5)
     assert isinstance(niche, Niche)
     assert niche.slug == "glad-labs"
-    assert niche.writer_rag_mode == "TWO_PASS"
     fetched = await svc.get_by_slug("glad-labs")
     assert fetched.id == niche.id
 
@@ -71,12 +69,9 @@ async def test_set_sources_replaces_prior_config(db_pool):
 # ---------------------------------------------------------------------------
 
 
-async def test_create_rejects_invalid_writer_rag_mode(db_pool):
-    # Pre-insert guard: ValueError fires before the DB roundtrip, so no row.
-    svc = NicheService(db_pool)
-    with pytest.raises(ValueError, match="invalid writer_rag_mode"):
-        await svc.create(slug="bad-mode", name="Bad Mode", writer_rag_mode="HYBRID")
-    assert await svc.get_by_slug("bad-mode") is None
+# test_create_rejects_invalid_writer_rag_mode deleted 2026-05-28:
+# the writer_rag_mode column + its allowlist were retired with the
+# writer_rag_modes/ cleanup. Routing now keys off niche_slug.
 
 
 async def test_create_applies_defaults_for_optional_kwargs(db_pool):
@@ -85,7 +80,6 @@ async def test_create_applies_defaults_for_optional_kwargs(db_pool):
     assert n.active is True
     assert n.target_audience_tags == []
     assert n.writer_prompt_override is None
-    assert n.writer_rag_mode == "TWO_PASS"
     assert n.batch_size == 5
     assert n.discovery_cadence_minute_floor == 60
 
