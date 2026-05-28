@@ -257,6 +257,12 @@ async def evaluate_podcast(
             signals.get("duration_seconds"),
             signals.get("silence_ratio"),
         )
+        # Operator-surface ping: now that quality signals are on the
+        # row, fire a Discord notification (skips silently when the
+        # row's already approved via niche fast-path). Lazy-imported to
+        # avoid a circular import (media_approval_service imports the
+        # integration framework which can pull other services).
+        await _notify_if_pending(db, post_id, "podcast")
 
     return signals
 
@@ -334,5 +340,29 @@ async def evaluate_video(
             "[media_quality] %s Layer 1 passed for %s (dur=%s)",
             medium, post_id[:8], signals.get("duration_seconds"),
         )
+        # Operator-surface ping — same skip-on-non-pending logic as
+        # the podcast path. See ``_notify_if_pending`` below.
+        await _notify_if_pending(db, post_id, medium)
 
     return signals
+
+
+async def _notify_if_pending(db: Any, post_id: str, medium: str) -> None:
+    """Fire the Discord ops ping for a freshly-evaluated medium.
+
+    Lazy-imports ``media_approval_service.notify_pending_for_review``
+    so this module doesn't drag the integrations framework into its
+    own import graph. Pure observability — failure is logged + swallowed
+    by the helper itself, so callers don't need a defensive wrapper.
+    """
+    try:
+        from services import media_approval_service
+
+        await media_approval_service.notify_pending_for_review(
+            db, post_id, medium,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[media_quality] notify_pending_for_review failed for %s/%s: %s",
+            medium, post_id[:8], e,
+        )

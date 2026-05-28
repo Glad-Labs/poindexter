@@ -24,7 +24,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
 import sys
+import uuid
+from pathlib import Path
 from typing import Any
 
 import click
@@ -193,3 +197,89 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
 
     verb = "approved" if approved else "rejected"
     click.secho(f"{verb}: {medium} for post {post_id[:8]}", fg="green" if approved else "yellow")
+
+
+# ---------------------------------------------------------------------------
+# ``open`` subcommand — cross-platform "open the file with the OS default app"
+# ---------------------------------------------------------------------------
+
+
+def _resolve_media_path(post_id: str, medium: str) -> Path:
+    """Return the on-disk path the backfill writes for ``(post_id, medium)``.
+
+    Imports ``PODCAST_DIR`` / ``VIDEO_DIR`` from the producing services so
+    the operator surface can't drift from the writer surface if those
+    directories ever move.
+    """
+    # Lazy-import the directory constants so the CLI import path stays
+    # cheap (these modules pull ffmpeg / torch helpers).
+    from services.podcast_service import PODCAST_DIR
+    from services.video_service import VIDEO_DIR
+
+    if medium == "podcast":
+        return PODCAST_DIR / f"{post_id}.mp3"
+    if medium == "video":
+        return VIDEO_DIR / f"{post_id}.mp4"
+    if medium == "video_short":
+        # The composed short lives next to the long-form video — see
+        # ``services/video_service.py`` (``{post_id}-short.mp4``). The
+        # ``-short-audio.mp3`` file is an intermediate TTS scratch piece;
+        # the operator wants to preview the final composed short, not
+        # the source narration.
+        return VIDEO_DIR / f"{post_id}-short.mp4"
+    raise ValueError(f"unknown medium {medium!r}")
+
+
+def _open_with_default_app(path: Path) -> None:
+    """Hand the file to the OS-default application.
+
+    Windows: ``os.startfile`` (stdlib). macOS: ``open``. Linux: ``xdg-open``.
+    The dispatch keys on ``sys.platform`` so unit tests can swap the
+    platform and assert the right branch fires.
+    """
+    platform = sys.platform
+    if platform == "win32":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    if platform == "darwin":
+        subprocess.run(["open", str(path)], check=False)
+        return
+    # Linux + everything else fall back to xdg-open — the freedesktop
+    # standard. If xdg-open isn't installed the subprocess returns
+    # non-zero but we don't raise; the operator sees the failure inline.
+    subprocess.run(["xdg-open", str(path)], check=False)
+
+
+@media_group.command(name="open")
+@click.argument("post_id")
+@click.argument("medium", type=click.Choice(_VALID_MEDIA, case_sensitive=False))
+def cmd_open(post_id: str, medium: str):
+    """Open a generated media file with the OS default application.
+
+    The path matches what the backfill jobs write to disk — imports
+    ``PODCAST_DIR`` / ``VIDEO_DIR`` from the producing services so the
+    operator surface and the writer surface can't drift.
+    """
+    # Validate post_id is a proper UUID before touching the filesystem —
+    # a typo'd id should fail loud per ``feedback_no_silent_defaults``,
+    # not silently render "file not found".
+    try:
+        uuid.UUID(post_id)
+    except (ValueError, AttributeError, TypeError) as e:
+        raise click.BadParameter(
+            f"post_id must be a UUID; got {post_id!r} ({e})",
+            param_hint="post_id",
+        )
+
+    path = _resolve_media_path(post_id, medium)
+
+    if not path.exists():
+        click.echo(
+            f"No file at {path} — has the backfill produced this medium yet? "
+            f"Check 'poindexter media pending'.",
+            err=True,
+        )
+        sys.exit(2)
+
+    _open_with_default_app(path)
+    click.secho(f"Opened {medium} for post {post_id[:8]}: {path}", fg="cyan")

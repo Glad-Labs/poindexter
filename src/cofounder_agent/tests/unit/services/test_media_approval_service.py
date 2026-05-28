@@ -10,7 +10,7 @@ common denominator: an object with async ``fetchrow`` / ``fetch`` /
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -241,3 +241,218 @@ async def test_list_pending_returns_rows(mock_db: MagicMock) -> None:
 async def test_list_pending_medium_filter_validates(mock_db: MagicMock) -> None:
     with pytest.raises(media_approval_service.InvalidMediumError):
         await media_approval_service.list_pending(mock_db, medium="audio")
+
+
+# ---------------------------------------------------------------------------
+# notify_pending_for_review — Discord ops ping when a new medium needs review
+# ---------------------------------------------------------------------------
+
+
+async def test_record_pending_then_notify_discord_dispatches_when_status_pending(
+    mock_db: MagicMock,
+) -> None:
+    """Happy path: pending row → notify_operator called once with the
+    rendered Discord-style message body.
+
+    Named for the ``-k "record_pending and discord"`` filter the PR
+    spec calls out.
+    """
+    # First fetchrow: app_settings enable check (missing → defaults on).
+    # Second fetchrow: the media_approvals row + post title.
+    mock_db.fetchrow.side_effect = [
+        None,  # enable flag missing → defaults on
+        {
+            "status": "pending",
+            "quality_score": 0.85,
+            "quality_signals": '{"duration_seconds": 240.0, "silence_ratio": 0.05, "file_size_bytes": 2400000}',
+            "title": "Why Cofounders Burn Out",
+            "slug": "why-cofounders-burn-out",
+        },
+    ]
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    mock_notify = _AsyncMock()
+    with patch(
+        "services.integrations.operator_notify.notify_operator",
+        mock_notify,
+    ):
+        result = await media_approval_service.notify_pending_for_review(
+            mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+        )
+
+    assert result is True
+    mock_notify.assert_called_once()
+    msg = mock_notify.call_args.args[0]
+    kwargs = mock_notify.call_args.kwargs
+    # Discord-only routing — must NOT be critical (that's Telegram).
+    assert kwargs.get("critical") is False
+    # Sanity: the rendered body contains the operator-useful fields.
+    assert "podcast awaiting approval" in msg
+    assert "Why Cofounders Burn Out" in msg
+    assert "score=0.85" in msg
+    assert "duration=240s" in msg
+    assert "silence=5%" in msg
+    # Operator commands appear so they can act on the ping.
+    assert "poindexter media pending --medium podcast" in msg
+    assert "poindexter media open" in msg
+
+
+async def test_record_pending_auto_approve_then_discord_notify_skipped(
+    mock_db: MagicMock,
+) -> None:
+    """Auto-approve fast path → row.status='approved' → no notify."""
+    mock_db.fetchrow.side_effect = [
+        None,  # enable defaults on
+        {
+            "status": "approved",
+            "quality_score": 1.0,
+            "quality_signals": "{}",
+            "title": "X",
+            "slug": "x",
+        },
+    ]
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    mock_notify = _AsyncMock()
+    with patch(
+        "services.integrations.operator_notify.notify_operator",
+        mock_notify,
+    ):
+        result = await media_approval_service.notify_pending_for_review(
+            mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+        )
+
+    assert result is False
+    mock_notify.assert_not_called()
+
+
+async def test_notify_pending_for_review_skips_when_status_rejected(
+    mock_db: MagicMock,
+) -> None:
+    """Layer 1 auto-reject leaves the row at status='rejected' — no notify."""
+    mock_db.fetchrow.side_effect = [
+        None,
+        {
+            "status": "rejected",
+            "quality_score": 0.0,
+            "quality_signals": "{}",
+            "title": "X",
+            "slug": "x",
+        },
+    ]
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    mock_notify = _AsyncMock()
+    with patch(
+        "services.integrations.operator_notify.notify_operator",
+        mock_notify,
+    ):
+        result = await media_approval_service.notify_pending_for_review(
+            mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+        )
+
+    assert result is False
+    mock_notify.assert_not_called()
+
+
+async def test_notify_pending_for_review_skips_when_disabled(
+    mock_db: MagicMock,
+) -> None:
+    """Operator can disable the ping via app_settings — defaults to on,
+    but ``false`` honored."""
+    mock_db.fetchrow.side_effect = [
+        {"value": "false"},  # operator turned it off
+        # Even if we got past, no second row needed because the
+        # function should short-circuit.
+    ]
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    mock_notify = _AsyncMock()
+    with patch(
+        "services.integrations.operator_notify.notify_operator",
+        mock_notify,
+    ):
+        result = await media_approval_service.notify_pending_for_review(
+            mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+        )
+
+    assert result is False
+    mock_notify.assert_not_called()
+
+
+async def test_record_pending_notify_discord_swallows_dispatch_errors(
+    mock_db: MagicMock,
+) -> None:
+    """Discord dispatch failure MUST NOT raise — pure observability."""
+    mock_db.fetchrow.side_effect = [
+        None,
+        {
+            "status": "pending",
+            "quality_score": 0.9,
+            "quality_signals": "{}",
+            "title": "Post",
+            "slug": "post",
+        },
+    ]
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    mock_notify = _AsyncMock(side_effect=RuntimeError("discord exploded"))
+    with patch(
+        "services.integrations.operator_notify.notify_operator",
+        mock_notify,
+    ):
+        # No raise — returns False to signal "skipped/failed".
+        result = await media_approval_service.notify_pending_for_review(
+            mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+        )
+
+    assert result is False
+    mock_notify.assert_called_once()
+
+
+async def test_record_pending_then_quality_eval_path_does_not_notify_when_auto_approved(
+    mock_db: MagicMock,
+) -> None:
+    """End-to-end: auto-approve fast path inserts status='approved'.
+    A subsequent notify_pending_for_review call MUST skip the Discord
+    ping (operator has no pending decision to take).
+
+    Validates the failure-mode the task spec called out: the Discord
+    notify should NOT fire on the niche auto-approve path.
+    """
+    # record_pending step:
+    #   fetchrow #1: niche_slug lookup → 'glad-labs'
+    #   fetchrow #2: niche auto_approve setting → true
+    # notify_pending_for_review step:
+    #   fetchrow #3: app_settings enable flag → missing (defaults on)
+    #   fetchrow #4: media_approvals row → status='approved'
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": "glad-labs"},
+        {"value": "true"},
+        None,
+        {
+            "status": "approved",
+            "quality_score": 1.0,
+            "quality_signals": "{}",
+            "title": "X",
+            "slug": "x",
+        },
+    ]
+
+    status = await media_approval_service.record_pending(
+        mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+    )
+    assert status == "approved"
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    mock_notify = _AsyncMock()
+    with patch(
+        "services.integrations.operator_notify.notify_operator",
+        mock_notify,
+    ):
+        result = await media_approval_service.notify_pending_for_review(
+            mock_db, "12345678-1234-1234-1234-123456789012", "podcast",
+        )
+
+    assert result is False
+    mock_notify.assert_not_called()

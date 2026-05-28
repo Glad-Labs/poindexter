@@ -31,6 +31,7 @@ combination — explicit opt-in, no silent default per
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -148,6 +149,138 @@ async def record_pending(
         medium, post_id,
     )
     return "pending"
+
+
+async def notify_pending_for_review(
+    db: Any, post_id: str, medium: str,
+) -> bool:
+    """Ping Discord ops that a new medium has Layer 1 signals + needs review.
+
+    Called by ``media_quality_service.evaluate_*`` after the quality
+    eval has populated ``quality_score`` / ``quality_signals`` /
+    ``quality_evaluated_at`` on the row. Pure observability — failure
+    here MUST NOT roll back the eval or the gate, so the helper wraps
+    its own dispatch in ``try/except``.
+
+    Skips when:
+    - The row was already auto-approved (niche fast path) — operator
+      doesn't need to act, Discord notification would be noise.
+    - The row was auto-rejected by Layer 1 — same reason; the file
+      will never reach the public surface and the operator can find
+      it via ``poindexter media pending`` if they want to inspect.
+    - The row is missing (race: notify called before record_pending
+      landed). The conservative default is to skip; the next
+      generation pass will trip the notification.
+
+    Returns ``True`` when a notification was dispatched, ``False`` when
+    it was skipped (any reason: status not pending, row missing,
+    notification disabled).
+
+    Medium-approval is ROUTINE traffic per
+    ``feedback_telegram_vs_discord`` — Discord only, never Telegram.
+    """
+    _validate_medium(medium)
+
+    # Discord notification is opt-in via app_settings — defaults to
+    # ENABLED so the first time the operator generates a podcast they
+    # see the ping in Discord without flipping a switch first. They
+    # can turn it off if it becomes noise.
+    enabled_row = await db.fetchrow(
+        "SELECT value FROM app_settings "
+        "WHERE key = 'media_approval_discord_notify_enabled' "
+        "AND is_active = true",
+    )
+    if enabled_row:
+        raw = str(enabled_row["value"] or "").strip().lower()
+        if raw not in ("true", "1", "yes", "on", ""):
+            return False
+
+    row = await db.fetchrow(
+        """
+        SELECT
+            ma.status,
+            ma.quality_score,
+            ma.quality_signals,
+            p.title,
+            p.slug
+        FROM media_approvals ma
+        LEFT JOIN posts p ON p.id = ma.post_id
+        WHERE ma.post_id = $1::uuid AND ma.medium = $2
+        """,
+        post_id, medium,
+    )
+    if row is None:
+        logger.debug(
+            "[media_approval] notify skipped — no row for post=%s medium=%s",
+            post_id[:8], medium,
+        )
+        return False
+
+    if row["status"] != "pending":
+        # Auto-approved (niche fast path) OR auto-rejected (Layer 1).
+        # Either way, the operator doesn't have a pending decision —
+        # no notification needed.
+        logger.debug(
+            "[media_approval] notify skipped — status=%s for post=%s medium=%s",
+            row["status"], post_id[:8], medium,
+        )
+        return False
+
+    signals_raw = row.get("quality_signals")
+    signals: dict[str, Any] = {}
+    if isinstance(signals_raw, str):
+        try:
+            signals = json.loads(signals_raw)
+        except (json.JSONDecodeError, TypeError):
+            signals = {}
+    elif isinstance(signals_raw, dict):
+        signals = signals_raw
+
+    score = row.get("quality_score")
+    dur = signals.get("duration_seconds")
+    sil = signals.get("silence_ratio")
+    size = signals.get("file_size_bytes")
+    title = (row.get("title") or "(untitled)")[:80]
+    post_id_short = post_id[:8]
+
+    score_str = f"{float(score):.2f}" if score is not None else "—"
+    dur_str = f"{dur:.0f}s" if dur is not None else "—"
+    sil_str = f"{sil:.0%}" if sil is not None else "—"
+    size_str = f"{int(size) // 1024}KB" if size is not None else "—"
+
+    medium_emoji = {"podcast": "\U0001F3A7", "video": "\U0001F3AC", "video_short": "\U0001F39E"}
+    emoji = medium_emoji.get(medium, "\U0001F3AC")
+
+    message = (
+        f"{emoji} New {medium} awaiting approval\n"
+        f"post: {post_id_short} — {title}\n"
+        f"quality: score={score_str}  duration={dur_str}  "
+        f"silence={sil_str}  size={size_str}\n"
+        f"review: poindexter media pending --medium {medium}\n"
+        f"preview: poindexter media open {post_id_short} {medium}"
+    )
+
+    try:
+        # Lazy-import to avoid pulling the integrations framework into
+        # the approval service's import path (keeps the test surface
+        # small + lets callers mock notify_operator at one seam).
+        from services.integrations.operator_notify import notify_operator
+
+        await notify_operator(message, critical=False)
+        logger.info(
+            "[media_approval] notified ops: %s pending for post %s",
+            medium, post_id_short,
+        )
+        return True
+    except Exception as e:  # noqa: BLE001
+        # Pure observability — never bubble a notification failure up
+        # into the eval / approval path. Matt explicitly called this
+        # out in the task spec.
+        logger.warning(
+            "[media_approval] Discord notify failed for %s/%s: %s",
+            medium, post_id_short, e,
+        )
+        return False
 
 
 async def is_approved(db: Any, post_id: str, medium: str) -> bool:
