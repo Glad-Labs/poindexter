@@ -61,7 +61,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -73,7 +73,7 @@
                 "value": 5
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 10
               }
             ]
@@ -135,7 +135,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -147,7 +147,7 @@
                 "value": 80
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 90
               }
             ]
@@ -188,7 +188,7 @@
           "refId": "A"
         }
       ],
-      "title": "Average Quality Score",
+      "title": "Avg quality",
       "type": "stat"
     },
     {
@@ -201,14 +201,14 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "green"
+            "fixedColor": "blue"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -262,14 +262,14 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "red"
+            "fixedColor": "orange"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               }
             ]
@@ -337,7 +337,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -363,7 +363,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "orange",
                       "value": null
                     },
                     {
@@ -375,7 +375,7 @@
                       "value": 80
                     },
                     {
-                      "color": "green",
+                      "color": "blue",
                       "value": 90
                     }
                   ]
@@ -512,7 +512,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -607,7 +607,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -682,7 +682,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -723,7 +723,7 @@
           "refId": "A"
         }
       ],
-      "title": "Active Generation",
+      "title": "Active gen",
       "type": "stat"
     },
     {
@@ -742,7 +742,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -804,14 +804,14 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "green"
+            "fixedColor": "blue"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -871,7 +871,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -879,7 +879,7 @@
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 5
               }
             ]
@@ -947,7 +947,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1001,7 +1001,7 @@
                     "type": "value",
                     "options": {
                       "published": {
-                        "color": "green",
+                        "color": "blue",
                         "index": 3
                       }
                     }
@@ -1010,7 +1010,7 @@
                     "type": "value",
                     "options": {
                       "rejected": {
-                        "color": "red",
+                        "color": "orange",
                         "index": 4
                       }
                     }
@@ -1019,7 +1019,7 @@
                     "type": "value",
                     "options": {
                       "failed": {
-                        "color": "red",
+                        "color": "orange",
                         "index": 5
                       }
                     }
@@ -1105,7 +1105,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1202,7 +1202,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1276,7 +1276,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1288,7 +1288,7 @@
                 "value": 60
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 80
               }
             ]
@@ -1350,7 +1350,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -1362,7 +1362,7 @@
                 "value": 40
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 60
               }
             ]
@@ -1424,7 +1424,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -1436,7 +1436,7 @@
                 "value": 75
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 85
               }
             ]
@@ -1477,7 +1477,7 @@
           "refId": "A"
         }
       ],
-      "title": "Avg Quality Score",
+      "title": "Avg quality",
       "type": "stat"
     },
     {
@@ -1500,7 +1500,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -1541,7 +1541,7 @@
           "refId": "A"
         }
       ],
-      "title": "Tasks in Window",
+      "title": "Tasks (win)",
       "type": "stat"
     },
     {
@@ -1785,7 +1785,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1848,7 +1848,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1919,7 +1919,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -1931,7 +1931,7 @@
                 "value": 80
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 90
               }
             ]
@@ -1972,7 +1972,7 @@
           "refId": "A"
         }
       ],
-      "title": "Average Quality",
+      "title": "Avg quality",
       "type": "stat"
     },
     {
@@ -1993,7 +1993,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -2005,7 +2005,7 @@
                 "value": 60
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 75
               }
             ]
@@ -2107,7 +2107,7 @@
           "refId": "A"
         }
       ],
-      "title": "Posts Generated",
+      "title": "Posts gen",
       "type": "stat"
     },
     {
@@ -2168,7 +2168,7 @@
           "refId": "A"
         }
       ],
-      "title": "Total Published",
+      "title": "Published",
       "type": "stat"
     },
     {
@@ -2303,7 +2303,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -2315,7 +2315,7 @@
                 "value": 10
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 20
               }
             ]
@@ -2410,7 +2410,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -2428,7 +2428,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "green"
+                  "fixedColor": "blue"
                 }
               }
             ]
@@ -2458,7 +2458,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "red"
+                  "fixedColor": "orange"
                 }
               }
             ]
@@ -2587,7 +2587,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -2617,7 +2617,7 @@
                       "value": null
                     },
                     {
-                      "color": "green",
+                      "color": "blue",
                       "value": 85
                     }
                   ]
@@ -2696,7 +2696,7 @@
         "x": 0,
         "y": 119
       },
-      "title": "Dry-Run Tasks (1h)",
+      "title": "Dry-Run (1h)",
       "datasource": {
         "type": "postgres",
         "uid": "local-brain-db"
@@ -2721,7 +2721,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -2750,7 +2750,7 @@
         "x": 6,
         "y": 119
       },
-      "title": "Dry-Run Total (all-time)",
+      "title": "Dry-Run all",
       "datasource": {
         "type": "postgres",
         "uid": "local-brain-db"
@@ -2800,7 +2800,7 @@
         "x": 12,
         "y": 119
       },
-      "title": "Dry-Run Avg Quality",
+      "title": "Dry-Run Q",
       "datasource": {
         "type": "postgres",
         "uid": "local-brain-db"
@@ -2821,7 +2821,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -2829,7 +2829,7 @@
                 "value": 60
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 80
               }
             ]
@@ -2860,7 +2860,7 @@
         "x": 18,
         "y": 119
       },
-      "title": "pipeline_dry_run_mode",
+      "title": "Dry-Run mode",
       "datasource": {
         "type": "postgres",
         "uid": "local-brain-db"
@@ -2981,7 +2981,7 @@
     {
       "type": "stat",
       "id": 44,
-      "title": "Open batches awaiting decision",
+      "title": "Open batches",
       "description": "Topic batches in `open` state. When >0 you have decisions to make.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -3007,7 +3007,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -3019,7 +3019,7 @@
                 "value": 3
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 6
               }
             ]
@@ -3038,7 +3038,7 @@
     {
       "type": "stat",
       "id": 45,
-      "title": "Hours since last batch",
+      "title": "Last batch h",
       "description": "Time since the discovery sweep last produced anything.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -3065,7 +3065,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -3077,7 +3077,7 @@
                 "value": 72
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 168
               }
             ]
@@ -3096,7 +3096,7 @@
     {
       "type": "stat",
       "id": 46,
-      "title": "Candidates ranked (24h)",
+      "title": "Ranked (24h)",
       "description": "Candidates the discovery sweep produced in last 24h (external + internal RAG).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -3125,7 +3125,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]

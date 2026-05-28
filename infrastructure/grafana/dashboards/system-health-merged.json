@@ -37,11 +37,11 @@
               "options": {
                 "0": {
                   "text": "DOWN",
-                  "color": "red"
+                  "color": "orange"
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -50,11 +50,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -112,11 +112,11 @@
               "options": {
                 "0": {
                   "text": "DOWN",
-                  "color": "red"
+                  "color": "orange"
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -125,11 +125,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -187,11 +187,11 @@
               "options": {
                 "0": {
                   "text": "DOWN",
-                  "color": "red"
+                  "color": "orange"
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -200,11 +200,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -264,7 +264,7 @@
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -277,7 +277,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -337,7 +337,7 @@
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -350,7 +350,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -410,7 +410,7 @@
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -423,7 +423,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -478,7 +478,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -486,7 +486,7 @@
                 "value": 1
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 10
               }
             ]
@@ -546,7 +546,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -558,7 +558,7 @@
                 "value": 20
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 35
               }
             ]
@@ -597,7 +597,7 @@
           "refId": "A"
         }
       ],
-      "title": "Approval rate (24h)",
+      "title": "Approval 24h",
       "type": "stat"
     },
     {
@@ -618,7 +618,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -626,7 +626,7 @@
                 "value": 70
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 95
               }
             ]
@@ -665,7 +665,7 @@
           "refId": "A"
         }
       ],
-      "title": "Approval queue fill",
+      "title": "Appr q fill",
       "type": "stat"
     },
     {
@@ -684,11 +684,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -727,7 +727,7 @@
           "refId": "A"
         }
       ],
-      "title": "Stuck in_progress >30m",
+      "title": "Stuck >30m",
       "type": "stat"
     },
     {
@@ -746,7 +746,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -754,7 +754,7 @@
                 "value": 1
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 7
               }
             ]
@@ -812,7 +812,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -820,7 +820,7 @@
                 "value": 48
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 168
               }
             ]
@@ -859,7 +859,7 @@
           "refId": "A"
         }
       ],
-      "title": "Hours since last publish",
+      "title": "Last pub (h)",
       "type": "stat"
     },
     {
@@ -878,7 +878,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -886,7 +886,7 @@
                 "value": 50000
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 100000
               }
             ]
@@ -925,7 +925,7 @@
           "refId": "A"
         }
       ],
-      "title": "Embeddings rows",
+      "title": "Embed rows",
       "type": "stat"
     },
     {
@@ -944,7 +944,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -952,7 +952,7 @@
                 "value": 500
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 2000
               }
             ]
@@ -991,7 +991,7 @@
           "refId": "A"
         }
       ],
-      "title": "Embeddings size",
+      "title": "Embed size",
       "type": "stat"
     },
     {
@@ -1010,7 +1010,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1057,7 +1057,7 @@
           "refId": "A"
         }
       ],
-      "title": "Oldest embedding (days)",
+      "title": "Oldest emb d",
       "type": "stat"
     },
     {
@@ -1076,7 +1076,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1084,7 +1084,7 @@
                 "value": 5
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 20
               }
             ]
@@ -1142,7 +1142,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1150,7 +1150,7 @@
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 10
               }
             ]
@@ -1189,7 +1189,7 @@
           "refId": "A"
         }
       ],
-      "title": "Alerts firing (1h)",
+      "title": "Firing (1h)",
       "type": "stat"
     },
     {
@@ -1208,7 +1208,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1216,7 +1216,7 @@
                 "value": 0.1
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -1253,7 +1253,7 @@
           "refId": "A"
         }
       ],
-      "title": "Validator warnings (15m rate)",
+      "title": "Validator 15m",
       "type": "stat"
     },
     {
@@ -1272,11 +1272,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -1315,7 +1315,7 @@
           "refId": "A"
         }
       ],
-      "title": "Plaintext secrets (should be 0)",
+      "title": "Plain secret",
       "type": "stat"
     },
     {
@@ -1334,7 +1334,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1342,7 +1342,7 @@
                 "value": 30
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 60
               }
             ]
@@ -1381,7 +1381,7 @@
           "refId": "A"
         }
       ],
-      "title": "Hard rejects (24h)",
+      "title": "Hard rej 24h",
       "type": "stat"
     },
     {
@@ -1407,7 +1407,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1497,7 +1497,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1509,7 +1509,7 @@
                 "value": 1073741824
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 5368709120
               }
             ]
@@ -1545,7 +1545,7 @@
     },
     {
       "id": 28,
-      "title": "Active Connections",
+      "title": "Active conn",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -1566,7 +1566,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1578,7 +1578,7 @@
                 "value": 50
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 90
               }
             ]
@@ -1614,7 +1614,7 @@
     },
     {
       "id": 29,
-      "title": "Connection States",
+      "title": "Conn states",
       "type": "piechart",
       "gridPos": {
         "h": 6,
@@ -1649,7 +1649,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "blue",
                   "mode": "fixed"
                 }
               }
@@ -1719,7 +1719,7 @@
     },
     {
       "id": 30,
-      "title": "Max Connection Age",
+      "title": "Max conn age",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -1740,7 +1740,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -1752,7 +1752,7 @@
                 "value": 86400
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 604800
               }
             ]
@@ -1993,7 +1993,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "orange",
                       "value": null
                     },
                     {
@@ -2001,7 +2001,7 @@
                       "value": 50
                     },
                     {
-                      "color": "green",
+                      "color": "blue",
                       "value": 90
                     }
                   ]
@@ -2087,7 +2087,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green",
+                      "color": "blue",
                       "value": null
                     },
                     {
@@ -2095,7 +2095,7 @@
                       "value": 5
                     },
                     {
-                      "color": "red",
+                      "color": "orange",
                       "value": 30
                     }
                   ]
@@ -2157,7 +2157,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -2169,7 +2169,7 @@
                 "value": 90
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 99
               }
             ]
@@ -2235,7 +2235,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "blue",
                   "mode": "fixed"
                 }
               }
@@ -2250,7 +2250,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -2306,7 +2306,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2318,7 +2318,7 @@
                 "value": 10000
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 100000
               }
             ]
@@ -2553,7 +2553,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2561,7 +2561,7 @@
                 "value": 60
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 85
               }
             ]
@@ -2612,7 +2612,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2620,7 +2620,7 @@
                 "value": 60
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 85
               }
             ]
@@ -2671,7 +2671,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2679,7 +2679,7 @@
                 "value": 360
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 510
               }
             ]
@@ -2730,7 +2730,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2738,7 +2738,7 @@
                 "value": 60
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 85
               }
             ]
@@ -2789,7 +2789,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2801,7 +2801,7 @@
                 "value": 800
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1200
               }
             ]
@@ -2852,7 +2852,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2864,7 +2864,7 @@
                 "value": 800
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1200
               }
             ]
@@ -2915,7 +2915,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -2923,7 +2923,7 @@
                 "value": 100
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 150
               }
             ]
@@ -2986,7 +2986,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -3031,7 +3031,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "blue",
                   "mode": "fixed"
                 }
               }
@@ -3180,7 +3180,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -3309,7 +3309,7 @@
     {
       "id": 55,
       "type": "stat",
-      "title": "Gaming Detected",
+      "title": "Gaming",
       "description": "Pipeline pauses automatically when external GPU workload (gaming) is detected",
       "datasource": {
         "type": "prometheus",
@@ -3328,7 +3328,7 @@
               "options": {
                 "0": {
                   "text": "Clear",
-                  "color": "green"
+                  "color": "blue"
                 }
               },
               "type": "value"
@@ -3347,7 +3347,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -3536,7 +3536,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "red"
+            "fixedColor": "orange"
           }
         },
         "overrides": []
@@ -3634,7 +3634,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "green"
+            "fixedColor": "blue"
           }
         },
         "overrides": []
@@ -3688,7 +3688,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -3742,7 +3742,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -3796,7 +3796,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -3838,7 +3838,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -3863,7 +3863,7 @@
                   {
                     "options": {
                       "failed": {
-                        "color": "red",
+                        "color": "orange",
                         "text": "failed"
                       },
                       "in_progress": {
@@ -3875,7 +3875,7 @@
                         "text": "pending"
                       },
                       "published": {
-                        "color": "green",
+                        "color": "blue",
                         "text": "published"
                       }
                     },
@@ -3918,7 +3918,7 @@
     {
       "id": 70,
       "type": "stat",
-      "title": "GlitchTip open issues",
+      "title": "GT open",
       "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -3933,7 +3933,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -3941,7 +3941,7 @@
                 "value": 5
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 25
               }
             ]
@@ -3983,7 +3983,7 @@
     {
       "id": 71,
       "type": "stat",
-      "title": "GlitchTip alerted last cycle",
+      "title": "GT alerted",
       "description": "Novel high-count issues paged via notify_operator() on the last triage cycle. Non-zero = a new recurring error worth investigating.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -3998,7 +3998,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -4006,7 +4006,7 @@
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 5
               }
             ]
@@ -4048,7 +4048,7 @@
     {
       "id": 72,
       "type": "stat",
-      "title": "GlitchTip auto-resolved (24h)",
+      "title": "GT resolved",
       "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing \u2014 operator's noise rules absorbing known-flapping issues.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -4105,7 +4105,7 @@
     {
       "id": 73,
       "type": "stat",
-      "title": "GlitchTip triage probe \u2014 last cycle",
+      "title": "GT probe",
       "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating \u2014 check `docker logs poindexter-brain`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -4120,7 +4120,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -4128,7 +4128,7 @@
                 "value": 600
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 900
               }
             ]
@@ -4170,7 +4170,7 @@
     {
       "id": 74,
       "type": "stat",
-      "title": "Scheduled queue depth",
+      "title": "Sched depth",
       "description": "Count of posts queued for future publish. Populated by `poindexter schedule batch ...` or `poindexter publish-at <id> <when>`. Zero is fine if the operator publishes manually; non-zero means the scheduled_publisher daemon will fire them at published_at.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -4189,7 +4189,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               },
               {
@@ -4250,7 +4250,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -4292,7 +4292,7 @@
     {
       "id": 76,
       "type": "stat",
-      "title": "Past-due scheduled slots",
+      "title": "Sched overdue",
       "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 — the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -4307,11 +4307,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -4375,7 +4375,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]

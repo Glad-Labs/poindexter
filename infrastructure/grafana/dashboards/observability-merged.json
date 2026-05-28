@@ -50,11 +50,11 @@
               "options": {
                 "0": {
                   "text": "DOWN",
-                  "color": "red"
+                  "color": "orange"
                 },
                 "1": {
                   "text": "UP",
-                  "color": "green"
+                  "color": "blue"
                 }
               }
             }
@@ -64,11 +64,11 @@
             "steps": [
               {
                 "value": null,
-                "color": "red"
+                "color": "orange"
               },
               {
                 "value": 1,
-                "color": "green"
+                "color": "blue"
               }
             ]
           }
@@ -402,7 +402,7 @@
     },
     {
       "type": "stat",
-      "title": "Spans ingested (last 5m)",
+      "title": "Spans in (5m)",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -430,7 +430,7 @@
     },
     {
       "type": "stat",
-      "title": "Spans discarded (last 5m)",
+      "title": "Spans drop 5m",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -456,11 +456,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 0.001
               }
             ]
@@ -669,7 +669,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -729,7 +729,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -737,7 +737,7 @@
                 "value": 10
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 50
               }
             ]
@@ -798,7 +798,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -958,7 +958,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               }
             ]

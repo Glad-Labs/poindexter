@@ -168,11 +168,11 @@
             {
               "options": {
                 "0": {
-                  "color": "red",
+                  "color": "orange",
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "blue",
                   "text": "UP"
                 }
               },
@@ -183,11 +183,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -245,11 +245,11 @@
             {
               "options": {
                 "0": {
-                  "color": "red",
+                  "color": "orange",
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "blue",
                   "text": "UP"
                 }
               },
@@ -260,11 +260,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -322,11 +322,11 @@
             {
               "options": {
                 "0": {
-                  "color": "red",
+                  "color": "orange",
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "blue",
                   "text": "UP"
                 }
               },
@@ -337,11 +337,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -401,7 +401,7 @@
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "blue",
                   "text": "UP"
                 }
               },
@@ -416,7 +416,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -476,7 +476,7 @@
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "blue",
                   "text": "UP"
                 }
               },
@@ -491,7 +491,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -551,7 +551,7 @@
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "blue",
                   "text": "UP"
                 }
               },
@@ -566,7 +566,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 1
               }
             ]
@@ -634,7 +634,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -695,7 +695,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -703,7 +703,7 @@
                 "value": 70
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 95
               }
             ]
@@ -764,7 +764,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -772,7 +772,7 @@
                 "value": 48
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 168
               }
             ]
@@ -813,7 +813,7 @@
           "refId": "A"
         }
       ],
-      "title": "Last publish (h)",
+      "title": "Last pub (h)",
       "type": "bargauge"
     },
     {
@@ -832,7 +832,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -840,7 +840,7 @@
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 10
               }
             ]
@@ -900,11 +900,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -964,7 +964,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               },
               {
@@ -972,7 +972,7 @@
                 "value": 30
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 60
               }
             ]
@@ -1166,7 +1166,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
@@ -1204,7 +1204,7 @@
     },
     {
       "id": 17,
-      "title": "Page-views received (drift detector)",
+      "title": "Page-views 1h",
       "type": "stat",
       "description": "Page-view beacon hits over the global dashboard time range. Powered by the audit_log drift detector (event_type='page_view_received') written by routes/cms_routes.py::track_page_view on every successful beacon. If this flatlines to 0 while Cloudflare reports traffic, the beacon path has regressed — same silent-failure mode that ran from 2026-04-09 to 2026-05-27. Red at 0, yellow at <10, green at 10+.",
       "datasource": {
@@ -1227,7 +1227,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "orange",
                 "value": null
               },
               {
@@ -1235,7 +1235,7 @@
                 "value": 1
               },
               {
-                "color": "green",
+                "color": "blue",
                 "value": 10
               }
             ]

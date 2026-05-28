@@ -18,7 +18,7 @@
     {
       "id": 101,
       "type": "stat",
-      "title": "Gate decisions today",
+      "title": "Gate today",
       "description": "Total auto_publish_gate evaluations logged in the last 24h. One per dev_diary finalize.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -30,7 +30,7 @@
           "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [{ "color": "blue", "value": null }]
           },
           "unit": "none"
         }
@@ -52,7 +52,7 @@
     {
       "id": 102,
       "type": "stat",
-      "title": "Would-have-fired today",
+      "title": "Would-fire 24h",
       "description": "Gate decisions where would_fire=true. While dry_run=true (default), these are the candidate auto-publishes — compare against your actual approves before flipping the gate live.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -99,9 +99,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
+              { "color": "blue", "value": null },
               { "color": "yellow", "value": 50 },
-              { "color": "red", "value": 200 }
+              { "color": "orange", "value": 200 }
             ]
           },
           "min": 0,
@@ -208,9 +208,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
+              { "color": "orange", "value": null },
               { "color": "yellow", "value": 1 },
-              { "color": "green", "value": 3 }
+              { "color": "blue", "value": 3 }
             ]
           },
           "min": 0,
@@ -257,8 +257,8 @@
                   {
                     "type": "value",
                     "options": {
-                      "true": { "color": "green", "text": "WOULD FIRE" },
-                      "false": { "color": "red", "text": "blocked" }
+                      "true": { "color": "blue", "text": "WOULD FIRE" },
+                      "false": { "color": "orange", "text": "blocked" }
                     }
                   }
                 ]
@@ -278,7 +278,7 @@
                   {
                     "type": "value",
                     "options": {
-                      "pass": { "color": "green" },
+                      "pass": { "color": "blue" },
                       "block_threshold": { "color": "yellow" },
                       "block_unclean": { "color": "orange" },
                       "disabled": { "color": "blue" },
