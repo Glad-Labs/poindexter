@@ -26,9 +26,60 @@ Issue: Glad-Labs/poindexter#362 (Phase 3 atom granularity).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# Private repo URL scrub — defense in depth (Glad-Labs/glad-labs-stack is
+# the private operator repo; only Glad-Labs/poindexter is public). The
+# bundle no longer carries PR/commit URLs to the LLM and the prompt now
+# directs `(PR #N)` plain-text citations, but the model can still echo
+# URLs from training data or partial context. These regexes are the last
+# line before publish.
+_PRIVATE_REPO_PULL_INLINE = re.compile(
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)"
+)
+_PRIVATE_REPO_COMMIT_INLINE = re.compile(
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
+)
+_PRIVATE_REPO_PULL_AUTOLINK = re.compile(
+    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+)
+_PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
+    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
+)
+_PRIVATE_REPO_PULL_BARE = re.compile(
+    r"https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)"
+)
+_PRIVATE_REPO_COMMIT_BARE = re.compile(
+    r"https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
+)
+_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/glad-labs-stack\b")
+
+
+def _scrub_private_repo_refs(text: str) -> str:
+    """Strip private-repo URLs from generated content.
+
+    Inline markdown links → ``text (PR #N)`` / ``text (`sha7`)``;
+    autolinks + bare URLs → ``(PR #N)`` / ``(`sha7`)``; remaining text
+    mentions of the private repo path → the public mirror path. Run
+    after the LLM emits prose and before the post is published.
+    """
+    if not text:
+        return text
+    text = _PRIVATE_REPO_PULL_INLINE.sub(r"\1 (PR #\2)", text)
+    text = _PRIVATE_REPO_COMMIT_INLINE.sub(r"\1 (`\2`)", text)
+    text = _PRIVATE_REPO_PULL_AUTOLINK.sub(r"(PR #\1)", text)
+    text = _PRIVATE_REPO_COMMIT_AUTOLINK.sub(r"(`\1`)", text)
+    text = _PRIVATE_REPO_PULL_BARE.sub(r"(PR #\1)", text)
+    text = _PRIVATE_REPO_COMMIT_BARE.sub(r"(`\1`)", text)
+    text = _PRIVATE_REPO_MENTION.sub("Glad-Labs/poindexter", text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -168,11 +219,12 @@ THE ARC:
 2. Thread the bundle facts through the narrative. When you mention
    a change, name the underlying system that broke ("the validator
    was firing 8x per post — same regex matching prose AND
-   markdown links interchangeably") and link the PR that fixed it
-   inline as markdown ([PR #231](url-from-bundle)). Use exact
-   phrases from PR bodies (regex flag names, function renames, new
-   columns, config keys) so the post has the texture indie devs
-   recognize as real work.
+   markdown links interchangeably") and cite the PR that fixed it
+   inline as plain text ``(PR #231)``. Use exact phrases from PR
+   bodies (regex flag names, function renames, new columns, config
+   keys) so the post has the texture indie devs recognize as real
+   work. Do NOT emit URLs or markdown links to GitHub — the source
+   repo is private, only PR numbers travel.
 
 3. Close with reflection. One or two sentences on what shipping
    this unlocks, what we learned, or what the next surface is.
@@ -218,13 +270,13 @@ is grounded in the bundle):
 - Code references: name a function, column, or flag only when it
   appears verbatim in the bundle. Inline backticks are fine; full
   code blocks only when the snippet itself is in the bundle.
-- URLs: every url comes from the bundle. When you describe a
-  specific change that came from a particular PR, link that PR
-  inline using its bundle url field — shape is
-  "[PR #N](url-from-bundle's-pr-url-field)". Cite at least the
-  PRs that anchor each section's main claim. Citations are how
-  readers verify the work is real; aim for several inline links
-  in the post.
+- URLs: do NOT emit URLs or markdown links to GitHub. The source
+  repo is private, so any github.com link would 404 for public
+  readers. Cite PRs as plain text "(PR #N)" — the number alone is
+  the provenance citation. Cite commits as plain text using the
+  short SHA in backticks, e.g. "(`abc1234`)". Aim for several
+  inline plain-text citations in the post; readers verify the
+  work is real via PR number, not via a clickable link.
 
 VOICE TIGHTENING (positive directives — what good looks like):
 
@@ -279,7 +331,6 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
         for p in prs[:30]:
             num = p.get("number") or "?"
             title = (p.get("title") or "").strip()
-            url = (p.get("url") or "").strip()
             body = (p.get("body") or "").strip()
             for marker in (
                 "🤖 Generated with",
@@ -289,10 +340,12 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
             ):
                 if marker in body:
                     body = body.split(marker, 1)[0].rstrip()
-            body = body[:1200]
+            # Scrub private-repo URLs from the PR body before it
+            # reaches the LLM — the source PRs are on the private
+            # operator repo, but the public blog cites them as plain
+            # text only. Public PR/commit numbers travel; URLs do not.
+            body = _scrub_private_repo_refs(body)[:1200]
             lines.append(f"PR #{num}: {title}")
-            if url:
-                lines.append(f"  url: {url}")
             if body:
                 for body_line in body.splitlines():
                     lines.append(f"  {body_line}")
@@ -421,11 +474,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         f"merged PR from the BUNDLE above by its actual title and "
         f"number — quote the title verbatim or paraphrase tightly from "
         f"the PR body. Every claim about what shipped today comes from "
-        f"a PR or commit in the BUNDLE. Cite PRs inline as "
-        f"[PR #N](url-from-the-bundle's-url-field). Follow the system "
-        f"prompt's voice + grounding rules. Output starts with the "
-        f"first letter of paragraph one and ends with the last letter "
-        f"of the closing paragraph."
+        f"a PR or commit in the BUNDLE. Cite PRs inline as plain text "
+        f"`(PR #N)` — do NOT emit URLs or markdown links to GitHub, "
+        f"the source repo is private. Follow the system prompt's "
+        f"voice + grounding rules. Output starts with the first letter "
+        f"of paragraph one and ends with the last letter of the "
+        f"closing paragraph."
     )
 
     # Route through the shared helper so this atom honors the
@@ -452,7 +506,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         )
         raw = ""
 
-    prose = _maybe_unwrap_json(raw).strip()
+    prose = _scrub_private_repo_refs(_maybe_unwrap_json(raw).strip())
     if not prose:
         # Graceful fallback so the post still ships. Instead of a single
         # "we shipped N PRs" sentence (which produced visibly thin posts
@@ -482,11 +536,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             for p in prs[:25]:
                 num = p.get("number") or "?"
                 title = (p.get("title") or "").strip() or f"PR #{num}"
-                url = (p.get("url") or "").strip()
-                if url:
-                    pr_lines.append(f"- [PR #{num}]({url}) {title}")
-                else:
-                    pr_lines.append(f"- PR #{num}: {title}")
+                # Plain text — source PRs live on the private operator
+                # repo so URLs would 404 for public readers. The PR
+                # number alone is enough provenance.
+                pr_lines.append(f"- PR #{num}: {title}")
             commit_lines: list[str] = []
             for c in commits[:15]:
                 sha = (c.get("sha") or "").strip()

@@ -20,6 +20,7 @@ import pytest
 
 from services.atoms.narrate_bundle import (
     _format_bundle_for_narrative,
+    _scrub_private_repo_refs,
     run,
 )
 
@@ -82,14 +83,18 @@ def _bundle_repro_pr_221() -> dict:
 
 @pytest.mark.unit
 class TestFormatBundleForNarrative:
-    def test_includes_pr_number_title_url_and_body(self):
+    def test_includes_pr_number_title_and_body_but_not_url(self):
         text = _format_bundle_for_narrative(_bundle_repro_pr_221())
-        # The PR number must appear so the LLM can cite [PR #221].
+        # The PR number must appear so the LLM can cite (PR #221).
         assert "PR #221" in text
         # The full PR title (verbatim) must appear so the LLM can quote it.
         assert "fix(cli): rank-batch sys#N markers + auto-load POINDEXTER_SECRET_KEY" in text
-        # The URL must appear so the LLM has a real link to use inline.
-        assert "https://github.com/Glad-Labs/poindexter/pull/221" in text
+        # URLs must NOT appear — the source PRs live on the private
+        # operator repo, the public blog cites by number only. Even
+        # public-mirror URLs are dropped: bundle policy is "no GitHub
+        # URLs reach the LLM" so it can't echo them back into prose.
+        assert "github.com" not in text
+        assert "url:" not in text
         # Substantive body content must survive the Claude-Code-footer strip.
         assert "operator-friction" in text or "rank-batch" in text
         assert "INPUT to a CLI flag" in text
@@ -110,6 +115,98 @@ class TestFormatBundleForNarrative:
         assert "DATE: 2026-05-04" in text
         # No PR section when there are no PRs.
         assert "MERGED PRs" not in text
+
+
+# ---------------------------------------------------------------------------
+# _scrub_private_repo_refs — defense-in-depth URL scrub.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestScrubPrivateRepoRefs:
+    """The bundle + prompt should prevent the LLM from emitting private
+    repo URLs, but training data echoes still slip through. This scrub
+    is the last line before publish — every leak shape must be caught.
+    """
+
+    def test_inline_markdown_pull_link_rewrites_to_pr_number(self):
+        text = (
+            "We fixed the regex in "
+            "[PR #673](https://github.com/Glad-Labs/glad-labs-stack/pull/673) "
+            "then moved on."
+        )
+        out = _scrub_private_repo_refs(text)
+        assert "github.com" not in out
+        assert "glad-labs-stack" not in out
+        assert "We fixed the regex in PR #673 (PR #673) then moved on." in out
+
+    def test_inline_markdown_commit_link_rewrites_to_short_sha_backtick(self):
+        text = (
+            "The fix landed in "
+            "[abc1234f](https://github.com/Glad-Labs/glad-labs-stack/commit/abc1234f5deadbeef)."
+        )
+        out = _scrub_private_repo_refs(text)
+        assert "github.com" not in out
+        assert out == "The fix landed in abc1234f (`abc1234`)."
+
+    def test_autolink_pull_rewrites_without_text_label(self):
+        text = "- <https://github.com/Glad-Labs/glad-labs-stack/pull/676>"
+        out = _scrub_private_repo_refs(text)
+        assert out == "- (PR #676)"
+
+    def test_autolink_commit_rewrites_to_sha_backtick(self):
+        text = "see <https://github.com/Glad-Labs/glad-labs-stack/commit/deadbee>"
+        out = _scrub_private_repo_refs(text)
+        assert out == "see (`deadbee`)"
+
+    def test_bare_pull_url_rewrites(self):
+        text = "more at https://github.com/Glad-Labs/glad-labs-stack/pull/42 today"
+        out = _scrub_private_repo_refs(text)
+        assert "github.com" not in out
+        assert "(PR #42)" in out
+
+    def test_bare_commit_url_rewrites(self):
+        text = "https://github.com/Glad-Labs/glad-labs-stack/commit/1234567abcdef"
+        out = _scrub_private_repo_refs(text)
+        assert out == "(`1234567`)"
+
+    def test_plain_text_repo_mention_rewrites_to_public_mirror(self):
+        text = "Pushed to Glad-Labs/glad-labs-stack today."
+        out = _scrub_private_repo_refs(text)
+        assert "glad-labs-stack" not in out
+        assert "Glad-Labs/poindexter" in out
+
+    def test_already_public_links_unchanged(self):
+        text = "[PR #221](https://github.com/Glad-Labs/poindexter/pull/221)"
+        # The public mirror's own URL is fine — the scrub is private-repo
+        # specific. (We still don't emit any URLs from the bundle, but
+        # if one slips through from elsewhere, it stays.)
+        out = _scrub_private_repo_refs(text)
+        assert out == text
+
+    def test_empty_input_returns_empty(self):
+        assert _scrub_private_repo_refs("") == ""
+
+    def test_no_private_refs_returns_unchanged(self):
+        text = "A normal sentence with no GitHub links at all."
+        assert _scrub_private_repo_refs(text) == text
+
+    def test_multiple_leak_shapes_in_one_paragraph(self):
+        text = (
+            "Today we shipped "
+            "[PR #673](https://github.com/Glad-Labs/glad-labs-stack/pull/673), "
+            "then <https://github.com/Glad-Labs/glad-labs-stack/pull/676>, "
+            "and a follow-up commit at "
+            "https://github.com/Glad-Labs/glad-labs-stack/commit/abc1234. "
+            "All landed on Glad-Labs/glad-labs-stack."
+        )
+        out = _scrub_private_repo_refs(text)
+        assert "glad-labs-stack" not in out
+        assert "github.com" not in out
+        assert "PR #673 (PR #673)" in out
+        assert "(PR #676)" in out
+        assert "(`abc1234`)" in out
+        assert "Glad-Labs/poindexter" in out
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +274,15 @@ class TestRunPromptConstruction:
             in prompt
         ), "PR title from bundle must reach the LLM prompt — see #354"
 
-        # The PR number must appear so the model can cite [PR #221].
+        # The PR number must appear so the model can cite (PR #221).
         assert "PR #221" in prompt
-        # The PR URL must appear so the model can build inline links.
-        assert "https://github.com/Glad-Labs/poindexter/pull/221" in prompt
+        # No GitHub URLs (https://github.com/...) reach the LLM —
+        # bundle policy is "no GitHub URLs", citations are plain text
+        # "(PR #N)" only. (The prompt's prose may mention "github.com"
+        # in the directive itself, which is fine; what must not appear
+        # is an actual URL the model could echo.)
+        assert "https://github.com/" not in prompt
+        assert "http://github.com/" not in prompt
         # Substantive body content must reach the LLM (not just the title).
         assert "INPUT to a CLI flag" in prompt
 

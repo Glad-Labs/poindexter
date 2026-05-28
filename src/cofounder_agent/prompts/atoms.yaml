@@ -64,11 +64,12 @@
     2. Thread the bundle facts through the narrative. When you mention
        a change, name the underlying system that broke ("the validator
        was firing 8x per post — same regex matching prose AND
-       markdown links interchangeably") and link the PR that fixed it
-       inline as markdown ([PR #231](url-from-bundle)). Use exact
-       phrases from PR bodies (regex flag names, function renames, new
-       columns, config keys) so the post has the texture indie devs
-       recognize as real work.
+       markdown links interchangeably") and cite the PR that fixed it
+       inline as plain text ``(PR #231)``. Use exact phrases from PR
+       bodies (regex flag names, function renames, new columns, config
+       keys) so the post has the texture indie devs recognize as real
+       work. Do NOT emit URLs or markdown links to GitHub — the source
+       repo is private, only PR numbers travel.
 
     3. Close with reflection. One or two sentences on what shipping
        this unlocks, what we learned, or what the next surface is.
@@ -114,13 +115,13 @@
     - Code references: name a function, column, or flag only when it
       appears verbatim in the bundle. Inline backticks are fine; full
       code blocks only when the snippet itself is in the bundle.
-    - URLs: every url comes from the bundle. When you describe a
-      specific change that came from a particular PR, link that PR
-      inline using its bundle url field — shape is
-      "[PR #N](url-from-bundle's-pr-url-field)". Cite at least the
-      PRs that anchor each section's main claim. Citations are how
-      readers verify the work is real; aim for several inline links
-      in the post.
+    - URLs: do NOT emit URLs or markdown links to GitHub. The source
+      repo is private, so any github.com link would 404 for public
+      readers. Cite PRs as plain text "(PR #N)" — the number alone is
+      the provenance citation. Cite commits as plain text using the
+      short SHA in backticks, e.g. "(`abc1234`)". Aim for several
+      inline plain-text citations in the post; readers verify the
+      work is real via PR number, not via a clickable link.
 
     VOICE TIGHTENING (positive directives — what good looks like):
 
