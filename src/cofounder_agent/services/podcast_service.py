@@ -432,38 +432,81 @@ def _build_script_fallback(title: str, content: str) -> str:
     return _wrap_with_intro_outro(plain_text, spoken_title)
 
 
+def _build_intro(spoken_title: str) -> str:
+    """Construct the canonical podcast intro line. Pure function so the
+    sibling ``_unwrap_intro_outro`` can reproduce it for stripping."""
+    _pname = site_config.get("podcast_name", "the podcast")
+    return f"Welcome to {_pname}. Today's episode: {spoken_title}."
+
+
+def _build_outro() -> str:
+    """Construct the canonical podcast outro lines. Pure function so the
+    sibling ``_unwrap_intro_outro`` can reproduce it for stripping."""
+    _pname = site_config.get("podcast_name", "the podcast")
+    _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
+    return (
+        f"Thanks for listening to {_pname}. "
+        f"Visit {_domain_tts} for more episodes, articles, and insights. "
+        "See you next time."
+    )
+
+
 def _wrap_with_intro_outro(script_body: str, spoken_title: str) -> str:
     """Prepend / append intro / outro to the spoken body for the podcast.
 
     Default on — the podcast IS a show, so "Welcome to {name}" makes
     sense there.
 
-    TODO (Matt 2026-05-28): the video composer currently reuses the
-    podcast MP3 as the video soundtrack (see
-    ``video_service.generate_video_for_post:467``). When intro/outro
-    are present, the video opens with "Welcome to {podcast_name}"
-    over a slideshow that isn't framed as a podcast episode. Follow-up
-    PR should split podcast (with wrappers) from video narration (body
-    only) — either via two TTS passes during episode generation or by
-    trimming intro/outro from the MP3 before video mux. Tracked as a
-    separate task to avoid coupling that fix with this refactor.
+    For the video composer's narration sibling, use
+    ``_unwrap_intro_outro`` (or build the body-only script directly and
+    feed it to a second edge_tts pass via ``PodcastService.generate_episode``,
+    which writes ``{post_id}-narration.mp3`` alongside the main file when
+    ``podcast_video_narration_sibling_enabled='true'``).
     """
     if site_config.get("podcast_include_intro", "true").lower() == "true":
-        _pname = site_config.get("podcast_name", "the podcast")
-        intro = f"Welcome to {_pname}. Today's episode: {spoken_title}."
+        intro = _build_intro(spoken_title)
         script_body = f"{intro}\n\n{script_body}"
 
     if site_config.get("podcast_include_outro", "true").lower() == "true":
-        _pname = site_config.get("podcast_name", "the podcast")
-        _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
-        outro = (
-            f"Thanks for listening to {_pname}. "
-            f"Visit {_domain_tts} for more episodes, articles, and insights. "
-            "See you next time."
-        )
+        outro = _build_outro()
         script_body = f"{script_body}\n\n{outro}"
 
     return script_body
+
+
+def _unwrap_intro_outro(wrapped: str, spoken_title: str) -> str:
+    """Inverse of ``_wrap_with_intro_outro`` — return the body-only
+    script.
+
+    Strips the canonical intro / outro produced by ``_build_intro`` /
+    ``_build_outro`` using exact-prefix / exact-suffix matching. If the
+    expected intro/outro isn't found at the boundary, leaves that side
+    alone (covers pre-existing scripts that were built before the
+    wrapper helper existed, or operator-curated overrides).
+
+    Used by ``PodcastService.generate_episode`` to produce the
+    body-only narration sibling MP3 that the video composer mixes in
+    — keeps the video from opening with "Welcome to {podcast_name}"
+    over a slideshow that isn't framed as a podcast episode.
+    """
+    body = wrapped or ""
+
+    if site_config.get("podcast_include_intro", "true").lower() == "true":
+        intro = _build_intro(spoken_title)
+        # The wrapper joins with "\n\n" — strip that separator too.
+        if body.startswith(intro + "\n\n"):
+            body = body[len(intro) + 2:]
+        elif body.startswith(intro):
+            body = body[len(intro):].lstrip("\n")
+
+    if site_config.get("podcast_include_outro", "true").lower() == "true":
+        outro = _build_outro()
+        if body.endswith("\n\n" + outro):
+            body = body[: -(len(outro) + 2)]
+        elif body.endswith(outro):
+            body = body[: -len(outro)].rstrip("\n")
+
+    return body.strip()
 
 
 def _estimate_duration_from_text(text: str) -> int:
@@ -607,6 +650,18 @@ class PodcastService:
                         voice=voice,
                         title=title,
                     )
+                    # Glad-Labs/glad-labs-stack#649 PR 2 — produce the
+                    # video-narration sibling MP3 alongside the main
+                    # podcast episode. The video composer mixes this in
+                    # so the slideshow doesn't open with "Welcome to
+                    # {podcast_name}". Best-effort: failure here MUST
+                    # NOT take the podcast result down.
+                    await self._maybe_generate_narration_sibling(
+                        post_id=post_id,
+                        script=script,
+                        title=title,
+                        voice=voice,
+                    )
                     return result
                 last_error = result.error
             except Exception as e:
@@ -616,6 +671,88 @@ class PodcastService:
         error_msg = f"All voices failed. Last error: {last_error}"
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
+
+    async def _maybe_generate_narration_sibling(
+        self,
+        *,
+        post_id: str,
+        script: str,
+        title: str,
+        voice: str,
+    ) -> None:
+        """Emit ``{post_id}-narration.mp3`` — body-only TTS for the video
+        composer.
+
+        Gated by ``app_settings.podcast_video_narration_sibling_enabled``
+        (default ``true``). The video composer in
+        ``services/video_service.py::generate_video_for_post`` prefers
+        this file over ``{post_id}.mp3`` when present, so the slideshow
+        narration is the article body without the "Welcome to {name}"
+        intro / "Visit {site} for more" outro.
+
+        Cheap: edge-tts is local, so this is a second local TTS pass on
+        already-normalized text. Same voice as the main episode to keep
+        the audio identity consistent (the video isn't a different show,
+        just a different framing of the same content).
+
+        Never raises — narration sibling generation failure is non-fatal
+        (the main episode is fine; the video will just fall back to the
+        wrapped MP3 with the leading "Welcome to ..." per the comment in
+        ``video_service.generate_video_for_post``).
+        """
+        try:
+            enabled = (
+                site_config.get(
+                    "podcast_video_narration_sibling_enabled", "true",
+                ).lower()
+                == "true"
+            )
+        except Exception:
+            enabled = True
+        if not enabled:
+            return
+
+        try:
+            spoken_title = _normalize_for_speech(title)
+            body_only = _unwrap_intro_outro(script, spoken_title)
+            if len(body_only) < 20:
+                logger.debug(
+                    "[PODCAST] narration sibling skipped: body-only "
+                    "script too short (%d chars) — wrapper probably "
+                    "didn't add intro/outro, video will reuse main MP3",
+                    len(body_only),
+                )
+                return
+            sibling_path = self.output_dir / f"{post_id}-narration.mp3"
+            try:
+                import edge_tts
+            except ImportError:
+                logger.debug(
+                    "[PODCAST] narration sibling skipped: edge-tts not installed",
+                )
+                return
+            communicate = edge_tts.Communicate(body_only, voice)
+            await communicate.save(str(sibling_path))
+            if (
+                sibling_path.exists()
+                and sibling_path.stat().st_size > 1000
+            ):
+                logger.info(
+                    "[PODCAST] narration sibling: %s (%d bytes, voice=%s)",
+                    sibling_path.name,
+                    sibling_path.stat().st_size,
+                    voice,
+                )
+            else:
+                logger.warning(
+                    "[PODCAST] narration sibling produced empty file at %s",
+                    sibling_path,
+                )
+        except Exception as exc:  # noqa: BLE001 — never fatal
+            logger.warning(
+                "[PODCAST] narration sibling generation failed (non-fatal): %s",
+                exc,
+            )
 
     async def _record_episode_asset(
         self,

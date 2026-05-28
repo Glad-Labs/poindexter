@@ -150,6 +150,28 @@ class ContentDatabase(DatabaseServiceMixin):
                 if not isinstance(metadata, dict):
                     metadata = {}
 
+                # video_shot_list — JSONB director output from the
+                # ``generate_video_shot_list`` pipeline stage
+                # (Glad-Labs/glad-labs-stack#649 PR 2). Shape pinned by
+                # ``schemas/video_shot_list.VideoShotList``. NULL means
+                # the director didn't run (older posts, or stage
+                # skipped due to missing podcast script) — the shot-list
+                # renderer treats NULL as "fall back to legacy slideshow".
+                # We persist whatever the stage produced; the renderer
+                # re-validates against the Pydantic schema at load time
+                # so director drift doesn't crash the renderer.
+                video_shot_list = post_data.get("video_shot_list")
+                if video_shot_list is not None and not isinstance(
+                    video_shot_list, (dict, list),
+                ):
+                    # Defensive: a stringified JSON would silently
+                    # become a JSON string in the column. Force-parse
+                    # or drop.
+                    try:
+                        video_shot_list = json.loads(video_shot_list)
+                    except (TypeError, ValueError):
+                        video_shot_list = None
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
@@ -172,12 +194,13 @@ class ContentDatabase(DatabaseServiceMixin):
                         word_count,
                         reading_time,
                         metadata,
+                        video_shot_list,
                         created_by,
                         updated_by,
                         created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, NOW(), NOW())
                     RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
                               author_id, category_id, status, published_at, created_at, updated_at
                     """,
@@ -201,6 +224,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     word_count,
                     reading_time,
                     json.dumps(metadata),
+                    json.dumps(video_shot_list) if video_shot_list is not None else None,
                     post_data.get("created_by"),
                     post_data.get("updated_by"),
                 )

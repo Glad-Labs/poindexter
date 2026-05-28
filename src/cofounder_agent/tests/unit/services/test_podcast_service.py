@@ -567,3 +567,204 @@ class TestGeneratePodcastEpisodeWrapper:
 
             kwargs = mock_instance.generate_episode.await_args.kwargs
             assert kwargs.get("pre_generated_script") == "my custom script"
+
+
+# ---------------------------------------------------------------------------
+# _unwrap_intro_outro + narration sibling
+# Glad-Labs/glad-labs-stack#649 PR 2 — the body-only narration sibling MP3
+# the video composer mixes in so videos don't open with "Welcome to ..."
+# ---------------------------------------------------------------------------
+
+
+class TestUnwrapIntroOutro:
+    """``_unwrap_intro_outro`` must invert ``_wrap_with_intro_outro``."""
+
+    def test_round_trip_returns_body_only(self, monkeypatch):
+        """wrap then unwrap must equal the original body."""
+        from services.podcast_service import (
+            _unwrap_intro_outro,
+            _wrap_with_intro_outro,
+        )
+
+        class _StubSC:
+            @staticmethod
+            def get(key, default=None):
+                return {
+                    "podcast_include_intro": "true",
+                    "podcast_include_outro": "true",
+                    "podcast_name": "Test Show",
+                    "site_domain": "example.com",
+                }.get(key, default)
+
+        monkeypatch.setattr("services.podcast_service.site_config", _StubSC())
+
+        body = "Here is the post body content. It has multiple sentences."
+        wrapped = _wrap_with_intro_outro(body, "My Title")
+        assert "Welcome to Test Show" in wrapped
+        assert "Visit example dot com" in wrapped
+
+        recovered = _unwrap_intro_outro(wrapped, "My Title")
+        assert recovered == body
+        assert "Welcome to Test Show" not in recovered
+        assert "Visit example dot com" not in recovered
+
+    def test_unwrap_no_intro_when_disabled(self, monkeypatch):
+        """When the wrapper didn't add an intro, unwrap leaves the
+        leading content alone."""
+        from services.podcast_service import _unwrap_intro_outro
+
+        class _StubSC:
+            @staticmethod
+            def get(key, default=None):
+                return {
+                    "podcast_include_intro": "false",
+                    "podcast_include_outro": "false",
+                    "podcast_name": "Test Show",
+                    "site_domain": "example.com",
+                }.get(key, default)
+
+        monkeypatch.setattr("services.podcast_service.site_config", _StubSC())
+
+        body = "Body only no wrappers at all."
+        recovered = _unwrap_intro_outro(body, "Title")
+        assert recovered == body
+
+
+class TestNarrationSibling:
+    """``PodcastService._maybe_generate_narration_sibling`` writes a
+    body-only MP3 next to the main episode for the video composer."""
+
+    @pytest.mark.asyncio
+    async def test_writes_narration_sibling_alongside_main_mp3(
+        self, monkeypatch,
+    ):
+        """When enabled (default), the sibling MP3 lands at
+        ``{post_id}-narration.mp3``, derived from the same script
+        without the intro/outro wrappers."""
+        from services.podcast_service import PodcastService
+
+        class _StubSC:
+            @staticmethod
+            def get(key, default=None):
+                return {
+                    "podcast_include_intro": "true",
+                    "podcast_include_outro": "true",
+                    "podcast_name": "Test Show",
+                    "site_domain": "example.com",
+                    "podcast_video_narration_sibling_enabled": "true",
+                }.get(key, default)
+
+        monkeypatch.setattr("services.podcast_service.site_config", _StubSC())
+
+        captured_scripts: list[str] = []
+
+        class _MockCommunicate:
+            def __init__(self, script, voice):
+                captured_scripts.append(script)
+                self._voice = voice
+
+            async def save(self, path):
+                Path(path).write_bytes(b"x" * 2000)
+
+        mock_edge_tts = MagicMock()
+        mock_edge_tts.Communicate = _MockCommunicate
+
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = PodcastService(output_dir=Path(tmp))
+
+            wrapped_script = (
+                "Welcome to Test Show. Today's episode: Post Title.\n\n"
+                "This is the post body content.\n\n"
+                "Thanks for listening to Test Show. "
+                "Visit example dot com for more episodes, articles, "
+                "and insights. See you next time."
+            )
+
+            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+                await svc._maybe_generate_narration_sibling(
+                    post_id="abc",
+                    script=wrapped_script,
+                    title="Post Title",
+                    voice="en-US-AvaNeural",
+                )
+
+            sibling_path = Path(tmp) / "abc-narration.mp3"
+            assert sibling_path.exists()
+            assert sibling_path.stat().st_size > 1000
+
+        assert len(captured_scripts) == 1
+        sibling_script = captured_scripts[0]
+        assert "Welcome to Test Show" not in sibling_script
+        assert "Visit example dot com" not in sibling_script
+        assert "post body content" in sibling_script
+
+    @pytest.mark.asyncio
+    async def test_disabled_setting_skips_sibling(self, monkeypatch):
+        """When the toggle is off, no sibling MP3 is written."""
+        from services.podcast_service import PodcastService
+
+        class _StubSC:
+            @staticmethod
+            def get(key, default=None):
+                return {
+                    "podcast_include_intro": "true",
+                    "podcast_include_outro": "true",
+                    "podcast_name": "Test Show",
+                    "site_domain": "example.com",
+                    "podcast_video_narration_sibling_enabled": "false",
+                }.get(key, default)
+
+        monkeypatch.setattr("services.podcast_service.site_config", _StubSC())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = PodcastService(output_dir=Path(tmp))
+            await svc._maybe_generate_narration_sibling(
+                post_id="abc",
+                script="Welcome to Test Show...\n\nbody.\n\nThanks for listening...",
+                title="Post Title",
+                voice="en-US-AvaNeural",
+            )
+            assert not (Path(tmp) / "abc-narration.mp3").exists()
+
+    @pytest.mark.asyncio
+    async def test_failure_is_non_fatal(self, monkeypatch):
+        """If edge_tts raises during the sibling pass, the call must
+        not propagate — the main episode is already done."""
+        from services.podcast_service import PodcastService
+
+        class _StubSC:
+            @staticmethod
+            def get(key, default=None):
+                return {
+                    "podcast_include_intro": "true",
+                    "podcast_include_outro": "true",
+                    "podcast_name": "Test Show",
+                    "site_domain": "example.com",
+                    "podcast_video_narration_sibling_enabled": "true",
+                }.get(key, default)
+
+        monkeypatch.setattr("services.podcast_service.site_config", _StubSC())
+
+        class _BrokenCommunicate:
+            def __init__(self, *a, **kw):
+                raise RuntimeError("simulated edge-tts failure")
+
+        mock_edge_tts = MagicMock()
+        mock_edge_tts.Communicate = _BrokenCommunicate
+
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = PodcastService(output_dir=Path(tmp))
+            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+                # Must not raise — the sibling failure is best-effort.
+                await svc._maybe_generate_narration_sibling(
+                    post_id="abc",
+                    script=(
+                        "Welcome to Test Show. Today's episode: Title.\n\n"
+                        "real body content here that is long enough.\n\n"
+                        "Thanks for listening to Test Show. "
+                        "Visit example dot com for more episodes, articles, "
+                        "and insights. See you next time."
+                    ),
+                    title="Title",
+                    voice="en-US-AvaNeural",
+                )

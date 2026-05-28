@@ -18,6 +18,7 @@ import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -62,8 +63,26 @@ def _video_server_url() -> str:
     imports before site_config.load() completes, the cached value was
     always the hardcoded default — changing video_server_url in
     app_settings had no effect until worker restart.
+
+    Glad-Labs/glad-labs-stack#649 PR 2 — emit a loud warning when the
+    URL points at port 9840. That port belongs to the wan-server
+    (Wan2.1 T2V model), which is a different service that only
+    accepts a ``prompt`` field. POSTing the slideshow body
+    (``image_paths`` / ``audio_path`` / ``ken_burns``) to it returns
+    422 on every call. Migration 20260528_040918 fixes existing DBs;
+    this guard catches operator-introduced regressions.
     """
-    return site_config.get("video_server_url", "http://host.docker.internal:9837")
+    url = site_config.get("video_server_url", "http://host.docker.internal:9837")
+    if ":9840" in url:
+        logger.warning(
+            "[VIDEO] video_server_url=%r points at the Wan2.1 T2V model server "
+            "(port 9840), which expects {'prompt': ...} not the slideshow body. "
+            "Every /generate POST will 422. Repoint to the slideshow server "
+            "(default http://host.docker.internal:9837) — see migration "
+            "20260528_040918 and Glad-Labs/glad-labs-stack#649 PR 2.",
+            url,
+        )
+    return url
 
 
 def _sdxl_server_url() -> str:
@@ -427,6 +446,119 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
     return image_paths
 
 
+async def _load_video_shot_list(post_id: str) -> Any:
+    """Load + validate ``posts.video_shot_list`` for ``post_id``.
+
+    Glad-Labs/glad-labs-stack#649 PR 2 — the director stage writes the
+    shot list to ``posts.video_shot_list jsonb``. Returns a
+    ``VideoShotList`` Pydantic model on success, or ``None`` when:
+
+    - no asyncpg pool is wired (tests / bootstrap),
+    - the post has NULL shot list (director hasn't run),
+    - the JSON fails schema validation (director output drifted from
+      the contract — operator should regenerate via the director
+      stage; we fall back to the legacy slideshow rather than
+      crashing the renderer).
+
+    Never raises. Validation failures land in the worker log so
+    operators can grep for ``[VIDEO] shot list validation failed``.
+    """
+    pool = getattr(site_config, "_pool", None)
+    if pool is None:
+        return None
+    try:
+        from schemas.video_shot_list import VideoShotList
+
+        row = await pool.fetchrow(
+            "SELECT video_shot_list FROM posts WHERE id = $1",
+            post_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[VIDEO] shot list lookup failed for %s (%s) — "
+            "falling back to legacy slideshow",
+            post_id, exc,
+        )
+        return None
+
+    if row is None or row["video_shot_list"] is None:
+        return None
+
+    raw = row["video_shot_list"]
+    try:
+        if isinstance(raw, str):
+            import json as _json
+            raw = _json.loads(raw)
+        return VideoShotList.model_validate(raw)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[VIDEO] shot list validation failed for %s: %s — "
+            "falling back to legacy slideshow",
+            post_id, exc,
+        )
+        return None
+
+
+async def _render_via_shot_list(
+    *,
+    post_id: str,
+    shot_list: Any,
+    podcast_path: str,
+    output_path: Path,
+    title: str,
+) -> VideoResult:
+    """Dispatch to ``shot_list_renderer.render_shot_list`` and adapt
+    the result to ``VideoResult``.
+
+    Wraps the renderer so ``generate_video_for_post`` can branch on a
+    single VideoResult shape regardless of which renderer ran.
+    """
+    from services.video_renderers.shot_list_renderer import render_shot_list
+
+    pool = getattr(site_config, "_pool", None)
+    sdxl_url = _sdxl_server_url()
+
+    render_result = await render_shot_list(
+        post_id=post_id,
+        shot_list=shot_list,
+        audio_path=podcast_path,
+        output_path=str(output_path),
+        sdxl_url=sdxl_url,
+        site_config=site_config,
+        pool=pool,
+    )
+
+    if not render_result.success or not render_result.output_path:
+        return VideoResult(
+            success=False,
+            error=(
+                render_result.error
+                or "shot-list renderer returned no output"
+            ),
+        )
+
+    # Glad-Labs/poindexter#161 — record media_assets row for the
+    # shot-list-rendered video, mirroring the legacy slideshow path.
+    await _record_video_asset(
+        post_id=post_id,
+        asset_type="video",
+        output_path=render_result.output_path,
+        duration_seconds=int(render_result.duration_s),
+        file_size_bytes=render_result.file_size_bytes,
+        width=1920,
+        height=1080,
+        images_used=render_result.shots_rendered,
+        title=title,
+    )
+    return VideoResult(
+        success=True,
+        file_path=render_result.output_path,
+        duration_seconds=int(render_result.duration_s),
+        file_size_bytes=render_result.file_size_bytes,
+        images_used=render_result.shots_rendered,
+    )
+
+
 async def generate_video_for_post(
     post_id: str,
     title: str,
@@ -434,6 +566,7 @@ async def generate_video_for_post(
     podcast_path: str | None = None,
     force: bool = False,
     pre_generated_scenes: list[str] | None = None,
+    **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a video for a published post.
 
@@ -445,10 +578,18 @@ async def generate_video_for_post(
         content: Post content excerpt (context for image prompts).
         podcast_path: Path to podcast MP3 file. If None, checks default location.
         force: Regenerate even if video exists.
+        **provider_kwargs: Swallows extra kwargs passed by the
+            ``KenBurnsSlideshowProvider`` wrapper (e.g.
+            ``site_config=...``). The function reads its
+            ``site_config`` from the lifespan-bound module-level
+            attribute (see ``set_site_config``) regardless, so
+            forwarding is a no-op — but accepting the kwarg keeps the
+            wrapper's existing keyword call from raising TypeError.
 
     Returns:
         VideoResult with file path and duration info.
     """
+    del provider_kwargs  # explicit no-op; lifespan site_config wins
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}.mp4"
 
@@ -461,13 +602,84 @@ async def generate_video_for_post(
             file_size_bytes=output_path.stat().st_size,
         )
 
-    # Find podcast audio
+    # Find podcast audio. Glad-Labs/glad-labs-stack#649 PR 2 — prefer
+    # the body-only narration sibling ({post_id}-narration.mp3) over
+    # the main podcast MP3. The sibling is produced by
+    # PodcastService.generate_episode when
+    # podcast_video_narration_sibling_enabled is true (default); it has
+    # the same body text but without the "Welcome to {podcast_name}" /
+    # "Visit {site} for more" wrappers that make sense for the podcast
+    # surface but not over a video slideshow. Falls back to the wrapped
+    # MP3 when the sibling is absent (older posts, or operator disabled
+    # the sibling).
     if not podcast_path:
         from services.podcast_service import PODCAST_DIR
-        podcast_path = str(PODCAST_DIR / f"{post_id}.mp3")
+        narration_sibling = PODCAST_DIR / f"{post_id}-narration.mp3"
+        wrapped_path = PODCAST_DIR / f"{post_id}.mp3"
+        if narration_sibling.exists() and narration_sibling.stat().st_size > 1000:
+            podcast_path = str(narration_sibling)
+            logger.info(
+                "[VIDEO] using narration sibling %s (body-only TTS)",
+                narration_sibling.name,
+            )
+        else:
+            podcast_path = str(wrapped_path)
+    else:
+        # Caller passed an explicit path — check if a sibling exists
+        # next to it and prefer that (same body content, no intro/outro).
+        candidate_parent = os.path.dirname(podcast_path)
+        candidate_stem = os.path.splitext(os.path.basename(podcast_path))[0]
+        sibling_candidate = os.path.join(
+            candidate_parent, f"{candidate_stem}-narration.mp3",
+        )
+        try:
+            sibling_ok = (
+                os.path.exists(sibling_candidate)
+                and os.path.getsize(sibling_candidate) > 1000
+            )
+        except OSError:
+            # Mixed-separator paths can confuse os.path on Windows;
+            # treat any probe failure as "no sibling".
+            sibling_ok = False
+        if sibling_ok:
+            logger.info(
+                "[VIDEO] using narration sibling %s alongside caller-supplied podcast",
+                os.path.basename(sibling_candidate),
+            )
+            podcast_path = sibling_candidate
 
     if not os.path.exists(podcast_path):
         return VideoResult(success=False, error=f"Podcast not found: {podcast_path}")
+
+    # Glad-Labs/glad-labs-stack#649 PR 2 — director-driven shot list path.
+    # When ``posts.video_shot_list`` is populated for this post, hand off
+    # to ``services/video_renderers/shot_list_renderer.render_shot_list``
+    # which composes the video from per-shot SDXL / Pexels / Wan2.1
+    # clips via FFmpegLocalCompositor. NULL shot list = director hasn't
+    # run for this post → fall through to the legacy slideshow path.
+    shot_list = await _load_video_shot_list(post_id)
+    if shot_list is not None:
+        logger.info(
+            "[VIDEO] shot list found for %s (%d shots, %.1fs) — "
+            "using director-driven renderer",
+            post_id, len(shot_list.shots), shot_list.total_duration_s,
+        )
+        result = await _render_via_shot_list(
+            post_id=post_id,
+            shot_list=shot_list,
+            podcast_path=podcast_path,
+            output_path=output_path,
+            title=title,
+        )
+        if result.success:
+            return result
+        # Shot-list render failed — log + fall back to slideshow so the
+        # post still gets a video. Better degraded than missing.
+        logger.warning(
+            "[VIDEO] shot-list render failed for %s (%s) — falling back "
+            "to legacy slideshow",
+            post_id, result.error,
+        )
 
     # Collect images: reuse from post content + supplement with SDXL
     logger.info("[VIDEO] Collecting images for '%s'", title[:50])
@@ -670,7 +882,6 @@ async def _generate_short_summary_audio(
 
     # Strip markdown for cleaner input
     from services.podcast_service import _normalize_for_speech, _strip_markdown
-
     from services.prompt_manager import get_prompt_manager
     prompt = get_prompt_manager().get_prompt(
         "video.short_form_narration",
@@ -723,13 +934,19 @@ async def generate_short_video_for_post(
     pre_generated_scenes: list[str] | None = None,
     pre_generated_summary: str | None = None,
     force: bool = False,
+    **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
 
     Generates a separate 60-second summary narration (not the full podcast).
     Uses post images + SDXL images for visuals.
     Output: 1080x1920 MP4, max 60 seconds.
+
+    ``**provider_kwargs`` swallows extras passed by the
+    ``KenBurnsSlideshowProvider`` wrapper (``site_config=...``) — same
+    rationale as ``generate_video_for_post``.
     """
+    del provider_kwargs  # explicit no-op; lifespan site_config wins
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}-short.mp4"
 
