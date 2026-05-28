@@ -93,7 +93,7 @@ ollama pull glm-4.7:9b         # 6 GB — lighter fallback for <16 GB VRAM
 
 Glad Labs production runs a custom RTX 5090 fine-tune (`glm-4.7-5090`, 19 GB) not on the public registry; any of the above work fine.
 
-Every model routing decision (writer / critic / research / summarizer / embedder) lives in `app_settings` and can be swapped at runtime — no restart, no redeploy. See [`docs/architecture/langgraph-cutover.md`](docs/architecture/langgraph-cutover.md) for the full routing table.
+Every model routing decision (writer / critic / research / summarizer / embedder) lives in `app_settings` and can be swapped at runtime — no restart, no redeploy.
 
 ## Architecture
 

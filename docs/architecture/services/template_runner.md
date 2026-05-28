@@ -46,7 +46,5 @@ After a run completes, the runner writes per-node training signal into `capabili
 
 ## See also
 
-- [`../langgraph-cutover.md`](../langgraph-cutover.md) — Lane C cutover history; Stage 4 (2026-05-16) deleted the chunked StageRunner path.
 - `plugins/atom.py` — `AtomMeta` shape (capability tier, cost class, retry policy) used by future architect-composed graphs.
 - `services/atom_registry.py` — bridges legacy stages into the atom catalog so the architect-LLM can drop a stage at any point in a composed graph.
-- `docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md` — full spec.

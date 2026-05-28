@@ -23,10 +23,7 @@ ideas drift down naturally.
 `resolve_batch` hands the rank-1 candidate to the content pipeline by
 inserting a `content_tasks` row with `topic_batch_id` provenance.
 
-This service replaces the older `topic_proposal_service` and is per
-the spec at
-`docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md`.
-Shipped 2026-04-30.
+This service replaces the older `topic_proposal_service`. Shipped 2026-04-30.
 
 ## Public API
 
@@ -137,8 +134,6 @@ topic_discovery wiring is not yet implemented` warning in logs.
 
 ## See also
 
-- `docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md`
-  — full design spec.
 - `docs/architecture/niches-and-rag-modes.md` — niche/source/goal
   modeling and how `writer_rag_mode` flows downstream.
 - `docs/architecture/services/content_router_service.md` — what

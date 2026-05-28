@@ -2,7 +2,6 @@
 
 **Status:** active as of 2026-05-12
 **Owner:** `services/url_scraper.py`
-**Audit reference:** [`docs/security/audit-2026-05-12.md`](../security/audit-2026-05-12.md) P0 #5
 
 ## Threat model
 

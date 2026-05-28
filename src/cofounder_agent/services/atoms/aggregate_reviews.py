@@ -17,7 +17,6 @@ Aggregation policy is configurable via state:
 - ``aggregation_pass_threshold`` (default: 70.0) — score below this
   → halt with verdict=revise.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#362.
 """
 

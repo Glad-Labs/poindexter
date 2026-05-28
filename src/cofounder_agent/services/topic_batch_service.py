@@ -10,9 +10,6 @@ Per-niche flow:
   6. open the topic_decision approval gate
   7. record discovery_run
 
-See spec §"Flow" + §"Discovery sweep" in
-docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md.
-
 Implementation note — lazy imports
 ==================================
 Both ``embed_text`` and ``llm_final_score`` are imported *inside* the

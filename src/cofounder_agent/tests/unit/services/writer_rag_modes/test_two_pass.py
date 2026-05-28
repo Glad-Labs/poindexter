@@ -1,8 +1,5 @@
 """Tests for the TWO_PASS writer mode (LangGraph state machine).
 
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 13)
-
 Deviations from plan:
 - Monkeypatches `services.topic_ranking.embed_text` instead of
   `services.embedding_service.embed_text` because embedding_service has

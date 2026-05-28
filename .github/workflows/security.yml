@@ -143,7 +143,7 @@ jobs:
   action-pins:
     name: Lint third-party Actions for SHA pins
     runs-on: ubuntu-latest
-    # Defends against the audit-2026-05-12 P1 #14 floating-tag vector.
+    # Defends against the floating-tag supply-chain vector.
     # Fails the build if any `uses:` in .github/workflows/ points at a
     # tag/branch instead of a 40-char commit SHA. Pure-stdlib script —
     # no pip install needed.

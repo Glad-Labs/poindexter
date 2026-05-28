@@ -30,7 +30,6 @@ code generation because:
 3. JSON serializes cleanly into ``pipeline_templates.graph_def`` for
    caching.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#364.
 """
 

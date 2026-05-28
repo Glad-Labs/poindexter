@@ -1,8 +1,7 @@
 """CRUD service for niches + their goals + their source configs.
 
 Niches are the first-class configuration unit for the topic-discovery + RAG
-pivot (see docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md).
-Glad Labs is the first niche; future operators add their own.
+pivot. Glad Labs is the first niche; future operators add their own.
 """
 
 from __future__ import annotations

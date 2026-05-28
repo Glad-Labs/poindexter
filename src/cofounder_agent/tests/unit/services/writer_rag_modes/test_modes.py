@@ -1,8 +1,4 @@
-"""Tests for the writer_rag_mode dispatcher.
-
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 9)
-"""
+"""Tests for the writer_rag_mode dispatcher."""
 
 import pytest
 

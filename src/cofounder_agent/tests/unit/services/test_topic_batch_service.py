@@ -1,8 +1,5 @@
 """Tests for TopicBatchService — orchestrates discovery → rank → batch → gate.
 
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 6)
-
 Roundtrips against the real Postgres test DB via the ``db_pool`` fixture
 defined in ``tests/unit/conftest.py``. Skipped automatically when no live
 Postgres DSN is reachable.

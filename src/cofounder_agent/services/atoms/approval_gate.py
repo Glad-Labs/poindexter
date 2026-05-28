@@ -23,7 +23,6 @@ Phase 2's Postgres checkpointer with custom serializers, because the
 v1 state contains live service objects (DatabaseService etc.) that
 aren't msgpack-serializable.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#363.
 """
 

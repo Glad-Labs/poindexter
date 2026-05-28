@@ -33,8 +33,7 @@ _DESCRIPTION = (
     "retry logic, and stale-task sweep with native Prefect primitives. "
     "Default 'false' = today's behavior. Flip with `UPDATE app_settings "
     "SET value = 'true' WHERE key = 'use_prefect_orchestration';` after "
-    "the deployment is live and the parity gate passes. See "
-    "docs/architecture/prefect-cutover.md for the staged rollout runbook."
+    "the deployment is live and the parity gate passes."
 )
 
 

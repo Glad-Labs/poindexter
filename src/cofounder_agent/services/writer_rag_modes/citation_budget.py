@@ -3,9 +3,6 @@
 Same as TOPIC_ONLY but the writer is REQUIRED to cite at least N internal
 sources by [source/ref] tag. content_validator extension (follow-up) enforces
 the count post-write.
-
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 11)
 """
 
 from __future__ import annotations

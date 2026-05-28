@@ -300,8 +300,7 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
                 # LangGraph TemplateRunner. The 'dev_diary' template
                 # skips QA, auto-curator, SEO, and media-script stages —
                 # none fit a status-report artifact. See
-                # docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md
-                # and Glad-Labs/poindexter#359.
+                # Glad-Labs/poindexter#359.
                 "dev_diary",
             )
             await conn.execute(

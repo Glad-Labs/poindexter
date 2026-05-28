@@ -5,8 +5,7 @@ call (or one programmatic computation), no internal conditional branches.
 Branching becomes graph edges in the templates that compose them, not
 internal logic.
 
-Phase 3 of the dynamic-pipeline-composition spec — see
-``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``.
+Phase 3 of the dynamic-pipeline-composition lift.
 
 What lives here:
 

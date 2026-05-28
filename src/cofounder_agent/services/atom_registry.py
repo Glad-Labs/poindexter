@@ -13,7 +13,6 @@ Phase 2 of the dynamic-pipeline-composition spec — the architect-LLM
 queries this catalog to know what blocks exist when composing novel
 pipelines.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#360.
 """
 

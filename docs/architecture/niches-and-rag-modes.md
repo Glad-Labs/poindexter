@@ -9,9 +9,7 @@ instead of summarizing external feeds.
 
 This doc is for operators who want to understand what the new flow does,
 when each writer mode is the right pick, and how to drive it from the
-CLI or MCP. The full design rationale lives in
-[`docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md`](../superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design);
-this page is the operator surface only.
+CLI or MCP. This page is the operator surface only.
 
 ## Why this exists
 

@@ -664,7 +664,7 @@ log_fps = [l.split('Fingerprint:',1)[1].strip() for l in log.splitlines() if 'Fi
 - `9e802e60` — narrative verb regex ("Use API", "adopt Large Language Models") captured plain TitleCase English words as library names. Fix: skip candidates matching `^[A-Z][a-z]+$` unless they're in a known reference list.
 - `89768318` — markdown linked citations (`[Title](url)`) still matched because the `(?<!\[)` lookbehind only blocks matches that START at the bracket. Fix: strip the full `[text](url)` construct from the text before running unlinked-citation patterns.
 
-All four fixes have regression tests. See `docs/experiments/pipeline-tuning.md` for the tuning session that uncovered them.
+All four fixes have regression tests.
 
 ---
 

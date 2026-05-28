@@ -99,7 +99,7 @@ def _add_request_id(
 
 
 # ---------------------------------------------------------------------------
-# Secret redaction processor (audit-2026-05-12 P1 #12)
+# Secret redaction processor
 # ---------------------------------------------------------------------------
 #
 # Two layers of defense against accidentally logging secrets:
@@ -359,11 +359,10 @@ def configure_structlog() -> bool:
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 # Add timestamps in ISO format
                 structlog.processors.TimeStamper(fmt="ISO"),
-                # Mask secret-named keys and bearer-shaped values
-                # (audit-2026-05-12 P1 #12). Runs after the timestamper
-                # so internal `_record`-style keys are already in place,
-                # and before the renderer so the masked dict is what
-                # actually hits stdout / Loki / disk.
+                # Mask secret-named keys and bearer-shaped values.
+                # Runs after the timestamper so internal `_record`-style
+                # keys are already in place, and before the renderer so
+                # the masked dict is what actually hits stdout / Loki / disk.
                 redact_secrets,
                 # Include stack information for exceptions
                 structlog.processors.StackInfoRenderer(),
@@ -470,9 +469,9 @@ def configure_standard_logging() -> None:
             print(f"Warning: Failed to configure rotating file logging: {e}", file=sys.stderr)
 
     # Apply the request-ID-aware formatter to every handler. Also attach
-    # the stdlib secret-redaction filter (audit-2026-05-12 P1 #12) so any
-    # third-party library that logs via stdlib (uvicorn, httpx, asyncpg,
-    # etc.) gets the same secret masking as our structlog calls.
+    # the stdlib secret-redaction filter so any third-party library that
+    # logs via stdlib (uvicorn, httpx, asyncpg, etc.) gets the same secret
+    # masking as our structlog calls.
     formatter = _RequestIDFormatter(log_format)
     redaction_filter = SecretRedactionFilter()
     for handler in handlers:

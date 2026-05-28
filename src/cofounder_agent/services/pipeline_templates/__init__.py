@@ -21,8 +21,6 @@ Phase 4+ adds architect-LLM-composed templates (cached here via the
 ``pipeline_templates`` table, with python_factory pointing at a runtime
 graph builder).
 
-Spec:
-``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Implements: Glad-Labs/poindexter#358.
 """
 

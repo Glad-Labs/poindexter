@@ -1,9 +1,9 @@
 """
 Unit tests for the structlog + stdlib secret-redaction processor.
 
-Closes audit-2026-05-12 P1 #12 — `services/logger_config.py` previously
-configured structlog with no redaction step, so any caller doing
-`logger.info("loaded", token=tok)` would leak the secret to Loki + disk.
+`services/logger_config.py` previously configured structlog with no
+redaction step, so any caller doing `logger.info("loaded", token=tok)`
+would leak the secret to Loki + disk.
 
 These tests exercise the processor function directly with synthetic
 event_dicts; they do NOT touch structlog's global configuration.

@@ -1,7 +1,6 @@
 """TemplateRunner — LangGraph-based orchestration backbone (v1 POC).
 
-The Phase 1 lift from the dynamic-pipeline-composition spec
-(``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``).
+The Phase 1 lift from the dynamic-pipeline-composition lift.
 
 What this is in v1 (POC):
 

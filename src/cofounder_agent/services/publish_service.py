@@ -240,7 +240,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
         # to '' disables the ping without code changes.
         # indexnow_key is is_secret=true since 2026-05-12 — must fetch via
         # async get_secret. The endpoint URL is NOT a secret so it stays
-        # on the sync cache. See docs/security/audit-2026-05-12.md P1 #8.
+        # on the sync cache.
         _indexnow_key = await site_config.get_secret("indexnow_key", "")
         _indexnow_url = site_config.get(
             "indexnow_ping_url", "https://api.indexnow.org/indexnow"

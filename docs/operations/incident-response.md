@@ -94,7 +94,7 @@ docker logs -f poindexter-worker 2>&1 | head -40
 # Look for: "Application startup complete." (FastAPI boot)
 # Look for: "[flows.content_generation] cycle starting" (worker actually
 # dispatching tasks via the Prefect flow — task_executor.py was deleted
-# in the 2026-05-16 Stage 4 cutover, see prefect-cutover.md).
+# in the 2026-05-16 Stage 4 cutover).
 # Cross-check Prefect itself:
 #   docker logs poindexter-worker | grep -i prefect
 

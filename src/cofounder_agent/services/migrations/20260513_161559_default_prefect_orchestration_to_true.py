@@ -16,8 +16,7 @@ Phase-0 migration get the new ``'true'`` default.
 
 Stage 4 of the cutover (delete ``services/task_executor.py``,
 ~1,500 LOC) is gated on this default being live for ~7 days without
-regression. See ``docs/architecture/prefect-cutover.md`` for the
-full runbook.
+regression.
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ _DESCRIPTION = (
     "after the operator's 2-3 day canary on 'true' stayed clean (no "
     "regression in qa_pass_completed cadence, approval-rate, or "
     "rag_engine_fallback). Existing rows preserved via ON CONFLICT "
-    "DO NOTHING. See docs/architecture/prefect-cutover.md."
+    "DO NOTHING."
 )
 
 

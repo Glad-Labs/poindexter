@@ -25,8 +25,7 @@ That path was the production default until the Lane C cutover
 
 After 7+ clean days on TemplateRunner with zero ``template_slug IS
 NULL`` tasks rolling through, the legacy chunked block was deleted in
-the cleanup sweep (Stage 4 of the Lane C runbook in
-``docs/architecture/langgraph-cutover.md``). What remains is the
+the cleanup sweep (Lane C Stage 4, 2026-05-16). What remains is the
 shared-context construction + the TemplateRunner dispatch + the
 post-run experiment outcome attribution. The 12-stage flow itself
 lives in ``services/pipeline_templates/__init__.py:_CANONICAL_BLOG_ORDER``;
@@ -70,9 +69,6 @@ Failure modes
 See also
 --------
 
-- ``docs/architecture/langgraph-cutover.md`` — Lane C runbook (this
-  is the file that file's Stage 4 deletes from)
-- ``docs/architecture/prefect-cutover.md`` — who calls this function
 - ``services/template_runner.py`` — the LangGraph engine
 - ``services/pipeline_templates/__init__.py`` — where new stages go
 """
@@ -284,7 +280,7 @@ async def process_content_generation_task(
             f"pipeline_tasks.template_slug is NULL for task {task_id} — "
             "set app_settings.default_template_slug or pass template_slug "
             "at task creation. The legacy chunked StageRunner path was "
-            "deleted 2026-05-16 (see docs/architecture/langgraph-cutover.md)."
+            "deleted 2026-05-16."
         )
         logger.error("[BG-TASK] %s", msg)
         audit_log_bg(

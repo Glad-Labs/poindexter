@@ -33,8 +33,7 @@ _PREFECT_FLAG_DESCRIPTION = (
     "2026-05-16). Permanently true — services/task_executor.py was "
     "deleted; Prefect's content_generation_flow is the sole dispatch "
     "path. Setting this to 'false' has no effect; the row is kept "
-    "so historical migrations remain idempotent. See "
-    "docs/architecture/prefect-cutover.md for the full cutover history."
+    "so historical migrations remain idempotent."
 )
 
 _HEARTBEAT_DESCRIPTION = (

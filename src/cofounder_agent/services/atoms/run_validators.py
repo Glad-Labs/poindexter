@@ -32,7 +32,6 @@ the architect put validators FIRST (cheap halt) and critics SECOND
 existing cross_model_qa stage uses internally, now exposed as
 LangGraph nodes.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#362.
 """
 

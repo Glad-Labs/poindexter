@@ -1250,9 +1250,6 @@ async def test_generation():
 # functions to render a draft from a topic + angle + retrieved snippets.
 # They are deliberately thin wrappers around _ollama_chat_json so unit tests
 # can monkeypatch this module to avoid a real Ollama call.
-#
-# Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-# Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
 
 
 async def _resolve_rag_writer_model() -> str:

@@ -1,8 +1,5 @@
 """Integration: end-to-end niche topic-discovery flow.
 
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 18)
-
 Two scenarios:
 
 1. ``test_glad_labs_sweep_produces_a_batch`` — verifies the seeded

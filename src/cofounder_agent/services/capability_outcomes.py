@@ -20,7 +20,6 @@ Public surface:
   outcomes inline (e.g. an atom that wants to log its own per-call
   outcome separate from the template summary).
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#358.
 """
 

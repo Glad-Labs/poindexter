@@ -1,8 +1,7 @@
 """Auth-gate regression tests for the formerly-unauthenticated routes.
 
-The 2026-05-12 security audit (docs/security/audit-2026-05-12.md P0 #4)
-caught the following endpoints serving sensitive operator data without
-any auth dependency:
+The 2026-05-12 security audit caught the following endpoints serving
+sensitive operator data without any auth dependency:
 
 - ``GET /api/pipeline/events``
 - ``GET /api/pipeline/events/task/{task_id}``

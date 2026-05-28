@@ -2,9 +2,6 @@
 
 Single embedding query, dump top-N internal snippets into the writer prompt
 as background context. Simplest of the four modes.
-
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 10)
 """
 
 from __future__ import annotations

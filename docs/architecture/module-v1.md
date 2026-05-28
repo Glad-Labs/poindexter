@@ -95,7 +95,7 @@ media_compositor,publish_adapter,topic_source}.py`. Each has a
   (`poindexter-pipeline-bot` container, 24/7), the MCP server
   (25 tools), the FastAPI worker, the `poindexter` CLI.
 - **Orchestration** is canonical: Prefect, as of the Stage 3
-  cutover (2026-05-13, `docs/architecture/prefect-cutover.md`).
+  cutover (2026-05-13).
 - **Declarative data plane** — 5 tables (`external_taps`,
   `retention_policies`, `webhook_endpoints`, `publishing_adapters`,
   `qa_gates`) feed 14 handlers across 5 surfaces.
@@ -425,9 +425,6 @@ we need for Phase 2 + 3.
   existing plugin Protocols that modules will bundle.
 - `src/cofounder_agent/services/migrations/__init__.py` — runner
   shape that Component 2 will mirror.
-- `docs/architecture/prefect-cutover.md` — recent successful
-  cutover pattern (Phase 0 → 5) to mirror for Module v1.
-- `docs/architecture/langgraph-cutover.md` — same pattern.
 - `scripts/sync-to-github.sh` — sync filter Component 5 replaces.
 - `CLAUDE.md` — operator-facing description; will need an update
   when Phase 3 lands.

@@ -23,7 +23,6 @@ What this lets the architect do (Phase 4):
   cheap_critic → budget_critic → free_critic"; the architect doesn't
   hand-code that into every node.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#360.
 """
 

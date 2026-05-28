@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Lint .github/workflows/ for unpinned third-party Actions usage.
 
-Defends against the floating-tag supply-chain vector documented in
-``docs/security/audit-2026-05-12.md`` P1 #14:
+Defends against the floating-tag supply-chain vector:
 
 - ``pypa/gh-action-pypi-publish@release/v1`` pinned to a moving branch.
   A compromised maintainer with ``id-token: write`` could mint a PyPI
@@ -118,8 +117,7 @@ def main() -> int:
             "\nFix: resolve each tag to its commit SHA "
             "(`gh api repos/<owner>/<repo>/git/refs/tags/<tag>`), "
             "replace the @ref, and append a trailing "
-            "`# <tag> as of <YYYY-MM-DD>` comment. See "
-            "docs/security/audit-2026-05-12.md P1 #14 for the rationale.",
+            "`# <tag> as of <YYYY-MM-DD>` comment.",
             file=sys.stderr,
         )
         return 1

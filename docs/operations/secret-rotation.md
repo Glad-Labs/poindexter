@@ -524,7 +524,7 @@ docker restart poindexter-worker
 
 ### `smtp_password`
 
-**Lives in.** `app_settings.smtp_password` — **NOT YET encrypted as of 2026-04-30** (per `gh-107-secret-keys-audit-2026-04-24.md`). Migration `0121_flip_smtp_password_secret.py` flips the row to `is_secret=true` once seeded.
+**Lives in.** `app_settings.smtp_password` — **NOT YET encrypted as of 2026-04-30**. Migration `0121_flip_smtp_password_secret.py` flips the row to `is_secret=true` once seeded.
 
 **TBD — needs operator confirmation:** verify with `psql -c "SELECT is_secret FROM app_settings WHERE key='smtp_password'"`. If `is_secret=false`, set as plain `poindexter set`. If `is_secret=true`, use the encrypted helper. The newsletter `_cfg` callsite is documented as needing migration to `await get_secret(...)` once this row is encrypted.
 
@@ -805,4 +805,3 @@ A scheduled agent should be set up to remind on this cadence (see `/schedule` sk
 - [`incident-response.md`](./incident-response) — alert routing
 - `src/cofounder_agent/plugins/secrets.py` — encryption module reference
 - `src/cofounder_agent/cli/auth_commands.py` — implementation of `poindexter auth migrate-*`
-- `docs/architecture/gh-107-secret-keys-audit-2026-04-24.md` — full audit of every secret callsite (historical, predates the OAuth migration)

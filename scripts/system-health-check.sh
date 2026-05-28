@@ -333,7 +333,7 @@ check pipeline "Recent approval rate (24h)" bash -c '
   total=$((approved + rejected))
   if [ "$total" = "0" ]; then echo "no completed tasks in 24h"; exit 1; fi
   rate=$((approved * 100 / total))
-  if [ "$rate" -lt 20 ]; then echo "approval rate ${rate}% ($approved/$total) — check docs/experiments/pipeline-tuning.md"; exit 1; fi
+  if [ "$rate" -lt 20 ]; then echo "approval rate ${rate}% ($approved/$total) — investigate writer/critic tuning"; exit 1; fi
   echo "approval rate ${rate}% ($approved/$total)"
 '
 

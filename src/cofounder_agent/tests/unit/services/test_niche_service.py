@@ -1,8 +1,5 @@
 """Tests for NicheService — CRUD over niches/goals/sources tables.
 
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 2)
-
 These tests roundtrip against a real Postgres test DB (the ``db_pool``
 fixture is provided by ``tests/unit/conftest.py``). When no live Postgres
 is reachable the fixture skips the module so CI runners without a DB

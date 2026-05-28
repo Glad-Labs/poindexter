@@ -121,7 +121,6 @@ _STRIP_FILES = (
     "docs/operations/silent-failures-audit-2026-04-27.md",
     "docs/operations/test-coverage-2026-04-27.md",
     "docs/architecture/database-and-embeddings-plan-2026-04-24.md",
-    "docs/architecture/gh-107-secret-keys-audit-2026-04-24.md",
     "docs/architecture/module-v1-phase-1-plan-2026-05-13.md",
     "docs/architecture/module-v1-phase-2-plan-2026-05-13.md",
     "docs/architecture/declarative-data-plane-rfc-2026-04-24.md",

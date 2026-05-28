@@ -12,7 +12,7 @@ Handles all startup and shutdown operations for Poindexter (the AI cofounder pip
 Task dispatch lives in the Prefect server at ``http://localhost:4200``
 (Glad-Labs/poindexter#410). The legacy in-process polling daemon
 (``services/task_executor.py``) was deleted in Stage 4 of that cutover
-(2026-05-16); see ``docs/architecture/prefect-cutover.md``.
+(2026-05-16).
 """
 
 import asyncio

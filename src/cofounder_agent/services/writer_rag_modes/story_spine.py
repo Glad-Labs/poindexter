@@ -2,9 +2,6 @@
 
 Preprocess top snippets into a structured outline with one LLM call, then
 expand the outline to full prose with the writer.
-
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 12)
 """
 
 from __future__ import annotations

@@ -23,10 +23,6 @@ in 30 minutes without any of the reading below.
 
 ## Architecture
 
-- **[LangGraph cutover](architecture/langgraph-cutover)** — the
-  13-node `canonical_blog` template (and the 4-node `dev_diary` template),
-  how `TemplateRunner` orders them, and the cutover history that
-  retired the legacy chunked `StageRunner` flow.
 - **[Anti-hallucination layers](architecture/anti-hallucination)** —
   writer / critic / gate-reviewer orchestration and the veto flow.
   Covers the QA stages (`cross_model_qa` with its rewrite loop) plus

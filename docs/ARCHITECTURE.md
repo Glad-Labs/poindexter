@@ -184,7 +184,7 @@ execution and multi-agent orchestration.
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` template (13 nodes) registered in `services/pipeline_templates/__init__.py`, dispatched by Prefect via `services/flows/content_generation.py`. The legacy stage-plugin chain was deleted 2026-05-16 (Lane C Stage 4) — see [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md).
+- LangGraph-orchestrated pipeline — `canonical_blog` template (13 nodes) registered in `services/pipeline_templates/__init__.py`, dispatched by Prefect via `services/flows/content_generation.py`.
 - LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
@@ -358,7 +358,7 @@ Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL valu
 - **End-to-end content:** `POST /api/tasks` → Prefect `content_generation_flow` claims the row → `ContentRouterService` dispatches to `TemplateRunner.run(template_slug, context)`
 - **Ad-hoc template use:** stages are called directly in tests and scripts; not exposed via the public API.
 
-See [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md) for the full cutover history and [`architecture/services/template_runner.md`](architecture/services/template_runner.md) for the runner's invariants.
+See [`architecture/services/template_runner.md`](architecture/services/template_runner.md) for the runner's invariants.
 
 ### 4. Poindexter Worker (FastAPI Backend)
 
@@ -532,7 +532,6 @@ The roadmap is tracked via GitHub milestones at
 
 ## Related Documentation
 
-- **[LangGraph Cutover](architecture/langgraph-cutover)** — the 13-node `canonical_blog` template + cross-model QA, post-Stage-4 reality
 - **[Database Schema](architecture/database-schema)** — every table + migration system
 - **[API Reference](api/README)** — REST endpoints
 - **[Local Development](operations/local-development-setup)** — setup walkthrough

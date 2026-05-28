@@ -30,7 +30,6 @@ reads ``state["qa_reviews"]`` still works once cross_model_qa is
 atom-grain-refactored). Multiple invocations APPEND to ``qa_reviews``;
 the aggregator atom reads the full list and decides pass/fail.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#362.
 """
 

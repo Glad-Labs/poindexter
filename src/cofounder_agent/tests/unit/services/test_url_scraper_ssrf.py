@@ -1,7 +1,5 @@
 """SSRF guard tests for ``services.url_scraper``.
 
-Audit punch list: docs/security/audit-2026-05-12.md P0 #5.
-
 These tests pin the contract for the IP-denylist layer that runs before
 every HTTP request and after every redirect:
 

@@ -20,7 +20,6 @@ within the narrative prose are sufficient ground truth — and reading
 "As shipped in [PR #231](url), the writer now sees..." reads like a
 real post, not a release note.
 
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 Issue: Glad-Labs/poindexter#362 (Phase 3 atom granularity).
 """
 

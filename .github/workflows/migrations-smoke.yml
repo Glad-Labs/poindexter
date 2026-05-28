@@ -22,8 +22,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege GITHUB_TOKEN — read-only checkout is all this workflow
-# needs. Per audit-2026-05-12 P1 #16. Bump per-job if a step ever needs
-# write access (none does today).
+# needs. Bump per-job if a step ever needs write access (none does today).
 permissions:
   contents: read
 

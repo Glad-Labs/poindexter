@@ -18,8 +18,7 @@ touching the WHAT (the pipeline body).
 Cutover history: ``app_settings.use_prefect_orchestration`` was the
 staged-rollout seam. The legacy ``services/task_executor.py`` polling
 daemon was deleted in Stage 4 (2026-05-16); Prefect is now the sole
-dispatcher. See ``docs/architecture/prefect-cutover.md`` for the
-full rollout runbook.
+dispatcher.
 """
 
 from __future__ import annotations

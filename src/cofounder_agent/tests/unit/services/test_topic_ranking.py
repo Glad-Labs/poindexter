@@ -1,8 +1,4 @@
-"""Tests for topic_ranking — goal vectors + weighted cosine scoring.
-
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 3)
-"""
+"""Tests for topic_ranking — goal vectors + weighted cosine scoring."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock

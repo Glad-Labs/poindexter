@@ -99,8 +99,7 @@ All from `app_settings` via `site_config`.
   enforced; the underlying `build_context` caps internally
   (5 web results, 8 references). Plumbing a true cap requires
   refactoring `build_context` (out of scope for the migration that
-  introduced it — see Task 14 in
-  `docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md`).
+  introduced it).
 
 ### `web_research.py`
 

@@ -9,9 +9,6 @@ with a different RAG strategy:
 - STORY_SPINE       — outline-first pass, then expand to prose
 - TWO_PASS          — internal-first draft, then conditional external augment
                       (LangGraph state machine; Glad Labs default)
-
-Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 9)
 """
 
 from __future__ import annotations

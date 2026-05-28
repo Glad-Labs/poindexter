@@ -67,7 +67,7 @@ src/cofounder_agent/
 
 **Database** (`services/database_service.py`): asyncpg connection pool with 5 domain modules (Users, Tasks, Content, Admin, WritingStyle). All queries are raw SQL. Migrations in `services/migrations/`.
 
-**Content Pipeline**: The `canonical_blog` LangGraph template (12 nodes) orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`. See [`docs/architecture/langgraph-cutover.md`](../../docs/architecture/langgraph-cutover.md) and [`docs/architecture/prefect-cutover.md`](../../docs/architecture/prefect-cutover.md).
+**Content Pipeline**: The `canonical_blog` LangGraph template (12 nodes) orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`.
 
 **Gate History** (`pipeline_gate_history` table): Typed history of HITL gate approvals + regen retries (poindexter#366 phase 1 — replaces the dropped `pipeline_events` event-bus table). Approval service writes; `atoms.approval_gate` + `rejection_handlers` read.
 

@@ -52,8 +52,6 @@ Architect. Stop." (niche=glad-labs, score 92) auto-published 2026-05-26
 13:45 UTC without operator approval. Each niche now owns its own keys
 and the absence of an explicit key is a loud "disabled" return per
 ``feedback_no_silent_defaults``.
-
-Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
 """
 
 from __future__ import annotations

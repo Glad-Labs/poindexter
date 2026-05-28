@@ -325,9 +325,6 @@ async def research_topic(query: str, max_sources: int | None = None) -> str:
     references). Plumbing a true cap requires refactoring
     ``ResearchService.build_context`` itself, which is out of scope for
     Task 14.
-
-    Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
-    Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
     """
     if max_sources is None:
         try:
