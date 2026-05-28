@@ -397,6 +397,13 @@ services:
       - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
       - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      # DbBackupJob writes pg_dumps here. Without this mount the script's
+      # mkdir at ${HOME}/.poindexter/backups fails Permission denied — the
+      # /home/appuser/.poindexter dir created implicitly by Docker is
+      # root-owned. GlitchTip #223 first seen 2026-05-27. Backups stop
+      # silently when this is missing, so the read-only /host-backups
+      # bind on the backup_watcher service (line 270) appears empty.
+      - ${USERPROFILE:-.}/.poindexter/backups:/home/appuser/.poindexter/backups
       # Legacy /root mount stays for code paths that still reference
       # /root/.poindexter or HOST_HOME=/root.
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
