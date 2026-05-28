@@ -146,22 +146,10 @@
       "keepTime": false,
       "tags": [],
       "targetBlank": true,
-      "title": "✏ Talk to Poindexter (Pipecat)",
-      "tooltip": "Browser-direct WebRTC voice chat with the always-on bot. Whisper STT → Ollama → Kokoro TTS. Plain HTTP, tailnet-only — click Connect, allow mic.",
-      "type": "link",
-      "url": "http://localhost:8003/client/"
-    },
-    {
-      "asDropdown": false,
-      "icon": "external link",
-      "includeVars": false,
-      "keepTime": false,
-      "tags": [],
-      "targetBlank": true,
       "title": "✏ Talk to Poindexter (LiveKit)",
       "tooltip": "Self-hosted LiveKit web client (poindexter#389). Same-origin wss via Tailscale Funnel — no mixed-content. 7-day token minted server-side; tap Connect, allow mic. Multi-party-capable: voice-agent-livekit + you in the same ‘poindexter’ room.",
       "type": "link",
-      "url": "/voice/join"
+      "url": "https://nightrider.taild4f626.ts.net/voice/join"
     }
   ],
   "panels": [
