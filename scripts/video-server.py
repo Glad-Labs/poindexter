@@ -21,6 +21,15 @@ PORT = 9837
 OUTPUT_DIR = Path.home() / "Downloads" / "glad-labs-generated-videos"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Suppress the brief console window Windows spawns for every child process.
+# feedback_no_popups / feedback_windowless — Matt works at the PC and popups
+# break his focus. POSIX subprocess never opens a window, so 0 is a no-op.
+_NO_WINDOW_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    if sys.platform == "win32"
+    else 0
+)
+
 
 def _generate_video(
     image_paths: list[str],
@@ -55,6 +64,7 @@ def _generate_video(
         ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
          "-of", "csv=p=0", audio_path],
         capture_output=True, text=True,
+        creationflags=_NO_WINDOW_FLAGS,
     )
     audio_duration = float(probe.stdout.strip()) if probe.stdout.strip() else 300.0
 
@@ -169,6 +179,7 @@ def _generate_video(
         result = subprocess.run(
             cmd,
             capture_output=True, text=True, timeout=600,
+            creationflags=_NO_WINDOW_FLAGS,
         )
         if result.returncode == 0 and os.path.exists(output_path):
             stat = os.stat(output_path)
@@ -215,6 +226,7 @@ def _generate_short_video(
         ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
          "-of", "csv=p=0", audio_path],
         capture_output=True, text=True,
+        creationflags=_NO_WINDOW_FLAGS,
     )
     audio_duration = float(probe.stdout.strip()) if probe.stdout.strip() else 60.0
     video_duration = min(audio_duration, max_duration)
@@ -320,7 +332,10 @@ def _generate_short_video(
     print(f"[SHORT] ffmpeg cmd: {n_images} images, {video_duration:.0f}s, {w}x{h}")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=300,
+            creationflags=_NO_WINDOW_FLAGS,
+        )
         if result.returncode == 0 and os.path.exists(output_path):
             stat = os.stat(output_path)
             print(f"[SHORT] Success: {stat.st_size} bytes, {round(video_duration)}s")
@@ -465,7 +480,10 @@ class VideoHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             # Check ffmpeg availability
             try:
-                subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+                subprocess.run(
+                    ["ffmpeg", "-version"], capture_output=True, timeout=5,
+                    creationflags=_NO_WINDOW_FLAGS,
+                )
                 ffmpeg_ok = True
             except Exception:
                 ffmpeg_ok = False
@@ -492,5 +510,9 @@ if __name__ == "__main__":
     server = HTTPServer(("0.0.0.0", PORT), VideoHandler)
     print(f"Video generation server on :{PORT}")
     print(f"Output dir: {OUTPUT_DIR}")
-    print(f"ffmpeg: {subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True).stdout.split(chr(10))[0]}")
+    _ver = subprocess.run(
+        ["ffmpeg", "-version"], capture_output=True, text=True,
+        creationflags=_NO_WINDOW_FLAGS,
+    )
+    print(f"ffmpeg: {_ver.stdout.split(chr(10))[0]}")
     server.serve_forever()

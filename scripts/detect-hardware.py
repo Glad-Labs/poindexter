@@ -14,6 +14,13 @@ import os
 import subprocess
 import sys
 
+# Suppress console window flicker on Windows (feedback_no_popups).
+_NO_WINDOW_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    if sys.platform == "win32"
+    else 0
+)
+
 # Model recommendations by VRAM tier
 MODEL_TIERS = {
     "no_gpu": {
@@ -65,6 +72,7 @@ def detect_gpu():
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=5,
+            creationflags=_NO_WINDOW_FLAGS,
         )
         if result.returncode == 0:
             parts = result.stdout.strip().split(", ")
@@ -83,6 +91,7 @@ def detect_gpu():
         result = subprocess.run(
             ["rocm-smi", "--showmeminfo", "vram", "--csv"],
             capture_output=True, text=True, timeout=5,
+            creationflags=_NO_WINDOW_FLAGS,
         )
         if result.returncode == 0 and "Total" in result.stdout:
             # Parse ROCm output
