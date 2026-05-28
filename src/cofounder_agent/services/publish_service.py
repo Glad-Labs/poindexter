@@ -566,6 +566,20 @@ async def publish_post_from_task(
         # the publisher if some legacy upstream wrote a string.
         featured_image_data = {}
     metadata = merged.get("metadata", {})
+    if not isinstance(metadata, dict):
+        # Defensive — same shape as featured_image_data above. The
+        # downstream INSERT requires a dict so it can be json.dumps'd.
+        metadata = {}
+    # Stamp the source task_id onto posts.metadata so the
+    # posts ↔ pipeline_tasks link is a first-class structured seam
+    # rather than slug-suffix archaeology. scheduled_publisher reads
+    # this key to keep ``pipeline_tasks.status`` in lockstep with
+    # ``posts.status`` promotions; the /go-live admin route does the
+    # same. Per ``feedback_filter_on_seams_not_slugs`` — when a
+    # structured field exists, populate + filter on it. The 2026-05-28
+    # backfill migration populates this key for every existing post.
+    if task_id:
+        metadata["pipeline_task_id"] = str(task_id)
 
     if not draft_content or not topic:
         msg = "Missing content or topic — cannot create post"
@@ -608,14 +622,36 @@ async def publish_post_from_task(
         existing_status = (existing.get("status") or "").lower()
         if existing_status == "approved" and not stage_only and not draft_mode:
             now_ts = datetime.now(timezone.utc)
-            await pool.execute(
-                "UPDATE posts SET status = 'published', "
-                "published_at = COALESCE(published_at, $2), "
-                "distributed_at = COALESCE(distributed_at, $2), "
-                "updated_at = $2 "
-                "WHERE id = $1",
-                existing["id"], now_ts,
-            )
+            async with pool.acquire() as _promote_conn:
+                async with _promote_conn.transaction():
+                    await _promote_conn.execute(
+                        "UPDATE posts SET status = 'published', "
+                        "published_at = COALESCE(published_at, $2), "
+                        "distributed_at = COALESCE(distributed_at, $2), "
+                        "updated_at = $2 "
+                        "WHERE id = $1",
+                        existing["id"], now_ts,
+                    )
+                    # Sync pipeline_tasks.status in lockstep — same
+                    # rationale as the scheduled_publisher loop. Reads
+                    # the seam (posts.metadata->>'pipeline_task_id')
+                    # populated either at insert by this same function
+                    # or by the 2026-05-28 backfill migration.
+                    sync_result = await _promote_conn.execute(
+                        """
+                        UPDATE pipeline_tasks
+                           SET status = 'published',
+                               updated_at = NOW()
+                         WHERE task_id = $1
+                           AND status IN ('approved', 'scheduled')
+                        """,
+                        str(task_id),
+                    )
+                    logger.info(
+                        "[publish_service] Promote-path pipeline_tasks "
+                        "sync for task=%s: %s",
+                        task_id, sync_result,
+                    )
             logger.info(
                 "[publish_service] Promoted existing approved post to "
                 "published: task=%s post_id=%s slug=%s",
@@ -1538,16 +1574,39 @@ async def fire_post_distribution_hooks(
     # + static export so the public surfaces refresh immediately.
     # ---------------------------------------------------------------
     async with pool.acquire() as conn:
-        update_result = await conn.execute(
-            """
-            UPDATE posts
-               SET status = 'published',
-                   published_at = COALESCE(published_at, NOW()),
-                   updated_at = NOW()
-             WHERE id::text = $1 AND status = 'awaiting_gates'
-            """,
-            str(post_id),
-        )
+        async with conn.transaction():
+            update_result = await conn.execute(
+                """
+                UPDATE posts
+                   SET status = 'published',
+                       published_at = COALESCE(published_at, NOW()),
+                       updated_at = NOW()
+                 WHERE id::text = $1 AND status = 'awaiting_gates'
+                """,
+                str(post_id),
+            )
+            # Sync the linked pipeline_tasks row in the same
+            # transaction. The seam (metadata->>'pipeline_task_id')
+            # was either stamped at insert by publish_post_from_task
+            # or backfilled by migration 20260528_021920. NULL is
+            # tolerated (the UPDATE simply matches no rows).
+            sync_result = await conn.execute(
+                """
+                UPDATE pipeline_tasks pt
+                   SET status = 'published',
+                       updated_at = NOW()
+                  FROM posts p
+                 WHERE p.id::text = $1
+                   AND p.metadata ->> 'pipeline_task_id' = pt.task_id
+                   AND pt.status IN ('approved', 'scheduled')
+                """,
+                str(post_id),
+            )
+            logger.info(
+                "[publish_service] fire_post_distribution_hooks "
+                "pipeline_tasks sync for post=%s: %s",
+                post_id, sync_result,
+            )
     if update_result.startswith("UPDATE 1"):
         logger.info(
             "[publish_service] fire_post_distribution_hooks: flipped post %s "

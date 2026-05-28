@@ -72,26 +72,96 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
                 continue
 
             async with pool.acquire() as conn:
-                # #327: pull the slug back too so we can revalidate the
-                # post-specific path. Previously only id/title were
-                # returned and the loop never triggered ISR busting,
-                # so promoted posts sat invisible for ≤5 min.
-                # `distributed_at` gates both the RSS feed
-                # (app/feed.xml/route.ts) and the static R2 index export
-                # (static_export_service.export_posts_index). Posts
-                # promoted via this loop sat invisible from both surfaces
-                # because the original UPDATE only flipped status — see
-                # https://github.com/Glad-Labs/poindexter (RSS staleness
-                # + missing-from-/posts bug, 2026-05-01). COALESCE
-                # preserves any pre-set value (re-promotion edge case).
-                rows = await conn.fetch("""
-                    UPDATE posts
-                    SET status = 'published',
-                        updated_at = NOW(),
-                        distributed_at = COALESCE(distributed_at, NOW())
-                    WHERE status = 'scheduled' AND published_at <= NOW()
-                    RETURNING id, title, slug
-                    """)
+                async with conn.transaction():
+                    # #327: pull the slug back too so we can revalidate
+                    # the post-specific path. Previously only id/title
+                    # were returned and the loop never triggered ISR
+                    # busting, so promoted posts sat invisible for ≤5
+                    # min. `distributed_at` gates both the RSS feed
+                    # (app/feed.xml/route.ts) and the static R2 index
+                    # export (static_export_service.export_posts_index).
+                    # Posts promoted via this loop sat invisible from
+                    # both surfaces because the original UPDATE only
+                    # flipped status — see RSS staleness + missing-
+                    # from-/posts bug, 2026-05-01. COALESCE preserves
+                    # any pre-set value (re-promotion edge case).
+                    #
+                    # 2026-05-28: also RETURN metadata->>'pipeline_task_id'
+                    # so we can sync the linked pipeline_tasks row in
+                    # the same transaction. Per
+                    # ``feedback_filter_on_seams_not_slugs``, the
+                    # ``posts.metadata->>'pipeline_task_id'`` JSONB key
+                    # is the canonical seam back to the source task —
+                    # populated at insert by publish_service and
+                    # backfilled for historical rows by migration
+                    # 20260528_021920. Before this change, promoted
+                    # posts left their pipeline_tasks row stuck at
+                    # 'approved' forever, making `poindexter tasks list`
+                    # lie to the operator.
+                    rows = await conn.fetch("""
+                        UPDATE posts
+                        SET status = 'published',
+                            updated_at = NOW(),
+                            distributed_at = COALESCE(distributed_at, NOW())
+                        WHERE status = 'scheduled' AND published_at <= NOW()
+                        RETURNING id, title, slug,
+                                  metadata ->> 'pipeline_task_id' AS pipeline_task_id
+                        """)
+                    if rows:
+                        # Sync each promoted post's linked pipeline_tasks
+                        # row to status='published'. Issued as a single
+                        # batch UPDATE inside the same transaction so
+                        # the two tables move together. Tasks missing
+                        # the seam (NULL pipeline_task_id) get warned
+                        # but don't crash the loop — Layer 1 + Layer 2
+                        # should cover everything, so a NULL here
+                        # indicates a publish path that slipped the
+                        # stamp and deserves operator attention.
+                        task_ids_to_sync: list[str] = []
+                        for row in rows:
+                            # asyncpg.Record supports __getitem__ only;
+                            # wrap in a guarded fetch so dict-backed
+                            # mocks without the field don't crash the
+                            # loop and a real Record without the alias
+                            # (shouldn't happen — the UPDATE...RETURNING
+                            # aliases the JSONB extraction) degrades to
+                            # a warning + skip.
+                            try:
+                                task_id = row["pipeline_task_id"]
+                            except (KeyError, IndexError):
+                                task_id = None
+                            try:
+                                row_slug = row["slug"]
+                            except (KeyError, IndexError):
+                                row_slug = "?"
+                            if task_id:
+                                task_ids_to_sync.append(task_id)
+                            else:
+                                logger.warning(
+                                    "[scheduled_publisher] Promoted post %s "
+                                    "(%s) has NULL metadata.pipeline_task_id — "
+                                    "pipeline_tasks status not synced. Some "
+                                    "publish path is skipping the seam stamp; "
+                                    "operator should investigate.",
+                                    row["id"],
+                                    row_slug,
+                                )
+                        if task_ids_to_sync:
+                            sync_result = await conn.execute(
+                                """
+                                UPDATE pipeline_tasks
+                                   SET status = 'published',
+                                       updated_at = NOW()
+                                 WHERE task_id = ANY($1::text[])
+                                   AND status IN ('approved', 'scheduled')
+                                """,
+                                task_ids_to_sync,
+                            )
+                            logger.info(
+                                "[scheduled_publisher] Synced pipeline_tasks "
+                                "to published for %d task(s): %s",
+                                len(task_ids_to_sync), sync_result,
+                            )
                 if rows:
                     for row in rows:
                         logger.info(

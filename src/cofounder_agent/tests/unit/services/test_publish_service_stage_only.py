@@ -72,11 +72,26 @@ def _make_db_service() -> Any:
     conn.fetchrow = AsyncMock(return_value=None)
     conn.execute = AsyncMock(return_value="UPDATE 0")
     conn.fetchval = AsyncMock(return_value=None)
+    # conn.transaction() returns an async context manager. The 2026-05-28
+    # pipeline_tasks status-sync fix wraps the promote path in
+    # ``async with conn.transaction()`` so the posts UPDATE + the
+    # pipeline_tasks UPDATE move together. Without an explicit stub,
+    # MagicMock returns a plain MagicMock that doesn't support
+    # ``async with`` and crashes the publisher.
+    txn_cm = MagicMock()
+    txn_cm.__aenter__ = AsyncMock(return_value=conn)
+    txn_cm.__aexit__ = AsyncMock(return_value=None)
+    conn.transaction = MagicMock(return_value=txn_cm)
     acq_cm = MagicMock()
     acq_cm.__aenter__ = AsyncMock(return_value=conn)
     acq_cm.__aexit__ = AsyncMock(return_value=None)
     pool.acquire = MagicMock(return_value=acq_cm)
     db.pool = pool
+    # Expose conn on the db stub so tests can assert against the
+    # connection-level execute calls (the promote path now goes through
+    # ``async with pool.acquire() as conn`` rather than pool.execute
+    # directly, since 2026-05-28).
+    db._test_conn = conn
     return db
 
 
@@ -234,6 +249,7 @@ async def test_publish_promotes_existing_approved_post_to_published() -> None:
     }
     db.pool.fetchrow = AsyncMock(return_value=existing)
     db.pool.execute = AsyncMock(return_value="UPDATE 1")
+    db._test_conn.execute = AsyncMock(return_value="UPDATE 1")
 
     result = await publish_post_from_task(
         db, _make_task(), "11111111-1111-1111-1111-111111111111",
@@ -247,14 +263,27 @@ async def test_publish_promotes_existing_approved_post_to_published() -> None:
     assert result.post_id == existing["id"]
     assert result.post_slug == existing["slug"]
     # The promotion UPDATE fired — must be the publish-status SQL, not
-    # a generic touch. Find the call that mentions status='published'.
-    publish_update_calls = [
-        c for c in db.pool.execute.await_args_list
-        if "status = 'published'" in (c.args[0] if c.args else "")
+    # a generic touch. The 2026-05-28 fix moved the promote write from
+    # ``pool.execute`` to ``async with pool.acquire() as conn`` so the
+    # posts UPDATE and the new pipeline_tasks sync UPDATE run in the
+    # same transaction. Look at conn-level execute calls now.
+    all_conn_calls = db._test_conn.execute.await_args_list
+    posts_update_calls = [
+        c for c in all_conn_calls
+        if "UPDATE posts" in (c.args[0] if c.args else "")
+        and "status = 'published'" in (c.args[0] if c.args else "")
     ]
-    assert len(publish_update_calls) == 1, (
-        f"Expected one promote UPDATE; got {len(publish_update_calls)}: "
-        f"{[c.args[0][:80] for c in db.pool.execute.await_args_list]}"
+    pipeline_sync_calls = [
+        c for c in all_conn_calls
+        if "UPDATE pipeline_tasks" in (c.args[0] if c.args else "")
+    ]
+    assert len(posts_update_calls) == 1, (
+        f"Expected one promote UPDATE on posts; got {len(posts_update_calls)}: "
+        f"{[c.args[0][:80] for c in all_conn_calls]}"
+    )
+    assert len(pipeline_sync_calls) == 1, (
+        f"Expected one pipeline_tasks status-sync UPDATE; got "
+        f"{len(pipeline_sync_calls)}: {[c.args[0][:80] for c in all_conn_calls]}"
     )
     # And create_post must NOT have been called — promotion happens in
     # place, no duplicate row.

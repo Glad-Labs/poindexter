@@ -368,11 +368,29 @@ class TestScheduledPublisherCallsHelper:
         from services.scheduled_publisher import run_scheduled_publisher
 
         rows = [
-            {"id": "id-1", "title": "First", "slug": "first-post-aaaaaaaa"},
-            {"id": "id-2", "title": "Second", "slug": "second-post-bbbbbbbb"},
+            {
+                "id": "id-1", "title": "First",
+                "slug": "first-post-aaaaaaaa",
+                "pipeline_task_id": None,
+            },
+            {
+                "id": "id-2", "title": "Second",
+                "slug": "second-post-bbbbbbbb",
+                "pipeline_task_id": None,
+            },
         ]
         conn = AsyncMock()
         conn.fetch = AsyncMock(return_value=rows)
+        conn.execute = AsyncMock(return_value="UPDATE 0")
+        # 2026-05-28: the promote loop is wrapped in
+        # ``async with conn.transaction()`` so the posts UPDATE and the
+        # pipeline_tasks status-sync UPDATE move together. Stub the
+        # transaction context manager so the loop doesn't crash entering
+        # it.
+        txn_cm = MagicMock()
+        txn_cm.__aenter__ = AsyncMock(return_value=conn)
+        txn_cm.__aexit__ = AsyncMock(return_value=False)
+        conn.transaction = MagicMock(return_value=txn_cm)
         acm = MagicMock()
         acm.__aenter__ = AsyncMock(return_value=conn)
         acm.__aexit__ = AsyncMock(return_value=False)
@@ -409,11 +427,16 @@ class TestScheduledPublisherCallsHelper:
         from services.scheduled_publisher import run_scheduled_publisher
 
         rows = [
-            {"id": "id-1", "title": "First", "slug": "first"},
-            {"id": "id-2", "title": "Second", "slug": "second"},
+            {"id": "id-1", "title": "First", "slug": "first", "pipeline_task_id": None},
+            {"id": "id-2", "title": "Second", "slug": "second", "pipeline_task_id": None},
         ]
         conn = AsyncMock()
         conn.fetch = AsyncMock(return_value=rows)
+        conn.execute = AsyncMock(return_value="UPDATE 0")
+        txn_cm = MagicMock()
+        txn_cm.__aenter__ = AsyncMock(return_value=conn)
+        txn_cm.__aexit__ = AsyncMock(return_value=False)
+        conn.transaction = MagicMock(return_value=txn_cm)
         acm = MagicMock()
         acm.__aenter__ = AsyncMock(return_value=conn)
         acm.__aexit__ = AsyncMock(return_value=False)

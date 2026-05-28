@@ -68,6 +68,15 @@ def _make_db(
     conn = AsyncMock()
     row = {"cnt": today_count, "latest": latest_today}
     conn.fetchrow = AsyncMock(return_value=row)
+    # conn.transaction() must yield a real async context manager because
+    # publish_service wraps the promote + fire_post_distribution_hooks
+    # UPDATEs in ``async with conn.transaction()`` (2026-05-28 status-
+    # sync fix). Without this stub, the publisher crashes the moment it
+    # opens a transaction inside the existing-approved promote branch.
+    txn_cm = MagicMock()
+    txn_cm.__aenter__ = AsyncMock(return_value=conn)
+    txn_cm.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=txn_cm)
 
     pool = AsyncMock()
     ctx = AsyncMock()
@@ -405,6 +414,83 @@ class TestPublishHappyPath:
 
         post_data = db.create_post.call_args[0][0]
         assert post_data["featured_image_data"] == {}
+
+    @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_metadata_pipeline_task_id_stamped_on_insert(
+        self, mock_sched, mock_ping, mock_hooks, mock_export,
+    ):
+        """The 2026-05-28 status-sync fix: every post inserted via
+        ``publish_post_from_task`` must carry the source task_id in
+        ``metadata.pipeline_task_id``. This is the canonical seam back
+        to ``pipeline_tasks`` per ``feedback_filter_on_seams_not_slugs``
+        — ``scheduled_publisher`` reads it to keep ``pipeline_tasks.status``
+        in lockstep with ``posts.status`` promotions. Before this stamp
+        existed, posts published 2026-05-26/27 left their tasks stuck at
+        ``approved`` forever, making ``poindexter tasks list`` lie to the
+        operator."""
+        db = _make_db()
+        task = _make_task(
+            content="# Hello\n\nBody.",
+            result={"seo_description": "desc", "seo_keywords": ["ai"]},
+        )
+        tid = "deadbeef-cafe-1234-5678-abcdef012345"
+
+        with _LazyImportContext():
+            await publish_post_from_task(
+                db_service=db, task=task, task_id=tid,
+                publisher="t", trigger_revalidation=False,
+                queue_social=False,
+            )
+
+        post_data = db.create_post.call_args[0][0]
+        assert "metadata" in post_data, (
+            "publish_post_from_task must populate post_data['metadata']"
+        )
+        assert isinstance(post_data["metadata"], dict)
+        assert post_data["metadata"].get("pipeline_task_id") == tid, (
+            f"Expected metadata.pipeline_task_id={tid!r}, got "
+            f"{post_data['metadata'].get('pipeline_task_id')!r}"
+        )
+
+    @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_metadata_pipeline_task_id_preserves_existing_keys(
+        self, mock_sched, mock_ping, mock_hooks, mock_export,
+    ):
+        """Stamping pipeline_task_id must not clobber other metadata keys
+        the task may have brought along (devto_*, featured_image
+        provenance, etc.). The merge happens in-place on the dict from
+        the task's merged result/task_metadata."""
+        db = _make_db()
+        task = _make_task(
+            content="# Hello\n\nBody.",
+            result={
+                "seo_description": "desc",
+                "seo_keywords": [],
+                "metadata": {"devto_status": "queued", "custom_key": "x"},
+            },
+        )
+        tid = "11111111-2222-3333-4444-555566667777"
+
+        with _LazyImportContext():
+            await publish_post_from_task(
+                db_service=db, task=task, task_id=tid,
+                publisher="t", trigger_revalidation=False,
+                queue_social=False,
+            )
+
+        post_data = db.create_post.call_args[0][0]
+        meta = post_data["metadata"]
+        assert meta.get("pipeline_task_id") == tid
+        assert meta.get("devto_status") == "queued"
+        assert meta.get("custom_key") == "x"
 
     @pytest.mark.asyncio
     async def test_idempotency_guard_skips_duplicate(self):
@@ -1171,13 +1257,27 @@ def _make_pool_for_fire(post_row, pending_gates: bool = False, status_flip: bool
     - First acquire(): _post_has_pending_gates query → returns 1 row if pending_gates else None
     - Second acquire(): SELECT post by id → returns post_row
     - Third acquire(): UPDATE posts SET status='published' → returns 'UPDATE 1' or 'UPDATE 0'
+      AND in the same conn.transaction(), a second execute for the
+      pipeline_tasks status sync (2026-05-28 fix).
     """
     # Connections for each acquire() — same conn instance, but separate
     # fetchrow / execute return values per call.
     conn = AsyncMock()
     pending_value = {"?column?": 1} if pending_gates else None
     conn.fetchrow = AsyncMock(side_effect=[pending_value, post_row])
+    # The status-flip UPDATE returns "UPDATE 1"/"UPDATE 0" depending on
+    # whether the row was at awaiting_gates. The pipeline_tasks sync
+    # UPDATE inside the same transaction returns a benign default — the
+    # caller only inspects the first execute's return value.
     conn.execute = AsyncMock(return_value="UPDATE 1" if status_flip else "UPDATE 0")
+    # 2026-05-28: fire_post_distribution_hooks wraps the status flip in
+    # ``async with conn.transaction()`` to atomically sync
+    # pipeline_tasks.status. The mock must yield a real async context
+    # manager so the publisher doesn't crash entering it.
+    txn_cm = MagicMock()
+    txn_cm.__aenter__ = AsyncMock(return_value=conn)
+    txn_cm.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=txn_cm)
 
     ctx = AsyncMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)

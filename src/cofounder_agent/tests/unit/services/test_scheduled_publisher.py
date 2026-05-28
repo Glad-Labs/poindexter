@@ -20,6 +20,19 @@ def _make_pool(rows=None):
     rows = rows if rows is not None else []
     conn = AsyncMock()
     conn.fetch = AsyncMock(return_value=rows)
+    # The promote loop calls conn.execute(...) for the pipeline_tasks
+    # status-sync UPDATE (2026-05-28 fix). Default return is a benign
+    # "UPDATE N" string — individual tests can override per case.
+    conn.execute = AsyncMock(return_value="UPDATE 0")
+    # 2026-05-28: the promote+sync logic is wrapped in
+    # ``async with conn.transaction()`` so the posts UPDATE and the
+    # pipeline_tasks UPDATE move together. Mock transaction() as an
+    # async context manager — without this stub the loop crashes the
+    # moment it opens the transaction.
+    txn_cm = MagicMock()
+    txn_cm.__aenter__ = AsyncMock(return_value=conn)
+    txn_cm.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=txn_cm)
 
     # asyncpg's pool.acquire() returns an async context manager directly
     acm = MagicMock()
@@ -351,3 +364,166 @@ class TestSQLCorrectness:
 
         sql = conn.fetch.call_args[0][0]
         assert "published_at <= NOW()" in sql
+
+
+# ---------------------------------------------------------------------------
+# pipeline_tasks status sync (2026-05-28 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineTasksStatusSync:
+    """Per the 2026-05-28 fix, promotions to ``posts.status='published'``
+    sync the linked ``pipeline_tasks.status`` to ``'published'`` in the
+    same transaction. The seam is ``posts.metadata->>'pipeline_task_id'``.
+
+    Pins the contract for:
+      (a) post WITH metadata.pipeline_task_id → both tables updated
+      (b) post WITHOUT the key → warning logged, loop doesn't crash
+      (c) idempotency — a re-run on tasks already at 'published' no-ops
+          (the UPDATE's WHERE clause restricts to approved/scheduled)
+    """
+
+    @pytest.mark.asyncio
+    async def test_sync_when_pipeline_task_id_present(self):
+        """A promoted post with metadata.pipeline_task_id triggers a
+        second UPDATE against pipeline_tasks with the task_ids batched
+        as a text[] parameter."""
+        rows = [
+            {
+                "id": "post-uuid-1",
+                "title": "Test",
+                "slug": "test-slug-12345678",
+                "pipeline_task_id": "task-uuid-12345678",
+            },
+        ]
+        pool, conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+
+        await _run_one_iteration(get_pool)
+
+        # conn.fetch was the posts UPDATE; conn.execute was the
+        # pipeline_tasks sync UPDATE.
+        conn.fetch.assert_awaited_once()
+        conn.execute.assert_awaited_once()
+        sync_sql, sync_arg = conn.execute.call_args[0]
+        assert "UPDATE pipeline_tasks" in sync_sql
+        assert "status = 'published'" in sync_sql
+        # Only flips 'approved' / 'scheduled' tasks — never clobbers
+        # 'rejected' / 'failed'.
+        assert "approved" in sync_sql
+        assert "scheduled" in sync_sql
+        assert sync_arg == ["task-uuid-12345678"]
+
+    @pytest.mark.asyncio
+    async def test_warning_when_pipeline_task_id_missing(self):
+        """A promoted post WITHOUT the metadata key logs a warning and
+        skips the sync — does NOT crash the loop. Per
+        feedback_no_silent_defaults, the warning surfaces the bug
+        (some publish path skipped the stamp); the loop keeps running
+        because crashing it would leave every subsequent due post
+        permanently stuck."""
+        rows = [
+            {
+                "id": "post-uuid-2",
+                "title": "No seam",
+                "slug": "no-seam-87654321",
+                "pipeline_task_id": None,
+            },
+        ]
+        pool, conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+
+        with patch("services.scheduled_publisher.logger") as mock_logger:
+            await _run_one_iteration(get_pool)
+
+            warning_logged = any(
+                "NULL metadata.pipeline_task_id" in str(call)
+                for call in mock_logger.warning.call_args_list
+            )
+            assert warning_logged, (
+                f"Expected NULL pipeline_task_id warning; saw warnings: "
+                f"{mock_logger.warning.call_args_list}"
+            )
+        # pipeline_tasks sync UPDATE must NOT fire when there's nothing
+        # to sync — would either no-op the batch or fail loudly on an
+        # empty array literal.
+        conn.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_query_selects_metadata_pipeline_task_id(self):
+        """The promote UPDATE...RETURNING surfaces the JSONB seam under
+        the ``pipeline_task_id`` alias so the sync step can read it
+        without re-querying posts."""
+        pool, conn = _make_pool([])
+        get_pool = AsyncMock(return_value=pool)
+
+        await _run_one_iteration(get_pool)
+
+        sql = conn.fetch.call_args[0][0]
+        assert "metadata ->> 'pipeline_task_id'" in sql
+        assert "pipeline_task_id" in sql  # the alias
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_task_already_published(self):
+        """The pipeline_tasks UPDATE filters on ``status IN ('approved',
+        'scheduled')`` so re-running against a task already at
+        'published' (or 'rejected' / 'failed') is a no-op. Demonstrated
+        via the WHERE clause; a real DB returns 'UPDATE 0' for the
+        no-match case and the loop doesn't care."""
+        rows = [
+            {
+                "id": "post-uuid-3",
+                "title": "Already in sync",
+                "slug": "already-in-sync-aaaaaaaa",
+                "pipeline_task_id": "task-aaaaaaaa",
+            },
+        ]
+        pool, conn = _make_pool(rows)
+        # Simulate the WHERE-clause no-match.
+        conn.execute = AsyncMock(return_value="UPDATE 0")
+        get_pool = AsyncMock(return_value=pool)
+
+        # Should not raise.
+        await _run_one_iteration(get_pool)
+
+        # The UPDATE was issued (the loop doesn't know whether it'll
+        # match until Postgres tells it). The WHERE-clause restriction
+        # is what makes it idempotent at the database level.
+        conn.execute.assert_awaited_once()
+        sync_sql = conn.execute.call_args[0][0]
+        assert "status IN ('approved', 'scheduled')" in sync_sql
+
+    @pytest.mark.asyncio
+    async def test_mixed_batch_only_syncs_rows_with_seam(self):
+        """A batch with one post missing the seam and one carrying it
+        issues a single pipeline_tasks UPDATE for only the carrying
+        post, and logs one warning for the missing one."""
+        rows = [
+            {
+                "id": "post-with-seam",
+                "title": "Has seam",
+                "slug": "has-seam-11111111",
+                "pipeline_task_id": "task-11111111",
+            },
+            {
+                "id": "post-no-seam",
+                "title": "Missing seam",
+                "slug": "missing-seam-22222222",
+                "pipeline_task_id": None,
+            },
+        ]
+        pool, conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+
+        with patch("services.scheduled_publisher.logger") as mock_logger:
+            await _run_one_iteration(get_pool)
+
+            warning_calls = [
+                c for c in mock_logger.warning.call_args_list
+                if "NULL metadata.pipeline_task_id" in str(c)
+            ]
+            assert len(warning_calls) == 1
+
+        conn.execute.assert_awaited_once()
+        sync_arg = conn.execute.call_args[0][1]
+        assert sync_arg == ["task-11111111"]

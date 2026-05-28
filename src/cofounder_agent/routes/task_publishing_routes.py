@@ -732,13 +732,34 @@ async def go_live(
     if row["status"] != "draft":
         raise HTTPException(status_code=400, detail=f"Post is '{row['status']}', not 'draft'")
 
-    # Promote to published
+    # Promote to published — and sync any linked pipeline_tasks row in
+    # the same transaction. Drafts may not have come from a pipeline
+    # task (admin-uploaded), so the metadata->>'pipeline_task_id' seam
+    # may be NULL — the sync UPDATE simply matches no rows in that
+    # case. When the seam IS present (post originated in the pipeline
+    # and was hand-routed through /go-live), the task gets promoted to
+    # 'published' alongside the post, keeping `poindexter tasks list`
+    # consistent.
     from datetime import datetime, timezone
-    await pool.execute(
-        """UPDATE posts SET status = 'published', published_at = $1, preview_token = NULL
-           WHERE id::text = $2""",
-        datetime.now(timezone.utc), post_id,
-    )
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            await _conn.execute(
+                """UPDATE posts SET status = 'published', published_at = $1, preview_token = NULL
+                   WHERE id::text = $2""",
+                datetime.now(timezone.utc), post_id,
+            )
+            await _conn.execute(
+                """
+                UPDATE pipeline_tasks pt
+                   SET status = 'published',
+                       updated_at = NOW()
+                  FROM posts p
+                 WHERE p.id::text = $1
+                   AND p.metadata ->> 'pipeline_task_id' = pt.task_id
+                   AND pt.status IN ('approved', 'scheduled')
+                """,
+                post_id,
+            )
 
     # Trigger ISR revalidation on the public site so Vercel busts its cache.
     # Glad-Labs/poindexter#327: routed through the shared helper in

@@ -184,9 +184,9 @@ The legacy 6-stage chunked StageRunner flow (`content_router_service.process_con
 
 **Database tables (key ones):**
 
-- `pipeline_tasks` — pipeline task queue (worker claims rows; Prefect flow dispatches)
+- `pipeline_tasks` — pipeline task queue (worker claims rows; Prefect flow dispatches). The canonical seam back from a `posts` row to its source task is `posts.metadata->>'pipeline_task_id'` (added 2026-05-28); `scheduled_publisher` / `/go-live` / the promote-existing-approved path read this key to sync `pipeline_tasks.status` in lockstep with `posts.status` promotions.
 - `pipeline_versions` — generated content + qa_feedback per task version
-- `posts` — published blog posts
+- `posts` — published blog posts. `metadata->>'pipeline_task_id'` is the canonical seam to the source `pipeline_tasks.task_id` — populated by `publish_service.publish_post_from_task` at insert and backfilled for historical rows by migration `20260528_021920`.
 - `app_settings` — all config (replaces env vars)
 - `affiliate_links` — partner links (DB-managed)
 - `page_views` — own analytics tracking

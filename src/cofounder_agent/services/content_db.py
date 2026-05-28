@@ -136,6 +136,20 @@ class ContentDatabase(DatabaseServiceMixin):
                 if not isinstance(featured_image_data, dict):
                     featured_image_data = {}
 
+                # metadata — JSONB sidecar for cross-table seams that
+                # don't justify a top-level column. As of 2026-05-28
+                # carries ``pipeline_task_id`` (stamped by
+                # publish_service.publish_post_from_task) so
+                # scheduled_publisher can sync ``pipeline_tasks.status``
+                # in lockstep with promotions — closes the status-drift
+                # bug where 3 posts published 2026-05-26/27 left their
+                # tasks stuck at ``approved``. Defaults to {} so legacy
+                # callers don't NULL the column out (same dead-seam
+                # class as featured_image_data before this commit).
+                metadata = post_data.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    metadata = {}
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
@@ -157,12 +171,13 @@ class ContentDatabase(DatabaseServiceMixin):
                         media_to_generate,
                         word_count,
                         reading_time,
+                        metadata,
                         created_by,
                         updated_by,
                         created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, NOW(), NOW())
                     RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
                               author_id, category_id, status, published_at, created_at, updated_at
                     """,
@@ -185,6 +200,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     media_to_generate,
                     word_count,
                     reading_time,
+                    json.dumps(metadata),
                     post_data.get("created_by"),
                     post_data.get("updated_by"),
                 )
