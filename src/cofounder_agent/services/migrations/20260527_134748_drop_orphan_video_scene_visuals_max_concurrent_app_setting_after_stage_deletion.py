@@ -1,6 +1,6 @@
 """Drop orphan ``video_scene_visuals_max_concurrent`` app_setting.
 
-ISSUE: Glad-Labs/glad-labs-stack#238 (cycle-3 orphan-stage deletion).
+ISSUE: Glad-Labs/poindexter#238 (cycle-3 orphan-stage deletion).
 
 Background
 ----------

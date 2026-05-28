@@ -1,6 +1,6 @@
 """Backfill ``posts.featured_image_data`` from ``media_assets.metadata``.
 
-ISSUE: Glad-Labs/glad-labs-stack 2026-05-19 jank-audit — featured_image_data
+ISSUE: Glad-Labs/poindexter 2026-05-19 jank-audit — featured_image_data
 dead-seam finding.
 
 Why: ``posts.featured_image_data`` is a ``jsonb`` column on ``posts``

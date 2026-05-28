@@ -18,11 +18,6 @@
         },
         {
           "type": "toml",
-          "path": "pyproject.toml",
-          "jsonpath": "$.project.version"
-        },
-        {
-          "type": "toml",
           "path": "src/cofounder_agent/pyproject.toml",
           "jsonpath": "$.tool.poetry.version"
         },
@@ -33,43 +28,8 @@
         },
         {
           "type": "json",
-          "path": "web/public-site/package.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
           "path": "src/cofounder_agent/package.json",
           "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
-          "path": "package-lock.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
-          "path": "package-lock.json",
-          "jsonpath": "$.packages[''].version"
-        },
-        {
-          "type": "toml",
-          "path": "mcp-server/pyproject.toml",
-          "jsonpath": "$.project.version"
-        },
-        {
-          "type": "toml",
-          "path": "mcp-server-gladlabs/pyproject.toml",
-          "jsonpath": "$.project.version"
-        },
-        {
-          "type": "toml",
-          "path": "mcp-server-voice/pyproject.toml",
-          "jsonpath": "$.project.version"
-        },
-        {
-          "type": "toml",
-          "path": "brain/pyproject.toml",
-          "jsonpath": "$.tool.poetry.version"
         }
       ]
     }

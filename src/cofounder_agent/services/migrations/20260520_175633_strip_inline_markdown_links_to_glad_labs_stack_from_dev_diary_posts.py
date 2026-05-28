@@ -2,14 +2,14 @@
 
 ISSUE: After 20260520_172353 (PR-format only) and 20260520_174023
 (autolink ``<url>`` form), one post still contained an inline markdown
-link of the form ``[noun](https://github.com/Glad-Labs/glad-labs-stack/
+link of the form ``[noun](https://github.com/Glad-Labs/poindexter/
 pull/N)`` where the bracket text is an arbitrary code noun, NOT
 ``PR #N``. The prior regex required ``PR #N`` as the bracket text,
 so this one slipped through.
 
 Example (post ``what-we-shipped-on-2026-05-19-4a8eabdb``):
 
-    The [alert_events](https://github.com/Glad-Labs/glad-labs-stack/pull/478)
+    The [alert_events](https://github.com/Glad-Labs/poindexter/pull/478)
     showed ten identical warnings...
 
 This migration catches the generic shape: any markdown link
@@ -41,15 +41,15 @@ async def up(pool) -> None:
                SET content = regexp_replace(
                                  regexp_replace(
                                      content,
-                                     '\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)',
+                                     '\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/pull/(\d+)\)',
                                      '\1 (PR #\2)', 'g'
                                  ),
-                                 '\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*\)',
+                                 '\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*\)',
                                  '\1 (`\2`)', 'g'
                              ),
                    updated_at = NOW()
              WHERE status = 'published'
-               AND content ~ 'github\.com/Glad-Labs/glad-labs-stack/(pull|commit)/'
+               AND content ~ 'github\.com/Glad-Labs/poindexter/(pull|commit)/'
             """,
         )
         logger.info(

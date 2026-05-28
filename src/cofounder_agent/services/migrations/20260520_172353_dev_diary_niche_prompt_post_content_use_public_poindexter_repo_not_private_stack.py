@@ -1,7 +1,7 @@
 """Strip private glad-labs-stack URLs from dev_diary niche prompt + post content.
 
 ISSUE: 13 published dev_diary posts (``what-we-shipped-on-...``) contained
-104 outbound links to ``github.com/Glad-Labs/glad-labs-stack/pull/N`` and
+104 outbound links to ``github.com/Glad-Labs/poindexter/pull/N`` and
 ``.../commit/SHA``. The repo is private — every one of those links is a
 404 for the public site's readers.
 
@@ -9,8 +9,8 @@ Source: ``niches.dev_diary.writer_prompt_override`` (the dev_diary
 narrate prompt) had two example format lines that explicitly told the
 LLM to emit those URLs:
 
-    [PR #N](https://github.com/Glad-Labs/glad-labs-stack/pull/N) by author
-    - [`SHA[:7]`](https://github.com/Glad-Labs/glad-labs-stack/commit/SHA) <subject>
+    [PR #N](https://github.com/Glad-Labs/poindexter/pull/N) by author
+    - [`SHA[:7]`](https://github.com/Glad-Labs/poindexter/commit/SHA) <subject>
 
 The LLM dutifully followed the format. Matt's direction (2026-05-20):
 "point to public repo commits or just a 'see the work here: poindexter
@@ -44,10 +44,10 @@ logger = logging.getLogger(__name__)
 
 
 _PRIVATE_PR_PATTERN = (
-    r'\[PR #(\d+)\]\(https://github\.com/Glad-Labs/glad-labs-stack/pull/\d+\)'
+    r'\[PR #(\d+)\]\(https://github\.com/Glad-Labs/poindexter/pull/\d+\)'
 )
 _PRIVATE_COMMIT_PATTERN = (
-    r'\[`([0-9a-fA-F]{7,40})`\]\(https://github\.com/Glad-Labs/glad-labs-stack/commit/[0-9a-fA-F]+\)'
+    r'\[`([0-9a-fA-F]{7,40})`\]\(https://github\.com/Glad-Labs/poindexter/commit/[0-9a-fA-F]+\)'
 )
 
 
@@ -80,10 +80,10 @@ async def up(pool) -> None:
                        REPLACE(
                            REPLACE(
                                writer_prompt_override,
-                               '[PR #N](https://github.com/Glad-Labs/glad-labs-stack/pull/N) by author',
+                               '[PR #N](https://github.com/Glad-Labs/poindexter/pull/N) by author',
                                'PR #N by author'
                            ),
-                           '- [`SHA[:7]`](https://github.com/Glad-Labs/glad-labs-stack/commit/SHA) <subject>',
+                           '- [`SHA[:7]`](https://github.com/Glad-Labs/poindexter/commit/SHA) <subject>',
                            '- `SHA[:7]` <subject>'
                        ),
                        $1,
@@ -116,7 +116,7 @@ async def up(pool) -> None:
                              END,
                    updated_at = NOW()
              WHERE status = 'published'
-               AND content ~ 'github\\.com/Glad-Labs/glad-labs-stack/(pull|commit)/'
+               AND content ~ 'github\\.com/Glad-Labs/poindexter/(pull|commit)/'
             """,
             _PRIVATE_PR_PATTERN,
             _PRIVATE_COMMIT_PATTERN,
