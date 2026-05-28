@@ -130,6 +130,38 @@ async def _load_template_slug(database_service: DatabaseService, task_id: str) -
     return None
 
 
+async def _load_niche_slug(
+    database_service: DatabaseService, task_id: str,
+) -> str | None:
+    """Read ``pipeline_tasks.niche_slug`` for ``task_id``.
+
+    Phase 0 lab observability seam (2026-05-28). The niche_slug is the
+    durable routing seam for the lab — every learnings digest /
+    bandit / variant experiment slices outcomes per niche. Seeding it
+    on the context dict means every downstream stage + atom +
+    capability_outcomes row gets it for free.
+
+    Returns the trimmed slug, or ``None`` if the row has no niche /
+    the lookup fails. None is the correct value for legacy / manual /
+    dev_diary-infra tasks (not all pipeline_tasks rows carry a niche).
+    """
+    try:
+        async with database_service.pool.acquire() as conn:
+            raw = await conn.fetchval(
+                "SELECT niche_slug FROM pipeline_tasks WHERE task_id = $1",
+                str(task_id),
+            )
+    except Exception as exc:
+        logger.warning(
+            "[BG-TASK] niche_slug lookup failed for task %s: %s",
+            task_id, exc,
+        )
+        return None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
 async def process_content_generation_task(
     topic: str,
     style: str,
@@ -268,6 +300,15 @@ async def process_content_generation_task(
     # tasks pass their own slug; everything else gets the operator's
     # global default).
     template_slug = await _load_template_slug(database_service, task_id)
+
+    # Phase 0 lab observability (2026-05-28). niche_slug is the durable
+    # routing seam — stamped on the context dict so every downstream
+    # stage / atom can read it, and ultimately propagated to
+    # capability_outcomes.niche_slug via record_run's state-level
+    # fallback. None for legacy / manual / dev_diary-infra tasks.
+    niche_slug = await _load_niche_slug(database_service, task_id)
+    if niche_slug:
+        result["niche_slug"] = niche_slug
 
     # Per ``feedback_no_silent_defaults``: a missing slug is a config
     # error, not a fallback. The legacy chunked StageRunner flow was

@@ -243,6 +243,53 @@ def hash_content(content: str) -> str:
     return hashlib.sha256((content or "").encode("utf-8")).hexdigest()[:16]
 
 
+async def _lookup_latest_capability_outcome(
+    pool: Any, task_id: str,
+) -> dict[str, Any] | None:
+    """Best-effort lookup of the most-recent capability_outcomes row
+    for a task. Returns dict with model_used / prompt_template_key /
+    prompt_template_version, or None if no row exists / query failed.
+
+    Phase 0 lab observability (2026-05-28). Used at approve time to
+    cross-stamp the writer's provenance onto the edit metric row, so
+    the lab view can attribute "operator edited N chars on the post
+    that the writer produced with prompt_template_key=X version=Y on
+    model Z". Pulls the latest non-NULL model_used because the writer
+    atom is the right grounding signal (other stages set NULL for
+    model_used since they don't invoke an LLM).
+    """
+    if pool is None or not task_id:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT model_used,
+                       prompt_template_key,
+                       prompt_template_version
+                  FROM capability_outcomes
+                 WHERE task_id = $1
+                   AND (model_used IS NOT NULL
+                        OR prompt_template_key IS NOT NULL)
+                 ORDER BY created_at DESC
+                 LIMIT 1
+                """,
+                str(task_id),
+            )
+        if row is None:
+            return None
+        return {
+            "model_used": row["model_used"],
+            "prompt_template_key": row["prompt_template_key"],
+            "prompt_template_version": row["prompt_template_version"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[auto_publish_gate] capability_outcomes lookup failed: %s", exc,
+        )
+        return None
+
+
 async def record_post_approve_metrics(
     pool: Any,
     *,
@@ -254,14 +301,26 @@ async def record_post_approve_metrics(
     approver: str = "operator",
     approve_method: str = "manual",
     post_id: int | None = None,
+    model_used: str | None = None,
+    prompt_template_key: str | None = None,
+    prompt_template_version: int | None = None,
 ) -> bool:
     """Compute pre/post-approve edit metrics + persist a row.
 
     Best-effort. Returns True on success. Called from
-    approval_service.approve when an operator approves an
+    publish_service.publish_post_from_task when an operator approves an
     awaiting_approval task — the diff between the content the
     pipeline produced and the content the operator approved IS the
     auto-publish gate's training signal.
+
+    Phase 0 lab observability (2026-05-28) adds three new optional
+    kwargs — ``model_used`` / ``prompt_template_key`` /
+    ``prompt_template_version`` — that flow into the matching columns.
+    Callers that don't have them up front can leave them None and
+    this function does a best-effort lookup against capability_outcomes
+    for the same task_id, copying whichever fields are populated
+    there. Per ``feedback_backcompat_now_required``, the new kwargs
+    default to None so existing call sites stay unchanged.
     """
     if pool is None:
         return False
@@ -300,6 +359,27 @@ async def record_post_approve_metrics(
         except Exception:  # noqa: BLE001
             pass
 
+    # Phase 0 lab observability — back-fill any unset provenance fields
+    # from the matching capability_outcomes row. The writer atom
+    # produces the canonical (model, prompt_key, prompt_version) trio
+    # at run time; copying them here means the lab view can join
+    # outcome → edit_metric without an extra correlation step.
+    if (
+        model_used is None
+        or prompt_template_key is None
+        or prompt_template_version is None
+    ):
+        latest = await _lookup_latest_capability_outcome(pool, task_id)
+        if latest is not None:
+            if model_used is None:
+                model_used = latest.get("model_used")
+            if prompt_template_key is None:
+                prompt_template_key = latest.get("prompt_template_key")
+            if prompt_template_version is None:
+                prompt_template_version = latest.get(
+                    "prompt_template_version"
+                )
+
     try:
         async with pool.acquire() as conn:
             await conn.execute(
@@ -309,8 +389,11 @@ async def record_post_approve_metrics(
                    pre_approve_hash, post_approve_hash,
                    char_diff_count, line_diff_count,
                    pre_approve_len, post_approve_len,
-                   approve_method, metrics)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+                   approve_method, metrics,
+                   model_used, prompt_template_key,
+                   prompt_template_version)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                        $12, $13::jsonb, $14, $15, $16)
                 """,
                 task_id, post_id, niche_slug, category, approver,
                 pre_hash, post_hash,
@@ -321,11 +404,14 @@ async def record_post_approve_metrics(
                     "pre_word_count": len(pre.split()),
                     "post_word_count": len(post.split()),
                 }),
+                model_used, prompt_template_key, prompt_template_version,
             )
         logger.info(
             "[auto_publish_gate] recorded edit metrics for task %s "
-            "(char_diff=%d, line_diff=%d, niche=%s)",
+            "(char_diff=%d, line_diff=%d, niche=%s, model=%s, "
+            "prompt=%s/v%s)",
             task_id, char_diff, line_diff, niche_slug,
+            model_used, prompt_template_key, prompt_template_version,
         )
         return True
     except Exception as exc:  # noqa: BLE001

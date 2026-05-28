@@ -126,8 +126,16 @@ def _scrub_private_repo_refs(text: str) -> str:
 _REVISE_PROMPT_KEY = "atoms.two_pass_writer.revise_prompt"
 
 
-def _resolve_revise_prompt(*, draft: str, aug_block: str) -> str:
-    """Pull the TWO_PASS revise prompt via UnifiedPromptManager.
+def _resolve_revise_prompt(
+    *, draft: str, aug_block: str,
+) -> tuple[str, str | None, int | None]:
+    """Pull the TWO_PASS revise prompt + provenance metadata.
+
+    Returns ``(prompt_text, prompt_template_key, prompt_template_version)``.
+    Provenance feeds the lab's ``capability_outcomes.prompt_template_*``
+    columns (Phase 0, 2026-05-28); ``(text, None, None)`` on the inline
+    fallback path so the lab can see "no resolved prompt — fallback
+    fired" instead of false-attributing the run to the key.
 
     Langfuse > YAML defaults > inline fallback. The inline constant only
     fires when the prompt registry hasn't been initialized (bootstrap /
@@ -135,16 +143,21 @@ def _resolve_revise_prompt(*, draft: str, aug_block: str) -> str:
     """
     try:
         from services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
+        resolution = get_prompt_manager().get_prompt_resolution(
             _REVISE_PROMPT_KEY, draft=draft, aug_block=aug_block,
         )
+        return resolution.text, resolution.key, resolution.version
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[writer_rag_modes.two_pass] prompt_manager lookup for %r "
             "failed (%s) — using inline fallback",
             _REVISE_PROMPT_KEY, exc,
         )
-        return _REVISE_PROMPT_FALLBACK.format(draft=draft, aug_block=aug_block)
+        return (
+            _REVISE_PROMPT_FALLBACK.format(draft=draft, aug_block=aug_block),
+            None,
+            None,
+        )
 
 
 # Inline fallback — last-resort for bootstrap / test / registry-unreachable
@@ -214,6 +227,13 @@ class _State(TypedDict, total=False):
     # notable_commits, brain_decisions, audit_resolved, recent_posts,
     # cost_summary, date.
     context_bundle: dict[str, Any]
+    # Phase 0 lab observability (2026-05-28) — populated by
+    # _revise_node when it resolves a prompt via UnifiedPromptManager.
+    # Surface up through run() into the caller stage so they land on
+    # capability_outcomes.prompt_template_{key,version}. None when the
+    # registry was unreachable (bootstrap / test).
+    prompt_template_key: str | None
+    prompt_template_version: int | None
 
 
 # -- nodes --
@@ -419,8 +439,13 @@ async def _revise_node(state: _State) -> _State:
     # 2026-05-16: pass ``pool`` so the call dispatches through the
     # configured LLM provider (LiteLLM / Ollama / etc.) instead of
     # hardwiring to local Ollama.
-    revise_prompt = _resolve_revise_prompt(
-        draft=state["draft"], aug_block=aug_block,
+    # 2026-05-28: capture (key, version) provenance so the writer
+    # surfaces them into the run-level return — feeds capability_outcomes
+    # via the dispatcher's metrics dict in the caller stage.
+    revise_prompt, prompt_template_key, prompt_template_version = (
+        _resolve_revise_prompt(
+            draft=state["draft"], aug_block=aug_block,
+        )
     )
     new_draft = await ollama_chat_text(
         revise_prompt,
@@ -429,7 +454,15 @@ async def _revise_node(state: _State) -> _State:
         pool=pool,
         timeout_setting="niche_ollama_chat_timeout_seconds",
     )
-    return {**state, "draft": new_draft, "revision_loops": state.get("revision_loops", 0) + 1}
+    return {
+        **state,
+        "draft": new_draft,
+        "revision_loops": state.get("revision_loops", 0) + 1,
+        # Stash on state so run() can surface them on the writer return
+        # for the caller stage to forward into capability_outcomes.
+        "prompt_template_key": prompt_template_key,
+        "prompt_template_version": prompt_template_version,
+    }
 
 
 def _mark_capped(state: _State) -> _State:
@@ -519,6 +552,16 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
             "external_lookups": final.get("external_lookups", []),
             "revision_loops": final.get("revision_loops", 0),
             "loop_capped": final.get("loop_capped", False),
+            # Phase 0 lab observability (2026-05-28). When the writer
+            # never reached _revise_node (no [EXTERNAL_NEEDED] markers
+            # in the draft) these stay None — that's accurate: the
+            # revise prompt wasn't resolved, so there's nothing to
+            # attribute the outcome to via this seam. The DRAFT prompt
+            # itself is currently inline in _draft_node; future PR can
+            # migrate it to UnifiedPromptManager and surface its
+            # provenance the same way.
+            "prompt_template_key": final.get("prompt_template_key"),
+            "prompt_template_version": final.get("prompt_template_version"),
         }
     finally:
         _POOL_REGISTRY.pop(thread_id, None)

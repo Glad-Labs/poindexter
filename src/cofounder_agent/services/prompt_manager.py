@@ -88,6 +88,32 @@ class PromptMetadata:
     notes: str = ""  # A/B test results, performance notes, etc.
 
 
+@dataclass(frozen=True)
+class PromptResolution:
+    """A resolved prompt — the rendered text plus the provenance metadata
+    callers need to stamp on outcome rows.
+
+    Returned by :meth:`UnifiedPromptManager.get_prompt_resolution`. The
+    plain :meth:`UnifiedPromptManager.get_prompt` API still returns a
+    bare string so the dozen existing call sites don't churn.
+
+    ``source`` is one of ``"langfuse"`` / ``"yaml"`` / ``"fallback"`` —
+    a coarse provenance signal for the lab. When Langfuse is the
+    active edit surface, ``version`` is the Langfuse prompt version
+    integer (when the SDK reports one); on the YAML path, it's the
+    YAML-registered prompt version cast to an int when possible, else
+    None.
+
+    The dataclass is frozen so callers can stash it in state dicts
+    without worrying about accidental mutation downstream.
+    """
+
+    text: str
+    key: str
+    version: int | None = None
+    source: str = "yaml"
+
+
 class UnifiedPromptManager:
     """
     Central manager for all LLM prompts.
@@ -264,38 +290,94 @@ class UnifiedPromptManager:
         Raises:
             KeyError: If prompt key not found in any source
         """
-        # Langfuse first — operator's preferred edit surface. The SDK
-        # caches in-process; first call hits the API, subsequent calls
-        # for the same key return the cached version until the cache
-        # window expires (default 60s in langfuse SDK).
-        template = self._fetch_from_langfuse(key)
+        return self.get_prompt_resolution(key, **kwargs).text
 
-        # Fall back to YAML-loaded prompts (the OSS default).
-        if template is None:
-            if key not in self.prompts:
-                available = ", ".join(self.prompts.keys())
-                raise KeyError(f"Prompt '{key}' not found. Available: {available}")
-            template = self.prompts[key]["template"]
+    def get_prompt_resolution(self, key: str, **kwargs) -> "PromptResolution":
+        """Resolve a prompt and return both the rendered text and its
+        provenance (key + version + source).
 
+        This is the lab-instrumentation seam. Atoms that want to stamp
+        ``prompt_template_key`` + ``prompt_template_version`` onto a
+        capability_outcomes row call this instead of the plain
+        :meth:`get_prompt` and then stash ``.key`` + ``.version`` on
+        the return dict. Existing call sites that only want the text
+        keep using :meth:`get_prompt` — backwards-compatible.
+
+        Priority is the same as :meth:`get_prompt`: Langfuse production
+        label > YAML defaults > KeyError. The Langfuse SDK exposes the
+        ``version`` attribute on its Prompt object when present; we
+        use it when integer-castable, else None.
+        """
+        template, source, version = self._resolve_template_with_meta(key)
         try:
-            return template.format(**kwargs)
+            rendered = template.format(**kwargs)
         except KeyError as e:
             missing_var = e.args[0]
             raise KeyError(
                 f"Prompt '{key}' missing required variable: {missing_var}. "
                 f"Please provide: {missing_var}=..."
             ) from e
+        return PromptResolution(
+            text=rendered, key=key, version=version, source=source,
+        )
+
+    def _resolve_template_with_meta(
+        self, key: str,
+    ) -> tuple[str, str, int | None]:
+        """Return (template_str, source, version) for a key.
+
+        ``source`` is one of ``"langfuse"`` / ``"yaml"``. Raises
+        ``KeyError`` when the key isn't registered in either source.
+        """
+        # Langfuse first — operator's preferred edit surface.
+        lf = self._fetch_from_langfuse_with_meta(key)
+        if lf is not None:
+            template, version = lf
+            return template, "langfuse", version
+
+        # Fall back to YAML-loaded prompts (the OSS default).
+        if key not in self.prompts:
+            available = ", ".join(self.prompts.keys())
+            raise KeyError(f"Prompt '{key}' not found. Available: {available}")
+        entry = self.prompts[key]
+        template = entry["template"]
+        # YAML "version" is a string like "v1.1" — try to extract the
+        # major-int for the outcome row. Non-numeric versions land as
+        # None; consumers expect that.
+        version: int | None = None
+        raw_version = entry.get("version") or ""
+        if isinstance(raw_version, str) and raw_version.startswith("v"):
+            head = raw_version[1:].split(".", 1)[0]
+            if head.isdigit():
+                version = int(head)
+        return template, "yaml", version
 
     def _fetch_from_langfuse(self, key: str) -> str | None:
         """Look up the production prompt from Langfuse, or return None.
+
+        Thin wrapper over :meth:`_fetch_from_langfuse_with_meta` that
+        keeps the historical "just give me the text" call sites green.
+        Behavior is identical — same lazy client init, same error
+        swallowing — but discards the version metadata.
+        """
+        result = self._fetch_from_langfuse_with_meta(key)
+        return result[0] if result is not None else None
+
+    def _fetch_from_langfuse_with_meta(
+        self, key: str,
+    ) -> tuple[str, int | None] | None:
+        """Look up the production prompt from Langfuse with version.
 
         Lazy-initializes the Langfuse client on first call. Caches the
         client + the per-prompt response (Langfuse SDK does its own
         caching; we just don't fight it). All errors are swallowed —
         the caller falls through to DB+YAML on any Langfuse failure.
 
-        Returns the prompt template string when Langfuse has a
-        ``production``-labeled version of the prompt; ``None`` otherwise.
+        Returns ``(template_string, version)`` when Langfuse has a
+        ``production``-labeled version of the prompt; ``None``
+        otherwise. ``version`` is the Langfuse prompt version integer
+        when the SDK reports one (it does for normal prompts), else
+        ``None``.
         """
         # Has Langfuse been wired up at all?
         if self._langfuse_enabled is False:
@@ -322,7 +404,15 @@ class UnifiedPromptManager:
                     if isinstance(m, dict)
                 )
             if isinstance(template, str) and template.strip():
-                return template
+                # version is an int on the Langfuse Prompt object when
+                # the SDK reports one. Coerce defensively.
+                raw_version = getattr(prompt, "version", None)
+                version: int | None = None
+                if isinstance(raw_version, int):
+                    version = raw_version
+                elif isinstance(raw_version, str) and raw_version.isdigit():
+                    version = int(raw_version)
+                return template, version
         except Exception as exc:  # noqa: BLE001
             # Either the prompt doesn't exist in Langfuse yet (expected
             # before the import script runs) or the API is unreachable.

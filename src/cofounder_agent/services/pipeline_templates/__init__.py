@@ -224,6 +224,20 @@ def dev_diary(
                             "model_used": result.get("model_used", ""),
                             "quality_score": result.get("quality_score"),
                             "word_count": len((result.get("content") or "").split()),
+                            # Phase 0 lab observability — propagates the
+                            # prompt resolution provenance from the atom
+                            # to capability_outcomes.{prompt_template_*}
+                            # columns via record_run.
+                            "prompt_template_key": result.get("prompt_template_key"),
+                            "prompt_template_version": result.get(
+                                "prompt_template_version"
+                            ),
+                            # niche_slug rides on state too, but stamping
+                            # it here keeps the per-record metrics dict
+                            # self-contained for downstream consumers.
+                            "niche_slug": (
+                                atom_input.get("niche_slug") or None
+                            ),
                         },
                     )
                 )

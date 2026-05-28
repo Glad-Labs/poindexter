@@ -368,11 +368,31 @@ class GenerateContentStage:
         except Exception as rev_err:
             logger.debug("[content_revisions] initial snapshot failed: %s", rev_err)
 
+        # Phase 0 lab observability (2026-05-28) — surface the prompt
+        # provenance + niche_slug on the StageResult.metrics dict so
+        # capability_outcomes.record_run picks them up via the
+        # per-record metrics path. None values are tolerated downstream
+        # and recorded as NULL, which is the right signal for stages
+        # that didn't resolve a UnifiedPromptManager key.
+        stage_metrics: dict[str, Any] = {
+            "content_length": len(content_text),
+            "model_used": model_used,
+        }
+        if metrics.get("prompt_template_key") is not None:
+            stage_metrics["prompt_template_key"] = metrics.get("prompt_template_key")
+        if metrics.get("prompt_template_version") is not None:
+            stage_metrics["prompt_template_version"] = metrics.get(
+                "prompt_template_version"
+            )
+        niche_for_metrics = context.get("niche_slug")
+        if niche_for_metrics:
+            stage_metrics["niche_slug"] = niche_for_metrics
+
         return StageResult(
             ok=True,
             detail=f"{len(content_text)} chars via {model_used}",
             context_updates=updates,
-            metrics={"content_length": len(content_text), "model_used": model_used},
+            metrics=stage_metrics,
         )
 
     # ------------------------------------------------------------------
@@ -735,6 +755,16 @@ class GenerateContentStage:
         for k in ("external_lookups", "revision_loops", "loop_capped"):
             if k in result:
                 metrics[k] = result[k]
+        # Phase 0 lab observability (2026-05-28) — propagate the prompt
+        # resolution provenance the writer captured into metrics so the
+        # caller (this stage's execute()) can forward them into the
+        # StageResult.metrics dict that capability_outcomes reads.
+        if result.get("prompt_template_key") is not None:
+            metrics["prompt_template_key"] = result.get("prompt_template_key")
+        if result.get("prompt_template_version") is not None:
+            metrics["prompt_template_version"] = result.get(
+                "prompt_template_version"
+            )
         return draft, model_used, metrics
 
     async def _fetch_existing_titles(self, database_service: Any) -> str:

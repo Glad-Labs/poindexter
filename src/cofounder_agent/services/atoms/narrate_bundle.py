@@ -151,26 +151,33 @@ _FOOTER = (
 _PROMPT_KEY = "atoms.narrate_bundle.system_prompt"
 
 
-def _resolve_system_prompt() -> str:
-    """Pull the narrate-bundle system prompt from UnifiedPromptManager.
+def _resolve_system_prompt() -> tuple[str, str | None, int | None]:
+    """Pull the narrate-bundle system prompt + provenance metadata.
+
+    Returns ``(prompt_text, prompt_template_key, prompt_template_version)``
+    so the atom can stamp the provenance fields on the outcome row for
+    the lab (Phase 0, 2026-05-28). Falls back to ``(_NARRATIVE_SYSTEM_
+    PROMPT_FALLBACK, None, None)`` when the prompt registry isn't
+    reachable (bootstrap / test) — the None key + version is the right
+    signal that no resolved prompt was used.
 
     Langfuse production label wins > YAML defaults > inline fallback.
-    Inline fallback only fires when the prompt registry hasn't been
-    initialized (early bootstrap, test paths) — production reads from
-    YAML at minimum. Operators editing the prompt land their changes
-    in the Langfuse UI; the next get_prompt call picks up the new
-    version (60s SDK cache).
+    Operators editing the prompt land their changes in the Langfuse
+    UI; the next get_prompt call picks up the new version (60s SDK
+    cache) and the new version int flows onto every subsequent
+    outcome row.
     """
     try:
         from services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(_PROMPT_KEY)
+        resolution = get_prompt_manager().get_prompt_resolution(_PROMPT_KEY)
+        return resolution.text, resolution.key, resolution.version
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[atoms.narrate_bundle] prompt_manager lookup for %r failed (%s) — "
             "falling back to inline constant",
             _PROMPT_KEY, exc,
         )
-        return _NARRATIVE_SYSTEM_PROMPT_FALLBACK
+        return _NARRATIVE_SYSTEM_PROMPT_FALLBACK, None, None
 
 
 # Inline fallback — kept in the codebase as the "last resort" prompt for
@@ -466,7 +473,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     model = resolve_local_model(site_config=site_config)
 
     bundle_text = _format_bundle_for_narrative(bundle)
-    system_prompt = _resolve_system_prompt()
+    system_prompt, prompt_template_key, prompt_template_version = (
+        _resolve_system_prompt()
+    )
     # The BUNDLE is the canonical source. Any "topic" string the caller
     # may have stamped on the task row is just a UI label — it can be
     # truncated, semantic-only, or stale relative to the actual PRs in
@@ -590,6 +599,15 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # a calculated score from bundle integrity + citation rate +
         # length, per feedback_calculated_vs_generated.
         "quality_score": quality_score,
+        # Phase 0 lab observability stamps (2026-05-28). These flow
+        # into capability_outcomes via the TemplateRunner's per-node
+        # metrics dict — record_run reads them off the record's
+        # metrics keys and writes them into the prompt_template_*
+        # columns. None when the prompt registry was unreachable
+        # (bootstrap / test paths), which is the right signal for
+        # the lab view downstream.
+        "prompt_template_key": prompt_template_key,
+        "prompt_template_version": prompt_template_version,
     }
 
 

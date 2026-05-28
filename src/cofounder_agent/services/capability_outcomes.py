@@ -46,6 +46,10 @@ async def record_run(
     state = initial_state or {}
     task_id = str(state.get("task_id") or "") or None
     template_slug = getattr(summary, "template_slug", "") or ""
+    # Phase 0 lab observability (2026-05-28): niche_slug rides on the
+    # pipeline context dict (seeded by content_router_service from the
+    # pipeline_tasks row). Per-record metrics can override per atom.
+    state_niche_slug = (state.get("niche_slug") or "") or None
 
     # Best-effort lookup of the atom catalog so we can stamp
     # capability_tier alongside the resolved model_used. The atom
@@ -92,14 +96,41 @@ async def record_run(
                     except ValueError:
                         quality_score = None
 
+                # Phase 0 lab observability stamps. niche_slug falls back
+                # to state-level; prompt_template_key + _version come
+                # from the per-node metrics dict (atoms stamp them when
+                # they resolve a prompt via UnifiedPromptManager.
+                # get_prompt_resolution). None for stages that don't
+                # invoke a prompt — view-side consumers handle NULL.
+                niche_slug = metrics.get("niche_slug") or state_niche_slug
+                prompt_template_key = (
+                    metrics.get("prompt_template_key")
+                    or state.get("prompt_template_key")
+                    or None
+                )
+                prompt_template_version_raw = (
+                    metrics.get("prompt_template_version")
+                    if "prompt_template_version" in metrics
+                    else state.get("prompt_template_version")
+                )
+                prompt_template_version: int | None = None
+                if prompt_template_version_raw is not None:
+                    try:
+                        prompt_template_version = int(prompt_template_version_raw)
+                    except (TypeError, ValueError):
+                        prompt_template_version = None
+
                 await conn.execute(
                     """
                     INSERT INTO capability_outcomes
                       (task_id, template_slug, node_name, atom_name,
                        capability_tier, model_used,
                        ok, halted, failure_reason, elapsed_ms,
-                       quality_score, metrics)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+                       quality_score, metrics,
+                       niche_slug, prompt_template_key,
+                       prompt_template_version)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                            $12::jsonb, $13, $14, $15)
                     """,
                     task_id, template_slug, node_name, atom_name,
                     capability_tier, model_used,
@@ -109,6 +140,7 @@ async def record_run(
                     int(getattr(r, "elapsed_ms", 0) or 0),
                     quality_score,
                     json.dumps(metrics, default=str),
+                    niche_slug, prompt_template_key, prompt_template_version,
                 )
                 written += 1
     except Exception as exc:  # noqa: BLE001
@@ -131,10 +163,19 @@ async def record_one(
     elapsed_ms: int = 0,
     quality_score: float | None = None,
     metrics: dict[str, Any] | None = None,
+    niche_slug: str | None = None,
+    prompt_template_key: str | None = None,
+    prompt_template_version: int | None = None,
 ) -> bool:
     """Single-row writer for ad-hoc outcome logging (e.g. from inside
     an atom that wants to record an extra-fine-grained event). Returns
     True on success. Best-effort.
+
+    Phase 0 lab observability (2026-05-28) adds optional
+    ``niche_slug`` / ``prompt_template_key`` /
+    ``prompt_template_version`` kwargs — additive + defaulted so
+    existing callers keep working unchanged per
+    ``feedback_backcompat_now_required``.
     """
     if pool is None:
         return False
@@ -146,13 +187,17 @@ async def record_one(
                   (task_id, template_slug, node_name, atom_name,
                    capability_tier, model_used,
                    ok, halted, failure_reason, elapsed_ms,
-                   quality_score, metrics)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+                   quality_score, metrics,
+                   niche_slug, prompt_template_key,
+                   prompt_template_version)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                        $12::jsonb, $13, $14, $15)
                 """,
                 task_id, template_slug, node_name, atom_name,
                 capability_tier, model_used,
                 ok, halted, failure_reason, elapsed_ms, quality_score,
                 json.dumps(metrics or {}, default=str),
+                niche_slug, prompt_template_key, prompt_template_version,
             )
         return True
     except Exception as exc:  # noqa: BLE001
