@@ -1,6 +1,6 @@
 """Add ``niches.default_template_slug`` + backfill empty ``pipeline_tasks.template_slug``.
 
-ISSUE: Glad-Labs/glad-labs-stack jank-audit finding #3 (2026-05-19).
+ISSUE: Glad-Labs/poindexter jank-audit finding #3 (2026-05-19).
 
 Why
 ---

@@ -2,7 +2,7 @@
 
 ISSUE: 7 published dev_diary posts (most recently
 ``what-we-shipped-on-2026-05-28-efabd25c`` with 16 references) link to
-``github.com/Glad-Labs/glad-labs-stack``, the private operator repo.
+``github.com/Glad-Labs/poindexter``, the private operator repo.
 The 2026-05-20 strip migrations were a one-shot backfill; the writer
 side kept regenerating links because the bundle fed the LLM raw PR
 URLs and the prompt actively instructed inline-link citation. This
@@ -15,7 +15,7 @@ adds a post-LLM scrub as defense-in-depth.
 The regex set mirrors ``_scrub_private_repo_refs`` in narrate_bundle:
 inline markdown links → ``text (PR #N)`` / ``text (`sha7`)``,
 autolinks + bare URLs → ``(PR #N)`` / ``(`sha7`)``, and remaining
-``Glad-Labs/glad-labs-stack`` text mentions → ``Glad-Labs/poindexter``
+``Glad-Labs/poindexter`` text mentions → ``Glad-Labs/poindexter``
 (the public mirror — safe and accurate, the PR/commit numbers don't
 match across repos but the text mention is fine).
 
@@ -45,31 +45,31 @@ async def up(pool) -> None:
                                regexp_replace(
                                  content,
                                  -- inline markdown link: [text](pull/N)
-                                 '\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)',
+                                 '\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/pull/(\d+)\)',
                                  '\1 (PR #\2)', 'g'
                                ),
                                -- inline markdown link: [text](commit/SHA)
-                               '\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*\)',
+                               '\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*\)',
                                '\1 (`\2`)', 'g'
                              ),
                              -- autolink: <url-pull>
-                             '<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>',
+                             '<https?://github\.com/Glad-Labs/poindexter/pull/(\d+)>',
                              '(PR #\1)', 'g'
                            ),
                            -- autolink: <url-commit>
-                           '<https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*>',
+                           '<https?://github\.com/Glad-Labs/poindexter/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*>',
                            '(`\1`)', 'g'
                          ),
                          -- bare URL: pull
-                         'https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)',
+                         'https?://github\.com/Glad-Labs/poindexter/pull/(\d+)',
                          '(PR #\1)', 'g'
                        ),
                        -- bare URL: commit
-                       'https?://github\.com/Glad-Labs/glad-labs-stack/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*',
+                       'https?://github\.com/Glad-Labs/poindexter/commit/([0-9a-fA-F]{7})[0-9a-fA-F]*',
                        '(`\1`)', 'g'
                      ),
                    updated_at = NOW()
-             WHERE content ~ 'Glad-Labs/glad-labs-stack'
+             WHERE content ~ 'Glad-Labs/poindexter'
             """,
         )
         # Second pass: rewrite any remaining bare text mentions of the
@@ -80,11 +80,11 @@ async def up(pool) -> None:
             UPDATE posts
                SET content = regexp_replace(
                        content,
-                       'Glad-Labs/glad-labs-stack',
+                       'Glad-Labs/poindexter',
                        'Glad-Labs/poindexter', 'g'
                      ),
                    updated_at = NOW()
-             WHERE content ~ 'Glad-Labs/glad-labs-stack'
+             WHERE content ~ 'Glad-Labs/poindexter'
             """,
         )
         logger.info(
