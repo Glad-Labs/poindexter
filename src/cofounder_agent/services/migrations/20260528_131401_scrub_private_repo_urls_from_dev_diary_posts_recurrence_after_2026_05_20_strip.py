@@ -87,9 +87,33 @@ async def up(pool) -> None:
              WHERE content ~ 'Glad-Labs/glad-labs-stack'
             """,
         )
+        # Third pass: upgrade the legacy plaintext footer to the
+        # public-mirror-link footer (PR #631, 2026-05-27). That fix landed
+        # on the OLD ``deterministic_compositor`` writer mode; the
+        # dev_diary template moved to ``atoms/narrate_bundle`` so the
+        # footer change never carried over. Every dev_diary post since
+        # 2026-05-27 (except the one PR #631 cleaned by hand) is still on
+        # the old plaintext footer. This pass catches them all in one
+        # idempotent pass.
+        result3 = await conn.execute(
+            """
+            UPDATE posts
+               SET content = regexp_replace(
+                       content,
+                       '_Auto-compiled by Poindexter from today''s commits and PRs\\._',
+                       '_Auto-compiled by Poindexter from today''s commits and PRs. [See the work: github.com/Glad-Labs/poindexter](https://github.com/Glad-Labs/poindexter)._',
+                       'g'
+                     ),
+                   updated_at = NOW()
+             WHERE slug LIKE 'what-we-shipped-on-%'
+               AND status = 'published'
+               AND content LIKE '%_Auto-compiled by Poindexter from today''s commits and PRs._%'
+               AND content NOT LIKE '%See the work: github.com/Glad-Labs/poindexter%'
+            """,
+        )
         logger.info(
-            "Migration scrub_private_repo_urls_dev_diary: pass1=%s pass2=%s",
-            result, result2,
+            "Migration scrub_private_repo_urls_dev_diary: pass1=%s pass2=%s pass3=%s",
+            result, result2, result3,
         )
 
 

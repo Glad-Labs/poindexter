@@ -129,7 +129,18 @@ ATOM_META = AtomMeta(
 
 
 _HEADER_PREFIX = "# What we shipped on "
-_FOOTER = "_Auto-compiled by Poindexter from today's commits and PRs._"
+# Footer matches deterministic_compositor (PR #631, 2026-05-27): a
+# single public-mirror link so readers who want commit-level detail
+# can browse the public repo. That 2026-05-27 fix landed on the OLD
+# compositor writer mode; the dev_diary template moved to THIS atom
+# (per the file docstring) so the footer change never carried over —
+# which is why today's post had 16 private-repo URLs in the body AND
+# the old plaintext footer instead of the new public-link footer.
+_FOOTER = (
+    "_Auto-compiled by Poindexter from today's commits and PRs. "
+    "[See the work: github.com/Glad-Labs/poindexter]"
+    "(https://github.com/Glad-Labs/poindexter)._"
+)
 
 
 # Prompt key in UnifiedPromptManager + prompt_templates table. The
