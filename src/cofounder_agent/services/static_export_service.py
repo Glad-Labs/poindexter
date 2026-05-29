@@ -67,16 +67,31 @@ def _to_json(data: Any) -> str:
     return json.dumps(data, default=_json_serial, ensure_ascii=False)
 
 
-async def _upload_json(key: str, data: str, content_type: str = "application/json") -> str | None:
-    """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None."""
+async def _upload_json(
+    key: str,
+    data: str,
+    content_type: str = "application/json",
+    *,
+    site_config: SiteConfig | None = None,
+) -> str | None:
+    """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None.
+
+    Phase-1 DI shim (#272): accepts an optional ``site_config`` so the
+    export entrypoints can thread one config instance through. When None,
+    falls back to the module-global ``site_config`` via a self-module
+    import (dodges the param name shadowing the global).
+    """
     from services.r2_upload_service import R2UploadService
+
+    import services.static_export_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
 
     tmp = None
     try:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         tmp.write(data)
         tmp.close()
-        r2 = R2UploadService(site_config=site_config)
+        r2 = R2UploadService(site_config=_sc)
         url = await r2.upload_to_r2(tmp.name, f"{_STATIC_PREFIX}/{key}", content_type)
         return url
     except Exception as e:
@@ -285,16 +300,29 @@ def _build_sitemap(posts: list[dict], categories: list[dict], site_url: str) -> 
     return {"urls": urls, "total": len(urls)}
 
 
-async def export_post(pool, slug: str) -> bool:
-    """Incremental export — called when a single post is published or updated."""
-    site_url = site_config.get("public_site_url") or site_config.require("site_url")
-    site_title = site_config.get("site_title") or site_config.require("site_name")
+async def export_post(
+    pool,
+    slug: str,
+    *,
+    site_config: SiteConfig | None = None,
+) -> bool:
+    """Incremental export — called when a single post is published or updated.
+
+    Phase-1 DI shim (#272): optional ``site_config`` is resolved once at the
+    top (falling back to the module-global) and threaded through every
+    ``_upload_json`` call so one config instance flows through the export.
+    """
+    import services.static_export_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
+    site_url = _sc.get("public_site_url") or _sc.require("site_url")
+    site_title = _sc.get("site_title") or _sc.require("site_name")
     success = True
 
     try:
         post = await _fetch_post_by_slug(pool, slug)
         if post:
-            url = await _upload_json(f"posts/{slug}.json", _to_json(_post_full(post)))
+            url = await _upload_json(f"posts/{slug}.json", _to_json(_post_full(post)), site_config=_sc)
             if not url:
                 success = False
             logger.info("[STATIC_EXPORT] Exported post: %s", slug)
@@ -308,19 +336,19 @@ async def export_post(pool, slug: str) -> bool:
             "total": len(all_posts),
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }
-        url = await _upload_json("posts/index.json", _to_json(index_data))
+        url = await _upload_json("posts/index.json", _to_json(index_data), site_config=_sc)
         if not url:
             success = False
 
         posts_with_content = await _fetch_published_posts(pool, include_content=True)
         feed = _build_json_feed(posts_with_content[:50], site_url, site_title)
-        url = await _upload_json("feed.json", _to_json(feed))
+        url = await _upload_json("feed.json", _to_json(feed), site_config=_sc)
         if not url:
             success = False
 
         categories = await _fetch_categories(pool)
         sitemap = _build_sitemap(all_posts, categories, site_url)
-        url = await _upload_json("sitemap.json", _to_json(sitemap))
+        url = await _upload_json("sitemap.json", _to_json(sitemap), site_config=_sc)
         if not url:
             success = False
 
@@ -332,7 +360,7 @@ async def export_post(pool, slug: str) -> bool:
             "site_url": site_url,
             "last_published_slug": slug,
         }
-        url = await _upload_json("manifest.json", _to_json(manifest))
+        url = await _upload_json("manifest.json", _to_json(manifest), site_config=_sc)
         if not url:
             success = False
 
@@ -347,10 +375,22 @@ async def export_post(pool, slug: str) -> bool:
         return False
 
 
-async def export_full_rebuild(pool) -> dict[str, Any]:
-    """Full rebuild — regenerate ALL static files from scratch."""
-    site_url = site_config.get("public_site_url") or site_config.require("site_url")
-    site_title = site_config.get("site_title") or site_config.require("site_name")
+async def export_full_rebuild(
+    pool,
+    *,
+    site_config: SiteConfig | None = None,
+) -> dict[str, Any]:
+    """Full rebuild — regenerate ALL static files from scratch.
+
+    Phase-1 DI shim (#272): optional ``site_config`` is resolved once at the
+    top (falling back to the module-global) and threaded through every
+    ``_upload_json`` call so one config instance flows through the rebuild.
+    """
+    import services.static_export_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
+    site_url = _sc.get("public_site_url") or _sc.require("site_url")
+    site_title = _sc.get("site_title") or _sc.require("site_name")
     errors = []
 
     try:
@@ -363,29 +403,29 @@ async def export_full_rebuild(pool) -> dict[str, Any]:
             "total": len(all_posts),
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }
-        if not await _upload_json("posts/index.json", _to_json(index_data)):
+        if not await _upload_json("posts/index.json", _to_json(index_data), site_config=_sc):
             errors.append("posts/index.json")
 
         for post in all_posts:
             key = f"posts/{post['slug']}.json"
-            if not await _upload_json(key, _to_json(_post_full(post))):
+            if not await _upload_json(key, _to_json(_post_full(post)), site_config=_sc):
                 errors.append(key)
 
         cat_data = [{"id": str(c["id"]), "name": c["name"], "slug": c["slug"],
                       "description": c.get("description")} for c in categories]
-        if not await _upload_json("categories.json", _to_json(cat_data)):
+        if not await _upload_json("categories.json", _to_json(cat_data), site_config=_sc):
             errors.append("categories.json")
 
         author_data = [{"id": str(a["id"]), "name": a.get("name", "Unknown")} for a in authors]
-        if not await _upload_json("authors.json", _to_json(author_data)):
+        if not await _upload_json("authors.json", _to_json(author_data), site_config=_sc):
             errors.append("authors.json")
 
         feed = _build_json_feed(all_posts[:50], site_url, site_title)
-        if not await _upload_json("feed.json", _to_json(feed)):
+        if not await _upload_json("feed.json", _to_json(feed), site_config=_sc):
             errors.append("feed.json")
 
         sitemap = _build_sitemap(all_posts, categories, site_url)
-        if not await _upload_json("sitemap.json", _to_json(sitemap)):
+        if not await _upload_json("sitemap.json", _to_json(sitemap), site_config=_sc):
             errors.append("sitemap.json")
 
         manifest = {
@@ -397,7 +437,7 @@ async def export_full_rebuild(pool) -> dict[str, Any]:
             "site_url": site_url,
             "full_rebuild": True,
         }
-        if not await _upload_json("manifest.json", _to_json(manifest)):
+        if not await _upload_json("manifest.json", _to_json(manifest), site_config=_sc):
             errors.append("manifest.json")
 
         total_files = len(all_posts) + 5

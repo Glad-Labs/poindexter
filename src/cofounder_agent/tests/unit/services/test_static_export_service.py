@@ -488,7 +488,7 @@ class TestExportFullRebuild:
         ]
         pool = _make_full_rebuild_pool(posts, [], [])
 
-        async def fake_upload(key, data, content_type="application/json"):
+        async def fake_upload(key, data, content_type="application/json", **kwargs):
             if "fail" in key:
                 return None
             return f"https://r2/{key}"
