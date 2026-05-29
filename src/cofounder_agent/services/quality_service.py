@@ -160,7 +160,13 @@ class UnifiedQualityService:
         self.database_service = database_service
         self.qa_agent = qa_agent
         self.llm_client = llm_client
-        self._site_config = site_config
+        # Phase-1 DI shim (#272): fall back to the lifespan-bound module
+        # global when no instance is injected, so existing callers that
+        # construct ``UnifiedQualityService()`` without site_config keep
+        # working. Self-import keeps the fallback bound to the live global
+        # (which ``set_site_config()`` rebinds), not a stale snapshot.
+        import services.quality_service as _mod
+        self._site_config = site_config if site_config is not None else _mod.site_config
 
         # Statistics
         self.total_evaluations = 0
@@ -247,7 +253,7 @@ class UnifiedQualityService:
                     seo_quality=5.0,
                     readability=5.0,
                     engagement=5.0,
-                    site_config=site_config,
+                    site_config=self._site_config,
                 ),
                 overall_score=5.0,
                 passing=False,
@@ -289,7 +295,7 @@ class UnifiedQualityService:
             seo_quality=self._score_seo(content, context) * 10,
             readability=readability_score * 10,
             engagement=self._score_engagement(content) * 10,
-            site_config=site_config,
+            site_config=self._site_config,
         )
 
         overall_score = dimensions.average()
@@ -311,7 +317,7 @@ class UnifiedQualityService:
             )
 
         # LLM pattern detection: buzzwords, filler, cliché openers, etc.
-        llm_penalty, llm_issues = self._score_llm_patterns(content)
+        llm_penalty, llm_issues = self._score_llm_patterns(content, self._site_config)
         if llm_issues:
             overall_score = max(0, overall_score + llm_penalty)  # penalty is negative
             logger.warning(
@@ -421,7 +427,7 @@ class UnifiedQualityService:
                 seo_quality=_clamp_score(scores.get("seo_quality", 5)),
                 readability=_clamp_score(scores.get("readability", 5)),
                 engagement=_clamp_score(scores.get("engagement", 5)),
-                site_config=site_config,
+                site_config=self._site_config,
             )
 
             overall_score = dimensions.average()
@@ -482,7 +488,7 @@ class UnifiedQualityService:
             seo_quality=(p.seo_quality + ll.seo_quality) / 2,
             readability=(p.readability + ll.readability) / 2,
             engagement=(p.engagement + ll.engagement) / 2,
-            site_config=site_config,
+            site_config=self._site_config,
         )
 
         overall = combined_dims.average()
@@ -617,43 +623,53 @@ class UnifiedQualityService:
         return artifacts
 
     @staticmethod
-    def _score_llm_patterns(content: str) -> tuple[float, list[str]]:
+    def _score_llm_patterns(content: str, site_config=None) -> tuple[float, list[str]]:
         """Detect and penalize common LLM-generated content patterns.
 
         Returns (penalty, list_of_issues) where penalty is a NEGATIVE number
         to subtract from the overall score (0 to -25 range).
 
         All thresholds are tunable via app_settings (key prefix: qa_llm_).
+
+        Phase-1 DI shim (#272): this is a ``@staticmethod`` (no ``self``), so
+        the injected SiteConfig is threaded in as an optional ``site_config``
+        param. When omitted, it falls back to the lifespan-bound module
+        global — keeping existing direct callers
+        (``UnifiedQualityService._score_llm_patterns(content)``, e.g. unit
+        tests) working unchanged. The instance caller passes
+        ``self._site_config``.
         """
+        import services.quality_service as _mod
+        _sc = site_config if site_config is not None else _mod.site_config
         # Load tunable thresholds from DB (with sensible defaults)
         _t = {
-            "buzzword_warn": site_config.get_int("qa_llm_buzzword_warn_threshold", 3),
-            "buzzword_fail": site_config.get_int("qa_llm_buzzword_fail_threshold", 5),
-            "buzzword_penalty": site_config.get_float("qa_llm_buzzword_penalty_per", 0.5),
-            "buzzword_max": site_config.get_float("qa_llm_buzzword_max_penalty", 5.0),
-            "buzzword_warn_penalty": site_config.get_float("qa_llm_buzzword_warn_penalty_per", 0.3),
-            "buzzword_warn_max": site_config.get_float("qa_llm_buzzword_warn_max_penalty", 2.0),
-            "filler_warn": site_config.get_int("qa_llm_filler_warn_threshold", 2),
-            "filler_fail": site_config.get_int("qa_llm_filler_fail_threshold", 4),
-            "filler_penalty": site_config.get_float("qa_llm_filler_penalty_per", 0.5),
-            "filler_max": site_config.get_float("qa_llm_filler_max_penalty", 4.0),
-            "filler_warn_penalty": site_config.get_float("qa_llm_filler_warn_penalty_per", 0.3),
-            "opener_penalty": site_config.get_float("qa_llm_opener_penalty", 5.0),
-            "transition_penalty": site_config.get_float("qa_llm_transition_penalty_per", 1.0),
-            "listicle_penalty": site_config.get_float("qa_llm_listicle_title_penalty", 2.0),
-            "hedge_ratio": site_config.get_float("qa_llm_hedge_ratio_threshold", 0.02),
-            "hedge_penalty": site_config.get_float("qa_llm_hedge_penalty", 2.0),
-            "repetitive_penalty": site_config.get_float("qa_llm_repetitive_starter_penalty_per", 1.0),
-            "repetitive_max": site_config.get_float("qa_llm_repetitive_starter_max_penalty", 4.0),
-            "formulaic_penalty": site_config.get_float("qa_llm_formulaic_structure_penalty", 2.0),
-            "formulaic_min_avg": site_config.get_int("qa_llm_formulaic_min_avg_words", 50),
-            "formulaic_variance": site_config.get_float("qa_llm_formulaic_variance", 0.2),
-            "exclamation_threshold": site_config.get_int("qa_llm_exclamation_threshold", 5),
-            "exclamation_penalty": site_config.get_float("qa_llm_exclamation_penalty_per", 0.3),
-            "exclamation_max": site_config.get_float("qa_llm_exclamation_max_penalty", 2.0),
-            "repetitive_min_count": site_config.get_int("qa_llm_repetitive_min_count", 3),
-            "transition_min_count": site_config.get_int("qa_llm_transition_min_count", 2),
-            "enabled": site_config.get_bool("qa_llm_patterns_enabled", True),
+            "buzzword_warn": _sc.get_int("qa_llm_buzzword_warn_threshold", 3),
+            "buzzword_fail": _sc.get_int("qa_llm_buzzword_fail_threshold", 5),
+            "buzzword_penalty": _sc.get_float("qa_llm_buzzword_penalty_per", 0.5),
+            "buzzword_max": _sc.get_float("qa_llm_buzzword_max_penalty", 5.0),
+            "buzzword_warn_penalty": _sc.get_float("qa_llm_buzzword_warn_penalty_per", 0.3),
+            "buzzword_warn_max": _sc.get_float("qa_llm_buzzword_warn_max_penalty", 2.0),
+            "filler_warn": _sc.get_int("qa_llm_filler_warn_threshold", 2),
+            "filler_fail": _sc.get_int("qa_llm_filler_fail_threshold", 4),
+            "filler_penalty": _sc.get_float("qa_llm_filler_penalty_per", 0.5),
+            "filler_max": _sc.get_float("qa_llm_filler_max_penalty", 4.0),
+            "filler_warn_penalty": _sc.get_float("qa_llm_filler_warn_penalty_per", 0.3),
+            "opener_penalty": _sc.get_float("qa_llm_opener_penalty", 5.0),
+            "transition_penalty": _sc.get_float("qa_llm_transition_penalty_per", 1.0),
+            "listicle_penalty": _sc.get_float("qa_llm_listicle_title_penalty", 2.0),
+            "hedge_ratio": _sc.get_float("qa_llm_hedge_ratio_threshold", 0.02),
+            "hedge_penalty": _sc.get_float("qa_llm_hedge_penalty", 2.0),
+            "repetitive_penalty": _sc.get_float("qa_llm_repetitive_starter_penalty_per", 1.0),
+            "repetitive_max": _sc.get_float("qa_llm_repetitive_starter_max_penalty", 4.0),
+            "formulaic_penalty": _sc.get_float("qa_llm_formulaic_structure_penalty", 2.0),
+            "formulaic_min_avg": _sc.get_int("qa_llm_formulaic_min_avg_words", 50),
+            "formulaic_variance": _sc.get_float("qa_llm_formulaic_variance", 0.2),
+            "exclamation_threshold": _sc.get_int("qa_llm_exclamation_threshold", 5),
+            "exclamation_penalty": _sc.get_float("qa_llm_exclamation_penalty_per", 0.3),
+            "exclamation_max": _sc.get_float("qa_llm_exclamation_max_penalty", 2.0),
+            "repetitive_min_count": _sc.get_int("qa_llm_repetitive_min_count", 3),
+            "transition_min_count": _sc.get_int("qa_llm_transition_min_count", 2),
+            "enabled": _sc.get_bool("qa_llm_patterns_enabled", True),
         }
 
         issues = []
