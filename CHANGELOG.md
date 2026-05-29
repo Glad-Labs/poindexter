@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.30.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.29.0...v0.30.0) (2026-05-29)
+
+
+### Features
+
+* **podcast:** emit itunes:keywords + itunes:summary per episode from SEO metadata ([#736](https://github.com/Glad-Labs/glad-labs-stack/issues/736)) ([da8a821](https://github.com/Glad-Labs/glad-labs-stack/commit/da8a82185a0f1dca89dd02f6926590851283b8b8))
+
 ## [0.29.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.28.1...v0.29.0) (2026-05-29)
 
 
