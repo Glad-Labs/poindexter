@@ -624,7 +624,41 @@ After saving, the next Scheduled Task fire (within 2 min) picks up the new logic
 
 **Verify.** Tail `~/.openclaw/logs/watchdog.log` and confirm the next cycle ends with `Gateway HTTP responding` instead of `Gateway recovery FAILED`. Once stable, follow up by reversing the silencing migration that Glad-Labs/poindexter#600 added to `operator_url_probe_skip_keys` so the brain probe pages on real openclaw outages again.
 
+If after applying the patch the watchdog still fails — and a direct `node node_modules/openclaw/dist/index.js gateway --port 18789` invocation logs `Gateway failed to start: failed to bind gateway socket on ws://127.0.0.1:18789: Error: listen EACCES: permission denied 127.0.0.1:18789` — see the **EACCES on port 18789** entry below. That's a separate (Windows-OS) problem: the upstream CLI's misleading "still busy" error was masking a port that Windows had reserved.
+
 Closes Glad-Labs/poindexter#519.
+
+---
+
+## OpenClaw gateway can't bind — `listen EACCES: permission denied 127.0.0.1:18789`
+
+**Symptom.** After applying the watchdog patch above, the gateway still doesn't come up. Running the bare `gateway.cmd` invocation by hand prints (after a few seconds of `loading configuration… / resolving authentication… / starting… / starting HTTP server…`):
+
+```
+Gateway failed to start: failed to bind gateway socket on ws://127.0.0.1:18789: Error: listen EACCES: permission denied 127.0.0.1:18789
+```
+
+…and the node process exits. `Get-NetTCPConnection -LocalPort 18789 -State Listen` returns nothing — the port is "free" from the listener-table view, but `bind()` is refused.
+
+**Root cause.** Windows reserves dynamic TCP port ranges for Hyper-V / WSL2 / WinNAT / Docker on boot. The reservation is randomized, and 18789 lands inside an excluded range some of the time. Confirm with:
+
+```powershell
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+If a range like `18736 - 18835` (or anything spanning 18789) appears in the output, that's the block. The upstream OpenClaw CLI doesn't distinguish `EACCES` from `EADDRINUSE` cleanly — its busy-check helper sees the bind fail and reports `port is still busy`, which is the misleading error that originally surfaced in Glad-Labs/poindexter#519.
+
+**Fix.** Restart the Windows NAT driver to force the OS to re-randomize the exclusion ranges (requires Administrator):
+
+```powershell
+net stop winnat   # may pause Docker / WSL2 / Hyper-V briefly
+net start winnat
+netsh int ipv4 show excludedportrange protocol=tcp   # confirm 18789 no longer covered
+```
+
+Then let the watchdog's next cycle bring the gateway up, or kick it manually with `cmd.exe /c "%USERPROFILE%\.openclaw\gateway.cmd"`.
+
+**Until upstream lets us pick a different port.** OpenClaw currently hardcodes 18789 in `~/.openclaw/gateway.cmd` (via `OPENCLAW_GATEWAY_PORT=18789`). Hand-editing the file to a port outside the typical Hyper-V dynamic range (e.g. 8789 or 28789) survives until the next OpenClaw upgrade overwrites the script. A persistent fix needs to land upstream — track in a follow-up.
 
 ---
 
