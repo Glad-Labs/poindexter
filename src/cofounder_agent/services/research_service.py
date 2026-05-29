@@ -127,16 +127,24 @@ _DEFAULT_KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
 }
 
 
-def get_known_references() -> dict[str, list[dict[str, str]]]:
+def get_known_references(
+    *, site_config: SiteConfig | None = None
+) -> dict[str, list[dict[str, str]]]:
     """Return the reference-link database, preferring app_settings if set.
 
     Looks up `known_references_json` in app_settings; if present and
     valid, replaces the default tech-oriented list entirely. Malformed
     JSON logs a warning and falls back to defaults. (#198)
+
+    Phase-1 DI shim (#272): accepts an optional ``site_config`` kwarg.
+    When omitted, falls back to the lifespan-bound module global via a
+    self-module import so existing callers keep working unchanged.
     """
+    import services.research_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     import json as _json
     try:
-        raw = site_config.get("known_references_json", "")
+        raw = _sc.get("known_references_json", "")
         if not raw:
             return _DEFAULT_KNOWN_REFERENCES
         parsed = _json.loads(raw)
@@ -179,9 +187,13 @@ KNOWN_REFERENCES = _DEFAULT_KNOWN_REFERENCES
 class ResearchService:
     """Builds research context for content generation."""
 
-    def __init__(self, pool=None, settings_service=None):
+    def __init__(self, pool=None, settings_service=None, *, site_config: SiteConfig | None = None):
+        import services.research_service as _mod
         self.pool = pool
         self.settings = settings_service
+        # Phase-1 DI shim (#272): store an injected SiteConfig or fall
+        # back to the lifespan-bound module global via self-module import.
+        self._site_config = site_config if site_config is not None else _mod.site_config
 
     async def build_context(
         self,
@@ -242,7 +254,7 @@ class ResearchService:
         matched = []
         seen_urls = set()
 
-        _refs = get_known_references()
+        _refs = get_known_references(site_config=self._site_config)
         for keyword, refs in _refs.items():
             if keyword in topic_lower:
                 for ref in refs:
@@ -294,7 +306,7 @@ class ResearchService:
         """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
         try:
             from services.web_research import WebResearcher
-            researcher = WebResearcher(site_config=site_config)
+            researcher = WebResearcher(site_config=self._site_config)
             results = await researcher.search_simple(topic, num_results=5)
             return results
         except Exception as e:
@@ -307,7 +319,12 @@ class ResearchService:
 # ---------------------------------------------------------------------------
 
 
-async def research_topic(query: str, max_sources: int | None = None) -> str:
+async def research_topic(
+    query: str,
+    max_sources: int | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> str:
     """Shim for the TWO_PASS writer mode's external fact-augmentation step.
 
     Wraps ``ResearchService.build_context`` so the writer can ask for a
@@ -326,15 +343,17 @@ async def research_topic(query: str, max_sources: int | None = None) -> str:
     ``ResearchService.build_context`` itself, which is out of scope for
     Task 14.
     """
+    import services.research_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     if max_sources is None:
         try:
-            max_sources = site_config.get_int(
+            max_sources = _sc.get_int(
                 "writer_rag_research_topic_max_sources", 2,
             )
         except Exception:
             max_sources = 2
     try:
-        svc = ResearchService(pool=None)
+        svc = ResearchService(pool=None, site_config=_sc)
         ctx = await svc.build_context(query)
         if not ctx:
             logger.info(

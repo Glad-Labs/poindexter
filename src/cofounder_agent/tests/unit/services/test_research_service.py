@@ -431,8 +431,11 @@ class TestResearchTopicShim:
             instance.build_context = AsyncMock(return_value="VERIFIED REFERENCES: ...")
             result = await research_topic("FastAPI")
         assert "VERIFIED REFERENCES" in result
-        # Constructed with pool=None — no DB lookup
-        MockSvc.assert_called_once_with(pool=None)
+        # Constructed with pool=None — no DB lookup. Phase-1 DI shim (#272)
+        # also threads the resolved SiteConfig (module global when no kwarg
+        # is passed) so the service shares the lifespan-bound instance.
+        import services.research_service as _mod
+        MockSvc.assert_called_once_with(pool=None, site_config=_mod.site_config)
 
     @pytest.mark.asyncio
     async def test_returns_empty_string_when_no_context_built(self):
