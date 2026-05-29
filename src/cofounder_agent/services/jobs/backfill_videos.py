@@ -205,6 +205,7 @@ class BackfillVideosJob:
                     post_id=post_id,
                     title=post["title"],
                     content=post["content"] or "",
+                    site_config=sc,
                 )
                 if result.success:
                     generated += 1

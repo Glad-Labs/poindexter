@@ -549,6 +549,7 @@ class MediaReconciliationJob:
 
         result = await generate_video_for_post(
             row["id"], row["title"], row["content"],
+            site_config=getattr(self, "_site_config", None),
         )
         if not result.success:
             logger.warning(

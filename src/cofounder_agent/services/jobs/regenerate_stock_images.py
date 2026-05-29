@@ -84,7 +84,7 @@ class RegenerateStockImagesJob:
             )
 
             from services.image_service import get_image_service
-            svc = get_image_service()
+            svc = get_image_service(site_config=sc)
 
             import cloudinary
             import cloudinary.uploader

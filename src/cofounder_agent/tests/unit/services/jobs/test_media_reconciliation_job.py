@@ -217,7 +217,9 @@ class TestMediaReconciliation:
 
         assert result.ok is True
         assert result.metrics["regen_video_ok"] == 1
-        gen_mock.assert_awaited_once_with("p2", "A title", "Body markdown.")
+        gen_mock.assert_awaited_once_with(
+            "p2", "A title", "Body markdown.", site_config=sc,
+        )
         upload_mock.assert_awaited_once_with("p2")
         # UPDATE-then-INSERT recorder in _record_media_asset; mock's
         # execute() returns None so UPDATE is treated as "no match"

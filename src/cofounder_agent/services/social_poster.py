@@ -33,19 +33,14 @@ from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.publishing_adapters_db import load_enabled_publishers
 from services.site_config import SiteConfig
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
 from services.telegram_config import TelegramConfig
+
+# SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
+# ``set_site_config`` setter were removed. Injection is mandatory — the
+# public entries (``generate_social_posts`` / ``generate_and_distribute_social_posts``)
+# take a required ``site_config=`` kwarg and thread it into every internal
+# helper. Callers pass the run-bound instance (``publish_service``'s ``_sc``;
+# the ``poindexter publishers fire`` CLI builds one from the lifespan pool).
 
 from .ollama_client import OllamaClient
 
@@ -67,23 +62,15 @@ logger = get_logger(__name__)
 # the value gets passed into.
 
 
-def _site_base_url(*, site_config: SiteConfig | None = None) -> str:
-    # Phase-1 DI shim (#272): self-module-import fallback dodges the
-    # param/global name-shadow so a passed instance wins, else the
-    # module global (set by set_site_config) is used. Global stays in
-    # place; Phase-2 removes it.
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.get("site_url", "https://localhost:3000")
+def _site_base_url(*, site_config: SiteConfig) -> str:
+    return site_config.get("site_url", "https://localhost:3000")
 
 
-def _openclaw_url(*, site_config: SiteConfig | None = None) -> str:
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
+def _openclaw_url(*, site_config: SiteConfig) -> str:
+    return site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
 
 
-async def _openclaw_token(*, site_config: SiteConfig | None = None) -> str:
+async def _openclaw_token(*, site_config: SiteConfig) -> str:
     # Legacy OpenClaw key — task_executor._notify_openclaw used to use
     # this too before it was migrated to the outbound dispatcher
     # framework. Social poster still goes through OpenClaw directly
@@ -92,24 +79,20 @@ async def _openclaw_token(*, site_config: SiteConfig | None = None) -> str:
     # Sync .get() would return enc:v1:<ciphertext> for is_secret rows
     # (#325 bug class), and the bearer-token comparison upstream would
     # silently 401 every webhook fire.
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return await _sc.get_secret("openclaw_webhook_token", "hooks-gladlabs")
+    return await site_config.get_secret("openclaw_webhook_token", "hooks-gladlabs")
 
 
-def _get_discord_ops_channel(*, site_config: SiteConfig | None = None) -> str:
+def _get_discord_ops_channel(*, site_config: SiteConfig) -> str:
     """Read the discord channel ID at call time, not module import time.
 
     require() needs site_config to be loaded, which doesn't happen until the
     worker boots and connects to the DB. Calling it at import time breaks
     pytest collection in any environment without a DB.
     """
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.require("discord_ops_channel_id")
+    return site_config.require("discord_ops_channel_id")
 
 
-async def _resolve_social_model(*, site_config: SiteConfig | None = None) -> str:
+async def _resolve_social_model(*, site_config: SiteConfig) -> str:
     """Bridge ``cost_tier='standard'`` -> concrete model id for social copy.
 
     Lane B batch 2 sweep migration. Order:
@@ -125,8 +108,7 @@ async def _resolve_social_model(*, site_config: SiteConfig | None = None) -> str
     by ``main.py``'s lifespan. When unavailable (tests, legacy paths) the
     tier resolution is skipped and the fallback path is taken directly.
     """
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     pool = getattr(_sc, "_pool", None)
     if pool is not None:
         try:
@@ -160,19 +142,15 @@ async def _resolve_social_model(*, site_config: SiteConfig | None = None) -> str
     ) from tier_exc
 
 
-def _twitter_char_limit(*, site_config: SiteConfig | None = None) -> int:
+def _twitter_char_limit(*, site_config: SiteConfig) -> int:
     # Defaults match current public platform limits; tune via app_settings
     # social_twitter_char_limit / social_linkedin_char_limit when platforms
     # change. (#198)
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.get_int("social_twitter_char_limit", 280)
+    return site_config.get_int("social_twitter_char_limit", 280)
 
 
-def _linkedin_char_limit(*, site_config: SiteConfig | None = None) -> int:
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.get_int("social_linkedin_char_limit", 700)
+def _linkedin_char_limit(*, site_config: SiteConfig) -> int:
+    return site_config.get_int("social_linkedin_char_limit", 700)
 
 
 # ---------------------------------------------------------------------------
@@ -252,10 +230,9 @@ def _build_twitter_prompt(
     excerpt: str,
     keywords: list[str],
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return _resolve_social_prompt(
@@ -276,10 +253,9 @@ def _build_linkedin_prompt(
     excerpt: str,
     keywords: list[str],
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return _resolve_social_prompt(
@@ -300,11 +276,10 @@ async def _generate_social_text(
     platform: str,
     ollama: OllamaClient | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
     """Call the local Ollama LLM and return the generated text, trimmed to limit."""
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     # Track whether we own the client — only close clients we created here
     # so we don't shut down a pool the caller is still using.
     owns_client = ollama is None
@@ -363,10 +338,9 @@ async def _generate_social_text(
 # ---------------------------------------------------------------------------
 
 
-async def _notify(message: str, *, site_config: SiteConfig | None = None) -> None:
+async def _notify(message: str, *, site_config: SiteConfig) -> None:
     """Send social post notifications to Telegram and Discord."""
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0)
@@ -419,7 +393,7 @@ async def generate_social_posts(
     keywords: list[str] | None = None,
     ollama: OllamaClient | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> list[SocialPost]:
     """
     Generate social media posts for X/Twitter and LinkedIn.
@@ -430,14 +404,13 @@ async def generate_social_posts(
         excerpt: Short description / excerpt of the post
         keywords: List of relevant keywords for hashtags
         ollama: Optional OllamaClient instance (for testing / reuse)
-        site_config: Optional SiteConfig (Phase-1 DI shim, #272). When
-            None, falls back to the module global via self-import.
+        site_config: Injected SiteConfig (required — #272 Phase-2e). Threaded
+            into every internal helper.
 
     Returns:
         List of SocialPost objects (one per platform)
     """
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     keywords = keywords or []
     post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
     posts: list[SocialPost] = []
@@ -475,7 +448,7 @@ async def generate_and_distribute_social_posts(
     ollama: OllamaClient | None = None,
     *,
     pool=None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> list[SocialPost]:
     """
     End-to-end: generate social posts and distribute them via notifications.
@@ -491,14 +464,13 @@ async def generate_and_distribute_social_posts(
         pool: Optional asyncpg pool. When provided, the publishing
             dispatcher loads enabled rows from ``publishing_adapters``
             and updates per-row counters after each call.
-        site_config: Optional SiteConfig (Phase-1 DI shim, #272). When
-            None, falls back to the module global via self-import.
+        site_config: Injected SiteConfig (required — #272 Phase-2e). Threaded
+            into every internal helper.
 
     Returns:
         List of generated SocialPost objects
     """
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     logger.info("[social_poster] Generating social posts for: %s", title)
 
     posts = await generate_social_posts(title, slug, excerpt, keywords, ollama, site_config=_sc)
@@ -650,7 +622,7 @@ async def _distribute_to_adapters(
     enabled: set,
     *,
     pool=None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> dict:
     """Post to each enabled publisher row from the ``publishing_adapters`` table.
 
@@ -671,8 +643,7 @@ async def _distribute_to_adapters(
     contract :mod:`services.social_adapters.bluesky` short-circuits on
     when missing (the 30-day distribution-dark bug fix from 2026-05-09).
     """
-    import services.social_poster as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     results: dict[str, dict] = {}
 
     if not posts:

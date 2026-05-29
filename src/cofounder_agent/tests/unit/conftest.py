@@ -116,7 +116,10 @@ for _key, _value in _TEST_BRAND_CONFIG.items():
 # main.py uses; we use it here for parity.
 _SHARED_TEST_MODULES = (
     "services.publish_service",
-    "services.image_service",
+    # ``services.image_service`` removed from _SHARED_TEST_MODULES 2026-05-29
+    # (#272 Phase-2e); no module-level site_config attr to share. Tests
+    # construct ``ImageService(site_config=...)`` / ``get_image_service(
+    # site_config=...)`` and pass ``site_config=`` to ``get_default_image_model``.
     "services.content_router_service",
     # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5); no module-level site_config attr to share. Tests
@@ -130,7 +133,10 @@ _SHARED_TEST_MODULES = (
     # ``AIContentGenerator(...)`` / ``generate_with_context`` directly (or
     # via ``UnifiedQualityService(site_config=...)``).
     "services.podcast_service",
-    "services.video_service",
+    # ``services.video_service`` removed from _SHARED_TEST_MODULES 2026-05-29
+    # (#272 Phase-2e); no module-level site_config attr to share. Tests pass
+    # ``site_config=`` to the public entries + internal helpers (the
+    # ``_seed_host_home`` fixture supplies a host_home-bearing stub).
     # ``services.newsletter_service`` migrated to required-keyword DI
     # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
     # share. Tests pass ``site_config=`` to ``send_post_newsletter`` /
@@ -188,7 +194,10 @@ _SHARED_TEST_MODULES = (
     # construct ``RetentionJanitor(site_config=...)`` directly.
     # ``services.ai_content_generator`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
-    "services.social_poster",
+    # ``services.social_poster`` removed from _SHARED_TEST_MODULES 2026-05-29
+    # (#272 Phase-2e); no module-level site_config attr to share. Tests pass
+    # ``site_config=`` to the public entries + internal helpers (shared
+    # ``_TEST_SC`` env-backed instance).
     "services.gpu_scheduler",
     # ``services.decorators`` migrated to AppContainer (DI migration PR 6,
     # 2026-05-28). The module-level ``Decorators`` facade is seeded below

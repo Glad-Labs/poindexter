@@ -188,7 +188,6 @@ class SourceFeaturedImageStage:
         generate_featured_image = bool(context.get("generate_featured_image", True))
         task_id = context.get("task_id")
         post_id = context.get("post_id")
-        image_service = context.get("image_service") or get_image_service()
         # DI seam (glad-labs-stack#330) — content_router_service seeds
         # site_config into the stage context.
         site_config = context.get("site_config")
@@ -203,6 +202,13 @@ class SourceFeaturedImageStage:
                 detail="disabled via generate_featured_image flag",
                 context_updates={"stages": stages, "featured_image": None},
             )
+
+        # Build the image service only after the disabled-flag guard —
+        # ``get_image_service`` requires a real ``site_config`` (#272
+        # Phase-2e), seeded into the context by content_router_service.
+        image_service = context.get("image_service") or get_image_service(
+            site_config=site_config
+        )
 
         logger.info("STAGE 3: Sourcing featured image...")
 

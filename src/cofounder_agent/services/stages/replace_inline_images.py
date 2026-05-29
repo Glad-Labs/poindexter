@@ -112,7 +112,6 @@ class ReplaceInlineImagesStage:
         topic = context.get("topic", "")
         content_text = context.get("content", "")
         database_service = context.get("database_service")
-        image_service = context.get("image_service") or get_image_service()
         category = context.get("category", "technology")
         # DI seam (glad-labs-stack#330) — content_router_service seeds
         # site_config into the stage context. Tests pass a mock SiteConfig.
@@ -129,6 +128,13 @@ class ReplaceInlineImagesStage:
                 ok=False,
                 detail="context missing task_id or database_service",
             )
+
+        # Build the image service only after the cheap guards pass —
+        # ``get_image_service`` requires a real ``site_config`` (#272
+        # Phase-2e), seeded into the context by content_router_service.
+        image_service = context.get("image_service") or get_image_service(
+            site_config=site_config
+        )
 
         stages = context.setdefault("stages", {})
         updates: dict[str, Any] = {}

@@ -40,8 +40,8 @@ class TestSocialPosterResolveModel:
         with patch(
             "services.social_poster.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
-        ), patch("services.social_poster.site_config", sc):
-            model = await _resolve_social_model()
+        ):
+            model = await _resolve_social_model(site_config=sc)
         assert model == "ollama/gemma3:27b"
 
     @pytest.mark.asyncio
@@ -55,10 +55,8 @@ class TestSocialPosterResolveModel:
         with patch(
             "services.social_poster.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.social_poster.notify_operator", notify), patch(
-            "services.social_poster.site_config", sc,
-        ):
-            model = await _resolve_social_model()
+        ), patch("services.social_poster.notify_operator", notify):
+            model = await _resolve_social_model(site_config=sc)
         assert model == "ollama/llama3:latest"
         assert notify.await_count == 1
 
@@ -73,11 +71,9 @@ class TestSocialPosterResolveModel:
         with patch(
             "services.social_poster.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.social_poster.notify_operator", notify), patch(
-            "services.social_poster.site_config", sc,
-        ):
+        ), patch("services.social_poster.notify_operator", notify):
             with pytest.raises(RuntimeError):
-                await _resolve_social_model()
+                await _resolve_social_model(site_config=sc)
         assert notify.await_count == 1
         assert notify.await_args.kwargs.get("critical") is True
 
@@ -89,10 +85,8 @@ class TestSocialPosterResolveModel:
         sc = MagicMock()
         sc._pool = None
         sc.get = MagicMock(return_value="ollama/gemma3:27b-it-qat")
-        with patch("services.social_poster.notify_operator", notify), patch(
-            "services.social_poster.site_config", sc,
-        ):
-            model = await _resolve_social_model()
+        with patch("services.social_poster.notify_operator", notify):
+            model = await _resolve_social_model(site_config=sc)
         assert model == "ollama/gemma3:27b-it-qat"
         assert notify.await_count == 1
 
@@ -113,8 +107,8 @@ class TestVideoServiceResolveModel:
         with patch(
             "services.video_service.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
-        ), patch("services.video_service.site_config", sc):
-            model = await _resolve_slideshow_prompt_model()
+        ):
+            model = await _resolve_slideshow_prompt_model(site_config=sc)
         assert model == "ollama/gemma3:27b"
 
     @pytest.mark.asyncio
@@ -128,10 +122,8 @@ class TestVideoServiceResolveModel:
         with patch(
             "services.video_service.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.video_service.notify_operator", notify), patch(
-            "services.video_service.site_config", sc,
-        ):
-            model = await _resolve_slideshow_prompt_model()
+        ), patch("services.video_service.notify_operator", notify):
+            model = await _resolve_slideshow_prompt_model(site_config=sc)
         assert model == "ollama/llama3:latest"
         assert notify.await_count == 1
 
@@ -146,11 +138,9 @@ class TestVideoServiceResolveModel:
         with patch(
             "services.video_service.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.video_service.notify_operator", notify), patch(
-            "services.video_service.site_config", sc,
-        ):
+        ), patch("services.video_service.notify_operator", notify):
             with pytest.raises(RuntimeError):
-                await _resolve_slideshow_prompt_model()
+                await _resolve_slideshow_prompt_model(site_config=sc)
         assert notify.await_count == 1
         assert notify.await_args.kwargs.get("critical") is True
 

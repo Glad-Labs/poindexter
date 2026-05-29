@@ -37,17 +37,13 @@ from services.site_config import SiteConfig
 if TYPE_CHECKING:
     import httpx
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
+# ``set_site_config`` setter were removed. Injection is mandatory —
+# ``ImageService`` takes a required ``site_config=`` ctor kwarg and
+# ``get_default_image_model`` takes a required ``site_config=`` keyword.
+# Callers thread the run-bound instance (the ``get_image_service(site_config=...)``
+# factory, pipeline stages via ``context.get("site_config")``, jobs/providers
+# via ``config["_site_config"]``).
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -180,19 +176,14 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
 }
 
 
-def get_default_image_model(*, site_config: SiteConfig | None = None) -> ImageModel:
+def get_default_image_model(*, site_config: SiteConfig) -> ImageModel:
     """Get the default image model from config or fallback.
 
-    Phase-1 DI shim (#272): accepts an optional keyword-only ``site_config``.
-    When omitted (the default), falls back to the module-level lifespan-bound
-    instance via a self-module import — this dodges the local-parameter name
-    shadow that would otherwise mask the module global. Back-compat: existing
-    callers pass nothing and keep the prior behaviour.
+    SiteConfig DI (#272 Phase-2e): ``site_config`` is a required keyword.
+    Callers thread the run-bound instance (the ``ImageService`` methods pass
+    ``self._site_config``).
     """
-    import services.image_service as _mod
-
-    _sc = site_config if site_config is not None else _mod.site_config
-    model_name = _sc.get("image_model", "sdxl_lightning")
+    model_name = site_config.get("image_model", "sdxl_lightning")
     try:
         return ImageModel(model_name)
     except ValueError:
@@ -268,7 +259,7 @@ class ImageService:
     All operations are async-first to prevent blocking in FastAPI event loop.
     """
 
-    def __init__(self, site_config: Any = None):
+    def __init__(self, site_config: SiteConfig):
         """Initialize image service.
 
         The Pexels API key is a secret (encrypted in app_settings) and
@@ -278,27 +269,14 @@ class ImageService:
         ``SiteConfig.get_secret()``.
 
         Args:
-            site_config: Injected ``SiteConfig`` instance. Required for
-                resolving the Pexels API key (a secret). Falls back to
-                the module-level singleton when not provided so legacy
-                callers (most ``get_image_service()`` sites) keep
-                working — but new code should pass the lifespan-loaded
-                instance from ``app.state.site_config`` /
-                ``context["site_config"]`` to avoid relying on a stale
-                singleton (poindexter#381).
+            site_config: Injected ``SiteConfig`` instance (required — #272
+                Phase-2e). Resolves the Pexels API key (a secret) and other
+                image-pipeline settings. Callers thread the run-bound
+                instance via ``get_image_service(site_config=...)`` —
+                ``app.state.site_config`` (FastAPI), ``context["site_config"]``
+                (pipeline stages), or ``config["_site_config"]`` (jobs /
+                image-provider plugins).
         """
-        # Resolve the SiteConfig DI seam. Prefer the explicit ctor arg;
-        # fall back to the module singleton, which lifespan rebinds to
-        # the DB-loaded instance (main.py — Phase H step 5). Tests that
-        # build a fresh ImageService() outside lifespan will get the
-        # empty default-only singleton, which is fine for the non-secret
-        # paths and is overridden by the explicit ctor arg in the
-        # regression tests.
-        # Use the module-level lifespan-bound site_config when caller
-        # didn't supply one. ``globals()`` reads the module attr (the
-        # parameter ``site_config`` shadows it within this function).
-        if site_config is None:
-            site_config = globals()["site_config"]
         self._site_config = site_config
 
         self.pexels_api_key: str | None = None
@@ -332,7 +310,7 @@ class ImageService:
             model: Which model to load. Defaults to get_default_image_model().
         """
         if model is None:
-            model = get_default_image_model()
+            model = get_default_image_model(site_config=self._site_config)
 
         # Already loaded — nothing to do
         if self._active_model == model and self._gen_pipe is not None:
@@ -662,7 +640,7 @@ class ImageService:
         from services.llm_providers.dispatcher import resolve_tier_model
 
         # Tuning constants via app_settings (#198).
-        _sc = site_config
+        _sc = self._site_config
         _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
         # Cost-tier API (Lane B sweep). Operators tune the standard tier
         # via app_settings.cost_tier.standard.model — no code edit per
@@ -1024,7 +1002,7 @@ class ImageService:
             True if successful, False otherwise
         """
         # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
-        _sc = site_config
+        _sc = self._site_config
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
             import httpx
@@ -1102,7 +1080,7 @@ class ImageService:
         # Strategy 2: Try local diffusers (if available)
         # Lazy initialize on first generation request
         if not self.sdxl_initialized or (model is not None and model != self._active_model):
-            target = model or get_default_image_model()
+            target = model or get_default_image_model(site_config=self._site_config)
             logger.info("First generation request detected - initializing %s...", target.value)
             self._initialize_model(target)
             self.sdxl_initialized = True
@@ -1313,14 +1291,14 @@ class ImageService:
         self.search_cache[query] = results
 
 
-def get_image_service(site_config: Any = None) -> ImageService:
+def get_image_service(site_config: SiteConfig) -> ImageService:
     """Factory function for dependency injection.
 
     Args:
-        site_config: Optional ``SiteConfig`` instance. Forwarded to
-            ``ImageService.__init__``. Pipeline stages should pull
-            this from ``context['site_config']`` and pass it through
-            so secrets resolve via the lifespan-loaded SiteConfig
-            instead of relying on the module singleton (#381).
+        site_config: Injected ``SiteConfig`` instance (required — #272
+            Phase-2e). Forwarded to ``ImageService.__init__``. Pipeline
+            stages pull this from ``context['site_config']``; jobs /
+            image-provider plugins from ``config['_site_config']``; routes
+            from ``app.state.site_config``.
     """
     return ImageService(site_config=site_config)

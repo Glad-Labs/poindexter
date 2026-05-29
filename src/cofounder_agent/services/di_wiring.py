@@ -82,7 +82,22 @@ WIRED_MODULES: tuple[str, ...] = (
     # ``services.telegram_config`` migrated to constructor DI 2026-05-28
     # (SiteConfig DI migration PR 3). Reach it via
     # ``container.telegram_config`` instead of importing free functions.
-    "services.video_service",
+    # ``services.video_service`` + ``services.image_service`` +
+    # ``services.social_poster`` removed from WIRED_MODULES 2026-05-29 (#272
+    # Phase-2e). Their module-level ``site_config`` globals + ``set_site_config``
+    # setters are deleted; injection is now mandatory. The video public entries
+    # (``generate_video_for_post`` / ``generate_short_video_for_post`` +
+    # ``generate_video_episode``), the social public entries
+    # (``generate_social_posts`` / ``generate_and_distribute_social_posts``), and
+    # ``ImageService`` / ``get_image_service`` / ``get_default_image_model`` all
+    # take a required ``site_config=``. Callers thread the run-bound instance
+    # (pipeline stages via ``context.get("site_config")``; ``publish_service``'s
+    # ``_sc``; the video route's ``get_site_config_dependency``; jobs /
+    # image-provider plugins via ``config["_site_config"]``; the
+    # ``publishers fire`` CLI builds one from the lifespan pool).
+    # ``services.ollama_client`` STAYS wired (#272 Phase-2e, below): its wide
+    # construction graph + the ``_sc_get`` test-patch contract are deferred to a
+    # follow-up; its optional ``site_config=`` shim + module global remain.
     # ``services.webhook_delivery_service`` migrated to constructor DI
     # 2026-05-29 (#272 leaf batch 4). ``main.py``'s lifespan constructs
     # ``WebhookDeliveryService(pool, site_config=...)`` from the
@@ -174,7 +189,8 @@ WIRED_MODULES: tuple[str, ...] = (
     # (caller-bridge); ``startup_manager`` constructs ``RetentionJanitor``.
     # ``services.ai_content_generator`` removed from WIRED_MODULES 2026-05-29
     # (#272 Phase-2c) — see the batch note above.
-    "services.image_service",
+    # ``services.image_service`` removed from WIRED_MODULES 2026-05-29 (#272
+    # Phase-2e) — see the batch note above.
     "services.content_router_service",
     # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5). Reach the SiteConfig-bearing
@@ -182,7 +198,8 @@ WIRED_MODULES: tuple[str, ...] = (
     # public ``SEOOptimizedContentGenerator`` needs a runtime
     # ``ai_content_generator`` so the ``generate_seo_metadata`` stage builds it
     # from the context SiteConfig (caller-bridge).
-    "services.social_poster",
+    # ``services.social_poster`` removed from WIRED_MODULES 2026-05-29 (#272
+    # Phase-2e) — see the batch note above.
     # Cross-cutting
     "utils.route_utils",
 )

@@ -27,17 +27,13 @@ from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# set_site_config() for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
+# ``set_site_config`` setter were removed. Injection is mandatory — the
+# public entries (``generate_video_for_post`` / ``generate_short_video_for_post``)
+# take a required ``site_config=`` kwarg and thread it into every internal
+# helper. Callers pass the run-bound instance (the video stage /
+# ``publish_service`` / ``ken_burns_slideshow`` provider / backfill +
+# media-reconciliation jobs / the ``poindexter media`` CLI).
 
 
 logger = get_logger(__name__)
@@ -56,7 +52,7 @@ def _write_bytes(path: str, content: bytes) -> None:
         f.write(content)
 
 
-def _video_server_url(*, site_config: SiteConfig | None = None) -> str:
+def _video_server_url(*, site_config: SiteConfig) -> str:
     """Resolve VIDEO_SERVER_URL from site_config per-call.
 
     Previously captured at module-import time. Since this module
@@ -72,9 +68,7 @@ def _video_server_url(*, site_config: SiteConfig | None = None) -> str:
     422 on every call. Migration 20260528_040918 fixes existing DBs;
     this guard catches operator-introduced regressions.
     """
-    import services.video_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    url = _sc.get("video_server_url", "http://host.docker.internal:9837")
+    url = site_config.get("video_server_url", "http://host.docker.internal:9837")
     if ":9840" in url:
         logger.warning(
             "[VIDEO] video_server_url=%r points at the Wan2.1 T2V model server "
@@ -87,15 +81,13 @@ def _video_server_url(*, site_config: SiteConfig | None = None) -> str:
     return url
 
 
-def _sdxl_server_url(*, site_config: SiteConfig | None = None) -> str:
+def _sdxl_server_url(*, site_config: SiteConfig) -> str:
     """Resolve SDXL_SERVER_URL from site_config per-call (same rationale)."""
-    import services.video_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
+    return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
 async def _resolve_slideshow_prompt_model(
-    *, site_config: SiteConfig | None = None
+    *, site_config: SiteConfig
 ) -> str:
     """Bridge ``cost_tier='standard'`` -> concrete model id for SDXL prompt-gen.
 
@@ -115,8 +107,7 @@ async def _resolve_slideshow_prompt_model(
     pinning ``cost_tier.standard.model`` to a thinking model should also
     set ``video_slideshow_prompt_model`` to override per-call.
     """
-    import services.video_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     pool = getattr(_sc, "_pool", None)
     if pool is not None:
         try:
@@ -253,7 +244,7 @@ async def _consume_sdxl_image_response(
 
 
 async def _generate_images_for_video(
-    title: str, content: str, num_images: int = 4
+    title: str, content: str, num_images: int = 4, *, site_config: SiteConfig
 ) -> list[str]:
     """Generate SDXL images for the video slideshow.
 
@@ -267,7 +258,7 @@ async def _generate_images_for_video(
     # per-call-site override; both miss -> notify_operator + we fall
     # through to the deterministic fallback prompts further down.
     try:
-        resolved = await _resolve_slideshow_prompt_model()
+        resolved = await _resolve_slideshow_prompt_model(site_config=site_config)
         model = resolved.removeprefix("ollama/")
     except RuntimeError:
         model = ""
@@ -343,12 +334,13 @@ async def _generate_images_for_video(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("[VIDEO] Generating %d SDXL images from %d prompts", len(prompts), len(prompts))
+    sdxl_url = _sdxl_server_url(site_config=site_config)
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(prompts):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{_sdxl_server_url()}/generate",
+                    f"{sdxl_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -358,7 +350,7 @@ async def _generate_images_for_video(
                 img_path = str(output_dir / f"frame_{i:02d}.png")
                 got = await _consume_sdxl_image_response(
                     resp,
-                    sdxl_url=_sdxl_server_url(),
+                    sdxl_url=sdxl_url,
                     output_path=img_path,
                     frame_label=f"frame {i}",
                 )
@@ -415,7 +407,9 @@ async def _extract_images_from_content(content: str) -> list[str]:
     return image_paths
 
 
-async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
+async def _generate_images_from_scenes(
+    scenes: list[str], *, site_config: SiteConfig
+) -> list[str]:
     """Generate SDXL images from pre-generated scene descriptions.
 
     Skips Ollama prompt generation since scenes are already written.
@@ -426,12 +420,13 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
     image_paths = []
 
     logger.info("[VIDEO] Generating %d SDXL images from pre-generated scenes", len(scenes))
+    sdxl_url = _sdxl_server_url(site_config=site_config)
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(scenes):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{_sdxl_server_url()}/generate",
+                    f"{sdxl_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -441,7 +436,7 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
                 img_path = str(output_dir / f"frame_{i:02d}.png")
                 got = await _consume_sdxl_image_response(
                     resp,
-                    sdxl_url=_sdxl_server_url(),
+                    sdxl_url=sdxl_url,
                     output_path=img_path,
                     frame_label=f"frame {i}",
                 )
@@ -454,7 +449,7 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
     return image_paths
 
 
-async def _load_video_shot_list(post_id: str) -> Any:
+async def _load_video_shot_list(post_id: str, *, site_config: SiteConfig) -> Any:
     """Load + validate ``posts.video_shot_list`` for ``post_id``.
 
     Glad-Labs/glad-labs-stack#649 PR 2 — the director stage writes the
@@ -514,6 +509,7 @@ async def _render_via_shot_list(
     podcast_path: str,
     output_path: Path,
     title: str,
+    site_config: SiteConfig,
 ) -> VideoResult:
     """Dispatch to ``shot_list_renderer.render_shot_list`` and adapt
     the result to ``VideoResult``.
@@ -524,7 +520,7 @@ async def _render_via_shot_list(
     from services.video_renderers.shot_list_renderer import render_shot_list
 
     pool = getattr(site_config, "_pool", None)
-    sdxl_url = _sdxl_server_url()
+    sdxl_url = _sdxl_server_url(site_config=site_config)
 
     render_result = await render_shot_list(
         post_id=post_id,
@@ -557,6 +553,7 @@ async def _render_via_shot_list(
         height=1080,
         images_used=render_result.shots_rendered,
         title=title,
+        site_config=site_config,
     )
     return VideoResult(
         success=True,
@@ -575,7 +572,7 @@ async def generate_video_for_post(
     force: bool = False,
     pre_generated_scenes: list[str] | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
     **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a video for a published post.
@@ -588,12 +585,9 @@ async def generate_video_for_post(
         content: Post content excerpt (context for image prompts).
         podcast_path: Path to podcast MP3 file. If None, checks default location.
         force: Regenerate even if video exists.
-        site_config: Phase-1 DI shim (Glad-Labs/glad-labs-stack#272). When
-            provided, this instance is used for every config read and
-            threaded into the shimmed readers this function calls
-            (``_video_server_url``). Defaults to ``None``, in which case
-            the lifespan-bound module-level ``site_config`` attribute
-            (see ``set_site_config``) is used — fully back-compatible.
+        site_config: Injected SiteConfig (required — #272 Phase-2e). Used for
+            every config read and threaded into every internal helper this
+            function calls.
         **provider_kwargs: Swallows any other extra kwargs passed by the
             ``KenBurnsSlideshowProvider`` wrapper. ``site_config`` is now
             an explicit keyword-only param above; remaining unknown
@@ -604,8 +598,7 @@ async def generate_video_for_post(
         VideoResult with file path and duration info.
     """
     del provider_kwargs  # explicit no-op; only site_config is threaded
-    import services.video_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}.mp4"
 
@@ -673,7 +666,7 @@ async def generate_video_for_post(
     # which composes the video from per-shot SDXL / Pexels / Wan2.1
     # clips via FFmpegLocalCompositor. NULL shot list = director hasn't
     # run for this post → fall through to the legacy slideshow path.
-    shot_list = await _load_video_shot_list(post_id)
+    shot_list = await _load_video_shot_list(post_id, site_config=_sc)
     if shot_list is not None:
         logger.info(
             "[VIDEO] shot list found for %s (%d shots, %.1fs) — "
@@ -686,6 +679,7 @@ async def generate_video_for_post(
             podcast_path=podcast_path,
             output_path=output_path,
             title=title,
+            site_config=_sc,
         )
         if result.success:
             return result
@@ -707,9 +701,9 @@ async def generate_video_for_post(
     new_images = []
     if supplement_count > 0:
         if pre_generated_scenes and len(pre_generated_scenes) >= 2:
-            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count])
+            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count], site_config=_sc)
         else:
-            new_images = await _generate_images_for_video(title, content, num_images=supplement_count)
+            new_images = await _generate_images_for_video(title, content, num_images=supplement_count, site_config=_sc)
 
     # Interleave: post image, new image, post image, new image...
     image_paths = []
@@ -792,6 +786,7 @@ async def generate_video_for_post(
                     height=1080,
                     images_used=len(image_paths),
                     title=title,
+                    site_config=_sc,
                 )
                 return VideoResult(
                     success=True,
@@ -822,6 +817,7 @@ async def _record_video_asset(
     height: int,
     images_used: int,
     title: str,
+    site_config: SiteConfig,
 ) -> None:
     """Best-effort ``media_assets`` insert for a legacy-pipeline video.
 
@@ -829,10 +825,9 @@ async def _record_video_asset(
     write rows; this brings the legacy slideshow path to parity so
     cleanup / retention / cost-attribution find every video.
 
-    Reads the asyncpg pool from the module-level ``site_config``
-    singleton (set by ``site_config.load(pool)`` during app startup).
-    Pool is best-effort: ``record_media_asset`` itself no-ops cleanly
-    when the pool is None.
+    Reads the asyncpg pool from the injected ``site_config`` (set by
+    ``site_config.load(pool)`` during app startup). Pool is best-effort:
+    ``record_media_asset`` itself no-ops cleanly when the pool is None.
     """
     try:
         from services import media_asset_recorder
@@ -868,7 +863,7 @@ async def _record_video_asset(
 
 
 async def _generate_short_summary_audio(
-    post_id: str, title: str, content: str,
+    post_id: str, title: str, content: str, *, site_config: SiteConfig,
 ) -> str | None:
     """Generate a 60-second summary TTS audio for the short-form video.
 
@@ -882,7 +877,7 @@ async def _generate_short_summary_audio(
     # right surface to swap. Operator-notify on miss; bail to None which
     # the caller treats as "no short audio available".
     try:
-        resolved = await _resolve_slideshow_prompt_model()
+        resolved = await _resolve_slideshow_prompt_model(site_config=site_config)
         model = resolved.removeprefix("ollama/")
     except RuntimeError:
         return None
@@ -951,7 +946,7 @@ async def generate_short_video_for_post(
     pre_generated_summary: str | None = None,
     force: bool = False,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
     **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
@@ -960,15 +955,13 @@ async def generate_short_video_for_post(
     Uses post images + SDXL images for visuals.
     Output: 1080x1920 MP4, max 60 seconds.
 
-    ``site_config`` is the Phase-1 DI shim (Glad-Labs/glad-labs-stack#272) —
-    same back-compat semantics as ``generate_video_for_post``: when ``None``
-    the lifespan-bound module-level attribute is used. ``**provider_kwargs``
-    still swallows any other extras passed by the
-    ``KenBurnsSlideshowProvider`` wrapper.
+    ``site_config`` is a required injected SiteConfig (#272 Phase-2e) —
+    threaded into every internal helper. ``**provider_kwargs`` still
+    swallows any other extras passed by the ``KenBurnsSlideshowProvider``
+    wrapper.
     """
     del provider_kwargs  # explicit no-op; only site_config is threaded
-    import services.video_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}-short.mp4"
 
@@ -999,7 +992,7 @@ async def generate_short_video_for_post(
             logger.warning("[SHORT] Pre-generated summary TTS failed: %s", e)
 
     if not short_audio:
-        short_audio = await _generate_short_summary_audio(post_id, title, content)
+        short_audio = await _generate_short_summary_audio(post_id, title, content, site_config=_sc)
     if not short_audio:
         # Fall back to full podcast if summary generation fails
         if not podcast_path:
@@ -1016,9 +1009,9 @@ async def generate_short_video_for_post(
     new_images = []
     if supplement_count > 0:
         if pre_generated_scenes and len(pre_generated_scenes) >= 2:
-            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count])
+            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count], site_config=_sc)
         else:
-            new_images = await _generate_images_for_video(title, content, num_images=supplement_count)
+            new_images = await _generate_images_for_video(title, content, num_images=supplement_count, site_config=_sc)
 
     image_paths = (post_images + new_images)[:4]
 
@@ -1079,6 +1072,7 @@ async def generate_short_video_for_post(
                     height=1920,
                     images_used=len(image_paths),
                     title=title,
+                    site_config=_sc,
                 )
                 return VideoResult(
                     success=True,
@@ -1104,12 +1098,18 @@ async def generate_video_episode(
     content: str,
     *,
     pre_generated_scenes: list[str] | None = None,
+    site_config: SiteConfig,
 ) -> None:
-    """Fire-and-forget full-length video generation. Logs errors but never raises."""
+    """Fire-and-forget full-length video generation. Logs errors but never raises.
+
+    ``site_config`` is a required injected SiteConfig (#272 Phase-2e),
+    forwarded to ``generate_video_for_post``.
+    """
     try:
         result = await generate_video_for_post(
             post_id, title, content,
             pre_generated_scenes=pre_generated_scenes,
+            site_config=site_config,
         )
         if not result.success:
             logger.warning("[VIDEO] Failed for post %s: %s", post_id, result.error)

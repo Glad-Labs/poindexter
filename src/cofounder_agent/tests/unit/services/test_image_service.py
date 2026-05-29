@@ -22,6 +22,18 @@ from services.image_service import (
     get_default_image_model,
     get_image_service,
 )
+from services.site_config import SiteConfig
+
+# SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
+# ``set_site_config`` were removed; ``ImageService`` / ``get_image_service`` /
+# ``get_default_image_model`` all take a required ``site_config=``. Tests
+# build a fresh env-backed instance (mirrors the old module-default behaviour,
+# which read env via ``SiteConfig().get``).
+
+
+def _test_sc() -> SiteConfig:
+    """Fresh env-backed SiteConfig for the required ``site_config=`` kwarg."""
+    return SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,7 +75,7 @@ def make_image_service_with_key() -> ImageService:
     fetch). Tests set the fields directly here and flip
     ``_pexels_key_checked_db`` so the lazy DB lookup is skipped.
     """
-    svc = ImageService()
+    svc = ImageService(site_config=_test_sc())
     svc.pexels_api_key = "fake-pexels-key"
     svc.pexels_available = True
     svc.pexels_headers = {"Authorization": "fake-pexels-key"}
@@ -77,7 +89,7 @@ def make_image_service_no_key() -> ImageService:
         import os
 
         os.environ.pop("PEXELS_API_KEY", None)
-        return ImageService()
+        return ImageService(site_config=_test_sc())
 
 
 # ---------------------------------------------------------------------------
@@ -163,22 +175,22 @@ class TestImageServiceInit:
 
     def test_pexels_not_available_without_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         assert svc.pexels_available is False
 
     def test_pexels_base_url_set(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         assert "pexels.com" in svc.pexels_base_url
 
     def test_sdxl_not_initialized_at_startup(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         # Models are lazily initialized only when generate_image() is called
         assert svc.sdxl_initialized is False
         assert svc._gen_pipe is None
         assert svc._active_model is None
 
     def test_search_cache_starts_empty(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         assert svc.search_cache == {}
 
 
@@ -191,7 +203,7 @@ class TestSearchFeaturedImage:
     @pytest.mark.asyncio
     async def test_returns_none_when_no_api_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc.pexels_api_key = ""
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
@@ -257,7 +269,7 @@ class TestGetImagesForGallery:
     @pytest.mark.asyncio
     async def test_returns_empty_list_without_api_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc.pexels_api_key = ""
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
@@ -298,7 +310,7 @@ class TestPexelsSearch:
     @pytest.mark.asyncio
     async def test_returns_empty_list_without_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         result = await svc._pexels_search("AI")
         assert result == []
 
@@ -344,7 +356,7 @@ class TestPexelsSearch:
 
 class TestImageServiceUtils:
     def test_generate_image_markdown_delegates_to_metadata(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         meta = FeaturedImageMetadata(url="https://example.com/photo.jpg", photographer="John")
         md = svc.generate_image_markdown(meta, caption="Custom caption")
         assert "Custom caption" in md
@@ -352,18 +364,18 @@ class TestImageServiceUtils:
 
     @pytest.mark.asyncio
     async def test_optimize_image_returns_original_url(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         result = await svc.optimize_image_for_web("https://example.com/image.jpg")
         assert result is not None
         assert result["url"] == "https://example.com/image.jpg"
         assert result["optimized"] is False
 
     def test_cache_get_returns_none_when_empty(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         assert svc.get_search_cache("any_query") is None
 
     def test_cache_set_and_get(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         meta = FeaturedImageMetadata(url="https://example.com/photo.jpg")
         svc.set_search_cache("nature", [meta])
         cached = svc.get_search_cache("nature")
@@ -379,12 +391,12 @@ class TestImageServiceUtils:
 
 class TestGetImageServiceFactory:
     def test_returns_image_service_instance(self):
-        svc = get_image_service()
+        svc = get_image_service(site_config=_test_sc())
         assert isinstance(svc, ImageService)
 
     def test_returns_fresh_instance_each_time(self):
-        s1 = get_image_service()
-        s2 = get_image_service()
+        s1 = get_image_service(site_config=_test_sc())
+        s2 = get_image_service(site_config=_test_sc())
         assert s1 is not s2
 
 
@@ -532,7 +544,7 @@ class TestImageModelRegistry:
 
 
 # ---------------------------------------------------------------------------
-# get_default_image_model()
+# get_default_image_model(site_config=_test_sc())
 # ---------------------------------------------------------------------------
 
 
@@ -540,32 +552,32 @@ class TestImageModelRegistry:
 class TestGetDefaultImageModel:
     def test_returns_sdxl_lightning_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv("IMAGE_MODEL", raising=False)
-        result = get_default_image_model()
+        result = get_default_image_model(site_config=_test_sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_returns_sdxl_base_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_base")
-        result = get_default_image_model()
+        result = get_default_image_model(site_config=_test_sc())
         assert result is ImageModel.SDXL_BASE
 
     def test_returns_flux_schnell_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "flux_schnell")
-        result = get_default_image_model()
+        result = get_default_image_model(site_config=_test_sc())
         assert result is ImageModel.FLUX_SCHNELL
 
     def test_returns_sdxl_lightning_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_lightning")
-        result = get_default_image_model()
+        result = get_default_image_model(site_config=_test_sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_falls_back_on_invalid_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "nonexistent_model_xyz")
-        result = get_default_image_model()
+        result = get_default_image_model(site_config=_test_sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_falls_back_on_empty_string_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "")
-        result = get_default_image_model()
+        result = get_default_image_model(site_config=_test_sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
 
@@ -578,7 +590,7 @@ class TestGetDefaultImageModel:
 class TestInitializeModel:
     def test_returns_early_when_model_already_loaded(self):
         """When the requested model is already the active model, _initialize_model is a no-op."""
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc._active_model = ImageModel.SDXL_BASE
         svc._gen_pipe = MagicMock()  # pretend a pipeline is loaded
         original_pipe = svc._gen_pipe
@@ -589,14 +601,14 @@ class TestInitializeModel:
         assert svc._gen_pipe is original_pipe
 
     def test_sets_sdxl_available_false_when_diffusers_unavailable(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         with patch("services.image_service.DIFFUSERS_AVAILABLE", False):
             svc._initialize_model(ImageModel.SDXL_BASE)
         assert svc.sdxl_available is False
         assert svc._gen_pipe is None
 
     def test_sets_sdxl_available_false_when_torch_unavailable(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         with (
             patch("services.image_service.DIFFUSERS_AVAILABLE", True),
             patch("services.image_service.TORCH_AVAILABLE", False),
@@ -607,7 +619,7 @@ class TestInitializeModel:
 
     def test_unloads_previous_model_before_loading_new(self):
         """When switching models, _unload_model is called before loading the new one."""
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc._gen_pipe = MagicMock()
         svc._active_model = ImageModel.SDXL_BASE
 
@@ -623,7 +635,7 @@ class TestInitializeModel:
             mock_unload.assert_called_once()
 
     def test_uses_get_default_when_model_is_none(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         with (
             patch("services.image_service.DIFFUSERS_AVAILABLE", False),
             patch(
@@ -643,7 +655,7 @@ class TestInitializeModel:
 @pytest.mark.unit
 class TestUnloadModel:
     def test_clears_pipeline_and_model(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc._gen_pipe = MagicMock()
         svc._active_model = ImageModel.SDXL_BASE
         svc.sdxl_available = True
@@ -656,7 +668,7 @@ class TestUnloadModel:
         assert svc.sdxl_available is False
 
     def test_noop_when_no_pipeline_loaded(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         assert svc._gen_pipe is None
         with patch("services.image_service.TORCH_AVAILABLE", False):
             svc._unload_model()  # Should not raise
@@ -665,7 +677,7 @@ class TestUnloadModel:
         assert svc.sdxl_available is False
 
     def test_clears_cuda_cache_when_available(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc._gen_pipe = MagicMock()
         svc._active_model = ImageModel.SDXL_LIGHTNING
 
@@ -685,7 +697,7 @@ class TestUnloadModel:
                 img_mod.torch = original_torch
 
     def test_skips_cuda_cache_when_not_available(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc._gen_pipe = MagicMock()
         svc._active_model = ImageModel.SDXL_BASE
 
@@ -760,7 +772,7 @@ class TestGenerateImage:
     @pytest.mark.asyncio
     async def test_host_sdxl_server_happy_path(self, tmp_path):
         """Strategy 1: host SDXL server returns image bytes -> file written + True."""
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
 
         png_bytes = b"\x89PNG fake image data"
         mock_resp = MagicMock()
@@ -790,7 +802,7 @@ class TestGenerateImage:
     @pytest.mark.asyncio
     async def test_host_sdxl_non_200_falls_through_to_local(self, tmp_path):
         """If host SDXL returns 500 and local diffusers unavailable -> False."""
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc.sdxl_available = False  # local diffusers not available
 
         mock_resp = MagicMock()
@@ -817,7 +829,7 @@ class TestGenerateImage:
     @pytest.mark.asyncio
     async def test_host_sdxl_exception_falls_through_to_local(self, tmp_path):
         """Connection error on host SDXL + diffusers unavailable -> False."""
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc.sdxl_available = False
 
         mock_client = AsyncMock()
@@ -837,7 +849,7 @@ class TestGenerateImage:
     @pytest.mark.asyncio
     async def test_host_sdxl_wrong_content_type_falls_through(self, tmp_path):
         """200 with text/html content-type is treated as failure."""
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc.sdxl_available = False
 
         mock_resp = MagicMock()
@@ -1037,12 +1049,12 @@ class TestPexelsResolutionViaSiteConfigDI:
 
 class TestModelIntrospection:
     def test_get_active_model_none_at_startup(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         # Fresh instance — nothing loaded
         assert svc.get_active_model() is None
 
     def test_get_active_model_returns_loaded(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         svc._active_model = ImageModel.SDXL_LIGHTNING
         assert svc.get_active_model() == ImageModel.SDXL_LIGHTNING
 
@@ -1065,7 +1077,7 @@ class TestModelIntrospection:
 class TestOptimizeImageForWeb:
     @pytest.mark.asyncio
     async def test_returns_placeholder_dict(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         result = await svc.optimize_image_for_web("https://cdn.example.com/img.png")
         assert result is not None
         assert result["url"] == "https://cdn.example.com/img.png"
@@ -1074,7 +1086,7 @@ class TestOptimizeImageForWeb:
 
     @pytest.mark.asyncio
     async def test_accepts_size_overrides(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_test_sc())
         # Just verify it doesn't raise with width/height overrides
         result = await svc.optimize_image_for_web(
             "https://cdn.example.com/x.png",

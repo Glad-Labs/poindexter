@@ -260,40 +260,54 @@ def publishers_fire(name: str, text: str, url: str) -> None:
     return dict.
     """
     async def _run_fire():
-        from services import social_poster
+        import asyncpg
+
         from services.integrations import registry
         from services.integrations.handlers import load_all
         from services.publishing_adapters_db import PublishingAdapterRow
+        from services.site_config import SiteConfig
 
         load_all()  # idempotent — registry refuses duplicate registrations
-        conn = await _connect()
+        # SiteConfig DI (#272 Phase-2e): the social_poster module global was
+        # removed. Build a run-bound SiteConfig from a short-lived pool so the
+        # publishing dispatcher gets a real, DB-loaded instance (the adapters
+        # short-circuit when site_config is missing).
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            row = await conn.fetchrow(
-                "SELECT id, name, platform, handler_name, credentials_ref, "
-                "       enabled, config, metadata "
-                "  FROM publishing_adapters "
-                " WHERE name = $1",
-                name,
-            )
-            if row is None:
-                raise RuntimeError(f"no publisher named {name!r}")
-            pub = PublishingAdapterRow(
-                id=row["id"], name=row["name"], platform=row["platform"],
-                handler_name=row["handler_name"],
-                credentials_ref=row["credentials_ref"],
-                enabled=bool(row["enabled"]),
-                config=dict(row["config"] or {}),
-                metadata=dict(row["metadata"] or {}),
+            site_cfg = SiteConfig(pool=pool)
+            try:
+                await site_cfg.load(pool)
+            except Exception:
+                # Defensive — keep the smoke test usable in odd environments
+                # (partial bootstrap); the dispatch still gets a usable config.
+                pass
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, name, platform, handler_name, credentials_ref, "
+                    "       enabled, config, metadata "
+                    "  FROM publishing_adapters "
+                    " WHERE name = $1",
+                    name,
+                )
+                if row is None:
+                    raise RuntimeError(f"no publisher named {name!r}")
+                pub = PublishingAdapterRow(
+                    id=row["id"], name=row["name"], platform=row["platform"],
+                    handler_name=row["handler_name"],
+                    credentials_ref=row["credentials_ref"],
+                    enabled=bool(row["enabled"]),
+                    config=dict(row["config"] or {}),
+                    metadata=dict(row["metadata"] or {}),
+                )
+            return await registry.dispatch(
+                "publishing", pub.handler_name,
+                {"text": text, "url": url},
+                site_config=site_cfg,
+                row=pub.as_dict(),
+                pool=None,
             )
         finally:
-            await conn.close()
-        return await registry.dispatch(
-            "publishing", pub.handler_name,
-            {"text": text, "url": url},
-            site_config=social_poster.site_config,
-            row=pub.as_dict(),
-            pool=None,
-        )
+            await pool.close()
 
     try:
         result = _run(_run_fire())

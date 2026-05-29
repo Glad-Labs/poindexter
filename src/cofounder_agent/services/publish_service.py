@@ -1099,12 +1099,14 @@ async def publish_post_from_task(
                         generate_and_distribute_social_posts,
                         title=_title, slug=slug,
                         excerpt=seo_description, keywords=_seo_kw,
+                        site_config=_sc,
                     )
                 else:
                     _spawn_background(
                         generate_and_distribute_social_posts(
                             title=_title, slug=slug,
                             excerpt=seo_description, keywords=_seo_kw,
+                            site_config=_sc,
                         ),
                         name=f"social_posts({slug})",
                     )
@@ -1327,11 +1329,13 @@ async def publish_post_from_task(
                 background_tasks.add_task(
                     generate_video_episode, post_id, post_title, post_content,
                     pre_generated_scenes=_video_scenes,
+                    site_config=_sc,
                 )
             else:
                 _spawn_background(
                     generate_video_episode(post_id, post_title, post_content,
-                                          pre_generated_scenes=_video_scenes),
+                                          pre_generated_scenes=_video_scenes,
+                                          site_config=_sc),
                     name=f"video_episode({post_id})",
                 )
             logger.info("[VIDEO] Queued video generation for post %s", post_id)
@@ -1358,6 +1362,7 @@ async def publish_post_from_task(
                         pid, ptitle, pcontent,
                         pre_generated_scenes=scenes,
                         pre_generated_summary=short_script,
+                        site_config=_sc,
                     )
                     if not result.success:
                         logger.warning("[SHORT] Failed for post %s: %s", pid, result.error)
@@ -1696,6 +1701,7 @@ async def fire_post_distribution_hooks(
             generate_and_distribute_social_posts(
                 title=post_title, slug=slug,
                 excerpt=seo_description, keywords=seo_keywords,
+                site_config=_sc,
             ),
             name=f"social_posts({slug})",
         )
@@ -1742,7 +1748,8 @@ async def fire_post_distribution_hooks(
             try:
                 from services.video_service import generate_video_episode
                 _spawn_background(
-                    generate_video_episode(post_id, post_title, post_content),
+                    generate_video_episode(post_id, post_title, post_content,
+                                          site_config=_sc),
                     name=f"video_episode({post_id})",
                 )
                 fired["hooks"].append("video")
@@ -1752,7 +1759,8 @@ async def fire_post_distribution_hooks(
             try:
                 from services.video_service import generate_short_video_for_post
                 _spawn_background(
-                    generate_short_video_for_post(post_id, post_title, post_content),
+                    generate_short_video_for_post(post_id, post_title, post_content,
+                                                 site_config=_sc),
                     name=f"short_video({post_id})",
                 )
                 fired["hooks"].append("short")

@@ -20,7 +20,12 @@ from services.integrations.handlers import (  # noqa: F401
     publishing_mastodon,
 )
 from services.publishing_adapters_db import PublishingAdapterRow
+from services.site_config import SiteConfig
 from services.social_poster import SocialPost
+
+# SiteConfig DI (#272 Phase-2e): ``_distribute_to_adapters`` takes a required
+# ``site_config=`` kwarg. Tests thread this shared env-backed instance.
+_TEST_SC = SiteConfig()
 
 
 def _row(platform: str, *, handler_name: str | None = None) -> PublishingAdapterRow:
@@ -76,7 +81,7 @@ class TestRegistryDrivenDispatch:
         mock_load.return_value = [_row("bluesky")]  # mastodon row absent
         mock_bsky.return_value = {"success": True, "post_id": "b", "error": None}
 
-        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"})
+        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"}, site_config=_TEST_SC)
 
         assert "bluesky" in result
         assert "mastodon" not in result
@@ -101,7 +106,7 @@ class TestSiteConfigKwargRegression:
         mock_load.return_value = [_row("bluesky")]
         mock_bsky.return_value = {"success": True, "post_id": "b", "error": None}
 
-        await _distribute_to_adapters(posts, set())
+        await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
 
         kwargs = mock_bsky.await_args.kwargs
         assert "site_config" in kwargs and kwargs["site_config"] is not None
@@ -118,7 +123,7 @@ class TestSiteConfigKwargRegression:
         mock_load.return_value = [_row("mastodon")]
         mock_masto.return_value = {"success": True, "post_id": "m", "error": None}
 
-        await _distribute_to_adapters(posts, set())
+        await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
 
         kwargs = mock_masto.await_args.kwargs
         assert "site_config" in kwargs and kwargs["site_config"] is not None
@@ -136,7 +141,7 @@ class TestDispatchEdgeCases:
 
         mock_load.return_value = []
         with caplog.at_level(logging.INFO, logger="services.social_poster"):
-            result = await _distribute_to_adapters(posts, set())
+            result = await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
         assert result == {}
         assert any(
             "no enabled adapters" in rec.getMessage()
@@ -157,7 +162,7 @@ class TestDispatchEdgeCases:
 
         mock_load.return_value = []  # nothing wired
         with caplog.at_level(logging.WARNING, logger="services.social_poster"):
-            await _distribute_to_adapters(posts, {"bluesky"})
+            await _distribute_to_adapters(posts, {"bluesky"}, site_config=_TEST_SC)
         assert any(
             "bluesky" in rec.getMessage() and "skipping" in rec.getMessage()
             for rec in caplog.records
@@ -176,7 +181,7 @@ class TestDispatchEdgeCases:
         mock_bsky.return_value = {"success": True, "post_id": "b", "error": None}
 
         pool = _FakePool()
-        await _distribute_to_adapters(posts, set(), pool=pool)
+        await _distribute_to_adapters(posts, set(), pool=pool, site_config=_TEST_SC)
 
         update_qs = [q for q, _ in pool.executes if "UPDATE publishing_adapters" in q]
         assert len(update_qs) == 1, "expected exactly one counter update per row"
@@ -203,7 +208,7 @@ class TestDispatchEdgeCases:
         mock_bsky.side_effect = RuntimeError("boom")
         mock_masto.return_value = {"success": True, "post_id": "m", "error": None}
 
-        result = await _distribute_to_adapters(posts, set())
+        result = await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
         assert result["bluesky"]["success"] is False
         assert "boom" in result["bluesky"]["error"]
         assert result["mastodon"]["success"] is True

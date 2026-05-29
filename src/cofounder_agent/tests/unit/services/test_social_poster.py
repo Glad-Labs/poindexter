@@ -13,6 +13,7 @@ from services.integrations.handlers import (  # noqa: F401
     publishing_bluesky,
     publishing_mastodon,
 )
+from services.site_config import SiteConfig
 from services.social_poster import (
     SocialPost,
     _build_linkedin_prompt,
@@ -24,12 +25,18 @@ from services.social_poster import (
     generate_social_posts,
 )
 
+# SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
+# ``set_site_config`` were removed; the public entries and every internal
+# helper take a required ``site_config=`` kwarg. Tests thread this shared
+# env-backed instance.
+_TEST_SC = SiteConfig()
+
 # Module-level constants were removed 2026-05-01 — they captured at import
 # time and bypassed app_settings hot-reload. Tests now call the helper
 # functions which read at call time. These local aliases keep the rest of
 # the test suite tidy without regressing the runtime fix.
-TWITTER_CHAR_LIMIT = _twitter_char_limit()
-LINKEDIN_CHAR_LIMIT = _linkedin_char_limit()
+TWITTER_CHAR_LIMIT = _twitter_char_limit(site_config=_TEST_SC)
+LINKEDIN_CHAR_LIMIT = _linkedin_char_limit(site_config=_TEST_SC)
 
 
 @pytest.fixture(autouse=True)
@@ -78,23 +85,23 @@ class TestBuildTwitterPrompt:
     """Verify the Twitter prompt contains required elements."""
 
     def test_contains_title_and_excerpt(self):
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert SAMPLE_TITLE in prompt
         assert SAMPLE_EXCERPT in prompt
 
     def test_contains_post_url(self):
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert f"/posts/{SAMPLE_SLUG}" in prompt
 
     def test_contains_hashtags(self):
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert "#LLM" in prompt
         assert "#Ollama" in prompt
         assert "#self-hosting" in prompt  # hyphen preserved, spaces removed
 
     def test_limits_to_three_hashtags(self):
         many_keywords = ["AI", "ML", "LLM", "GPU", "Cloud"]
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, many_keywords)
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, many_keywords, site_config=_TEST_SC)
         # Only first 3 should appear in suggested hashtags line
         assert "#AI" in prompt
         assert "#ML" in prompt
@@ -102,11 +109,11 @@ class TestBuildTwitterPrompt:
         assert "#GPU" not in prompt
 
     def test_mentions_char_limit(self):
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert str(TWITTER_CHAR_LIMIT) in prompt
 
     def test_empty_keywords(self):
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, [])
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, [], site_config=_TEST_SC)
         assert "Suggested hashtags:" in prompt
 
 
@@ -114,20 +121,20 @@ class TestBuildLinkedInPrompt:
     """Verify the LinkedIn prompt contains required elements."""
 
     def test_contains_title_and_excerpt(self):
-        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert SAMPLE_TITLE in prompt
         assert SAMPLE_EXCERPT in prompt
 
     def test_contains_post_url(self):
-        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert f"/posts/{SAMPLE_SLUG}" in prompt
 
     def test_mentions_char_limit(self):
-        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert str(LINKEDIN_CHAR_LIMIT) in prompt
 
     def test_mentions_professional_tone(self):
-        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert "professional" in prompt.lower()
 
 
@@ -142,13 +149,13 @@ class TestGenerateSocialText:
     @pytest.mark.asyncio
     async def test_returns_generated_text(self):
         ollama = _make_ollama_mock("Check out our latest blog post! #AI")
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == "Check out our latest blog post! #AI"
 
     @pytest.mark.asyncio
     async def test_strips_wrapping_quotes(self):
         ollama = _make_ollama_mock('"Here is a tweet about AI"')
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert not result.startswith('"')
         assert not result.endswith('"')
         assert result == "Here is a tweet about AI"
@@ -157,7 +164,7 @@ class TestGenerateSocialText:
     async def test_truncates_over_limit(self):
         long_text = "word " * 100  # Well over 280 chars
         ollama = _make_ollama_mock(long_text)
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert len(result) <= TWITTER_CHAR_LIMIT
         assert result.endswith("...")
 
@@ -165,7 +172,7 @@ class TestGenerateSocialText:
     async def test_truncates_linkedin_over_limit(self):
         long_text = "word " * 200  # Well over 700 chars
         ollama = _make_ollama_mock(long_text)
-        result = await _generate_social_text("prompt", LINKEDIN_CHAR_LIMIT, "linkedin", ollama)
+        result = await _generate_social_text("prompt", LINKEDIN_CHAR_LIMIT, "linkedin", ollama, site_config=_TEST_SC)
         assert len(result) <= LINKEDIN_CHAR_LIMIT
         assert result.endswith("...")
 
@@ -173,28 +180,28 @@ class TestGenerateSocialText:
     async def test_returns_empty_on_llm_error(self):
         ollama = AsyncMock()
         ollama.generate.side_effect = Exception("Ollama is down")
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == ""
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_text_key_missing(self):
         ollama = AsyncMock()
         ollama.generate.return_value = {}
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == ""
 
     @pytest.mark.asyncio
     async def test_text_under_limit_not_truncated(self):
         short = "Short tweet #AI"
         ollama = _make_ollama_mock(short)
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == short
         assert "..." not in result
 
     @pytest.mark.asyncio
     async def test_strips_whitespace(self):
         ollama = _make_ollama_mock("  padded text  ")
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == "padded text"
 
 
@@ -210,7 +217,7 @@ class TestGenerateSocialPosts:
     async def test_returns_two_posts(self):
         ollama = _make_ollama_mock("Great AI post! #LLM")
         posts = await generate_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         assert len(posts) == 2
         platforms = {p.platform for p in posts}
@@ -220,7 +227,7 @@ class TestGenerateSocialPosts:
     async def test_posts_have_correct_url(self):
         ollama = _make_ollama_mock("Check it out!")
         posts = await generate_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         for post in posts:
             assert SAMPLE_SLUG in post.post_url
@@ -230,7 +237,7 @@ class TestGenerateSocialPosts:
     async def test_posts_are_social_post_instances(self):
         ollama = _make_ollama_mock("AI is great!")
         posts = await generate_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         for post in posts:
             assert isinstance(post, SocialPost)
@@ -242,7 +249,7 @@ class TestGenerateSocialPosts:
         ollama = AsyncMock()
         ollama.generate.side_effect = Exception("model not loaded")
         posts = await generate_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         assert posts == []
 
@@ -250,7 +257,7 @@ class TestGenerateSocialPosts:
     async def test_defaults_keywords_to_empty(self):
         ollama = _make_ollama_mock("No keywords here")
         posts = await generate_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, ollama=ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, ollama=ollama, site_config=_TEST_SC
         )
         assert len(posts) == 2
 
@@ -269,7 +276,7 @@ class TestGenerateSocialPosts:
         ollama = AsyncMock()
         ollama.generate.side_effect = _side_effect
         posts = await generate_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         assert len(posts) == 1
         assert posts[0].platform == "twitter"
@@ -288,7 +295,7 @@ class TestGenerateAndDistribute:
     async def test_sends_notification_per_post(self, mock_notify):
         ollama = _make_ollama_mock("Posted! #AI")
         posts = await generate_and_distribute_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         assert len(posts) == 2
         # One notification per post (twitter + linkedin)
@@ -299,7 +306,7 @@ class TestGenerateAndDistribute:
     async def test_notification_contains_platform_header(self, mock_notify):
         ollama = _make_ollama_mock("Great content!")
         await generate_and_distribute_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         messages = [call.args[0] for call in mock_notify.call_args_list]
         assert any("Twitter/X" in m for m in messages)
@@ -310,7 +317,7 @@ class TestGenerateAndDistribute:
     async def test_notification_contains_blog_url(self, mock_notify):
         ollama = _make_ollama_mock("Read this!")
         await generate_and_distribute_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         messages = [call.args[0] for call in mock_notify.call_args_list]
         assert all(SAMPLE_SLUG in m for m in messages)
@@ -321,7 +328,7 @@ class TestGenerateAndDistribute:
         ollama = AsyncMock()
         ollama.generate.side_effect = Exception("total failure")
         posts = await generate_and_distribute_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         assert posts == []
         mock_notify.assert_called_once()
@@ -332,7 +339,7 @@ class TestGenerateAndDistribute:
     async def test_returns_social_post_objects(self, mock_notify):
         ollama = _make_ollama_mock("AI tweet")
         posts = await generate_and_distribute_social_posts(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         for post in posts:
             assert isinstance(post, SocialPost)
@@ -371,7 +378,7 @@ class TestNotify:
         mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        await _notify("Test notification message")
+        await _notify("Test notification message", site_config=_TEST_SC)
 
         assert mock_client.post.call_count == 2
         # First call: Telegram
@@ -396,7 +403,7 @@ class TestNotify:
         mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
         # Should not raise
-        await _notify("This should not crash")
+        await _notify("This should not crash", site_config=_TEST_SC)
 
     @pytest.mark.asyncio
     @patch("services.social_poster.httpx.AsyncClient")
@@ -409,7 +416,7 @@ class TestNotify:
         mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
         # Should not raise
-        await _notify("Timeout test")
+        await _notify("Timeout test", site_config=_TEST_SC)
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +452,7 @@ class TestCharacterLimitsAndHashtags:
 
     def test_hashtags_strip_spaces(self):
         keywords = ["machine learning", "deep learning", "natural language processing"]
-        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, keywords)
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, keywords, site_config=_TEST_SC)
         assert "#machinelearning" in prompt
         assert "#deeplearning" in prompt
         assert "#naturallanguageprocessing" in prompt
@@ -460,7 +467,7 @@ class TestCharacterLimitsAndHashtags:
     async def test_exact_limit_text_not_truncated(self):
         exact_text = "x" * TWITTER_CHAR_LIMIT
         ollama = _make_ollama_mock(exact_text)
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == exact_text
         assert len(result) == TWITTER_CHAR_LIMIT
 
@@ -468,7 +475,7 @@ class TestCharacterLimitsAndHashtags:
     async def test_one_over_limit_gets_truncated(self):
         over_text = "x " * 141  # 282 chars, just over 280
         ollama = _make_ollama_mock(over_text)
-        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert len(result) <= TWITTER_CHAR_LIMIT
         assert result.endswith("...")
 
@@ -582,7 +589,7 @@ class TestDistributeToAdapters:
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
 
         with patch("services.social_poster.logger") as mock_logger:
-            result = await _distribute_to_adapters(posts, set())
+            result = await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
 
         assert result == {}
         mock_logger.info.assert_any_call(
@@ -595,7 +602,7 @@ class TestDistributeToAdapters:
         from services.social_poster import _distribute_to_adapters
 
         mock_load.return_value = [_row("bluesky"), _row("mastodon")]
-        result = await _distribute_to_adapters([], {"bluesky", "mastodon"})
+        result = await _distribute_to_adapters([], {"bluesky", "mastodon"}, site_config=_TEST_SC)
         assert result == {}
 
     @pytest.mark.asyncio
@@ -613,7 +620,7 @@ class TestDistributeToAdapters:
         mock_masto.return_value = {"success": True, "post_id": "masto1", "error": None}
 
         posts = [SocialPost(platform="twitter", text="hello", post_url="https://x.com/1")]
-        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"})
+        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"}, site_config=_TEST_SC)
 
         assert result["bluesky"]["success"] is True
         assert result["mastodon"]["success"] is True
@@ -635,7 +642,7 @@ class TestDistributeToAdapters:
         mock_bsky.return_value = {"success": True, "post_id": "x", "error": None}
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
-        await _distribute_to_adapters(posts, {"bluesky"})
+        await _distribute_to_adapters(posts, {"bluesky"}, site_config=_TEST_SC)
 
         mock_bsky.assert_awaited_once()
         kwargs = mock_bsky.await_args.kwargs
@@ -660,7 +667,7 @@ class TestDistributeToAdapters:
         mock_masto.return_value = {"success": True, "post_id": "masto1", "error": None}
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
-        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"})
+        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"}, site_config=_TEST_SC)
 
         assert result["bluesky"]["success"] is False
         assert "Bluesky is down" in result["bluesky"]["error"]
@@ -684,7 +691,7 @@ class TestDistributeToAdapters:
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
         with caplog.at_level(logging.WARNING, logger="services.social_poster"):
-            result = await _distribute_to_adapters(posts, {"bluesky", "linkedin"})
+            result = await _distribute_to_adapters(posts, {"bluesky", "linkedin"}, site_config=_TEST_SC)
 
         assert result["bluesky"]["success"] is True
         assert "linkedin" not in result
@@ -711,7 +718,7 @@ class TestDistributeToAdapters:
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
         with caplog.at_level(logging.WARNING, logger="services.social_poster"):
-            result = await _distribute_to_adapters(posts, {"bluesky"})
+            result = await _distribute_to_adapters(posts, {"bluesky"}, site_config=_TEST_SC)
 
         assert result["bluesky"]["success"] is False
         assert "not configured" in result["bluesky"]["error"]
@@ -743,7 +750,7 @@ class TestDistributeToAdapters:
 
         pool = _Pool()
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
-        await _distribute_to_adapters(posts, {"bluesky"}, pool=pool)
+        await _distribute_to_adapters(posts, {"bluesky"}, pool=pool, site_config=_TEST_SC)
 
         assert any("UPDATE publishing_adapters" in q for q, _ in pool.executes)
 
