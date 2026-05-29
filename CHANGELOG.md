@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.24.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.23.0...v0.24.0) (2026-05-29)
+
+
+### Features
+
+* **di:** wire AppContainer at every entry point (DI migration PR 2) ([#715](https://github.com/Glad-Labs/glad-labs-stack/issues/715)) ([5c40c7e](https://github.com/Glad-Labs/glad-labs-stack/commit/5c40c7eae19c402b5c430d6c6b423e7882320a8b))
+
 ## [0.23.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.22.0...v0.23.0) (2026-05-29)
 
 
