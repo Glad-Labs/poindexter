@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.18.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.17.0...v0.18.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** Phase 1 PR 1 — experiments harness foundation (tables + scorecard view) ([#699](https://github.com/Glad-Labs/glad-labs-stack/issues/699)) ([1b52c2e](https://github.com/Glad-Labs/glad-labs-stack/commit/1b52c2e2c5aebf0457969df90b0456c118b44832))
+
 ## [0.17.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.16.0...v0.17.0) (2026-05-29)
 
 
