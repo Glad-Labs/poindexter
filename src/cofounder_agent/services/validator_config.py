@@ -282,18 +282,31 @@ def seed_cache_for_tests(rules: dict[str, dict[str, Any]]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _legacy_first_person_bypass(niche: str | None) -> bool:
+def _legacy_first_person_bypass(
+    niche: str | None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> bool:
     """Return True iff the legacy CSV bypass applies for ``niche``.
 
     Honors the PR #160 ``qa_allow_first_person_niches`` app_setting so
     operators that pinned the bypass via the old path keep working. Only
     consulted when the rule name is ``first_person_claims`` — every
     other rule reads niche scope exclusively from ``applies_to_niches``.
+
+    The keyword-only ``site_config`` param is the Phase-1 DI shim
+    (glad-labs-stack#272): callers may pass an explicit ``SiteConfig``
+    instance; when omitted we fall back to the module-global so existing
+    callers keep working unchanged.
     """
     if not niche:
         return False
+    # Phase-1 DI shim (#272): prefer an explicitly-passed SiteConfig,
+    # else fall back to the lifespan-wired module global via self-import.
+    import services.validator_config as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     try:
-        csv = site_config.get("qa_allow_first_person_niches", "")
+        csv = _sc.get("qa_allow_first_person_niches", "")
     except Exception:
         return False
     if not csv:
@@ -302,7 +315,12 @@ def _legacy_first_person_bypass(niche: str | None) -> bool:
     return str(niche).strip().lower() in allow
 
 
-def is_validator_enabled(name: str, niche: str | None = None) -> bool:
+def is_validator_enabled(
+    name: str,
+    niche: str | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> bool:
     """Should validator ``name`` run for a post in ``niche``?
 
     Lookup order:
@@ -316,8 +334,14 @@ def is_validator_enabled(name: str, niche: str | None = None) -> bool:
     Special case: for ``first_person_claims``, an additional bypass
     applies if ``niche`` is in the legacy
     ``qa_allow_first_person_niches`` CSV setting (PR #160 path).
+
+    The keyword-only ``site_config`` param is the Phase-1 DI shim
+    (glad-labs-stack#272): when passed it is threaded down into the
+    legacy bypass lookup; when omitted the module-global is used.
     """
-    if name == "first_person_claims" and _legacy_first_person_bypass(niche):
+    if name == "first_person_claims" and _legacy_first_person_bypass(
+        niche, site_config=site_config
+    ):
         return False
 
     rules = _get_cached_rules()
