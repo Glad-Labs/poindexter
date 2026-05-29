@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.23.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.22.0...v0.23.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** Grafana variant-experiment scorecard panels (Phase 1 PR 4) ([#716](https://github.com/Glad-Labs/glad-labs-stack/issues/716)) ([63c173b](https://github.com/Glad-Labs/glad-labs-stack/commit/63c173bfc37ecb606300e0e30aecabdf4322214a))
+
 ## [0.22.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.2...v0.22.0) (2026-05-29)
 
 
