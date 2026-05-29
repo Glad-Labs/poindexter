@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.19.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.18.0...v0.19.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** Phase 1 PR 2 — variant runner + writer-atom hook ([#702](https://github.com/Glad-Labs/glad-labs-stack/issues/702)) ([8646259](https://github.com/Glad-Labs/glad-labs-stack/commit/86462593c83a211b9fcf30db537b30d836585264))
+
 ## [0.18.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.17.0...v0.18.0) (2026-05-29)
 
 
