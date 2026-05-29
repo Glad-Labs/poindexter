@@ -1133,7 +1133,9 @@ class TestResolveWriterModels:
 
     @pytest.mark.asyncio
     async def test_falls_through_to_pipeline_writer_model_when_tier_unset(self):
-        gen = _make_generator()
+        # Phase-1 DI shim (#272): the generator now binds its SiteConfig at
+        # construction time, so the module-global patch must be in place
+        # *before* _make_generator() so the instance captures the mock.
         with patch(
             "services.llm_providers.dispatcher.resolve_tier_model",
             side_effect=RuntimeError("no tier mapping"),
@@ -1144,18 +1146,21 @@ class TestResolveWriterModels:
                 "pipeline_writer_model": "legacy-writer",
                 "pipeline_fallback_model": "legacy-fallback",
             }.get(k, _d)
+            gen = _make_generator()
             ordered = await gen._resolve_writer_models(None, pool=object())
         assert ordered == ["legacy-writer", "legacy-fallback"]
 
     @pytest.mark.asyncio
     async def test_no_pool_skips_tier_lookup(self):
-        gen = _make_generator()
+        # Patch the module global before construction so the DI-bound
+        # instance (#272) reads the mock via self._site_config.
         with patch(
             "services.ai_content_generator.site_config",
         ) as sc:
             sc.get.side_effect = lambda k, _d="": (
                 "legacy" if k == "pipeline_writer_model" else _d
             )
+            gen = _make_generator()
             ordered = await gen._resolve_writer_models(None, pool=None)
         assert ordered == ["legacy"]
 

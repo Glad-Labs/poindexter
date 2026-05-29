@@ -56,6 +56,24 @@ def set_site_config(sc: SiteConfig) -> None:
     site_config = sc
 
 
+def _resolve_module_site_config(sc: SiteConfig | None) -> SiteConfig:
+    """Phase-1 DI shim resolver (Glad-Labs/glad-labs-stack#272).
+
+    Returns the explicitly-passed ``SiteConfig`` when one is provided,
+    otherwise falls back to the lifespan-bound module global. The global
+    is read via ``import services.ai_content_generator as _mod`` rather
+    than the bare ``site_config`` name so a local parameter named
+    ``site_config`` can never shadow the module-global lookup. Lets new
+    callers thread their own instance while every existing caller keeps
+    working untouched (Phase-2 will remove the global fallback).
+    """
+    if sc is not None:
+        return sc
+    import services.ai_content_generator as _mod
+
+    return _mod.site_config
+
+
 logger = get_logger(__name__)
 
 
@@ -78,19 +96,31 @@ class ContentValidationResult:
 class AIContentGenerator:
     """Unified content generation with provider fallback and self-checking"""
 
-    def __init__(self, quality_threshold: float = 5.0):
+    def __init__(
+        self,
+        quality_threshold: float = 5.0,
+        site_config: SiteConfig | None = None,
+    ):
         """Initialize content generator
 
         Args:
             quality_threshold: Minimum quality score (0-10) for content acceptance
+            site_config: Optional DI seam (Glad-Labs/glad-labs-stack#272).
+                When ``None`` (the default), the instance binds the
+                lifespan-wired module global, so existing callers are
+                unaffected. New callers may pass their own instance.
         """
         self.quality_threshold = quality_threshold
+        # Phase-1 DI shim: bind the injected SiteConfig or fall back to the
+        # module global. Every instance-method read goes through
+        # ``self._site_config`` from here on.
+        self._site_config = _resolve_module_site_config(site_config)
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
         # #198: tunable via app_settings so operators can widen/tighten
         # refinement loops without a redeploy.
-        _sc = site_config
+        _sc = self._site_config
         self.max_refinement_attempts = _sc.get_int("content_gen_max_refinement_attempts", 3)
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
@@ -101,7 +131,7 @@ class AIContentGenerator:
             logger.debug("Ollama already checked previously: %s", self.ollama_available)
             return
 
-        _sc = site_config
+        _sc = self._site_config
         ollama_url = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
@@ -124,7 +154,7 @@ class AIContentGenerator:
     async def _populate_internal_links_cache(self):
         """Fetch published post titles + slugs so the LLM can include real internal links."""
         try:
-            _sc = site_config
+            _sc = self._site_config
             site_url = _sc.get("site_url", "")
 
             import asyncpg
@@ -305,7 +335,7 @@ class AIContentGenerator:
         try:
             logger.info("Loading system prompt...")
             # Word-count window buffers — tunable via app_settings (#198).
-            _sc = site_config
+            _sc = self._site_config
             _min_ratio = _sc.get_float("content_gen_min_word_ratio", 0.9)
             _max_ratio = _sc.get_float("content_gen_max_word_ratio", 1.1)
             min_words = int(target_length * _min_ratio)
@@ -616,7 +646,7 @@ class AIContentGenerator:
             is_thinking_model,
             resolve_thinking_substrings,
         )
-        _sc = site_config
+        _sc = self._site_config
         _is_thinking_refine = is_thinking_model(
             model_name, substrings=resolve_thinking_substrings(_sc)
         )
@@ -727,8 +757,9 @@ class AIContentGenerator:
                 )
 
         # 3. Legacy per-call-site writer model
+        _sc = self._site_config
         try:
-            _push(site_config.get("pipeline_writer_model", ""))
+            _push(_sc.get("pipeline_writer_model", ""))
         except Exception as e:
             logger.debug(
                 "   pipeline_writer_model read failed: %s — relying on tier "
@@ -737,7 +768,7 @@ class AIContentGenerator:
 
         # 4. Legacy fallback model
         try:
-            _push(site_config.get("pipeline_fallback_model", ""))
+            _push(_sc.get("pipeline_fallback_model", ""))
         except Exception as e:
             logger.debug(
                 "   pipeline_fallback_model read failed: %s", e,
@@ -861,7 +892,7 @@ class AIContentGenerator:
         # SiteConfig fall back to the no-pool path in resolve_tier_model
         # and the dispatcher's get_provider_name swallows the read error
         # and uses the registered defaults.
-        pool = getattr(site_config, "_pool", None)
+        pool = getattr(self._site_config, "_pool", None)
         logger.info("[ATTEMPT 1/3] Dispatching via LLMProvider (cost_tier=standard)...")
 
         model_list = await self._resolve_writer_models(preferred_model, pool)
@@ -891,7 +922,7 @@ class AIContentGenerator:
                 # output between reasoning + answer; give them extra headroom.
                 _is_thinking = _is_thinking_model(
                     model_name,
-                    substrings=_resolve_thinking_substrings(site_config),
+                    substrings=_resolve_thinking_substrings(self._site_config),
                 )
                 _multiplier = 6.0 if _is_thinking else 4.0
                 max_tokens = int(target_length * _multiplier)
@@ -1252,7 +1283,9 @@ async def test_generation():
 # can monkeypatch this module to avoid a real Ollama call.
 
 
-async def _resolve_rag_writer_model() -> str:
+async def _resolve_rag_writer_model(
+    *, site_config: SiteConfig | None = None,
+) -> str:
     """Resolve writer model for the RAG ``generate_with_*`` helpers.
 
     Lane B sweep migration. Order:
@@ -1277,7 +1310,8 @@ async def _resolve_rag_writer_model() -> str:
     from services.integrations.operator_notify import notify_operator
     from services.llm_providers.dispatcher import resolve_tier_model
 
-    pool = getattr(site_config, "_pool", None)
+    _sc = _resolve_module_site_config(site_config)
+    pool = getattr(_sc, "_pool", None)
     if pool is not None:
         try:
             return (await resolve_tier_model(pool, "standard")).removeprefix(
@@ -1290,14 +1324,14 @@ async def _resolve_rag_writer_model() -> str:
     else:
         tier_exc = RuntimeError("no asyncpg pool available")
 
-    fallback = site_config.get("pipeline_writer_model") or ""
+    fallback = _sc.get("pipeline_writer_model") or ""
     if fallback:
         await notify_operator(
             f"ai_content_generator (RAG): cost_tier='standard' resolution "
             f"failed ({tier_exc}); falling back to "
             f"pipeline_writer_model={fallback!r}",
             critical=False,
-            site_config=site_config,
+            site_config=_sc,
         )
         return fallback.removeprefix("ollama/")
 
@@ -1305,7 +1339,7 @@ async def _resolve_rag_writer_model() -> str:
         f"ai_content_generator (RAG): cost_tier='standard' has no model AND "
         f"pipeline_writer_model is empty — RAG draft generation aborted: {tier_exc}",
         critical=True,
-        site_config=site_config,
+        site_config=_sc,
     )
     raise RuntimeError(
         "ai_content_generator: no writer model resolvable via tier or "
@@ -1316,6 +1350,7 @@ async def _resolve_rag_writer_model() -> str:
 async def generate_with_context(
     *, topic: str, angle: str, snippets: list[dict],
     extra_instructions: str | None = None,
+    site_config: SiteConfig | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1328,10 +1363,11 @@ async def generate_with_context(
     """
     from services.topic_ranking import _ollama_chat_json
 
-    snippet_max_chars = site_config.get_int(
+    _sc = _resolve_module_site_config(site_config)
+    snippet_max_chars = _sc.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
-    model = await _resolve_rag_writer_model()
+    model = await _resolve_rag_writer_model(site_config=_sc)
     snippet_block = "\n".join(
         f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
         for s in snippets if s.get('snippet')
