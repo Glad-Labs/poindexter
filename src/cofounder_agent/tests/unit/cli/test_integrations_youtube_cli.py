@@ -343,9 +343,14 @@ class TestSetupFailures:
         assert "Revoke the app" in result.output
         assert stub_db_calls["write_calls"] == []
 
-    def test_verify_channel_failure_bails(
+    def test_verify_channel_failure_is_best_effort(
         self, runner, integrations_module, stub_db_calls, monkeypatch,
     ):
+        # channels.list(mine=True) 403s under an upload-only token — that
+        # is expected, NOT a failure. A successful consent + refresh-token
+        # exchange already proves the youtube.upload scope was granted, so
+        # the setup flow skips the read-back, writes secrets, and exits 0.
+        # End-to-end proof comes from `youtube test` (an actual upload).
         import click as _click
 
         _patch_consent(monkeypatch, integrations_module, _make_creds("r"))
@@ -360,10 +365,10 @@ class TestSetupFailures:
             integrations_module.integrations_group,
             ["youtube", "setup", "--client-id", "c", "--client-secret", "s"],
         )
-        assert result.exit_code != 0
-        assert "channels.list" in result.output
-        # Per feedback_no_silent_defaults — no half-credentials written.
-        assert stub_db_calls["write_calls"] == []
+        assert result.exit_code == 0
+        assert "Channel read-back skipped" in result.output
+        # Best-effort skip still proceeds to persist the granted token.
+        assert stub_db_calls["write_calls"] != []
 
     def test_write_secrets_failure_bails(
         self, runner, integrations_module, monkeypatch,
