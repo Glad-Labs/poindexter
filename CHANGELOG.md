@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.26.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.25.0...v0.26.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate redis_cache to constructor DI (DI migration PR 5) ([#721](https://github.com/Glad-Labs/glad-labs-stack/issues/721)) ([d4b3d59](https://github.com/Glad-Labs/glad-labs-stack/commit/d4b3d591596020c483ffad72437e1eb915bdd6fa))
+
 ## [0.25.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.24.0...v0.25.0) (2026-05-29)
 
 
