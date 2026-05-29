@@ -2,6 +2,13 @@
 Unit tests for services/web_research.py
 
 Tests DuckDuckGo search, content extraction, and prompt formatting.
+
+Rewritten 2026-05-29 (SiteConfig DI migration #272 leaf batch 2) after
+``WebResearcher`` was converted from a module-level ``site_config``
+singleton + ``set_site_config`` setter + ``_sc()``/``_web_research_int``
+free helpers to constructor DI. ``WebResearcher`` now takes
+``site_config`` in ``__init__``; tests construct it with a
+``SiteConfig(initial_config={...})`` directly — zero shared module state.
 """
 
 import asyncio
@@ -9,12 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.site_config import SiteConfig
 from services.web_research import WebResearcher
 
 
 class TestSearchSimple:
     async def test_returns_results(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("services.web_research.WebResearcher._ddg_search") as mock:
             mock.return_value = [
                 {"title": "Test", "url": "https://example.com", "snippet": "A test", "content": ""},
@@ -24,7 +32,7 @@ class TestSearchSimple:
             assert results[0]["title"] == "Test"
 
     async def test_empty_on_failure(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("services.web_research.WebResearcher._ddg_search") as mock:
             mock.return_value = []
             results = await researcher.search_simple("nonexistent", num_results=3)
@@ -40,7 +48,7 @@ class TestDDGSearch:
         accidentally hit the real DuckDuckGo network in any environment
         where one of them is installed (closes #170).
         """
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch.dict(
             "sys.modules",
             {"ddgs": None, "duckduckgo_search": None},
@@ -54,7 +62,7 @@ class TestDDGSearch:
 
 class TestExtractContent:
     async def test_extracts_from_html(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -76,7 +84,7 @@ class TestExtractContent:
             assert "main content" in content
 
     async def test_handles_404(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 404
@@ -90,14 +98,14 @@ class TestExtractContent:
             assert content == ""
 
     async def test_empty_url_returns_empty(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         content = await researcher._extract_content("")
         assert content == ""
 
 
 class TestFormatForPrompt:
     def test_formats_results(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         results = [
             {"title": "FastAPI Guide", "url": "https://fastapi.dev", "snippet": "Learn FastAPI", "content": "FastAPI is a modern framework."},
             {"title": "Django vs Flask", "url": "https://blog.dev", "snippet": "Comparison", "content": ""},
@@ -109,11 +117,11 @@ class TestFormatForPrompt:
         assert "Learn FastAPI" in formatted
 
     def test_empty_results(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         assert researcher.format_for_prompt([]) == ""
 
     def test_respects_max_chars(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         results = [
             {"title": f"Article {i}", "url": f"https://example.com/{i}", "snippet": "x" * 200, "content": "y" * 500}
             for i in range(20)
@@ -127,7 +135,7 @@ class TestSearchFullPipeline:
 
     @pytest.mark.asyncio
     async def test_returns_enriched_results(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
 
         async def fake_ddg(query, n):
             return [
@@ -150,7 +158,7 @@ class TestSearchFullPipeline:
 
     @pytest.mark.asyncio
     async def test_empty_ddg_returns_empty(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch.object(WebResearcher, "_ddg_search", return_value=[]):
             results = await researcher.search("nothing", num_results=5)
         assert results == []
@@ -158,7 +166,7 @@ class TestSearchFullPipeline:
     @pytest.mark.asyncio
     async def test_extract_failures_filtered_out(self):
         """If one fetch raises, gather should not lose the others."""
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
 
         async def fake_ddg(query, n):
             return [
@@ -186,7 +194,7 @@ class TestDDGTimeoutPath:
     @pytest.mark.asyncio
     async def test_ddg_timeout_returns_empty(self):
         """When asyncio.wait_for times out, _ddg_search must return []."""
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
 
         # Patch run_in_executor to return a future that never completes
         # by raising TimeoutError directly on the wait_for.
@@ -221,7 +229,7 @@ class TestDDGTimeoutPath:
             "ddgs": MagicMock(DDGS=fake_ddgs),
             "duckduckgo_search": MagicMock(DDGS=fake_ddgs),
         }):
-            researcher = WebResearcher()
+            researcher = WebResearcher(site_config=SiteConfig())
             results = await researcher._ddg_search("test", 3)
 
         assert len(results) == 2
@@ -236,7 +244,7 @@ class TestExtractContentEdgeCases:
     @pytest.mark.asyncio
     async def test_no_article_or_main_or_body_returns_empty(self):
         """If the page has none of the expected containers, extract returns ''."""
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -252,7 +260,7 @@ class TestExtractContentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_strips_script_and_style(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -278,7 +286,7 @@ class TestExtractContentEdgeCases:
     @pytest.mark.asyncio
     async def test_truncates_to_max_chars(self):
         from services.web_research import MAX_CONTENT_CHARS
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         long_text = "lorem ipsum " * 1000  # ~12000 chars
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
@@ -295,7 +303,7 @@ class TestExtractContentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_network_error_returns_empty(self):
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=SiteConfig())
         with patch("httpx.AsyncClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.get = AsyncMock(side_effect=Exception("connection refused"))
@@ -305,3 +313,25 @@ class TestExtractContentEdgeCases:
 
             content = await researcher._extract_content("https://example.com")
         assert content == ""
+
+
+class TestAppContainerWiring:
+    """``AppContainer.web_research`` returns a memoised WebResearcher (#272 batch 2)."""
+
+    def test_app_container_exposes_web_research(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        researcher = container.web_research
+        assert isinstance(researcher, WebResearcher)
+
+    def test_cached_property_memoises(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.web_research is container.web_research
+
+    def test_reads_tunable_from_injected_site_config(self):
+        sc = SiteConfig(initial_config={"web_research_max_concurrent": "7"})
+        researcher = WebResearcher(site_config=sc)
+        assert researcher._web_research_int("max_concurrent", 3) == 7

@@ -35,17 +35,22 @@ from services.site_config import SiteConfig
 logger = logging.getLogger(__name__)
 
 
-# Lifespan-bound SiteConfig — wired by main.py via set_site_config().
-# Used to build the crawler User-Agent dynamically so the operator's
-# contact URL (or absence thereof) shows up correctly in HEAD requests
-# the citation verifier sends.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# 2026-05-29 — SiteConfig DI migration (#272 leaf batch 2) converted this
+# module from the module-level ``site_config`` singleton + ``set_site_config``
+# setter + free ``verify_citations`` function to constructor DI via a
+# ``CitationVerifier`` class taking ``site_config`` in ``__init__``. The
+# ``_build_citation_headers`` helper (User-Agent built from
+# ``crawler_contact_url``) + ``verify_citations`` became instance methods.
+# The pure ``extract_urls`` / ``verdict_from_report`` /
+# ``append_sources_section`` helpers + the dataclasses stay module-level
+# (no SiteConfig dependency). The shared ``http_client`` plumbing
+# (``set_http_client`` / module-level ``http_client``) is a SEPARATE
+# concern wired by ``services/http_client.py`` at lifespan startup and
+# pinned by ``test_http_client.py`` — it stays module-level. The
+# composition root (``services/container.py::AppContainer.citation_verifier``)
+# wires a ``CitationVerifier``; callers that aren't yet migrated build a
+# per-call instance from their own lifespan-bound SiteConfig (caller-bridge
+# pattern, ``CitationVerifier(site_config=site_config)``).
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -142,7 +147,7 @@ def extract_urls(content: str, site_url: str | None = None) -> list[str]:
     return out
 
 
-def _build_citation_headers() -> dict[str, str]:
+def _build_citation_headers(site_config: SiteConfig) -> dict[str, str]:
     """Build the User-Agent + Accept headers for HEAD probes.
 
     The User-Agent follows the standard crawler-UA convention:
@@ -173,7 +178,10 @@ def _build_citation_headers() -> dict[str, str]:
 
 
 async def _head_one(
-    client: httpx.AsyncClient, url: str, timeout_s: float
+    client: httpx.AsyncClient,
+    url: str,
+    timeout_s: float,
+    headers: dict[str, str],
 ) -> tuple[str, CitationIssue | None]:
     """HEAD a single URL. Returns (url, None) on alive, (url, issue) on dead."""
     try:
@@ -181,7 +189,7 @@ async def _head_one(
             url,
             timeout=timeout_s,
             follow_redirects=True,
-            headers=_build_citation_headers(),
+            headers=headers,
         )
         status = resp.status_code
         # Some servers 405 on HEAD but 200 on GET. Fall back to a lightweight GET.
@@ -190,7 +198,7 @@ async def _head_one(
                 url,
                 timeout=timeout_s,
                 follow_redirects=True,
-                headers=_build_citation_headers(),
+                headers=headers,
             )
             status = resp.status_code
         if 200 <= status < 400:
@@ -215,70 +223,89 @@ async def _head_one(
         ))
 
 
-async def verify_citations(
-    content: str,
-    *,
-    site_url: str | None = None,
-    timeout_s: float = 8.0,
-    concurrency: int = 5,
-) -> CitationReport:
-    """Extract every external URL from ``content`` and verify it's reachable.
+class CitationVerifier:
+    """External-citation reachability checker wired to a SiteConfig.
 
-    Never raises — individual URL failures become entries in ``report.dead``,
-    and a full-pipeline failure (httpx import, etc) returns an empty report
-    so the caller can treat "couldn't verify" as "no blocking issue".
+    Constructed by ``AppContainer.citation_verifier`` (#272 leaf batch 2).
+    Holds only the injected ``SiteConfig`` (read for the crawler
+    ``crawler_contact_url`` User-Agent). HTTP fan-out prefers the
+    module-level lifespan-bound shared ``http_client`` (wired by
+    ``services/http_client.py``) and falls back to a per-call client.
     """
-    urls = extract_urls(content, site_url=site_url)
-    if not urls:
-        return CitationReport(total_urls=0, unique_urls=0)
 
-    sem = asyncio.Semaphore(max(1, concurrency))
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        self._site_config = site_config
 
-    async def _bound(client: httpx.AsyncClient, url: str):
-        async with sem:
-            return await _head_one(client, url, timeout_s)
+    def _build_citation_headers(self) -> dict[str, str]:
+        """Instance shim over the module-level header builder."""
+        return _build_citation_headers(self._site_config)
 
-    try:
-        # Prefer the lifespan-bound shared client (warm connection pool
-        # across the per-task fan-out); fall back to a per-call client
-        # only when nothing has been wired (tests, CLI one-shots).
-        if http_client is not None:
-            results = await asyncio.gather(
-                *(_bound(http_client, u) for u in urls),
-                return_exceptions=False,
-            )
-        else:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(timeout_s, connect=min(3.0, timeout_s)),
-                headers=_build_citation_headers(),
-            ) as client:
+    async def verify_citations(
+        self,
+        content: str,
+        *,
+        site_url: str | None = None,
+        timeout_s: float = 8.0,
+        concurrency: int = 5,
+    ) -> CitationReport:
+        """Extract every external URL from ``content`` and verify it's reachable.
+
+        Never raises — individual URL failures become entries in ``report.dead``,
+        and a full-pipeline failure (httpx import, etc) returns an empty report
+        so the caller can treat "couldn't verify" as "no blocking issue".
+        """
+        urls = extract_urls(content, site_url=site_url)
+        if not urls:
+            return CitationReport(total_urls=0, unique_urls=0)
+
+        headers = self._build_citation_headers()
+        sem = asyncio.Semaphore(max(1, concurrency))
+
+        async def _bound(client: httpx.AsyncClient, url: str):
+            async with sem:
+                return await _head_one(client, url, timeout_s, headers)
+
+        try:
+            # Prefer the lifespan-bound shared client (warm connection pool
+            # across the per-task fan-out); fall back to a per-call client
+            # only when nothing has been wired (tests, CLI one-shots).
+            if http_client is not None:
                 results = await asyncio.gather(
-                    *(_bound(client, u) for u in urls),
+                    *(_bound(http_client, u) for u in urls),
                     return_exceptions=False,
                 )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[citation_verifier] bulk verification failed: %s — returning empty report",
-            exc,
+            else:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(timeout_s, connect=min(3.0, timeout_s)),
+                    headers=headers,
+                ) as client:
+                    results = await asyncio.gather(
+                        *(_bound(client, u) for u in urls),
+                        return_exceptions=False,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[citation_verifier] bulk verification failed: %s — returning empty report",
+                exc,
+            )
+            return CitationReport(total_urls=len(urls), unique_urls=len(urls))
+
+        alive: list[str] = []
+        dead: list[CitationIssue] = []
+        for url, issue in results:
+            if issue is None:
+                alive.append(url)
+            else:
+                dead.append(issue)
+
+        unique = len(urls)
+        return CitationReport(
+            total_urls=unique,
+            unique_urls=unique,
+            alive=alive,
+            dead=dead,
+            dead_ratio=(len(dead) / unique) if unique else 0.0,
         )
-        return CitationReport(total_urls=len(urls), unique_urls=len(urls))
-
-    alive: list[str] = []
-    dead: list[CitationIssue] = []
-    for url, issue in results:
-        if issue is None:
-            alive.append(url)
-        else:
-            dead.append(issue)
-
-    unique = len(urls)
-    return CitationReport(
-        total_urls=unique,
-        unique_urls=unique,
-        alive=alive,
-        dead=dead,
-        dead_ratio=(len(dead) / unique) if unique else 0.0,
-    )
 
 
 async def verdict_from_report(

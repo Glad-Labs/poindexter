@@ -37,13 +37,27 @@ Design constraints
 
 Public surface
 --------------
-:func:`check_external_title_duplicates` — the coroutine the QA /
-content-generation stage calls. Returns a structured dict with
-``verbatim_match``, ``near_match``, ``penalty``, ``matches``,
-``fail_open`` fields so the caller can decide whether to reject,
-apply a score penalty, or just surface a warning.
+:meth:`TitleOriginalityExternalChecker.check_external_title_duplicates` —
+the coroutine the QA / content-generation stage calls. Returns a
+structured result with ``verbatim_match``, ``near_match``, ``penalty``,
+``matches``, ``fail_open`` fields so the caller can decide whether to
+reject, apply a score penalty, or just surface a warning.
 
 :func:`clear_cache` — test helper, drops all cached entries.
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 2) converted this
+module from the module-level ``site_config`` singleton + ``set_site_config``
+setter + free ``check_external_title_duplicates`` function to constructor
+DI via a ``TitleOriginalityExternalChecker`` class taking ``site_config``
+in ``__init__``. The ``_cache_ttl_seconds`` / ``_read_settings`` helpers
+became instance methods reading ``self._site_config``. The process-local
+``_CACHE`` dict + ``clear_cache`` test helper stay module-level (the cache
+is shared across instances by design — DDG rate-limits hard and the same
+title is probed multiple times per pipeline run). The composition root
+(``services/container.py::AppContainer.title_originality_external``) wires
+one; callers that aren't yet migrated build a per-call instance from their
+own lifespan-bound SiteConfig (caller-bridge pattern,
+``TitleOriginalityExternalChecker(site_config=site_config)``).
 """
 
 from __future__ import annotations
@@ -57,18 +71,6 @@ from difflib import SequenceMatcher
 
 import httpx
 from services.site_config import SiteConfig
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
 
 
 logger = logging.getLogger(__name__)
@@ -165,17 +167,6 @@ def _cache_key(title: str) -> str:
     return collapsed
 
 
-def _cache_ttl_seconds() -> int:
-    """Read the TTL from app_settings; default 24h. Failures → 24h."""
-    try:
-        hours = site_config.get_int("title_originality_cache_ttl_hours", 24)
-    except Exception:
-        hours = 24
-    # Guardrail: never a non-positive TTL, never more than a week.
-    hours = max(1, min(hours, 24 * 7))
-    return hours * 3600
-
-
 def _cache_lookup(key: str) -> ExternalOriginalityResult | None:
     entry = _CACHE.get(key)
     if entry is None:
@@ -187,8 +178,8 @@ def _cache_lookup(key: str) -> ExternalOriginalityResult | None:
     return value
 
 
-def _cache_store(key: str, value: ExternalOriginalityResult) -> None:
-    _CACHE[key] = (time.time() + _cache_ttl_seconds(), value)
+def _cache_store(key: str, value: ExternalOriginalityResult, ttl_seconds: int) -> None:
+    _CACHE[key] = (time.time() + ttl_seconds, value)
 
 
 # ---------------------------------------------------------------------------
@@ -321,121 +312,146 @@ def _parse_ddg_results(body: str, limit: int = 10) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def _read_settings() -> tuple[bool, int]:
-    """Return ``(enabled, penalty)`` with safe defaults on config failure."""
-    try:
-        enabled = site_config.get_bool(
-            "title_originality_external_check_enabled", True,
-        )
-        penalty = site_config.get_int(
-            "title_originality_external_penalty", -50,
-        )
-    except Exception:
-        enabled, penalty = True, -50
-    # Penalty is stored as a negative int in settings for human readability.
-    # We surface the absolute value so the caller can apply it as a penalty
-    # without worrying about sign.
-    return enabled, abs(int(penalty))
+class TitleOriginalityExternalChecker:
+    """External-title duplicate checker wired to a SiteConfig.
 
-
-async def check_external_title_duplicates(title: str) -> ExternalOriginalityResult:
-    """Search DDG for the exact title; return a structured originality result.
-
-    Flow:
-
-    1. Bail out early if the feature is disabled in ``app_settings``.
-    2. Check the process-local cache (keyed on normalised title).
-    3. Hit the DDG HTML endpoint with the quoted title.
-    4. Parse the response into ``{title, url}`` dicts.
-    5. Compute similarity for each result; classify as verbatim / near /
-       unrelated.
-    6. Build + cache + return an :class:`ExternalOriginalityResult`.
-
-    Any failure in step 3 or 4 is treated as fail-open: we log + bump the
-    Prometheus counter and return an all-zero result with ``fail_open=True``
-    so the pipeline continues.
+    Constructed by ``AppContainer.title_originality_external`` (#272 leaf
+    batch 2). Holds only the injected ``SiteConfig`` (read for the
+    ``title_originality_external_check_enabled`` /
+    ``title_originality_external_penalty`` /
+    ``title_originality_cache_ttl_hours`` app_settings tunables). The
+    process-local ``_CACHE`` is shared across instances by design.
     """
-    if not title or not title.strip():
-        return ExternalOriginalityResult()
 
-    enabled, penalty = _read_settings()
-    if not enabled:
-        logger.debug("[TITLE_ORIG_EXT] External check disabled via settings")
-        return ExternalOriginalityResult()
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        self._site_config = site_config
 
-    key = _cache_key(title)
-    cached = _cache_lookup(key)
-    if cached is not None:
-        logger.debug("[TITLE_ORIG_EXT] Cache hit for %r", title[:60])
-        return cached
-
-    body, reason = await _fetch_ddg_html(title)
-    if body is None:
-        logger.warning(
-            "[TITLE_ORIG_EXT] Fail-open on DDG query (reason=%s): %r",
-            reason, title[:60],
-        )
+    def _read_settings(self) -> tuple[bool, int]:
+        """Return ``(enabled, penalty)`` with safe defaults on config failure."""
         try:
-            TITLE_ORIGINALITY_FAIL_OPEN.labels(reason=reason or "unknown").inc()
-        except Exception:  # pragma: no cover — counter is fire-and-forget
-            pass
-        # Deliberately do NOT cache fail-open results — we want the next
-        # call to try again rather than pretending we know the answer for
-        # the next 24 hours.
-        return ExternalOriginalityResult(
-            fail_open=True, fail_reason=reason or "unknown",
+            enabled = self._site_config.get_bool(
+                "title_originality_external_check_enabled", True,
+            )
+            penalty = self._site_config.get_int(
+                "title_originality_external_penalty", -50,
+            )
+        except Exception:
+            enabled, penalty = True, -50
+        # Penalty is stored as a negative int in settings for human readability.
+        # We surface the absolute value so the caller can apply it as a penalty
+        # without worrying about sign.
+        return enabled, abs(int(penalty))
+
+    def _cache_ttl_seconds(self) -> int:
+        """Read the TTL from app_settings; default 24h. Failures → 24h."""
+        try:
+            hours = self._site_config.get_int("title_originality_cache_ttl_hours", 24)
+        except Exception:
+            hours = 24
+        # Guardrail: never a non-positive TTL, never more than a week.
+        hours = max(1, min(hours, 24 * 7))
+        return hours * 3600
+
+    async def check_external_title_duplicates(
+        self, title: str
+    ) -> ExternalOriginalityResult:
+        """Search DDG for the exact title; return a structured originality result.
+
+        Flow:
+
+        1. Bail out early if the feature is disabled in ``app_settings``.
+        2. Check the process-local cache (keyed on normalised title).
+        3. Hit the DDG HTML endpoint with the quoted title.
+        4. Parse the response into ``{title, url}`` dicts.
+        5. Compute similarity for each result; classify as verbatim / near /
+           unrelated.
+        6. Build + cache + return an :class:`ExternalOriginalityResult`.
+
+        Any failure in step 3 or 4 is treated as fail-open: we log + bump the
+        Prometheus counter and return an all-zero result with ``fail_open=True``
+        so the pipeline continues.
+        """
+        if not title or not title.strip():
+            return ExternalOriginalityResult()
+
+        enabled, penalty = self._read_settings()
+        if not enabled:
+            logger.debug("[TITLE_ORIG_EXT] External check disabled via settings")
+            return ExternalOriginalityResult()
+
+        key = _cache_key(title)
+        cached = _cache_lookup(key)
+        if cached is not None:
+            logger.debug("[TITLE_ORIG_EXT] Cache hit for %r", title[:60])
+            return cached
+
+        body, reason = await _fetch_ddg_html(title)
+        if body is None:
+            logger.warning(
+                "[TITLE_ORIG_EXT] Fail-open on DDG query (reason=%s): %r",
+                reason, title[:60],
+            )
+            try:
+                TITLE_ORIGINALITY_FAIL_OPEN.labels(reason=reason or "unknown").inc()
+            except Exception:  # pragma: no cover — counter is fire-and-forget
+                pass
+            # Deliberately do NOT cache fail-open results — we want the next
+            # call to try again rather than pretending we know the answer for
+            # the next 24 hours.
+            return ExternalOriginalityResult(
+                fail_open=True, fail_reason=reason or "unknown",
+            )
+
+        results = _parse_ddg_results(body)
+        probe = _normalise_for_compare(title)
+        verbatim_match = False
+        near_match = False
+        matches: list[dict[str, str]] = []
+
+        for r in results:
+            ext_title = r.get("title", "")
+            ext_norm = _normalise_for_compare(ext_title)
+            if not ext_norm:
+                continue
+            if ext_norm == probe:
+                verbatim_match = True
+                matches.append(r)
+                continue
+            # Similarity ratio catches near-duplicates: "We Shipped It — Here's
+            # How" vs "We Shipped It! Here Is How" should trigger a near-match.
+            sim = SequenceMatcher(None, probe, ext_norm).ratio()
+            if sim >= 0.90:
+                # Very-close near-match — treat as verbatim for penalty purposes.
+                verbatim_match = True
+                matches.append(r)
+            elif sim >= 0.80:
+                near_match = True
+                matches.append(r)
+
+        result = ExternalOriginalityResult(
+            verbatim_match=verbatim_match,
+            near_match=near_match and not verbatim_match,
+            penalty=penalty if verbatim_match else 0,
+            matches=matches,
+            fail_open=False,
         )
+        _cache_store(key, result, self._cache_ttl_seconds())
 
-    results = _parse_ddg_results(body)
-    probe = _normalise_for_compare(title)
-    verbatim_match = False
-    near_match = False
-    matches: list[dict[str, str]] = []
+        if verbatim_match:
+            logger.warning(
+                "[TITLE_ORIG_EXT] Verbatim external duplicate for %r: %s",
+                title[:60],
+                matches[0].get("url") if matches else "?",
+            )
+        elif near_match:
+            logger.info(
+                "[TITLE_ORIG_EXT] Near-match external title for %r (%d candidates)",
+                title[:60], len(matches),
+            )
+        else:
+            logger.debug(
+                "[TITLE_ORIG_EXT] No external duplicates for %r (%d results scanned)",
+                title[:60], len(results),
+            )
 
-    for r in results:
-        ext_title = r.get("title", "")
-        ext_norm = _normalise_for_compare(ext_title)
-        if not ext_norm:
-            continue
-        if ext_norm == probe:
-            verbatim_match = True
-            matches.append(r)
-            continue
-        # Similarity ratio catches near-duplicates: "We Shipped It — Here's
-        # How" vs "We Shipped It! Here Is How" should trigger a near-match.
-        sim = SequenceMatcher(None, probe, ext_norm).ratio()
-        if sim >= 0.90:
-            # Very-close near-match — treat as verbatim for penalty purposes.
-            verbatim_match = True
-            matches.append(r)
-        elif sim >= 0.80:
-            near_match = True
-            matches.append(r)
-
-    result = ExternalOriginalityResult(
-        verbatim_match=verbatim_match,
-        near_match=near_match and not verbatim_match,
-        penalty=penalty if verbatim_match else 0,
-        matches=matches,
-        fail_open=False,
-    )
-    _cache_store(key, result)
-
-    if verbatim_match:
-        logger.warning(
-            "[TITLE_ORIG_EXT] Verbatim external duplicate for %r: %s",
-            title[:60],
-            matches[0].get("url") if matches else "?",
-        )
-    elif near_match:
-        logger.info(
-            "[TITLE_ORIG_EXT] Near-match external title for %r (%d candidates)",
-            title[:60], len(matches),
-        )
-    else:
-        logger.debug(
-            "[TITLE_ORIG_EXT] No external duplicates for %r (%d results scanned)",
-            title[:60], len(results),
-        )
-
-    return result
+        return result

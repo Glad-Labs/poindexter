@@ -58,7 +58,9 @@ WIRED_MODULES: tuple[str, ...] = (
     # constructor DI 2026-05-29 (#272 leaf batch 1). Reach them via
     # ``container.url_validator`` / ``container.url_scraper``, or build a
     # per-call instance from a lifespan-bound SiteConfig (caller-bridge).
-    "services.web_research",
+    # ``services.web_research`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 2). Reach it via ``container.web_research`` or build
+    # ``WebResearcher(site_config=...)`` per call (caller-bridge).
     # ``services.revalidation_service`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3). Reach it via ``container.revalidation_service`` or
     # build a per-call instance from a lifespan-bound SiteConfig
@@ -72,7 +74,15 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.webhook_delivery_service",
     # Content pipeline + QA
     "services.publish_service",
-    "services.citation_verifier",
+    # ``services.citation_verifier`` + ``services.seed_url_fetcher`` +
+    # ``services.title_originality_external`` migrated to constructor DI
+    # 2026-05-29 (#272 leaf batch 2). Reach them via
+    # ``container.citation_verifier`` / ``container.seed_url_fetcher`` /
+    # ``container.title_originality_external``, or build a per-call instance
+    # from a lifespan-bound SiteConfig (caller-bridge). NOTE:
+    # ``citation_verifier`` still exposes ``set_http_client`` and stays in
+    # ``http_client.WIRED_HTTP_CLIENT_MODULES`` — that's the separate shared
+    # httpx-client plumbing, not the SiteConfig seam.
     "services.newsletter_service",
     "services.podcast_service",
     "services.multi_model_qa",
@@ -80,10 +90,8 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.content_validator",
     "services.research_service",
     "services.research_quality_service",
-    "services.seed_url_fetcher",
     "services.self_review",
     "services.title_generation",
-    "services.title_originality_external",
     "services.internal_rag_source",
     "services.scheduled_publisher",
     "services.topic_ranking",

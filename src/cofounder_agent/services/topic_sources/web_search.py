@@ -50,6 +50,7 @@ class WebSearchSource:
 
         # Lazy import so test environments that don't have the full
         # web_research dep chain installed can still import this module.
+        from services.site_config import SiteConfig
         from services.topic_discovery import CATEGORY_SEARCHES
         from services.web_research import WebResearcher
 
@@ -64,7 +65,13 @@ class WebSearchSource:
         )
         target_categories = target_categories[:max_cats]
 
-        researcher = WebResearcher()
+        # Caller-bridge (#272 leaf batch 2): the dispatcher seeds the
+        # lifespan-bound SiteConfig under ``config["_site_config"]``. Fall
+        # back to a fresh env-fallback instance when it's absent (tests,
+        # CLI one-shots) so this source stays importable + runnable.
+        researcher = WebResearcher(
+            site_config=config.get("_site_config") or SiteConfig()
+        )
 
         topics: list[DiscoveredTopic] = []
         for cat in target_categories:

@@ -489,9 +489,11 @@ class TestCreateTaskQueueFull:
 class TestCreateTaskSeedURL:
     """Verify POST /api/tasks handles the seed_url field end-to-end.
 
-    These tests monkeypatch :func:`services.seed_url_fetcher.fetch_seed_url`
-    so no real HTTP goes out. Each covers one acceptance criterion from
-    GH-42:
+    These tests monkeypatch
+    :meth:`services.seed_url_fetcher.SeedURLFetcher.fetch_seed_url` so no
+    real HTTP goes out (the free function became a method under the #272
+    leaf-batch-2 SiteConfig DI migration). Each covers one acceptance
+    criterion from GH-42:
 
       AC#6 matrix:
         - URL with topic       → combined; caller's topic wins, URL still attributed
@@ -504,20 +506,21 @@ class TestCreateTaskSeedURL:
     """
 
     def _patch_fetch(self, monkeypatch, result=None, error=None):
-        """Patch fetch_seed_url in the module where it's imported at use time.
+        """Patch SeedURLFetcher.fetch_seed_url at the class boundary.
 
-        ``routes.task_routes._resolve_seed_url`` imports the symbol from
-        ``services.seed_url_fetcher`` at call time, so patching the
-        source module is sufficient.
+        ``routes.task_routes._resolve_seed_url`` builds a
+        ``SeedURLFetcher(site_config=...)`` per request and calls
+        ``.fetch_seed_url(...)`` on it. Patching the unbound method on the
+        class makes every per-request instance use our fake — no real HTTP.
         """
-        from services import seed_url_fetcher as fetcher_mod
+        from services.seed_url_fetcher import SeedURLFetcher
 
-        async def _fake_fetch(url, **kwargs):
+        async def _fake_fetch(self, url, **kwargs):  # noqa: ARG001 — bound-method shim
             if error is not None:
                 raise error
             return result
 
-        monkeypatch.setattr(fetcher_mod, "fetch_seed_url", _fake_fetch)
+        monkeypatch.setattr(SeedURLFetcher, "fetch_seed_url", _fake_fetch)
 
     def test_seed_url_only_extracts_title_as_topic(self, monkeypatch):
         from services.seed_url_fetcher import SeedURLResult

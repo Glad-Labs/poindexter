@@ -127,10 +127,13 @@ _SHARED_TEST_MODULES = (
     "services.multi_model_qa",
     "services.research_service",
     "services.research_quality_service",
-    "services.seed_url_fetcher",
+    # ``services.seed_url_fetcher`` + ``services.title_originality_external``
+    # migrated to constructor DI 2026-05-29 (#272 leaf batch 2); no
+    # module-level site_config attr to share. Tests construct
+    # ``SeedURLFetcher(site_config=...)`` /
+    # ``TitleOriginalityExternalChecker(site_config=...)`` directly.
     "services.self_review",
     "services.title_generation",
-    "services.title_originality_external",
     "services.internal_rag_source",
     "services.scheduled_publisher",
     "services.topic_ranking",
@@ -157,7 +160,9 @@ _SHARED_TEST_MODULES = (
     # constructor DI 2026-05-29 (#272 leaf batch 1); no module-level
     # site_config attr to share. Tests construct ``URLValidator(site_config=...)``
     # / ``URLScraper(site_config=...)`` directly.
-    "services.web_research",
+    # ``services.web_research`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 2); no module-level site_config attr to share.
+    # Tests construct ``WebResearcher(site_config=...)`` directly.
     # ``services.revalidation_service`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3); no module-level site_config attr to share. Tests
     # construct ``RevalidationService(site_config=...)`` directly (or call

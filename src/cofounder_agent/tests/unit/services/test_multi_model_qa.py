@@ -1516,7 +1516,7 @@ class TestCitationsThresholdReads:
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
         with caplog.at_level("WARNING"), patch(
-            "services.citation_verifier.verify_citations",
+            "services.citation_verifier.CitationVerifier.verify_citations",
             new=AsyncMock(side_effect=RuntimeError("stop here")),
         ):
             await qa._check_citations("body with no urls")
@@ -1538,7 +1538,7 @@ class TestCitationsThresholdReads:
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
         with caplog.at_level("WARNING"), patch(
-            "services.citation_verifier.verify_citations",
+            "services.citation_verifier.CitationVerifier.verify_citations",
             new=AsyncMock(side_effect=RuntimeError("stop here")),
         ):
             await qa._check_citations("body with no urls")
@@ -1560,7 +1560,7 @@ class TestCitationsThresholdReads:
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
         with caplog.at_level("WARNING"), patch(
-            "services.citation_verifier.verify_citations",
+            "services.citation_verifier.CitationVerifier.verify_citations",
             new=AsyncMock(side_effect=RuntimeError("stop here")),
         ):
             await qa._check_citations("body with no urls")

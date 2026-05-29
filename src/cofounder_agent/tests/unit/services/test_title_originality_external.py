@@ -19,14 +19,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from services.site_config import SiteConfig
 from services.title_originality_external import (
     ExternalOriginalityResult,
+    TitleOriginalityExternalChecker,
     _cache_key,
     _normalise_for_compare,
     _parse_ddg_results,
-    check_external_title_duplicates,
     clear_cache,
 )
+
+# Rewritten 2026-05-29 (SiteConfig DI migration #272 leaf batch 2): the
+# free ``check_external_title_duplicates`` function became
+# ``TitleOriginalityExternalChecker.check_external_title_duplicates`` with
+# constructor DI. Tests build a checker from a ``SiteConfig`` (enabled /
+# disabled) instead of patching a module-level ``site_config`` singleton.
+# The process-local ``_CACHE`` + ``clear_cache`` test helper + the pure
+# parse/normalise helpers stay module-level.
 
 # ---------------------------------------------------------------------------
 # Fixtures + helpers
@@ -46,23 +55,22 @@ def _clear_originality_cache():
 
 
 @pytest.fixture
-def _enabled_settings():
-    """Patch site_config so the feature is on with default penalty."""
-    with patch("services.title_originality_external.site_config") as mock_cfg:
-        mock_cfg.get_bool.return_value = True
-        mock_cfg.get_int.side_effect = lambda key, default: {
-            "title_originality_external_penalty": -50,
-            "title_originality_cache_ttl_hours": 24,
-        }.get(key, default)
-        yield mock_cfg
+def enabled_checker() -> TitleOriginalityExternalChecker:
+    """Checker wired to a SiteConfig with the feature on + default penalty."""
+    sc = SiteConfig(initial_config={
+        "title_originality_external_check_enabled": "true",
+        "title_originality_external_penalty": "-50",
+        "title_originality_cache_ttl_hours": "24",
+    })
+    return TitleOriginalityExternalChecker(site_config=sc)
 
 
 @pytest.fixture
-def _disabled_settings():
-    with patch("services.title_originality_external.site_config") as mock_cfg:
-        mock_cfg.get_bool.return_value = False
-        mock_cfg.get_int.side_effect = lambda key, default: default
-        yield mock_cfg
+def disabled_checker() -> TitleOriginalityExternalChecker:
+    sc = SiteConfig(initial_config={
+        "title_originality_external_check_enabled": "false",
+    })
+    return TitleOriginalityExternalChecker(site_config=sc)
 
 
 def _fake_async_client(*, response=None, raise_exc=None):
@@ -169,7 +177,7 @@ class TestParseDdgResults:
 
 @pytest.mark.asyncio
 class TestCheckExternalTitleDuplicates:
-    async def test_verbatim_match_returns_penalty(self, _enabled_settings):
+    async def test_verbatim_match_returns_penalty(self, enabled_checker):
         """The exact GH-87 scenario: DDG returns the same title we probed."""
         probe = "AI Doesn't Fix Weak Engineering. It Just Speeds It Up."
         resp = MagicMock(
@@ -183,7 +191,7 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await enabled_checker.check_external_title_duplicates(probe)
 
         assert result.verbatim_match is True
         assert result.near_match is False
@@ -192,7 +200,7 @@ class TestCheckExternalTitleDuplicates:
         assert result.matches
         assert result.matches[0]["url"] == "https://dev.to/jonomakesapps/x"
 
-    async def test_near_match_returns_warning_no_penalty(self, _enabled_settings):
+    async def test_near_match_returns_warning_no_penalty(self, enabled_checker):
         """Similarity 0.80..0.90 → near-match flag, no penalty."""
         probe = "How GPUs Handle Deep Learning Workloads Today"
         # SequenceMatcher ratio ~0.835 (0.80..0.90 band = near-match).
@@ -205,7 +213,7 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await enabled_checker.check_external_title_duplicates(probe)
 
         # 0.835 lands in the near-match band: warning but no penalty.
         assert result.near_match is True
@@ -213,7 +221,7 @@ class TestCheckExternalTitleDuplicates:
         assert result.penalty == 0
         assert result.matches[0]["url"] == "https://example.com/1"
 
-    async def test_no_match_returns_clean(self, _enabled_settings):
+    async def test_no_match_returns_clean(self, enabled_checker):
         probe = "A Uniquely Niche Title About Polygon-Fluffing"
         resp = MagicMock(
             status_code=200,
@@ -225,14 +233,14 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await enabled_checker.check_external_title_duplicates(probe)
 
         assert result.verbatim_match is False
         assert result.near_match is False
         assert result.penalty == 0
         assert result.fail_open is False
 
-    async def test_cache_hit_skips_fetch(self, _enabled_settings):
+    async def test_cache_hit_skips_fetch(self, enabled_checker):
         """A repeat call with the same (normalised) title must not hit DDG."""
         probe = "Cache Test Title"
         resp = MagicMock(
@@ -244,10 +252,10 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=fake_client,
         ) as mock_client_cls:
-            first = await check_external_title_duplicates(probe)
+            first = await enabled_checker.check_external_title_duplicates(probe)
             # Second call (same title, different casing + trailing punct) —
             # should hit the cache, not call httpx again.
-            second = await check_external_title_duplicates("CACHE TEST TITLE!")
+            second = await enabled_checker.check_external_title_duplicates("CACHE TEST TITLE!")
 
         assert first.verbatim_match is True
         assert second.verbatim_match is True
@@ -255,7 +263,7 @@ class TestCheckExternalTitleDuplicates:
         # short-circuited on cache).
         assert mock_client_cls.call_count == 1
 
-    async def test_429_fail_open(self, _enabled_settings):
+    async def test_429_fail_open(self, enabled_checker):
         """HTTP 429 → fail_open=True, no penalty, counter bumps."""
         probe = "Rate Limited Title"
         resp = MagicMock(status_code=429, text="rate limit")
@@ -266,7 +274,7 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.TITLE_ORIGINALITY_FAIL_OPEN",
         ) as mock_counter:
             mock_counter.labels.return_value = mock_counter
-            result = await check_external_title_duplicates(probe)
+            result = await enabled_checker.check_external_title_duplicates(probe)
 
         assert result.fail_open is True
         assert result.fail_reason == "rate_limited"
@@ -276,19 +284,19 @@ class TestCheckExternalTitleDuplicates:
         mock_counter.labels.assert_called_with(reason="rate_limited")
         mock_counter.inc.assert_called_once()
 
-    async def test_timeout_fail_open(self, _enabled_settings):
+    async def test_timeout_fail_open(self, enabled_checker):
         probe = "Timeout Title"
         with patch(
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(raise_exc=httpx.TimeoutException("boom")),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await enabled_checker.check_external_title_duplicates(probe)
 
         assert result.fail_open is True
         assert result.fail_reason == "timeout"
         assert result.penalty == 0
 
-    async def test_captcha_body_fail_open(self, _enabled_settings):
+    async def test_captcha_body_fail_open(self, enabled_checker):
         """A 200 response containing a CAPTCHA marker must fail open."""
         probe = "Captcha Title"
         resp = MagicMock(
@@ -299,13 +307,13 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await enabled_checker.check_external_title_duplicates(probe)
 
         assert result.fail_open is True
         assert result.fail_reason == "captcha"
         assert result.penalty == 0
 
-    async def test_fail_open_is_not_cached(self, _enabled_settings):
+    async def test_fail_open_is_not_cached(self, enabled_checker):
         """A rate-limit today should not silence the check for 24 hours."""
         probe = "Retry Tomorrow Title"
         rate_limited = MagicMock(status_code=429, text="rate limit")
@@ -321,8 +329,8 @@ class TestCheckExternalTitleDuplicates:
                 _fake_async_client(response=rate_limited),
                 _fake_async_client(response=ok_resp),
             ]
-            first = await check_external_title_duplicates(probe)
-            second = await check_external_title_duplicates(probe)
+            first = await enabled_checker.check_external_title_duplicates(probe)
+            second = await enabled_checker.check_external_title_duplicates(probe)
 
         assert first.fail_open is True
         # Second call went back to the network (fail-open wasn't cached)
@@ -330,24 +338,24 @@ class TestCheckExternalTitleDuplicates:
         assert second.fail_open is False
         assert second.verbatim_match is True
 
-    async def test_disabled_setting_skips_fetch(self, _disabled_settings):
+    async def test_disabled_setting_skips_fetch(self, disabled_checker):
         """Kill-switch must short-circuit before any HTTP call."""
         probe = "Anything"
         with patch(
             "services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
-            result = await check_external_title_duplicates(probe)
+            result = await disabled_checker.check_external_title_duplicates(probe)
 
         assert result == ExternalOriginalityResult()
         assert mock_cls.call_count == 0
 
-    async def test_empty_title_returns_empty_result(self, _enabled_settings):
+    async def test_empty_title_returns_empty_result(self, enabled_checker):
         """Defensive: no probe = no work."""
         with patch(
             "services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
-            result = await check_external_title_duplicates("")
-            result2 = await check_external_title_duplicates("   ")
+            result = await enabled_checker.check_external_title_duplicates("")
+            result2 = await enabled_checker.check_external_title_duplicates("   ")
 
         assert result.verbatim_match is False
         assert result2.verbatim_match is False
@@ -381,16 +389,20 @@ class TestCheckTitleOriginalityIntegration:
             fail_open=False,
         )
 
+        # Patch the class METHOD so whatever instance title_generation
+        # constructs via the caller-bridge returns our stub. The
+        # title_generation module's own ``site_config`` is seeded by the
+        # unit conftest (brand config); ``qa_title_originality_enabled`` /
+        # ``qa_title_similarity_threshold`` fall back to their code
+        # defaults (True / 0.6).
         with patch(
             "services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
-            "services.title_originality_external.check_external_title_duplicates",
+            "services.title_originality_external.TitleOriginalityExternalChecker"
+            ".check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
-        ), patch("services.title_originality_external.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 0.6
-            mock_cfg.get_bool.return_value = True
-
+        ):
             result = await check_title_originality("The Exact Title")
 
         assert result["is_original"] is False
@@ -416,14 +428,47 @@ class TestCheckTitleOriginalityIntegration:
             "services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
-            "services.title_originality_external.check_external_title_duplicates",
+            "services.title_originality_external.TitleOriginalityExternalChecker"
+            ".check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
-        ), patch("services.title_originality_external.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 0.6
-            mock_cfg.get_bool.return_value = True
-
+        ):
             result = await check_title_originality("Some Title")
 
         assert result["is_original"] is True
         assert result["external_fail_open"] is True
         assert result["external_penalty"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Container wiring (#272 leaf batch 2)
+# ---------------------------------------------------------------------------
+
+
+class TestAppContainerWiring:
+    """``AppContainer.title_originality_external`` returns a memoised checker."""
+
+    def test_app_container_exposes_checker(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        checker = container.title_originality_external
+        assert isinstance(checker, TitleOriginalityExternalChecker)
+
+    def test_cached_property_memoises(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert (
+            container.title_originality_external
+            is container.title_originality_external
+        )
+
+    def test_read_settings_uses_injected_site_config(self):
+        sc = SiteConfig(initial_config={
+            "title_originality_external_check_enabled": "false",
+            "title_originality_external_penalty": "-30",
+        })
+        checker = TitleOriginalityExternalChecker(site_config=sc)
+        enabled, penalty = checker._read_settings()
+        assert enabled is False
+        assert penalty == 30

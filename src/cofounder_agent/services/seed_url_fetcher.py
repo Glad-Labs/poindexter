@@ -24,6 +24,20 @@ Deliberate design choices:
 * **Config reads via site_config.** Timeout / UA / max_bytes are all
   app_settings keys (seeded by migration 0074) per the project's
   DB-first configuration convention — no direct environment reads.
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 2) converted this
+module from the module-level ``site_config`` singleton + ``set_site_config``
+setter + free ``fetch_seed_url`` function to constructor DI via a
+``SeedURLFetcher`` class taking ``site_config`` in ``__init__``. The
+``_get_timeout_seconds`` / ``_get_user_agent`` / ``_get_max_bytes`` config
+readers became instance methods reading ``self._site_config``;
+``fetch_seed_url`` is now ``SeedURLFetcher.fetch_seed_url`` with the same
+signature. The pure ``build_source_attribution`` helper + the dataclasses
+stay module-level (no SiteConfig dependency). The composition root
+(``services/container.py::AppContainer.seed_url_fetcher``) wires one;
+callers that aren't yet migrated build a per-call instance from their own
+lifespan-bound SiteConfig (caller-bridge pattern,
+``SeedURLFetcher(site_config=site_config)``).
 """
 
 from __future__ import annotations
@@ -36,18 +50,6 @@ from urllib.parse import urlparse
 
 import httpx
 from services.site_config import SiteConfig
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
 
 
 logger = logging.getLogger(__name__)
@@ -160,36 +162,6 @@ class SeedURLError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Config helpers
-# ---------------------------------------------------------------------------
-
-
-def _get_timeout_seconds() -> float:
-    try:
-        _sc = site_config
-        return _sc.get_float(_SETTING_TIMEOUT, _DEFAULT_TIMEOUT_SECONDS)
-    except Exception:  # pragma: no cover — site_config absent in bare imports
-        return _DEFAULT_TIMEOUT_SECONDS
-
-
-def _get_user_agent() -> str:
-    try:
-        _sc = site_config
-        ua = _sc.get(_SETTING_USER_AGENT, _DEFAULT_USER_AGENT)
-        return ua or _DEFAULT_USER_AGENT
-    except Exception:  # pragma: no cover
-        return _DEFAULT_USER_AGENT
-
-
-def _get_max_bytes() -> int:
-    try:
-        _sc = site_config
-        return _sc.get_int(_SETTING_MAX_BYTES, _DEFAULT_MAX_BYTES)
-    except Exception:  # pragma: no cover
-        return _DEFAULT_MAX_BYTES
-
-
-# ---------------------------------------------------------------------------
 # Extraction helpers
 # ---------------------------------------------------------------------------
 
@@ -264,133 +236,168 @@ def _validate_url(url: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def fetch_seed_url(
-    url: str,
-    *,
-    timeout_seconds: float | None = None,
-    user_agent: str | None = None,
-    max_bytes: int | None = None,
-    client: httpx.AsyncClient | None = None,
-) -> SeedURLResult:
-    """Fetch a URL and extract title + excerpt.
+class SeedURLFetcher:
+    """Fetch a single URL → title + excerpt topic seed, wired to a SiteConfig.
 
-    Args:
-        url: The URL to fetch. Must be http:// or https://.
-        timeout_seconds: Override fetch timeout. Default: from site_config
-            ``seed_url_fetch_timeout_seconds`` (seeded at 10s).
-        user_agent: Override User-Agent header. Default: from site_config
-            ``seed_url_user_agent`` (seeded with a generic Chrome UA).
-        max_bytes: Truncate the response body at this many bytes. Default:
-            from site_config ``seed_url_max_bytes`` (seeded at 1 MiB).
-        client: Optional pre-built ``httpx.AsyncClient`` — tests inject
-            a ``MockTransport``-backed client here.
-
-    Returns:
-        :class:`SeedURLResult` with title, excerpt, status code, and the
-        number of bytes actually read.
-
-    Raises:
-        SeedURLError: On any failure. ``reason`` identifies the class of
-            failure — one of ``invalid_url``, ``network``, ``http_error``,
-            ``login_wall``, ``too_large``, ``no_title``.
+    Constructed by ``AppContainer.seed_url_fetcher`` (#272 leaf batch 2).
+    Holds only the injected ``SiteConfig`` (read for the
+    ``seed_url_fetch_timeout_seconds`` / ``seed_url_user_agent`` /
+    ``seed_url_max_bytes`` app_settings tunables). Each fetch opens its own
+    short-lived ``httpx.AsyncClient`` unless the caller injects one.
     """
-    _validate_url(url)
 
-    timeout = timeout_seconds if timeout_seconds is not None else _get_timeout_seconds()
-    ua = user_agent if user_agent is not None else _get_user_agent()
-    cap = max_bytes if max_bytes is not None else _get_max_bytes()
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        self._site_config = site_config
 
-    headers = {
-        "User-Agent": ua,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-
-    owns_client = client is None
-    if client is None:
-        client = httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout, connect=min(timeout, 5.0)),
-            follow_redirects=True,
-            headers=headers,
-        )
-
-    try:
+    def _get_timeout_seconds(self) -> float:
         try:
-            resp = await client.get(url, headers=headers)
-        except httpx.TimeoutException as exc:
-            raise SeedURLError(
-                f"Fetch timed out after {timeout:.1f}s: {url}",
-                reason="network",
-            ) from exc
-        except httpx.HTTPError as exc:
-            # Network-layer problems (DNS, connection refused, TLS).
-            raise SeedURLError(
-                f"Network error fetching {url}: {exc}",
-                reason="network",
-            ) from exc
+            return self._site_config.get_float(
+                _SETTING_TIMEOUT, _DEFAULT_TIMEOUT_SECONDS,
+            )
+        except Exception:  # pragma: no cover — site_config absent in bare imports
+            return _DEFAULT_TIMEOUT_SECONDS
 
-        if resp.status_code >= 400:
-            # 404 / 403 / 500 → clear HTTP error. Don't try to extract
-            # anything; the body is usually an error page.
-            raise SeedURLError(
-                f"HTTP {resp.status_code} from {url}",
-                reason="http_error",
+    def _get_user_agent(self) -> str:
+        try:
+            ua = self._site_config.get(_SETTING_USER_AGENT, _DEFAULT_USER_AGENT)
+            return ua or _DEFAULT_USER_AGENT
+        except Exception:  # pragma: no cover
+            return _DEFAULT_USER_AGENT
+
+    def _get_max_bytes(self) -> int:
+        try:
+            return self._site_config.get_int(_SETTING_MAX_BYTES, _DEFAULT_MAX_BYTES)
+        except Exception:  # pragma: no cover
+            return _DEFAULT_MAX_BYTES
+
+    async def fetch_seed_url(
+        self,
+        url: str,
+        *,
+        timeout_seconds: float | None = None,
+        user_agent: str | None = None,
+        max_bytes: int | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> SeedURLResult:
+        """Fetch a URL and extract title + excerpt.
+
+        Args:
+            url: The URL to fetch. Must be http:// or https://.
+            timeout_seconds: Override fetch timeout. Default: from site_config
+                ``seed_url_fetch_timeout_seconds`` (seeded at 10s).
+            user_agent: Override User-Agent header. Default: from site_config
+                ``seed_url_user_agent`` (seeded with a generic Chrome UA).
+            max_bytes: Truncate the response body at this many bytes. Default:
+                from site_config ``seed_url_max_bytes`` (seeded at 1 MiB).
+            client: Optional pre-built ``httpx.AsyncClient`` — tests inject
+                a ``MockTransport``-backed client here.
+
+        Returns:
+            :class:`SeedURLResult` with title, excerpt, status code, and the
+            number of bytes actually read.
+
+        Raises:
+            SeedURLError: On any failure. ``reason`` identifies the class of
+                failure — one of ``invalid_url``, ``network``, ``http_error``,
+                ``login_wall``, ``too_large``, ``no_title``.
+        """
+        _validate_url(url)
+
+        timeout = timeout_seconds if timeout_seconds is not None else self._get_timeout_seconds()
+        ua = user_agent if user_agent is not None else self._get_user_agent()
+        cap = max_bytes if max_bytes is not None else self._get_max_bytes()
+
+        headers = {
+            "User-Agent": ua,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=min(timeout, 5.0)),
+                follow_redirects=True,
+                headers=headers,
             )
 
-        # Truncate body at max_bytes. httpx already has the full response
-        # in memory at this point (no streaming) but we still enforce the
-        # cap so downstream code never sees more than max_bytes of HTML.
-        body_bytes = resp.content or b""
-        truncated = False
-        if len(body_bytes) > cap:
-            body_bytes = body_bytes[:cap]
-            truncated = True
+        try:
+            try:
+                resp = await client.get(url, headers=headers)
+            except httpx.TimeoutException as exc:
+                raise SeedURLError(
+                    f"Fetch timed out after {timeout:.1f}s: {url}",
+                    reason="network",
+                ) from exc
+            except httpx.HTTPError as exc:
+                # Network-layer problems (DNS, connection refused, TLS).
+                raise SeedURLError(
+                    f"Network error fetching {url}: {exc}",
+                    reason="network",
+                ) from exc
+
+            if resp.status_code >= 400:
+                # 404 / 403 / 500 → clear HTTP error. Don't try to extract
+                # anything; the body is usually an error page.
+                raise SeedURLError(
+                    f"HTTP {resp.status_code} from {url}",
+                    reason="http_error",
+                )
+
+            # Truncate body at max_bytes. httpx already has the full response
+            # in memory at this point (no streaming) but we still enforce the
+            # cap so downstream code never sees more than max_bytes of HTML.
+            body_bytes = resp.content or b""
+            truncated = False
+            if len(body_bytes) > cap:
+                body_bytes = body_bytes[:cap]
+                truncated = True
+                logger.info(
+                    "[SEED_URL] Truncated body from %d to %d bytes for %s",
+                    len(resp.content), cap, url,
+                )
+
+            # Decode as best-effort UTF-8 with replacement — we only need
+            # enough text to extract a title.
+            try:
+                html = body_bytes.decode(resp.encoding or "utf-8", errors="replace")
+            except (LookupError, TypeError):
+                html = body_bytes.decode("utf-8", errors="replace")
+
+            title = _extract_title(html)
+            excerpt = _extract_excerpt(html)
+
+            # Login-wall: only escalate to an error if we ALSO failed to get a
+            # useful title/excerpt. News articles routinely embed "sign in"
+            # strings in the footer — those aren't login walls.
+            if _looks_like_login_wall(html) and (not title or not excerpt):
+                raise SeedURLError(
+                    f"Login wall detected at {url} — no extractable article",
+                    reason="login_wall",
+                )
+
+            if not title:
+                raise SeedURLError(
+                    f"Could not extract a title from {url}",
+                    reason="no_title",
+                )
+
             logger.info(
-                "[SEED_URL] Truncated body from %d to %d bytes for %s",
-                len(resp.content), cap, url,
+                "[SEED_URL] Fetched %s: title=%r, excerpt=%d chars, bytes=%d%s",
+                url, title[:80], len(excerpt), len(body_bytes),
+                " (truncated)" if truncated else "",
             )
 
-        # Decode as best-effort UTF-8 with replacement — we only need
-        # enough text to extract a title.
-        try:
-            html = body_bytes.decode(resp.encoding or "utf-8", errors="replace")
-        except (LookupError, TypeError):
-            html = body_bytes.decode("utf-8", errors="replace")
-
-        title = _extract_title(html)
-        excerpt = _extract_excerpt(html)
-
-        # Login-wall: only escalate to an error if we ALSO failed to get a
-        # useful title/excerpt. News articles routinely embed "sign in"
-        # strings in the footer — those aren't login walls.
-        if _looks_like_login_wall(html) and (not title or not excerpt):
-            raise SeedURLError(
-                f"Login wall detected at {url} — no extractable article",
-                reason="login_wall",
+            return SeedURLResult(
+                url=url,
+                title=title,
+                excerpt=excerpt,
+                status_code=resp.status_code,
+                content_length=len(body_bytes),
             )
-
-        if not title:
-            raise SeedURLError(
-                f"Could not extract a title from {url}",
-                reason="no_title",
-            )
-
-        logger.info(
-            "[SEED_URL] Fetched %s: title=%r, excerpt=%d chars, bytes=%d%s",
-            url, title[:80], len(excerpt), len(body_bytes),
-            " (truncated)" if truncated else "",
-        )
-
-        return SeedURLResult(
-            url=url,
-            title=title,
-            excerpt=excerpt,
-            status_code=resp.status_code,
-            content_length=len(body_bytes),
-        )
-    finally:
-        if owns_client:
-            await client.aclose()
+        finally:
+            if owns_client:
+                await client.aclose()
 
 
 def build_source_attribution(result: SeedURLResult) -> str:

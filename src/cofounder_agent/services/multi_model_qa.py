@@ -1871,10 +1871,12 @@ class MultiModelQA:
 
         try:
             from services.citation_verifier import (
+                CitationVerifier,
                 verdict_from_report,
-                verify_citations,
             )
-            report = await verify_citations(
+            report = await CitationVerifier(
+                site_config=site_config
+            ).verify_citations(
                 content,
                 site_url=site_url,
                 timeout_s=timeout_s,
@@ -2421,7 +2423,7 @@ class MultiModelQA:
                 len(claims_list), claims_list, critic_concerned,
             )
 
-            researcher = WebResearcher()
+            researcher = WebResearcher(site_config=site_config)
             verified = 0
             contradicted = 0
             evidence_lines = []

@@ -28,14 +28,18 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
+from services.citation_verifier import CitationVerifier
 from services.r2_upload_service import R2UploadService
 from services.redis_cache import RedisCache
 from services.retention_janitor import RetentionJanitor
 from services.revalidation_service import RevalidationService
+from services.seed_url_fetcher import SeedURLFetcher
 from services.site_config import SiteConfig
 from services.telegram_config import TelegramConfig
+from services.title_originality_external import TitleOriginalityExternalChecker
 from services.url_scraper import URLScraper
 from services.url_validator import URLValidator
+from services.web_research import WebResearcher
 
 if TYPE_CHECKING:
     from services.decorators import Decorators
@@ -258,3 +262,55 @@ class AppContainer:
         (caller-bridge); this property is the canonical wiring seam.
         """
         return RetentionJanitor(site_config=self.site_config)
+
+    @cached_property
+    def web_research(self) -> WebResearcher:
+        """Free DuckDuckGo web research + content extraction (#272 leaf batch 2).
+
+        Reads the ``web_research_*`` tunables (max_concurrent /
+        search_timeout_seconds / fetch_timeout_seconds / max_content_chars)
+        from ``SiteConfig``. ``research_service`` / ``multi_model_qa`` /
+        ``title_generation`` / the ``web_search`` topic source build their
+        own per-call instance from the context SiteConfig (caller-bridge);
+        this property is the canonical wiring seam for container-aware
+        callers + tests.
+        """
+        return WebResearcher(site_config=self.site_config)
+
+    @cached_property
+    def citation_verifier(self) -> CitationVerifier:
+        """External-citation reachability checker (#272 leaf batch 2).
+
+        Reads ``crawler_contact_url`` from ``SiteConfig`` for the HEAD-probe
+        User-Agent. ``multi_model_qa`` builds its own per-review instance
+        from the module SiteConfig (caller-bridge). The shared
+        ``http_client`` fan-out plumbing stays module-level (wired by
+        ``services/http_client.py``); this property is the SiteConfig wiring
+        seam for container-aware callers + tests.
+        """
+        return CitationVerifier(site_config=self.site_config)
+
+    @cached_property
+    def seed_url_fetcher(self) -> SeedURLFetcher:
+        """Single-URL → topic-seed fetcher (#272 leaf batch 2).
+
+        Reads ``seed_url_fetch_timeout_seconds`` / ``seed_url_user_agent`` /
+        ``seed_url_max_bytes`` from ``SiteConfig``. ``routes/task_routes.py``
+        builds its own per-request instance from the DI'd SiteConfig
+        (caller-bridge); this property is the canonical wiring seam.
+        """
+        return SeedURLFetcher(site_config=self.site_config)
+
+    @cached_property
+    def title_originality_external(self) -> TitleOriginalityExternalChecker:
+        """External-article title-duplicate checker (#272 leaf batch 2).
+
+        Reads ``title_originality_external_check_enabled`` /
+        ``title_originality_external_penalty`` /
+        ``title_originality_cache_ttl_hours`` from ``SiteConfig``.
+        ``title_generation`` builds its own per-call instance from the
+        module SiteConfig (caller-bridge). The process-local result cache
+        stays module-level (shared across instances by design); this
+        property is the canonical SiteConfig wiring seam.
+        """
+        return TitleOriginalityExternalChecker(site_config=self.site_config)

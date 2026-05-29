@@ -11,9 +11,19 @@ Sources:
 
 Usage:
     from services.web_research import WebResearcher
-    researcher = WebResearcher()
+    researcher = WebResearcher(site_config=site_config)
     results = await researcher.search("FastAPI best practices 2026")
     # Returns list of {title, url, snippet, content} dicts
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 2) converted this
+module from the module-level ``site_config`` singleton + ``set_site_config``
+setter + ``_sc()`` accessor to constructor DI. The ``WebResearcher`` class
+now takes ``site_config`` in ``__init__`` and reads its ``web_research_*``
+tunables via ``self._web_research_int``. The composition root
+(``services/container.py::AppContainer.web_research``) wires one; callers
+that aren't yet migrated build a per-call instance from their own
+lifespan-bound SiteConfig (caller-bridge pattern,
+``WebResearcher(site_config=site_config)``).
 """
 
 import asyncio
@@ -25,34 +35,6 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Falls back to a fresh env-fallback instance when unset.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
-def _sc() -> SiteConfig:
-    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
-    return site_config
-
-
-def _web_research_int(key: str, default: int) -> int:
-    """Read a web_research_* tunable from app_settings with a safe default.
-
-    Indirected through a function so the lookup happens at call time
-    (picks up live app_settings changes without a restart) rather than
-    being frozen at import time (#198).
-    """
-    try:
-        return _sc().get_int(f"web_research_{key}", default)
-    except Exception:
-        return default
 
 
 # Max content to extract per page (chars) — default only, tunable via
@@ -67,6 +49,21 @@ MAX_CONCURRENT = 3
 class WebResearcher:
     """Free web research using DuckDuckGo + content extraction."""
 
+    def __init__(self, *, site_config: SiteConfig):
+        self._site_config = site_config
+
+    def _web_research_int(self, key: str, default: int) -> int:
+        """Read a web_research_* tunable from app_settings with a safe default.
+
+        Indirected through a method so the lookup happens at call time
+        (picks up live app_settings changes without a restart) rather than
+        being frozen at import time (#198).
+        """
+        try:
+            return self._site_config.get_int(f"web_research_{key}", default)
+        except Exception:
+            return default
+
     async def search(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
         """Search the web and extract content from top results.
 
@@ -79,7 +76,7 @@ class WebResearcher:
             return []
 
         # Step 2: Fetch and extract content from top results (concurrent)
-        sem = asyncio.Semaphore(_web_research_int("max_concurrent", MAX_CONCURRENT))
+        sem = asyncio.Semaphore(self._web_research_int("max_concurrent", MAX_CONCURRENT))
         async def fetch_one(result):
             async with sem:
                 content = await self._extract_content(result["url"])
@@ -118,7 +115,7 @@ class WebResearcher:
             loop = asyncio.get_running_loop()
             # Hard cap: DDG sometimes hangs or rate-limits silently.
             # asyncio.wait_for guarantees the pipeline won't stall on search.
-            _search_timeout = _web_research_int("search_timeout_seconds", 20)
+            _search_timeout = self._web_research_int("search_timeout_seconds", 20)
             try:
                 raw = await asyncio.wait_for(
                     loop.run_in_executor(None, _search), timeout=_search_timeout
@@ -149,7 +146,7 @@ class WebResearcher:
         if not url:
             return ""
 
-        _fetch_timeout = _web_research_int("fetch_timeout_seconds", FETCH_TIMEOUT)
+        _fetch_timeout = self._web_research_int("fetch_timeout_seconds", FETCH_TIMEOUT)
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(_fetch_timeout, connect=3.0),
@@ -183,7 +180,7 @@ class WebResearcher:
                 lines = [line.strip() for line in text.split("\n") if line.strip()]
                 clean = "\n".join(lines)
 
-                return clean[: _web_research_int("max_content_chars", MAX_CONTENT_CHARS)]
+                return clean[: self._web_research_int("max_content_chars", MAX_CONTENT_CHARS)]
 
         except Exception as e:
             logger.debug("[RESEARCH] Content extraction failed for %s: %s", url[:50], e)

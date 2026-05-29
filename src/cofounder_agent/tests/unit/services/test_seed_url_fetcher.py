@@ -5,6 +5,13 @@ happy path (combined topic + URL) and the max_bytes truncation cap.
 httpx is mocked via ``MockTransport`` so no real network traffic ever
 happens — and we deliberately pass the ``client=`` kwarg through so
 the test doesn't wait on real DNS/TCP timeouts.
+
+Rewritten 2026-05-29 (SiteConfig DI migration #272 leaf batch 2) after
+the free ``fetch_seed_url`` function became
+``SeedURLFetcher.fetch_seed_url`` with constructor DI. Tests build a
+``SeedURLFetcher(site_config=SiteConfig())`` and call the method; the
+pure ``build_source_attribution`` + ``_looks_like_login_wall`` helpers
+stay module-level.
 """
 
 from __future__ import annotations
@@ -14,11 +21,17 @@ import pytest
 
 from services.seed_url_fetcher import (
     SeedURLError,
+    SeedURLFetcher,
     SeedURLResult,
     _looks_like_login_wall,
     build_source_attribution,
-    fetch_seed_url,
 )
+from services.site_config import SiteConfig
+
+# A bare fetcher reused across tests — the config helpers all fall back
+# to their hardcoded defaults on an empty SiteConfig, which is exactly
+# what these tests want (the ``client=`` kwarg overrides transport).
+_fetcher = SeedURLFetcher(site_config=SiteConfig())
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,7 +79,7 @@ class TestFetchSeedURLHappyPath:
             return httpx.Response(200, text=html, headers={"content-type": "text/html"})
 
         async with _mock_client(handler) as client:
-            result = await fetch_seed_url(
+            result = await _fetcher.fetch_seed_url(
                 "https://example.com/post", client=client,
             )
 
@@ -87,7 +100,7 @@ class TestFetchSeedURLHappyPath:
             return httpx.Response(200, text=html)
 
         async with _mock_client(handler) as client:
-            result = await fetch_seed_url(
+            result = await _fetcher.fetch_seed_url(
                 "https://example.com/no-title", client=client,
             )
 
@@ -106,7 +119,7 @@ class TestFetchSeedURLHappyPath:
             return httpx.Response(200, text=html)
 
         async with _mock_client(handler) as client:
-            result = await fetch_seed_url(
+            result = await _fetcher.fetch_seed_url(
                 "https://example.com/no-meta", client=client,
             )
 
@@ -126,7 +139,7 @@ class TestFetchSeedURLHappyPath:
             return httpx.Response(200, text=html)
 
         async with _mock_client(handler) as client:
-            result = await fetch_seed_url(
+            result = await _fetcher.fetch_seed_url(
                 "https://example.com/og", client=client,
             )
 
@@ -147,7 +160,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://example.com/missing", client=client,
                 )
 
@@ -161,7 +174,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://example.com/broken", client=client,
                 )
 
@@ -186,7 +199,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://example.com/premium", client=client,
                 )
 
@@ -206,7 +219,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://example.com/paid", client=client,
                 )
 
@@ -222,7 +235,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://example.com/untitled", client=client,
                 )
 
@@ -231,13 +244,13 @@ class TestFetchSeedURLErrors:
     @pytest.mark.asyncio
     async def test_invalid_scheme_rejected_before_fetch(self):
         with pytest.raises(SeedURLError) as exc_info:
-            await fetch_seed_url("ftp://example.com/file.txt")
+            await _fetcher.fetch_seed_url("ftp://example.com/file.txt")
         assert exc_info.value.reason == "invalid_url"
 
     @pytest.mark.asyncio
     async def test_empty_url_rejected(self):
         with pytest.raises(SeedURLError) as exc_info:
-            await fetch_seed_url("")
+            await _fetcher.fetch_seed_url("")
         assert exc_info.value.reason == "invalid_url"
 
     @pytest.mark.asyncio
@@ -247,7 +260,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://unreachable.example.com", client=client,
                 )
 
@@ -260,7 +273,7 @@ class TestFetchSeedURLErrors:
 
         async with _mock_client(handler) as client:
             with pytest.raises(SeedURLError) as exc_info:
-                await fetch_seed_url(
+                await _fetcher.fetch_seed_url(
                     "https://slow.example.com", client=client,
                 )
 
@@ -289,7 +302,7 @@ class TestFetchSeedURLMaxBytes:
             return httpx.Response(200, text=html)
 
         async with _mock_client(handler) as client:
-            result = await fetch_seed_url(
+            result = await _fetcher.fetch_seed_url(
                 "https://example.com/huge",
                 client=client,
                 max_bytes=1024,
@@ -309,7 +322,7 @@ class TestFetchSeedURLMaxBytes:
             return httpx.Response(200, text=html)
 
         async with _mock_client(handler) as client:
-            result = await fetch_seed_url(
+            result = await _fetcher.fetch_seed_url(
                 "https://example.com/tiny",
                 client=client,
                 max_bytes=1_048_576,
@@ -380,3 +393,41 @@ class TestLoginWallHeuristic:
         assert _looks_like_login_wall(
             "This content is for members only."
         )
+
+
+# ---------------------------------------------------------------------------
+# Container wiring (#272 leaf batch 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAppContainerWiring:
+    """``AppContainer.seed_url_fetcher`` returns a memoised SeedURLFetcher."""
+
+    def test_app_container_exposes_seed_url_fetcher(self):
+        from unittest.mock import MagicMock
+
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        fetcher = container.seed_url_fetcher
+        assert isinstance(fetcher, SeedURLFetcher)
+
+    def test_cached_property_memoises(self):
+        from unittest.mock import MagicMock
+
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.seed_url_fetcher is container.seed_url_fetcher
+
+    def test_reads_tunables_from_injected_site_config(self):
+        sc = SiteConfig(initial_config={
+            "seed_url_fetch_timeout_seconds": "3",
+            "seed_url_user_agent": "MyBot/9.9",
+            "seed_url_max_bytes": "4096",
+        })
+        fetcher = SeedURLFetcher(site_config=sc)
+        assert fetcher._get_timeout_seconds() == 3.0
+        assert fetcher._get_user_agent() == "MyBot/9.9"
+        assert fetcher._get_max_bytes() == 4096

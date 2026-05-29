@@ -376,7 +376,7 @@ async def check_title_originality(title: str) -> dict:
 
     try:
         from services.web_research import WebResearcher
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=site_config)
         search_results = await researcher.search_simple(
             f'"{title}"', num_results=8,
         )
@@ -417,9 +417,11 @@ async def check_title_originality(title: str) -> dict:
     # path (and vice versa).
     try:
         from services.title_originality_external import (
-            check_external_title_duplicates,
+            TitleOriginalityExternalChecker,
         )
-        ext = await check_external_title_duplicates(title)
+        ext = await TitleOriginalityExternalChecker(
+            site_config=site_config
+        ).check_external_title_duplicates(title)
         result["external_verbatim_match"] = ext.verbatim_match
         result["external_near_match"] = ext.near_match
         result["external_penalty"] = ext.penalty

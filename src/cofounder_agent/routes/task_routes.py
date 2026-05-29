@@ -96,7 +96,9 @@ def _check_task_ownership(task: dict, current_user: Any) -> None:
 # the Herrington-pattern reasoning behind the "Source article:" block.
 
 
-async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
+async def _resolve_seed_url(
+    task_request: UnifiedTaskRequest, *, site_config: SiteConfig
+) -> None:
     """If ``seed_url`` is set, fetch it and populate topic + research context.
 
     Mutates ``task_request`` in place:
@@ -123,12 +125,16 @@ async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
     # route tests without the full http stack loaded.
     from services.seed_url_fetcher import (
         SeedURLError,
+        SeedURLFetcher,
         build_source_attribution,
-        fetch_seed_url,
     )
 
+    # Caller-bridge (#272 leaf batch 2): build a per-request fetcher from
+    # the route's DI'd SiteConfig rather than a module-level singleton.
+    fetcher = SeedURLFetcher(site_config=site_config)
+
     try:
-        result = await fetch_seed_url(seed_url)
+        result = await fetcher.fetch_seed_url(seed_url)
     except SeedURLError as exc:
         logger.info(
             "[SEED_URL] Fetch rejected for %s (reason=%s): %s",
@@ -282,7 +288,7 @@ async def create_task(
         # Failures bubble up as HTTPException 400 with a clear reason —
         # we deliberately do NOT fall back to autodiscovery, because the
         # caller asked for THIS specific URL.
-        await _resolve_seed_url(task_request)
+        await _resolve_seed_url(task_request, site_config=site_config)
 
         # Validate required fields (belt-and-suspenders — Pydantic also
         # enforces this, but the check keeps the 422 message specific).
