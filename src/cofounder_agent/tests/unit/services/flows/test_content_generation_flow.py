@@ -22,11 +22,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
-def _make_pool(claim_row=None):
-    """asyncpg pool double whose claim transaction returns ``claim_row``."""
+def _make_pool(claim_row=None, settings_rows=None):
+    """asyncpg pool double whose claim transaction returns ``claim_row``.
+
+    ``settings_rows`` mocks the ``SELECT key, value FROM app_settings ...``
+    issued by ``services.bootstrap.build_container`` when the Prefect flow
+    bootstraps its AppContainer. Defaults to ``[]`` (empty SiteConfig),
+    which is fine for these tests — they patch the pipeline call directly
+    so they don't actually exercise any settings reads.
+    """
     conn = MagicMock()
     conn.fetchrow = AsyncMock(return_value=claim_row)
     conn.execute = AsyncMock()
+    conn.fetch = AsyncMock(return_value=settings_rows if settings_rows is not None else [])
 
     @asynccontextmanager
     async def _tx():
@@ -41,6 +49,10 @@ def _make_pool(claim_row=None):
         yield conn
 
     pool.acquire = _acquire
+    # bootstrap.build_container calls ``await pool.fetch(...)`` directly
+    # (asyncpg's pool-level convenience), so the pool double also needs
+    # an AsyncMock fetch independent of the per-connection one above.
+    pool.fetch = AsyncMock(return_value=settings_rows if settings_rows is not None else [])
     return pool
 
 

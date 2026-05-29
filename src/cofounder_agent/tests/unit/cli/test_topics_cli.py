@@ -47,6 +47,10 @@ def fake_dsn(monkeypatch):
 def _async_conn(*, fetchval_result=None) -> Any:
     conn = MagicMock()
     conn.fetchval = AsyncMock(return_value=fetchval_result)
+    # ``execute`` is needed for the ``audit_log`` insert that the new
+    # `topics sweep` canary writes after building the AppContainer
+    # (SiteConfig DI migration PR 2).
+    conn.execute = AsyncMock(return_value=None)
     return conn
 
 
@@ -65,6 +69,13 @@ def fake_asyncpg(fake_dsn):
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
     pool.close = AsyncMock(return_value=None)
+    # ``fetch`` is needed by ``services.bootstrap.build_container`` —
+    # the new ``topics sweep`` canary builds an AppContainer via
+    # ``container_for_cli(pool)`` which immediately calls
+    # ``pool.fetch("SELECT key, value FROM app_settings ...")``.
+    # An empty rowset is fine for these tests; they don't exercise the
+    # container's site_config payload.
+    pool.fetch = AsyncMock(return_value=[])
 
     async def _create_pool(_dsn, **_kwargs):
         return pool
@@ -161,6 +172,63 @@ class TestSweep:
         assert result.exit_code == 0, result.output
         assert "A sharper hook" in result.output
         assert str(snap.id) in result.output
+
+    def test_container_canary_writes_audit_log_row(
+        self, runner, fake_asyncpg,
+    ):
+        """SiteConfig DI migration PR 2 canary: ``topics sweep`` builds
+        an AppContainer via ``container_for_cli`` and writes one
+        ``cli_container_built`` audit_log row so production wireup is
+        observable via a single SQL count.
+
+        Container service count is 0 until PR 3+ migrates a service.
+        """
+        n = _niche()
+        snap = _snapshot(candidate_count=2)
+        view = _batch_view(candidates=[_candidate(title="Canary topic")])
+
+        ns_cls = MagicMock()
+        ns_cls.return_value.get_by_slug = AsyncMock(return_value=n)
+        svc_cls = MagicMock()
+        svc_cls.return_value.run_sweep = AsyncMock(return_value=snap)
+        svc_cls.return_value.show_batch = AsyncMock(return_value=view)
+
+        with (
+            patch("services.niche_service.NicheService", ns_cls),
+            patch("services.topic_batch_service.TopicBatchService", svc_cls),
+        ):
+            result = runner.invoke(
+                topics_group, ["sweep", "--niche", n.slug],
+            )
+
+        assert result.exit_code == 0, result.output
+        # The canary prints a single ``[di-migration]`` line confirming
+        # the container was built. Body of the line carries the live
+        # service count so a future migration PR can grep for it
+        # changing from 0 to N.
+        assert "[di-migration]" in result.output
+        assert "AppContainer built" in result.output
+
+        # Audit-log row written. The CLI uses
+        # ``conn.execute(INSERT INTO audit_log ...)`` — the fake_asyncpg
+        # fixture stubs ``conn.execute`` as an AsyncMock. Confirm the
+        # call landed with the right event_type + source.
+        execute_mock = fake_asyncpg["conn"].execute
+        assert execute_mock.await_count >= 1
+        # Find the audit_log insert (there's only one INSERT in the
+        # sweep path; any other execute calls would be UPDATEs from
+        # TopicBatchService, which is mocked away here).
+        insert_calls = [
+            c for c in execute_mock.await_args_list
+            if "audit_log" in str(c.args[0])
+        ]
+        assert insert_calls, (
+            "topics sweep must write a cli_container_built row to "
+            "audit_log so prod wireup is observable"
+        )
+        sql, *params = insert_calls[0].args
+        assert "cli_container_built" in params
+        assert "poindexter.cli.topics.sweep" in params
 
 
 # ---------------------------------------------------------------------------

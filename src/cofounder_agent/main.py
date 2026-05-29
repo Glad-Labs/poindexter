@@ -195,6 +195,29 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 "[LIFESPAN] di_wiring import / call failed: %s", e,
             )
 
+        # SiteConfig constructor-DI migration PR 2 (design doc:
+        # ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+        # Build the ``AppContainer`` and stash it on ``app.state.container``
+        # so route handlers can ``Depends(get_container_dependency)`` for
+        # any migrated service. Coexists with the per-module
+        # ``wire_site_config_modules`` call above for the duration of the
+        # migration; the cleanup PR at the end retires the per-module
+        # wiring once every service constructs through the container.
+        #
+        # Per ``feedback_no_silent_defaults``: build_container raises
+        # RuntimeError loudly if app_settings can't be read — we let it
+        # propagate so the lifespan's outer handler logs + records the
+        # startup_error. A worker that can't read app_settings has a
+        # real problem (DB not actually ready / schema not migrated) and
+        # MUST surface, not silently boot with a missing container.
+        from services.bootstrap import build_container
+        app.state.container = await build_container(
+            services["database"].pool
+        )
+        logger.info(
+            "[LIFESPAN] AppContainer built and attached to app.state.container"
+        )
+
         # Boot-time import audit (Glad-Labs/poindexter#504).
         # Closes the silent-degradation gap that caused the 2026-05-14
         # Langfuse v2→v3 incident: an optional-SDK ImportError was

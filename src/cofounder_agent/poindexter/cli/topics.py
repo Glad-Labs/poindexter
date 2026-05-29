@@ -29,6 +29,8 @@ from uuid import UUID
 
 import click
 
+from poindexter.cli._lifecycle import container_for_cli
+
 
 _MARKER_RE = re.compile(r"^(sys)?#(\d+)$")
 
@@ -113,41 +115,109 @@ def sweep(niche: str) -> None:
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            n = await NicheService(pool).get_by_slug(niche)
-            if not n:
-                raise click.ClickException(f"unknown niche: {niche}")
+            # SiteConfig constructor-DI migration PR 2 canary (design doc:
+            # ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+            # `container_for_cli` builds an AppContainer for the
+            # duration of this command. Today the container holds zero
+            # services — TopicBatchService still constructs inline below.
+            # PR 3+ migrates TopicBatchService into the container and
+            # the body of this command swaps `TopicBatchService(pool)`
+            # for `container.topic_batch_service`.
+            async with container_for_cli(pool) as container:
+                # Best-effort audit_log entry so operators can verify
+                # the wireup in production via a single SQL query:
+                #     SELECT count(*) FROM audit_log
+                #     WHERE event_type = 'cli_container_built'
+                # When a service migrates we'll bump the count in
+                # ``details.container_services`` automatically since
+                # the field reads from the live container.
+                try:
+                    # Count is computed against the container's
+                    # ``cached_property`` service entries — anything
+                    # exposed publicly (no leading underscore) on the
+                    # container class beyond its declared dataclass
+                    # fields. Today: 0; future PRs: 1, 2, ... per
+                    # migrated service.
+                    from functools import cached_property as _cached_property
 
-            svc = TopicBatchService(pool)
-            snapshot = await svc.run_sweep(niche_id=n.id)
-
-            click.echo(f"Niche: {n.slug} ({n.name})")
-            if snapshot is None:
-                # run_sweep returns None on the two known short-circuits.
-                # Distinguish them so the operator knows which gate hit.
-                async with pool.acquire() as conn:
-                    open_batch = await conn.fetchval(
-                        "SELECT id FROM topic_batches "
-                        "WHERE niche_id = $1 AND status = 'open'",
-                        n.id,
+                    _container_cls = type(container)
+                    _service_count = sum(
+                        1
+                        for _name, _attr in vars(_container_cls).items()
+                        if isinstance(_attr, _cached_property)
+                        and not _name.startswith("_")
                     )
-                if open_batch is not None:
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log
+                                (event_type, source, details, severity)
+                            VALUES ($1, $2, $3::jsonb, $4)
+                            """,
+                            "cli_container_built",
+                            "poindexter.cli.topics.sweep",
+                            json.dumps(
+                                {
+                                    "command": "topics sweep",
+                                    "container_services": _service_count,
+                                    "niche": niche,
+                                }
+                            ),
+                            "info",
+                        )
                     click.echo(
-                        f"No new batch — open batch already exists: {open_batch}"
+                        f"[di-migration] AppContainer built "
+                        f"({_service_count} services wired)"
                     )
-                else:
+                except Exception as audit_exc:  # noqa: BLE001
+                    # Audit write is observability, never blocks the
+                    # command. Log to stderr and continue — the sweep
+                    # still runs.
                     click.echo(
-                        "No new batch — discovery cadence floor not elapsed "
-                        f"(niche.discovery_cadence_minute_floor="
-                        f"{n.discovery_cadence_minute_floor}m)"
+                        f"[di-migration] audit_log write failed "
+                        f"(non-blocking): {audit_exc}",
+                        err=True,
                     )
-                return
 
-            view = await svc.show_batch(batch_id=snapshot.id)
-            top_title = view.candidates[0].title if view.candidates else "(none)"
-            click.echo(
-                f"Created batch {snapshot.id} — "
-                f"{snapshot.candidate_count} candidates, top: {top_title}"
-            )
+                n = await NicheService(pool).get_by_slug(niche)
+                if not n:
+                    raise click.ClickException(f"unknown niche: {niche}")
+
+                svc = TopicBatchService(pool)
+                snapshot = await svc.run_sweep(niche_id=n.id)
+
+                click.echo(f"Niche: {n.slug} ({n.name})")
+                if snapshot is None:
+                    # run_sweep returns None on the two known
+                    # short-circuits. Distinguish them so the operator
+                    # knows which gate hit.
+                    async with pool.acquire() as conn:
+                        open_batch = await conn.fetchval(
+                            "SELECT id FROM topic_batches "
+                            "WHERE niche_id = $1 AND status = 'open'",
+                            n.id,
+                        )
+                    if open_batch is not None:
+                        click.echo(
+                            f"No new batch — open batch already exists: "
+                            f"{open_batch}"
+                        )
+                    else:
+                        click.echo(
+                            "No new batch — discovery cadence floor not "
+                            f"elapsed (niche.discovery_cadence_minute_floor="
+                            f"{n.discovery_cadence_minute_floor}m)"
+                        )
+                    return
+
+                view = await svc.show_batch(batch_id=snapshot.id)
+                top_title = (
+                    view.candidates[0].title if view.candidates else "(none)"
+                )
+                click.echo(
+                    f"Created batch {snapshot.id} — "
+                    f"{snapshot.candidate_count} candidates, top: {top_title}"
+                )
         finally:
             await pool.close()
 

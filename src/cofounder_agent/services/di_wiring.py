@@ -183,3 +183,51 @@ async def build_and_wire_for_subprocess(pool: Any) -> Any:
         "%d modules rebound", loaded_keys, wired,
     )
     return site_cfg
+
+
+async def build_and_wire_subprocess_with_container(
+    pool: Any,
+) -> tuple[Any, Any]:
+    """Subprocess bootstrap that ALSO constructs an ``AppContainer``.
+
+    Sibling to :func:`build_and_wire_for_subprocess` for the SiteConfig
+    constructor-DI migration (design doc:
+    ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+    Returns ``(site_config, app_container)`` so the caller (a Prefect
+    flow body, etc.) can keep handing the loaded SiteConfig down to
+    legacy ``site_config=`` consumers AND start reaching for
+    container-wired services as they migrate.
+
+    Wiring order matters:
+
+    1. ``build_container(pool)`` constructs a SiteConfig via the
+       bootstrap helper and loads non-secret rows into it. This is the
+       SAME SiteConfig instance the container holds.
+    2. ``wire_site_config_modules(container.site_config)`` then fans
+       the same instance out across every per-module ``site_config``
+       attribute — exactly mirroring what ``main.py``'s lifespan does.
+
+    Sharing the SiteConfig instance between the container and the
+    per-module attrs is the key invariant: a ``.reload(pool)`` on the
+    container's SiteConfig propagates to every wired module without a
+    second wiring pass.
+
+    Per ``feedback_no_silent_defaults``: ``build_container`` raises
+    RuntimeError loudly on app_settings query failure. We propagate
+    that (no try/except wrap here) — a Prefect flow that can't read
+    its config shouldn't pretend it can.
+    """
+    from services.bootstrap import build_container
+
+    container = await build_container(pool)
+    site_cfg = container.site_config
+
+    wired = wire_site_config_modules(site_cfg)
+    logger.info(
+        "[di_wiring] subprocess AppContainer wired: %d settings from DB, "
+        "%d modules rebound (container service count: 0 — services "
+        "migrate one per PR)",
+        len(site_cfg._config),  # noqa: SLF001 — observability only
+        wired,
+    )
+    return site_cfg, container

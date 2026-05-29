@@ -749,6 +749,29 @@ def get_oauth_client():
     return _OAUTH_CLIENT
 
 
+# SiteConfig constructor-DI migration PR 2 (design doc:
+# ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+# Module-level handle on the lifespan-bound ``AppContainer`` — built
+# once in ``main()`` after the asyncpg pool is alive, read via
+# ``get_app_container()``. Stays ``None`` during the migration when
+# ``services.bootstrap`` isn't importable from the brain image (the
+# import is best-effort — see ``main()`` for the rationale).
+_APP_CONTAINER = None
+
+
+def get_app_container():
+    """Return the brain's lifespan-bound ``AppContainer``, or ``None``.
+
+    Mirror of :func:`get_oauth_client` for the SiteConfig DI migration.
+    Probes that migrate to the container model in PR 3+ call this from
+    their cycle body; until then it's a forward-compatibility seam.
+    Returns ``None`` before ``main()`` builds the container, and in
+    environments where ``services.bootstrap`` isn't on PYTHONPATH (the
+    bare-brain unit-test harness).
+    """
+    return _APP_CONTAINER
+
+
 # Vercel's edge protection (BotID + bot-blocking ruleset) returns 403
 # for the default Python-urllib UA, which made the brain repeatedly
 # alert "Service site is DOWN: Forbidden" against a perfectly healthy
@@ -2491,6 +2514,54 @@ async def main():
     # under service="poindexter-brain" so the daemon shows up alongside
     # the worker / voice agents in the Grafana flame-graph panel.
     await _setup_brain_pyroscope(pool)
+
+    # SiteConfig constructor-DI migration PR 2 (design doc:
+    # ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+    # Build the ``AppContainer`` and stash it module-globally so probes
+    # / restart paths that get migrated in PR 3+ can reach the wired
+    # services through ``brain.brain_daemon.get_app_container()`` instead
+    # of constructing services per-call.
+    #
+    # The brain is standalone (no SiteConfig DI seam today — probes
+    # talk to the DB directly, see ``_setup_brain_pyroscope`` /
+    # ``write_prometheus_secrets`` for examples). Container construction
+    # here is additive — no existing probe path changes. PR 3+ migrates
+    # probes one at a time to use ``container.<service>``.
+    #
+    # Best-effort import: ``services.bootstrap`` lives in the worker
+    # tree, not the brain tree. The brain container's image mirrors the
+    # services tree onto PYTHONPATH so the import resolves at runtime;
+    # in environments where it doesn't (eg the bare-brain unit-test
+    # harness) we log loudly per ``feedback_no_silent_defaults`` and
+    # continue — every existing probe path still works since none of
+    # them read the container today.
+    global _APP_CONTAINER
+    try:
+        # Lazy import — brain's PYTHONPATH includes the worker services
+        # tree at /app in the container build (see brain/Dockerfile).
+        from services.bootstrap import build_container as _build_app_container
+
+        _APP_CONTAINER = await _build_app_container(pool)
+        logger.info(
+            "[BRAIN] AppContainer built and stashed module-globally "
+            "(get_app_container() returns it)"
+        )
+    except ImportError as exc:
+        logger.warning(
+            "[BRAIN] services.bootstrap unavailable — AppContainer not "
+            "built; brain probes that depend on it (PR 3+) will fail: %s",
+            exc,
+        )
+        _APP_CONTAINER = None
+    except Exception:
+        # build_container raises RuntimeError loudly when app_settings
+        # query fails. Re-raise so the daemon doesn't boot in a half-
+        # state where every probe that needs the container would crash.
+        logger.exception(
+            "[BRAIN] AppContainer build failed — refusing to start brain "
+            "daemon with a half-wired DI seam"
+        )
+        raise
 
     # Build the shared OAuth client so probes can hit authenticated
     # worker endpoints with cached JWTs (#245). Falls back to the

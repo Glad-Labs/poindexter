@@ -145,7 +145,7 @@ async def content_generation_flow(
     # the module to register flows during deployment-time discovery
     # but doesn't need the heavy database/services tree).
     from services.content_router_service import process_content_generation_task
-    from services.di_wiring import build_and_wire_for_subprocess
+    from services.di_wiring import build_and_wire_subprocess_with_container
 
     if database_service is None:
         database_service = await _build_default_database_service()
@@ -158,13 +158,19 @@ async def content_generation_flow(
     # through to "pick largest installed model by file size", and the
     # 70-150B parameter local models that ship for testing get loaded
     # into 32 GB VRAM + 63 GB host RAM and thrash the system.
-    # ``build_and_wire_for_subprocess`` loads SiteConfig from the
-    # database_service's pool and rebinds it across every wired
-    # module before any pipeline code runs.
+    # ``build_and_wire_subprocess_with_container`` (DI migration PR 2,
+    # design doc 2026-05-28-site-config-di-migration.md) loads
+    # SiteConfig from the database_service's pool via
+    # ``services.bootstrap.build_container``, rebinds the same instance
+    # across every wired module, and returns the AppContainer so
+    # downstream migrated services can construct through it.
     _wired_site_config: Any = None
+    _app_container: Any = None
     _pool = getattr(database_service, "pool", None)
     if _pool is not None:
-        _wired_site_config = await build_and_wire_for_subprocess(_pool)
+        _wired_site_config, _app_container = (
+            await build_and_wire_subprocess_with_container(_pool)
+        )
     else:
         logger.warning(
             "[CONTENT_FLOW] database_service has no .pool — skipping "

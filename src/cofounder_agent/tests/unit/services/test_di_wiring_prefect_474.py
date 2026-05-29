@@ -229,14 +229,44 @@ class TestProductionCallsiteGuards:
     """
 
     def test_content_generation_flow_calls_build_and_wire(self):
-        """The Prefect flow entrypoint must call build_and_wire_for_subprocess."""
-        from services.flows import content_generation
+        """The Prefect flow entrypoint must call either
+        ``build_and_wire_for_subprocess`` (legacy seam) or
+        ``build_and_wire_subprocess_with_container`` (SiteConfig DI
+        migration PR 2 — design doc
+        ``docs/architecture/2026-05-28-site-config-di-migration.md``).
 
-        source = inspect.getsource(content_generation)
-        assert "build_and_wire_for_subprocess" in source, (
-            "services/flows/content_generation.py must call "
-            "build_and_wire_for_subprocess(database_service.pool) "
-            "before any pipeline stage runs. See poindexter#477."
+        Either name closes the poindexter#477 regression — the
+        important invariant is that the Prefect-spawned subprocess
+        wires every per-module ``site_config`` attr from the DB pool
+        before any pipeline stage runs. The container variant
+        additionally returns an ``AppContainer`` for migrated services.
+
+        Reads the flow module's source via ``pathlib`` rather than
+        ``import services.flows.content_generation`` so the regression
+        guard runs even in test environments that don't have the
+        ``prefect`` package installed (the module's top-level
+        ``from prefect import flow, task`` would otherwise hard-error
+        on import and shadow the real assertion).
+        """
+        from pathlib import Path
+
+        flow_path = (
+            Path(inspect.getsourcefile(inspect.currentframe())).resolve()
+            .parents[3]
+            / "services" / "flows" / "content_generation.py"
+        )
+        assert flow_path.is_file(), (
+            f"expected content_generation.py at {flow_path}"
+        )
+        source = flow_path.read_text(encoding="utf-8")
+        wires_legacy = "build_and_wire_for_subprocess" in source
+        wires_container = "build_and_wire_subprocess_with_container" in source
+        assert wires_legacy or wires_container, (
+            "services/flows/content_generation.py must call either "
+            "build_and_wire_for_subprocess (legacy) or "
+            "build_and_wire_subprocess_with_container (DI migration PR 2) "
+            "before any pipeline stage runs. See poindexter#477 + the "
+            "2026-05-28 SiteConfig DI migration design doc."
         )
 
     def test_main_lifespan_calls_wire_site_config_modules(self):

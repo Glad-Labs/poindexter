@@ -468,3 +468,37 @@ async def db_pool(_db_pool_session):
                 )
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Layer 5 — AppContainer fixture (SiteConfig DI migration PR 2)
+# ---------------------------------------------------------------------------
+#
+# Opt-in baseline ``AppContainer`` for tests that want one without going
+# all the way to the real ``build_container(real_pool)`` bootstrap path.
+# Tests that need a real container with real services should construct
+# their own via ``services.bootstrap.build_container`` against a fixture
+# pool.
+#
+# NOT autouse — most existing tests don't touch the container, and
+# poking it into every fixture chain would force the module-level
+# ``services.container`` import on tests that intentionally stub
+# ``services``-tree modules.
+
+
+@pytest.fixture(scope="session")
+def default_container():
+    """A baseline :class:`AppContainer` for tests that need one.
+
+    Constructed with an empty :class:`SiteConfig` (override via
+    ``SiteConfig(initial_config=...)`` per-test) and a mock pool. Tests
+    that need real wiring should construct their own via
+    ``services.bootstrap.build_container(real_pool)`` against the
+    ``db_pool`` fixture above.
+    """
+    from unittest.mock import MagicMock
+
+    from services.container import AppContainer
+    from services.site_config import SiteConfig
+
+    return AppContainer(site_config=SiteConfig(), pool=MagicMock(name="default_container.pool"))

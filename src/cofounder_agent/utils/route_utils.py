@@ -186,6 +186,42 @@ def get_site_config_dependency(request: Request) -> Any:
     return sc
 
 
+def get_container_dependency(request: Request) -> Any:
+    """FastAPI dependency that returns the lifespan-bound ``AppContainer``.
+
+    Companion to :func:`get_site_config_dependency` for the SiteConfig
+    constructor-DI migration (design doc:
+    ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+
+    PR 2 of the migration wires ``app.state.container`` from
+    ``services.bootstrap.build_container`` in ``main.py``'s lifespan.
+    During the migration the container holds no service entries; future
+    PRs add a ``@cached_property`` per migrated service, and route
+    handlers will reach those services via this dependency::
+
+        from fastapi import Depends
+        from utils.route_utils import get_container_dependency
+
+        @router.get("/topics/sweep")
+        async def sweep(container = Depends(get_container_dependency)):
+            return await container.topic_batch_service.run_sweep(...)
+
+    Per ``feedback_no_silent_defaults``: if the container isn't on
+    ``app.state`` (lifespan never ran, or its build_container call
+    crashed and was swallowed somewhere), we raise ``RuntimeError``
+    rather than silently returning ``None``. A missing container is a
+    bug at the entry point, not a tolerable degenerate state.
+    """
+    container = getattr(request.app.state, "container", None)
+    if container is None:
+        raise RuntimeError(
+            "AppContainer not on app.state — lifespan startup did not "
+            "call services.bootstrap.build_container, or the call failed. "
+            "Check worker startup logs for [LIFESPAN] AppContainer errors."
+        )
+    return container
+
+
 def get_enhanced_status_change_service() -> Any:
     """FastAPI dependency for enhanced status change service."""
     from services.enhanced_status_change_service import EnhancedStatusChangeService

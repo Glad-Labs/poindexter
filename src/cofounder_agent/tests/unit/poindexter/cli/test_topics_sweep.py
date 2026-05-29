@@ -39,6 +39,11 @@ def _async_conn(*, fetchval_result=None) -> Any:
     conn = MagicMock()
     conn.fetchval = AsyncMock(return_value=fetchval_result)
     conn.close = AsyncMock(return_value=None)
+    # ``execute`` is needed for the ``audit_log`` insert that the new
+    # `topics sweep` canary writes after building the AppContainer
+    # (SiteConfig DI migration PR 2, design doc
+    # ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+    conn.execute = AsyncMock(return_value=None)
     return conn
 
 
@@ -52,6 +57,10 @@ def fake_asyncpg(fake_dsn):
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
     pool.close = AsyncMock(return_value=None)
+    # ``fetch`` is needed by ``services.bootstrap.build_container``,
+    # which the new ``topics sweep`` canary calls via
+    # ``container_for_cli(pool)``. Empty rowset is fine for these tests.
+    pool.fetch = AsyncMock(return_value=[])
 
     async def _create_pool(_dsn, **_kwargs):
         return pool
