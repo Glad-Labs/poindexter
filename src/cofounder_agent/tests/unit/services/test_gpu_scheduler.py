@@ -229,15 +229,16 @@ class TestGetGpuUtilization:
 class TestWaitForGamingClear:
     @pytest.mark.asyncio
     async def test_idle_gpu_proceeds_immediately(self):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
 
-        with patch("services.gpu_scheduler.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
+        mock_sc = MagicMock()
+        mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
+        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
         assert scheduler._gaming_detected is False
@@ -246,15 +247,16 @@ class TestWaitForGamingClear:
 
     @pytest.mark.asyncio
     async def test_none_utilization_proceeds(self):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=None)
 
-        with patch("services.gpu_scheduler.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc = MagicMock()
+        mock_sc.get_int.side_effect = lambda k, d: d
+        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
         # No exception, no gaming flag set
         assert scheduler._gaming_detected is False
@@ -262,7 +264,7 @@ class TestWaitForGamingClear:
     @pytest.mark.asyncio
     async def test_brief_spike_proceeds(self):
         """First check is high, second is low — was just a spike, proceed."""
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler
 
@@ -270,9 +272,10 @@ class TestWaitForGamingClear:
         # First check: 90% (high), second check: 5% (idle)
         scheduler._get_gpu_utilization = AsyncMock(side_effect=[90.0, 5.0])
 
-        with patch("services.gpu_scheduler.site_config") as mock_sc, \
+        mock_sc = MagicMock()
+        mock_sc.get_int.side_effect = lambda k, d: d
+        with patch("services.gpu_scheduler._sc", return_value=mock_sc), \
              patch("asyncio.sleep", new=AsyncMock()):
-            mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
         # Was just a spike — gaming not flagged
         assert scheduler._gaming_detected is False
@@ -281,7 +284,7 @@ class TestWaitForGamingClear:
     async def test_idle_after_previous_gaming_clears_flag(self):
         """If gaming was previously detected and GPU is now idle, the flag clears."""
         import time
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler
 
@@ -290,8 +293,9 @@ class TestWaitForGamingClear:
         scheduler._gaming_paused_since = time.monotonic() - 60.0
         scheduler._get_gpu_utilization = AsyncMock(return_value=5.0)
 
-        with patch("services.gpu_scheduler.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc = MagicMock()
+        mock_sc.get_int.side_effect = lambda k, d: d
+        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
 
         assert scheduler._gaming_detected is False
@@ -428,12 +432,13 @@ class TestPropertiesAndConfig:
         assert scheduler.is_gaming is True
 
     def test_status_includes_config(self):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
-        with patch("services.gpu_scheduler.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc = MagicMock()
+        mock_sc.get_int.side_effect = lambda k, d: d
+        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             status = scheduler.status
         assert "config" in status
         assert "threshold_percent" in status["config"]
@@ -468,7 +473,7 @@ class TestPropertiesAndConfig:
         fake_sc = MagicMock()
         fake_sc.get_int = MagicMock(return_value=99)
 
-        with patch.object(gpu_scheduler, "site_config", fake_sc):
+        with patch.object(gpu_scheduler, "_sc", return_value=fake_sc):
             result = gpu_scheduler._cfg_int("threshold", 30)
         assert result == 99
 
@@ -488,7 +493,7 @@ class TestPropertiesAndConfig:
         fake_sc = MagicMock()
         fake_sc.get_int = MagicMock(side_effect=RuntimeError("db pool exhausted"))
 
-        with patch.object(gpu_scheduler, "site_config", fake_sc), \
+        with patch.object(gpu_scheduler, "_sc", return_value=fake_sc), \
              patch("utils.findings.emit_finding") as mock_emit:
             result = gpu_scheduler._cfg_int("threshold", 42)
 
@@ -511,7 +516,7 @@ class TestPropertiesAndConfig:
         fake_sc = MagicMock()
         fake_sc.get_float = MagicMock(side_effect=RuntimeError("connection refused"))
 
-        with patch.object(gpu_scheduler, "site_config", fake_sc), \
+        with patch.object(gpu_scheduler, "_sc", return_value=fake_sc), \
              patch("utils.findings.emit_finding") as mock_emit:
             result = gpu_scheduler._cfg_float("electricity_rate_kwh_usd", 0.12)
 
@@ -534,7 +539,7 @@ class TestPropertiesAndConfig:
         fake_sc = MagicMock()
         fake_sc.get_int = MagicMock(side_effect=RuntimeError("simulated"))
 
-        with patch.object(gpu_scheduler, "site_config", fake_sc), \
+        with patch.object(gpu_scheduler, "_sc", return_value=fake_sc), \
              patch("utils.findings.emit_finding",
                    side_effect=RuntimeError("audit_log not ready")):
             result = gpu_scheduler._cfg_int("threshold", 30)

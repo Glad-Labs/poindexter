@@ -34,20 +34,27 @@ from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Falls back to a fresh env-fallback instance when unset.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# Process-wide empty-SiteConfig fallback (#272 capstone). When no
+# AppContainer has been registered (CLI early paths, import time, tests
+# that never bootstrap), ``_sc()`` returns this empty instance — behaving
+# exactly like the old per-module ``site_config`` global did before its
+# lifespan setter fired. Never crashes when the container is unset.
+_FALLBACK_SITE_CONFIG = SiteConfig()
 
 
 def _sc() -> SiteConfig:
-    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
-    return site_config
+    """Return the active container's SiteConfig, or the empty fallback.
+
+    #272 capstone: sources SiteConfig from the process-wide
+    ``AppContainer`` registered by ``bootstrap.build_container`` instead
+    of a module-level global wired via the retired ``set_site_config``.
+    Crash-safe — returns ``_FALLBACK_SITE_CONFIG`` (an empty SiteConfig)
+    when no container has been registered yet.
+    """
+    from services.container_registry import get_container
+
+    container = get_container()
+    return container.site_config if container is not None else _FALLBACK_SITE_CONFIG
 
 
 def _sc_get(key: str, default: str = "") -> str:

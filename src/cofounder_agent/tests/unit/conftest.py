@@ -209,10 +209,13 @@ _SHARED_TEST_MODULES = (
     # (the flag_on/flag_off fixtures return the configured SiteConfig).
     # ``services.pipeline_architect`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
-    # ``services.prompt_manager`` STAYS in _SHARED_TEST_MODULES (#272
-    # Phase-2f deferral) — its singleton-factory construction graph keeps
-    # the module global + set_site_config in place for now.
-    "services.prompt_manager",
+    # ``services.prompt_manager`` migrated to the process-wide AppContainer
+    # accessor 2026-05-29 (#272 capstone); the module global +
+    # set_site_config setter are deleted. Its ctor / Langfuse-init path now
+    # sources SiteConfig from ``container_registry.get_container()`` via the
+    # module ``_sc()`` helper. The conftest's ``default_container_active``
+    # fixture (below) registers the seeded test SiteConfig on a container so
+    # ``get_prompt_manager()`` sees the brand seed.
     # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3); no module-level site_config attr to share. Tests
     # construct ``RetentionJanitor(site_config=...)`` directly.
@@ -222,11 +225,20 @@ _SHARED_TEST_MODULES = (
     # (#272 Phase-2e); no module-level site_config attr to share. Tests pass
     # ``site_config=`` to the public entries + internal helpers (shared
     # ``_TEST_SC`` env-backed instance).
-    "services.gpu_scheduler",
+    # ``services.gpu_scheduler`` migrated to the process-wide AppContainer
+    # accessor 2026-05-29 (#272 capstone); the module global +
+    # set_site_config setter are deleted. ``_sc()`` / ``_cfg_int`` /
+    # ``_cfg_float`` now source SiteConfig from
+    # ``container_registry.get_container()``; tests patch ``_sc`` directly
+    # or rely on the ``default_container_active`` fixture below.
     # ``services.decorators`` migrated to AppContainer (DI migration PR 6,
     # 2026-05-28). The module-level ``Decorators`` facade is seeded below
     # via ``_share_test_decorators()`` using the same shared SiteConfig.
-    "services.ollama_client",
+    # ``services.ollama_client`` migrated to the process-wide AppContainer
+    # accessor 2026-05-29 (#272 capstone); the module global +
+    # set_site_config setter are deleted. ``_sc_get`` stays the patchable
+    # test seam — it now reads ``_sc()`` (container) when no instance is
+    # injected. Tests that patch ``_sc_get`` are unaffected.
     # ``services.url_validator`` + ``services.url_scraper`` migrated to
     # constructor DI 2026-05-29 (#272 leaf batch 1); no module-level
     # site_config attr to share. Tests construct ``URLValidator(site_config=...)``
@@ -251,7 +263,11 @@ _SHARED_TEST_MODULES = (
     # share. Tests construct ``WebhookDeliveryService(pool, site_config=...)``
     # directly.
     "services.devto_service",
-    "utils.route_utils",
+    # ``utils.route_utils`` migrated to the process-wide AppContainer
+    # accessor 2026-05-29 (#272 capstone); the module global +
+    # set_site_config setter are deleted. ``get_site_config_dependency``
+    # resolves from ``app.state.container`` / ``app.state.site_config`` /
+    # the registered container / an empty fallback.
 )
 
 
@@ -293,6 +309,40 @@ def _share_test_decorators() -> None:
 
 
 _share_test_decorators()
+
+
+def _register_test_container() -> None:
+    """Register a process-wide ``AppContainer`` holding the seeded test
+    SiteConfig (#272 capstone).
+
+    The final four ambient-singleton modules (gpu_scheduler /
+    ollama_client / prompt_manager / utils.route_utils) now source their
+    SiteConfig from ``services.container_registry.get_container()`` instead
+    of a per-module global. Registering a container that wraps the SAME
+    ``site_config`` instance the conftest seeded with ``_TEST_BRAND_CONFIG``
+    preserves the previous semantic: those modules see the brand seed
+    everywhere (e.g. ``get_prompt_manager()`` reading ``langfuse_*`` keys,
+    ``gpu_scheduler._sc()`` reads). Best-effort — if the heavy
+    ``services.container`` import fails, the modules fall back to their
+    empty ``_FALLBACK_SITE_CONFIG``, which is also non-crashing.
+    """
+    try:
+        from unittest.mock import MagicMock
+
+        from services.container import AppContainer
+        from services.container_registry import set_container
+
+        set_container(
+            AppContainer(
+                site_config=site_config,
+                pool=MagicMock(name="conftest_test_container.pool"),
+            )
+        )
+    except Exception:
+        pass
+
+
+_register_test_container()
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +470,12 @@ def _reset_singletons_between_tests():
         _share_test_site_config()
         # Same reasoning for the migrated ``services.decorators`` facade.
         _share_test_decorators()
+        # #272 capstone: re-register the process-wide container so the four
+        # accessor-migrated modules (gpu_scheduler / ollama_client /
+        # prompt_manager / utils.route_utils) keep seeing the seeded
+        # SiteConfig after a test that bootstrapped its own container or
+        # cleared the registration via ``set_container(None)``.
+        _register_test_container()
     except Exception:
         pass
 

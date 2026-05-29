@@ -40,36 +40,43 @@ logger = get_logger(__name__)
 # CONSTANTS
 # ============================================================================
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Falls back to a fresh env-fallback instance when unset.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# Process-wide empty-SiteConfig fallback (#272 capstone). Returned by
+# ``_sc()`` when no AppContainer has been registered (CLI early paths,
+# import time, tests that never bootstrap) — behaves exactly like the old
+# per-module ``site_config`` global did before its lifespan setter fired.
+_FALLBACK_SITE_CONFIG = SiteConfig()
 
 
 def _sc() -> SiteConfig:
-    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
-    return site_config
+    """Return the active container's SiteConfig, or the empty fallback.
+
+    #272 capstone: sources SiteConfig from the process-wide
+    ``AppContainer`` registered by ``bootstrap.build_container`` instead
+    of a module-level global wired via the retired ``set_site_config``.
+    Crash-safe — returns ``_FALLBACK_SITE_CONFIG`` (an empty SiteConfig)
+    when no container has been registered yet.
+    """
+    from services.container_registry import get_container
+
+    container = get_container()
+    return container.site_config if container is not None else _FALLBACK_SITE_CONFIG
 
 
 def _sc_get(key: str, default: str = "", *, site_config: SiteConfig | None = None) -> str:
     """Get from site_config (falls back to env automatically).
 
-    Phase-1 DI shim (#272): accepts an optional ``site_config`` keyword so
-    callers that have an injected instance can read through it instead of
-    the module global. When ``site_config`` is None we resolve the module
-    attribute via a self-import so a parameter named ``site_config`` in a
-    caller's scope can't shadow the global. Existing no-arg callers
-    (including tests that patch this function) keep working unchanged.
-    """
-    import services.ollama_client as _mod
+    DI shim (#272): accepts an optional ``site_config`` keyword so callers
+    that have an injected instance can read through it instead of the
+    process-wide container. When ``site_config`` is None we resolve the
+    active container's SiteConfig via ``_sc()`` (or the empty fallback).
 
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.get(key, default)
+    CRITICAL test contract: ~50 test sites monkeypatch
+    ``services.ollama_client._sc_get`` with a ``lambda key, default="":
+    ...`` — this stays the canonical patchable seam. Only the internal
+    source of the SiteConfig changed (module global → container).
+    """
+    _resolved = site_config if site_config is not None else _sc()
+    return _resolved.get(key, default)
 
 
 def _sc_get_di(key: str, default: str = "", *, site_config: SiteConfig | None = None) -> str:

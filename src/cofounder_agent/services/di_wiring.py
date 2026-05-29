@@ -41,226 +41,32 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# Single source of truth for "every module that exposes
-# ``set_site_config()``". Adding a new wired module is a one-line edit
-# here; both ``main.py``'s lifespan and the Prefect flow pick it up
-# automatically.
+# Single source of truth for "every module that still exposes a
+# ``set_site_config()`` setter for the lifespan/subprocess wiring loop to
+# call".
 #
-# Order is informational only — ``__import__`` is idempotent. Grouped
-# by lifecycle for readability:
-WIRED_MODULES: tuple[str, ...] = (
-    # Core infra: scheduler, decorators, HTTP/Ollama clients
-    # ``services.decorators`` migrated to AppContainer (PR 6, 2026-05-28
-    # — see ``docs/architecture/2026-05-28-site-config-di-migration.md``).
-    # ``services.gpu_scheduler`` STAYS wired (#272 Phase-2g deferral): the
-    # earlier audit note claimed its module ``site_config`` global was dead,
-    # but ``_sc()`` / ``_sc_get`` / ``_cfg_int`` / ``_cfg_float`` read it
-    # throughout the lock lifecycle. The live consumer is the process-wide
-    # ``gpu`` singleton (``from services.gpu_scheduler import gpu``) used across
-    # ~10 stages/services with no SiteConfig in scope at the ``gpu.lock(...)``
-    # call sites — same singleton-factory shape as ``ollama_client`` /
-    # ``prompt_manager``. Making injection mandatory ripples too wide for this
-    # PR; its optional ``site_config=`` shim + module global remain, deferred
-    # to a follow-up.
-    "services.gpu_scheduler",
-    "services.ollama_client",
-    # ``services.url_validator`` + ``services.url_scraper`` migrated to
-    # constructor DI 2026-05-29 (#272 leaf batch 1). Reach them via
-    # ``container.url_validator`` / ``container.url_scraper``, or build a
-    # per-call instance from a lifespan-bound SiteConfig (caller-bridge).
-    # ``services.web_research`` migrated to constructor DI 2026-05-29
-    # (#272 leaf batch 2). Reach it via ``container.web_research`` or build
-    # ``WebResearcher(site_config=...)`` per call (caller-bridge).
-    # ``services.revalidation_service`` migrated to constructor DI 2026-05-29
-    # (#272 leaf batch 3). Reach it via ``container.revalidation_service`` or
-    # build a per-call instance from a lifespan-bound SiteConfig
-    # (caller-bridge); the back-compat free-function wrappers now require an
-    # explicit ``site_config=`` kwarg.
-    # ``services.static_export_service`` + ``services.quality_service`` +
-    # ``services.validator_config`` + ``services.topic_batch_service`` removed
-    # from WIRED_MODULES 2026-05-29 (#272 Phase-2d). Their module-level
-    # ``site_config`` globals + ``set_site_config`` setters are deleted;
-    # injection is now mandatory. ``export_post`` / ``export_full_rebuild`` /
-    # ``_upload_json`` take a required ``site_config=``; ``UnifiedQualityService``
-    # / ``TopicBatchService`` take a required ctor ``site_config=``;
-    # ``is_validator_enabled`` + ``_legacy_first_person_bypass`` take a required
-    # keyword ``site_config=``. Callers thread the run-bound instance
-    # (publish_service ``_sc`` / the CMS rebuild route's
-    # ``get_site_config_dependency`` / jobs' ``config["_site_config"]`` / the CLI
-    # ``container.site_config`` / pipeline stages via
-    # ``context.get("site_config")``).
-    # ``services.telegram_config`` migrated to constructor DI 2026-05-28
-    # (SiteConfig DI migration PR 3). Reach it via
-    # ``container.telegram_config`` instead of importing free functions.
-    # ``services.video_service`` + ``services.image_service`` +
-    # ``services.social_poster`` removed from WIRED_MODULES 2026-05-29 (#272
-    # Phase-2e). Their module-level ``site_config`` globals + ``set_site_config``
-    # setters are deleted; injection is now mandatory. The video public entries
-    # (``generate_video_for_post`` / ``generate_short_video_for_post`` +
-    # ``generate_video_episode``), the social public entries
-    # (``generate_social_posts`` / ``generate_and_distribute_social_posts``), and
-    # ``ImageService`` / ``get_image_service`` / ``get_default_image_model`` all
-    # take a required ``site_config=``. Callers thread the run-bound instance
-    # (pipeline stages via ``context.get("site_config")``; ``publish_service``'s
-    # ``_sc``; the video route's ``get_site_config_dependency``; jobs /
-    # image-provider plugins via ``config["_site_config"]``; the
-    # ``publishers fire`` CLI builds one from the lifespan pool).
-    # ``services.ollama_client`` STAYS wired (#272 Phase-2e, below): its wide
-    # construction graph + the ``_sc_get`` test-patch contract are deferred to a
-    # follow-up; its optional ``site_config=`` shim + module global remain.
-    # ``services.webhook_delivery_service`` migrated to constructor DI
-    # 2026-05-29 (#272 leaf batch 4). ``main.py``'s lifespan constructs
-    # ``WebhookDeliveryService(pool, site_config=...)`` from the
-    # lifespan-bound SiteConfig (caller-bridge); no container build-time
-    # property because the runtime pool can't be supplied at build time.
-    # ``services.template_runner`` + ``services.podcast_service`` +
-    # ``services.content_router_service`` removed from WIRED_MODULES
-    # 2026-05-29 (#272 Phase-2f). Their module-level ``site_config``
-    # globals + ``set_site_config`` setters are deleted; injection is now
-    # mandatory. ``TemplateRunner.__init__`` + ``_emit_progress`` take a
-    # required ``site_config=`` (node-level emits thread
-    # ``context.get("site_config")``); ``PodcastService.__init__`` +
-    # ``generate_podcast_episode`` take a required ``site_config=``;
-    # ``process_content_generation_task`` takes a required keyword
-    # ``site_config=``. Callers thread the run-bound instance
-    # (content_router_service builds ``TemplateRunner(pool, site_config=_sc)``
-    # and seeds the context; the Prefect flow passes the
-    # subprocess-wired SiteConfig to ``process_content_generation_task``;
-    # publish_service's ``_sc`` / the podcast route's
-    # ``get_site_config_dependency`` / jobs' ``config['_site_config']``
-    # feed the podcast entries).
-    # ``services.prompt_manager`` STAYS wired (#272 Phase-2f): its
-    # ``get_prompt_manager()`` module-level singleton factory + ~30
-    # ``get_prompt_manager()`` consumers across services/atoms/stages have
-    # no SiteConfig in scope at call time, so the ctor can't cleanly source
-    # one. Its optional ``site_config=`` shim + module global remain;
-    # deferred to a follow-up pass.
-    # Content pipeline + QA
-    # ``services.publish_service`` removed from WIRED_MODULES 2026-05-29 (#272
-    # Phase-2g). Its module-level ``site_config`` global + ``set_site_config``
-    # setter + ``_resolve_site_config`` fallback shim are deleted; injection is
-    # now mandatory. ``publish_post_from_task`` / ``fire_post_distribution_hooks``
-    # + the internal ``_ping_search_engines`` take a required ``site_config=``.
-    # Callers thread the run-bound instance (the publish/approve routes via
-    # ``get_site_config_dependency``; the Prefect post-pipeline auto-publish path
-    # via ``auto_publish_task(site_config=...)``; the idle-worker via its wired
-    # instance).
-    # ``services.citation_verifier`` + ``services.seed_url_fetcher`` +
-    # ``services.title_originality_external`` migrated to constructor DI
-    # 2026-05-29 (#272 leaf batch 2). Reach them via
-    # ``container.citation_verifier`` / ``container.seed_url_fetcher`` /
-    # ``container.title_originality_external``, or build a per-call instance
-    # from a lifespan-bound SiteConfig (caller-bridge). NOTE:
-    # ``citation_verifier`` still exposes ``set_http_client`` and stays in
-    # ``http_client.WIRED_HTTP_CLIENT_MODULES`` — that's the separate shared
-    # httpx-client plumbing, not the SiteConfig seam.
-    # ``services.newsletter_service`` migrated to required-keyword DI
-    # 2026-05-29 (#272 Phase-2b). ``send_post_newsletter`` now requires a
-    # ``site_config=`` kwarg; ``publish_service`` passes its own wired
-    # module ``site_config`` (caller-bridge). No module-level attr remains.
-    # ``services.podcast_service`` removed from WIRED_MODULES 2026-05-29
-    # (#272 Phase-2f) — see the batch note above.
-    # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
-    # Phase-2 bulk cleanup). ``MultiModelQA`` now requires a ``site_config=``
-    # kwarg; construction sites (cross_model_qa stage, post_pipeline_actions)
-    # thread the lifespan-bound SiteConfig via the context / caller-bridge.
-    # ``services.image_decision_agent`` + ``services.quality_scorers`` +
-    # ``services.pipeline_architect`` + ``services.ai_content_generator``
-    # migrated to required-keyword DI 2026-05-29 (#272 Phase-2c). No
-    # module-level ``site_config`` attr / ``set_site_config`` remains:
-    # ``plan_images`` / ``qa_cfg`` + ``score_*`` / ``compose`` /
-    # ``AIContentGenerator.__init__`` + ``generate_with_context`` +
-    # ``_resolve_rag_writer_model`` now require a ``site_config=`` kwarg.
-    # Callers thread the run-bound instance (pipeline stages →
-    # ``context.get("site_config")``; the ``two_pass_writer`` atom → its
-    # run-bound SiteConfig; ``UnifiedQualityService`` → its own
-    # ``self._site_config``).
-    # ``services.content_validator`` removed from WIRED_MODULES 2026-05-29 (#272
-    # Phase-2g). The module global + ``set_site_config`` setter (and the
-    # self-import ``_mod`` fallback) are deleted; injection is now mandatory.
-    # The sole import-time read (``GLAD_LABS_FACTS = _get_company_facts()``)
-    # now builds its fact patterns from a fresh env-fallback ``SiteConfig()``
-    # — byte-for-byte identical to before, because the old global was still
-    # its empty default at module-import time (the lifespan setter never ran
-    # before import completed). The public validators (``validate_content`` /
-    # ``_check_code_block_density`` / ``verify_content_urls``) already required
-    # ``site_config=`` (Phase-2d).
-    # ``services.research_service`` migrated to required-keyword DI
-    # 2026-05-29 (#272 Phase-2b). ``ResearchService.__init__`` /
-    # ``research_topic`` / ``get_known_references`` now require a
-    # ``site_config=`` kwarg; the ``generate_content`` stage threads
-    # ``context.get("site_config")`` and the ``two_pass_writer`` atom
-    # threads its run-bound instance. No module-level attr remains.
-    # ``services.research_quality_service`` migrated to constructor DI
-    # 2026-05-29 (#272 leaf batch 4). Reach it via
-    # ``container.research_quality_service`` or build a per-call instance
-    # from a lifespan-bound SiteConfig (caller-bridge).
-    # ``services.self_review`` + ``services.title_generation`` +
-    # ``services.scheduled_publisher`` migrated to required-keyword DI
-    # 2026-05-29 (#272 Phase-2a). These are free-function modules — callers
-    # pass ``site_config=context.get("site_config")`` (pipeline stages) or the
-    # lifespan-bound instance (main.py's scheduled-publisher task); no
-    # module-level ``site_config`` attr remains to wire.
-    # ``services.internal_rag_source`` migrated to constructor DI 2026-05-29
-    # (#272 leaf batch 5). It takes a runtime ``pool`` the container can't
-    # supply at build time, so there's no container build-time property;
-    # ``topic_batch_service`` constructs
-    # ``InternalRagSource(pool, site_config=...)`` from its own lifespan-bound
-    # SiteConfig (caller-bridge).
-    # ``services.topic_ranking`` migrated to required-keyword DI
-    # 2026-05-29 (#272 Phase-2b). ``embed_text`` / ``goal_vector_for`` /
-    # ``llm_final_score`` (and the internal ``_ollama_chat_json``) now
-    # require a ``site_config=`` kwarg; ``topic_batch_service`` (now also
-    # required-DI, #272 Phase-2d) and ``internal_rag_source`` /
-    # ``ai_content_generator`` thread their instances. No module-level attr
-    # remains.
-    # ``services.database_service`` removed from WIRED_MODULES 2026-05-29 (#272
-    # Phase-2g). Its module-level ``site_config`` global + ``set_site_config``
-    # setter (and the lazy ``_site_config`` property fallback) are deleted;
-    # ``DatabaseService.__init__`` now takes a REQUIRED keyword ``site_config``.
-    # Bootstrap care: it's constructed before site_config loads from the DB, so
-    # callers pass the lifespan-bound (initially-empty) instance — populated
-    # in-place by ``site_config.load(pool)`` afterwards; the pool-size reads in
-    # ``initialize()`` use defaults exactly as before. Construction sites:
-    # ``startup_manager`` (lifespan instance), the Prefect flow's
-    # ``_build_default_database_service`` + ``run_migrations`` + idle_worker
-    # (fresh env-fallback ``SiteConfig()`` since the pool predates the load).
-    # ``services.quality_scorers`` removed from WIRED_MODULES 2026-05-29
-    # (#272 Phase-2c) — see the batch note above.
-    # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
-    # Phase-2 bulk cleanup). ``QualityDimensions`` now requires a ``site_config``
-    # field (typed Optional for dataclass field-ordering, required at runtime);
-    # construction sites in ``quality_service`` thread that module's injected
-    # ``self._site_config`` (#272 Phase-2d removed the quality_service global).
-    # ``services.template_runner`` removed from WIRED_MODULES 2026-05-29
-    # (#272 Phase-2f) — see the batch note above.
-    # ``services.pipeline_architect`` removed from WIRED_MODULES 2026-05-29
-    # (#272 Phase-2c) — see the batch note above.
-    # ``services.prompt_manager`` STAYS wired (#272 Phase-2f deferral) —
-    # see the batch note above; its singleton-factory construction graph
-    # is too wide to make injection mandatory cleanly.
-    "services.prompt_manager",
-    # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
-    # (#272 leaf batch 3). Reach it via ``container.retention_janitor`` or
-    # build a per-call instance from a lifespan-bound SiteConfig
-    # (caller-bridge); ``startup_manager`` constructs ``RetentionJanitor``.
-    # ``services.ai_content_generator`` removed from WIRED_MODULES 2026-05-29
-    # (#272 Phase-2c) — see the batch note above.
-    # ``services.image_service`` removed from WIRED_MODULES 2026-05-29 (#272
-    # Phase-2e) — see the batch note above.
-    # ``services.content_router_service`` removed from WIRED_MODULES
-    # 2026-05-29 (#272 Phase-2f) — see the batch note above.
-    # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
-    # (#272 leaf batch 5). Reach the SiteConfig-bearing
-    # ``ContentMetadataGenerator`` via ``container.seo_content_generator``; the
-    # public ``SEOOptimizedContentGenerator`` needs a runtime
-    # ``ai_content_generator`` so the ``generate_seo_metadata`` stage builds it
-    # from the context SiteConfig (caller-bridge).
-    # ``services.social_poster`` removed from WIRED_MODULES 2026-05-29 (#272
-    # Phase-2e) — see the batch note above.
-    # Cross-cutting
-    "utils.route_utils",
-)
+# #272 CAPSTONE (2026-05-29): this tuple is now EMPTY. The last four
+# ambient-singleton modules — ``services.gpu_scheduler``,
+# ``services.ollama_client``, ``services.prompt_manager``, and
+# ``utils.route_utils`` — were migrated off their per-module
+# ``site_config`` globals + ``set_site_config`` setters and onto the
+# process-wide ``AppContainer`` accessor (``services.container_registry``
+# .get_container()). ``bootstrap.build_container`` calls ``set_container``
+# at the single chokepoint every entry point flows through, so each of
+# the four sources its SiteConfig from the registered container (or a
+# module-local empty ``_FALLBACK_SITE_CONFIG`` when none is registered —
+# the no-container path that behaves exactly like the old empty global).
+#
+# All earlier batches (Phase-2a..2g + leaf batches 1-5) had already
+# either migrated to constructor/required-keyword DI or moved to
+# ``AppContainer`` cached_properties. With those four converted, the
+# ambient-singleton + lifespan-rebind pattern (GH#330) is fully retired;
+# ``wire_site_config_modules`` below becomes a no-op over the empty tuple
+# (it still publishes to ``shared_context`` — a separate seam). The
+# cleanup PR can retire this module + the wiring calls in ``main.py`` /
+# the Prefect flow once we confirm nothing else depends on the
+# ``shared_context`` publish side-effect.
+WIRED_MODULES: tuple[str, ...] = ()
 
 
 def wire_site_config_modules(site_cfg: Any) -> int:

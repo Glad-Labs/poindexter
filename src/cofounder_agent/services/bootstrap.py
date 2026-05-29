@@ -101,6 +101,17 @@ async def build_container(pool: Any) -> AppContainer:
     )
     container = AppContainer(site_config=site_config, pool=pool)
 
+    # Register the container as the process-wide active one (#272
+    # capstone). This is the single chokepoint every entry point flows
+    # through (main lifespan, CLI ``_lifecycle``, Prefect ``di_wiring``),
+    # so registering here makes ``services.container_registry.get_container``
+    # return a configured container for every process — which is how the
+    # final four ambient-singleton modules (gpu_scheduler / ollama_client /
+    # prompt_manager / utils.route_utils) now source their SiteConfig
+    # instead of a per-module global wired by ``set_site_config``.
+    from services.container_registry import set_container
+    set_container(container)
+
     # ------------------------------------------------------------------
     # Eager-init the Option B facade services. These properties have
     # side-effects (pinning a module-level ``_default_*`` reference) and

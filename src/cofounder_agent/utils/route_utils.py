@@ -26,17 +26,12 @@ from fastapi import FastAPI, Request
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# Process-wide empty-SiteConfig fallback (#272 capstone). Returned by
+# ``get_site_config_dependency`` only when neither ``app.state`` nor the
+# registered ``AppContainer`` carries a SiteConfig (early boot, tests that
+# never bootstrap). Behaves exactly like the old per-module
+# ``site_config`` global did before its lifespan setter fired.
+_FALLBACK_SITE_CONFIG = SiteConfig()
 
 
 logger = get_logger(__name__)
@@ -161,12 +156,19 @@ def get_database_dependency() -> Any:
 def get_site_config_dependency(request: Request) -> Any:
     """FastAPI dependency that returns the lifespan-bound SiteConfig.
 
-    Phase H (#242) is migrating every caller from the module-level
-    ``services.site_config.site_config`` singleton to this DI pattern.
-    The singleton still exists in parallel during the transition; this
-    function returns the SAME instance (attached to ``app.state`` in
-    main.py's lifespan), so routes that switch to ``Depends()`` behave
-    identically to ones still importing directly.
+    Resolution order (#272 capstone — the per-module ``site_config``
+    global + ``set_site_config`` setter were retired):
+
+    1. ``request.app.state.container.site_config`` — the web process
+       attaches the built ``AppContainer`` to ``app.state``; this is the
+       canonical SiteConfig instance.
+    2. ``request.app.state.site_config`` — the legacy lifespan-bound
+       attribute, still set in parallel during the migration.
+    3. The process-wide ``AppContainer`` via ``get_container()`` — covers
+       processes that built a container but didn't stash it on
+       ``app.state`` (or non-FastAPI request shims).
+    4. ``_FALLBACK_SITE_CONFIG`` — an empty SiteConfig so early-boot /
+       test paths never crash.
 
     Usage::
 
@@ -177,13 +179,25 @@ def get_site_config_dependency(request: Request) -> Any:
         async def handler(cfg = Depends(get_site_config_dependency)):
             site_url = cfg.require("site_url")
     """
-    sc = getattr(request.app.state, "site_config", None)
-    if sc is None:
-        # Fallback during transition — the module singleton is still
-        # loaded and usable. Once every caller uses Depends(), lifespan
-        # is the sole construction site and this branch goes away.
-        return site_config
-    return sc
+    state = getattr(request.app, "state", None)
+
+    container = getattr(state, "container", None)
+    if container is not None:
+        sc = getattr(container, "site_config", None)
+        if sc is not None:
+            return sc
+
+    sc = getattr(state, "site_config", None)
+    if sc is not None:
+        return sc
+
+    from services.container_registry import get_container
+
+    registered = get_container()
+    if registered is not None:
+        return registered.site_config
+
+    return _FALLBACK_SITE_CONFIG
 
 
 def get_container_dependency(request: Request) -> Any:

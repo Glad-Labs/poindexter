@@ -1,42 +1,43 @@
-"""Regression tests for Glad-Labs/poindexter#477.
+"""Regression tests for Glad-Labs/poindexter#477 + the #272 capstone.
 
 Critical bug discovered 2026-05-11 13:00 UTC: Prefect-spawned
 subprocesses (active in prod since Phase 1+2 cutover #410) never run
 ``main.py``'s lifespan, so the 40+ ``services/*.py`` modules with
-module-level ``site_config: SiteConfig`` attributes stay at the empty
-default. ``site_config.get("preferred_ollama_model")`` returns ``""``,
-``ollama_client``'s ``auto`` resolver falls through to
-``Auto-resolved default model (largest)``, and 70-150B parameter
-models get loaded into 32 GB VRAM + 63 GB host RAM, thrashing the
-system. The Mixtral 8x22B + qwen2.5:72b incidents on 2026-05-11
-surfaced the trail.
+module-level ``site_config: SiteConfig`` attributes stayed at the empty
+default. ``site_config.get("preferred_ollama_model")`` returned ``""``,
+``ollama_client``'s ``auto`` resolver fell through to the largest model,
+and 70-150B parameter models thrashed the box.
 
-Fix: ``services/di_wiring.py`` centralises the wired-module list
-(previously inlined in ``main.py``) and exposes
-``wire_site_config_modules`` + ``build_and_wire_for_subprocess``.
-``main.py``'s lifespan now calls the former; the Prefect flow body
-in ``services/flows/content_generation.py`` calls the latter.
+The original fix centralised the wired-module list in
+``services/di_wiring.py`` and fanned a loaded SiteConfig out across every
+per-module ``site_config`` attribute via ``set_site_config``.
 
-These tests pin the contract:
+**#272 CAPSTONE (2026-05-29):** the ambient-singleton + lifespan-rebind
+pattern (GH#330) is now fully retired. The last four modules
+(``gpu_scheduler`` / ``ollama_client`` / ``prompt_manager`` /
+``utils.route_utils``) source their SiteConfig from the process-wide
+``AppContainer`` accessor (``services.container_registry.get_container``)
+instead of a per-module global. ``WIRED_MODULES`` is therefore EMPTY and
+``set_site_config`` setters no longer exist on those modules.
 
-1. ``WIRED_MODULES`` covers every load-bearing service that holds a
-   module-level ``site_config`` attribute. If a future commit adds
-   such a module and forgets to register it, this test fails at
-   collection time instead of at the next overnight batch.
-2. ``wire_site_config_modules`` actually rebinds each module's
-   ``site_config`` attribute to the instance it was given.
-3. ``content_generation_flow``'s entrypoint source includes the
-   subprocess wiring call. Source-level guard so a future refactor
-   can't silently sever it.
-4. ``main.py`` calls ``wire_site_config_modules`` from its lifespan
-   (same source-level guard).
+These tests pin the NEW contract:
+
+1. ``WIRED_MODULES`` is empty — the per-module wiring loop is retired.
+2. ``wire_site_config_modules`` is a no-op over the empty tuple but still
+   succeeds (and still publishes to ``shared_context`` — a separate seam).
+3. The accessor (``container_registry.set_container`` /
+   ``get_container``) round-trips a container, and the four migrated
+   modules source their SiteConfig from it.
+4. The no-container path falls back to an empty SiteConfig (never crashes).
+5. ``main.py`` + the Prefect flow still call the wiring helpers
+   (source-level guards — closes the poindexter#473/#477 sever class).
 """
 
 from __future__ import annotations
 
 import inspect
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -48,144 +49,180 @@ from services.di_wiring import (
 
 
 # ---------------------------------------------------------------------------
-# WIRED_MODULES: completeness + uniqueness
+# WIRED_MODULES: now empty (the per-module wiring loop is retired)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestWiredModulesList:
-    """The single-source-of-truth list must cover every wired surface."""
+    """#272 capstone retired the per-module ``set_site_config`` loop."""
 
-    def test_list_is_non_empty(self):
-        assert len(WIRED_MODULES) > 0, (
-            "WIRED_MODULES must enumerate the modules to wire — empty list "
-            "means the Prefect subprocess wiring is a no-op."
+    def test_list_is_empty(self):
+        """All ambient singletons migrated — the tuple is empty."""
+        assert WIRED_MODULES == (), (
+            "WIRED_MODULES must be empty after the #272 capstone — every "
+            "ambient-singleton module now sources SiteConfig from the "
+            f"process-wide AppContainer. Found: {WIRED_MODULES!r}"
         )
 
     def test_no_duplicates(self):
-        """Duplicates in the list don't break correctness but signal
-        the list is being maintained sloppily."""
-        assert len(set(WIRED_MODULES)) == len(WIRED_MODULES), (
-            f"WIRED_MODULES has duplicates: "
-            f"{sorted(set(WIRED_MODULES))}"
-        )
+        assert len(set(WIRED_MODULES)) == len(WIRED_MODULES)
 
     @pytest.mark.parametrize(
         "modname",
         [
-            # The minimum-viable set — these directly caused the 2026-05-11
-            # bleed when not wired. Adding more here is fine; removing one
-            # without a paired fix elsewhere means a known failure mode is
-            # un-pinned.
             "services.ollama_client",
-            # ``services.multi_model_qa`` removed from this pin 2026-05-29
-            # (#272 Phase-2): it migrated to constructor DI and no longer
-            # carries a module-global ``site_config``. Construction sites
-            # thread the SiteConfig explicitly, so the 2026-05-11 bleed
-            # cannot recur via this module.
-            # ``services.ai_content_generator`` removed from this pin
-            # 2026-05-29 (#272 Phase-2c) for the same reason — its ctor +
-            # free functions now require an explicit ``site_config=`` kwarg.
-            # ``services.content_router_service`` + ``services.template_runner``
-            # removed from this pin 2026-05-29 (#272 Phase-2f): both migrated
-            # to constructor/keyword DI and no longer carry a module-global
-            # ``site_config``. Callers thread the SiteConfig explicitly, so
-            # the wiring-loss bug cannot recur via them.
             "services.prompt_manager",
             "services.gpu_scheduler",
+            "utils.route_utils",
         ],
     )
-    def test_known_critical_module_present(self, modname: str):
-        """Pins the modules that *must* be wired or the bug recurs."""
-        assert modname in WIRED_MODULES
+    def test_migrated_module_has_no_setter(self, modname: str):
+        """The four capstone modules no longer expose ``set_site_config``
+        nor a module-level ``site_config`` global — they source it from
+        the container accessor instead. This pins that the migration
+        actually deleted those seams (verify-clean)."""
+        mod = __import__(modname, fromlist=["set_site_config"])
+        assert not hasattr(mod, "set_site_config"), (
+            f"{modname} must NOT expose set_site_config after the #272 "
+            "capstone — it sources SiteConfig from container_registry."
+        )
+        assert not hasattr(mod, "site_config"), (
+            f"{modname} must NOT carry a module-level site_config global "
+            "after the #272 capstone."
+        )
 
 
 # ---------------------------------------------------------------------------
-# wire_site_config_modules: rebind verification
+# wire_site_config_modules: no-op over the empty tuple, still succeeds
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestWireSiteConfigModules:
-    """Calling the wiring helper actually rebinds each module's attr."""
+    """The helper survives an empty WIRED_MODULES (cleanup hasn't yet
+    removed the call sites in main.py / the Prefect flow)."""
 
-    def test_returns_wired_count(self):
-        """Helper returns the count of successfully wired modules.
-
-        Used by main.py's lifespan log line — operators read that
-        number to confirm the wiring took.
-        """
+    def test_returns_zero_on_empty_list(self):
+        """No modules to wire → returns 0 without raising."""
         marker = SimpleNamespace(name="marker_site_cfg")
         count = wire_site_config_modules(marker)
-        assert count > 0, (
-            "wire_site_config_modules returned 0 — every module's "
-            "set_site_config failed silently. Check the WARNING logs "
-            "for [di_wiring] entries."
-        )
+        assert count == 0
 
-    def test_known_modules_pick_up_the_new_instance(self):
-        """After wiring, the module-level ``site_config`` attr is the
-        instance we passed in — not the original empty default."""
+    def test_still_publishes_to_shared_context(self):
+        """The shared_context publish side-effect is independent of the
+        (now-empty) per-module loop and must keep firing — the
+        operator-notify helper depends on it."""
         from services.site_config import SiteConfig
 
-        # A real SiteConfig so the wired modules accept it; the .get()
-        # surface is what differentiates "wired" from "default empty".
         sentinel = SiteConfig()
-        sentinel._config["__sentinel__"] = "wired_474"
+        sentinel._config["__sentinel__"] = "shared_ctx_272"
 
         wire_site_config_modules(sentinel)
 
-        # Check the critical modules — pulling them in via importlib
-        # so the test doesn't fail at import time if one's unavailable.
-        # (#272 Phase-2g: publish_service no longer carries a module
-        # global, so verify still-wired modules instead — gpu_scheduler
-        # still owns its ``site_config`` attr.)
-        for modname in ("services.ollama_client", "services.gpu_scheduler"):
-            mod = __import__(modname, fromlist=["site_config"])
-            cfg = getattr(mod, "site_config", None)
-            assert cfg is sentinel, (
-                f"{modname}.site_config is not the wired sentinel; "
-                f"set_site_config wasn't called or didn't rebind."
-            )
+        from services.integrations import shared_context
+        assert shared_context.get_site_config() is sentinel
 
-    def test_missing_module_does_not_break_the_loop(self):
-        """A broken or missing module logs a WARNING but the rest still wire."""
+    def test_empty_loop_does_not_break(self):
+        """Patching WIRED_MODULES back to a bogus list still wires the
+        real entries — proves the loop body is intact for any future
+        re-population."""
         from services import di_wiring
 
-        bogus_list = (
-            "services.ollama_client",  # real
-            "services.this_module_does_not_exist_anywhere",  # bogus
-            "services.gpu_scheduler",  # real, must still get wired
-        )
-        with patch.object(di_wiring, "WIRED_MODULES", bogus_list):
+        with patch.object(
+            di_wiring,
+            "WIRED_MODULES",
+            ("services.this_module_does_not_exist_anywhere",),
+        ):
             from services.site_config import SiteConfig
-            sentinel = SiteConfig()
-            sentinel._config["__sentinel__"] = "loop_resilience_474"
-            count = wire_site_config_modules(sentinel)
+            count = wire_site_config_modules(SiteConfig())
 
-        # 2 of 3 must wire — the bogus one is swallowed.
-        assert count == 2
-
-        # The real one downstream of the broken entry still got wired.
-        # (#272 Phase-2g: gpu_scheduler still owns a module-global
-        # ``site_config`` + ``set_site_config``; publish_service no
-        # longer does.)
-        import services.gpu_scheduler as gs
-        assert getattr(gs, "site_config", None) is sentinel
+        # The bogus entry is swallowed (no set_site_config) → 0 wired.
+        assert count == 0
 
 
 # ---------------------------------------------------------------------------
-# build_and_wire_for_subprocess: full Prefect-entry contract
+# container_registry accessor: the new SiteConfig source for the four
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContainerAccessor:
+    """The process-wide AppContainer accessor replaces the per-module
+    ``set_site_config`` fan-out."""
+
+    def test_round_trips_container(self):
+        from services.container import AppContainer
+        from services.container_registry import get_container, set_container
+        from services.site_config import SiteConfig
+
+        original = get_container()
+        try:
+            sentinel = SiteConfig()
+            sentinel._config["__sentinel__"] = "accessor_272"
+            container = AppContainer(site_config=sentinel, pool=MagicMock())
+            set_container(container)
+            assert get_container() is container
+            assert get_container().site_config is sentinel
+        finally:
+            set_container(original)
+
+    def test_modules_source_site_config_from_container(self):
+        """gpu_scheduler ``_sc()`` + prompt_manager ``_sc()`` resolve the
+        registered container's SiteConfig."""
+        import services.gpu_scheduler as gs
+        import services.prompt_manager as pm
+        from services.container import AppContainer
+        from services.container_registry import get_container, set_container
+        from services.site_config import SiteConfig
+
+        original = get_container()
+        try:
+            sentinel = SiteConfig()
+            sentinel._config["preferred_ollama_model"] = "gemma3:27b"
+            set_container(AppContainer(site_config=sentinel, pool=MagicMock()))
+
+            assert gs._sc() is sentinel
+            assert pm._sc() is sentinel
+            # ollama_client's patchable _sc_get reads _sc() when no
+            # instance is injected.
+            assert gs._sc().get("preferred_ollama_model") == "gemma3:27b"
+        finally:
+            set_container(original)
+
+    def test_no_container_falls_back_to_empty(self):
+        """With no container registered, ``_sc()`` returns the module's
+        empty fallback rather than crashing."""
+        import services.gpu_scheduler as gs
+        import services.ollama_client as oc
+        import services.prompt_manager as pm
+        from services.container_registry import get_container, set_container
+
+        original = get_container()
+        try:
+            set_container(None)
+            # Each returns a usable SiteConfig (the empty fallback), no raise.
+            assert gs._sc() is gs._FALLBACK_SITE_CONFIG
+            assert oc._sc() is oc._FALLBACK_SITE_CONFIG
+            assert pm._sc() is pm._FALLBACK_SITE_CONFIG
+            # And reads default cleanly.
+            assert oc._sc_get("missing_key", "fallback") == "fallback"
+        finally:
+            set_container(original)
+
+
+# ---------------------------------------------------------------------------
+# build_and_wire_for_subprocess: still loads + wires (shared_context seam)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestBuildAndWireForSubprocess:
-    """The function the Prefect flow body calls at startup."""
+    """The legacy subprocess seam still loads SiteConfig from the pool and
+    publishes to shared_context (the per-module loop is now empty)."""
 
     @pytest.mark.asyncio
-    async def test_loads_site_config_then_wires(self):
-        """SiteConfig.load(pool) runs, then every module gets wired."""
+    async def test_loads_site_config_then_publishes(self):
         from services.site_config import SiteConfig
 
         load_called_with = {}
@@ -199,23 +236,14 @@ class TestBuildAndWireForSubprocess:
             pool = MagicMock(name="fake_pool")
             result_cfg = await build_and_wire_for_subprocess(pool)
 
-        # Loaded from the pool we passed in.
         assert load_called_with["pool"] is pool
-        # Loaded value present on the returned SiteConfig.
         assert result_cfg.get("preferred_ollama_model") == "gemma3:27b"
-        # And the critical modules now point at this same instance —
-        # which is the whole point of the fix.
-        import services.ollama_client as oc
-        assert getattr(oc, "site_config") is result_cfg
+        # Published to shared_context (the surviving wiring side-effect).
+        from services.integrations import shared_context
+        assert shared_context.get_site_config() is result_cfg
 
     @pytest.mark.asyncio
-    async def test_load_failure_still_wires_env_fallback(self):
-        """If SiteConfig.load() fails, we still wire the empty instance.
-
-        This matches main.py's lifespan behaviour — env-fallback
-        SiteConfig is better than the un-wired empty default, because
-        consumers can at least pick up environment-variable values.
-        """
+    async def test_load_failure_still_returns_env_fallback(self):
         from services.site_config import SiteConfig
 
         async def fake_load(self_sc, pool):
@@ -225,45 +253,21 @@ class TestBuildAndWireForSubprocess:
             pool = MagicMock(name="fake_pool")
             result_cfg = await build_and_wire_for_subprocess(pool)
 
-        # Empty-default SiteConfig returned, but modules still got wired.
-        import services.ollama_client as oc
-        assert getattr(oc, "site_config") is result_cfg
+        # Empty-default SiteConfig returned; no crash.
+        assert isinstance(result_cfg, SiteConfig)
 
 
 # ---------------------------------------------------------------------------
-# Source-level guards: production code actually calls the helpers
+# Source-level guards: production code still calls the helpers
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestProductionCallsiteGuards:
-    """Lock the bug shut: a future refactor must NOT sever the call sites.
-
-    The previous regression (poindexter#473) was exactly this — a
-    function was defined but no production code called it. We're not
-    repeating that with the di_wiring helper.
-    """
+    """Lock the bug shut: a future refactor must NOT sever the call sites
+    until the cleanup PR retires the helpers entirely."""
 
     def test_content_generation_flow_calls_build_and_wire(self):
-        """The Prefect flow entrypoint must call either
-        ``build_and_wire_for_subprocess`` (legacy seam) or
-        ``build_and_wire_subprocess_with_container`` (SiteConfig DI
-        migration PR 2 — design doc
-        ``docs/architecture/2026-05-28-site-config-di-migration.md``).
-
-        Either name closes the poindexter#477 regression — the
-        important invariant is that the Prefect-spawned subprocess
-        wires every per-module ``site_config`` attr from the DB pool
-        before any pipeline stage runs. The container variant
-        additionally returns an ``AppContainer`` for migrated services.
-
-        Reads the flow module's source via ``pathlib`` rather than
-        ``import services.flows.content_generation`` so the regression
-        guard runs even in test environments that don't have the
-        ``prefect`` package installed (the module's top-level
-        ``from prefect import flow, task`` would otherwise hard-error
-        on import and shadow the real assertion).
-        """
         from pathlib import Path
 
         flow_path = (
@@ -280,18 +284,19 @@ class TestProductionCallsiteGuards:
         assert wires_legacy or wires_container, (
             "services/flows/content_generation.py must call either "
             "build_and_wire_for_subprocess (legacy) or "
-            "build_and_wire_subprocess_with_container (DI migration PR 2) "
-            "before any pipeline stage runs. See poindexter#477 + the "
-            "2026-05-28 SiteConfig DI migration design doc."
+            "build_and_wire_subprocess_with_container (DI migration PR 2)."
         )
 
-    def test_main_lifespan_calls_wire_site_config_modules(self):
-        """main.py's lifespan must call wire_site_config_modules."""
+    def test_main_lifespan_builds_container(self):
+        """main.py's lifespan must build the AppContainer (which registers
+        it via ``set_container`` inside ``build_container``) so the four
+        accessor-migrated modules resolve a configured SiteConfig."""
         import main
 
         source = inspect.getsource(main)
-        assert "wire_site_config_modules" in source, (
-            "main.py lifespan must call wire_site_config_modules(_site_cfg) "
-            "so FastAPI worker startup uses the same wiring loop as the "
-            "Prefect subprocess. See poindexter#477."
+        assert "build_container" in source, (
+            "main.py lifespan must call services.bootstrap.build_container "
+            "so the process-wide AppContainer is registered (#272 capstone "
+            "accessor source for gpu_scheduler / ollama_client / "
+            "prompt_manager / utils.route_utils)."
         )

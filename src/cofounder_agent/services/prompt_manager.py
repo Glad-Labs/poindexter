@@ -33,17 +33,29 @@ import yaml
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
+# Process-wide empty-SiteConfig fallback (#272 capstone). Used by the
+# ctor / Langfuse-init path when no SiteConfig is injected AND no
+# AppContainer has been registered (import time, CLI early paths, tests
+# that never bootstrap). Behaves exactly like the old per-module
+# ``site_config`` global did before its lifespan setter fired.
+_FALLBACK_SITE_CONFIG = SiteConfig()
 
 
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+def _sc() -> SiteConfig:
+    """Return the active container's SiteConfig, or the empty fallback.
+
+    #272 capstone: sources SiteConfig from the process-wide
+    ``AppContainer`` registered by ``bootstrap.build_container`` instead
+    of a module-level global wired via the retired ``set_site_config``.
+    The ``get_prompt_manager()`` singleton factory builds
+    ``UnifiedPromptManager()`` with no ctor arg, so the instance pulls
+    its SiteConfig from here. Crash-safe — returns ``_FALLBACK_SITE_CONFIG``
+    when no container is registered yet.
+    """
+    from services.container_registry import get_container
+
+    container = get_container()
+    return container.site_config if container is not None else _FALLBACK_SITE_CONFIG
 
 
 logger = get_logger(__name__)
@@ -143,22 +155,18 @@ class UnifiedPromptManager:
         self.prompts: dict[str, dict[str, Any]] = {}
         self.metadata: dict[str, PromptMetadata] = {}
         self._db_overrides: dict[str, str] = {}  # DB prompt overrides (loaded async)
-        # Site config injected via ctor (Phase-1 DI shim, #272) or by
-        # load_from_db — used by the Langfuse init path. The module-level
-        # site_config singleton is never .load()'d in process, so we have
-        # to capture the loaded one at the same DI seam as the DB pool.
+        # Site config injected via ctor (DI shim, #272) or by
+        # load_from_db — used by the Langfuse init path. The container's
+        # SiteConfig may not be .load()'d at construction time, so we
+        # capture the loaded one at the same DI seam as the DB pool.
         #
-        # Phase-1 back-compat: when no instance is injected, fall back to
-        # the module-global ``site_config`` singleton. The self-import
-        # (``import services.prompt_manager as _mod``) dodges the local
-        # name-shadowing inside methods like ``_init_langfuse_client``
-        # that bind a local ``site_config`` variable. ``load_from_db``
-        # may overwrite ``self._site_config`` later with the DI seam's
-        # instance — that path is unchanged.
-        import services.prompt_manager as _mod
-
+        # #272 capstone: when no instance is injected, source it from the
+        # process-wide ``AppContainer`` via ``_sc()`` (empty fallback when
+        # no container is registered). ``load_from_db`` may overwrite
+        # ``self._site_config`` later with the DI seam's instance — that
+        # path is unchanged.
         self._site_config: Any = (
-            site_config if site_config is not None else _mod.site_config
+            site_config if site_config is not None else _sc()
         )
         # Langfuse secret pre-fetched at load_from_db time. The Langfuse
         # client init runs in a sync code path (get_prompt is sync), so
@@ -448,10 +456,11 @@ class UnifiedPromptManager:
         the DB+YAML stack and Langfuse becomes a no-op until the
         operator provisions credentials.
 
-        Per CLAUDE.md §Configuration: the module-level
-        ``site_config`` singleton was retired in Phase H step 5; the DI
-        seam is the one passed to ``load_from_db``. Falling back to the
-        module singleton keeps the no-DB unit-test paths green when
+        Per CLAUDE.md §Configuration: the per-module ``site_config``
+        global + ``set_site_config`` setter were retired in the #272
+        capstone. The DI seam is the one passed to ``load_from_db``;
+        falling back to the process-wide container's SiteConfig (via
+        ``_sc()``) keeps the no-DB unit-test paths green when
         ``load_from_db`` was never called.
         """
         if self._langfuse_client is not None:
@@ -462,15 +471,13 @@ class UnifiedPromptManager:
             return None
 
         # __init__ now guarantees self._site_config is non-None (ctor
-        # injection or the module-global fallback). The None-guard stays
-        # for defensiveness; the self-import (#272) dodges the local
-        # name-shadow that a bare ``site_config`` global read would hit.
+        # injection or the container/empty-fallback via ``_sc()``). The
+        # None-guard stays for defensiveness; #272 capstone sources the
+        # fallback from the process-wide AppContainer.
         site_config = self._site_config
         if site_config is None:
             try:
-                import services.prompt_manager as _mod
-
-                site_config = _mod.site_config
+                site_config = _sc()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[prompt_manager] site_config unavailable: %s", exc)
                 return None
