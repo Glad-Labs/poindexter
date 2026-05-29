@@ -54,12 +54,10 @@ class TestPodcastServiceRecordsAsset:
     ):
         pool = MagicMock()
         sc = _fake_site_config(pool=pool)
-        # PodcastService reads site_config from the module-level
-        # singleton at call time (no DI kwarg). Stamp the test's pool
-        # onto that singleton so the recorder sees the expected ref.
-        from services import podcast_service as ps_mod
-        monkeypatch.setattr(ps_mod.site_config, "_pool", pool, raising=False)
-        svc = PodcastService(output_dir=tmp_path)
+        # #272 Phase-2f: PodcastService requires an injected site_config
+        # (module global deleted). Thread the fake — its ``_pool`` is what
+        # the recorder reads for the ``pool`` kwarg asserted below.
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
 
         # Mock the TTS render — write the file inside the mock so the
         # "episode already exists" short-circuit doesn't fire.
@@ -98,10 +96,8 @@ class TestPodcastServiceRecordsAsset:
 
     async def test_failure_does_not_record(self, tmp_path: Path):
         sc = _fake_site_config(pool=MagicMock())
-        # site_config kwarg removed — PodcastService reads it from the
-        # singleton import at call time. `sc` is still constructed because
-        # other parts of the test inject it into mocks downstream.
-        svc = PodcastService(output_dir=tmp_path)
+        # #272 Phase-2f: PodcastService requires an injected site_config.
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
 
         async def _gen_with_voice(script: str, voice: str, output_path: Path):
             return EpisodeResult(success=False, error="all voices failed")
@@ -129,10 +125,8 @@ class TestPodcastServiceRecordsAsset:
         # does NOT need to land a row — backfill catches it. Verify
         # the recorder is not called on this short-circuit path.
         sc = _fake_site_config(pool=MagicMock())
-        # site_config kwarg removed — PodcastService reads it from the
-        # singleton import at call time. `sc` is still constructed because
-        # other parts of the test inject it into mocks downstream.
-        svc = PodcastService(output_dir=tmp_path)
+        # #272 Phase-2f: PodcastService requires an injected site_config.
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
 
         fake_mp3 = tmp_path / "post-1.mp3"
         fake_mp3.write_bytes(b"bytes" * 1000)

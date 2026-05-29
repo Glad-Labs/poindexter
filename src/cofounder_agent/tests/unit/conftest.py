@@ -120,7 +120,10 @@ _SHARED_TEST_MODULES = (
     # (#272 Phase-2e); no module-level site_config attr to share. Tests
     # construct ``ImageService(site_config=...)`` / ``get_image_service(
     # site_config=...)`` and pass ``site_config=`` to ``get_default_image_model``.
-    "services.content_router_service",
+    # ``services.content_router_service`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2f); no module-level site_config attr to share.
+    # The content-router pipeline tests thread a stub directly into
+    # ``process_content_generation_task(site_config=...)``.
     # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5); no module-level site_config attr to share. Tests
     # construct ``ContentMetadataGenerator(site_config=...)`` /
@@ -132,7 +135,11 @@ _SHARED_TEST_MODULES = (
     # to ``plan_images`` / ``qa_cfg`` + ``score_*`` / ``compose`` /
     # ``AIContentGenerator(...)`` / ``generate_with_context`` directly (or
     # via ``UnifiedQualityService(site_config=...)``).
-    "services.podcast_service",
+    # ``services.podcast_service`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2f); no module-level site_config attr to share.
+    # Tests thread a shared ``_TEST_SC`` SiteConfig into
+    # ``PodcastService(site_config=...)`` / ``generate_podcast_episode(
+    # site_config=...)`` and the internal free functions.
     # ``services.video_service`` removed from _SHARED_TEST_MODULES 2026-05-29
     # (#272 Phase-2e); no module-level site_config attr to share. Tests pass
     # ``site_config=`` to the public entries + internal helpers (the
@@ -185,9 +192,15 @@ _SHARED_TEST_MODULES = (
     # site_config attr to share. Tests construct
     # ``UnifiedQualityService(site_config=...)`` and pass ``site_config=`` to
     # ``is_validator_enabled`` / ``UnifiedQualityService._score_llm_patterns``.
-    "services.template_runner",
+    # ``services.template_runner`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2f); no module-level site_config attr to share.
+    # Tests construct ``TemplateRunner(pool, site_config=SiteConfig(...))``
+    # (the flag_on/flag_off fixtures return the configured SiteConfig).
     # ``services.pipeline_architect`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
+    # ``services.prompt_manager`` STAYS in _SHARED_TEST_MODULES (#272
+    # Phase-2f deferral) — its singleton-factory construction graph keeps
+    # the module global + set_site_config in place for now.
     "services.prompt_manager",
     # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3); no module-level site_config attr to share. Tests

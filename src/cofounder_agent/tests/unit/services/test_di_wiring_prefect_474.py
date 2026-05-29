@@ -86,7 +86,11 @@ class TestWiredModulesList:
             # ``services.ai_content_generator`` removed from this pin
             # 2026-05-29 (#272 Phase-2c) for the same reason — its ctor +
             # free functions now require an explicit ``site_config=`` kwarg.
-            "services.content_router_service",
+            # ``services.content_router_service`` + ``services.template_runner``
+            # removed from this pin 2026-05-29 (#272 Phase-2f): both migrated
+            # to constructor/keyword DI and no longer carry a module-global
+            # ``site_config``. Callers thread the SiteConfig explicitly, so
+            # the wiring-loss bug cannot recur via them.
             "services.prompt_manager",
             "services.gpu_scheduler",
         ],
@@ -133,7 +137,10 @@ class TestWireSiteConfigModules:
 
         # Check the critical modules — pulling them in via importlib
         # so the test doesn't fail at import time if one's unavailable.
-        for modname in ("services.ollama_client", "services.content_router_service"):
+        # (#272 Phase-2f: content_router_service no longer carries a
+        # module global, so verify a still-wired module instead —
+        # publish_service still owns its ``site_config`` attr.)
+        for modname in ("services.ollama_client", "services.publish_service"):
             mod = __import__(modname, fromlist=["site_config"])
             cfg = getattr(mod, "site_config", None)
             assert cfg is sentinel, (
@@ -148,7 +155,7 @@ class TestWireSiteConfigModules:
         bogus_list = (
             "services.ollama_client",  # real
             "services.this_module_does_not_exist_anywhere",  # bogus
-            "services.content_router_service",  # real, must still get wired
+            "services.publish_service",  # real, must still get wired
         )
         with patch.object(di_wiring, "WIRED_MODULES", bogus_list):
             from services.site_config import SiteConfig
@@ -160,8 +167,11 @@ class TestWireSiteConfigModules:
         assert count == 2
 
         # The real one downstream of the broken entry still got wired.
-        import services.content_router_service as crs
-        assert getattr(crs, "site_config", None) is sentinel
+        # (#272 Phase-2f: publish_service still owns a module-global
+        # ``site_config`` + ``set_site_config``; content_router_service
+        # no longer does.)
+        import services.publish_service as ps
+        assert getattr(ps, "site_config", None) is sentinel
 
 
 # ---------------------------------------------------------------------------

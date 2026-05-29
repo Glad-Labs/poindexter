@@ -108,7 +108,9 @@ async def _smoke() -> None:
 
         # ---- 5. First runner — writes a checkpoint ----
         print("[smoke] runner_a invoking trivial template")
-        runner_a = TemplateRunner(pool=None, checkpointer_dsn=test_dsn)
+        runner_a = TemplateRunner(
+            pool=None, checkpointer_dsn=test_dsn, site_config=site_config,
+        )
         summary_a = await runner_a.run(
             "smoke_trivial",
             {"task_id": "smoke-1", "topic": "first run"},
@@ -137,7 +139,9 @@ async def _smoke() -> None:
 
         # ---- 7. Second runner — separate instance, same thread_id ----
         print("[smoke] runner_b (separate instance, same thread_id)")
-        runner_b = TemplateRunner(pool=None, checkpointer_dsn=test_dsn)
+        runner_b = TemplateRunner(
+            pool=None, checkpointer_dsn=test_dsn, site_config=site_config,
+        )
         summary_b = await runner_b.run(
             "smoke_trivial",
             {"task_id": "smoke-2", "topic": "second run"},

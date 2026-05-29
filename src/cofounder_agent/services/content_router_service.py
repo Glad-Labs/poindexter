@@ -85,18 +85,12 @@ from .database_service import DatabaseService
 from .image_service import get_image_service
 from .webhook_delivery_service import emit_webhook_event
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# SiteConfig is now injected exclusively (#272 Phase-2f). The
+# module-level ``site_config`` global + ``set_site_config`` setter were
+# deleted; ``process_content_generation_task`` requires a ``site_config=``
+# kwarg. The Prefect flow (``services/flows/content_generation.py``)
+# threads the subprocess-wired instance from
+# ``build_and_wire_subprocess_with_container``.
 
 logger = get_logger(__name__)
 
@@ -176,7 +170,7 @@ async def process_content_generation_task(
     category: str | None = None,
     target_audience: str | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> dict[str, Any]:
     """Dispatch one ``pipeline_tasks`` row through its LangGraph template.
 
@@ -195,14 +189,9 @@ async def process_content_generation_task(
     """
     from uuid import uuid4
 
-    # Phase-1 DI shim (#272): resolve the SiteConfig to use. Prefer the
-    # injected instance; otherwise fall back to the lifespan-bound module
-    # global via self-import so callers that don't yet pass site_config
-    # keep getting the wired config. The local param name `site_config`
-    # would otherwise shadow the module global, so every use below routes
-    # through `_sc`.
-    import services.content_router_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    # SiteConfig is injected (#272 Phase-2f — module global deleted).
+    # Bind to ``_sc`` so the existing reads below stay unchanged.
+    _sc = site_config
 
     if not task_id:
         task_id = str(uuid4())
@@ -362,7 +351,7 @@ async def process_content_generation_task(
 
     try:
         from services.template_runner import TemplateRunner
-        _tmpl_runner = TemplateRunner(database_service.pool)
+        _tmpl_runner = TemplateRunner(database_service.pool, site_config=_sc)
         _tmpl_summary = await _tmpl_runner.run(
             template_slug, result, thread_id=str(task_id),
         )

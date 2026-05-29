@@ -72,27 +72,25 @@ def trivial_templates(monkeypatch):
 
 
 @pytest.fixture
-def flag_on(monkeypatch):
-    """Force template_runner_use_postgres_checkpointer = true."""
-    import services.template_runner as _scm
-    site_config = _scm.site_config
-    monkeypatch.setitem(
-        site_config._config,
-        "template_runner_use_postgres_checkpointer",
-        "true",
-    )
+def flag_on():
+    """Return a SiteConfig with the postgres-checkpointer flag = true.
+
+    #272 Phase-2f deleted the template_runner module-global site_config;
+    tests now construct a SiteConfig and thread it into TemplateRunner.
+    """
+    from services.site_config import SiteConfig
+    return SiteConfig(initial_config={
+        "template_runner_use_postgres_checkpointer": "true",
+    })
 
 
 @pytest.fixture
-def flag_off(monkeypatch):
-    """Force template_runner_use_postgres_checkpointer = false (default)."""
-    import services.template_runner as _scm
-    site_config = _scm.site_config
-    monkeypatch.setitem(
-        site_config._config,
-        "template_runner_use_postgres_checkpointer",
-        "false",
-    )
+def flag_off():
+    """Return a SiteConfig with the postgres-checkpointer flag = false."""
+    from services.site_config import SiteConfig
+    return SiteConfig(initial_config={
+        "template_runner_use_postgres_checkpointer": "false",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +191,9 @@ class TestPostgresCheckpointerSmoke:
             slug = trivial_templates
 
             # First runner: writes a checkpoint via AsyncPostgresSaver.
-            runner_a = TemplateRunner(pool=None, checkpointer_dsn=test_dsn)
+            runner_a = TemplateRunner(
+                pool=None, checkpointer_dsn=test_dsn, site_config=flag_on,
+            )
             summary_a = await runner_a.run(
                 slug,
                 {"task_id": "smoke-1", "topic": "first run"},
@@ -228,7 +228,9 @@ class TestPostgresCheckpointerSmoke:
             # important durability check (above) has already passed —
             # the second run is a smoke check that re-using a thread_id
             # against a populated checkpointer doesn't blow up.
-            runner_b = TemplateRunner(pool=None, checkpointer_dsn=test_dsn)
+            runner_b = TemplateRunner(
+                pool=None, checkpointer_dsn=test_dsn, site_config=flag_on,
+            )
             summary_b = await runner_b.run(
                 slug,
                 {"task_id": "smoke-2", "topic": "second run"},
@@ -264,7 +266,9 @@ class TestCheckpointerFallback:
         self, trivial_templates, flag_on, caplog,
     ):
         """Flag is on but no DSN resolvable → log warning, use MemorySaver."""
-        runner = TemplateRunner(pool=None, checkpointer_dsn=None)
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None, site_config=flag_on,
+        )
 
         with patch(
             "brain.bootstrap.resolve_database_url", return_value=None,
@@ -288,7 +292,9 @@ class TestCheckpointerFallback:
     ):
         """If langgraph-checkpoint-postgres can't be imported, fall back
         cleanly. Simulates an environment without the dep installed."""
-        runner = TemplateRunner(pool=None, checkpointer_dsn="postgresql://x/y")
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn="postgresql://x/y", site_config=flag_on,
+        )
 
         # Force the lazy import in _resolve_checkpointer to ImportError.
         import builtins
@@ -322,7 +328,9 @@ class TestCheckpointerFallback:
         _CheckpointerSetupError. Per feedback_no_silent_defaults: we
         MUST NOT silently use MemorySaver when Postgres is reachable
         but the schema migration broke."""
-        runner = TemplateRunner(pool=None, checkpointer_dsn="postgresql://x/y")
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn="postgresql://x/y", site_config=flag_on,
+        )
 
         # Build a fake AsyncPostgresSaver context-manager whose checkpointer
         # has a setup() that raises.
@@ -373,7 +381,7 @@ class TestCheckpointerFallback:
         Postgres was NEVER reached — this is a "Postgres unreachable"
         condition, not a "Postgres reachable but broken" condition."""
         runner = TemplateRunner(
-            pool=None, checkpointer_dsn="postgresql://x/y",
+            pool=None, checkpointer_dsn="postgresql://x/y", site_config=flag_on,
         )
 
         class _BoomSaver:
@@ -419,7 +427,9 @@ class TestBackwardCompat:
         """With the flag off, _resolve_checkpointer should never even
         attempt to import the AsyncPostgresSaver module — verified by
         spying on the langgraph postgres import path."""
-        runner = TemplateRunner(pool=None, checkpointer_dsn=None)
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None, site_config=flag_off,
+        )
 
         # Spy: track every attempted import of the postgres saver module.
         import builtins
@@ -451,6 +461,8 @@ class TestBackwardCompat:
         """Direct unit test of _resolve_checkpointer — flag off yields
         a MemorySaver instance. Belt-and-suspenders for the more
         integrated test above."""
-        runner = TemplateRunner(pool=None, checkpointer_dsn=None)
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None, site_config=flag_off,
+        )
         async with runner._resolve_checkpointer() as cp:
             assert isinstance(cp, MemorySaver)

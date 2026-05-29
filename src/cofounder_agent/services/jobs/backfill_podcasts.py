@@ -80,7 +80,10 @@ class BackfillPodcastsJob:
         finally:
             await cloud.close()
 
-        svc = PodcastService()
+        # ``sc`` is guaranteed non-None here: the ``not cloud_url`` early
+        # return above bails when ``config['_site_config']`` is missing.
+        # #272 Phase-2f made the ctor site_config mandatory.
+        svc = PodcastService(site_config=sc)
         generated = 0
         uploaded = 0
 

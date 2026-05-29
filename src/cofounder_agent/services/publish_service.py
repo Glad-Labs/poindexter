@@ -1263,6 +1263,7 @@ async def publish_post_from_task(
                     result = await generate_podcast_episode(
                         pid, ptitle, pcontent,
                         pre_generated_script=script,
+                        site_config=_sc,
                     )
                 except Exception as gen_err:
                     logger.warning(
@@ -1738,7 +1739,9 @@ async def fire_post_distribution_hooks(
             try:
                 from services.podcast_service import generate_podcast_episode
                 _spawn_background(
-                    generate_podcast_episode(post_id, post_title, post_content),
+                    generate_podcast_episode(
+                        post_id, post_title, post_content, site_config=_sc,
+                    ),
                     name=f"podcast_episode({post_id})",
                 )
                 fired["hooks"].append("podcast")

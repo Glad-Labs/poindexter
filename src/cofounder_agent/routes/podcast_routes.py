@@ -89,7 +89,7 @@ async def podcast_feed(
 
     db = get_services().get_database()
 
-    svc = PodcastService()
+    svc = PodcastService(site_config=site_config)
     episodes_on_disk = {ep["post_id"]: ep for ep in svc.list_episodes()}
 
     if not episodes_on_disk:
@@ -348,9 +348,11 @@ async def stream_episode(post_id: str):
 
 
 @router.get("/episodes")
-async def list_episodes():
+async def list_episodes(
+    site_config: Any = Depends(get_site_config_dependency),
+):
     """List all available podcast episodes as JSON."""
-    svc = PodcastService()
+    svc = PodcastService(site_config=site_config)
     episodes = svc.list_episodes()
     return {"episodes": episodes, "count": len(episodes)}
 
@@ -361,7 +363,10 @@ async def list_episodes():
 
 
 @router.post("/generate/{post_id}", dependencies=[Depends(verify_api_token)])
-async def generate_episode(post_id: str):
+async def generate_episode(
+    post_id: str,
+    site_config: Any = Depends(get_site_config_dependency),
+):
     """Manually trigger podcast episode generation for a published post."""
     from utils.route_utils import get_services
 
@@ -388,7 +393,7 @@ async def generate_episode(post_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Published post not found")
 
-    svc = PodcastService()
+    svc = PodcastService(site_config=site_config)
     result = await svc.generate_episode(
         post_id=row["id"],
         title=row["title"],

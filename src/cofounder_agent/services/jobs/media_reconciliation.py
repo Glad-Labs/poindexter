@@ -520,15 +520,20 @@ class MediaReconciliationJob:
         from services.podcast_service import generate_podcast_episode
         from services.r2_upload_service import R2UploadService
 
-        await generate_podcast_episode(
-            row["id"], row["title"], row["content"],
-        )
+        # Resolve site_config FIRST — generate_podcast_episode now requires
+        # it (#272 Phase-2f). The scheduler seeds ``self._site_config`` from
+        # ``config['_site_config']``; a None here is a real wiring bug, so
+        # bail before doing work rather than fabricating an empty config.
         sc = getattr(self, "_site_config", None)
         if sc is None:
             logger.warning(
-                "media_reconciliation: no site_config in scope — cannot upload",
+                "media_reconciliation: no site_config in scope — cannot "
+                "regenerate/upload podcast",
             )
             return False
+        await generate_podcast_episode(
+            row["id"], row["title"], row["content"], site_config=sc,
+        )
         r2 = R2UploadService(site_config=sc)
         url = await r2.upload_podcast_episode(row["id"])
         if not url:

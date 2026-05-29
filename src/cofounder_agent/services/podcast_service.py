@@ -33,36 +33,32 @@ from pathlib import Path
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# SiteConfig is now injected exclusively (#272 Phase-2f). The
+# module-level ``site_config`` global + ``set_site_config`` setter were
+# deleted; the public entry points (``PodcastService.__init__`` /
+# ``generate_podcast_episode``) require a ``site_config=`` kwarg and
+# thread it down into the internal free functions. Callers pass the
+# run-bound instance: routes via ``Depends(get_site_config_dependency)``,
+# publish_service via its own ``_sc``, jobs via ``config['_site_config']``.
 
 
 def _resolve_site_config(sc: "SiteConfig | None") -> SiteConfig:
-    """Phase-1 DI shim (#272): resolve the SiteConfig to use.
+    """Resolve the SiteConfig to use, failing loud on a missing instance.
 
-    Prefer the injected ``sc`` when callers thread one through. Falls
-    back to the module-level lifespan-bound ``site_config`` otherwise —
-    keeping every new parameter optional and non-breaking.
-
-    Imports this module by name (``_mod``) so the fallback reads the
-    *current* module global rather than the local name captured at
-    function-def time (dodges the local-name shadow once callers add a
-    ``site_config=`` keyword parameter).
+    The internal free functions keep a ``site_config: SiteConfig | None``
+    signature so the public entry points can thread their resolved
+    instance through them. After #272 Phase-2f there is no module-global
+    fallback — a ``None`` here means a caller bypassed the public DI seam,
+    which we surface loudly per ``feedback_no_silent_defaults`` rather
+    than fabricating an empty ``SiteConfig()``.
     """
-    if sc is not None:
-        return sc
-    import services.podcast_service as _mod
-
-    return _mod.site_config
+    if sc is None:
+        raise ValueError(
+            "podcast_service requires a site_config — construct "
+            "PodcastService(site_config=...) / call generate_podcast_episode("
+            "..., site_config=...) with the run-bound SiteConfig (#272)."
+        )
+    return sc
 
 
 logger = get_logger(__name__)
@@ -581,13 +577,11 @@ class PodcastService:
         self,
         output_dir: Path | None = None,
         *,
-        site_config: "SiteConfig | None" = None,
+        site_config: SiteConfig,
     ):
         self.output_dir = output_dir or PODCAST_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Phase-1 DI shim (#272): prefer an injected SiteConfig, fall back
-        # to the module-level lifespan-bound global. Non-breaking — every
-        # existing caller constructs PodcastService() with no site_config.
+        # SiteConfig is mandatory (#272 Phase-2f — module global deleted).
         self._site_config = _resolve_site_config(site_config)
 
     def get_episode_path(self, post_id: str) -> Path:
@@ -822,10 +816,10 @@ class PodcastService:
         cleanup / retention / cost-attribution missed it. Failures
         here must NEVER bubble up; the episode itself is fine.
 
-        Reads the asyncpg pool from the module-level ``site_config``
-        singleton (set by ``site_config.load(pool)`` during app
-        startup). Pool is best-effort: ``record_media_asset`` itself
-        no-ops cleanly when the pool is None.
+        Reads the asyncpg pool from the injected ``self._site_config``
+        (set by ``site_config.load(pool)`` during app startup, threaded
+        into the ctor per #272 Phase-2f). Pool is best-effort:
+        ``record_media_asset`` itself no-ops cleanly when the pool is None.
         """
         try:
             from services import media_asset_recorder
@@ -914,7 +908,7 @@ async def generate_podcast_episode(
     content: str,
     *,
     pre_generated_script: str | None = None,
-    site_config: "SiteConfig | None" = None,
+    site_config: SiteConfig,
 ) -> None:
     """Fire-and-forget podcast generation. Logs errors but never raises."""
     try:

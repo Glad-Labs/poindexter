@@ -135,6 +135,10 @@ class _ImportPatchContext:
         webhook_mock = AsyncMock()
         self._audit_mock = audit_mock
         self._webhook_mock = webhook_mock
+        # #272 Phase-2f: the module-global site_config + set_site_config
+        # were deleted. site_config is now a required kwarg threaded by
+        # each process_content_generation_task(...) call below — no
+        # module attr to patch.
         self._router_patches = [
             patch.object(crs, "audit_log_bg", audit_mock),
             patch.object(crs, "emit_webhook_event", webhook_mock),
@@ -142,7 +146,6 @@ class _ImportPatchContext:
                 crs, "get_image_service",
                 self._overrides["services.image_service"].get_image_service,
             ),
-            patch.object(crs, "site_config", self._site_config_obj),
         ]
         for p in self._router_patches:
             p.start()
@@ -191,6 +194,7 @@ async def test_happy_path_dispatches_to_template_runner_and_returns_final_state(
             generate_featured_image=True,
             database_service=db,
             task_id="11111111-2222-3333-4444-555555555555",
+            site_config=site_config_obj,
         )
 
     # TemplateRunner was invoked with the resolved slug + the context dict
@@ -224,6 +228,7 @@ async def test_task_id_auto_generated_when_missing():
         result = await process_content_generation_task(
             topic="x", style="s", tone="t", target_length=500,
             database_service=db,
+            site_config=site_config_obj,
         )
 
     assert result["task_id"]
@@ -242,6 +247,7 @@ async def test_custom_category_propagated_to_result():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="cat-test", category="gaming",
+            site_config=site_config_obj,
         )
 
     assert result["category"] == "gaming"
@@ -259,6 +265,7 @@ async def test_default_category_is_technology_when_none():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="cat-default",
+            site_config=site_config_obj,
         )
 
     assert result["category"] == "technology"
@@ -282,6 +289,7 @@ async def test_raises_when_database_service_is_none():
             await process_content_generation_task(
                 topic="topic", style="s", tone="t", target_length=500,
                 database_service=None, task_id="abc",
+                site_config=site_config_obj,
             )
 
 
@@ -307,6 +315,7 @@ async def test_missing_template_slug_fails_loudly():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="no-slug",
+            site_config=site_config_obj,
         )
 
     # TemplateRunner was NOT invoked — no fallback pipeline ran
@@ -342,6 +351,7 @@ async def test_empty_string_template_slug_treated_as_missing():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="whitespace-slug",
+            site_config=site_config_obj,
         )
 
     tmpl_runner.run.assert_not_awaited()
@@ -369,6 +379,7 @@ async def test_template_runner_exception_marks_task_failed_and_emits_webhook():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="boom-task",
+            site_config=site_config_obj,
         )
 
     assert result["status"] == "failed"
@@ -399,6 +410,7 @@ async def test_update_task_failure_during_error_path_does_not_raise():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="double-fail",
+            site_config=site_config_obj,
         )
 
     assert result["status"] == "failed"
@@ -436,6 +448,7 @@ async def test_dry_run_halt_logs_at_info_severity_not_error():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="dry-run-task",
+            site_config=site_config_obj,
         )
 
     assert result["status"] == "failed"
@@ -467,6 +480,7 @@ async def test_experiment_assignment_failure_is_swallowed():
         result = await process_content_generation_task(
             topic="t", style="s", tone="t", target_length=500,
             database_service=db, task_id="exp-fail",
+            site_config=site_config_obj,
         )
 
     # Pipeline still completed despite hook failure
@@ -495,6 +509,7 @@ async def test_models_by_phase_and_tags_seeded_in_context():
             tags=["a", "b"],
             models_by_phase={"writer": "qwen2.5:72b"},
             database_service=db, task_id="seed-test",
+            site_config=site_config_obj,
         )
 
     # The context passed to TemplateRunner.run contained the seeded values

@@ -86,7 +86,9 @@ class GenerateMediaScriptsStage:
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
             async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
-                podcast_script = await _build_script_with_llm(title, content_text)
+                podcast_script = await _build_script_with_llm(
+                    title, content_text, site_config=sc,
+                )
 
             if podcast_script and len(podcast_script) > 200:
                 logger.info("[MEDIA] Podcast script: %d chars", len(podcast_script))

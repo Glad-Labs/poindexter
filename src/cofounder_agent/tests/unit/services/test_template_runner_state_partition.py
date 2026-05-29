@@ -228,20 +228,21 @@ def _service_aware_factory_with_capture(
 
 
 @pytest.fixture
-def flag_off_for_partition(monkeypatch):
-    """Force template_runner_use_postgres_checkpointer = false (default).
+def flag_off_for_partition():
+    """Return a SiteConfig with the postgres-checkpointer flag = false.
 
     The partition fix matters for BOTH MemorySaver and AsyncPostgresSaver
     — both serialize state via ormsgpack. We test on MemorySaver here
     because it's hermetic; the Postgres path is covered by the existing
     smoke test in test_template_runner_postgres_checkpointer.py.
+
+    #272 Phase-2f deleted the template_runner module-global site_config;
+    tests now construct a SiteConfig and thread it into TemplateRunner.
     """
-    import services.template_runner as _scm
-    monkeypatch.setitem(
-        _scm.site_config._config,
-        "template_runner_use_postgres_checkpointer",
-        "false",
-    )
+    from services.site_config import SiteConfig
+    return SiteConfig(initial_config={
+        "template_runner_use_postgres_checkpointer": "false",
+    })
 
 
 @pytest.mark.unit
@@ -315,7 +316,10 @@ class TestRunnerPartitionsServicesFromState:
         import services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_partition": factory})
 
-        runner = TemplateRunner(pool=None, checkpointer_dsn=None)
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None,
+            site_config=flag_off_for_partition,
+        )
 
         db = _FakeDatabaseService()
         img = _FakeImageService()
@@ -388,7 +392,10 @@ class TestRunnerPartitionsServicesFromState:
         import services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_partition_2": factory})
 
-        runner = TemplateRunner(pool=None, checkpointer_dsn=None)
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None,
+            site_config=flag_off_for_partition,
+        )
         summary = await runner.run(
             "svc_partition_2",
             {
@@ -424,7 +431,10 @@ class TestRunnerPartitionsServicesFromState:
         import services.pipeline_templates as pt
         monkeypatch.setattr(pt, "TEMPLATES", {"svc_partition_3": factory})
 
-        runner = TemplateRunner(pool=None, checkpointer_dsn=None)
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None,
+            site_config=flag_off_for_partition,
+        )
         summary = await runner.run(
             "svc_partition_3",
             {"task_id": "no-svcs", "topic": "no services here"},

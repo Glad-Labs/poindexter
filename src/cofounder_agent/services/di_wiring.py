@@ -103,6 +103,28 @@ WIRED_MODULES: tuple[str, ...] = (
     # ``WebhookDeliveryService(pool, site_config=...)`` from the
     # lifespan-bound SiteConfig (caller-bridge); no container build-time
     # property because the runtime pool can't be supplied at build time.
+    # ``services.template_runner`` + ``services.podcast_service`` +
+    # ``services.content_router_service`` removed from WIRED_MODULES
+    # 2026-05-29 (#272 Phase-2f). Their module-level ``site_config``
+    # globals + ``set_site_config`` setters are deleted; injection is now
+    # mandatory. ``TemplateRunner.__init__`` + ``_emit_progress`` take a
+    # required ``site_config=`` (node-level emits thread
+    # ``context.get("site_config")``); ``PodcastService.__init__`` +
+    # ``generate_podcast_episode`` take a required ``site_config=``;
+    # ``process_content_generation_task`` takes a required keyword
+    # ``site_config=``. Callers thread the run-bound instance
+    # (content_router_service builds ``TemplateRunner(pool, site_config=_sc)``
+    # and seeds the context; the Prefect flow passes the
+    # subprocess-wired SiteConfig to ``process_content_generation_task``;
+    # publish_service's ``_sc`` / the podcast route's
+    # ``get_site_config_dependency`` / jobs' ``config['_site_config']``
+    # feed the podcast entries).
+    # ``services.prompt_manager`` STAYS wired (#272 Phase-2f): its
+    # ``get_prompt_manager()`` module-level singleton factory + ~30
+    # ``get_prompt_manager()`` consumers across services/atoms/stages have
+    # no SiteConfig in scope at call time, so the ctor can't cleanly source
+    # one. Its optional ``site_config=`` shim + module global remain;
+    # deferred to a follow-up pass.
     # Content pipeline + QA
     "services.publish_service",
     # ``services.citation_verifier`` + ``services.seed_url_fetcher`` +
@@ -118,7 +140,8 @@ WIRED_MODULES: tuple[str, ...] = (
     # 2026-05-29 (#272 Phase-2b). ``send_post_newsletter`` now requires a
     # ``site_config=`` kwarg; ``publish_service`` passes its own wired
     # module ``site_config`` (caller-bridge). No module-level attr remains.
-    "services.podcast_service",
+    # ``services.podcast_service`` removed from WIRED_MODULES 2026-05-29
+    # (#272 Phase-2f) — see the batch note above.
     # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup). ``MultiModelQA`` now requires a ``site_config=``
     # kwarg; construction sites (cross_model_qa stage, post_pipeline_actions)
@@ -179,9 +202,13 @@ WIRED_MODULES: tuple[str, ...] = (
     # field (typed Optional for dataclass field-ordering, required at runtime);
     # construction sites in ``quality_service`` thread that module's injected
     # ``self._site_config`` (#272 Phase-2d removed the quality_service global).
-    "services.template_runner",
+    # ``services.template_runner`` removed from WIRED_MODULES 2026-05-29
+    # (#272 Phase-2f) — see the batch note above.
     # ``services.pipeline_architect`` removed from WIRED_MODULES 2026-05-29
     # (#272 Phase-2c) — see the batch note above.
+    # ``services.prompt_manager`` STAYS wired (#272 Phase-2f deferral) —
+    # see the batch note above; its singleton-factory construction graph
+    # is too wide to make injection mandatory cleanly.
     "services.prompt_manager",
     # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3). Reach it via ``container.retention_janitor`` or
@@ -191,7 +218,8 @@ WIRED_MODULES: tuple[str, ...] = (
     # (#272 Phase-2c) — see the batch note above.
     # ``services.image_service`` removed from WIRED_MODULES 2026-05-29 (#272
     # Phase-2e) — see the batch note above.
-    "services.content_router_service",
+    # ``services.content_router_service`` removed from WIRED_MODULES
+    # 2026-05-29 (#272 Phase-2f) — see the batch note above.
     # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5). Reach the SiteConfig-bearing
     # ``ContentMetadataGenerator`` via ``container.seo_content_generator``; the

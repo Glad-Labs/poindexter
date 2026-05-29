@@ -55,18 +55,14 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# SiteConfig is now injected exclusively via constructor DI (#272
+# Phase-2f). The module-level ``site_config`` global + ``set_site_config``
+# setter were deleted; ``TemplateRunner`` requires a ``site_config=``
+# ctor kwarg and the node-level ``_emit_progress`` calls thread
+# ``context.get("site_config")`` (seeded by
+# ``content_router_service.process_content_generation_task`` and the
+# dev_diary runner). The run-level ``_emit_progress`` calls use
+# ``self._site_config``.
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +208,7 @@ async def _emit_progress(
     event_type: str,
     payload: dict[str, Any],
     notify_operator_message: str | None = None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> None:
     """Fan progress events out to Discord (when enabled).
 
@@ -221,16 +217,14 @@ async def _emit_progress(
     unused at this layer. A future Langfuse-tracing wire-up will read
     ``event_type`` + ``payload`` to populate span attributes.
 
-    ``site_config`` is the Phase-1 DI shim (Glad-Labs/poindexter#272):
-    callers may pass an explicit instance; when omitted we fall back to
-    the module-level lifespan-bound global. The self-module import dodges
-    the param/global name shadow introduced by the new keyword.
+    ``site_config`` is mandatory (#272 Phase-2f — the module global was
+    deleted): run-level callers pass ``self._site_config`` and node-level
+    callers pass ``context.get("site_config")``.
     """
     del pool, event_type, payload  # see docstring — kept for source-compat
     if not notify_operator_message:
         return
-    import services.template_runner as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     try:
         from services.integrations.operator_notify import notify_operator
         stream_on = bool(
@@ -444,6 +438,12 @@ def make_stage_node(
         for svc_key, svc_value in services.items():
             context.setdefault(svc_key, svc_value)
         task_id = context.get("task_id")
+        # SiteConfig is threaded through the pipeline context (one of the
+        # _KNOWN_SERVICE_KEYS partitioned onto RunnableConfig by the
+        # runner and merged back here). #272 Phase-2f made
+        # ``_emit_progress``'s ``site_config`` mandatory, so every
+        # node-level emit forwards this run-bound instance.
+        node_site_config = context.get("site_config")
 
         cfg = await PluginConfig.load(pool, "stage", name)
         if not cfg.enabled:
@@ -458,6 +458,7 @@ def make_stage_node(
                 pool,
                 event_type="template.node_skipped",
                 payload={"task_id": str(task_id or ""), "node": name},
+                site_config=node_site_config,
             )
             return {}
 
@@ -470,6 +471,7 @@ def make_stage_node(
             event_type="template.node_started",
             payload={"task_id": str(task_id or ""), "node": name},
             notify_operator_message=f"⚙️ {name}… (task {str(task_id or '')[:8]})",
+            site_config=node_site_config,
         )
 
         timeout = int(
@@ -507,6 +509,7 @@ def make_stage_node(
                     f"❌ {name} timed out after {timeout}s "
                     f"(task {str(task_id or '')[:8]})"
                 ),
+                site_config=node_site_config,
             )
             if halts:
                 raise RuntimeError(f"stage {name!r} timed out after {timeout}s")
@@ -534,6 +537,7 @@ def make_stage_node(
                     f"❌ {name} raised {type(exc).__name__} "
                     f"(task {str(task_id or '')[:8]})"
                 ),
+                site_config=node_site_config,
             )
             if halts:
                 raise
@@ -574,6 +578,7 @@ def make_stage_node(
                     f"⛔ {name} halted: {(result.detail or 'requested halt')[:80]} "
                     f"(task {str(task_id or '')[:8]})"
                 ),
+                site_config=node_site_config,
             )
         else:
             await _emit_progress(
@@ -587,6 +592,7 @@ def make_stage_node(
                     f"✓ {name} ({elapsed}ms) "
                     f"(task {str(task_id or '')[:8]})"
                 ),
+                site_config=node_site_config,
             )
 
         return updates
@@ -665,19 +671,17 @@ class TemplateRunner:
         pool: Any,
         *,
         checkpointer_dsn: str | None = None,
-        site_config: SiteConfig | None = None,
+        site_config: SiteConfig,
     ) -> None:
         self._pool = pool
         # Optional override; production resolves via brain.bootstrap when
         # None. Tests inject a sandbox DSN explicitly.
         self._checkpointer_dsn = checkpointer_dsn
-        # Phase-1 DI shim (Glad-Labs/poindexter#272): prefer an injected
-        # SiteConfig, else fall back to the module-level lifespan-bound
-        # global. Self-module import dodges the param/global name shadow.
-        import services.template_runner as _mod
-        self._site_config = (
-            site_config if site_config is not None else _mod.site_config
-        )
+        # SiteConfig is mandatory (#272 Phase-2f — the module global +
+        # set_site_config setter were deleted). content_router_service
+        # threads its run-bound instance; tests pass a constructed
+        # ``SiteConfig(initial_config=...)``.
+        self._site_config = site_config
 
     async def run(
         self,

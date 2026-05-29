@@ -284,6 +284,12 @@ async def content_generation_flow(
             task_id=task_id,
             category=category,
             target_audience=target_audience,
+            # #272 Phase-2f: site_config is now a required kwarg. Thread
+            # the subprocess-wired instance from
+            # build_and_wire_subprocess_with_container above (None only in
+            # the degenerate no-pool branch, which already logged a
+            # warning and is a real misconfiguration we surface loudly).
+            site_config=_wired_site_config,
         )
     except Exception as exc:
         await _mark_task_failed_on_flow_crash(
