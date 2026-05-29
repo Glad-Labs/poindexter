@@ -97,9 +97,16 @@ COPY pyproject.toml poetry.lock ./
 # closes. Outside this Linux container the extra is gated by the
 # ``sys_platform != 'win32'`` marker on the dependency, so Matt's
 # Windows host `poetry install --extras profiling` still skips cleanly.
+#
+# --extras youtube pulls in google-auth / google-auth-oauthlib /
+# google-api-python-client so services/publish_adapters/youtube.py can
+# resumable-upload MP4s. The host CLI (`poindexter integrations youtube
+# setup`) installs these on Matt's machine, but the worker container —
+# which actually runs the backfill_videos publish dispatch — needs them
+# baked in or the publishing.youtube handler ImportErrors at dispatch.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-root --no-dev --no-interaction --extras profiling 2>/dev/null || \
-    poetry install --no-root --no-interaction --extras profiling
+    poetry install --no-root --no-dev --no-interaction --extras "profiling youtube" 2>/dev/null || \
+    poetry install --no-root --no-interaction --extras "profiling youtube"
 
 # Fail-fast verification — confirm the pyroscope-io wheel actually
 # landed in the image. If `[profiling]` was silently dropped (resolver
@@ -114,6 +121,12 @@ RUN poetry config virtualenvs.create false && \
 # — the contract we need to verify is that the symbol exists, not the
 # version number. Closes Glad-Labs/poindexter#406.
 RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')"
+
+# Fail-fast verification — confirm the YouTube upload stack landed. If
+# `[youtube]` was silently dropped, publishing.youtube would ImportError
+# only when the backfill_videos job tries to dispatch an upload — a
+# runtime failure on the publish path. Assert at build time instead.
+RUN python -c "import googleapiclient.discovery, google_auth_oauthlib.flow, google.oauth2.credentials; print('[BUILD] youtube extra OK — google api client + oauth available')"
 
 # Install Playwright's bundled chromium to a shared location so the
 # runtime user (if different from the build user) can find it.
