@@ -84,6 +84,8 @@ async def plan_images(
     topic: str,
     category: str = "technology",
     max_images: int = 4,
+    *,
+    site_config: SiteConfig | None = None,
 ) -> ImagePlanResult:
     """Analyze article content and plan image placement + sourcing.
 
@@ -103,14 +105,22 @@ async def plan_images(
 
     from services.llm_providers.dispatcher import resolve_tier_model
 
-    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+    # Phase-1 DI shim (#272): prefer the injected SiteConfig; fall back to
+    # the module-global via a self-import so the ``site_config`` param
+    # name shadow doesn't trip us. The module global stays in place
+    # (Phase-2 removes it). Default ``None`` keeps every existing caller
+    # working unchanged.
+    import services.image_decision_agent as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
+    ollama_url = _sc.get("ollama_base_url", "http://host.docker.internal:11434")
 
     # Cost-tier API (Lane B sweep). Image decision is a small JSON-shaped
     # task — budget tier (qwen3:8b-class) is the right home, not standard.
     # Operators tune via app_settings.cost_tier.budget.model. Per-call-site
     # key (model_role_image_decision) preserved as last-ditch fallback;
     # if both miss we page the operator and return an empty plan.
-    pool = getattr(site_config, "_pool", None)
+    pool = getattr(_sc, "_pool", None)
     model: str | None = None
     if pool is not None:
         try:
@@ -124,14 +134,14 @@ async def plan_images(
                 tier_err,
             )
     if not model:
-        fallback = site_config.get("model_role_image_decision") or ""
+        fallback = _sc.get("model_role_image_decision") or ""
         if not fallback:
             from services.integrations.operator_notify import notify_operator
             await notify_operator(
                 "image_decision_agent: cost_tier='budget' has no model AND "
                 "model_role_image_decision is empty — image planning skipped",
                 critical=False,
-                site_config=site_config,
+                site_config=_sc,
             )
             return ImagePlanResult()
         model = fallback.removeprefix("ollama/")
@@ -234,7 +244,7 @@ async def plan_images(
                 resolve_thinking_substrings,
             )
             _is_thinking = _is_thinking_model(
-                model, substrings=resolve_thinking_substrings(site_config)
+                model, substrings=resolve_thinking_substrings(_sc)
             )
             actual_prompt = f"/nothink\n{prompt}" if _is_thinking else prompt
 
@@ -348,7 +358,7 @@ async def plan_images(
             import asyncpg
 
             from services.decision_service import log_decision
-            _dsn = site_config.get("database_url", "")
+            _dsn = _sc.get("database_url", "")
             if _dsn:
                 _conn = await asyncpg.connect(_dsn)
                 try:
