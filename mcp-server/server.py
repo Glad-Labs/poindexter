@@ -633,9 +633,13 @@ async def list_settings(category: str = "") -> str:
         if not rows:
             return "No settings found."
         lines = [f"Settings ({len(rows)}):"]
+        # Leftmost token is the bare key — see ``_strip_category_prefix``
+        # for the phantom-key context (Glad-Labs/poindexter#253). Naive
+        # copy-paste of the leftmost token into ``set_setting`` lands on
+        # the canonical row.
         for r in rows:
             val = "********" if r["is_secret"] else (r["value"] or "")
-            lines.append(f"  {r['category'] or '?'}/{r['key']} = {val}")
+            lines.append(f"  {r['key']} [{r['category'] or '?'}] = {val}")
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"

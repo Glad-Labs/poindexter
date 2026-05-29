@@ -16,6 +16,33 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _split_category_prefix(key: str) -> tuple[str, str | None]:
+    """Strip an optional ``<category>/`` prefix from a settings key.
+
+    ``settings list`` previously rendered rows as ``category/key`` and
+    operators copy-pasted that form into ``settings set`` / ``settings
+    get``. To support the copy-paste workflow without re-introducing
+    the phantom-key trap (Glad-Labs/poindexter#253), the CLI accepts
+    either a bare key or the ``category/key`` form and uses the bare
+    key for the actual DB operation.
+
+    Per spec we use ``rsplit("/", 1)`` so the canonical key is always
+    the right-most token. The supplied prefix is returned alongside so
+    callers can warn when it disagrees with the row's actual
+    ``category`` column.
+
+    Mirrors ``mcp-server/server.py::_strip_category_prefix`` behaviour
+    (which uses ``partition("/")`` — first-slash split — because MCP
+    server treats the slash as a single-level category separator;
+    ``rsplit`` here is the spec'd CLI behaviour so canonical keys that
+    themselves contain ``/`` still resolve to the right-most segment).
+    """
+    if "/" not in key:
+        return key, None
+    prefix, canonical = key.rsplit("/", 1)
+    return canonical, prefix
+
+
 @click.group(name="settings", help="Read and write app_settings (DB-first config).")
 def settings_group() -> None:
     pass
@@ -96,12 +123,17 @@ def settings_list(
             fg="cyan",
         )
         click.echo()
+        # Leftmost token is the bare key so naive copy-paste into
+        # ``settings set <key> <value>`` lands on the canonical row
+        # rather than creating a phantom ``category/key`` upsert.
         for r in items:
             status_color = "white" if r.get("is_active") else "bright_black"
             active_flag = "" if r.get("is_active") else "  [DISABLED]"
             value = "(encrypted)" if r.get("is_secret") else (r.get("value") or "")
+            category = r.get("category", "?")
+            key_name = r.get("key", "?")
             click.secho(
-                f"  {r.get('category', '?')}/{r.get('key', '?'):<40} = {str(value)[:70]}{active_flag}",
+                f"  {key_name:<40} [{category}] = {str(value)[:70]}{active_flag}",
                 fg=status_color,
             )
         return
@@ -134,24 +166,34 @@ def settings_list(
 
     click.secho(f"Settings: {len(items)} of {data.get('total', '?')}", fg="cyan")
     click.echo()
+    # Leftmost token is the bare key — see _split_category_prefix
+    # for the rationale (Glad-Labs/poindexter#253 phantom-key trap).
     for s in items:
         key = s.get("key", "?")
         value = s.get("value_preview") or s.get("value") or ""
         cat = s.get("category", "?")
         if s.get("is_encrypted"):
             value = "******* (encrypted)"
-        click.echo(f"  {cat}/{key:<40} = {str(value)[:80]}")
+        click.echo(f"  {key:<40} [{cat}] = {str(value)[:80]}")
 
 
 @settings_group.command("get")
 @click.argument("key")
 @click.option("--json", "json_output", is_flag=True)
 def settings_get(key: str, json_output: bool) -> None:
-    """Get a specific setting by key."""
+    """Get a specific setting by key.
+
+    Accepts either a bare key or the ``category/key`` form rendered by
+    older ``settings list`` output. The ``category/`` prefix is
+    auto-stripped before the lookup — see :func:`_split_category_prefix`.
+    """
+    # Auto-strip the optional category/ prefix so copy-paste from the
+    # display form still resolves. Mirrors the MCP server's behaviour.
+    canonical_key, _supplied_prefix = _split_category_prefix(key)
 
     async def _get():
         async with WorkerClient() as c:
-            resp = await c.get(f"/api/settings/{key}")
+            resp = await c.get(f"/api/settings/{canonical_key}")
             return await c.json_or_raise(resp)
 
     try:
@@ -167,7 +209,7 @@ def settings_get(key: str, json_output: bool) -> None:
     value = s.get("value", "")
     if s.get("is_encrypted"):
         value = "******* (encrypted)"
-    click.secho(f"{s.get('key', key)} ({s.get('category', '?')})", fg="cyan")
+    click.secho(f"{s.get('key', canonical_key)} ({s.get('category', '?')})", fg="cyan")
     click.echo(f"  value       {value}")
     click.echo(f"  data_type   {s.get('data_type', '?')}")
     click.echo(f"  description {s.get('description', '')}")
@@ -182,31 +224,40 @@ def settings_get(key: str, json_output: bool) -> None:
 @click.option(
     "--allow-new",
     is_flag=True,
-    help="Allow creating a brand-new setting key. Without this flag, only "
-         "existing keys can be updated — prevents phantom-key creation when "
-         "operators paste the ``category/key`` display form from the list "
-         "output.",
+    help="Allow creating a brand-new setting key. Without this flag, an "
+         "unknown bare key fails loud rather than silently upserting a "
+         "row no consumer will read. Orthogonal to the slash-prefix "
+         "handling — ``category/key`` always resolves to the bare "
+         "canonical key, never creates a phantom row.",
 )
 def settings_set(
     key: str, value: str, category: str, description: str, allow_new: bool,
 ) -> None:
-    """Upsert a setting by key — creates it if missing, updates if present.
+    """Upsert a setting by key — creates it (with ``--allow-new``) or updates if present.
 
-    Uses a direct DB upsert rather than the HTTP `PUT /api/settings/{key}`
+    Uses a direct DB upsert rather than the HTTP ``PUT /api/settings/{key}``
     endpoint because the latter is update-only (404s on missing keys) and
     the POST-then-PUT dance isn't worth the round-trips. Writing a value
     also re-activates a previously disabled setting — the same behavior
-    `admin_db.set_setting` provides.
+    ``admin_db.set_setting`` provides.
 
-    2026-05-27 phantom-key guard: the ``settings list`` output renders
-    every row as ``{category}/{key} = {value}``. Operators copy that
-    visible form and run ``settings set pipeline/daily_post_limit 4``,
-    which UPSERTs a NEW row with the literal key ``pipeline/daily_post_limit``
-    instead of updating the canonical key ``daily_post_limit``. The
-    consumer (auto_publish.py) only reads the canonical key, so the
-    "set" is silently dead. Caught after Matt's daily_post_limit looked
-    set to 4 but the pipeline still throttled to 1.
+    Accepts either a bare key or the ``category/key`` form rendered by
+    older ``settings list`` output. The ``category/`` prefix is
+    auto-stripped before the upsert — operators copy-pasting from list
+    output get the canonical row updated, not a phantom new row.
+
+    Phantom-key trap history (Glad-Labs/poindexter#253): the original
+    ``settings list`` output rendered every row as
+    ``{category}/{key} = {value}``. Operators copy that visible form and
+    ran ``settings set pipeline/daily_post_limit 4``, which UPSERTed a
+    NEW row with the literal key ``pipeline/daily_post_limit`` instead
+    of updating the canonical key ``daily_post_limit``. Consumers only
+    read canonical keys, so the "set" was silently dead. The 2026-05-27
+    bandaid (reject any key containing ``/``) was replaced 2026-05-28
+    with proper UX: auto-strip the prefix AND reshape list output so
+    the leftmost token is always the bare key.
     """
+    canonical_key, supplied_prefix = _split_category_prefix(key)
 
     async def _upsert() -> bool:
         import asyncpg
@@ -216,47 +267,62 @@ def settings_set(
         dsn = resolve_dsn()
         conn = await asyncpg.connect(dsn)
         try:
-            # Phantom-key guard. If the key contains ``/`` AND that exact
-            # key does NOT exist in the table, the user probably pasted
-            # the ``category/key`` display form. Refuse + suggest the
-            # canonical key (if one exists with the suffix), unless
-            # --allow-new is explicitly passed.
-            if "/" in key and not allow_new:
-                existing = await conn.fetchval(
-                    "SELECT 1 FROM app_settings WHERE key = $1", key,
-                )
-                if existing is None:
-                    canonical = key.split("/")[-1]
-                    canonical_row = await conn.fetchrow(
-                        "SELECT key, category FROM app_settings WHERE key = $1",
-                        canonical,
-                    )
-                    msg_lines = [
-                        f"Refusing to create new key {key!r} (contains '/').",
-                        "",
-                        "The ``settings list`` output renders rows as "
-                        "``category/key = value`` — that 'category/' part is a "
-                        "DISPLAY prefix, not part of the actual key. Setting "
-                        "it as-written would create a phantom row that no "
-                        "consumer reads.",
-                        "",
-                    ]
-                    if canonical_row is not None:
-                        msg_lines.append(
-                            f"Did you mean: poindexter settings set "
-                            f"{canonical_row['key']} {value}"
-                        )
-                        msg_lines.append(
-                            f"  (canonical key, category=={canonical_row['category']!r})"
-                        )
-                    else:
-                        msg_lines.append(
-                            "If you genuinely want to create a new key with "
-                            "'/' in it, re-run with --allow-new."
-                        )
-                    click.echo("\n".join(msg_lines), err=True)
-                    sys.exit(2)
+            existing_row = await conn.fetchrow(
+                "SELECT key, category FROM app_settings WHERE key = $1",
+                canonical_key,
+            )
 
+            # Case A: a slash was supplied AND the canonical row exists.
+            # Auto-strip the prefix; warn if it disagrees with the
+            # actual category column (informational only — proceed
+            # anyway, matching the MCP tool's behaviour).
+            if supplied_prefix is not None and existing_row is not None:
+                actual_category = existing_row["category"] or ""
+                if supplied_prefix != actual_category:
+                    click.secho(
+                        f"warning: supplied prefix {supplied_prefix!r} does not "
+                        f"match the row's actual category {actual_category!r}; "
+                        f"ignoring the prefix and updating the canonical key "
+                        f"{canonical_key!r} anyway",
+                        fg="yellow",
+                        err=True,
+                    )
+
+            # Case B: a slash was supplied AND the canonical row does
+            # NOT exist. Fail loud — this is either a typo, a stale
+            # paste from a no-longer-existing row, or a genuine new-key
+            # request. Operator must opt in with --allow-new + a bare
+            # key (no slash) to create a row.
+            if supplied_prefix is not None and existing_row is None:
+                click.echo(
+                    f"Error: no setting named {canonical_key!r} found.\n"
+                    f"\n"
+                    f"You supplied {key!r} (with a category prefix). If you "
+                    f"genuinely want to create a new key, re-run with "
+                    f"`--allow-new` AND pass just the bare key (no '/'):\n"
+                    f"\n"
+                    f"    poindexter settings set {canonical_key} {value} "
+                    f"--allow-new --category {supplied_prefix}\n",
+                    err=True,
+                )
+                sys.exit(2)
+
+            # Case C: bare key, no canonical row — only allowed with
+            # --allow-new. Without the flag, fail loud so a typo
+            # doesn't silently create a phantom row no consumer reads.
+            if supplied_prefix is None and existing_row is None and not allow_new:
+                click.echo(
+                    f"Error: no setting named {canonical_key!r} found.\n"
+                    f"\n"
+                    f"If you genuinely want to create a new key, re-run "
+                    f"with `--allow-new` (and `--category {category}` if "
+                    f"you want a non-default category).",
+                    err=True,
+                )
+                sys.exit(2)
+
+            # Case D (regular case): bare key with existing row → update.
+            # Or bare key + --allow-new + no existing row → create.
             await conn.execute(
                 """
                 INSERT INTO app_settings (key, value, category, description, is_active)
@@ -268,7 +334,7 @@ def settings_set(
                     is_active   = true,
                     updated_at  = NOW()
                 """,
-                key,
+                canonical_key,
                 value,
                 category,
                 description,
@@ -283,7 +349,7 @@ def settings_set(
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    click.secho(f"Updated: {key} = {value}", fg="green")
+    click.secho(f"Updated: {canonical_key} = {value}", fg="green")
 
 
 # ---------------------------------------------------------------------------
@@ -316,28 +382,38 @@ def settings_disable(key: str) -> None:
 
     Use this to test fallback behavior without losing the current value.
     Re-enable with `poindexter settings enable <key>`.
+
+    Accepts the ``category/key`` form (auto-stripped).
     """
+    canonical_key, _ = _split_category_prefix(key)
     try:
-        updated = _run(_toggle_active(key, False))
+        updated = _run(_toggle_active(canonical_key, False))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     if not updated:
-        click.echo(f"No setting found for key '{key}'", err=True)
+        click.echo(f"No setting found for key '{canonical_key}'", err=True)
         sys.exit(1)
-    click.secho(f"Disabled: {key} (value preserved, is_active=false)", fg="yellow")
+    click.secho(
+        f"Disabled: {canonical_key} (value preserved, is_active=false)",
+        fg="yellow",
+    )
 
 
 @settings_group.command("enable")
 @click.argument("key")
 def settings_enable(key: str) -> None:
-    """Re-activate a previously disabled setting."""
+    """Re-activate a previously disabled setting.
+
+    Accepts the ``category/key`` form (auto-stripped).
+    """
+    canonical_key, _ = _split_category_prefix(key)
     try:
-        updated = _run(_toggle_active(key, True))
+        updated = _run(_toggle_active(canonical_key, True))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     if not updated:
-        click.echo(f"No setting found for key '{key}'", err=True)
+        click.echo(f"No setting found for key '{canonical_key}'", err=True)
         sys.exit(1)
-    click.secho(f"Enabled: {key} (is_active=true)", fg="green")
+    click.secho(f"Enabled: {canonical_key} (is_active=true)", fg="green")
