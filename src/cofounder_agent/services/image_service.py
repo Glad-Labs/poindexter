@@ -180,9 +180,19 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
 }
 
 
-def get_default_image_model() -> ImageModel:
-    """Get the default image model from config or fallback."""
-    model_name = site_config.get("image_model", "sdxl_lightning")
+def get_default_image_model(*, site_config: SiteConfig | None = None) -> ImageModel:
+    """Get the default image model from config or fallback.
+
+    Phase-1 DI shim (#272): accepts an optional keyword-only ``site_config``.
+    When omitted (the default), falls back to the module-level lifespan-bound
+    instance via a self-module import — this dodges the local-parameter name
+    shadow that would otherwise mask the module global. Back-compat: existing
+    callers pass nothing and keep the prior behaviour.
+    """
+    import services.image_service as _mod
+
+    _sc = site_config if site_config is not None else _mod.site_config
+    model_name = _sc.get("image_model", "sdxl_lightning")
     try:
         return ImageModel(model_name)
     except ValueError:
