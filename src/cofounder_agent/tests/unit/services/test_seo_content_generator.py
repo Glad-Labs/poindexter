@@ -16,6 +16,7 @@ from services.seo_content_generator import (
     SEOOptimizedContentGenerator,
     get_seo_content_generator,
 )
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # ContentMetadata
@@ -106,7 +107,7 @@ class TestEnhancedBlogPost:
 
 class TestGenerateSlug:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_lowercase(self):
         assert self.gen._generate_slug("Hello World") == "hello-world"
@@ -136,7 +137,7 @@ class TestGenerateSlug:
 
 class TestGenerateMetaDescription:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_short_excerpt_returned_as_is(self):
         excerpt = "Short excerpt under 155 chars."
@@ -163,7 +164,7 @@ class TestGenerateMetaDescription:
 
 class TestGenerateSEOAssets:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_returns_seo_title(self):
         result = self.gen.generate_seo_assets("AI Trends", "Content about AI.", "AI")
@@ -197,7 +198,7 @@ class TestGenerateSEOAssets:
 
 class TestCalculateReadingTime:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_minimum_1_minute(self):
         assert self.gen.calculate_reading_time("short") >= 1
@@ -218,7 +219,7 @@ class TestCalculateReadingTime:
 
 class TestGenerateSocialMetadata:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_contains_og_fields(self):
         result = self.gen.generate_social_metadata("Title", "Excerpt here")
@@ -250,7 +251,7 @@ class TestGenerateSocialMetadata:
 
 class TestGenerateCategoryAndTags:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_ai_content_categorized_correctly(self):
         content = (
@@ -282,7 +283,7 @@ class TestGenerateCategoryAndTags:
 
 class TestGenerateJsonLdSchema:
     def setup_method(self):
-        self.gen = ContentMetadataGenerator()
+        self.gen = ContentMetadataGenerator(site_config=SiteConfig())
 
     def test_schema_type(self):
         schema = self.gen.generate_json_ld_schema(
@@ -317,16 +318,20 @@ class TestGenerateJsonLdSchema:
 class TestSEOOptimizedContentGenerator:
     def _make_generator(self) -> SEOOptimizedContentGenerator:
         mock_ai = MagicMock()
-        return SEOOptimizedContentGenerator(ai_content_generator=mock_ai)
+        return SEOOptimizedContentGenerator(
+            ai_content_generator=mock_ai, site_config=SiteConfig()
+        )
 
     def test_metadata_gen_assigned(self):
         gen = self._make_generator()
         assert isinstance(gen.metadata_gen, ContentMetadataGenerator)
 
     def test_custom_metadata_gen_accepted(self):
-        custom_meta = ContentMetadataGenerator()
+        custom_meta = ContentMetadataGenerator(site_config=SiteConfig())
         mock_ai = MagicMock()
-        gen = SEOOptimizedContentGenerator(mock_ai, metadata_generator=custom_meta)
+        gen = SEOOptimizedContentGenerator(
+            mock_ai, metadata_generator=custom_meta, site_config=SiteConfig()
+        )
         assert gen.metadata_gen is custom_meta
 
 
@@ -338,10 +343,10 @@ class TestSEOOptimizedContentGenerator:
 class TestGetSEOContentGeneratorFactory:
     def test_returns_seo_generator_instance(self):
         mock_ai = MagicMock()
-        gen = get_seo_content_generator(mock_ai)
+        gen = get_seo_content_generator(mock_ai, site_config=SiteConfig())
         assert isinstance(gen, SEOOptimizedContentGenerator)
 
     def test_ai_generator_assigned(self):
         mock_ai = MagicMock()
-        gen = get_seo_content_generator(mock_ai)
+        gen = get_seo_content_generator(mock_ai, site_config=SiteConfig())
         assert gen.ai_generator is mock_ai

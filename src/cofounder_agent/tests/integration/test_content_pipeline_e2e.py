@@ -319,8 +319,9 @@ class TestSEOMetadata:
     def test_seo_assets_from_content(self):
         """ContentMetadataGenerator produces seo_title, meta_description, meta_keywords."""
         from services.seo_content_generator import ContentMetadataGenerator
+        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator()
+        gen = ContentMetadataGenerator(site_config=SiteConfig())
         seo = gen.generate_seo_assets(
             title="Benefits of Unit Testing in Modern Software",
             content=SAMPLE_BLOG_CONTENT,
@@ -341,8 +342,9 @@ class TestSEOMetadata:
     def test_seo_slug_generation(self):
         """Slug is URL-friendly: lowercase, no special chars, dashes for spaces."""
         from services.seo_content_generator import ContentMetadataGenerator
+        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator()
+        gen = ContentMetadataGenerator(site_config=SiteConfig())
         seo = gen.generate_seo_assets(
             title="AI & Machine Learning: A 2026 Guide!",
             content="Some content about AI and machine learning.",
@@ -356,16 +358,18 @@ class TestSEOMetadata:
     def test_reading_time_and_word_count(self):
         """Reading time and word count calculations work correctly."""
         from services.seo_content_generator import ContentMetadataGenerator
+        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator()
+        gen = ContentMetadataGenerator(site_config=SiteConfig())
         reading_time = gen.calculate_reading_time(SAMPLE_BLOG_CONTENT)
         assert reading_time >= 1, "Reading time should be at least 1 minute"
 
     def test_category_and_tags(self):
         """Category and tag suggestions are generated from content."""
         from services.seo_content_generator import ContentMetadataGenerator
+        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator()
+        gen = ContentMetadataGenerator(site_config=SiteConfig())
         org = gen.generate_category_and_tags(SAMPLE_BLOG_CONTENT, "unit testing")
         assert org["category"], "category is empty"
         assert isinstance(org["tags"], list)
@@ -380,6 +384,7 @@ class TestSEOMetadata:
         """
         from services.ollama_client import OllamaClient
         from services.seo_content_generator import ContentMetadataGenerator
+        from services.site_config import SiteConfig
 
         model = "gemma3:27b" if _ollama_has_model("gemma3:27b") else None
         # Thinking models need more tokens for reasoning overhead
@@ -402,7 +407,7 @@ class TestSEOMetadata:
             title_match = re.search(r"^# (.+)$", content, re.MULTILINE)
             title = title_match.group(1) if title_match else "Continuous Integration Benefits"
 
-            gen = ContentMetadataGenerator()
+            gen = ContentMetadataGenerator(site_config=SiteConfig())
             seo = gen.generate_seo_assets(title=title, content=content, topic="CI/CD")
 
             # All SEO fields should be populated

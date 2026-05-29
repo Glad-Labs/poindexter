@@ -99,7 +99,12 @@ WIRED_MODULES: tuple[str, ...] = (
     # from a lifespan-bound SiteConfig (caller-bridge).
     "services.self_review",
     "services.title_generation",
-    "services.internal_rag_source",
+    # ``services.internal_rag_source`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 5). It takes a runtime ``pool`` the container can't
+    # supply at build time, so there's no container build-time property;
+    # ``topic_batch_service`` constructs
+    # ``InternalRagSource(pool, site_config=...)`` from its own lifespan-bound
+    # SiteConfig (caller-bridge).
     "services.scheduled_publisher",
     "services.topic_ranking",
     "services.database_service",
@@ -118,7 +123,12 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.ai_content_generator",
     "services.image_service",
     "services.content_router_service",
-    "services.seo_content_generator",
+    # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 5). Reach the SiteConfig-bearing
+    # ``ContentMetadataGenerator`` via ``container.seo_content_generator``; the
+    # public ``SEOOptimizedContentGenerator`` needs a runtime
+    # ``ai_content_generator`` so the ``generate_seo_metadata`` stage builds it
+    # from the context SiteConfig (caller-bridge).
     "services.social_poster",
     # Cross-cutting
     "utils.route_utils",

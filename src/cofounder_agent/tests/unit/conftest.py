@@ -118,7 +118,10 @@ _SHARED_TEST_MODULES = (
     "services.publish_service",
     "services.image_service",
     "services.content_router_service",
-    "services.seo_content_generator",
+    # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 5); no module-level site_config attr to share. Tests
+    # construct ``ContentMetadataGenerator(site_config=...)`` /
+    # ``SEOOptimizedContentGenerator(ai, site_config=...)`` directly.
     "services.image_decision_agent",
     "services.podcast_service",
     "services.video_service",
@@ -137,7 +140,9 @@ _SHARED_TEST_MODULES = (
     # ``TitleOriginalityExternalChecker(site_config=...)`` directly.
     "services.self_review",
     "services.title_generation",
-    "services.internal_rag_source",
+    # ``services.internal_rag_source`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 5); no module-level site_config attr to share. Tests
+    # construct ``InternalRagSource(pool, site_config=...)`` directly.
     "services.scheduled_publisher",
     "services.topic_ranking",
     "services.topic_batch_service",

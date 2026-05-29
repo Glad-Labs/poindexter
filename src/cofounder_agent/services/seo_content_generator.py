@@ -23,18 +23,16 @@ from utils.text_utils import extract_keywords_from_text
 from .prompt_manager import get_prompt_manager
 from .site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# 2026-05-29 — SiteConfig DI migration (#272 leaf batch 5) converted this
+# module from the module-level ``site_config`` singleton + ``set_site_config``
+# setter to constructor DI. ``ContentMetadataGenerator`` now takes
+# ``site_config`` in ``__init__`` (stored as ``self._site_config``); the lone
+# ``site_name`` read in ``generate_json_ld_schema`` goes through it.
+# ``SEOOptimizedContentGenerator`` + the ``get_seo_content_generator`` factory
+# thread ``site_config`` down. The composition root
+# (``services/container.py::AppContainer.seo_content_generator``) wires a
+# ``ContentMetadataGenerator``; the ``generate_seo_metadata`` pipeline stage
+# builds its public service from the context SiteConfig (caller-bridge).
 
 logger = get_logger(__name__)
 
@@ -116,8 +114,9 @@ class EnhancedBlogPost:
 class ContentMetadataGenerator:
     """Generate SEO and metadata for content"""
 
-    def __init__(self, llm_provider_manager=None):
+    def __init__(self, llm_provider_manager=None, *, site_config: SiteConfig):
         self.llm = llm_provider_manager
+        self._site_config = site_config
 
     def generate_seo_assets(
         self,
@@ -203,7 +202,7 @@ class ContentMetadataGenerator:
             "@type": "BlogPosting",
             "headline": blog_post.get("title"),
             "description": blog_post.get("excerpt"),
-            "author": {"@type": "Organization", "name": site_config.get("site_name", "AI Content Pipeline")},
+            "author": {"@type": "Organization", "name": self._site_config.get("site_name", "AI Content Pipeline")},
             "datePublished": datetime.now(timezone.utc).isoformat(),
             "keywords": ",".join(blog_post.get("keywords", [])),
             "image": blog_post.get("featured_image_url"),
@@ -263,10 +262,14 @@ class SEOOptimizedContentGenerator:
     """Main service for SEO-optimized content generation with full metadata"""
 
     def __init__(
-        self, ai_content_generator, metadata_generator: ContentMetadataGenerator | None = None
+        self,
+        ai_content_generator,
+        metadata_generator: ContentMetadataGenerator | None = None,
+        *,
+        site_config: SiteConfig,
     ):
         self.ai_generator = ai_content_generator
-        self.metadata_gen = metadata_generator or ContentMetadataGenerator()
+        self.metadata_gen = metadata_generator or ContentMetadataGenerator(site_config=site_config)
 
     async def generate_complete_blog_post(
         self,
@@ -389,7 +392,13 @@ class SEOOptimizedContentGenerator:
         )
 
 
-def get_seo_content_generator(ai_content_generator):
-    """Factory function to create SEO-optimized generator"""
-    metadata_gen = ContentMetadataGenerator()
-    return SEOOptimizedContentGenerator(ai_content_generator, metadata_gen)
+def get_seo_content_generator(ai_content_generator, *, site_config: SiteConfig):
+    """Factory function to create SEO-optimized generator.
+
+    ``site_config`` is threaded down to ``ContentMetadataGenerator`` for the
+    JSON-LD ``site_name`` read (SiteConfig DI migration #272 leaf batch 5).
+    """
+    metadata_gen = ContentMetadataGenerator(site_config=site_config)
+    return SEOOptimizedContentGenerator(
+        ai_content_generator, metadata_gen, site_config=site_config
+    )

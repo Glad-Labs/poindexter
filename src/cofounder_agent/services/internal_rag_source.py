@@ -15,18 +15,16 @@ from uuid import UUID
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# 2026-05-29 — SiteConfig DI migration (#272 leaf batch 5) converted this
+# module from the module-level ``site_config`` singleton + ``set_site_config``
+# setter to constructor DI via ``InternalRagSource`` taking ``site_config``
+# in ``__init__`` (stored as ``self._site_config``). The
+# ``niche_internal_rag_per_kind_limit`` / ``niche_internal_rag_snippet_max_chars``
+# reads + the ``resolve_local_model`` writer-model lookup now go through
+# ``self._site_config``. The runtime ``pool`` is supplied by the caller, so
+# there is no container build-time cached_property; ``topic_batch_service``
+# constructs ``InternalRagSource(pool, site_config=...)`` from its own
+# lifespan-bound SiteConfig (caller-bridge pattern).
 
 logger = get_logger(__name__)
 
@@ -48,8 +46,9 @@ class InternalCandidate:
 
 
 class InternalRagSource:
-    def __init__(self, pool):
+    def __init__(self, pool, *, site_config: SiteConfig):
         self._pool = pool
+        self._site_config = site_config
 
     async def generate(
         self,
@@ -63,7 +62,7 @@ class InternalRagSource:
         # 0119). The prior hardcoded default was 5; falls back to that
         # when site_config isn't loaded so unit-test fixtures still work.
         if per_kind_limit is None:
-            per_kind_limit = site_config.get_int(
+            per_kind_limit = self._site_config.get_int(
                 "niche_internal_rag_per_kind_limit", 5,
             )
         bad = [s for s in source_kinds if s not in VALID_SOURCE_KINDS]
@@ -139,7 +138,7 @@ class InternalRagSource:
         """
         from services.topic_ranking import _ollama_chat_json
 
-        snippet_max = site_config.get_int(
+        snippet_max = self._site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )
         # poindexter#485 fail-loud sweep: previously this baked
@@ -149,7 +148,7 @@ class InternalRagSource:
         # at call time. Now chains through the cost-tier API and
         # raises ValueError if no writer model is resolvable.
         from services.llm_text import resolve_local_model
-        model = resolve_local_model(site_config=site_config)
+        model = resolve_local_model(site_config=self._site_config)
         joined = "\n---\n".join(s[:snippet_max] for s in snippets if s)
         from services.prompt_manager import get_prompt_manager
         prompt = get_prompt_manager().get_prompt(

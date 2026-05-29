@@ -35,6 +35,7 @@ from services.research_quality_service import ResearchQualityService
 from services.retention_janitor import RetentionJanitor
 from services.revalidation_service import RevalidationService
 from services.seed_url_fetcher import SeedURLFetcher
+from services.seo_content_generator import ContentMetadataGenerator
 from services.site_config import SiteConfig
 from services.telegram_config import TelegramConfig
 from services.title_originality_external import TitleOriginalityExternalChecker
@@ -336,3 +337,19 @@ class AppContainer:
         (caller-bridge).
         """
         return ResearchQualityService(site_config=self.site_config)
+
+    @cached_property
+    def seo_content_generator(self) -> ContentMetadataGenerator:
+        """SEO / metadata generator (#272 leaf batch 5).
+
+        Reads ``site_name`` from ``SiteConfig`` for the JSON-LD
+        ``author`` block. The public service
+        ``SEOOptimizedContentGenerator`` needs a runtime
+        ``ai_content_generator`` the container can't supply at build time,
+        so the factory (``get_seo_content_generator(ai, site_config=...)``)
+        stays a caller-bridge: the ``generate_seo_metadata`` pipeline stage
+        builds it from the context SiteConfig. This property is the
+        canonical wiring seam for the SiteConfig-bearing
+        ``ContentMetadataGenerator`` for container-aware callers + tests.
+        """
+        return ContentMetadataGenerator(site_config=self.site_config)

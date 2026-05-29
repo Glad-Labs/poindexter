@@ -7,6 +7,7 @@ from services.internal_rag_source import (
     InternalCandidate,
     VALID_SOURCE_KINDS,
 )
+from services.site_config import SiteConfig
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -63,7 +64,7 @@ class _FakePool:
 async def test_generate_pulls_top_k_per_source_kind(db_pool, monkeypatch):
     # The source should query the embeddings table for each enabled source_kind
     # and return distilled candidates.
-    src = InternalRagSource(db_pool)
+    src = InternalRagSource(db_pool, site_config=SiteConfig())
     # Mock the LLM distillation step — it turns a snippet into (topic, angle).
     async def fake_distill(snippets):
         return ("How we handled OAuth phase 1", "Why client credentials grant first")
@@ -87,7 +88,7 @@ async def test_generate_pulls_top_k_per_source_kind(db_pool, monkeypatch):
 
 async def test_generate_rejects_unknown_source_kind():
     pool = _FakePool()
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
     with pytest.raises(ValueError, match="unknown source_kinds"):
         await src.generate(
             niche_id="00000000-0000-0000-0000-000000000001",
@@ -98,7 +99,7 @@ async def test_generate_rejects_unknown_source_kind():
 
 async def test_generate_rejects_unknown_kinds_lists_only_invalid_ones():
     pool = _FakePool()
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
     with pytest.raises(ValueError) as exc_info:
         await src.generate(
             niche_id="00000000-0000-0000-0000-000000000001",
@@ -114,7 +115,7 @@ async def test_generate_rejects_unknown_kinds_lists_only_invalid_ones():
 
 async def test_generate_with_empty_source_kinds_returns_empty():
     pool = _FakePool()
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
     result = await src.generate(
         niche_id="00000000-0000-0000-0000-000000000001",
         source_kinds=[],
@@ -128,7 +129,7 @@ async def test_generate_skips_git_commit_kind_silently(monkeypatch):
     # _fetch_recent_snippets returns [] for it, so generate should
     # produce no candidates without raising.
     pool = _FakePool()
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
     distill = AsyncMock(return_value=("t", "a"))
     monkeypatch.setattr(src, "_distill_topic_angle", distill)
 
@@ -153,7 +154,7 @@ async def test_fetch_recent_snippets_maps_source_kinds_to_tables():
     }
     for kind, table in expected.items():
         pool = _FakePool(rows=[])
-        src = InternalRagSource(pool)
+        src = InternalRagSource(pool, site_config=SiteConfig())
         await src._fetch_recent_snippets(kind, limit=3)
         assert pool.last_conn is not None
         assert pool.last_conn.last_args is not None
@@ -164,7 +165,7 @@ async def test_fetch_recent_snippets_maps_source_kinds_to_tables():
 
 async def test_fetch_recent_snippets_returns_empty_for_unmapped_kind():
     pool = _FakePool()
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
     rows = await src._fetch_recent_snippets("git_commit", limit=5)
     assert rows == []
     # Pool should never have been acquired for an unmapped kind.
@@ -177,7 +178,7 @@ async def test_fetch_recent_snippets_handles_null_text_preview():
         {"source_id": "def-456", "text_preview": "real preview"},
     ]
     pool = _FakePool(rows=rows)
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
     out = await src._fetch_recent_snippets("brain_knowledge", limit=2)
     assert out == [
         ("abc-123", "", []),
@@ -196,7 +197,7 @@ async def test_generate_aggregates_across_multiple_kinds(monkeypatch):
         ],
     }
     pool = _FakePool(rows_by_table=rows_by_table)
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
 
     seen_snippets: list[list[str]] = []
 
@@ -225,7 +226,7 @@ async def test_generate_aggregates_across_multiple_kinds(monkeypatch):
 
 async def test_generate_propagates_per_kind_limit_to_fetch(monkeypatch):
     pool = _FakePool(rows=[])
-    src = InternalRagSource(pool)
+    src = InternalRagSource(pool, site_config=SiteConfig())
 
     seen_limits: list[int] = []
     real_fetch = src._fetch_recent_snippets

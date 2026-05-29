@@ -322,7 +322,10 @@ class TopicBatchService:
         ):
             return []
         from services.internal_rag_source import InternalRagSource
-        rag = InternalRagSource(self._pool)
+        # ``topic_batch_service`` keeps its own lifespan-bound module-level
+        # ``site_config`` (still wired via WIRED_MODULES); pass it down to the
+        # migrated ``InternalRagSource`` (caller-bridge, #272 leaf batch 5).
+        rag = InternalRagSource(self._pool, site_config=site_config)
         # Per spec: per-kind limit defaults to 4, all 6 valid kinds
         # except git_commit (which still needs git-log plumbing).
         # Operator-tunable via niche_internal_rag_per_kind_limit
