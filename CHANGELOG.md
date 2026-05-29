@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.21.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.0...v0.21.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **ci:** use HEAD^1 instead of stale base.sha in detect-changes ([#707](https://github.com/Glad-Labs/glad-labs-stack/issues/707)) ([c5c7de9](https://github.com/Glad-Labs/glad-labs-stack/commit/c5c7de9c0a2c1a7b8775e02fd8f043a3e46ed569))
+
 ## [0.21.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.20.0...v0.21.0) (2026-05-29)
 
 
