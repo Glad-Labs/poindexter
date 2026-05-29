@@ -79,7 +79,11 @@ class TestWiredModulesList:
             # un-pinned.
             "services.ollama_client",
             "services.ai_content_generator",
-            "services.multi_model_qa",
+            # ``services.multi_model_qa`` removed from this pin 2026-05-29
+            # (#272 Phase-2): it migrated to constructor DI and no longer
+            # carries a module-global ``site_config``. Construction sites
+            # thread the SiteConfig explicitly, so the 2026-05-11 bleed
+            # cannot recur via this module.
             "services.content_router_service",
             "services.prompt_manager",
             "services.gpu_scheduler",

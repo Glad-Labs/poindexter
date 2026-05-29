@@ -15,6 +15,7 @@ from services.quality_models import (
     QualityScore,
     RefinementType,
 )
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # EvaluationMethod enum
@@ -84,6 +85,7 @@ class TestQualityDimensions:
         dims = QualityDimensions(
             clarity=80, accuracy=80, completeness=80,
             relevance=80, seo_quality=80, readability=80, engagement=80,
+            site_config=SiteConfig(),
         )
         assert dims.average() == pytest.approx(80.0, abs=0.1)
 
@@ -91,6 +93,7 @@ class TestQualityDimensions:
         dims = QualityDimensions(
             clarity=90, accuracy=70, completeness=80,
             relevance=60, seo_quality=75, readability=85, engagement=70,
+            site_config=SiteConfig(),
         )
         expected = (90 + 70 + 80 + 60 + 75 + 85 + 70) / 7
         result = dims.average()
@@ -102,6 +105,7 @@ class TestQualityDimensions:
             clarity=90, accuracy=90, completeness=90,
             relevance=30,  # Below CRITICAL_FLOOR (50)
             seo_quality=90, readability=90, engagement=90,
+            site_config=SiteConfig(),
         )
         result = dims.average()
         # Should be capped at relevance value (30)
@@ -114,6 +118,7 @@ class TestQualityDimensions:
             relevance=90, seo_quality=90,
             readability=20,  # Very low but NOT critical
             engagement=90,
+            site_config=SiteConfig(),
         )
         result = dims.average()
         # Should NOT be capped at readability value
@@ -123,6 +128,7 @@ class TestQualityDimensions:
         dims = QualityDimensions(
             clarity=80, accuracy=70, completeness=85,
             relevance=75, seo_quality=82, readability=78, engagement=88,
+            site_config=SiteConfig(),
         )
         d = dims.to_dict()
         assert len(d) == 7
@@ -133,6 +139,7 @@ class TestQualityDimensions:
         dims = QualityDimensions(
             clarity=80, accuracy=80, completeness=80,
             relevance=80, seo_quality=80, readability=80, engagement=80,
+            site_config=SiteConfig(),
         )
         assert "clarity" in dims.CRITICAL_DIMENSIONS
         assert "relevance" in dims.CRITICAL_DIMENSIONS
@@ -149,6 +156,7 @@ class TestQualityAssessment:
         dims = QualityDimensions(
             clarity=80, accuracy=80, completeness=80,
             relevance=80, seo_quality=80, readability=80, engagement=80,
+            site_config=SiteConfig(),
         )
         assessment = QualityAssessment(
             dimensions=dims,
@@ -169,6 +177,7 @@ class TestQualityAssessment:
         dims = QualityDimensions(
             clarity=70, accuracy=70, completeness=70,
             relevance=70, seo_quality=70, readability=70, engagement=70,
+            site_config=SiteConfig(),
         )
         assessment = QualityAssessment(
             dimensions=dims, overall_score=70.0, passing=True,
@@ -190,30 +199,30 @@ class TestQualityAssessment:
 @pytest.mark.unit
 class TestCriticalFloorTunable:
     def test_site_config_overrides_default_floor(self):
-        from unittest.mock import patch
+        # DI (#272): the floor is read from the injected SiteConfig, not a
+        # patched module global (the singleton was deleted in Phase 2).
         dims = QualityDimensions(
             clarity=90, accuracy=90, completeness=90,
             relevance=55,  # Above default 50, but below custom 60
             seo_quality=90, readability=90, engagement=90,
+            site_config=SiteConfig(initial_config={"qa_critical_floor": "60.0"}),
         )
-        with patch("services.quality_models.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 60.0
-            result = dims.average()
+        result = dims.average()
         # relevance (55) < custom floor (60) → cap at 55
         assert result == 55.0
 
-    def test_site_config_exception_falls_back_to_default(self):
-        from unittest.mock import patch
+    def test_missing_site_config_raises(self):
+        # DI (#272): average() fails loud when site_config was never
+        # threaded (no silent fallback to a module global — that singleton
+        # was deleted in Phase 2). Matches feedback_no_silent_defaults.
         dims = QualityDimensions(
             clarity=90, accuracy=90, completeness=90,
-            relevance=30,  # Below default floor 50
+            relevance=30,
             seo_quality=90, readability=90, engagement=90,
+            # site_config intentionally omitted (defaults to None)
         )
-        with patch("services.quality_models.site_config") as mock_cfg:
-            mock_cfg.get_float.side_effect = RuntimeError("config down")
-            result = dims.average()
-        # Falls back to CRITICAL_FLOOR=50 → 30 < 50 → cap at 30
-        assert result == 30.0
+        with pytest.raises(RuntimeError, match="QualityDimensions.site_config not set"):
+            dims.average()
 
     def test_lowest_critical_dim_wins(self):
         """When BOTH clarity and relevance are below floor, the LOWER caps."""
@@ -221,6 +230,7 @@ class TestCriticalFloorTunable:
             clarity=40, accuracy=90, completeness=90,
             relevance=20,  # Lower than clarity
             seo_quality=90, readability=90, engagement=90,
+            site_config=SiteConfig(),
         )
         result = dims.average()
         # Both critical dims below floor, the lower (20) is the cap
@@ -233,6 +243,7 @@ class TestCriticalFloorTunable:
         dims = QualityDimensions(
             clarity=50, accuracy=90, completeness=90,
             relevance=90, seo_quality=90, readability=90, engagement=90,
+            site_config=SiteConfig(),
         )
         result = dims.average()
         # 50 is NOT < 50 (strict less-than), so no cap
@@ -246,6 +257,7 @@ class TestCriticalFloorTunable:
             relevance=90,
             seo_quality=10,  # Very low but not critical
             readability=90, engagement=90,
+            site_config=SiteConfig(),
         )
         result = dims.average()
         # Should be the raw average, not capped at 10
@@ -264,6 +276,7 @@ class TestQualityAssessmentOptionalFields:
         return QualityDimensions(
             clarity=80, accuracy=80, completeness=80,
             relevance=80, seo_quality=80, readability=80, engagement=80,
+            site_config=SiteConfig(),
         )
 
     def test_content_length_in_dict(self):

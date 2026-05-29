@@ -25,6 +25,7 @@ from services.multi_model_qa import (
     MultiModelQA,
     _surface_reviewer_skip,
 )
+from services.site_config import SiteConfig
 
 
 @pytest.mark.unit
@@ -70,7 +71,7 @@ class TestReviewerSkipWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_deepeval_brand_master_rail_off_surfaces_skip(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
@@ -84,7 +85,7 @@ class TestReviewerSkipWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_deepeval_faithfulness_empty_research_surfaces_skip(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ), patch(
@@ -98,7 +99,7 @@ class TestReviewerSkipWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_guardrails_brand_master_rail_off_surfaces_skip(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.is_enabled", return_value=False,
         ), patch(
@@ -112,7 +113,7 @@ class TestReviewerSkipWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_guardrails_competitor_empty_list_surfaces_skip(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.is_enabled", return_value=True,
         ), patch(
@@ -128,7 +129,7 @@ class TestReviewerSkipWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_ragas_master_rail_off_surfaces_skip(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.is_enabled", return_value=False,
         ), patch(
@@ -142,7 +143,7 @@ class TestReviewerSkipWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_ragas_empty_research_surfaces_skip(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.is_enabled", return_value=True,
         ), patch(

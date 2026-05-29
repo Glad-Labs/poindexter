@@ -13,7 +13,7 @@ Architecture:
 
 Usage:
     from services.multi_model_qa import MultiModelQA
-    qa = MultiModelQA(pool)
+    qa = MultiModelQA(pool, site_config=site_config)
     result = await qa.review(title, content, topic)
     if result.approved:
         # Safe to publish
@@ -36,19 +36,6 @@ from services.site_config import SiteConfig
 
 if TYPE_CHECKING:
     import httpx
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
 # set_http_client() at startup. The vision-QA paths prefer it so the
@@ -288,15 +275,14 @@ class MultiModelQA:
         pool=None,
         settings_service=None,
         *,
-        site_config: "SiteConfig | None" = None,
+        site_config: SiteConfig,
     ):
         self.pool = pool
         self.settings = settings_service
-        # Phase-1 back-compat DI: prefer an injected SiteConfig, fall back to
-        # the live module global. The param name shadows the module global, so
-        # resolve the global via a self-module import to avoid the shadowing bug.
-        import services.multi_model_qa as _mod
-        self._site_config = site_config if site_config is not None else _mod.site_config
+        # DI (#272): SiteConfig is keyword-required — the module-global
+        # singleton + lifespan-rebind shim were deleted in Phase 2. Every
+        # construction site threads a real, populated instance.
+        self._site_config = site_config
 
     async def _load_gate_states(self) -> dict[str, tuple[bool, bool]]:
         """Return ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates``.

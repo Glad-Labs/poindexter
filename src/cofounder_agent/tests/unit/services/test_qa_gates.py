@@ -223,9 +223,9 @@ def _qa_with_chain(rows: list[dict[str, Any]]) -> MultiModelQA:
     conn = _StubConn(sorted(rows, key=lambda r: r["execution_order"]))
     pool = _StubPool(conn)
     with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
-        # site_config kwarg removed — MultiModelQA reads SiteConfig
-        # via the singleton import in _build_runtime_*().
-        qa = MultiModelQA(pool=pool, settings_service=None)
+        # site_config is a required kwarg (#272 Phase-2): the module-global
+        # singleton was deleted, so tests pass an explicit SiteConfig().
+        qa = MultiModelQA(pool=pool, settings_service=None, site_config=SiteConfig())
     return qa
 
 
@@ -302,7 +302,7 @@ class TestLegacyFallback:
         with patch(
             "services.multi_model_qa.get_model_router", create=True, return_value=MagicMock(),
         ):
-            qa = MultiModelQA(pool=None, settings_service=None)
+            qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         chain = await load_qa_gate_chain(qa.pool)
         assert chain == []
 

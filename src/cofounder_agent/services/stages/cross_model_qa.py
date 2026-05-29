@@ -223,7 +223,17 @@ class CrossModelQAStage:
         # cleanup. If a future niche needs cross-model QA bypassed, key
         # the bypass on niche_slug, not on a stringly-typed mode marker.
 
-        qa = MultiModelQA(pool=pool, settings_service=settings_service)
+        # DI (#272): MultiModelQA requires a SiteConfig. The pipeline seeds
+        # ``context["site_config"]`` (caller-bridge — same pattern as
+        # ``stages/generate_seo_metadata.py``). Fall back to a fresh instance
+        # only for route-direct invocations that don't populate context.
+        site_config = context.get("site_config")
+        if site_config is None:
+            from services.site_config import SiteConfig
+            site_config = SiteConfig()
+        qa = MultiModelQA(
+            pool=pool, settings_service=settings_service, site_config=site_config,
+        )
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)
 

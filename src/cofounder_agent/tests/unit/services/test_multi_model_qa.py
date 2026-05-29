@@ -13,6 +13,7 @@ import pytest
 
 from services.content_validator import ValidationIssue, ValidationResult
 from services.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -110,7 +111,7 @@ def qa():
         return None
 
     with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-        instance = MultiModelQA(pool=None, settings_service=None)
+        instance = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
     # Stub the new gates so existing tests that don't care about them
     # see the pre-gate reviewer count (validator + main critic = 2).
     instance._check_topic_delivery = _skip_gate  # type: ignore[method-assign]
@@ -352,7 +353,7 @@ def _mock_gate_client(json_payload: dict):
 def raw_qa():
     """MultiModelQA WITHOUT the gate stubs — exercises the real gate methods."""
     with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-        return MultiModelQA(pool=None, settings_service=None)
+        return MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
 
 
 class TestTopicDeliveryGate:
@@ -545,7 +546,7 @@ class TestSettingsOverrides:
             qa_final_score_threshold=70,
         )
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         # Stub gates so they don't actually call Ollama
         async def _skip_gate(*args, **kwargs):
@@ -569,7 +570,7 @@ class TestSettingsOverrides:
             qa_final_score_threshold=95,
         )
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         async def _skip_gate(*args, **kwargs):
             return None
@@ -592,7 +593,7 @@ class TestSettingsOverrides:
             qa_final_score_threshold=50,  # very lenient
         )
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         async def _skip_gate(*args, **kwargs):
             return None
@@ -615,7 +616,7 @@ class TestSettingsOverrides:
         settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
 
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         async def _skip_gate(*args, **kwargs):
             return None
@@ -888,7 +889,7 @@ class TestWarningQAPenalty:
             content_validator_warning_qa_penalty=3,
         )
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         async def _skip_gate(*_a, **_k):
             return None
@@ -920,7 +921,7 @@ class TestWarningQAPenalty:
             content_validator_warning_qa_penalty=3,
         )
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         async def _skip_gate(*_a, **_k):
             return None
@@ -949,7 +950,7 @@ class TestWarningQAPenalty:
             content_validator_warning_qa_penalty=5,
         )
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         async def _skip_gate(*_a, **_k):
             return None
@@ -1033,7 +1034,7 @@ def _qa_with_gate_chain(rows):
         sorted(rows, key=lambda r: r["execution_order"]),
     ))
     with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
-        return MultiModelQA(pool=pool, settings_service=None)
+        return MultiModelQA(pool=pool, settings_service=None, site_config=SiteConfig())
 
 
 class TestQAGatesEnabledFalseSkipsLLMCall:
@@ -1244,7 +1245,7 @@ class TestDeepEvalBrandFabricationGate:
     """
 
     def test_clean_content_returns_score_100_approved(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         # Patch the rail's evaluate fn so the test doesn't need deepeval
         # actually loaded. Same shape: (passed, score_unit, reason).
         with patch(
@@ -1263,7 +1264,7 @@ class TestDeepEvalBrandFabricationGate:
         assert "No fabrication" in result.feedback
 
     def test_fabrication_detected_returns_score_0_rejected(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_brand_fabrication",
             return_value=(False, 0.0, "1 fabrication(s) detected: fake_quote: 'foo'"),
@@ -1280,7 +1281,7 @@ class TestDeepEvalBrandFabricationGate:
     def test_returns_none_when_rail_disabled(self):
         """Operator turning off ``deepeval_enabled`` must short-circuit
         before the metric runs (avoids loading deepeval / spending CPU)."""
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
@@ -1295,7 +1296,7 @@ class TestDeepEvalBrandFabricationGate:
         """Brand metric is binary today, but the rescaler must work
         for graded scores — the G-Eval and Faithfulness reviewers
         return values like 0.73 that should land at 73.0."""
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_brand_fabrication",
             return_value=(True, 0.73, "graded score"),
@@ -1328,7 +1329,7 @@ class TestDeepEvalGEvalGate:
 
     @pytest.mark.asyncio
     async def test_high_score_returns_approved(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
             return_value=(True, 0.9, "well grounded"),
@@ -1345,7 +1346,7 @@ class TestDeepEvalGEvalGate:
 
     @pytest.mark.asyncio
     async def test_low_score_returns_rejected(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
             return_value=(False, 0.4, "vague claims"),
@@ -1361,7 +1362,7 @@ class TestDeepEvalGEvalGate:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_rail_disabled(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
@@ -1380,7 +1381,7 @@ class TestDeepEvalGEvalGate:
             "deepeval_threshold_g_eval": "0.85",
             "deepeval_g_eval_criterion": "Custom criterion text",
         }.get(key))
-        qa = MultiModelQA(pool=None, settings_service=settings)
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
@@ -1414,7 +1415,7 @@ class TestDeepEvalFaithfulnessGate:
 
     @pytest.mark.asyncio
     async def test_skips_without_research(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_faithfulness",
         ) as judge_mock, patch(
@@ -1429,7 +1430,7 @@ class TestDeepEvalFaithfulnessGate:
 
     @pytest.mark.asyncio
     async def test_grounded_post_passes(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_faithfulness",
             return_value=(True, 0.95, "all claims attributable"),
@@ -1453,7 +1454,7 @@ class TestDeepEvalFaithfulnessGate:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_rail_disabled(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
@@ -1475,7 +1476,7 @@ class TestDeepEvalFaithfulnessGate:
         settings.get = AsyncMock(side_effect=lambda key: {
             "deepeval_threshold_faithfulness": "not-a-number",
         }.get(key))
-        qa = MultiModelQA(pool=None, settings_service=settings)
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         with patch(
             "services.deepeval_rails.evaluate_faithfulness",
@@ -1511,7 +1512,7 @@ class TestCitationsThresholdReads:
             "qa_citation_verify_enabled": "true",
             "qa_citation_max_dead_ratio": "oops",
         }.get(key))
-        qa = MultiModelQA(pool=None, settings_service=settings)
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
@@ -1533,7 +1534,7 @@ class TestCitationsThresholdReads:
             "qa_citation_verify_enabled": "true",
             "qa_citation_min_count": "twelve",
         }.get(key))
-        qa = MultiModelQA(pool=None, settings_service=settings)
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
@@ -1555,7 +1556,7 @@ class TestCitationsThresholdReads:
             "qa_citation_verify_enabled": "true",
             "qa_citation_timeout_seconds": "soon",
         }.get(key))
-        qa = MultiModelQA(pool=None, settings_service=settings)
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
 
         # Short-circuit before the citation_verifier work — the threshold
         # warnings fire during the settings reads earlier in the function.
@@ -1582,7 +1583,7 @@ class TestGuardrailsBrandGate:
 
     @pytest.mark.asyncio
     async def test_clean_content_returns_score_100(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.run_brand_guard",
             return_value=(True, None),
@@ -1599,7 +1600,7 @@ class TestGuardrailsBrandGate:
 
     @pytest.mark.asyncio
     async def test_fabrication_detected_returns_score_0(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.run_brand_guard",
             return_value=(False, "fake_quote: 'Bill Gates said...'"),
@@ -1615,7 +1616,7 @@ class TestGuardrailsBrandGate:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_disabled(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.is_enabled", return_value=False,
         ), patch(
@@ -1638,7 +1639,7 @@ class TestGuardrailsCompetitorGate:
 
     @pytest.mark.asyncio
     async def test_skips_with_empty_competitor_list(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails._resolve_competitors",
             return_value=[],
@@ -1654,7 +1655,7 @@ class TestGuardrailsCompetitorGate:
 
     @pytest.mark.asyncio
     async def test_clean_content_with_list_passes(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails._resolve_competitors",
             return_value=["Acme", "Foo"],
@@ -1675,7 +1676,7 @@ class TestGuardrailsCompetitorGate:
 
     @pytest.mark.asyncio
     async def test_competitor_mention_fails(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails._resolve_competitors",
             return_value=["Acme"],
@@ -1696,7 +1697,7 @@ class TestGuardrailsCompetitorGate:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_rail_disabled(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.is_enabled", return_value=False,
         ), patch(
@@ -1720,7 +1721,7 @@ class TestRagasEvalGate:
 
     @pytest.mark.asyncio
     async def test_skips_without_research(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.evaluate_sample",
         ) as eval_mock, patch(
@@ -1735,7 +1736,7 @@ class TestRagasEvalGate:
 
     @pytest.mark.asyncio
     async def test_skips_when_disabled(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.is_enabled", return_value=False,
         ), patch(
@@ -1750,7 +1751,7 @@ class TestRagasEvalGate:
 
     @pytest.mark.asyncio
     async def test_averages_three_scores(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
@@ -1780,7 +1781,7 @@ class TestRagasEvalGate:
         """Per-metric -1.0 sentinel = ragas couldn't compute that one.
         Averaging in -1.0 would slam the score; instead we drop the
         sentinel and average just the valid metrics."""
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
@@ -1801,7 +1802,7 @@ class TestRagasEvalGate:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_all_metrics_failed(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
@@ -1820,7 +1821,7 @@ class TestRagasEvalGate:
 
     @pytest.mark.asyncio
     async def test_low_score_marks_unapproved(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.evaluate_sample",
             new=AsyncMock(return_value={
@@ -1904,7 +1905,7 @@ class TestReviewerFailureWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_deepeval_g_eval_failure_surfaces(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
             side_effect=RuntimeError("judge unreachable"),
@@ -1921,7 +1922,7 @@ class TestReviewerFailureWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_deepeval_faithfulness_failure_surfaces(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_faithfulness",
             side_effect=RuntimeError("judge unreachable"),
@@ -1938,7 +1939,7 @@ class TestReviewerFailureWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_guardrails_brand_failure_surfaces(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.run_brand_guard",
             side_effect=RuntimeError("validator import failure"),
@@ -1955,7 +1956,7 @@ class TestReviewerFailureWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_guardrails_competitor_failure_surfaces(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails._resolve_competitors",
             return_value=["Acme"],
@@ -1975,7 +1976,7 @@ class TestReviewerFailureWiredIntoRails:
 
     @pytest.mark.asyncio
     async def test_ragas_eval_failure_surfaces(self):
-        qa = MultiModelQA(pool=None, settings_service=None)
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.evaluate_sample",
             new=AsyncMock(side_effect=RuntimeError("ragas exploded")),

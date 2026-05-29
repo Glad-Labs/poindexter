@@ -89,7 +89,10 @@ WIRED_MODULES: tuple[str, ...] = (
     # httpx-client plumbing, not the SiteConfig seam.
     "services.newsletter_service",
     "services.podcast_service",
-    "services.multi_model_qa",
+    # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
+    # Phase-2 bulk cleanup). ``MultiModelQA`` now requires a ``site_config=``
+    # kwarg; construction sites (cross_model_qa stage, post_pipeline_actions)
+    # thread the lifespan-bound SiteConfig via the context / caller-bridge.
     "services.image_decision_agent",
     "services.content_validator",
     "services.research_service",
@@ -109,7 +112,11 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.topic_ranking",
     "services.database_service",
     "services.quality_scorers",
-    "services.quality_models",
+    # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
+    # Phase-2 bulk cleanup). ``QualityDimensions`` now requires a ``site_config``
+    # field (typed Optional for dataclass field-ordering, required at runtime);
+    # construction sites in ``quality_service`` thread that module's own
+    # still-wired ``site_config`` global.
     "services.quality_service",
     "services.validator_config",
     "services.template_runner",

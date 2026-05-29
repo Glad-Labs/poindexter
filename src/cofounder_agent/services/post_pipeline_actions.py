@@ -469,6 +469,7 @@ async def _maybe_run_preview_qa(
     *,
     database_service: Any,
     settings_service: Any | None,
+    site_config: Any,
     task_id: str,
     topic: str,
     preview_token: str,
@@ -512,7 +513,11 @@ async def _maybe_run_preview_qa(
         # hostname that isn't resolvable here.
         internal_preview_url = f"http://localhost:8002/preview/{preview_token}"
         pool = getattr(database_service, "pool", None)
-        pqa = MultiModelQA(pool=pool, settings_service=_settings_svc)
+        # DI (#272): MultiModelQA requires a SiteConfig — threaded down from
+        # ``_notify_operator`` (the wired lifespan-bound instance).
+        pqa = MultiModelQA(
+            pool=pool, settings_service=_settings_svc, site_config=site_config,
+        )
         review = await pqa._check_rendered_preview(
             title=topic, topic=topic, preview_url=internal_preview_url,
         )
@@ -594,6 +599,7 @@ async def _notify_operator(
         preview_qa_note = await _maybe_run_preview_qa(
             database_service=database_service,
             settings_service=settings_service,
+            site_config=site_config,
             task_id=task_id,
             topic=topic,
             preview_token=preview_token,

@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.multi_model_qa import MultiModelQA
+from services.site_config import SiteConfig
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +33,7 @@ from services.multi_model_qa import MultiModelQA
 class TestMultiModelQAResolveCriticModel:
     @pytest.mark.asyncio
     async def test_returns_tier_model_on_success(self):
-        qa = MultiModelQA(pool=MagicMock(), settings_service=AsyncMock())
+        qa = MultiModelQA(pool=MagicMock(), settings_service=AsyncMock(), site_config=SiteConfig())
         with patch(
             "services.multi_model_qa.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
@@ -46,7 +47,7 @@ class TestMultiModelQAResolveCriticModel:
     async def test_falls_back_to_setting_when_tier_missing(self):
         settings = AsyncMock()
         settings.get = AsyncMock(return_value="ollama/gemma3:27b-it-qat")
-        qa = MultiModelQA(pool=MagicMock(), settings_service=settings)
+        qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(
             "services.multi_model_qa.resolve_tier_model",
@@ -64,7 +65,7 @@ class TestMultiModelQAResolveCriticModel:
     async def test_raises_when_tier_and_setting_both_missing(self):
         settings = AsyncMock()
         settings.get = AsyncMock(return_value=None)
-        qa = MultiModelQA(pool=MagicMock(), settings_service=settings)
+        qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(
             "services.multi_model_qa.resolve_tier_model",
@@ -80,7 +81,7 @@ class TestMultiModelQAResolveCriticModel:
 
     @pytest.mark.asyncio
     async def test_raises_when_no_settings_service_and_tier_missing(self):
-        qa = MultiModelQA(pool=MagicMock(), settings_service=None)
+        qa = MultiModelQA(pool=MagicMock(), settings_service=None, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(
             "services.multi_model_qa.resolve_tier_model",

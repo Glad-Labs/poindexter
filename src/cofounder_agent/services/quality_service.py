@@ -247,6 +247,7 @@ class UnifiedQualityService:
                     seo_quality=5.0,
                     readability=5.0,
                     engagement=5.0,
+                    site_config=site_config,
                 ),
                 overall_score=5.0,
                 passing=False,
@@ -288,6 +289,7 @@ class UnifiedQualityService:
             seo_quality=self._score_seo(content, context) * 10,
             readability=readability_score * 10,
             engagement=self._score_engagement(content) * 10,
+            site_config=site_config,
         )
 
         overall_score = dimensions.average()
@@ -419,6 +421,7 @@ class UnifiedQualityService:
                 seo_quality=_clamp_score(scores.get("seo_quality", 5)),
                 readability=_clamp_score(scores.get("readability", 5)),
                 engagement=_clamp_score(scores.get("engagement", 5)),
+                site_config=site_config,
             )
 
             overall_score = dimensions.average()
@@ -479,6 +482,7 @@ class UnifiedQualityService:
             seo_quality=(p.seo_quality + ll.seo_quality) / 2,
             readability=(p.readability + ll.readability) / 2,
             engagement=(p.engagement + ll.engagement) / 2,
+            site_config=site_config,
         )
 
         overall = combined_dims.average()

@@ -13,19 +13,6 @@ from typing import Any
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = get_logger(__name__)
 
 
@@ -113,9 +100,11 @@ class QualityDimensions:
     CRITICAL_FLOOR: float = 50.0
     CRITICAL_DIMENSIONS: tuple = ("clarity", "relevance")
 
-    # Phase-1 DI seam (#272): optional injected SiteConfig. Defaults to None so
-    # existing construction sites are unaffected; average() falls back to the
-    # live module-global `site_config` when not supplied.
+    # DI seam (#272): injected SiteConfig. Typed Optional with a None default
+    # ONLY because dataclass field-ordering forbids a no-default field after
+    # the defaulted CRITICAL_FLOOR / CRITICAL_DIMENSIONS above. It is REQUIRED
+    # at runtime: average() raises loudly if it is still None (no silent
+    # fallback to a module global — that singleton was deleted in Phase 2).
     site_config: "SiteConfig | None" = None
 
     def average(self) -> float:
@@ -147,17 +136,14 @@ class QualityDimensions:
         # Enforce minimum-dimension constraint on critical dimensions only.
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
-        try:
-            # Phase-1 DI (#272): prefer the injected instance, fall back to the
-            # live module-global via self-module import (avoids name shadowing).
-            import services.quality_models as _mod
-
-            _sc = self.site_config if self.site_config is not None else _mod.site_config
-            effective_floor = _sc.get_float(
-                "qa_critical_floor", self.CRITICAL_FLOOR,
-            )
-        except Exception:
-            effective_floor = self.CRITICAL_FLOOR
+        # DI (#272): the injected SiteConfig is required. Fail loud if a
+        # construction site forgot to thread it (no silent fallback to a
+        # module global — that singleton was deleted in Phase 2).
+        if self.site_config is None:
+            raise RuntimeError("QualityDimensions.site_config not set")
+        effective_floor = self.site_config.get_float(
+            "qa_critical_floor", self.CRITICAL_FLOOR,
+        )
         critical_values = {dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS}
         for dim_name, dim_value in critical_values.items():
             if dim_value < effective_floor:

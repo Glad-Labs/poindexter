@@ -127,7 +127,9 @@ _SHARED_TEST_MODULES = (
     "services.video_service",
     "services.newsletter_service",
     "services.content_validator",
-    "services.multi_model_qa",
+    # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
+    # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
+    # pass ``site_config=`` to the MultiModelQA constructor.
     "services.research_service",
     # ``services.research_quality_service`` migrated to constructor DI
     # 2026-05-29 (#272 leaf batch 4); no module-level site_config attr to
@@ -148,7 +150,9 @@ _SHARED_TEST_MODULES = (
     "services.topic_batch_service",
     "services.database_service",
     "services.quality_scorers",
-    "services.quality_models",
+    # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
+    # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
+    # pass ``site_config=`` to the QualityDimensions dataclass.
     "services.quality_service",
     "services.validator_config",
     "services.template_runner",

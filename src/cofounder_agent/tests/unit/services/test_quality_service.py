@@ -17,6 +17,7 @@ from services.quality_service import (
     get_content_quality_service,
     get_quality_service,
 )
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -363,6 +364,7 @@ class TestQualityDimensionsAverage:
             seo_quality=65,
             readability=70,
             engagement=70,
+            site_config=SiteConfig(),
         )
         expected = (80 + 70 + 70 + 75 + 65 + 70 + 70) / 7
         assert dims.average() == pytest.approx(expected, abs=0.01)
@@ -382,6 +384,7 @@ class TestQualityDimensionsAverage:
             seo_quality=90,
             readability=40,  # below floor — but NOT a critical dim
             engagement=90,
+            site_config=SiteConfig(),
         )
         avg = dims.average()
         # Raw average: (90*6 + 40) / 7 ≈ 82.9 — not capped
@@ -397,6 +400,7 @@ class TestQualityDimensionsAverage:
             seo_quality=90,
             readability=90,
             engagement=90,
+            site_config=SiteConfig(),
         )
         assert dims.average() <= 45.0
 
@@ -410,6 +414,7 @@ class TestQualityDimensionsAverage:
             seo_quality=90,
             readability=90,
             engagement=90,
+            site_config=SiteConfig(),
         )
         assert dims.average() <= 30.0
 
@@ -423,6 +428,7 @@ class TestQualityDimensionsAverage:
             seo_quality=80,
             readability=80,
             engagement=80,
+            site_config=SiteConfig(),
         )
         avg = dims.average()
         # Average is > 50, so no cap should apply from accuracy
