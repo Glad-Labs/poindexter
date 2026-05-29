@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.29.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.28.1...v0.29.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate url_validator + url_scraper to constructor DI ([#272](https://github.com/Glad-Labs/glad-labs-stack/issues/272) leaf batch 1) ([#734](https://github.com/Glad-Labs/glad-labs-stack/issues/734)) ([f2e6693](https://github.com/Glad-Labs/glad-labs-stack/commit/f2e6693d83335ff9b0586ca682622918de1217b7))
+
 ## [0.28.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.28.0...v0.28.1) (2026-05-29)
 
 
