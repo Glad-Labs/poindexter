@@ -22,19 +22,6 @@ import re
 from difflib import SequenceMatcher
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -245,18 +232,14 @@ async def generate_canonical_title(
     content_excerpt: str,
     existing_titles: str = "",
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles.
 
-    Phase-1 DI shim (#272): pass ``site_config`` to inject the instance
-    explicitly. When omitted (the default), falls back to the lifespan-bound
-    module global — non-breaking for existing callers.
+    Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
+    module global + ``set_site_config`` shim was retired.
     """
-    # Resolve the SiteConfig via self-module import so the keyword param
-    # doesn't shadow the module global of the same name.
-    import services.title_generation as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     try:
         from plugins.registry import get_all_llm_providers
         from services.llm_providers.dispatcher import resolve_tier_model
@@ -337,7 +320,7 @@ async def generate_canonical_title(
 async def check_title_originality(
     title: str,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> dict:
     """Web-search the title; return similarity summary.
 
@@ -370,10 +353,9 @@ async def check_title_originality(
     network is down, ``external_fail_open=True`` and the pipeline
     continues as if nothing matched.
     """
-    # Resolve the SiteConfig via self-module import so the keyword param
-    # doesn't shadow the module global of the same name (Phase-1 DI shim, #272).
-    import services.title_generation as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    # Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
+    # module global + ``set_site_config`` shim was retired.
+    _sc = site_config
 
     result: dict = {
         "is_original": True,

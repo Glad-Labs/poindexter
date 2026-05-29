@@ -18,39 +18,22 @@ import asyncio
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = get_logger(__name__)
 
 
-async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig | None = None):
+async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
     """
     Background loop that checks for posts with status='scheduled'
     and published_at <= NOW(), then publishes them.
 
     Args:
         get_pool: Callable that returns the asyncpg connection pool
-        site_config: Optional SiteConfig (Phase H DI seam — GH#95). When
-            provided, used to read ``scheduled_publisher_poll_seconds``;
-            falls back to the module singleton for back-compat.
+        site_config: SiteConfig (Phase H DI seam — GH#95). Used to read
+            ``scheduled_publisher_poll_seconds`` and threaded down to
+            ``_revalidate_for_row``. Phase-2 DI (#272): now required — the
+            module global + ``set_site_config`` shim was retired.
     """
-    # Phase-1 DI shim (#272): resolve the effective SiteConfig once.
-    # Current callers pass nothing, so default-None must fall back to the
-    # lifespan-bound module global (which set_site_config() rebinds). Read
-    # the global off the module object so the rebind is observed.
-    import services.scheduled_publisher as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
 
     # Poll interval tunable via app_settings.scheduled_publisher_poll_seconds (#198)
     try:
@@ -183,7 +166,7 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig | None = 
             logger.error("[scheduled_publisher] Error: %s", e, exc_info=True)
 
 
-async def _revalidate_for_row(row, *, site_config: SiteConfig | None = None) -> None:
+async def _revalidate_for_row(row, *, site_config: SiteConfig) -> None:
     """Trigger ISR revalidation for a freshly-promoted scheduled post.
 
     Pulled out as a helper so the main loop body stays readable and
@@ -192,12 +175,11 @@ async def _revalidate_for_row(row, *, site_config: SiteConfig | None = None) -> 
     Never raises — revalidation failure must not poison the loop or
     block subsequent rows in the same batch.
 
-    ``site_config`` is threaded in by ``run_scheduled_publisher`` (Phase-1
-    DI shim, #272); default-None falls back to the lifespan-bound module
-    global for back-compat with any direct caller.
+    ``site_config`` is threaded in by ``run_scheduled_publisher`` (Phase-2
+    DI, #272 — now required; the module global + ``set_site_config`` shim
+    was retired).
     """
-    import services.scheduled_publisher as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     try:
         slug = row["slug"]
     except (KeyError, TypeError):

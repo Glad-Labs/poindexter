@@ -140,12 +140,15 @@ _SHARED_TEST_MODULES = (
     # module-level site_config attr to share. Tests construct
     # ``SeedURLFetcher(site_config=...)`` /
     # ``TitleOriginalityExternalChecker(site_config=...)`` directly.
-    "services.self_review",
-    "services.title_generation",
+    # ``services.self_review`` + ``services.title_generation`` +
+    # ``services.scheduled_publisher`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2a); no module-level site_config attr to wire —
+    # tests pass ``site_config=`` to the free functions
+    # (``self_review_and_revise`` / ``generate_canonical_title`` /
+    # ``check_title_originality`` / ``run_scheduled_publisher``).
     # ``services.internal_rag_source`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5); no module-level site_config attr to share. Tests
     # construct ``InternalRagSource(pool, site_config=...)`` directly.
-    "services.scheduled_publisher",
     "services.topic_ranking",
     "services.topic_batch_service",
     "services.database_service",

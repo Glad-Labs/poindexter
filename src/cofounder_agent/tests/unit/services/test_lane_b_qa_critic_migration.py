@@ -108,7 +108,9 @@ class TestSelfReviewResolveModel:
             "services.self_review.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
         ):
-            model = await _resolve_self_review_model(MagicMock())
+            model = await _resolve_self_review_model(
+                MagicMock(), site_config=MagicMock(),
+            )
         assert model == "ollama/gemma3:27b"
 
     @pytest.mark.asyncio
@@ -122,10 +124,8 @@ class TestSelfReviewResolveModel:
         with patch(
             "services.self_review.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.self_review.notify_operator", notify), patch(
-            "services.self_review.site_config", sc,
-        ):
-            model = await _resolve_self_review_model(MagicMock())
+        ), patch("services.self_review.notify_operator", notify):
+            model = await _resolve_self_review_model(MagicMock(), site_config=sc)
         assert model == "gemma3:27b-it-qat"
         assert notify.await_count == 1
 
@@ -139,11 +139,9 @@ class TestSelfReviewResolveModel:
         with patch(
             "services.self_review.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.self_review.notify_operator", notify), patch(
-            "services.self_review.site_config", sc,
-        ):
+        ), patch("services.self_review.notify_operator", notify):
             with pytest.raises(RuntimeError):
-                await _resolve_self_review_model(MagicMock())
+                await _resolve_self_review_model(MagicMock(), site_config=sc)
         assert notify.await_count == 1
         assert notify.await_args.kwargs.get("critical") is True
 
@@ -156,10 +154,8 @@ class TestSelfReviewResolveModel:
         notify = AsyncMock()
         sc = MagicMock()
         sc.get = MagicMock(return_value="gemma3:27b")
-        with patch("services.self_review.notify_operator", notify), patch(
-            "services.self_review.site_config", sc,
-        ):
-            model = await _resolve_self_review_model(None)
+        with patch("services.self_review.notify_operator", notify):
+            model = await _resolve_self_review_model(None, site_config=sc)
         assert model == "gemma3:27b"
         assert notify.await_count == 1
 

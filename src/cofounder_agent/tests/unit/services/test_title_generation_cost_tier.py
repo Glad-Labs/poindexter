@@ -73,8 +73,7 @@ async def test_uses_cost_tier_standard_when_mapping_present():
     fake_sc.get.return_value = ""  # pipeline_writer_model unused on the happy path
     fake_sc.get_int.return_value = 4000
 
-    with patch("services.title_generation.site_config", fake_sc), \
-         patch(
+    with patch(
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
@@ -84,6 +83,7 @@ async def test_uses_cost_tier_standard_when_mapping_present():
             topic="AI trends",
             primary_keyword="AI",
             content_excerpt="Body excerpt",
+            site_config=fake_sc,
         )
 
     assert captured["called"] is True
@@ -105,8 +105,7 @@ async def test_falls_back_to_pipeline_writer_model_when_tier_missing():
     fake_sc.get.return_value = "ollama/glm-4.7-5090"
     fake_sc.get_int.return_value = 4000
 
-    with patch("services.title_generation.site_config", fake_sc), \
-         patch(
+    with patch(
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
@@ -114,6 +113,7 @@ async def test_falls_back_to_pipeline_writer_model_when_tier_missing():
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
+            site_config=fake_sc,
         )
 
     assert captured["called"] is True
@@ -134,8 +134,7 @@ async def test_pages_operator_when_both_miss():
     provider.name = "ollama_native"
     provider.complete = AsyncMock()
 
-    with patch("services.title_generation.site_config", fake_sc), \
-         patch(
+    with patch(
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
@@ -147,6 +146,7 @@ async def test_pages_operator_when_both_miss():
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
+            site_config=fake_sc,
         )
 
     assert out is None
@@ -257,8 +257,7 @@ async def test_returns_none_when_ollama_native_provider_missing():
     other = MagicMock()
     other.name = "claude_haiku"  # registered, but not the writer
 
-    with patch("services.title_generation.site_config", fake_sc), \
-         patch(
+    with patch(
              "plugins.registry.get_all_llm_providers",
              return_value=[other],
          ), \
@@ -266,6 +265,7 @@ async def test_returns_none_when_ollama_native_provider_missing():
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
+            site_config=fake_sc,
         )
 
     assert out is None
@@ -292,8 +292,7 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
     fake_sc.get.return_value = ""
     fake_sc.get_int.return_value = 4000
 
-    with patch("services.title_generation.site_config", fake_sc), \
-         patch(
+    with patch(
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
@@ -301,6 +300,7 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
         pm.return_value.get_prompt.return_value = "PROMPT"
         out = await generate_canonical_title(
             topic="AI", primary_keyword="AI", content_excerpt="x",
+            site_config=fake_sc,
         )
 
     assert captured.get("called") is True
@@ -329,8 +329,7 @@ async def test_existing_titles_appended_to_avoidance_prompt():
     fake_sc.get.return_value = ""
     fake_sc.get_int.return_value = 4000
 
-    with patch("services.title_generation.site_config", fake_sc), \
-         patch(
+    with patch(
              "plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
@@ -341,6 +340,7 @@ async def test_existing_titles_appended_to_avoidance_prompt():
             primary_keyword="AI",
             content_excerpt="x",
             existing_titles="- Old Title One\n- Old Title Two",
+            site_config=fake_sc,
         )
 
     assert out == "A Distinctly Different Title"

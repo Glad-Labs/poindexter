@@ -197,6 +197,7 @@ class GenerateContentStage:
         existing_titles = await self._fetch_existing_titles(database_service)
         llm_title = await _generate_canonical_title(
             topic, primary_keyword, content_text[:500], existing_titles=existing_titles,
+            site_config=context.get("site_config"),
         )
         # poindexter#471: prefer the writer's H1 over the raw topic when
         # the LLM title-gen call returns nothing. The raw topic carries
@@ -209,7 +210,9 @@ class GenerateContentStage:
         # Title originality: if the title collides with something on the
         # web, regenerate with a stronger avoidance list. Only take the
         # regenerated version if it's actually more original.
-        originality = await _check_title_originality(title)
+        originality = await _check_title_originality(
+            title, site_config=context.get("site_config"),
+        )
         if not originality["is_original"]:
             logger.warning(
                 "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
@@ -220,9 +223,12 @@ class GenerateContentStage:
             title_v2 = await _generate_canonical_title(
                 topic, primary_keyword, content_text[:500],
                 existing_titles=avoid_list,
+                site_config=context.get("site_config"),
             )
             if title_v2:
-                originality_v2 = await _check_title_originality(title_v2)
+                originality_v2 = await _check_title_originality(
+                    title_v2, site_config=context.get("site_config"),
+                )
                 # GH-87: prefer the regenerated title if it drops below
                 # either the internal-corpus similarity threshold OR the
                 # external-duplicate flag. Previously we only looked at
@@ -290,6 +296,7 @@ class GenerateContentStage:
                 _sr_pool = getattr(database_service, "pool", None)
                 revised, sr_meta = await _self_review_and_revise(
                     content_text, title, topic, pool=_sr_pool,
+                    site_config=context.get("site_config"),
                 )
                 if sr_meta.get("revised"):
                     logger.info(

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.scheduled_publisher import run_scheduled_publisher
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -51,7 +52,9 @@ async def _run_one_iteration(get_pool):
     The function internally catches CancelledError and breaks, so
     the task finishes normally (no CancelledError propagates).
     """
-    task = asyncio.create_task(run_scheduled_publisher(get_pool))
+    task = asyncio.create_task(
+        run_scheduled_publisher(get_pool, site_config=SiteConfig())
+    )
     await asyncio.sleep(0.05)
     task.cancel()
     # run_scheduled_publisher catches CancelledError and returns cleanly
@@ -125,7 +128,9 @@ class TestPublishingTrigger:
             await original_sleep(seconds)
 
         with patch("services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
-            task = asyncio.create_task(run_scheduled_publisher(get_pool))
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=SiteConfig())
+            )
             await task
 
         # fetch was called once before the first sleep(60) attempt
@@ -148,7 +153,9 @@ class TestPublishingTrigger:
                 raise asyncio.CancelledError()
 
         with patch("services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
-            task = asyncio.create_task(run_scheduled_publisher(get_pool))
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=SiteConfig())
+            )
             await task
 
         assert 60 in sleep_values
@@ -250,7 +257,9 @@ class TestErrorHandling:
                 raise asyncio.CancelledError()
 
         with patch("services.scheduled_publisher.asyncio.sleep", side_effect=mock_sleep):
-            task = asyncio.create_task(run_scheduled_publisher(get_pool))
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=SiteConfig())
+            )
             await task
 
         # fetch was called at least twice (first errored, second succeeded)

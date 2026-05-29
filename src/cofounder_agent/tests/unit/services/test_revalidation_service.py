@@ -375,6 +375,7 @@ class TestScheduledPublisherCallsHelper:
     @pytest.mark.asyncio
     async def test_promotes_and_revalidates_each_row(self):
         from services.scheduled_publisher import run_scheduled_publisher
+        from services.site_config import SiteConfig
 
         rows = [
             {
@@ -419,7 +420,9 @@ class TestScheduledPublisherCallsHelper:
             "services.revalidation_service.trigger_isr_revalidate",
             new=fake_revalidate,
         ):
-            task = asyncio.create_task(run_scheduled_publisher(get_pool))
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=SiteConfig())
+            )
             await asyncio.sleep(0.05)
             task.cancel()
             await task
@@ -434,6 +437,7 @@ class TestScheduledPublisherCallsHelper:
     async def test_revalidation_failure_does_not_poison_loop(self):
         """A revalidation exception must not break subsequent rows."""
         from services.scheduled_publisher import run_scheduled_publisher
+        from services.site_config import SiteConfig
 
         rows = [
             {"id": "id-1", "title": "First", "slug": "first", "pipeline_task_id": None},
@@ -467,7 +471,9 @@ class TestScheduledPublisherCallsHelper:
             "services.revalidation_service.trigger_isr_revalidate",
             new=fake_revalidate,
         ):
-            task = asyncio.create_task(run_scheduled_publisher(get_pool))
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=SiteConfig())
+            )
             await asyncio.sleep(0.05)
             task.cancel()
             await task

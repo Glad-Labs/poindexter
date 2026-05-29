@@ -22,19 +22,6 @@ from services.integrations.operator_notify import notify_operator
 from services.llm_providers.dispatcher import resolve_tier_model
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -83,7 +70,7 @@ def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
 
 
 async def _resolve_self_review_model(
-    pool: Any, *, site_config: SiteConfig | None = None,
+    pool: Any, *, site_config: SiteConfig,
 ) -> str:
     """Resolve writer-self-review model via cost-tier API + fallback chain.
 
@@ -96,12 +83,10 @@ async def _resolve_self_review_model(
     asyncpg pool (e.g. legacy paths); in that case we skip the tier
     resolution and try the per-call-site setting directly.
 
-    Phase-1 DI shim (#272): ``site_config`` is a keyword-only override; when
-    omitted it falls back to the live module global so existing callers are
-    unaffected.
+    Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
+    module global + ``set_site_config`` shim was retired.
     """
-    import services.self_review as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     if pool is not None:
         try:
             return await resolve_tier_model(pool, "standard")
@@ -134,7 +119,7 @@ async def _resolve_self_review_model(
 
 async def self_review_and_revise(
     draft: str, title: str, topic: str, *, pool: Any = None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> tuple[str, dict]:
     """Ask the writer model to catch + fix cross-section contradictions.
 
@@ -144,13 +129,12 @@ async def self_review_and_revise(
     - ``contradictions_found`` (int) — count the detector returned.
     - ``revised`` (bool) — True only when we accepted the revision.
 
-    Phase-1 DI shim (#272): ``site_config`` is a keyword-only override; when
-    omitted it falls back to the live module global so existing callers are
-    unaffected. The resolved instance is threaded down to
-    ``_resolve_self_review_model`` so the whole call chain shares one config.
+    Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
+    module global + ``set_site_config`` shim was retired. The instance is
+    threaded down to ``_resolve_self_review_model`` so the whole call chain
+    shares one config.
     """
-    import services.self_review as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     from plugins.registry import get_all_llm_providers
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
 

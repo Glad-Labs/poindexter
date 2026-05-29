@@ -403,7 +403,9 @@ class TestCheckTitleOriginalityIntegration:
             ".check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
         ):
-            result = await check_title_originality("The Exact Title")
+            result = await check_title_originality(
+                "The Exact Title", site_config=SiteConfig(),
+            )
 
         assert result["is_original"] is False
         assert result["external_verbatim_match"] is True
@@ -432,7 +434,9 @@ class TestCheckTitleOriginalityIntegration:
             ".check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
         ):
-            result = await check_title_originality("Some Title")
+            result = await check_title_originality(
+                "Some Title", site_config=SiteConfig(),
+            )
 
         assert result["is_original"] is True
         assert result["external_fail_open"] is True

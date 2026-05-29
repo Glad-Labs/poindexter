@@ -531,13 +531,14 @@ class TestCheckTitleOriginality:
         mock_researcher = MagicMock()
         mock_researcher.search_simple = AsyncMock(return_value=[])
 
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = True
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.title_generation.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality(
-                    "A Completely Unique Title Nobody Has Written"
-                )
+            result = await _check_title_originality(
+                "A Completely Unique Title Nobody Has Written",
+                site_config=mock_cfg,
+            )
 
         assert result["is_original"] is True
         assert result["similar_titles"] == []
@@ -551,13 +552,14 @@ class TestCheckTitleOriginality:
             {"title": "AI and Healthcare: 2026 Update", "url": "https://example.com/2", "snippet": ""},
         ])
 
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = True
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.title_generation.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality(
-                    "How AI Is Changing Healthcare in 2026"
-                )
+            result = await _check_title_originality(
+                "How AI Is Changing Healthcare in 2026",
+                site_config=mock_cfg,
+            )
 
         assert result["is_original"] is False
         assert len(result["similar_titles"]) >= 1
@@ -566,10 +568,10 @@ class TestCheckTitleOriginality:
     @pytest.mark.asyncio
     async def test_disabled_returns_original(self):
         """When disabled via config, should always return original."""
-        with patch("services.title_generation.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 0.6
-            mock_cfg.get_bool.return_value = False
-            result = await _check_title_originality("Any Title")
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = False
+        result = await _check_title_originality("Any Title", site_config=mock_cfg)
 
         assert result["is_original"] is True
 
@@ -579,11 +581,11 @@ class TestCheckTitleOriginality:
         mock_researcher = MagicMock()
         mock_researcher.search_simple = AsyncMock(side_effect=Exception("Network error"))
 
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = True
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.title_generation.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality("Test Title")
+            result = await _check_title_originality("Test Title", site_config=mock_cfg)
 
         assert result["is_original"] is True
 
@@ -595,13 +597,14 @@ class TestCheckTitleOriginality:
             {"title": "Something Completely Different About Dogs", "url": "https://x.com/1", "snippet": ""},
         ])
 
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = True
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.title_generation.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality(
-                    "Understanding GPU Architecture for ML Workloads"
-                )
+            result = await _check_title_originality(
+                "Understanding GPU Architecture for ML Workloads",
+                site_config=mock_cfg,
+            )
 
         assert result["is_original"] is True
 

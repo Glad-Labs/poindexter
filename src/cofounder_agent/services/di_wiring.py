@@ -100,15 +100,18 @@ WIRED_MODULES: tuple[str, ...] = (
     # 2026-05-29 (#272 leaf batch 4). Reach it via
     # ``container.research_quality_service`` or build a per-call instance
     # from a lifespan-bound SiteConfig (caller-bridge).
-    "services.self_review",
-    "services.title_generation",
+    # ``services.self_review`` + ``services.title_generation`` +
+    # ``services.scheduled_publisher`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2a). These are free-function modules — callers
+    # pass ``site_config=context.get("site_config")`` (pipeline stages) or the
+    # lifespan-bound instance (main.py's scheduled-publisher task); no
+    # module-level ``site_config`` attr remains to wire.
     # ``services.internal_rag_source`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5). It takes a runtime ``pool`` the container can't
     # supply at build time, so there's no container build-time property;
     # ``topic_batch_service`` constructs
     # ``InternalRagSource(pool, site_config=...)`` from its own lifespan-bound
     # SiteConfig (caller-bridge).
-    "services.scheduled_publisher",
     "services.topic_ranking",
     "services.database_service",
     "services.quality_scorers",

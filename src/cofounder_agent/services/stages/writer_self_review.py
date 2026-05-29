@@ -82,6 +82,7 @@ class WriterSelfReviewStage:
         try:
             revised_text, stats = await _self_review_and_revise(
                 content_text, title, topic, pool=pool,
+                site_config=context.get("site_config"),
             )
         except Exception as e:
             logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", e)
