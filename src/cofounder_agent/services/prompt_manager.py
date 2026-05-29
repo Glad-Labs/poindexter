@@ -139,15 +139,27 @@ class UnifiedPromptManager:
         "podcast": PromptCategory.PODCAST,
     }
 
-    def __init__(self):
+    def __init__(self, site_config: "SiteConfig | None" = None):
         self.prompts: dict[str, dict[str, Any]] = {}
         self.metadata: dict[str, PromptMetadata] = {}
         self._db_overrides: dict[str, str] = {}  # DB prompt overrides (loaded async)
-        # Site config injected by load_from_db — used by the Langfuse
-        # init path. The module-level site_config singleton is never
-        # .load()'d in process, so we have to capture the loaded one
-        # at the same DI seam as the DB pool.
-        self._site_config: Any = None
+        # Site config injected via ctor (Phase-1 DI shim, #272) or by
+        # load_from_db — used by the Langfuse init path. The module-level
+        # site_config singleton is never .load()'d in process, so we have
+        # to capture the loaded one at the same DI seam as the DB pool.
+        #
+        # Phase-1 back-compat: when no instance is injected, fall back to
+        # the module-global ``site_config`` singleton. The self-import
+        # (``import services.prompt_manager as _mod``) dodges the local
+        # name-shadowing inside methods like ``_init_langfuse_client``
+        # that bind a local ``site_config`` variable. ``load_from_db``
+        # may overwrite ``self._site_config`` later with the DI seam's
+        # instance — that path is unchanged.
+        import services.prompt_manager as _mod
+
+        self._site_config: Any = (
+            site_config if site_config is not None else _mod.site_config
+        )
         # Langfuse secret pre-fetched at load_from_db time. The Langfuse
         # client init runs in a sync code path (get_prompt is sync), so
         # the async-only get_secret call has to happen earlier and the
@@ -250,7 +262,11 @@ class UnifiedPromptManager:
         churn either.
         """
         del pool  # parameter kept for source-compat; see docstring
-        self._site_config = site_config
+        # Only rebind when an instance is actually supplied — a None
+        # arg here must not clobber the ctor-injected / module-global
+        # fallback captured in __init__ (Phase-1 DI shim, #272).
+        if site_config is not None:
+            self._site_config = site_config
 
         if site_config is not None:
             try:
@@ -445,10 +461,16 @@ class UnifiedPromptManager:
         except ImportError:
             return None
 
+        # __init__ now guarantees self._site_config is non-None (ctor
+        # injection or the module-global fallback). The None-guard stays
+        # for defensiveness; the self-import (#272) dodges the local
+        # name-shadow that a bare ``site_config`` global read would hit.
         site_config = self._site_config
         if site_config is None:
             try:
-                site_config = globals()["site_config"]
+                import services.prompt_manager as _mod
+
+                site_config = _mod.site_config
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[prompt_manager] site_config unavailable: %s", exc)
                 return None
