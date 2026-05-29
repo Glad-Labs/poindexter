@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.26.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.26.0...v0.26.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **youtube:** make channel read-back best-effort in setup ([86e2841](https://github.com/Glad-Labs/glad-labs-stack/commit/86e2841fc711efef4dccb1cf009cd1d2afaeac46))
+
 ## [0.26.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.25.0...v0.26.0) (2026-05-29)
 
 
