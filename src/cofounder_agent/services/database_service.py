@@ -71,6 +71,7 @@ class DatabaseService:
         self,
         database_url: str | None = None,
         local_database_url: str | None = None,
+        site_config: SiteConfig | None = None,
     ):
         """
         Initialize database service coordinator with asyncpg.
@@ -81,7 +82,22 @@ class DatabaseService:
             local_database_url: PostgreSQL connection URL (local brain DB)
                                Optional: LOCAL_DATABASE_URL env var or passed explicitly
                                When not set, local_pool = pool (backward compatible)
+            site_config: Injected SiteConfig (Phase-1 DI shim, #272). When None
+                         (the default — every existing caller), falls back to the
+                         module-level ``site_config`` global so behavior is
+                         identical to today. Bootstrap nuance: this service is
+                         constructed very early, before ``site_config`` has loaded
+                         from the DB (it loads via this very pool), so at
+                         pool-creation time ``.get()`` returns literal defaults —
+                         the fallback preserves that exact behavior.
         """
+        # Phase-1 DI shim (#272). Store the explicitly-injected instance, or
+        # ``None`` to mean "fall back to the module-level global". The
+        # ``_site_config`` property resolves the global lazily at read time
+        # so a late ``set_site_config()`` rebind — and tests that patch
+        # ``services.database_service.site_config`` after construction — keep
+        # the exact behavior the global-read code had before this shim.
+        self._injected_site_config = site_config
         if database_url:
             self.database_url = database_url
         else:
@@ -163,6 +179,19 @@ class DatabaseService:
         self.embeddings: EmbeddingsDatabase | None = None
         self.audit: AuditLogger | None = None
 
+    @property
+    def _site_config(self) -> SiteConfig:
+        """Resolve the active SiteConfig (Phase-1 DI shim, #272).
+
+        Returns the explicitly-injected instance when one was passed to
+        ``__init__``; otherwise the module-level global (read live so a
+        late ``set_site_config()`` rebind is honored — identical to the
+        pre-shim ``site_config.get(...)`` reads).
+        """
+        if self._injected_site_config is not None:
+            return self._injected_site_config
+        return site_config
+
     async def initialize(self) -> None:
         """Initialize connection pool(s) and all delegate modules."""
         try:
@@ -180,8 +209,8 @@ class DatabaseService:
             # ``max_size`` stays higher so bursts can grow the pool on demand.
             # Reads from app_settings (no silent env-var drift); defaults
             # preserve backward compat for max_size.
-            min_size = int(site_config.get("database_pool_min_size", "2" if is_dev else "5"))
-            max_size = int(site_config.get("database_pool_max_size", "20" if is_dev else "50"))
+            min_size = int(self._site_config.get("database_pool_min_size", "2" if is_dev else "5"))
+            max_size = int(self._site_config.get("database_pool_max_size", "20" if is_dev else "50"))
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -198,8 +227,8 @@ class DatabaseService:
             if self.local_database_url:
                 # GH-92: local pool min stays at 2 — rarely-called paths
                 # (tasks, writing_style, embeddings) shouldn't hoard.
-                local_min = int(site_config.get("local_database_pool_min_size", "2" if is_dev else "2"))
-                local_max = int(site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
+                local_min = int(self._site_config.get("local_database_pool_min_size", "2" if is_dev else "2"))
+                local_max = int(self._site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
                 self.local_pool = await asyncpg.create_pool(
                     self.local_database_url,
                     min_size=local_min,
