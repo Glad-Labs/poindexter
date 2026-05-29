@@ -283,9 +283,20 @@ class MultiModelQA:
     Change at runtime via OpenClaw or the settings API.
     """
 
-    def __init__(self, pool=None, settings_service=None):
+    def __init__(
+        self,
+        pool=None,
+        settings_service=None,
+        *,
+        site_config: "SiteConfig | None" = None,
+    ):
         self.pool = pool
         self.settings = settings_service
+        # Phase-1 back-compat DI: prefer an injected SiteConfig, fall back to
+        # the live module global. The param name shadows the module global, so
+        # resolve the global via a self-module import to avoid the shadowing bug.
+        import services.multi_model_qa as _mod
+        self._site_config = site_config if site_config is not None else _mod.site_config
 
     async def _load_gate_states(self) -> dict[str, tuple[bool, bool]]:
         """Return ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates``.
@@ -605,7 +616,7 @@ class MultiModelQA:
                     from urllib.parse import urlparse as _urlparse
                     _internal_domains: set[str] = {"localhost"}
                     try:
-                        _site_domain = (site_config.get("site_domain", "") or "").lower().strip()
+                        _site_domain = (self._site_config.get("site_domain", "") or "").lower().strip()
                         if _site_domain:
                             _internal_domains.add(_site_domain)
                             _internal_domains.add(f"www.{_site_domain}")
@@ -1075,7 +1086,7 @@ class MultiModelQA:
                 resolve_thinking_substrings,
             )
             _is_thinking = _is_thinking_model(
-                ollama_model, substrings=resolve_thinking_substrings(site_config)
+                ollama_model, substrings=resolve_thinking_substrings(self._site_config)
             )
             max_tok = thinking_max if _is_thinking else standard_max
             try:
@@ -1211,8 +1222,8 @@ class MultiModelQA:
             )
             ollama_model = resolved_model.removeprefix("ollama/")
 
-            _gate_max = site_config.get_int("qa_gate_max_tokens", 600)
-            _gate_timeout = site_config.get_int("qa_gate_timeout_seconds", 60)
+            _gate_max = self._site_config.get_int("qa_gate_max_tokens", 600)
+            _gate_timeout = self._site_config.get_int("qa_gate_timeout_seconds", 60)
             try:
                 result = await asyncio.wait_for(
                     client.generate(
@@ -1311,7 +1322,7 @@ class MultiModelQA:
         # the migration seeds app_settings.deepeval_enabled='true' so
         # this is on out-of-the-box. If the operator turns it off, skip.
         try:
-            if not deepeval_rails.is_enabled(site_config):
+            if not deepeval_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(
                     "deepeval_brand_fabrication",
                     "deepeval_enabled=false (master rail flag off)",
@@ -1367,7 +1378,7 @@ class MultiModelQA:
             )
             return None
         try:
-            if not deepeval_rails.is_enabled(site_config):
+            if not deepeval_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(
                     "deepeval_g_eval",
                     "deepeval_enabled=false (master rail flag off)",
@@ -1385,7 +1396,7 @@ class MultiModelQA:
         threshold = 0.7
         criterion = deepeval_rails._DEFAULT_G_EVAL_CRITERION
         try:
-            judge_model = await deepeval_rails._resolve_judge_model(site_config)
+            judge_model = await deepeval_rails._resolve_judge_model(self._site_config)
         except ValueError as e:
             # 2026-05-12: the resolver now fails loud (raises) when no
             # judge model is configured. For this rail specifically the
@@ -1475,7 +1486,7 @@ class MultiModelQA:
             )
             return None
         try:
-            if not deepeval_rails.is_enabled(site_config):
+            if not deepeval_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(
                     "deepeval_faithfulness",
                     "deepeval_enabled=false (master rail flag off)",
@@ -1507,7 +1518,7 @@ class MultiModelQA:
 
         threshold = 0.8
         try:
-            judge_model = await deepeval_rails._resolve_judge_model(site_config)
+            judge_model = await deepeval_rails._resolve_judge_model(self._site_config)
         except ValueError as e:
             # See _check_deepeval_g_eval — same fail-loud-but-skip-rail
             # contract. The rail is advisory; a missing judge model is
@@ -1599,7 +1610,7 @@ class MultiModelQA:
             )
             return None
         try:
-            if not guardrails_rails.is_enabled(site_config):
+            if not guardrails_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(
                     "guardrails_brand",
                     "guardrails_enabled=false (master rail flag off)",
@@ -1660,7 +1671,7 @@ class MultiModelQA:
             )
             return None
         try:
-            if not ragas_eval.is_enabled(site_config):
+            if not ragas_eval.is_enabled(self._site_config):
                 _surface_reviewer_skip(
                     "ragas_eval",
                     "ragas_enabled=false (master rail flag off — opt-in "
@@ -1699,7 +1710,7 @@ class MultiModelQA:
                 topic=topic,
                 generated_content=content,
                 retrieved_contexts=chunks,
-                site_config=site_config,
+                site_config=self._site_config,
             )
         except Exception as exc:
             _surface_reviewer_failure("ragas_eval", exc)
@@ -1759,7 +1770,7 @@ class MultiModelQA:
             )
             return None
         try:
-            if not guardrails_rails.is_enabled(site_config):
+            if not guardrails_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(
                     "guardrails_competitor",
                     "guardrails_enabled=false (master rail flag off)",
@@ -1774,7 +1785,7 @@ class MultiModelQA:
             )
             return None
 
-        competitors = guardrails_rails._resolve_competitors(site_config)
+        competitors = guardrails_rails._resolve_competitors(self._site_config)
         if not competitors:
             # No list configured — no enforcement (matches the rail's
             # own behavior, but skip the thread hop entirely). 2026-05-27:
@@ -1875,7 +1886,7 @@ class MultiModelQA:
                 verdict_from_report,
             )
             report = await CitationVerifier(
-                site_config=site_config
+                site_config=self._site_config
             ).verify_citations(
                 content,
                 site_url=site_url,
@@ -2093,7 +2104,7 @@ class MultiModelQA:
             ],
             "options": {"temperature": 0.2, "num_predict": 400},
         }
-        _ollama_url = site_config.get(
+        _ollama_url = self._site_config.get(
             "ollama_base_url", "http://host.docker.internal:11434",
         ) + "/api/chat"
         _vision_timeout = httpx.Timeout(120.0, connect=5.0)
@@ -2285,7 +2296,7 @@ class MultiModelQA:
             ],
             "options": {"temperature": 0.2, "num_predict": 500},
         }
-        _ollama_url = site_config.get(
+        _ollama_url = self._site_config.get(
             "ollama_base_url", "http://host.docker.internal:11434",
         ) + "/api/chat"
         _preview_timeout = httpx.Timeout(180.0, connect=5.0)
@@ -2423,7 +2434,7 @@ class MultiModelQA:
                 len(claims_list), claims_list, critic_concerned,
             )
 
-            researcher = WebResearcher(site_config=site_config)
+            researcher = WebResearcher(site_config=self._site_config)
             verified = 0
             contradicted = 0
             evidence_lines = []
