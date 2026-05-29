@@ -190,6 +190,7 @@ async def compose(
     context: dict[str, Any] | None = None,
     max_attempts: int = 3,
     pool: Any = None,
+    site_config: SiteConfig | None = None,
 ) -> ArchitectResult:
     """Ask the local writer LLM to compose a graph for the given intent.
 
@@ -205,7 +206,19 @@ async def compose(
     honors ``plugin.llm_provider.primary.standard`` (LiteLLM / Ollama /
     OpenAI-compat per app_settings). When ``None``, the call falls
     back to direct httpx → local Ollama (tests / bootstrap only).
+
+    ``site_config`` is the Phase-1 DI shim (#272): callers may now pass a
+    :class:`SiteConfig` explicitly. When ``None`` (the historical default),
+    we fall back to the module-global ``site_config`` so existing callers
+    and test patches against the module attribute keep working unchanged.
     """
+    # Phase-1 back-compat shim (#272): prefer an explicitly-injected
+    # SiteConfig; otherwise read the module global via a self-import so
+    # ``set_site_config()`` rebinds and test monkeypatches of the module
+    # attribute are still observed at call time.
+    import services.pipeline_architect as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
     catalog_text = to_catalog_text()
     if not catalog_text.strip():
         return ArchitectResult(
@@ -221,13 +234,13 @@ async def compose(
     # → ValueError). The architect cannot compose pipelines without
     # a model, so raising is the right answer for unset config.
     architect_override = (
-        site_config.get("pipeline_architect_model") or ""
+        _sc.get("pipeline_architect_model") or ""
     ).strip()
     if architect_override:
         model = architect_override.removeprefix("ollama/")
     else:
         from services.llm_text import resolve_local_model
-        model = resolve_local_model(site_config=site_config)
+        model = resolve_local_model(site_config=_sc)
 
     base_user_prompt = f"INTENT: {intent}\n\n"
     if context:
@@ -265,7 +278,7 @@ async def compose(
         raw = await _ollama_chat_text(
             full_prompt,
             model=model,
-            site_config=site_config,
+            site_config=_sc,
             pool=pool,
             timeout_setting="pipeline_architect_timeout_seconds",
         )
