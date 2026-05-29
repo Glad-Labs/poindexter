@@ -539,7 +539,9 @@ async def _try_sdxl_featured(
         if output_path is None:
             return None
 
-        image_url = await _upload_featured_to_r2(output_path, task_id)
+        image_url = await _upload_featured_to_r2(
+            output_path, task_id, site_config=site_config,
+        )
         source = "sdxl_cloudinary" if "cloudinary" in image_url else "sdxl_local"
         # Compose the reproducibility blob — prompt + negative come
         # from this function (the server doesn't echo them back), the
@@ -830,13 +832,21 @@ async def _download_featured_sdxl_image(sdxl_url: str, filename: str) -> str:
     return _write_featured_bytes_to_tempfile(get_resp.content)
 
 
-async def _upload_featured_to_r2(output_path: str, task_id: str | None) -> str:
+async def _upload_featured_to_r2(
+    output_path: str, task_id: str | None, *, site_config: Any = None,
+) -> str:
     """Upload the featured image to R2 and return the final URL."""
     try:
-        from services.r2_upload_service import upload_to_r2
+        from services.r2_upload_service import R2UploadService
+        if site_config is None:
+            raise RuntimeError(
+                "R2 upload requires site_config; stage execute() must "
+                "thread site_config from context (GH#95 / DI PR 4)",
+            )
+        svc = R2UploadService(site_config=site_config)
         r2_id = task_id or uuid.uuid4().hex[:12]
         r2_key = f"images/featured/{r2_id}.jpg"
-        r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
+        r2_url = await svc.upload_to_r2(output_path, r2_key, content_type="image/jpeg")
         if r2_url:
             logger.info("Uploaded to R2: %s", r2_url[:80])
             with suppress(OSError):

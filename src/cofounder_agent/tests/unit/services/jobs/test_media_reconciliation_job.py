@@ -136,21 +136,27 @@ class TestMediaReconciliation:
         """
         pool, conn = _make_pool([_post(id_="p1")])
         # Stub the regen path — generate_podcast_episode is fire-and-
-        # forget (returns None) and upload_podcast_episode returns a URL
-        # on success.
+        # forget (returns None) and the R2UploadService stub returns a
+        # URL on success.
+        r2 = MagicMock()
+        upload_mock = AsyncMock(return_value="https://r2.test/podcast/v2/p1.mp3")
+        r2.upload_podcast_episode = upload_mock
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
                  "services.podcast_service.generate_podcast_episode",
                  new=AsyncMock(return_value=None),
              ) as gen_mock, \
              patch(
-                 "services.r2_upload_service.upload_podcast_episode",
-                 new=AsyncMock(return_value="https://r2.test/podcast/v2/p1.mp3"),
-             ) as upload_mock, \
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
+             ), \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
-            result = await MediaReconciliationJob().run(pool, config={})
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
 
         assert result.ok is True
         assert result.metrics["missing_podcast"] == 1
@@ -189,19 +195,25 @@ class TestMediaReconciliation:
         video_result = MagicMock()
         video_result.success = True
 
+        r2 = MagicMock()
+        upload_mock = AsyncMock(return_value="https://r2.test/video/p2.mp4")
+        r2.upload_video_episode = upload_mock
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=200, video_status=404), \
              patch(
                  "services.video_service.generate_video_for_post",
                  new=AsyncMock(return_value=video_result),
              ) as gen_mock, \
              patch(
-                 "services.r2_upload_service.upload_video_episode",
-                 new=AsyncMock(return_value="https://r2.test/video/p2.mp4"),
-             ) as upload_mock, \
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
+             ), \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
              ):
-            result = await MediaReconciliationJob().run(pool, config={})
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
 
         assert result.ok is True
         assert result.metrics["regen_video_ok"] == 1
@@ -216,19 +228,24 @@ class TestMediaReconciliation:
     async def test_regen_upload_failure_escalates_to_critical(self):
         """Upload returns None → regen failed; finding MUST be critical."""
         pool, _ = _make_pool([_post(id_="p3")])
+        r2 = MagicMock()
+        r2.upload_podcast_episode = AsyncMock(return_value=None)
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
                  "services.podcast_service.generate_podcast_episode",
                  new=AsyncMock(return_value=None),
              ), \
              patch(
-                 "services.r2_upload_service.upload_podcast_episode",
-                 new=AsyncMock(return_value=None),  # upload failed
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
              ), \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
-            result = await MediaReconciliationJob().run(pool, config={})
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
         assert result.ok is False
         assert result.metrics["regen_podcast_fail"] == 1
         emit_mock.assert_called_once()
@@ -244,21 +261,28 @@ class TestMediaReconciliation:
         async def _capture_gen(post_id, *a, **kw):  # noqa: ANN001, ARG001
             gen_calls.append(post_id)
 
+        r2 = MagicMock()
+        r2.upload_podcast_episode = AsyncMock(return_value="https://r2.test/x.mp3")
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
                  "services.podcast_service.generate_podcast_episode",
                  new=AsyncMock(side_effect=_capture_gen),
              ), \
              patch(
-                 "services.r2_upload_service.upload_podcast_episode",
-                 new=AsyncMock(return_value="https://r2.test/x.mp3"),
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
              ), \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
              ):
             result = await MediaReconciliationJob().run(
                 pool,
-                config={"podcast_cap_per_cycle": 2, "video_cap_per_cycle": 0},
+                config={
+                    "podcast_cap_per_cycle": 2,
+                    "video_cap_per_cycle": 0,
+                    "_site_config": sc,
+                },
             )
         # All 10 are detected as missing, but only 2 get regen this cycle.
         assert result.metrics["missing_podcast"] == 10
@@ -271,19 +295,24 @@ class TestMediaReconciliation:
         a failure and contributes to the critical-severity escalation.
         """
         pool, _ = _make_pool([_post(id_="p_boom")])
+        r2 = MagicMock()
+        r2.upload_podcast_episode = AsyncMock(return_value=None)
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
         with _patch_head(podcast_status=404, video_status=200), \
              patch(
                  "services.podcast_service.generate_podcast_episode",
                  new=AsyncMock(side_effect=RuntimeError("TTS broke")),
              ), \
              patch(
-                 "services.r2_upload_service.upload_podcast_episode",
-                 new=AsyncMock(return_value=None),
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
              ), \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
-            result = await MediaReconciliationJob().run(pool, config={})
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
         # Exception during regen counts as a failure (the regen path is
         # wrapped in try/except so the job itself doesn't raise).
         assert result.metrics["regen_podcast_fail"] == 1

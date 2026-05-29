@@ -86,22 +86,24 @@ class BackfillPodcastsJob:
 
         # Pass 1: sync existing local episodes to R2.
         try:
-            from services.r2_upload_service import upload_podcast_episode
+            from services.r2_upload_service import R2UploadService
+            r2_svc = R2UploadService(site_config=sc) if sc is not None else None
             sync_count = 0
-            for post in posts:
-                if svc.episode_exists(post["id"]) and sync_count < r2_sync_cap:
-                    try:
-                        r2_url = await upload_podcast_episode(post["id"])
-                        if r2_url:
-                            sync_count += 1
-                    except Exception:  # noqa: BLE001 — sync failure shouldn't block generation
-                        pass
+            if r2_svc is not None:
+                for post in posts:
+                    if svc.episode_exists(post["id"]) and sync_count < r2_sync_cap:
+                        try:
+                            r2_url = await r2_svc.upload_podcast_episode(post["id"])
+                            if r2_url:
+                                sync_count += 1
+                        except Exception:  # noqa: BLE001 — sync failure shouldn't block generation
+                            pass
             if sync_count > 0:
                 uploaded += sync_count
                 logger.info("[BACKFILL_PODCASTS] Synced %d episodes to R2", sync_count)
         except ImportError:
             # r2_upload_service missing → R2 offline, keep going on local-only mode.
-            pass
+            r2_svc = None
 
         # Pass 2: generate new episodes.
         # Re-open the cloud connection — it was closed at line 81 after
@@ -160,10 +162,16 @@ class BackfillPodcastsJob:
                         )
                     # Upload the fresh episode to R2 too.
                     try:
-                        from services.r2_upload_service import upload_podcast_episode
-                        r2_url = await upload_podcast_episode(post["id"])
-                        if r2_url:
-                            uploaded += 1
+                        if r2_svc is None:
+                            from services.r2_upload_service import R2UploadService
+                            r2_svc = (
+                                R2UploadService(site_config=sc)
+                                if sc is not None else None
+                            )
+                        if r2_svc is not None:
+                            r2_url = await r2_svc.upload_podcast_episode(post["id"])
+                            if r2_url:
+                                uploaded += 1
                     except Exception as r2_err:
                         logger.warning(
                             "[BACKFILL_PODCASTS] R2 upload failed for %s: %s",
@@ -182,7 +190,7 @@ class BackfillPodcastsJob:
             try:
                 import httpx
 
-                from services.r2_upload_service import upload_to_r2
+                from services.r2_upload_service import R2UploadService
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
                 api_base = (
                     sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
@@ -196,8 +204,12 @@ class BackfillPodcastsJob:
                     os.makedirs(os.path.dirname(feed_path), exist_ok=True)
                     with open(feed_path, "w", encoding="utf-8") as f:
                         f.write(feed.text)
-                    await upload_to_r2(feed_path, "podcast/feed.xml", "application/rss+xml")
-                    logger.info("[BACKFILL_PODCASTS] Podcast RSS feed rebuilt on R2")
+                    if sc is not None:
+                        r2_svc = R2UploadService(site_config=sc)
+                        await r2_svc.upload_to_r2(
+                            feed_path, "podcast/feed.xml", "application/rss+xml",
+                        )
+                        logger.info("[BACKFILL_PODCASTS] Podcast RSS feed rebuilt on R2")
             except Exception as feed_err:
                 logger.warning(
                     "[BACKFILL_PODCASTS] Feed rebuild failed (non-fatal): %s", feed_err,

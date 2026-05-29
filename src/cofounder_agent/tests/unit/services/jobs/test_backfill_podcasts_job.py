@@ -2,6 +2,11 @@
 
 Covers the two-pass (R2 sync + generation) workflow plus the
 RSS-feed-rebuild side effect. Podcast + R2 services are mocked.
+
+R2 mocking shape (post DI-PR-4 migration): the job constructs
+``R2UploadService(site_config=sc)`` inline; tests patch
+``services.r2_upload_service.R2UploadService`` to return a MagicMock
+with AsyncMock methods.
 """
 
 from __future__ import annotations
@@ -52,6 +57,19 @@ def _mk_podcast_svc(existing: set[str], gen_result=None):
     return svc
 
 
+def _mk_r2_svc(
+    *,
+    upload_podcast_return: Any = None,
+    upload_to_r2_return: Any = "https://r2/feed.xml",
+) -> MagicMock:
+    """Build a MagicMock standing in for an R2UploadService instance."""
+    r2 = MagicMock()
+    r2.upload_podcast_episode = AsyncMock(return_value=upload_podcast_return)
+    r2.upload_video_episode = AsyncMock(return_value=None)
+    r2.upload_to_r2 = AsyncMock(return_value=upload_to_r2_return)
+    return r2
+
+
 @pytest.mark.unit
 class TestBackfillPodcastsJobMetadata:
     def test_name(self):
@@ -76,11 +94,11 @@ class TestBackfillPodcastsJobRun:
         fake_asyncpg, _ = _fake_asyncpg(rows=rows)
 
         svc = _mk_podcast_svc(existing=set())  # nothing exists yet
+        r2 = _mk_r2_svc(upload_podcast_return=None)
 
         with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
-             patch("services.r2_upload_service.upload_podcast_episode",
-                   new=AsyncMock(return_value=None)):
+             patch("services.r2_upload_service.R2UploadService", return_value=r2):
             result = await job.run(
                 MagicMock(),
                 {"max_per_cycle": 2, "_site_config": _sc("postgres://cloud")},
@@ -96,11 +114,11 @@ class TestBackfillPodcastsJobRun:
         fake_asyncpg, _ = _fake_asyncpg(rows=rows)
 
         svc = _mk_podcast_svc(existing={"p1", "p2"})  # all exist
+        r2 = _mk_r2_svc(upload_podcast_return="https://r2/p.mp3")
 
         with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
-             patch("services.r2_upload_service.upload_podcast_episode",
-                   new=AsyncMock(return_value="https://r2/p.mp3")):
+             patch("services.r2_upload_service.R2UploadService", return_value=r2):
             result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
 
         assert result.ok is True
@@ -127,11 +145,11 @@ class TestBackfillPodcastsJobRun:
             return MagicMock(success=True)
 
         svc.generate_episode = _flaky_gen
+        r2 = _mk_r2_svc(upload_podcast_return="https://r2/p.mp3")
 
         with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
-             patch("services.r2_upload_service.upload_podcast_episode",
-                   new=AsyncMock(return_value="https://r2/p.mp3")):
+             patch("services.r2_upload_service.R2UploadService", return_value=r2):
             result = await job.run(
                 MagicMock(),
                 {"max_per_cycle": 2, "_site_config": _sc("postgres://cloud")},
@@ -160,11 +178,14 @@ class TestBackfillPodcastsJobRun:
             upload_calls.append((path, key, ct))
             return f"https://r2/{key}"
 
+        r2 = MagicMock()
+        r2.upload_podcast_episode = AsyncMock(return_value="https://r2/ep.mp3")
+        r2.upload_video_episode = AsyncMock(return_value=None)
+        r2.upload_to_r2 = AsyncMock(side_effect=_upload)
+
         with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
-             patch("services.r2_upload_service.upload_podcast_episode",
-                   new=AsyncMock(return_value="https://r2/ep.mp3")), \
-             patch("services.r2_upload_service.upload_to_r2", new=_upload), \
+             patch("services.r2_upload_service.R2UploadService", return_value=r2), \
              patch("httpx.AsyncClient", return_value=mock_http_ctx):
             result = await job.run(
                 MagicMock(),

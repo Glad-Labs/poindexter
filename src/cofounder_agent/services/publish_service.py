@@ -1350,20 +1350,17 @@ async def publish_post_from_task(
             import asyncio as _aio
             from pathlib import Path
 
-            from services.r2_upload_service import (
-                upload_podcast_episode,
-                upload_to_r2,
-                upload_video_episode,
-            )
+            from services.r2_upload_service import R2UploadService
+            _r2 = R2UploadService(site_config=site_config)
             # Give podcast/video/short generation time to complete
             _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
-            await upload_podcast_episode(pid)
-            await upload_video_episode(pid)
+            await _r2.upload_podcast_episode(pid)
+            await _r2.upload_video_episode(pid)
             # Upload short video if it exists
             short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}-short.mp4"
             if short_path.exists():
-                await upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
+                await _r2.upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
             # Regenerate public podcast RSS feed on R2
             try:
                 import httpx as _hx
@@ -1383,7 +1380,7 @@ async def publish_post_from_task(
                         await asyncio.to_thread(
                             _write_text_file, _feed_path, _feed.text,
                         )
-                        await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
+                        await _r2.upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
                         logger.info("[R2] Podcast RSS feed regenerated on CDN")
                 finally:
                     try:
@@ -1409,7 +1406,7 @@ async def publish_post_from_task(
                         await asyncio.to_thread(
                             _write_text_file, _feed_path, _feed.text,
                         )
-                        await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
+                        await _r2.upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
                         logger.info("[R2] Video RSS feed regenerated on CDN")
                 finally:
                     try:

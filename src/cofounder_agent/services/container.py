@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
+from services.r2_upload_service import R2UploadService
 from services.redis_cache import RedisCache
 from services.site_config import SiteConfig
 from services.telegram_config import TelegramConfig
@@ -197,3 +198,8 @@ class AppContainer:
         up its SiteConfig dependency".
         """
         return RedisCache(site_config=self.site_config)
+
+    @cached_property
+    def r2_upload_service(self) -> R2UploadService:
+        """Object-store uploader (R2 / S3 / B2 / MinIO) — SiteConfig DI migration PR 4."""
+        return R2UploadService(site_config=self.site_config)

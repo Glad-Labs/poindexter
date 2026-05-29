@@ -416,15 +416,16 @@ def _materialize_sidecar_json(
 
 async def _upload_to_r2(path: str, prompt: str, site_config: Any) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
-    from services.r2_upload_service import upload_to_r2
+    from services.r2_upload_service import R2UploadService
 
     if site_config is None:
         raise RuntimeError(
             "R2 upload requires site_config; "
             "image_service dispatcher must seed '_site_config' (GH#95)",
         )
+    svc = R2UploadService(site_config=site_config)
     key = f"flux_schnell/{os.path.basename(path)}"
-    url = await upload_to_r2(path, key, "image/png", site_config=site_config)
+    url = await svc.upload_to_r2(path, key, "image/png")
     if not url:
         raise RuntimeError("r2_upload_service returned empty URL")
     logger.debug(

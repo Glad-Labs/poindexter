@@ -91,17 +91,17 @@ async def _generate_png(prompt: str) -> bytes | None:
 
 async def _upload(png: bytes, key_suffix: str, site_config) -> str | None:
     sys.path.insert(0, "/app")
-    from services.r2_upload_service import upload_to_r2  # type: ignore
+    from services.r2_upload_service import R2UploadService  # type: ignore
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp.write(png)
         path = tmp.name
     try:
-        return await upload_to_r2(
+        svc = R2UploadService(site_config=site_config)
+        return await svc.upload_to_r2(
             path,
             f"images/inline/{TASK_ID}-{key_suffix}.png",
             content_type="image/png",
-            site_config=site_config,
         )
     finally:
         with __import__("contextlib").suppress(Exception):

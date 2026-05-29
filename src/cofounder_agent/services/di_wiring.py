@@ -57,7 +57,6 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.url_validator",
     "services.url_scraper",
     "services.web_research",
-    "services.r2_upload_service",
     "services.revalidation_service",
     "services.static_export_service",
     # ``services.telegram_config`` migrated to constructor DI 2026-05-28

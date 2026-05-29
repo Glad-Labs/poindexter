@@ -568,7 +568,7 @@ async def _try_sdxl(
         logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
-        return await _upload_to_r2_with_fallback(tmp_path)
+        return await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
     except Exception as err:
         logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, err)
         return None
@@ -650,7 +650,9 @@ async def _download_sdxl_image(sdxl_url: str, filename: str) -> str:
     return _write_bytes_to_tempfile(resp.content)
 
 
-async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
+async def _upload_to_r2_with_fallback(
+    tmp_path: str, *, site_config: Any = None,
+) -> str:
     """Upload the image to R2 and return a public URL, or fall back to a local path.
 
     If R2 upload succeeds, the local file is cleaned up. Otherwise the
@@ -659,9 +661,15 @@ async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
     """
     img_url = tmp_path
     try:
-        from services.r2_upload_service import upload_to_r2
+        from services.r2_upload_service import R2UploadService
+        if site_config is None:
+            raise RuntimeError(
+                "R2 upload requires site_config; stage execute() must "
+                "thread site_config from context (GH#95 / DI PR 4)",
+            )
+        svc = R2UploadService(site_config=site_config)
         r2_key = f"images/inline/{uuid.uuid4().hex[:12]}.png"
-        r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
+        r2_url = await svc.upload_to_r2(tmp_path, r2_key, content_type="image/png")
         if r2_url:
             img_url = r2_url
             with suppress(OSError):

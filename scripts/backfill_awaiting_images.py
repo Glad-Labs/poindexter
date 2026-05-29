@@ -105,7 +105,7 @@ async def _upload_to_r2(png_bytes: bytes, task_id: str, site_config) -> str | No
         # Late import — these only resolve cleanly inside the worker
         # container (where /app is on PYTHONPATH).
         sys.path.insert(0, "/app")
-        from services.r2_upload_service import upload_to_r2  # type: ignore
+        from services.r2_upload_service import R2UploadService  # type: ignore
     except Exception as exc:
         logger.warning("r2_upload_service import failed: %s", exc)
         return None
@@ -117,11 +117,11 @@ async def _upload_to_r2(png_bytes: bytes, task_id: str, site_config) -> str | No
         # Match the live `images/featured/<task_uuid>.jpg` shape so
         # downstream readers don't have to special-case backfilled rows.
         key = f"images/featured/{task_id}.png"
-        url = await upload_to_r2(
+        svc = R2UploadService(site_config=site_config)
+        url = await svc.upload_to_r2(
             tmp_path,
             key,
             content_type="image/png",
-            site_config=site_config,
         )
         return url
     except Exception as exc:

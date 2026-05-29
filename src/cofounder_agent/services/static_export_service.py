@@ -69,14 +69,15 @@ def _to_json(data: Any) -> str:
 
 async def _upload_json(key: str, data: str, content_type: str = "application/json") -> str | None:
     """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None."""
-    from services.r2_upload_service import upload_to_r2
+    from services.r2_upload_service import R2UploadService
 
     tmp = None
     try:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         tmp.write(data)
         tmp.close()
-        url = await upload_to_r2(tmp.name, f"{_STATIC_PREFIX}/{key}", content_type)
+        r2 = R2UploadService(site_config=site_config)
+        url = await r2.upload_to_r2(tmp.name, f"{_STATIC_PREFIX}/{key}", content_type)
         return url
     except Exception as e:
         logger.exception("[STATIC_EXPORT] Upload failed for %s: %s", key, e)

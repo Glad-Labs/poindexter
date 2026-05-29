@@ -149,6 +149,11 @@ class MediaReconciliationJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+        # DI seam (glad-labs-stack#330): scheduler seeds `_site_config`
+        # on every config dict. Captured here so the regen helpers can
+        # build a fresh R2UploadService per regen attempt.
+        self._site_config = config.get("_site_config")
+
         lookback_days = int(config.get("lookback_days", 14))
         podcast_cap = max(0, int(config.get("podcast_cap_per_cycle", 3)))
         video_cap = max(0, int(config.get("video_cap_per_cycle", 2)))
@@ -513,12 +518,19 @@ class MediaReconciliationJob:
         # Lazy imports — these pull in TTS heavyweight deps we don't want
         # to load when no regen is needed this cycle.
         from services.podcast_service import generate_podcast_episode
-        from services.r2_upload_service import upload_podcast_episode
+        from services.r2_upload_service import R2UploadService
 
         await generate_podcast_episode(
             row["id"], row["title"], row["content"],
         )
-        url = await upload_podcast_episode(row["id"])
+        sc = getattr(self, "_site_config", None)
+        if sc is None:
+            logger.warning(
+                "media_reconciliation: no site_config in scope — cannot upload",
+            )
+            return False
+        r2 = R2UploadService(site_config=sc)
+        url = await r2.upload_podcast_episode(row["id"])
         if not url:
             logger.warning(
                 "media_reconciliation: podcast upload returned None for %s",
@@ -532,7 +544,7 @@ class MediaReconciliationJob:
 
     async def _regen_video(self, pool: Any, row: dict[str, Any]) -> bool:
         """Regenerate one missing video + upload + stamp media_assets."""
-        from services.r2_upload_service import upload_video_episode
+        from services.r2_upload_service import R2UploadService
         from services.video_service import generate_video_for_post
 
         result = await generate_video_for_post(
@@ -545,7 +557,14 @@ class MediaReconciliationJob:
             )
             return False
 
-        url = await upload_video_episode(row["id"])
+        sc = getattr(self, "_site_config", None)
+        if sc is None:
+            logger.warning(
+                "media_reconciliation: no site_config in scope — cannot upload",
+            )
+            return False
+        r2 = R2UploadService(site_config=sc)
+        url = await r2.upload_video_episode(row["id"])
         if not url:
             logger.warning(
                 "media_reconciliation: video upload returned None for %s",

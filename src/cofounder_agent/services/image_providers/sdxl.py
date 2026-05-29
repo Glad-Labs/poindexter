@@ -109,7 +109,9 @@ class SdxlProvider:
                 )
         elif upload_target == "r2":
             try:
-                url = await _upload_to_r2(output_path, prompt)
+                url = await _upload_to_r2(
+                    output_path, prompt, site_config=config.get("_site_config"),
+                )
             except Exception as e:
                 logger.warning(
                     "[SdxlProvider] R2 upload failed (serving file:// URL): %s", e,
@@ -140,11 +142,18 @@ class SdxlProvider:
 # when the operator hasn't opted in to ``upload_to=cloudinary``.
 
 
-async def _upload_to_r2(path: str, prompt: str) -> str:
+async def _upload_to_r2(path: str, prompt: str, *, site_config: Any) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
-    from services.r2_upload_service import upload_to_r2
+    from services.r2_upload_service import R2UploadService
+
+    if site_config is None:
+        raise RuntimeError(
+            "R2 upload requires site_config; image_service dispatcher "
+            "must seed '_site_config' (GH#95 / constructor-DI PR 4)",
+        )
+    svc = R2UploadService(site_config=site_config)
     key = f"sdxl/{os.path.basename(path)}"
-    url = await upload_to_r2(path, key, "image/png")
+    url = await svc.upload_to_r2(path, key, "image/png")
     if not url:
         raise RuntimeError("r2_upload_service returned empty URL")
     # Tag onto prompt to keep the call signature honest (unused otherwise).
