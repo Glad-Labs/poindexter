@@ -1049,7 +1049,7 @@ class ImageService:
                 # ``GET /images/{filename}`` since the worker container
                 # doesn't share the sidecar's volume mount. Original code
                 # assumed Content-Type: image/* and broke against the JSON
-                # response — see Glad-Labs/glad-labs-stack#334.
+                # response — see Glad-Labs/poindexter#334.
                 ctype = resp.headers.get("content-type", "")
                 if resp.status_code == 200 and ctype.startswith("application/json"):
                     body = resp.json()
