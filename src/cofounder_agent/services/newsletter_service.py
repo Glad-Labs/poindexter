@@ -36,35 +36,48 @@ def set_site_config(sc: SiteConfig) -> None:
 logger = get_logger(__name__)
 
 
-def _site_url() -> str:
+def _site_url(*, site_config: SiteConfig | None = None) -> str:
     """Return the canonical site URL. Reads site_config lazily because
     this module may be imported before site_config has been populated
     from the DB. Fails loud (RuntimeError) if the setting is missing —
-    silently sending newsletters with broken links would be worse."""
-    return site_config.require("site_url")
+    silently sending newsletters with broken links would be worse.
+
+    Phase-1 DI shim (#272): callers may pass an explicit ``site_config``;
+    when omitted it falls back to the lifespan-bound module global. The
+    self-module import dodges the local-name shadow introduced by the
+    keyword-only parameter.
+    """
+    import services.newsletter_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+    return _sc.require("site_url")
 
 
-async def _cfg() -> dict:
+async def _cfg(*, site_config: SiteConfig | None = None) -> dict:
     """Load newsletter config from DB.
 
     ``smtp_password`` (and ``resend_api_key``) are ``is_secret=true`` rows
     after migration 0121 — they're filtered out of the in-memory cache,
     so they MUST be fetched via the async ``get_secret`` path. See
     Glad-Labs/poindexter#221 for the schema flip.
+
+    Phase-1 DI shim (#272): accepts an explicit ``site_config``; falls
+    back to the lifespan-bound module global when omitted.
     """
+    import services.newsletter_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     return {
-        "enabled": site_config.get_bool("newsletter_enabled", False),
-        "provider": site_config.get("newsletter_provider", "resend"),
-        "from_email": site_config.get("newsletter_from_email", ""),
-        "from_name": site_config.get("newsletter_from_name", ""),
-        "resend_api_key": await site_config.get_secret("resend_api_key", ""),
-        "smtp_host": site_config.get("smtp_host", ""),
-        "smtp_port": site_config.get_int("smtp_port", 587),
-        "smtp_user": site_config.get("smtp_user", ""),
-        "smtp_password": await site_config.get_secret("smtp_password", ""),
-        "smtp_use_tls": site_config.get_bool("smtp_use_tls", True),
-        "batch_size": site_config.get_int("newsletter_batch_size", 50),
-        "batch_delay": site_config.get_int("newsletter_batch_delay_seconds", 2),
+        "enabled": _sc.get_bool("newsletter_enabled", False),
+        "provider": _sc.get("newsletter_provider", "resend"),
+        "from_email": _sc.get("newsletter_from_email", ""),
+        "from_name": _sc.get("newsletter_from_name", ""),
+        "resend_api_key": await _sc.get_secret("resend_api_key", ""),
+        "smtp_host": _sc.get("smtp_host", ""),
+        "smtp_port": _sc.get_int("smtp_port", 587),
+        "smtp_user": _sc.get("smtp_user", ""),
+        "smtp_password": await _sc.get_secret("smtp_password", ""),
+        "smtp_use_tls": _sc.get_bool("smtp_use_tls", True),
+        "batch_size": _sc.get_int("newsletter_batch_size", 50),
+        "batch_delay": _sc.get_int("newsletter_batch_delay_seconds", 2),
     }
 
 
@@ -84,15 +97,18 @@ async def _get_active_subscribers(pool) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _unsubscribe_url(token: str) -> str:
+def _unsubscribe_url(token: str, *, site_config: SiteConfig | None = None) -> str:
     """Per-subscriber unsubscribe URL.
 
     Centralised so the email template and the ``List-Unsubscribe``
     header stay in sync — both consume the token, and they have to
     agree on shape or one-click clients (Gmail/Apple Mail) silently
     fall back to the inline link.
+
+    Phase-1 DI shim (#272): threads ``site_config`` through to
+    ``_site_url``; falls back to the module global when omitted.
     """
-    return f"{_site_url()}/newsletter/unsubscribe?token={token}"
+    return f"{_site_url(site_config=site_config)}/newsletter/unsubscribe?token={token}"
 
 
 def _build_html(
@@ -102,16 +118,23 @@ def _build_html(
     first_name: str | None = None,
     *,
     unsubscribe_token: str,
+    site_config: SiteConfig | None = None,
 ) -> str:
     """Build a simple, clean newsletter email body.
 
     ``unsubscribe_token`` is keyword-only + required: the token has no
     sensible default and a typo'd positional call would silently ship
     emails with a broken unsubscribe link.
+
+    Phase-1 DI shim (#272): accepts an explicit ``site_config`` (threaded
+    to ``_site_url`` / ``_unsubscribe_url`` and used for the company /
+    site-name reads); falls back to the lifespan-bound module global.
     """
+    import services.newsletter_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
-    post_url = f"{_site_url()}/posts/{slug}"
-    unsubscribe_url = _unsubscribe_url(unsubscribe_token)
+    post_url = f"{_site_url(site_config=_sc)}/posts/{slug}"
+    unsubscribe_url = _unsubscribe_url(unsubscribe_token, site_config=_sc)
 
     return f"""\
 <!DOCTYPE html>
@@ -119,7 +142,7 @@ def _build_html(
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a;">
   <div style="border-bottom: 2px solid #6366f1; padding-bottom: 16px; margin-bottom: 24px;">
-    <h2 style="margin: 0; color: #6366f1;">{site_config.get("company_name", "")}</h2>
+    <h2 style="margin: 0; color: #6366f1;">{_sc.get("company_name", "")}</h2>
   </div>
 
   <p>{greeting}</p>
@@ -138,7 +161,7 @@ def _build_html(
 
   <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 32px 0;">
   <p style="font-size: 12px; color: #999;">
-    You're receiving this because you subscribed to {site_config.get("site_name", "our")} updates.<br>
+    You're receiving this because you subscribed to {_sc.get("site_name", "our")} updates.<br>
     <a href="{unsubscribe_url}" style="color: #999;">Unsubscribe</a>
   </p>
 </body>
@@ -175,6 +198,7 @@ async def _send_via_smtp(
     html: str,
     *,
     unsubscribe_token: str,
+    site_config: SiteConfig | None = None,
 ) -> bool:
     """Send a single email via SMTP.
 
@@ -185,6 +209,10 @@ async def _send_via_smtp(
     endpoint with no credential and fails the #252 gate, which would
     silently break inbox-native unsubscribe even after we fix the
     inline link.
+
+    Phase-1 DI shim (#272): threads ``site_config`` to the
+    ``_unsubscribe_url`` call so the header URL resolves against the
+    same config flowing through the rest of the send chain.
     """
     try:
         from email.mime.multipart import MIMEMultipart
@@ -196,7 +224,7 @@ async def _send_via_smtp(
         msg["From"] = f"{cfg['from_name']} <{cfg['from_email']}>"
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg["List-Unsubscribe"] = f"<{_unsubscribe_url(unsubscribe_token)}>"
+        msg["List-Unsubscribe"] = f"<{_unsubscribe_url(unsubscribe_token, site_config=site_config)}>"
         msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         msg.attach(MIMEText(html, "html"))
 
@@ -232,6 +260,8 @@ async def send_post_newsletter(
     title: str,
     excerpt: str,
     slug: str,
+    *,
+    site_config: SiteConfig | None = None,
 ) -> dict:
     """Send newsletter to all active subscribers about a new post.
 
@@ -240,11 +270,16 @@ async def send_post_newsletter(
         title: post title
         excerpt: post excerpt/description
         slug: post URL slug
+        site_config: optional explicit SiteConfig (Phase-1 DI shim, #272).
+            When omitted the module falls back to the lifespan-bound
+            global, so existing callers are unaffected. When provided it
+            flows through the full send chain (_cfg / _build_html /
+            _send_via_smtp).
 
     Returns:
         dict with sent, failed, skipped counts
     """
-    cfg = await _cfg()
+    cfg = await _cfg(site_config=site_config)
     result = {"sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0}
 
     if not cfg["enabled"]:
@@ -286,6 +321,7 @@ async def send_post_newsletter(
             html = _build_html(
                 title, excerpt, slug, sub.get("first_name"),
                 unsubscribe_token=token,
+                site_config=site_config,
             )
             # Per-provider dispatch — SMTP also needs the token for the
             # ``List-Unsubscribe`` header (RFC 8058 one-click). Resend
@@ -297,6 +333,7 @@ async def send_post_newsletter(
                 success = await _send_via_smtp(
                     cfg, sub["email"], subject, html,
                     unsubscribe_token=token,
+                    site_config=site_config,
                 )
 
             if success:
