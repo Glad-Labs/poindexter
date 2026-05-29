@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.27.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.26.1...v0.27.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate telegram_config to constructor DI (DI migration PR 3) ([#722](https://github.com/Glad-Labs/glad-labs-stack/issues/722)) ([131391a](https://github.com/Glad-Labs/glad-labs-stack/commit/131391a0ca22c9fce3ef569b4d78f95933173102))
+
 ## [0.26.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.26.0...v0.26.1) (2026-05-29)
 
 
