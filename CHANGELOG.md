@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.22.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.2...v0.22.0) (2026-05-29)
+
+
+### Features
+
+* **youtube:** finish E2E publishing path — deps + OAuth setup CLI + smoke test ([#713](https://github.com/Glad-Labs/glad-labs-stack/issues/713)) ([dc7b0ca](https://github.com/Glad-Labs/glad-labs-stack/commit/dc7b0cac17590932b0aec80d5cee538949c49d58))
+
 ## [0.21.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.1...v0.21.2) (2026-05-29)
 
 
