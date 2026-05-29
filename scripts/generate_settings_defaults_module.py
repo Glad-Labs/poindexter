@@ -150,9 +150,6 @@ HARD_EXCLUDE = {
     "gpu_name",       # Hardware identity
     "gpu_tdp_map",    # Hardware identity
     "gpu_vram_gb",    # Hardware identity
-    "gitea_repo",     # Operator's repo URL
-    "gitea_url",      # Operator's gitea instance (gitea is retired)
-    "gitea_user",     # Operator's gitea username
     "podcast_cdn_version",  # CDN version pinning is per-deployment
 }
 

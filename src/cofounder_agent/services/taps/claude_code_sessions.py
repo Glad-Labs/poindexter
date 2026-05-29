@@ -61,7 +61,7 @@ old entry.
   bodies are truncated past this length.
 - ``config.extra_scrub_patterns`` (default empty list) — additional
   regex patterns (as strings) to apply on top of the built-in set.
-  Useful for per-install tokens (e.g. gitea_password value).
+  Useful for per-install tokens (e.g. an API key value).
 
 ## Source IDs
 

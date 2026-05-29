@@ -218,7 +218,10 @@ async def test_window_zero_disables_dedup():
 # the whole time; operators retry via the CLI / approval UI now. Retry
 # semantics on a fundamentally failed flow run are owned by Prefect's
 # native ``retries=`` + ``retry_delay_seconds=`` on the flow definition
-# (see ``services/flows/content_generation.py``).
+# (see ``services/flows/content_generation.py``). The now-dead
+# ``task_retry_max_attempts`` app_settings key was pruned from the seeds
+# + live DB on 2026-05-29 (migration
+# ``20260529_054100_prune_deprecated_app_settings_keys``).
 # ---------------------------------------------------------------------------
 
 

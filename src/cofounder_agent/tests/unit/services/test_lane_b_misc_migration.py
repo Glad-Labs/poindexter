@@ -158,11 +158,12 @@ class TestVideoServiceResolveModel:
 # ---------------------------------------------------------------------------
 # task_executor first-retry writer — deleted with task_executor.py in
 # Glad-Labs/poindexter#410 Stage 4 (2026-05-16). The ``task_retry_max_attempts``
-# default of ``0`` has kept the auto-retry sweeper off in production
+# default of ``0`` had kept the auto-retry sweeper off in production
 # since #370; operators retry via CLI/UI now. The
-# ``task_executor_first_retry_writer_model`` app_settings row remains in
-# the seed migrations for backwards compat but is no longer read by any
-# production code path.
+# ``task_executor_first_retry_writer_model`` and ``task_retry_max_attempts``
+# app_settings rows were pruned from the seeds + live DB on 2026-05-29
+# (migration ``20260529_054100_prune_deprecated_app_settings_keys``) once
+# the audit confirmed no production code path read them.
 # ---------------------------------------------------------------------------
 
 

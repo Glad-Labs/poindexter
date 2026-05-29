@@ -469,15 +469,6 @@
       "receiver": "site_config"
     },
     {
-      "key": "gitea_url",
-      "value": "http://localhost:3001",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\utils\\gitea_issues.py",
-      "line": 39,
-      "receiver": "site_config"
-    },
-    {
       "key": "gitea_user",
       "value": "gladlabs",
       "value_type": "str",
@@ -3321,15 +3312,6 @@
       "getter": "get",
       "file": "src\\cofounder_agent\\utils\\gitea_issues.py",
       "line": 42,
-      "receiver": "site_config"
-    },
-    "gitea_url": {
-      "key": "gitea_url",
-      "value": "http://localhost:3001",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\utils\\gitea_issues.py",
-      "line": 39,
       "receiver": "site_config"
     },
     "gitea_user": {

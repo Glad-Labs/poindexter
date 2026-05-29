@@ -66,10 +66,6 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
 # inside a container, so the same DB value works in both environments.
 API_URL = localize_url(os.getenv("API_URL") or "http://localhost:8002")
 LOCAL_OLLAMA = localize_url(os.getenv("OLLAMA_URL") or "http://localhost:11434")
-GITEA_URL = localize_url(os.getenv("GITEA_URL") or "http://localhost:3001")
-GITEA_USER = os.getenv("GITEA_USER") or ""
-GITEA_PASS = os.getenv("GITEA_PASS") or os.getenv("GITEA_PASSWORD") or ""
-GITEA_REPO = os.getenv("GITEA_REPO") or "gladlabs/glad-labs-codebase"
 
 _config_synced = False
 
@@ -83,7 +79,7 @@ async def _sync_config_from_db(pool):
     network), DB values are fallback for local dev where env vars may
     not be set.
     """
-    global API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_USER, GITEA_PASS, GITEA_REPO, _config_synced
+    global API_URL, LOCAL_OLLAMA, _config_synced
     if _config_synced:
         return
     try:
@@ -96,25 +92,9 @@ async def _sync_config_from_db(pool):
             pool, "ollama_base_url",
             default=LOCAL_OLLAMA, env_var="OLLAMA_URL",
         )
-        GITEA_URL = await resolve_url(
-            pool, "gitea_url",
-            default=GITEA_URL, env_var="GITEA_URL",
-        )
-        # Non-URL settings: straightforward env-wins-over-DB, no localize_url.
-        rows = await pool.fetch(
-            "SELECT key, value FROM app_settings WHERE key IN "
-            "('gitea_user', 'gitea_password', 'gitea_repo')"
-        )
-        settings = {r["key"]: r["value"] for r in rows}
-        if not os.getenv("GITEA_USER") and settings.get("gitea_user"):
-            GITEA_USER = settings["gitea_user"]
-        if not (os.getenv("GITEA_PASS") or os.getenv("GITEA_PASSWORD")) and settings.get("gitea_password"):
-            GITEA_PASS = settings["gitea_password"]
-        if not os.getenv("GITEA_REPO") and settings.get("gitea_repo"):
-            GITEA_REPO = settings["gitea_repo"]
         _config_synced = True
-        logger.info("[PROBES] Config synced: API=%s, Ollama=%s, Gitea=%s repo=%s (env wins over DB; URLs localized)",
-                     API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_REPO)
+        logger.info("[PROBES] Config synced: API=%s, Ollama=%s (env wins over DB; URLs localized)",
+                     API_URL, LOCAL_OLLAMA)
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
 
