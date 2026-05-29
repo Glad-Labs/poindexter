@@ -3494,6 +3494,216 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "id": 55,
+      "title": "Lab Observability — Variant Experiments",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 165 },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 56,
+      "title": "Active experiments",
+      "description": "Count of experiments currently in state='active'. Phase 1 enforces one-active-per-niche via a partial unique index, so this number also bounds how many niches are running tests right now. Green at 0-2, yellow at 3-5, red at 6+ (operator-overload threshold — concluding experiments to free up niche slots).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 166 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 6 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Active experiments\" FROM experiments WHERE status = 'active';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": 57,
+      "title": "Scorecard — most recently activated experiment",
+      "description": "Per-variant rollup for the experiment with the most recent activated_at. Sorted by approval_rate_pct DESC so the leading variant is on top. Columns: variant_label, runs, approval %, mean edit distance, mean cost, mean wall-clock — the 5 axes the operator uses to conclude(--winner=...). Source: experiment_variant_scorecard_v1 view (Phase 1 PR 1) JOINed against lab_outcomes_v1 for the wall-clock column.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": { "h": 9, "w": 18, "x": 6, "y": 166 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Approval %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 40 },
+                    { "color": "yellow", "value": 60 },
+                    { "color": "green", "value": 75 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Mean Edit Distance" },
+            "properties": [{ "id": "unit", "value": "percentunit" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Mean Cost (USD)" },
+            "properties": [{ "id": "unit", "value": "currencyUSD" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Mean Wall-Clock (s)" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH latest_active AS (\n  SELECT id\n    FROM experiments\n   WHERE status = 'active'\n   ORDER BY activated_at DESC NULLS LAST\n   LIMIT 1\n)\nSELECT\n  s.variant_label                         AS \"Variant\",\n  s.posts_attempted                       AS \"Runs\",\n  COALESCE(s.approval_rate_pct, 0)::float AS \"Approval %\",\n  COALESCE(\n    ROUND(AVG(lo.atom_quality_score)::numeric, 1),\n    0\n  )::float                                AS \"Mean Quality Score\",\n  COALESCE(s.avg_edit_distance_pct, 0)::float    AS \"Mean Edit Distance\",\n  COALESCE(s.avg_cost_per_post, 0)::float        AS \"Mean Cost (USD)\",\n  COALESCE(\n    ROUND((AVG(lo.elapsed_ms) / 1000.0)::numeric, 2),\n    0\n  )::float                                AS \"Mean Wall-Clock (s)\"\nFROM experiment_variant_scorecard_v1 s\nJOIN latest_active la ON la.id = s.experiment_id\nLEFT JOIN lab_outcomes_v1 lo ON lo.variant_id = s.variant_id\nGROUP BY s.variant_label, s.posts_attempted, s.approval_rate_pct,\n         s.avg_edit_distance_pct, s.avg_cost_per_post\nORDER BY \"Approval %\" DESC, \"Runs\" DESC;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 58,
+      "title": "Approval rate by variant (rolling 7-day window)",
+      "description": "Approval rate per active-experiment variant, bucketed by day, computed as the rolling 7-day mean (each point is the % of approved tasks across the trailing 7 days for that variant). One line per variant_label across every currently-active experiment. Powered by capability_outcomes.variant_id (Phase 1 PR 2) JOINed against experiment_variants for the label. The 7-day window smooths small-sample noise — for unsmoothed daily approval rates use the scorecard.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 175 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "approval %",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "percent"
+        }
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH daily AS (\n  SELECT\n    date_trunc('day', co.created_at) AS day,\n    ev.id                            AS variant_id,\n    ev.label                         AS variant_label,\n    e.key                            AS experiment_key,\n    COUNT(*)                                                       AS runs,\n    COUNT(*) FILTER (WHERE pem.approver IS NOT NULL)               AS approved\n  FROM capability_outcomes co\n  JOIN experiment_variants ev ON ev.id = co.variant_id\n  JOIN experiments e          ON e.id = ev.experiment_id\n  LEFT JOIN published_post_edit_metrics pem ON pem.task_id = co.task_id\n  WHERE co.variant_id IS NOT NULL\n    AND e.status = 'active'\n    AND co.created_at > NOW() - INTERVAL '30 days'\n  GROUP BY 1, 2, 3, 4\n)\nSELECT\n  day                                                          AS time,\n  experiment_key || ' / ' || variant_label                     AS metric,\n  ROUND(\n    (SUM(approved) OVER w)::numeric\n    / NULLIF((SUM(runs) OVER w)::numeric, 0) * 100, 1\n  )::float                                                      AS value\nFROM daily\nWINDOW w AS (\n  PARTITION BY variant_id\n  ORDER BY day\n  RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW\n)\nORDER BY time, metric;",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
