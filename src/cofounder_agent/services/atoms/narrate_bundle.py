@@ -32,34 +32,34 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# Private repo URL scrub — defense in depth (Glad-Labs/glad-labs-stack is
+# Private repo URL scrub — defense in depth (Glad-Labs/poindexter is
 # the private operator repo; only Glad-Labs/poindexter is public). The
 # bundle no longer carries PR/commit URLs to the LLM and the prompt now
 # directs `(PR #N)` plain-text citations, but the model can still echo
 # URLs from training data or partial context. These regexes are the last
 # line before publish.
 _PRIVATE_REPO_PULL_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)"
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/pull/(\d+)\)"
 )
 _PRIVATE_REPO_COMMIT_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
 )
 _PRIVATE_REPO_PULL_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+    r"<https?://github\.com/Glad-Labs/poindexter/pull/(\d+)>"
 )
 _PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"<https?://github\.com/Glad-Labs/poindexter/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
 )
 _PRIVATE_REPO_PULL_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)"
+    r"https?://github\.com/Glad-Labs/poindexter/pull/(\d+)"
 )
 _PRIVATE_REPO_COMMIT_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"https?://github\.com/Glad-Labs/poindexter/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
 )
-_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/glad-labs-stack\b")
+_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/poindexter\b")
 
 
 def _scrub_private_repo_refs(text: str) -> str:
