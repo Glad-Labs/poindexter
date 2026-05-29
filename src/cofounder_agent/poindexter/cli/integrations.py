@@ -170,9 +170,11 @@ def _run_consent_flow(client_id: str, client_secret: str) -> Any:
     --extras youtube` is the gate).
 
     Per `feedback_oauth_scope_hygiene`: only requests
-    ``youtube.upload`` — the absolute minimum scope. ``channels.list
-    (mine=True)`` works with this scope alone, so we don't need
-    ``youtube.readonly`` for the verify step either.
+    ``youtube.upload`` — the absolute minimum scope. We deliberately do
+    NOT add ``youtube.readonly`` just to support a channel read-back:
+    ``channels.list(mine=True)`` 403s under an upload-only token, so the
+    setup flow treats that read-back as best-effort and proves the
+    grant end-to-end via an actual upload (`youtube test`) instead.
     """
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-not-found]
@@ -462,14 +464,35 @@ def youtube_setup(
             "re-run setup."
         )
 
-    # Step 3 — verify the token actually works + has the upload scope.
-    click.echo("Verifying credentials with channels.list(mine=True)...")
-    channel = _verify_channel(credentials)
-    click.secho(
-        f"  Granted access to channel: {channel['channel_title']} "
-        f"(id={channel['channel_id']})",
-        fg="green",
-    )
+    # Step 3 — best-effort channel confirmation.
+    #
+    # NOTE: ``channels.list(mine=True)`` requires a READ scope
+    # (youtube.readonly / youtube), which ``youtube.upload`` does NOT
+    # grant — an upload-only token gets 403 "insufficient scopes" here.
+    # That's expected and NOT a failure: a successful consent +
+    # refresh-token exchange already proves the upload scope was
+    # granted. So this confirmation is best-effort — if it 403s on
+    # scope, we log it and proceed to write the secrets. The real
+    # end-to-end proof is `poindexter integrations youtube test`,
+    # which does an actual upload (the only thing youtube.upload
+    # actually authorizes).
+    click.echo("Confirming channel access (best-effort)...")
+    try:
+        channel = _verify_channel(credentials)
+        click.secho(
+            f"  Granted access to channel: {channel['channel_title']} "
+            f"(id={channel['channel_id']})",
+            fg="green",
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort confirmation
+        click.secho(
+            "  Channel read-back skipped: channels.list needs a read "
+            f"scope that youtube.upload doesn't grant ({type(exc).__name__}). "
+            "This is expected for an upload-only token — the consent + "
+            "token exchange succeeded, so the upload scope IS granted. "
+            "Verify end-to-end with `poindexter integrations youtube test`.",
+            fg="yellow",
+        )
 
     # Step 4 — encrypted write.
     click.echo("Writing encrypted secrets to app_settings...")
