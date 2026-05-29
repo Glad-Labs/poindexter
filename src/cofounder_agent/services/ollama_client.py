@@ -56,9 +56,34 @@ def _sc() -> SiteConfig:
     return site_config
 
 
-def _sc_get(key: str, default: str = "") -> str:
-    """Get from site_config (falls back to env automatically)."""
-    return _sc().get(key, default)
+def _sc_get(key: str, default: str = "", *, site_config: SiteConfig | None = None) -> str:
+    """Get from site_config (falls back to env automatically).
+
+    Phase-1 DI shim (#272): accepts an optional ``site_config`` keyword so
+    callers that have an injected instance can read through it instead of
+    the module global. When ``site_config`` is None we resolve the module
+    attribute via a self-import so a parameter named ``site_config`` in a
+    caller's scope can't shadow the global. Existing no-arg callers
+    (including tests that patch this function) keep working unchanged.
+    """
+    import services.ollama_client as _mod
+
+    _sc = site_config if site_config is not None else _mod.site_config
+    return _sc.get(key, default)
+
+
+def _sc_get_di(key: str, default: str = "", *, site_config: SiteConfig | None = None) -> str:
+    """Internal DI-aware wrapper around ``_sc_get`` (#272).
+
+    When no injected SiteConfig is supplied this calls ``_sc_get(key,
+    default)`` with the legacy positional signature so the module-global
+    path — and the tests that monkeypatch ``_sc_get`` with a
+    ``lambda key, default="": ...`` — keep working. Only when an instance
+    is actually injected do we thread the ``site_config=`` keyword through.
+    """
+    if site_config is None:
+        return _sc_get(key, default)
+    return _sc_get(key, default, site_config=site_config)
 
 # All config below is resolved lazily via _default_*() helpers because
 # site_config is empty at module-import time (loaded later in the lifespan).
@@ -66,54 +91,54 @@ def _sc_get(key: str, default: str = "") -> str:
 # ignore any app_settings overrides set after first import.
 
 
-def _default_model() -> str:
-    return _sc_get("default_ollama_model", "auto")
+def _default_model(*, site_config: SiteConfig | None = None) -> str:
+    return _sc_get_di("default_ollama_model", "auto", site_config=site_config)
 
 
-def _default_base_url() -> str:
+def _default_base_url(*, site_config: SiteConfig | None = None) -> str:
     return (
-        _sc_get("ollama_base_url")
-        or _sc_get("ollama_host")
+        _sc_get_di("ollama_base_url", site_config=site_config)
+        or _sc_get_di("ollama_host", site_config=site_config)
         or "http://host.docker.internal:11434"
     )
 
 
-def _default_gpu_power_watts() -> float:
+def _default_gpu_power_watts(*, site_config: SiteConfig | None = None) -> float:
     """GPU electricity cost default (RTX 5090: 575W TDP, ~300W typical inference)."""
     try:
-        return float(_sc_get("gpu_inference_watts", "300"))
+        return float(_sc_get_di("gpu_inference_watts", "300", site_config=site_config))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for gpu_inference_watts: {exc}"
         ) from exc
 
 
-def _default_electricity_rate_kwh() -> float:
+def _default_electricity_rate_kwh(*, site_config: SiteConfig | None = None) -> float:
     try:
-        return float(_sc_get("electricity_rate_kwh", "0.12"))
+        return float(_sc_get_di("electricity_rate_kwh", "0.12", site_config=site_config))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for electricity_rate_kwh: {exc}"
         ) from exc
 
 
-def _default_num_ctx() -> int:
+def _default_num_ctx(*, site_config: SiteConfig | None = None) -> int:
     """Context window limit — prevents models from allocating massive KV caches.
     Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context."""
     try:
-        return int(_sc_get("ollama_num_ctx", "8192"))
+        return int(_sc_get_di("ollama_num_ctx", "8192", site_config=site_config))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for ollama_num_ctx: {exc}"
         ) from exc
 
 
-def _get_int_setting(key: str, default: int) -> int:
+def _get_int_setting(key: str, default: int, *, site_config: SiteConfig | None = None) -> int:
     """Read a positive int from app_settings, falling back to ``default`` on
     missing / invalid values. Wraps bad config in a warning log instead of
     raising so a typo in app_settings can't silently take down the worker.
     """
-    raw = _sc_get(key, "")
+    raw = _sc_get_di(key, "", site_config=site_config)
     if not raw:
         return default
     try:
@@ -206,6 +231,8 @@ def calculate_electricity_cost(
     duration_seconds: float,
     gpu_power_watts: float | None = None,
     electricity_rate_kwh: float | None = None,
+    *,
+    site_config: SiteConfig | None = None,
 ) -> float:
     """Calculate electricity cost for a GPU inference call.
 
@@ -215,14 +242,22 @@ def calculate_electricity_cost(
         duration_seconds: Wall-clock time of the inference call.
         gpu_power_watts: GPU power draw in watts (default 300W typical inference).
         electricity_rate_kwh: Electricity price in USD/kWh (default $0.12).
+        site_config: Optional injected SiteConfig (Phase-1 DI shim, #272);
+            falls back to the module global when None.
 
     Returns:
         Cost in USD (typically fractions of a cent).
     """
     if duration_seconds <= 0:
         return 0.0
-    watts = gpu_power_watts if gpu_power_watts is not None else _default_gpu_power_watts()
-    rate = electricity_rate_kwh if electricity_rate_kwh is not None else _default_electricity_rate_kwh()
+    watts = (
+        gpu_power_watts if gpu_power_watts is not None
+        else _default_gpu_power_watts(site_config=site_config)
+    )
+    rate = (
+        electricity_rate_kwh if electricity_rate_kwh is not None
+        else _default_electricity_rate_kwh(site_config=site_config)
+    )
     kwh = (watts / 1000.0) * (duration_seconds / 3600.0)
     return round(kwh * rate, 8)
 
@@ -247,9 +282,20 @@ class OllamaClient:
     Model profiles are discovered dynamically from the Ollama server.
     """
 
-    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int | None = None):
-        self.base_url = (base_url or _default_base_url()).rstrip("/")
-        self.model = model or _default_model()
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
+        *,
+        site_config: SiteConfig | None = None,
+    ):
+        # Phase-1 DI shim (#272): store an optional injected SiteConfig so
+        # this client's config reads can be routed through it instead of the
+        # module global. None keeps the legacy module-global behaviour.
+        self._site_config = site_config
+        self.base_url = (base_url or _default_base_url(site_config=site_config)).rstrip("/")
+        self.model = model or _default_model(site_config=site_config)
         # Default timeout is high (600s) because a 70B+ writer model can
         # easily take 3-10 minutes to generate a long blog post on a
         # single GPU. The old default of 120s silently dropped big-model
@@ -259,7 +305,7 @@ class OllamaClient:
         # gemma3:27b the whole time. Callers can still override for
         # short-timeout use cases (health checks, quick list calls).
         if timeout is None:
-            timeout = int(_sc_get("ollama_client_timeout_seconds", "600") or 600)
+            timeout = int(_sc_get_di("ollama_client_timeout_seconds", "600", site_config=site_config) or 600)
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
         self._model_cache: dict[str, dict[str, Any]] = {}
@@ -267,8 +313,8 @@ class OllamaClient:
         self._resolved_default: str | None = None  # Lazily resolved from installed models
 
         # Electricity cost parameters — updated at runtime via configure_electricity()
-        self._gpu_power_watts: float = _default_gpu_power_watts()
-        self._electricity_rate_kwh: float = _default_electricity_rate_kwh()
+        self._gpu_power_watts: float = _default_gpu_power_watts(site_config=site_config)
+        self._electricity_rate_kwh: float = _default_electricity_rate_kwh(site_config=site_config)
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
 
@@ -312,7 +358,7 @@ class OllamaClient:
             installed_names = {m.get("name", "") for m in models}
 
             # Check config first — user knows which model is best for their hardware
-            preferred = _sc_get("preferred_ollama_model", "")
+            preferred = _sc_get_di("preferred_ollama_model", "", site_config=self._site_config)
             if preferred and preferred in installed_names:
                 self._resolved_default = preferred
                 logger.info("Auto-resolved model from PREFERRED_OLLAMA_MODEL: %s", preferred)
@@ -494,7 +540,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": stream,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
         }
 
         if max_tokens:
@@ -617,7 +663,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
         }
 
         if max_tokens:
@@ -743,13 +789,13 @@ class OllamaClient:
         model = model or self.model
         attempts = (
             max_retries if max_retries is not None
-            else _get_int_setting("ollama_max_retries", 3)
+            else _get_int_setting("ollama_max_retries", 3, site_config=self._site_config)
         )
         initial = (
             base_delay if base_delay is not None
-            else float(_sc_get("ollama_retry_initial_seconds", "1") or 1)
+            else float(_sc_get_di("ollama_retry_initial_seconds", "1", site_config=self._site_config) or 1)
         )
-        max_wait = float(_sc_get("ollama_retry_max_seconds", "30") or 30)
+        max_wait = float(_sc_get_di("ollama_retry_max_seconds", "30", site_config=self._site_config) or 30)
 
         try:
             async for attempt in AsyncRetrying(
@@ -806,7 +852,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
         }
 
         if max_tokens:
