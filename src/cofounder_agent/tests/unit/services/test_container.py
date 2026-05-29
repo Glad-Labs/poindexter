@@ -1,21 +1,33 @@
 """
 Unit tests for services/container.py
 
-Tests ServiceContainer instance isolation, registration, retrieval,
-and module-level helper functions.
+Covers two complementary container types in the same module:
+
+* ``ServiceContainer`` — legacy name-keyed registry.
+* ``AppContainer`` — composition root for the SiteConfig constructor-DI
+  migration (PR 1 scaffold, design doc:
+  ``docs/architecture/2026-05-28-site-config-di-migration.md``).
+
+Also covers ``services/bootstrap.py::build_container``, the helper
+every entry point will eventually call to construct an AppContainer
+from an asyncpg pool.
 """
 
-from unittest.mock import MagicMock
+from functools import cached_property
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from services.bootstrap import build_container
 from services.container import (
+    AppContainer,
     ServiceContainer,
     get_service,
     initialize_services,
     register_service,
     service_container,
 )
+from services.site_config import SiteConfig
 
 
 @pytest.fixture(autouse=True)
@@ -105,3 +117,147 @@ class TestHelperFunctions:
         app.state = MagicMock()
         initialize_services(app)
         assert get_service("database") is None
+
+
+# ---------------------------------------------------------------------------
+# AppContainer tests (SiteConfig constructor-DI migration, PR 1)
+# ---------------------------------------------------------------------------
+
+
+class _AppContainerWithSmokeService(AppContainer):
+    """Subclass used by the cached_property pattern-demo test.
+
+    Documents the shape every migration PR will follow when it adds a
+    service: a ``@cached_property`` constructing the service from the
+    container's wiring fields. Kept as a subclass (not added to the
+    production ``AppContainer`` class) so the production container
+    stays empty until services actually migrate.
+    """
+
+    @cached_property
+    def _smoke(self) -> object:
+        return object()
+
+
+class TestAppContainerConstruction:
+    """AppContainer constructs cleanly from its wiring fields."""
+
+    def test_container_constructs_from_loaded_site_config(self):
+        """Happy path: realistic SiteConfig + a pool sentinel."""
+        site_config = SiteConfig(initial_config={"site_name": "Test Site"})
+        pool = MagicMock(name="asyncpg_pool")
+        container = AppContainer(site_config=site_config, pool=pool)
+        assert container.site_config is site_config
+        assert container.pool is pool
+        # The wiring fields round-trip through the dataclass __init__
+        # — confirms there's no hidden mutation in the constructor.
+        assert container.site_config.get("site_name") == "Test Site"
+
+    def test_container_constructs_with_empty_site_config(self):
+        """Degenerate path: an empty SiteConfig still constructs.
+
+        The container is pure wiring — services that need real
+        settings will fail loud when they try to read them, but the
+        container itself never gates on settings being present. This
+        matters for tests + bootstrap-time call sites that genuinely
+        have an empty config.
+        """
+        site_config = SiteConfig()  # no initial_config, no pool
+        pool = MagicMock(name="asyncpg_pool")
+        container = AppContainer(site_config=site_config, pool=pool)
+        assert container.site_config is site_config
+        assert container.pool is pool
+
+    def test_container_hashable_contract(self):
+        """Document the (un)hashability choice.
+
+        ``AppContainer`` is a dataclass with mutable fields and the
+        default ``eq=True, frozen=False`` — which by Python dataclass
+        rules sets ``__hash__`` to ``None`` (unhashable). This is the
+        right call: containers are passed by reference and identity-
+        compared (``is``), never used as dict keys. Locking the
+        contract in a test so a later ``@dataclass(frozen=True)``
+        change is a deliberate, reviewed decision rather than a
+        silent semantics drift.
+        """
+        site_config = SiteConfig()
+        container = AppContainer(site_config=site_config, pool=MagicMock())
+        with pytest.raises(TypeError, match="unhashable"):
+            hash(container)
+
+    def test_cached_property_pattern(self):
+        """Demonstrate + verify the migration's service-property shape.
+
+        Every migration PR adds a ``@cached_property`` like the
+        ``_smoke`` one on the test-only subclass above. Two calls
+        return the SAME instance — that's the memoisation the
+        migration relies on so dependent services share a single
+        instance of their dependency rather than reconstructing it
+        per lookup.
+        """
+        site_config = SiteConfig()
+        container = _AppContainerWithSmokeService(
+            site_config=site_config, pool=MagicMock()
+        )
+        first = container._smoke
+        second = container._smoke
+        assert first is second
+
+
+class TestBuildContainer:
+    """``services.bootstrap.build_container`` happy + sad paths."""
+
+    async def test_build_container_loads_site_config_from_pool(self):
+        """Builds a container; SiteConfig has the pool's rows in it."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[
+                {"key": "site_name", "value": "Loaded Site"},
+                {"key": "preferred_ollama_model", "value": "qwen2.5:14b"},
+                {"key": "empty_key", "value": ""},  # filtered out
+            ]
+        )
+        container = await build_container(pool)
+        assert isinstance(container, AppContainer)
+        assert container.pool is pool
+        assert container.site_config.is_loaded is True
+        assert container.site_config.get("site_name") == "Loaded Site"
+        assert (
+            container.site_config.get("preferred_ollama_model") == "qwen2.5:14b"
+        )
+        # Empty-string values shouldn't land in the cache, matching
+        # SiteConfig.load semantics.
+        assert "empty_key" not in container.site_config._config  # noqa: SLF001
+
+    async def test_build_container_skips_secrets(self):
+        """The SQL the helper runs filters secrets out at query time."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+        await build_container(pool)
+        # We assert on the SQL string the helper actually issued —
+        # tracking the seam that keeps ``is_secret = true`` rows out
+        # of the in-memory cache (those go through
+        # ``SiteConfig.get_secret`` async per-call instead).
+        pool.fetch.assert_awaited_once()
+        sql_used = pool.fetch.await_args.args[0]
+        assert "is_secret = false" in sql_used
+        assert "app_settings" in sql_used
+
+    async def test_build_container_raises_runtime_error_on_query_failure(self):
+        """Fail-loud per feedback_no_silent_defaults — no empty-config fallback."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("connection reset"))
+        with pytest.raises(RuntimeError) as excinfo:
+            await build_container(pool)
+        msg = str(excinfo.value)
+        # The error message should echo the SQL it tried so an
+        # operator reading the traceback can immediately see what
+        # broke.
+        assert "is_secret = false" in msg
+        assert "app_settings" in msg
+        assert "connection reset" in msg
+
+    async def test_build_container_rejects_none_pool(self):
+        """Passing pool=None is always a programming error — fail loud."""
+        with pytest.raises(RuntimeError, match="pool=None"):
+            await build_container(None)
