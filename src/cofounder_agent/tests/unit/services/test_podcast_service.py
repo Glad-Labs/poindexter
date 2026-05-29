@@ -172,7 +172,7 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_empty_content(self):
-        async def _mock_script(title, content):
+        async def _mock_script(title, content, **kwargs):
             return _build_script(title, content)
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp))
@@ -185,7 +185,7 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_handles_import_error(self):
-        async def _mock_script(title, content):
+        async def _mock_script(title, content, **kwargs):
             return _build_script(title, content)
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp))
@@ -208,7 +208,7 @@ class TestGenerateEpisode:
     @pytest.fixture(autouse=True)
     def mock_llm_script(self):
         """Mock _build_script_with_llm to use fallback (no Ollama in tests)."""
-        async def _fallback(title, content):
+        async def _fallback(title, content, **kwargs):
             return _build_script(title, content)
 
         with patch("services.podcast_service._build_script_with_llm", side_effect=_fallback):

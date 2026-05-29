@@ -46,6 +46,25 @@ def set_site_config(sc: SiteConfig) -> None:
     site_config = sc
 
 
+def _resolve_site_config(sc: "SiteConfig | None") -> SiteConfig:
+    """Phase-1 DI shim (#272): resolve the SiteConfig to use.
+
+    Prefer the injected ``sc`` when callers thread one through. Falls
+    back to the module-level lifespan-bound ``site_config`` otherwise —
+    keeping every new parameter optional and non-breaking.
+
+    Imports this module by name (``_mod``) so the fallback reads the
+    *current* module global rather than the local name captured at
+    function-def time (dodges the local-name shadow once callers add a
+    ``site_config=`` keyword parameter).
+    """
+    if sc is not None:
+        return sc
+    import services.podcast_service as _mod
+
+    return _mod.site_config
+
+
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -178,12 +197,14 @@ _DEFAULT_ACRONYM_REPLACEMENTS = {
 }
 
 
-def _get_tts_replacements() -> list:
+def _get_tts_replacements(*, site_config: "SiteConfig | None" = None) -> list:
     """Load TTS pronunciation replacements, merging DB overrides with defaults."""
     import json as _json
 
+    _sc = _resolve_site_config(site_config)
+
     # Simple replacements: DB key tts_pronunciations (JSON object: {"written": "spoken"})
-    db_pronunciations = site_config.get("tts_pronunciations", "")
+    db_pronunciations = _sc.get("tts_pronunciations", "")
     if db_pronunciations:
         try:
             db_map = _json.loads(db_pronunciations)
@@ -199,11 +220,13 @@ def _get_tts_replacements() -> list:
     return simple
 
 
-def _get_acronym_regex() -> list:
+def _get_acronym_regex(*, site_config: "SiteConfig | None" = None) -> list:
     """Load acronym replacements from DB, compile to regex list."""
     import json as _json
 
-    db_acronyms = site_config.get("tts_acronym_replacements", "")
+    _sc = _resolve_site_config(site_config)
+
+    db_acronyms = _sc.get("tts_acronym_replacements", "")
     if db_acronyms:
         try:
             acronyms = _json.loads(db_acronyms)
@@ -215,17 +238,17 @@ def _get_acronym_regex() -> list:
     return [(re.compile(rf"\b{re.escape(k)}\b"), v) for k, v in acronyms.items()]
 
 
-def _normalize_for_speech(text: str) -> str:
+def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Convert written English conventions to natural spoken form."""
     # Simple replacements (DB-configurable via tts_pronunciations)
-    for written, spoken in _get_tts_replacements():
+    for written, spoken in _get_tts_replacements(site_config=site_config):
         # Case-insensitive replace for pronunciation fixes
         text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
         text = pattern.sub(replacement, text)
     # Acronym replacements (DB-configurable via tts_acronym_replacements)
-    for pattern, replacement in _get_acronym_regex():
+    for pattern, replacement in _get_acronym_regex(site_config=site_config):
         text = pattern.sub(replacement, text)
     # Smart quotes → straight quotes (TTS handles these better)
     text = text.replace("\u201c", '"').replace("\u201d", '"')
@@ -311,7 +334,9 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-async def _build_script_with_llm(title: str, content: str) -> str:
+async def _build_script_with_llm(
+    title: str, content: str, *, site_config: "SiteConfig | None" = None
+) -> str:
     """Use the configured LLM provider to rewrite a blog post as a natural podcast script.
 
     Routes through :func:`services.llm_providers.dispatcher.dispatch_complete`
@@ -321,22 +346,24 @@ async def _build_script_with_llm(title: str, content: str) -> str:
     """
     from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
 
+    _sc = _resolve_site_config(site_config)
+
     # Cost-tier API (Lane B sweep). Operators tune the standard tier via
     # app_settings.cost_tier.standard.model — no code edit per niche.
     # Resolution order: (1) podcast-specific override, (2) cost-tier
     # mapping, (3) legacy default_ollama_model fallback. Per
     # feedback_no_silent_defaults.md, if all three miss we page the
     # operator and let the caller fall back to regex script.
-    pool = getattr(site_config, "_pool", None)
+    pool = getattr(_sc, "_pool", None)
     if pool is None:
         # No DB pool — tests / bootstrap path. Skip the LLM call entirely
         # and use the regex fallback so the episode still renders.
         logger.debug(
             "[PODCAST] no DB pool on site_config; falling back to regex script",
         )
-        return _build_script_fallback(title, content)
+        return _build_script_fallback(title, content, site_config=_sc)
 
-    model = (site_config.get("podcast_script_model") or "").removeprefix("ollama/")
+    model = (_sc.get("podcast_script_model") or "").removeprefix("ollama/")
     if not model:
         try:
             model = (
@@ -349,7 +376,7 @@ async def _build_script_with_llm(title: str, content: str) -> str:
                 tier_err,
             )
     if not model:
-        fallback = site_config.get("default_ollama_model") or ""
+        fallback = _sc.get("default_ollama_model") or ""
         if not fallback:
             from services.integrations.operator_notify import notify_operator
             await notify_operator(
@@ -357,22 +384,22 @@ async def _build_script_with_llm(title: str, content: str) -> str:
                 "default_ollama_model is empty — falling back to regex "
                 "script for this episode",
                 critical=False,
-                site_config=site_config,
+                site_config=_sc,
             )
-            return _build_script_fallback(title, content)
+            return _build_script_fallback(title, content, site_config=_sc)
         model = fallback.removeprefix("ollama/")
     if model == "auto":
         # Same fallback path — no silent literal default.
-        fallback = site_config.get("default_ollama_model") or ""
+        fallback = _sc.get("default_ollama_model") or ""
         if not fallback:
             from services.integrations.operator_notify import notify_operator
             await notify_operator(
                 "podcast_service: podcast_script_model='auto' AND "
                 "default_ollama_model is empty — falling back to regex script",
                 critical=False,
-                site_config=site_config,
+                site_config=_sc,
             )
-            return _build_script_fallback(title, content)
+            return _build_script_fallback(title, content, site_config=_sc)
         model = fallback.removeprefix("ollama/")
 
     from services.prompt_manager import get_prompt_manager
@@ -403,7 +430,7 @@ async def _build_script_with_llm(title: str, content: str) -> str:
                 "[PODCAST] LLM script too short (%d chars), falling back to regex",
                 len(script_body),
             )
-            return _build_script_fallback(title, content)
+            return _build_script_fallback(title, content, site_config=_sc)
 
         logger.info(
             "[PODCAST] LLM generated %d-char script for '%s'",
@@ -414,36 +441,41 @@ async def _build_script_with_llm(title: str, content: str) -> str:
         logger.warning(
             "[PODCAST] LLM script generation failed (%s), falling back to regex", e,
         )
-        return _build_script_fallback(title, content)
+        return _build_script_fallback(title, content, site_config=_sc)
 
     # Still apply speech normalization for TTS pronunciation fixes
-    script_body = _normalize_for_speech(script_body)
-    spoken_title = _normalize_for_speech(title)
+    script_body = _normalize_for_speech(script_body, site_config=_sc)
+    spoken_title = _normalize_for_speech(title, site_config=_sc)
 
-    return _wrap_with_intro_outro(script_body, spoken_title)
+    return _wrap_with_intro_outro(script_body, spoken_title, site_config=_sc)
 
 
-def _build_script_fallback(title: str, content: str) -> str:
+def _build_script_fallback(
+    title: str, content: str, *, site_config: "SiteConfig | None" = None
+) -> str:
     """Fallback: build script via regex stripping when Ollama is unavailable."""
+    _sc = _resolve_site_config(site_config)
     plain_text = _strip_markdown(content)
-    plain_text = _normalize_for_speech(plain_text)
-    spoken_title = _normalize_for_speech(title)
+    plain_text = _normalize_for_speech(plain_text, site_config=_sc)
+    spoken_title = _normalize_for_speech(title, site_config=_sc)
 
-    return _wrap_with_intro_outro(plain_text, spoken_title)
+    return _wrap_with_intro_outro(plain_text, spoken_title, site_config=_sc)
 
 
-def _build_intro(spoken_title: str) -> str:
+def _build_intro(spoken_title: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Construct the canonical podcast intro line. Pure function so the
     sibling ``_unwrap_intro_outro`` can reproduce it for stripping."""
-    _pname = site_config.get("podcast_name", "the podcast")
+    _sc = _resolve_site_config(site_config)
+    _pname = _sc.get("podcast_name", "the podcast")
     return f"Welcome to {_pname}. Today's episode: {spoken_title}."
 
 
-def _build_outro() -> str:
+def _build_outro(*, site_config: "SiteConfig | None" = None) -> str:
     """Construct the canonical podcast outro lines. Pure function so the
     sibling ``_unwrap_intro_outro`` can reproduce it for stripping."""
-    _pname = site_config.get("podcast_name", "the podcast")
-    _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
+    _sc = _resolve_site_config(site_config)
+    _pname = _sc.get("podcast_name", "the podcast")
+    _domain_tts = _sc.get("site_domain", "our site").replace(".", " dot ")
     return (
         f"Thanks for listening to {_pname}. "
         f"Visit {_domain_tts} for more episodes, articles, and insights. "
@@ -451,7 +483,9 @@ def _build_outro() -> str:
     )
 
 
-def _wrap_with_intro_outro(script_body: str, spoken_title: str) -> str:
+def _wrap_with_intro_outro(
+    script_body: str, spoken_title: str, *, site_config: "SiteConfig | None" = None
+) -> str:
     """Prepend / append intro / outro to the spoken body for the podcast.
 
     Default on — the podcast IS a show, so "Welcome to {name}" makes
@@ -463,18 +497,21 @@ def _wrap_with_intro_outro(script_body: str, spoken_title: str) -> str:
     which writes ``{post_id}-narration.mp3`` alongside the main file when
     ``podcast_video_narration_sibling_enabled='true'``).
     """
-    if site_config.get("podcast_include_intro", "true").lower() == "true":
-        intro = _build_intro(spoken_title)
+    _sc = _resolve_site_config(site_config)
+    if _sc.get("podcast_include_intro", "true").lower() == "true":
+        intro = _build_intro(spoken_title, site_config=_sc)
         script_body = f"{intro}\n\n{script_body}"
 
-    if site_config.get("podcast_include_outro", "true").lower() == "true":
-        outro = _build_outro()
+    if _sc.get("podcast_include_outro", "true").lower() == "true":
+        outro = _build_outro(site_config=_sc)
         script_body = f"{script_body}\n\n{outro}"
 
     return script_body
 
 
-def _unwrap_intro_outro(wrapped: str, spoken_title: str) -> str:
+def _unwrap_intro_outro(
+    wrapped: str, spoken_title: str, *, site_config: "SiteConfig | None" = None
+) -> str:
     """Inverse of ``_wrap_with_intro_outro`` — return the body-only
     script.
 
@@ -491,16 +528,17 @@ def _unwrap_intro_outro(wrapped: str, spoken_title: str) -> str:
     """
     body = wrapped or ""
 
-    if site_config.get("podcast_include_intro", "true").lower() == "true":
-        intro = _build_intro(spoken_title)
+    _sc = _resolve_site_config(site_config)
+    if _sc.get("podcast_include_intro", "true").lower() == "true":
+        intro = _build_intro(spoken_title, site_config=_sc)
         # The wrapper joins with "\n\n" — strip that separator too.
         if body.startswith(intro + "\n\n"):
             body = body[len(intro) + 2:]
         elif body.startswith(intro):
             body = body[len(intro):].lstrip("\n")
 
-    if site_config.get("podcast_include_outro", "true").lower() == "true":
-        outro = _build_outro()
+    if _sc.get("podcast_include_outro", "true").lower() == "true":
+        outro = _build_outro(site_config=_sc)
         if body.endswith("\n\n" + outro):
             body = body[: -(len(outro) + 2)]
         elif body.endswith(outro):
@@ -539,9 +577,18 @@ class EpisodeResult:
 class PodcastService:
     """Generate podcast MP3 episodes from blog post content using Edge TTS."""
 
-    def __init__(self, output_dir: Path | None = None):
+    def __init__(
+        self,
+        output_dir: Path | None = None,
+        *,
+        site_config: "SiteConfig | None" = None,
+    ):
         self.output_dir = output_dir or PODCAST_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Phase-1 DI shim (#272): prefer an injected SiteConfig, fall back
+        # to the module-level lifespan-bound global. Non-breaking — every
+        # existing caller constructs PodcastService() with no site_config.
+        self._site_config = _resolve_site_config(site_config)
 
     def get_episode_path(self, post_id: str) -> Path:
         """Return the expected path for an episode MP3."""
@@ -603,7 +650,9 @@ class PodcastService:
             script = pre_generated_script
             logger.info("[PODCAST] Using pre-generated script (%d chars)", len(script))
         else:
-            script = await _build_script_with_llm(title, content)
+            script = await _build_script_with_llm(
+                title, content, site_config=self._site_config
+            )
 
         if not script.strip():
             return EpisodeResult(success=False, error="Empty content after markdown stripping")
@@ -702,7 +751,7 @@ class PodcastService:
         """
         try:
             enabled = (
-                site_config.get(
+                self._site_config.get(
                     "podcast_video_narration_sibling_enabled", "true",
                 ).lower()
                 == "true"
@@ -713,8 +762,12 @@ class PodcastService:
             return
 
         try:
-            spoken_title = _normalize_for_speech(title)
-            body_only = _unwrap_intro_outro(script, spoken_title)
+            spoken_title = _normalize_for_speech(
+                title, site_config=self._site_config
+            )
+            body_only = _unwrap_intro_outro(
+                script, spoken_title, site_config=self._site_config
+            )
             if len(body_only) < 20:
                 logger.debug(
                     "[PODCAST] narration sibling skipped: body-only "
@@ -779,10 +832,10 @@ class PodcastService:
         except Exception as exc:  # noqa: BLE001 — defensive import guard
             logger.debug("[PODCAST] media_asset_recorder unavailable: %s", exc)
             return
-        pool = getattr(site_config, "_pool", None)
+        pool = getattr(self._site_config, "_pool", None)
         try:
             engine = (
-                site_config.get("podcast_tts_engine", "edge_tts")
+                self._site_config.get("podcast_tts_engine", "edge_tts")
                 or "edge_tts"
             )
         except Exception:
@@ -861,10 +914,11 @@ async def generate_podcast_episode(
     content: str,
     *,
     pre_generated_script: str | None = None,
+    site_config: "SiteConfig | None" = None,
 ) -> None:
     """Fire-and-forget podcast generation. Logs errors but never raises."""
     try:
-        svc = PodcastService()
+        svc = PodcastService(site_config=site_config)
         result = await svc.generate_episode(
             post_id, title, content,
             pre_generated_script=pre_generated_script,
