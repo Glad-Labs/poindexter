@@ -27,20 +27,20 @@ router = APIRouter(prefix="/api/video", tags=["video"])
 # 2026-05-12 (poindexter#485): removed the "_R2_FALLBACK" constant that
 # baked Matt's specific R2 bucket URL into a public OSS file. Forks
 # without R2 configured would have served video feeds pointing at
-# Matt's bucket. Feed handler now bails with 503 when r2_public_url
+# Matt's bucket. Feed handler now bails with 503 when storage_public_url
 # is unset.
 
 
 def _r2_url(site_config: Any) -> str:
-    """Get R2 CDN base URL or raise HTTPException(503) when unset."""
-    url = (site_config.get("r2_public_url", "") or "").rstrip("/")
+    """Get object-store CDN base URL or raise HTTPException(503) when unset."""
+    url = (site_config.get("storage_public_url", "") or "").rstrip("/")
     if not url:
         from fastapi import HTTPException
         raise HTTPException(
             status_code=503,
             detail=(
-                "r2_public_url not configured — video feed unavailable. "
-                "Set via `poindexter set-setting r2_public_url 'https://<bucket>.r2.dev'`."
+                "storage_public_url not configured — video feed unavailable. "
+                "Set via `poindexter set-setting storage_public_url 'https://<bucket>.r2.dev'`."
             ),
         )
     return url

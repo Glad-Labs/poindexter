@@ -36,7 +36,7 @@ from services.jobs.media_reconciliation import MediaReconciliationJob
 def _make_pool(rows: list[dict[str, Any]]) -> Any:
     """asyncpg pool stub: conn.fetch returns ``rows``, conn.execute swallowed.
 
-    fetchrow defaults to returning the seeded r2_public_url so the
+    fetchrow defaults to returning the seeded storage_public_url so the
     URL resolver short-circuits to ``https://r2.test`` — matches the
     URL prefix the test's _patch_head helpers route on.
     """
@@ -322,7 +322,7 @@ class TestMediaReconciliation:
 
     @pytest.mark.asyncio
     async def test_skips_when_no_r2_public_base_configured(self):
-        """No config.r2_public_base AND no app_settings.r2_public_url → skip.
+        """No config.r2_public_base AND no app_settings.storage_public_url → skip.
 
         2026-05-12 cleanup (poindexter#485): the old hardcoded
         ``_DEFAULT_R2_PUBLIC_BASE`` constant baked Matt's R2 bucket into
@@ -330,7 +330,7 @@ class TestMediaReconciliation:
         resolves, skip the job rather than probing somebody else's bucket.
         """
         # Pool: posts query returns rows so we actually hit the resolver path;
-        # app_settings query returns None (r2_public_url unset).
+        # app_settings query returns None (storage_public_url unset).
         conn = AsyncMock()
         conn.fetch = AsyncMock(return_value=[_post(id_="p1")])
         conn.fetchrow = AsyncMock(return_value=None)
@@ -365,7 +365,7 @@ class TestMediaReconciliation:
         prefixes."""
         async def _fetchrow_dispatch(sql, *_args, **_kwargs):
             # Route by SQL text so order-of-call doesn't matter.
-            if "r2_public_url" in sql:
+            if "storage_public_url" in sql:
                 return {"value": "https://r2.test"}
             if "media_reconciliation_exclude_slug_prefixes" in sql:
                 return None  # defaults kick in
@@ -401,7 +401,7 @@ class TestMediaReconciliation:
         row (comma-separated). Per ``feedback_db_first_config`` — no
         code change required to add a new exempt post type."""
         async def _fetchrow_dispatch(sql, *_args, **_kwargs):
-            if "r2_public_url" in sql:
+            if "storage_public_url" in sql:
                 return {"value": "https://r2.test"}
             if "media_reconciliation_exclude_slug_prefixes" in sql:
                 return {"value": "what-we-shipped-, internal-only-, weekly-digest-"}

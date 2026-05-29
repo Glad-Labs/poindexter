@@ -44,7 +44,7 @@ has to step in.
 - ``config.r2_public_base`` (default
   ``https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev``) — the base
   URL we HEAD against to verify R2 has the file. Falls back to the
-  ``r2_public_url`` app_setting when not provided.
+  ``storage_public_url`` app_setting when not provided.
 - ``config.podcast_cdn_version`` (default ``v2``) — path prefix on R2.
   Mirrors the upload_podcast_episode contract.
 """
@@ -84,14 +84,14 @@ async def _resolve_r2_public_base(pool: Any, config: dict[str, Any]) -> str | No
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT value FROM app_settings WHERE key = 'r2_public_url'",
+                "SELECT value FROM app_settings WHERE key = 'storage_public_url'",
             )
         base = ((row["value"] if row else "") or "").strip().rstrip("/")
         if base:
             return base
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            "media_reconciliation: r2_public_url lookup failed: %s", e,
+            "media_reconciliation: storage_public_url lookup failed: %s", e,
         )
     return None
 _HTTP_TIMEOUT = httpx.Timeout(8.0, connect=3.0)
@@ -178,7 +178,7 @@ class MediaReconciliationJob:
         if not r2_base:
             logger.warning(
                 "media_reconciliation: skipped — no R2 public base URL "
-                "resolved (set app_settings.r2_public_url or "
+                "resolved (set app_settings.storage_public_url or "
                 "config.r2_public_base)",
             )
             try:
@@ -189,7 +189,7 @@ class MediaReconciliationJob:
                     title="Media reconciliation skipped — R2 not configured",
                     body=(
                         "Neither config.r2_public_base nor "
-                        "app_settings.r2_public_url is set. Media drift "
+                        "app_settings.storage_public_url is set. Media drift "
                         "detection is dormant until one of them is."
                     ),
                     dedup_key="media_reconciliation_r2_public_base_unresolved",

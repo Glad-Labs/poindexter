@@ -1671,3 +1671,24 @@ class TestMediaSpawnRespectsPolicy:
         assert "podcast_episode" in joined
         assert "video_episode" in joined
         assert "short_video" in joined
+
+
+class TestStorageDelayKeyName:
+    """storage_* cutover (#731): the post-publish R2 upload delay is read
+    from the storage-agnostic ``media_upload_delay_seconds`` key, not the
+    deprecated ``media_r2_upload_delay_seconds``.
+
+    The read lives inside the ``_upload_media_to_r2`` closure in
+    ``publish_post_from_task`` (a fire-and-forget background task that's
+    awkward to drive in isolation), so pin the contract at the source
+    level — this catches a regression that reintroduces the old key.
+    """
+
+    def test_reads_storage_agnostic_delay_key(self):
+        import inspect
+
+        import services.publish_service as ps
+
+        src = inspect.getsource(ps)
+        assert 'site_config.get("media_upload_delay_seconds"' in src
+        assert "media_r2_upload_delay_seconds" not in src

@@ -57,8 +57,10 @@ All from `app_settings` via `site_config`:
 - `short_video_post_publish_delay_seconds` (default `180`) — wait
   before generating the short video so the long-form podcast/video
   finish first.
-- `media_r2_upload_delay_seconds` (default `240`) — wait before
-  uploading media to R2 so generators have time to finish.
+- `media_upload_delay_seconds` (default `240`) — wait before
+  uploading media to the object-store CDN so generators have time to
+  finish. (Storage-agnostic rename of the deprecated
+  `media_r2_upload_delay_seconds`, #731.)
 - `social_distribution_platforms` (string, e.g. `"x,linkedin,youtube"`) —
   controls whether YouTube upload runs.
 - `max_posts_per_day` (default `3`, only when `honor_pacing=True`).

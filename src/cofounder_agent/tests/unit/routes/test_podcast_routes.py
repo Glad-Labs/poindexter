@@ -17,8 +17,24 @@ from routes.podcast_routes import (
     _rfc2822,
     router,
 )
-import services.podcast_service as _site_config_mod
-_test_site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
+
+# storage_* cutover (#731): podcast routes read storage_public_url (was
+# r2_public_url). Build a dedicated SiteConfig for the feed-rendering
+# tests rather than the conftest shared singleton — the autouse
+# ``_reset_singletons_between_tests`` fixture strips any key not in
+# ``_TEST_BRAND_CONFIG`` from the shared instance before each test, so a
+# seeded ``storage_public_url`` wouldn't survive there. This instance is
+# never reset, so the feed renders media URLs instead of 503ing.
+_test_site_config = SiteConfig(initial_config={
+    "podcast_name": "Test Podcast",
+    "podcast_description": "A test podcast feed",
+    "site_url": "https://www.test-site.example.com",
+    "site_domain": "test-site.example.com",
+    "owner_name": "Tester",
+    "owner_email": "owner@test.example.com",
+    "storage_public_url": "https://pub-test-bucket.r2.dev",
+})
 
 # ---------------------------------------------------------------------------
 # Test app
@@ -28,6 +44,12 @@ _test_site_config = _site_config_mod.site_config
 def _build_app():
     app = FastAPI()
     app.include_router(router)
+    # storage_* cutover (#731): the feed endpoint reads storage_public_url
+    # via get_site_config_dependency. Override it with the dedicated test
+    # config so the route doesn't 503 on the reset-stripped shared
+    # singleton.
+    from utils.route_utils import get_site_config_dependency
+    app.dependency_overrides[get_site_config_dependency] = lambda: _test_site_config
     return app
 
 

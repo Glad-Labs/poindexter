@@ -308,8 +308,16 @@ DEFAULTS: dict[str, str] = {
     'smtp_port': '587',
     'smtp_use_tls': 'true',
 
-    # ----- Storage / R2 -----
-    'r2_public_url': '',
+    # ----- Storage (provider-agnostic S3-compatible: R2 / S3 / B2 / MinIO) -----
+    # Public base URL for the object store; consumers append the object
+    # key. Replaces the deprecated ``r2_public_url`` (storage_* cutover,
+    # Glad-Labs/poindexter#731).
+    'storage_public_url': '',
+    # Wait this many seconds after a post publishes before uploading
+    # podcast/video/short to the object-store CDN — gives generation
+    # time to finish. Storage-agnostic rename of the deprecated
+    # ``media_r2_upload_delay_seconds`` (#731).
+    'media_upload_delay_seconds': '240',
 
     # ----- Observability / monitoring -----
     'enable_pyroscope': 'false',

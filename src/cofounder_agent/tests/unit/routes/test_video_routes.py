@@ -11,7 +11,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from services.site_config import SiteConfig
 from routes.video_routes import _rfc2822, router
+
+# storage_* cutover (#731): video routes read storage_public_url (was
+# r2_public_url). Build a dedicated SiteConfig for the feed tests rather
+# than the conftest shared singleton — the autouse
+# ``_reset_singletons_between_tests`` fixture strips any key not in
+# ``_TEST_BRAND_CONFIG`` from the shared instance before each test, so a
+# seeded ``storage_public_url`` wouldn't survive there. Override the DI
+# dependency with this instance so the feed renders media URLs instead
+# of 503ing.
+_test_site_config = SiteConfig(initial_config={
+    "video_feed_name": "Test Video",
+    "site_url": "https://www.test-site.example.com",
+    "site_domain": "test-site.example.com",
+    "storage_public_url": "https://pub-test-bucket.r2.dev",
+})
 
 # ---------------------------------------------------------------------------
 # Test app
@@ -21,6 +37,8 @@ from routes.video_routes import _rfc2822, router
 def _build_app():
     app = FastAPI()
     app.include_router(router)
+    from utils.route_utils import get_site_config_dependency
+    app.dependency_overrides[get_site_config_dependency] = lambda: _test_site_config
     return app
 
 

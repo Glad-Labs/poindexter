@@ -49,7 +49,7 @@ _MANIFEST_PATH_SUFFIX = "/static/manifest.json"
 
 
 async def _resolve_manifest_url(pool: Any, config: dict[str, Any]) -> str | None:
-    """Resolve the manifest URL from job config or app_settings.r2_public_url.
+    """Resolve the manifest URL from job config or app_settings.storage_public_url.
 
     Returns None when neither source is configured — caller treats that
     as "fork hasn't set up R2 yet, skip the job rather than crash".
@@ -65,14 +65,14 @@ async def _resolve_manifest_url(pool: Any, config: dict[str, Any]) -> str | None
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT value FROM app_settings WHERE key = 'r2_public_url'",
+                "SELECT value FROM app_settings WHERE key = 'storage_public_url'",
             )
         base = ((row["value"] if row else "") or "").strip().rstrip("/")
         if base:
             return f"{base}{_MANIFEST_PATH_SUFFIX}"
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            "static_export_reconciliation: r2_public_url lookup failed: %s", e,
+            "static_export_reconciliation: storage_public_url lookup failed: %s", e,
         )
     return None
 
@@ -89,7 +89,7 @@ class StaticExportReconciliationJob:
         if not manifest_url:
             logger.warning(
                 "static_export_reconciliation: skipped — no manifest URL "
-                "resolved (set app_settings.r2_public_url or "
+                "resolved (set app_settings.storage_public_url or "
                 "config.r2_manifest_url)",
             )
             try:
@@ -100,7 +100,7 @@ class StaticExportReconciliationJob:
                     title="Static-export reconciliation skipped — R2 not configured",
                     body=(
                         "Neither config.r2_manifest_url nor "
-                        "app_settings.r2_public_url is set. Static-export "
+                        "app_settings.storage_public_url is set. Static-export "
                         "drift detection is dormant until one of them is."
                     ),
                     dedup_key="static_export_manifest_url_unresolved",

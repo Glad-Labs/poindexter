@@ -183,11 +183,35 @@ class TestUploadToR2:
             "cloudflare_r2_secret_key": "legacy_secret",
             "cloudflare_r2_endpoint": "https://legacy.r2.dev",
             "cloudflare_r2_bucket": "legacy-bucket",
-            "r2_public_url": "https://pub-legacy.r2.dev",
+            "cloudflare_r2_public_url": "https://pub-legacy.r2.dev",
         })
         with patch.dict("sys.modules", {"boto3": mock_boto3}):
             result = await svc.upload_to_r2(str(mp3), "podcast/legacy.mp3")
         assert result == "https://pub-legacy.r2.dev/podcast/legacy.mp3"
+
+    @pytest.mark.asyncio
+    async def test_retired_r2_public_url_key_is_not_honored(self, tmp_path):
+        """storage_* cutover (#731): the deprecated ``r2_public_url`` key is
+        no longer read for the public link. With valid credentials + bucket
+        but ONLY ``r2_public_url`` set (no storage_/cloudflare_r2_ public_url),
+        the upload returns None because the public base can't be resolved.
+        """
+        mp3 = tmp_path / "stale.mp3"
+        mp3.write_bytes(b"data")
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        svc = _make_service({
+            "storage_access_key": "key",
+            "storage_secret_key": "secret",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            # Only the retired key is set — must NOT be used.
+            "r2_public_url": "https://pub-retired.r2.dev",
+        })
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await svc.upload_to_r2(str(mp3), "podcast/stale.mp3")
+        assert result is None
 
 
 class TestContentTypes:

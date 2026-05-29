@@ -109,7 +109,6 @@ class R2UploadService:
             logger.warning("[R2] File not found: %s", local_path)
             return None
 
-        sc = self._site_config
         # Get credentials from DB (storage_* preferred, cloudflare_r2_* fallback).
         # access_key is NOT marked is_secret (it's paired with the secret and
         # can't do damage alone), so site_config has it cached. secret_key
@@ -161,9 +160,7 @@ class R2UploadService:
                 ExtraArgs={"ContentType": content_type},
             )
 
-            public_url = self._storage("public_url") or sc.get(
-                "r2_public_url", "",
-            )
+            public_url = self._storage("public_url")
             if not public_url:
                 logger.warning(
                     "[STORAGE] storage_public_url not set — can't construct "

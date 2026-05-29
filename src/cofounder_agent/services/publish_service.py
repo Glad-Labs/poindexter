@@ -1353,7 +1353,7 @@ async def publish_post_from_task(
             from services.r2_upload_service import R2UploadService
             _r2 = R2UploadService(site_config=site_config)
             # Give podcast/video/short generation time to complete
-            _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
+            _delay = int(site_config.get("media_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
             await _r2.upload_podcast_episode(pid)
             await _r2.upload_video_episode(pid)

@@ -177,14 +177,14 @@ class TestStaticExportReconciliation:
 
     @pytest.mark.asyncio
     async def test_skips_when_no_manifest_url_configured(self):
-        """No config.r2_manifest_url AND no app_settings.r2_public_url → skip.
+        """No config.r2_manifest_url AND no app_settings.storage_public_url → skip.
 
         2026-05-12 cleanup (poindexter#485): the old hardcoded
         ``_DEFAULT_MANIFEST_URL`` constant baked Matt's R2 bucket into
         a public OSS file. Pin the new behaviour: when neither source
         resolves, skip the job rather than probing somebody else's bucket.
         """
-        # Pool's app_settings lookup returns no row (r2_public_url unset).
+        # Pool's app_settings lookup returns no row (storage_public_url unset).
         conn = AsyncMock()
         conn.fetchrow = AsyncMock(return_value=None)
         ctx = AsyncMock()
@@ -212,7 +212,7 @@ class TestStaticExportReconciliation:
     @pytest.mark.asyncio
     async def test_resolves_manifest_url_from_app_settings(self):
         """When r2_manifest_url isn't in config, fall through to
-        app_settings.r2_public_url + '/static/manifest.json'."""
+        app_settings.storage_public_url + '/static/manifest.json'."""
         now = datetime.now(timezone.utc)
         # Pool needs to answer TWO different queries: app_settings + posts.
         conn = AsyncMock()

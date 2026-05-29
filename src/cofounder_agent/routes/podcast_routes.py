@@ -40,22 +40,22 @@ def _site_url(site_config: Any) -> str:
 
 
 def _r2_url(site_config: Any) -> str:
-    """Get R2 CDN base URL. Returns '' when unconfigured — caller must
-    check before composing media URLs (use ``_r2_url_or_503``)."""
-    return (site_config.get("r2_public_url", "") or "").rstrip("/")
+    """Get object-store CDN base URL. Returns '' when unconfigured — caller
+    must check before composing media URLs (use ``_r2_url_or_503``)."""
+    return (site_config.get("storage_public_url", "") or "").rstrip("/")
 
 
 def _r2_url_or_503(site_config: Any) -> str:
-    """Variant that raises HTTP 503 when r2_public_url is unset. Use this
-    in feed/route handlers where the URL is mandatory."""
+    """Variant that raises HTTP 503 when storage_public_url is unset. Use
+    this in feed/route handlers where the URL is mandatory."""
     url = _r2_url(site_config)
     if not url:
         from fastapi import HTTPException
         raise HTTPException(
             status_code=503,
             detail=(
-                "r2_public_url not configured — podcast feed unavailable. "
-                "Set via `poindexter set-setting r2_public_url 'https://<bucket>.r2.dev'`."
+                "storage_public_url not configured — podcast feed unavailable. "
+                "Set via `poindexter set-setting storage_public_url 'https://<bucket>.r2.dev'`."
             ),
         )
     return url
