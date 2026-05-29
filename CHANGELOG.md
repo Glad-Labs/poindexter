@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.21.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.1...v0.21.2) (2026-05-29)
+
+
+### Bug Fixes
+
+* **settings-cli:** auto-strip category/ prefix, reshape list output, retire phantom-key guard ([#711](https://github.com/Glad-Labs/glad-labs-stack/issues/711)) ([1b344f7](https://github.com/Glad-Labs/glad-labs-stack/commit/1b344f70bb4abca5021a56a462af0aa00a654305))
+
 ## [0.21.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.0...v0.21.1) (2026-05-29)
 
 
