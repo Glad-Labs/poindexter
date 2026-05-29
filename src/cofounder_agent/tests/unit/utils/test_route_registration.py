@@ -193,7 +193,20 @@ class TestRegisterAllRoutes:
 
     def test_include_router_called_for_each_successful_route(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        # Patch get_modules to isolate substrate-manifest behavior from
+        # Phase 4-lite Module v1 iteration (FinanceModule.register_routes
+        # also calls app.include_router; that's exercised in
+        # TestModuleV1RouteIteration).
+        #
+        # Patch order matters: ``plugins.registry.get_modules`` must be
+        # patched BEFORE ``importlib.import_module``. ``patch`` lazily
+        # resolves its target at __enter__; if import_module is already
+        # a MagicMock when the second patch tries to import
+        # ``plugins.registry``, it silently patches the mock instead of
+        # the real module and the production code reaches the real
+        # ``get_modules``.
+        with patch("plugins.registry.get_modules", return_value=[]), \
+             patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             register_all_routes(app)
@@ -202,10 +215,12 @@ class TestRegisterAllRoutes:
 
     def test_include_router_not_called_on_import_failure(self):
         app = _make_app()
-        with patch(
-            "utils.route_registration.importlib.import_module",
-            side_effect=ImportError("no module"),
-        ):
+        # Patch order: get_modules first; see sibling test for why.
+        with patch("plugins.registry.get_modules", return_value=[]), \
+             patch(
+                 "utils.route_registration.importlib.import_module",
+                 side_effect=ImportError("no module"),
+             ):
             register_all_routes(app)
         app.include_router.assert_not_called()
 
@@ -215,6 +230,7 @@ class TestRegisterAllRoutes:
         call_count = {"n": 0}
 
         def _import_side_effect(module_path):
+            del module_path  # match import_module signature; value unused
             call_count["n"] += 1
             if call_count["n"] == 1:
                 raise ImportError("first import fails")
@@ -238,7 +254,13 @@ class TestRegisterAllRoutes:
 
     def test_worker_mode_registers_all_worker_routes(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        # Patch get_modules to isolate substrate-manifest behavior from
+        # Phase 4-lite Module v1 status entries (module:content /
+        # module:finance also land True; that's exercised in
+        # TestModuleV1RouteIteration). Patch order matters — see sibling
+        # test_include_router_called_for_each_successful_route.
+        with patch("plugins.registry.get_modules", return_value=[]), \
+             patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app, deployment_mode="worker")
@@ -257,7 +279,13 @@ class TestRegisterAllRoutes:
 
     def test_coordinator_mode_includes_all_7_routes(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        # Patch get_modules to isolate substrate-manifest behavior from
+        # Phase 4-lite Module v1 iteration (FinanceModule.register_routes
+        # also calls app.include_router; exercised separately in
+        # TestModuleV1RouteIteration). Patch order matters — see sibling
+        # test_include_router_called_for_each_successful_route.
+        with patch("plugins.registry.get_modules", return_value=[]), \
+             patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             register_all_routes(app, deployment_mode="coordinator")
@@ -265,7 +293,10 @@ class TestRegisterAllRoutes:
 
     def test_default_mode_is_coordinator(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        # Patch order matters — see sibling
+        # test_include_router_called_for_each_successful_route.
+        with patch("plugins.registry.get_modules", return_value=[]), \
+             patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             register_all_routes(app)
