@@ -35,61 +35,68 @@ logger = get_logger(__name__)
 # Config loader
 # ---------------------------------------------------------------------------
 
-def qa_cfg() -> dict:
+def qa_cfg(*, site_config: SiteConfig | None = None) -> dict:
     """Load all QA pipeline thresholds from DB via site_config.
 
     Every threshold in the QA pipeline is tunable via app_settings
     (key prefix: qa_). Returns a dict of all values with sensible defaults.
     Change any value with a simple SQL UPDATE on app_settings.
+
+    Phase-1 DI shim (#272): accepts an optional injected ``site_config``.
+    When omitted (the back-compat path), it falls back to the module-level
+    ``site_config`` global wired by ``set_site_config()``. The self-module
+    import dodges the local-parameter name shadowing the module global.
     """
+    import services.quality_scorers as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     return {
         # --- Overall pipeline ---
-        "pass_threshold": site_config.get_float("qa_pass_threshold", 70.0),
-        "critical_floor": site_config.get_float("qa_critical_floor", 50.0),
-        "artifact_penalty_per": site_config.get_float("qa_artifact_penalty_per", 5.0),
-        "artifact_penalty_max": site_config.get_float("qa_artifact_penalty_max", 20.0),
+        "pass_threshold": _sc.get_float("qa_pass_threshold", 70.0),
+        "critical_floor": _sc.get_float("qa_critical_floor", 50.0),
+        "artifact_penalty_per": _sc.get_float("qa_artifact_penalty_per", 5.0),
+        "artifact_penalty_max": _sc.get_float("qa_artifact_penalty_max", 20.0),
         # --- Flesch-Kincaid target ---
-        "fk_target_min": site_config.get_float("qa_fk_target_min", 8.0),
-        "fk_target_max": site_config.get_float("qa_fk_target_max", 12.0),
+        "fk_target_min": _sc.get_float("qa_fk_target_min", 8.0),
+        "fk_target_max": _sc.get_float("qa_fk_target_max", 12.0),
         # --- Clarity ---
-        "clarity_ideal_min": site_config.get_int("qa_clarity_ideal_min_wps", 15),
-        "clarity_ideal_max": site_config.get_int("qa_clarity_ideal_max_wps", 20),
-        "clarity_good_min": site_config.get_int("qa_clarity_good_min_wps", 10),
-        "clarity_good_max": site_config.get_int("qa_clarity_good_max_wps", 25),
-        "clarity_ok_min": site_config.get_int("qa_clarity_ok_min_wps", 8),
-        "clarity_ok_max": site_config.get_int("qa_clarity_ok_max_wps", 30),
+        "clarity_ideal_min": _sc.get_int("qa_clarity_ideal_min_wps", 15),
+        "clarity_ideal_max": _sc.get_int("qa_clarity_ideal_max_wps", 20),
+        "clarity_good_min": _sc.get_int("qa_clarity_good_min_wps", 10),
+        "clarity_good_max": _sc.get_int("qa_clarity_good_max_wps", 25),
+        "clarity_ok_min": _sc.get_int("qa_clarity_ok_min_wps", 8),
+        "clarity_ok_max": _sc.get_int("qa_clarity_ok_max_wps", 30),
         # --- Accuracy ---
-        "accuracy_baseline": site_config.get_float("qa_accuracy_baseline", 7.0),
-        "accuracy_good_link_bonus": site_config.get_float("qa_accuracy_good_link_bonus", 0.3),
-        "accuracy_good_link_max": site_config.get_float("qa_accuracy_good_link_max_bonus", 1.0),
-        "accuracy_bad_link_penalty": site_config.get_float("qa_accuracy_bad_link_penalty", 0.5),
-        "accuracy_bad_link_max": site_config.get_float("qa_accuracy_bad_link_max_penalty", 2.0),
-        "accuracy_citation_bonus": site_config.get_float("qa_accuracy_citation_bonus", 0.3),
-        "accuracy_first_person_penalty": site_config.get_float("qa_accuracy_first_person_penalty", 1.0),
-        "accuracy_first_person_max": site_config.get_float("qa_accuracy_first_person_max_penalty", 3.0),
-        "accuracy_meta_commentary_penalty": site_config.get_float("qa_accuracy_meta_commentary_penalty", 0.5),
-        "accuracy_meta_commentary_max": site_config.get_float("qa_accuracy_meta_commentary_max_penalty", 2.0),
+        "accuracy_baseline": _sc.get_float("qa_accuracy_baseline", 7.0),
+        "accuracy_good_link_bonus": _sc.get_float("qa_accuracy_good_link_bonus", 0.3),
+        "accuracy_good_link_max": _sc.get_float("qa_accuracy_good_link_max_bonus", 1.0),
+        "accuracy_bad_link_penalty": _sc.get_float("qa_accuracy_bad_link_penalty", 0.5),
+        "accuracy_bad_link_max": _sc.get_float("qa_accuracy_bad_link_max_penalty", 2.0),
+        "accuracy_citation_bonus": _sc.get_float("qa_accuracy_citation_bonus", 0.3),
+        "accuracy_first_person_penalty": _sc.get_float("qa_accuracy_first_person_penalty", 1.0),
+        "accuracy_first_person_max": _sc.get_float("qa_accuracy_first_person_max_penalty", 3.0),
+        "accuracy_meta_commentary_penalty": _sc.get_float("qa_accuracy_meta_commentary_penalty", 0.5),
+        "accuracy_meta_commentary_max": _sc.get_float("qa_accuracy_meta_commentary_max_penalty", 2.0),
         # --- Completeness ---
-        "completeness_word_2000": site_config.get_float("qa_completeness_word_2000_score", 6.5),
-        "completeness_word_1500": site_config.get_float("qa_completeness_word_1500_score", 6.0),
-        "completeness_word_1000": site_config.get_float("qa_completeness_word_1000_score", 5.0),
-        "completeness_word_500": site_config.get_float("qa_completeness_word_500_score", 3.5),
-        "completeness_word_min": site_config.get_float("qa_completeness_word_min_score", 2.0),
-        "completeness_heading_bonus": site_config.get_float("qa_completeness_heading_bonus", 0.3),
-        "completeness_heading_max": site_config.get_float("qa_completeness_heading_max_bonus", 1.5),
-        "completeness_truncation_penalty": site_config.get_float("qa_completeness_truncation_penalty", 3.0),
+        "completeness_word_2000": _sc.get_float("qa_completeness_word_2000_score", 6.5),
+        "completeness_word_1500": _sc.get_float("qa_completeness_word_1500_score", 6.0),
+        "completeness_word_1000": _sc.get_float("qa_completeness_word_1000_score", 5.0),
+        "completeness_word_500": _sc.get_float("qa_completeness_word_500_score", 3.5),
+        "completeness_word_min": _sc.get_float("qa_completeness_word_min_score", 2.0),
+        "completeness_heading_bonus": _sc.get_float("qa_completeness_heading_bonus", 0.3),
+        "completeness_heading_max": _sc.get_float("qa_completeness_heading_max_bonus", 1.5),
+        "completeness_truncation_penalty": _sc.get_float("qa_completeness_truncation_penalty", 3.0),
         # --- Relevance ---
-        "relevance_no_topic_default": site_config.get_float("qa_relevance_no_topic_default", 6.0),
-        "relevance_high_coverage": site_config.get_float("qa_relevance_high_coverage_score", 8.5),
-        "relevance_med_coverage": site_config.get_float("qa_relevance_med_coverage_score", 7.0),
-        "relevance_low_coverage": site_config.get_float("qa_relevance_low_coverage_score", 5.5),
-        "relevance_none_coverage": site_config.get_float("qa_relevance_none_coverage_score", 3.0),
-        "relevance_stuffing_hard": site_config.get_float("qa_relevance_stuffing_hard_density", 5.0),
-        "relevance_stuffing_soft": site_config.get_float("qa_relevance_stuffing_soft_density", 3.0),
+        "relevance_no_topic_default": _sc.get_float("qa_relevance_no_topic_default", 6.0),
+        "relevance_high_coverage": _sc.get_float("qa_relevance_high_coverage_score", 8.5),
+        "relevance_med_coverage": _sc.get_float("qa_relevance_med_coverage_score", 7.0),
+        "relevance_low_coverage": _sc.get_float("qa_relevance_low_coverage_score", 5.5),
+        "relevance_none_coverage": _sc.get_float("qa_relevance_none_coverage_score", 3.0),
+        "relevance_stuffing_hard": _sc.get_float("qa_relevance_stuffing_hard_density", 5.0),
+        "relevance_stuffing_soft": _sc.get_float("qa_relevance_stuffing_soft_density", 3.0),
         # --- SEO ---
-        "seo_baseline": site_config.get_float("qa_seo_baseline", 6.0),
+        "seo_baseline": _sc.get_float("qa_seo_baseline", 6.0),
         # --- Engagement ---
-        "engagement_baseline": site_config.get_float("qa_engagement_baseline", 6.0),
+        "engagement_baseline": _sc.get_float("qa_engagement_baseline", 6.0),
     }
 
 
@@ -97,10 +104,18 @@ def qa_cfg() -> dict:
 # Scoring functions (all return 0-10 scale)
 # ---------------------------------------------------------------------------
 
-def score_clarity(content: str, sentence_count: int, word_count: int, cfg: dict | None = None) -> float:
+def score_clarity(
+    content: str,
+    sentence_count: int,
+    word_count: int,
+    cfg: dict | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> float:
     """Score clarity based on sentence structure and word count.
-    Thresholds tunable via qa_clarity_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_clarity_* app_settings keys.
+    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    cfg = cfg or qa_cfg(site_config=site_config)
     if word_count == 0 or sentence_count == 0:
         return 5.0
 
@@ -115,10 +130,23 @@ def score_clarity(content: str, sentence_count: int, word_count: int, cfg: dict 
     return 5.0
 
 
-def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_accuracy(
+    content: str,
+    context: dict[str, Any],
+    cfg: dict | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> float:
     """Score accuracy based on citation patterns and factual anchors.
-    Thresholds tunable via qa_accuracy_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_accuracy_* app_settings keys.
+
+    Phase-1 DI shim (#272): optional injected ``site_config`` threads down
+    to ``qa_cfg`` and the inline ``site_domain`` / ``trusted_source_domains``
+    reads. When omitted, falls back to the module-level global via a
+    self-module import (dodges the local-param name shadow)."""
+    import services.quality_scorers as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+    cfg = cfg or qa_cfg(site_config=_sc)
     score = cfg["accuracy_baseline"]
     content_lower = content.lower()
 
@@ -127,7 +155,6 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     # content_router, so one list covers both external-link validation
     # and citation credibility (#198).
     all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
-    _sc = site_config
     _domain = _sc.get("site_domain", "")
     _override_csv = _sc.get("trusted_source_domains", "")
     _default_reputable = {
@@ -208,10 +235,17 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     return min(max(score, 0.0), 10.0)
 
 
-def score_completeness(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_completeness(
+    content: str,
+    context: dict[str, Any],
+    cfg: dict | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> float:
     """Score completeness based on depth signals beyond raw word count.
-    Thresholds tunable via qa_completeness_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_completeness_* app_settings keys.
+    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    cfg = cfg or qa_cfg(site_config=site_config)
     word_count = len(content.split())
     score = 0.0
 
@@ -252,10 +286,17 @@ def score_completeness(content: str, context: dict[str, Any], cfg: dict | None =
     return min(score, 10.0)
 
 
-def score_relevance(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_relevance(
+    content: str,
+    context: dict[str, Any],
+    cfg: dict | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> float:
     """Score relevance using topic-word family matching to resist keyword stuffing.
-    Thresholds tunable via qa_relevance_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_relevance_* app_settings keys.
+    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    cfg = cfg or qa_cfg(site_config=site_config)
     topic = context.get("topic", "") or context.get("primary_keyword", "")
     if not topic:
         return cfg["relevance_no_topic_default"]
@@ -290,7 +331,13 @@ def score_relevance(content: str, context: dict[str, Any], cfg: dict | None = No
     return min(base, 10.0)
 
 
-def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_seo(
+    content: str,
+    context: dict[str, Any],
+    cfg: dict | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> float:
     """Score SEO quality. Baseline tunable via qa_seo_baseline.
 
     Awards points for:
@@ -300,8 +347,10 @@ def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) ->
     - Primary keywords present anywhere in the content (+1.5)
     - Primary keywords missing (-1.0, dragging an otherwise-fine post
       below the passing threshold)
+
+    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``.
     """
-    cfg = cfg or qa_cfg()
+    cfg = cfg or qa_cfg(site_config=site_config)
     score = cfg["seo_baseline"]
 
     # Check for headers
@@ -361,9 +410,15 @@ def score_readability(content: str) -> float:
         return max(7.0, 7.0 + flesch * 0.017)  # 0->7.0, 30->7.5
 
 
-def score_engagement(content: str, cfg: dict | None = None) -> float:
-    """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline."""
-    cfg = cfg or qa_cfg()
+def score_engagement(
+    content: str,
+    cfg: dict | None = None,
+    *,
+    site_config: SiteConfig | None = None,
+) -> float:
+    """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline.
+    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    cfg = cfg or qa_cfg(site_config=site_config)
     score = cfg["engagement_baseline"]
 
     # Bullet points / lists
