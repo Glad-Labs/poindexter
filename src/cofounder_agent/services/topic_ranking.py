@@ -48,15 +48,21 @@ GOAL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def _resolve_goal_descriptions() -> dict[str, str]:
+def _resolve_goal_descriptions(*, site_config: SiteConfig | None = None) -> dict[str, str]:
     """Return goal-type → prose mapping, preferring the
     ``niche_goal_descriptions`` app_setting (JSON blob) over the in-code
     default. Falls back silently to ``GOAL_DESCRIPTIONS`` if the setting
     is missing, empty, or malformed — keeps test fixtures and bare
     installs working without the migration applied.
+
+    Phase-1 DI shim (#272): accepts an optional keyword-only
+    ``site_config``; defaults to the module global when not supplied so
+    existing callers stay non-breaking.
     """
+    import services.topic_ranking as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     try:
-        raw = site_config.get("niche_goal_descriptions", "")
+        raw = _sc.get("niche_goal_descriptions", "")
         if not raw:
             return GOAL_DESCRIPTIONS
         parsed = json.loads(raw)
@@ -74,7 +80,7 @@ def _resolve_goal_descriptions() -> dict[str, str]:
 _GOAL_VEC_CACHE: dict[str, list[float]] = {}
 
 
-async def _embed_text_cached(text: str) -> list[float]:
+async def _embed_text_cached(text: str, *, site_config: SiteConfig | None = None) -> list[float]:
     """Embed via the registered ollama_native provider.
 
     The embedding service is responsible for its own caching (or not).
@@ -84,7 +90,15 @@ async def _embed_text_cached(text: str) -> list[float]:
     embed_text`` but no such module-level helper exists — embeddings go
     through the ``LLMProvider`` Protocol (matches the pattern in
     ``services.publish_service`` etc.).
+
+    Phase-1 DI shim (#272): accepts an optional keyword-only
+    ``site_config``; defaults to the module global when not supplied. The
+    embed-model read drives only the provider call, not the
+    ``_GOAL_VEC_CACHE`` key (which is keyed on goal_type prose), so
+    threading the param is cache-safe.
     """
+    import services.topic_ranking as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     from plugins.registry import get_all_llm_providers
     providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
@@ -92,24 +106,38 @@ async def _embed_text_cached(text: str) -> list[float]:
         raise RuntimeError(
             "ollama_native provider not registered — cannot generate embeddings"
         )
-    embed_model = site_config.get("niche_embedding_model", "nomic-embed-text")
+    embed_model = _sc.get("niche_embedding_model", "nomic-embed-text")
     return await provider.embed(text, model=embed_model)
 
 
-async def embed_text(text: str) -> list[float]:
+async def embed_text(text: str, *, site_config: SiteConfig | None = None) -> list[float]:
     """Public embedding helper. Writer modes and the batch service import
     this rather than reaching into ``_embed_text_cached`` directly.
+
+    Phase-1 DI shim (#272): threads an optional ``site_config`` down to
+    the reader; defaults to the module global when unset. We only forward
+    the kwarg when it's actually supplied so existing monkeypatched test
+    doubles for ``_embed_text_cached`` (positional-only fakes) keep
+    working through the default path — back-compat per #272.
     """
+    if site_config is not None:
+        return await _embed_text_cached(text, site_config=site_config)
     return await _embed_text_cached(text)
 
 
-async def goal_vector_for(goal_type: str) -> list[float]:
+async def goal_vector_for(goal_type: str, *, site_config: SiteConfig | None = None) -> list[float]:
     if goal_type in _GOAL_VEC_CACHE:
         return _GOAL_VEC_CACHE[goal_type]
-    descriptions = _resolve_goal_descriptions()
+    descriptions = _resolve_goal_descriptions(site_config=site_config)
     if goal_type not in descriptions:
         raise ValueError(f"unknown goal_type: {goal_type!r}")
-    vec = await _embed_text_cached(descriptions[goal_type])
+    # Only forward the kwarg when supplied — keeps positional-only
+    # monkeypatched ``_embed_text_cached`` fakes working on the default
+    # path (back-compat per #272).
+    if site_config is not None:
+        vec = await _embed_text_cached(descriptions[goal_type], site_config=site_config)
+    else:
+        vec = await _embed_text_cached(descriptions[goal_type])
     _GOAL_VEC_CACHE[goal_type] = vec
     return vec
 
@@ -167,6 +195,7 @@ from services.langfuse_shim import langfuse_context, observe
 @observe(as_type="generation", name="topic_ranking._ollama_chat_json")
 async def _ollama_chat_json(
     prompt: str, *, model: str, pool: object | None = None,
+    site_config: SiteConfig | None = None,
 ) -> str:
     """One-shot LLM chat call returning the assistant's content as a string.
 
@@ -204,8 +233,15 @@ async def _ollama_chat_json(
     through here, so wrapping at this layer covers all three call sites
     at once.
     """
+    # Phase-1 DI shim (#272): resolve the SiteConfig from the optional
+    # keyword-only param, falling back to the module global so existing
+    # callers stay non-breaking. Self-module import avoids param/global
+    # name shadowing.
+    import services.topic_ranking as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
     messages = [{"role": "user", "content": prompt}]
-    timeout = site_config.get_float(
+    timeout = _sc.get_float(
         "niche_ollama_chat_timeout_seconds", 60.0,
     )
 
@@ -213,7 +249,7 @@ async def _ollama_chat_json(
     # uses (``site_config._pool``). Lets every existing caller pick up
     # dispatcher routing without a signature change; tests + bootstrap
     # paths that don't wire ``_pool`` keep the httpx fallback.
-    resolved_pool = pool if pool is not None else getattr(site_config, "_pool", None)
+    resolved_pool = pool if pool is not None else getattr(_sc, "_pool", None)
 
     if resolved_pool is not None:
         from services.llm_providers.dispatcher import dispatch_complete
@@ -251,7 +287,7 @@ async def _ollama_chat_json(
     # asyncpg pool; bootstrap scripts run before any pool is established).
     import httpx
     base_url = (
-        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
+        _sc.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
     )
     payload = {
         "model": model,
@@ -285,6 +321,7 @@ async def llm_final_score(
     weights: list[NicheGoal],
     *,
     model: str | None = None,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, ScoredCandidate]:
     """Single LLM call ranks the (already-shortlisted) candidates against weighted goals.
 
@@ -304,10 +341,17 @@ async def llm_final_score(
     raises ``ValueError`` if neither is set — surfaces misconfig at
     pipeline-entry instead of as an opaque Ollama 404 mid-call.
     """
+    # Phase-1 DI shim (#272): resolve the SiteConfig from the optional
+    # keyword-only param, falling back to the module global. Threaded
+    # down into resolve_local_model, the goal-descriptions reader, and
+    # the LLM-chat helper so every downstream read honors the injected
+    # instance.
+    import services.topic_ranking as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     if model is None:
         from services.llm_text import resolve_local_model
-        model = resolve_local_model(site_config=site_config)
-    descriptions = _resolve_goal_descriptions()
+        model = resolve_local_model(site_config=_sc)
+    descriptions = _resolve_goal_descriptions(site_config=_sc)
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
     cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
     prompt = get_prompt_manager().get_prompt(
@@ -315,7 +359,13 @@ async def llm_final_score(
         weights_descr=weights_descr,
         cand_block=cand_block,
     )
-    raw = await _ollama_chat_json(prompt, model=model)
+    # Only forward the injected SiteConfig when one was explicitly
+    # supplied — keeps monkeypatched ``_ollama_chat_json`` fakes that
+    # predate the param working on the default path (back-compat #272).
+    if site_config is not None:
+        raw = await _ollama_chat_json(prompt, model=model, site_config=_sc)
+    else:
+        raw = await _ollama_chat_json(prompt, model=model)
     parsed = json.loads(raw)
     result: dict[str, ScoredCandidate] = {}
     for c in candidates:
