@@ -132,7 +132,7 @@ async def podcast_feed(
                 #    ``services/media_approval_service.py``.
                 rows = await conn.fetch(
                     """
-                    SELECT id::text, title, slug, excerpt, published_at
+                    SELECT id::text, title, slug, excerpt, seo_keywords, published_at
                     FROM posts p
                     WHERE id::text = ANY($1)
                       AND status = 'published'
@@ -163,6 +163,7 @@ async def podcast_feed(
             "title": post.get("title", "Untitled"),
             "slug": post.get("slug", pid),
             "description": post.get("excerpt", ""),
+            "keywords": post.get("seo_keywords", "") or "",
             "published_at": post.get("published_at"),
             "file_size_bytes": disk_info.get("file_size_bytes", 0),
             "duration_seconds": 0,  # Estimated on the fly if needed
@@ -264,6 +265,18 @@ def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
         SubElement(item, "title").text = ep["title"]
         SubElement(item, "link").text = f"{_site}/posts/{ep['slug']}"
         SubElement(item, "description").text = ep.get("description", "")
+        # itunes:summary is what Apple Podcasts / Spotify actually surface
+        # for the episode body; mirror the SEO description.
+        SubElement(
+            item, "{http://www.itunes.com/dtds/podcast-1.0.dtd}summary"
+        ).text = ep.get("description", "")
+        # itunes:keywords — SEO keywords (stored comma-joined in
+        # posts.seo_keywords). Omit the element entirely when there are none.
+        _kw = (ep.get("keywords", "") or "").strip()
+        if _kw:
+            SubElement(
+                item, "{http://www.itunes.com/dtds/podcast-1.0.dtd}keywords"
+            ).text = _kw
         SubElement(item, "guid").text = f"{_domain}-podcast-{ep['post_id']}"
 
         pub_date = ep.get("published_at")

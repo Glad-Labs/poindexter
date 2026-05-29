@@ -126,6 +126,41 @@ class TestBuildRssXml:
         assert "audio/mpeg" in xml
         assert "5000000" in xml
 
+    def test_episode_emits_itunes_summary_and_keywords(self):
+        episodes = [{
+            "post_id": "123",
+            "title": "Test Episode",
+            "slug": "test-episode",
+            "description": "An SEO meta description.",
+            "keywords": "ai, automation, pipelines",
+            "published_at": datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc),
+            "file_size_bytes": 5000000,
+            "duration_seconds": 300,
+        }]
+        xml = _build_rss_xml(episodes, _test_site_config)
+        # itunes:summary mirrors the SEO description (what Apple/Spotify show).
+        assert "An SEO meta description." in xml
+        assert "summary" in xml
+        # itunes:keywords carries the comma-joined SEO keywords.
+        assert "ai, automation, pipelines" in xml
+        assert "keywords" in xml
+
+    def test_episode_omits_keywords_when_empty(self):
+        episodes = [{
+            "post_id": "123",
+            "title": "Test Episode",
+            "slug": "test-episode",
+            "description": "Body.",
+            "keywords": "",
+            "published_at": datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc),
+            "file_size_bytes": 5000000,
+            "duration_seconds": 300,
+        }]
+        xml = _build_rss_xml(episodes, _test_site_config)
+        # itunes:summary still present; keywords element omitted entirely.
+        assert "summary" in xml
+        assert "<itunes:keywords>" not in xml and "}keywords>" not in xml
+
     def test_episode_without_duration(self):
         episodes = [{
             "post_id": "456",
