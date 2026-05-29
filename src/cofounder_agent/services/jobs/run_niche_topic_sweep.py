@@ -52,6 +52,10 @@ class RunNicheTopicSweepJob:
         from services.topic_batch_service import TopicBatchService
 
         notify = bool(config.get("notify_on_new_batch", True))
+        # #272 Phase-2d: TopicBatchService requires an explicit site_config.
+        # The scheduler seeds the run-bound instance into
+        # ``config["_site_config"]`` before invoking the job.
+        site_config = config["_site_config"]
 
         niches = await NicheService(pool).list_active()
         if not niches:
@@ -59,7 +63,7 @@ class RunNicheTopicSweepJob:
                 ok=True, detail="no active niches configured", changes_made=0,
             )
 
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=site_config)
         new_batches = 0
         skipped = 0
         errors = 0
@@ -93,7 +97,7 @@ class RunNicheTopicSweepJob:
                 # Best-effort — never let notification failures take down
                 # the sweep job. The batch is already persisted.
                 try:
-                    await _notify_new_batch(pool, niche, snapshot)
+                    await _notify_new_batch(pool, niche, snapshot, site_config)
                 except Exception as notify_err:
                     logger.warning(
                         "[niche-topic-sweep] notification failed for batch %s: %s",
@@ -111,16 +115,21 @@ class RunNicheTopicSweepJob:
         )
 
 
-async def _notify_new_batch(pool: Any, niche: Any, snapshot: Any) -> None:
+async def _notify_new_batch(
+    pool: Any, niche: Any, snapshot: Any, site_config: Any,
+) -> None:
     """Layer 3 — notify the operator on Telegram + Discord with the top
     candidates so they can rank/pick from their phone.
 
     Lazy-import the notify helper so the sweep job is testable without
     pulling in the full telegram/discord stack.
+
+    #272 Phase-2d: ``site_config`` is threaded from the caller (the job's
+    run-bound ``config["_site_config"]``).
     """
     from services.topic_batch_service import TopicBatchService
 
-    svc = TopicBatchService(pool)
+    svc = TopicBatchService(pool, site_config=site_config)
     view = await svc.show_batch(batch_id=snapshot.id)
 
     top = view.candidates[:3]

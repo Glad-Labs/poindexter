@@ -14,6 +14,7 @@ import pytest
 
 from services.niche_service import Niche, NicheService, NicheGoal, NicheSource
 from services.internal_rag_source import InternalCandidate
+from services.site_config import SiteConfig
 from services.topic_batch_service import CandidateView, TopicBatchService
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -92,7 +93,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
 
     monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
 
     assert batch is not None
@@ -181,7 +182,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
 
     monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     first = await svc.run_sweep(niche_id=n.id)
     assert first is not None
     assert first.status == "open"
@@ -284,7 +285,7 @@ async def test_show_batch_returns_unified_ranked_view(db_pool):
         db_pool, slug="show-batch-niche", n_external=2, n_internal=3,
     )
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     view = await svc.show_batch(batch_id=batch_id)
 
     assert view.id == batch_id
@@ -312,7 +313,7 @@ async def test_rank_batch_records_operator_order(db_pool):
     # external-first-then-internal fallback.
     ordered = [int_ids[2], ext_ids[0], int_ids[0], ext_ids[1], int_ids[1]]
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=ordered)
 
     view = await svc.show_batch(batch_id=batch_id)
@@ -331,7 +332,7 @@ async def test_edit_winner_sets_operator_edit_fields(db_pool):
     )
     # Make an INTERNAL candidate the winner so we exercise the fallback.
     ordered = [int_ids[0], ext_ids[0], int_ids[1], ext_ids[1], int_ids[2]]
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=ordered)
 
     await svc.edit_winner(
@@ -352,7 +353,7 @@ async def test_resolve_batch_advances_winner_and_marks_resolved(db_pool, monkeyp
         db_pool, slug="resolve-batch-niche", n_external=2, n_internal=3,
     )
     ordered = [ext_ids[0], int_ids[0], ext_ids[1], int_ids[1], int_ids[2]]
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=ordered)
 
     handoff_calls: list[tuple[str, str, str]] = []
@@ -388,7 +389,7 @@ async def test_reject_batch_marks_expired_and_can_re_discover(db_pool):
     niche, batch_id, ext_ids, int_ids = await _seed_batch_with_mixed_candidates(
         db_pool, slug="reject-batch-niche", n_external=2, n_internal=3,
     )
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     await svc.reject_batch(batch_id=batch_id, reason="none of these")
 
     view = await svc.show_batch(batch_id=batch_id)
@@ -480,7 +481,7 @@ async def test_discover_external_dispatches_registered_plugins(db_pool, monkeypa
         lambda: [hn, devto],
     )
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     out = await svc._discover_external(n)
 
     assert len(out) == 3
@@ -535,7 +536,7 @@ async def test_discover_external_skips_unknown_source_with_warning(
     ])
     monkeypatch.setattr("plugins.registry.get_topic_sources", lambda: [hn])
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     import logging
     with caplog.at_level(logging.WARNING):
         out = await svc._discover_external(n)
@@ -578,7 +579,7 @@ async def test_discover_external_isolates_per_source_failures(
         "plugins.registry.get_topic_sources", lambda: [bad, good],
     )
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     out = await svc._discover_external(n)
 
     assert len(out) == 1
@@ -616,7 +617,7 @@ async def test_discover_external_disabled_sources_skipped(
         "plugins.registry.get_topic_sources", lambda: [hn, devto],
     )
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     out = await svc._discover_external(n)
 
     assert len(out) == 1
@@ -729,7 +730,7 @@ class TestHandoffToPipelineSQL:
             return "INSERT 0 1"
 
         pool, _conn = _make_mock_pool(execute_side_effect=_capture)
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
 
         await svc._handoff_to_pipeline(
             winner=_make_candidate(),
@@ -745,7 +746,7 @@ class TestHandoffToPipelineSQL:
     async def test_emits_two_inserts_per_handoff(self):
         # One INSERT into pipeline_tasks + one into pipeline_versions.
         pool, conn = _make_mock_pool()
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
 
         await svc._handoff_to_pipeline(
             winner=_make_candidate(),
@@ -763,7 +764,7 @@ class TestHandoffToPipelineSQL:
             return "INSERT 0 1"
 
         pool, _conn = _make_mock_pool(execute_side_effect=_capture)
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
 
         winner = CandidateView(
             id="cand-1",
@@ -825,7 +826,7 @@ class TestHandoffTemplateSlugResolution:
             return "INSERT 0 1"
 
         pool, _ = _make_mock_pool(execute_side_effect=_capture)
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
 
         await svc._handoff_to_pipeline(
             winner=_make_candidate(),
@@ -857,7 +858,7 @@ class TestHandoffTemplateSlugResolution:
             niche_template_slug="dev_diary",
             app_setting_template_slug="canonical_blog",
         )
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
 
         await svc._handoff_to_pipeline(
             winner=_make_candidate(),
@@ -891,7 +892,7 @@ class TestHandoffTemplateSlugResolution:
             niche_template_slug=None,
             app_setting_template_slug=None,
         )
-        svc = TopicBatchService(pool)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
 
         with pytest.raises(TemplateSlugUnresolvable):
             await svc._handoff_to_pipeline(

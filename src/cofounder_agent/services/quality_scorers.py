@@ -196,7 +196,7 @@ def score_accuracy(
     _post_niche = (context.get("niche") or context.get("category") or "")
     _post_niche = str(_post_niche).strip().lower() or None
 
-    if is_validator_enabled("first_person_claims", niche=_post_niche):
+    if is_validator_enabled("first_person_claims", niche=_post_niche, site_config=_sc):
         first_person_claims = len(re.findall(
             r"\b(?:I|we)\s+(?:built|created|developed|designed|made|launched|shipped|released|wrote)\b",
             content, re.IGNORECASE,
@@ -208,7 +208,7 @@ def score_accuracy(
             )
 
     # Meta-commentary penalty — same DB-driven gate.
-    if is_validator_enabled("meta_commentary", niche=_post_niche):
+    if is_validator_enabled("meta_commentary", niche=_post_niche, site_config=_sc):
         meta_commentary = len(re.findall(
             r"\b(?:this\s+(?:post|article|blog|piece)\s+(?:explores?|examines?|discusses?|looks\s+at|covers?|delves?))"
             r"|\b(?:in\s+this\s+(?:post|article|blog|piece))"

@@ -44,17 +44,12 @@ from services.quality_models import (
 )
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
+# setter were removed. ``UnifiedQualityService`` now REQUIRES a ``site_config``
+# in its constructor; the QA-stage caller threads ``context.get("site_config")``
+# and the factory helpers pass their wired config. The
+# ``_score_llm_patterns`` staticmethod likewise requires an explicit
+# ``site_config`` param (the instance caller passes ``self._site_config``).
 from services.quality_scorers import (
     check_keywords as _check_keywords_fn,
 )
@@ -145,7 +140,7 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(self, database_service=None, qa_agent=None, llm_client=None, site_config=None):
+    def __init__(self, database_service=None, qa_agent=None, llm_client=None, *, site_config: SiteConfig):
         """
         Initialize quality service
 
@@ -153,20 +148,18 @@ class UnifiedQualityService:
             database_service: Optional DatabaseService for persistence
             qa_agent: Optional QA Agent for binary approval
             llm_client: Optional LLMClient for direct LLM evaluation calls
-            site_config: Optional SiteConfig — Phase H DI seam (GH#95).
-                Stored on the instance for any sub-method that needs
-                DB-backed config without re-importing the singleton.
+            site_config: REQUIRED SiteConfig — Phase H DI seam (GH#95),
+                made mandatory in #272 Phase-2d. Stored on the instance and
+                threaded into every ``quality_scorers`` call. The
+                ``quality_evaluation`` stage passes
+                ``context.get("site_config")``; the factory helpers pass
+                their wired config.
         """
         self.database_service = database_service
         self.qa_agent = qa_agent
         self.llm_client = llm_client
-        # Phase-1 DI shim (#272): fall back to the lifespan-bound module
-        # global when no instance is injected, so existing callers that
-        # construct ``UnifiedQualityService()`` without site_config keep
-        # working. Self-import keeps the fallback bound to the live global
-        # (which ``set_site_config()`` rebinds), not a stale snapshot.
-        import services.quality_service as _mod
-        self._site_config = site_config if site_config is not None else _mod.site_config
+        # #272 Phase-2d: injection is mandatory — no module-global fallback.
+        self._site_config = site_config
 
         # Statistics
         self.total_evaluations = 0
@@ -177,16 +170,13 @@ class UnifiedQualityService:
         logger.info("UnifiedQualityService initialized")
 
     def _resolve_site_config(self) -> SiteConfig:
-        """Resolve the SiteConfig to thread into ``quality_scorers`` calls.
+        """Return the DI-injected SiteConfig threaded into ``quality_scorers``.
 
-        Prefers the DI-injected ``self._site_config`` (set by ``main.py``
-        and the ``quality_evaluation`` stage). Falls back to the
-        still-wired ``quality_service`` module global for callers /
-        tests that construct ``UnifiedQualityService`` without a
-        SiteConfig (#272 Phase-2c: ``quality_scorers`` no longer carries
-        its own wired global, so the consumer supplies one).
+        #272 Phase-2d: ``self._site_config`` is always populated (the
+        constructor requires it), so this is a thin accessor kept for the
+        many internal call sites that already route through it.
         """
-        return self._site_config if self._site_config is not None else site_config
+        return self._site_config
 
     def _qa_cfg(self) -> dict:
         """Load all QA pipeline thresholds from DB via site_config.
@@ -645,7 +635,7 @@ class UnifiedQualityService:
         return artifacts
 
     @staticmethod
-    def _score_llm_patterns(content: str, site_config=None) -> tuple[float, list[str]]:
+    def _score_llm_patterns(content: str, site_config: SiteConfig) -> tuple[float, list[str]]:
         """Detect and penalize common LLM-generated content patterns.
 
         Returns (penalty, list_of_issues) where penalty is a NEGATIVE number
@@ -653,16 +643,13 @@ class UnifiedQualityService:
 
         All thresholds are tunable via app_settings (key prefix: qa_llm_).
 
-        Phase-1 DI shim (#272): this is a ``@staticmethod`` (no ``self``), so
-        the injected SiteConfig is threaded in as an optional ``site_config``
-        param. When omitted, it falls back to the lifespan-bound module
-        global — keeping existing direct callers
-        (``UnifiedQualityService._score_llm_patterns(content)``, e.g. unit
-        tests) working unchanged. The instance caller passes
-        ``self._site_config``.
+        #272 Phase-2d: this is a ``@staticmethod`` (no ``self``), so the
+        injected SiteConfig is threaded in as a REQUIRED ``site_config``
+        param (no module-global fallback). The instance caller passes
+        ``self._site_config``; direct callers (unit tests) pass an explicit
+        ``SiteConfig``.
         """
-        import services.quality_service as _mod
-        _sc = site_config if site_config is not None else _mod.site_config
+        _sc = site_config
         # Load tunable thresholds from DB (with sensible defaults)
         _t = {
             "buzzword_warn": _sc.get_int("qa_llm_buzzword_warn_threshold", 3),
@@ -951,21 +938,30 @@ class UnifiedQualityService:
 
 
 def get_quality_service(
-    database_service=None, llm_client=None
+    database_service=None, llm_client=None, *, site_config: SiteConfig
 ) -> UnifiedQualityService:
-    """Factory function for UnifiedQualityService dependency injection"""
+    """Factory function for UnifiedQualityService dependency injection.
+
+    #272 Phase-2d: ``site_config`` is REQUIRED and threaded into the
+    constructed service.
+    """
     return UnifiedQualityService(
-        database_service=database_service, llm_client=llm_client
+        database_service=database_service, llm_client=llm_client,
+        site_config=site_config,
     )
 
 
 # Backward compatibility alias
 def get_content_quality_service(
-    database_service=None, llm_client=None
+    database_service=None, llm_client=None, *, site_config: SiteConfig
 ) -> UnifiedQualityService:
-    """Backward compatibility alias for get_quality_service"""
+    """Backward compatibility alias for get_quality_service.
+
+    #272 Phase-2d: ``site_config`` is REQUIRED.
+    """
     return UnifiedQualityService(
-        database_service=database_service, llm_client=llm_client
+        database_service=database_service, llm_client=llm_client,
+        site_config=site_config,
     )
 
 

@@ -15,11 +15,13 @@ from __future__ import annotations
 import pytest
 
 from services.quality_scorers import score_accuracy
-# The first-person bypass CSV (``qa_allow_first_person_niches``) is read by
-# ``validator_config.is_validator_enabled`` from ``validator_config``'s own
-# wired SiteConfig — NOT the one passed to ``score_accuracy`` (#272 Phase-2c
-# removed ``quality_scorers``' module global). Seed + pass that instance.
-import services.validator_config as _vc_mod
+from services.site_config import SiteConfig
+
+# #272 Phase-2d: ``validator_config.is_validator_enabled`` now reads the
+# ``qa_allow_first_person_niches`` CSV from the SiteConfig threaded down by
+# ``score_accuracy`` (no module global anymore). Tests seed a local
+# SiteConfig and pass it in.
+_SITE_CONFIG = SiteConfig()
 
 
 _FIRST_PERSON_CONTENT = (
@@ -47,9 +49,9 @@ def _seed_allow_list():
     at the shared test instance) — that's where ``is_validator_enabled``
     reads the ``qa_allow_first_person_niches`` CSV from.
     """
-    _vc_mod.site_config._config["qa_allow_first_person_niches"] = "dev_diary"
+    _SITE_CONFIG._config["qa_allow_first_person_niches"] = "dev_diary"
     yield
-    _vc_mod.site_config._config.pop("qa_allow_first_person_niches", None)
+    _SITE_CONFIG._config.pop("qa_allow_first_person_niches", None)
 
 
 @pytest.mark.unit
@@ -60,7 +62,7 @@ class TestFirstPersonValidatorBypass:
             _FIRST_PERSON_CONTENT,
             context={"niche": "ai_ml"},  # not in the allow list
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         # baseline 7.0 minus first-person penalty (capped at 3.0)
         assert score <= 5.0, f"Non-allowlisted niche should be penalised; got {score}"
@@ -71,7 +73,7 @@ class TestFirstPersonValidatorBypass:
             _FIRST_PERSON_CONTENT,
             context={},
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         assert score <= 5.0, f"Empty-context post should be penalised; got {score}"
 
@@ -81,7 +83,7 @@ class TestFirstPersonValidatorBypass:
             _FIRST_PERSON_CONTENT,
             context={"niche": "dev_diary"},
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         # No penalty applied → score should land near baseline 7.0
         assert score >= 6.5, (
@@ -95,7 +97,7 @@ class TestFirstPersonValidatorBypass:
             _FIRST_PERSON_CONTENT,
             context={"category": "dev_diary"},
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         assert score >= 6.5, f"category-based niche should bypass; got {score}"
 
@@ -105,19 +107,19 @@ class TestFirstPersonValidatorBypass:
             _FIRST_PERSON_CONTENT,
             context={"niche": "DEV_DIARY"},
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         assert score >= 6.5, f"case-insensitive bypass should fire; got {score}"
 
     def test_unrelated_niche_in_allow_list_does_not_help_dev_diary_post(self):
         """If only ``other_niche`` is in the allow list, dev_diary posts
         are still penalised."""
-        _vc_mod.site_config._config["qa_allow_first_person_niches"] = "other_niche"
+        _SITE_CONFIG._config["qa_allow_first_person_niches"] = "other_niche"
         score = score_accuracy(
             _FIRST_PERSON_CONTENT,
             context={"niche": "dev_diary"},
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         assert score <= 5.0, (
             f"non-listed niche should still be penalised; got {score}"
@@ -127,12 +129,12 @@ class TestFirstPersonValidatorBypass:
         """When the allow list is empty/unset, all niches get the strict
         rule — preserves backward compatibility for operators who haven't
         run migration 0134 yet."""
-        _vc_mod.site_config._config["qa_allow_first_person_niches"] = ""
+        _SITE_CONFIG._config["qa_allow_first_person_niches"] = ""
         score = score_accuracy(
             _FIRST_PERSON_CONTENT,
             context={"niche": "dev_diary"},
             cfg=_CFG,
-            site_config=_vc_mod.site_config,
+            site_config=_SITE_CONFIG,
         )
         assert score <= 5.0, (
             f"empty allow list = strict rule for everyone; got {score}"

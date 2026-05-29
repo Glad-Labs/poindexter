@@ -10,8 +10,8 @@ No LLM judgment — deterministic pattern matching that catches:
 
 Usage:
     from services.content_validator import validate_content
-    issues = validate_content(title, content, topic)
-    if issues:
+    result = validate_content(title, content, topic, site_config=site_config)
+    if not result.passed:
         # Reject — content has quality issues
 """
 
@@ -32,18 +32,24 @@ if TYPE_CHECKING:
 # fires. Tests can either patch this attribute directly or call
 # ``set_site_config()`` for explicit wiring.
 #
-# Phase-1 DI shim (#272): public entry points now accept an optional
-# ``site_config`` keyword. When a caller supplies one it is threaded down
-# to internal readers; when omitted, readers fall back to the module
-# global ``_mod.site_config`` (via the self-import above to dodge the
-# local-name shadow inside functions that take a ``site_config`` param).
-# The global + ``set_site_config()`` stay in place for back-compat;
-# Phase-2 removes them.
+# #272 Phase-2d: the public entry points (``validate_content`` /
+# ``_check_code_block_density`` / ``verify_content_urls``) now REQUIRE an
+# explicit ``site_config`` — callers thread the run-bound instance. The
+# module global + ``set_site_config()`` are RETAINED solely for the
+# import-time ``GLAD_LABS_FACTS = _get_company_facts()`` read below
+# (``_get_company_facts`` has no SiteConfig in scope at import time), so
+# ``content_validator`` stays in ``di_wiring.WIRED_MODULES``. Everything
+# else routes through the required param.
 site_config: SiteConfig = SiteConfig()
 
 
 def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
+    """Wire the lifespan-bound SiteConfig instance for this module.
+
+    #272 Phase-2d: retained only to wire the global consumed by the
+    import-time ``_get_company_facts()`` path. The public validator
+    functions take a required ``site_config`` and never read the global.
+    """
     global site_config
     site_config = sc
 
@@ -117,9 +123,12 @@ _NAMED_SOURCE_KEYWORDS = (
 def _get_company_facts(site_config: SiteConfig | None = None) -> dict:
     """Load company facts from DB (site_config) with env fallback.
 
-    Phase-1 DI shim (#272): accepts an optional ``site_config``. When
-    omitted (the module-import call below has no SiteConfig in scope) it
-    falls back to the module global ``_mod.site_config`` — non-breaking.
+    #272 Phase-2d (option b): this helper keeps an OPTIONAL ``site_config``
+    with a module-global fallback specifically for the import-time call
+    (``GLAD_LABS_FACTS = _get_company_facts()`` below), which has no
+    SiteConfig in scope. The other validator functions went required;
+    this one cannot, because it runs at module import before any
+    SiteConfig exists. The module global is retained for exactly this path.
     """
     _sc = site_config if site_config is not None else _mod.site_config
     return {
@@ -1144,7 +1153,7 @@ def _check_code_block_density(
     content: str,
     topic: str,
     tags: list[str],
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> list[ValidationIssue]:
     """GH-234: warn when tech-tagged posts ship without enough code.
 
@@ -1152,10 +1161,10 @@ def _check_code_block_density(
     ``site_config`` so operators can tune per niche without redeploys.
     Returns warnings only — never critical.
 
-    Phase-1 DI shim (#272): ``site_config`` is threaded from
-    ``validate_content``; falls back to ``_mod.site_config`` when omitted.
+    #272 Phase-2d: ``site_config`` is REQUIRED — threaded from
+    ``validate_content``.
     """
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     if not _sc.get_bool("code_density_check_enabled", True):
         return []
     tech_tags = {
@@ -1237,7 +1246,8 @@ def validate_content(
     topic: str = "",
     tags: list[str] | None = None,
     niche: str | None = None,
-    site_config: SiteConfig | None = None,
+    *,
+    site_config: SiteConfig,
 ) -> ValidationResult:
     """
     Validate content against hard quality rules.
@@ -1245,11 +1255,12 @@ def validate_content(
     Returns ValidationResult with pass/fail and list of issues.
     Content fails if ANY critical issue is found.
 
-    site_config (Phase-1 DI shim, #272): optional SiteConfig instance.
-    When supplied it is threaded down to internal readers
-    (``_check_code_block_density`` + the inline threshold reads here);
-    when omitted it falls back to the module global ``_mod.site_config``.
-    Backwards compatible — existing callers need no change.
+    site_config (#272 Phase-2d): REQUIRED (keyword-only) SiteConfig
+    instance. Threaded down to internal readers
+    (``_check_code_block_density`` + ``is_validator_enabled`` rule
+    enable/scope checks). Callers thread the run-bound instance
+    (pipeline ``url_validation`` / ``cross_model_qa`` stages →
+    ``context.get("site_config")``).
 
     tags (GH-83 part b): optional list of the post's topic tags. When
     provided, the hallucinated-reference rule uses them to detect
@@ -1268,10 +1279,10 @@ def validate_content(
     # never reach validate_content().
     from services.validator_config import is_validator_enabled
 
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
 
     def _enabled(rule_name: str) -> bool:
-        return is_validator_enabled(rule_name, niche=niche)
+        return is_validator_enabled(rule_name, niche=niche, site_config=_sc)
 
     issues: list[ValidationIssue] = []
     title = title or ""
@@ -1790,20 +1801,22 @@ def validate_content(
 
 async def verify_content_urls(
     content: str,
-    site_config: SiteConfig | None = None,
+    *,
+    site_config: SiteConfig,
 ) -> list[ValidationIssue]:
     """Extract all URLs from content and verify they resolve.
 
     Returns a list of ValidationIssues for dead/broken links.
     This is async because it makes HTTP requests.
 
-    site_config (Phase-1 DI shim, #272): optional SiteConfig used to read
-    the ``site_domains`` skip-list; falls back to ``_mod.site_config``
-    when omitted. Backwards compatible.
+    site_config (#272 Phase-2d): REQUIRED (keyword-only) SiteConfig used
+    to read the ``site_domains`` skip-list. Callers thread the run-bound
+    instance (the ``url_validation`` pipeline stage →
+    ``context.get("site_config")``).
     """
     import httpx
 
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
 
     issues: list[ValidationIssue] = []
     # Extract markdown links: [text](url) and bare https:// URLs

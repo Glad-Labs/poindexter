@@ -34,6 +34,7 @@ import pytest_asyncio
 
 from services.internal_rag_source import InternalCandidate
 from services.niche_service import NicheService
+from services.site_config import SiteConfig
 from services.topic_batch_service import TopicBatchService
 
 pytestmark = [pytest.mark.asyncio(loop_scope="session"), pytest.mark.integration]
@@ -230,7 +231,7 @@ async def test_glad_labs_sweep_produces_a_batch(db_pool, monkeypatch):
 
     monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
 
     if batch is None:
@@ -294,7 +295,7 @@ async def test_resolve_advances_to_content_task(db_pool, monkeypatch):
             )
             cand_ids.append(str(row["id"]))
 
-    svc = TopicBatchService(db_pool)
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
     # Operator picks candidate 0 as the winner.
     await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=cand_ids)
 

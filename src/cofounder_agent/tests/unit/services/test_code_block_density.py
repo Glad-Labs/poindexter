@@ -152,6 +152,7 @@ class TestCodeBlockDensityGate:
             body,
             topic="python",
             tags=["python", "programming"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert density_issues, "Expected a code_block_density warning for prose-only tech post"
@@ -169,6 +170,7 @@ class TestCodeBlockDensityGate:
             body,
             topic="python",
             tags=["python", "programming"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert not density_issues, (
@@ -186,6 +188,7 @@ class TestCodeBlockDensityGate:
             body,
             topic="cooking",
             tags=["coffee", "lifestyle"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert not density_issues, (
@@ -200,6 +203,7 @@ class TestCodeBlockDensityGate:
             body,
             topic="python",
             tags=["python", "programming"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert not density_issues, (
@@ -221,6 +225,7 @@ class TestDensityGateEdgeCases:
             body,
             topic="python",
             tags=["python"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert not density_issues
@@ -237,6 +242,7 @@ class TestDensityGateEdgeCases:
             body,
             topic="python",
             tags=["python"],
+                    site_config=site_config,
         )
         ratio_issues = [
             i for i in result.issues
@@ -258,6 +264,7 @@ class TestDensityGateEdgeCases:
             body,
             topic="python",
             tags=["python"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert not density_issues
@@ -267,7 +274,8 @@ class TestDensityGateEdgeCases:
         # so callers that bypass validate_content() still get correct behavior.
         _seed_density_settings(enabled=False)
         issues = _check_code_block_density(
-            _prose_post(800), "python", ["python"]
+            _prose_post(800), "python", ["python"],
+            site_config=site_config,
         )
         assert issues == []
 
@@ -282,6 +290,7 @@ class TestDensityGateEdgeCases:
             body,
             topic="python",
             tags=["python"],
+                    site_config=site_config,
         )
         density_issues = [i for i in result.issues if i.category == "code_block_density"]
         assert density_issues, "Sanity: should have triggered the gate"

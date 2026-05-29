@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from services.site_config import SiteConfig
 
 from services.jobs.run_niche_topic_sweep import RunNicheTopicSweepJob
 
@@ -51,7 +52,7 @@ class TestRun:
         ns_cls = MagicMock()
         ns_cls.return_value.list_active = AsyncMock(return_value=[])
         with patch("services.niche_service.NicheService", ns_cls):
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {"_site_config": SiteConfig()})
         assert result.ok is True
         assert result.changes_made == 0
         assert "no active niches" in result.detail
@@ -68,7 +69,7 @@ class TestRun:
             patch("services.niche_service.NicheService", ns_cls),
             patch("services.topic_batch_service.TopicBatchService", svc_cls),
         ):
-            result = await job.run(MagicMock(), {"notify_on_new_batch": False})
+            result = await job.run(MagicMock(), {"notify_on_new_batch": False, "_site_config": SiteConfig()})
         assert result.ok is True
         assert result.changes_made == 0
         assert "skipped=1" in result.detail
@@ -83,7 +84,7 @@ class TestRun:
 
         notify_calls: list = []
 
-        async def fake_notify(pool, niche, snapshot):
+        async def fake_notify(pool, niche, snapshot, site_config):
             notify_calls.append((niche.slug, snapshot.id))
 
         svc_cls = MagicMock()
@@ -93,7 +94,7 @@ class TestRun:
             patch("services.topic_batch_service.TopicBatchService", svc_cls),
             patch("services.jobs.run_niche_topic_sweep._notify_new_batch", fake_notify),
         ):
-            result = await job.run(MagicMock(), {"notify_on_new_batch": True})
+            result = await job.run(MagicMock(), {"notify_on_new_batch": True, "_site_config": SiteConfig()})
 
         assert result.ok is True
         assert result.changes_made == 1
@@ -111,7 +112,7 @@ class TestRun:
 
         notify_calls: list = []
 
-        async def fake_notify(pool, niche, snapshot):
+        async def fake_notify(pool, niche, snapshot, site_config):
             notify_calls.append("called")
 
         with (
@@ -119,7 +120,7 @@ class TestRun:
             patch("services.topic_batch_service.TopicBatchService", svc_cls),
             patch("services.jobs.run_niche_topic_sweep._notify_new_batch", fake_notify),
         ):
-            result = await job.run(MagicMock(), {"notify_on_new_batch": False})
+            result = await job.run(MagicMock(), {"notify_on_new_batch": False, "_site_config": SiteConfig()})
 
         assert result.changes_made == 1
         assert notify_calls == []  # notify was suppressed
@@ -150,7 +151,7 @@ class TestRun:
                 new_callable=AsyncMock,
             ),
         ):
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {"_site_config": SiteConfig()})
 
         assert result.ok is False  # one niche errored
         assert "errors=1" in result.detail
@@ -175,7 +176,7 @@ class TestRun:
             patch("services.topic_batch_service.TopicBatchService", svc_cls),
             patch("services.jobs.run_niche_topic_sweep._notify_new_batch", boom),
         ):
-            result = await job.run(MagicMock(), {"notify_on_new_batch": True})
+            result = await job.run(MagicMock(), {"notify_on_new_batch": True, "_site_config": SiteConfig()})
 
         # changes_made still records the new batch even though notify failed.
         assert result.ok is True

@@ -548,7 +548,7 @@ async def test_publish_promote_triggers_r2_export() -> None:
 
     export_calls: list[tuple[Any, str]] = []
 
-    async def fake_export_post(pool: Any, slug: str) -> bool:
+    async def fake_export_post(pool: Any, slug: str, **kwargs: Any) -> bool:
         export_calls.append((pool, slug))
         return True
 

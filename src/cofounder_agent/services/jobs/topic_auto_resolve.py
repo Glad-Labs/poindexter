@@ -185,7 +185,10 @@ class TopicAutoResolveJob:
         # light).
         from services.topic_batch_service import TopicBatchService
 
-        svc = TopicBatchService(pool)
+        # #272 Phase-2d: TopicBatchService requires an explicit site_config.
+        # The scheduler seeds the run-bound instance into
+        # ``config["_site_config"]`` before invoking the job.
+        svc = TopicBatchService(pool, site_config=config["_site_config"])
         resolved_count = 0
         errors: list[str] = []
 

@@ -422,7 +422,10 @@ class MultiModelQA:
         gate_states = await self._load_gate_states()
 
         # 1. Programmatic validation (always runs, fast, deterministic)
-        validation = validate_content(title, content, topic)
+        # #272 Phase-2d: validate_content requires an explicit site_config.
+        validation = validate_content(
+            title, content, topic, site_config=self._site_config,
+        )
         validator_review = ReviewerResult(
             reviewer="programmatic_validator",
             approved=validation.passed,
@@ -576,7 +579,9 @@ class MultiModelQA:
         else:
             try:
                 from services.content_validator import verify_content_urls
-                url_issues = await verify_content_urls(content)
+                url_issues = await verify_content_urls(
+                    content, site_config=self._site_config,
+                )
                 dead_links = [i for i in url_issues if i.category == "dead_link"]
 
                 if dead_links:

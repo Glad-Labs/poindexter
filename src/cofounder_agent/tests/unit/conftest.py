@@ -165,15 +165,20 @@ _SHARED_TEST_MODULES = (
     # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
     # share. Tests pass ``site_config=`` to ``embed_text`` /
     # ``goal_vector_for`` / ``llm_final_score`` (and their fakes accept it).
-    "services.topic_batch_service",
+    # ``services.topic_batch_service`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2d); no module-level site_config attr to share.
+    # Tests construct ``TopicBatchService(pool, site_config=SiteConfig())``.
     "services.database_service",
     # ``services.quality_scorers`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the QualityDimensions dataclass.
-    "services.quality_service",
-    "services.validator_config",
+    # ``services.quality_service`` + ``services.validator_config`` removed from
+    # _SHARED_TEST_MODULES 2026-05-29 (#272 Phase-2d); no module-level
+    # site_config attr to share. Tests construct
+    # ``UnifiedQualityService(site_config=...)`` and pass ``site_config=`` to
+    # ``is_validator_enabled`` / ``UnifiedQualityService._score_llm_patterns``.
     "services.template_runner",
     # ``services.pipeline_architect`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
@@ -200,7 +205,10 @@ _SHARED_TEST_MODULES = (
     # (#272 leaf batch 3); no module-level site_config attr to share. Tests
     # construct ``RevalidationService(site_config=...)`` directly (or call
     # the back-compat free-function wrappers with an explicit site_config).
-    "services.static_export_service",
+    # ``services.static_export_service`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2d); no module-level site_config attr to share.
+    # Tests pass ``site_config=`` to ``export_post`` / ``export_full_rebuild`` /
+    # ``_upload_json``.
     # ``services.telegram_config`` migrated to constructor DI 2026-05-28
     # (SiteConfig DI migration PR 3); no module-level site_config attr
     # to share. Tests construct ``TelegramConfig(site_config=...)``

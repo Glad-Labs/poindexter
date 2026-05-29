@@ -183,7 +183,9 @@ def sweep(niche: str) -> None:
                 if not n:
                     raise click.ClickException(f"unknown niche: {niche}")
 
-                svc = TopicBatchService(pool)
+                # #272 Phase-2d: TopicBatchService requires an explicit
+                # site_config — pass the container's wired instance.
+                svc = TopicBatchService(pool, site_config=container.site_config)
                 snapshot = await svc.run_sweep(niche_id=n.id)
 
                 click.echo(f"Niche: {n.slug} ({n.name})")
@@ -252,7 +254,12 @@ def show_batch(niche: str) -> None:
             if bid is None:
                 click.echo(f"No open batch for niche {niche}.")
                 return
-            view = await TopicBatchService(pool).show_batch(batch_id=bid)
+            # #272 Phase-2d: TopicBatchService requires an explicit
+            # site_config — build one from the lifespan container.
+            async with container_for_cli(pool) as container:
+                view = await TopicBatchService(
+                    pool, site_config=container.site_config,
+                ).show_batch(batch_id=bid)
             click.echo(f"Batch {view.id} (status={view.status})")
             for c in view.candidates:
                 marker = (
@@ -295,13 +302,15 @@ def rank_batch(batch_id: UUID, order: str) -> None:
         tokens = [s.strip() for s in order.split(",") if s.strip()]
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            svc = TopicBatchService(pool)
-            view = await svc.show_batch(batch_id=batch_id)
-            ids = _resolve_order_tokens(tokens, view.candidates)
-            await svc.rank_batch(
-                batch_id=batch_id, ordered_candidate_ids=ids,
-            )
-            click.echo(f"Ranked {len(ids)} candidates in batch {batch_id}")
+            # #272 Phase-2d: TopicBatchService requires an explicit site_config.
+            async with container_for_cli(pool) as container:
+                svc = TopicBatchService(pool, site_config=container.site_config)
+                view = await svc.show_batch(batch_id=batch_id)
+                ids = _resolve_order_tokens(tokens, view.candidates)
+                await svc.rank_batch(
+                    batch_id=batch_id, ordered_candidate_ids=ids,
+                )
+                click.echo(f"Ranked {len(ids)} candidates in batch {batch_id}")
         finally:
             await pool.close()
 
@@ -328,10 +337,14 @@ def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            await TopicBatchService(pool).edit_winner(
-                batch_id=batch_id, topic=topic, angle=angle,
-            )
-            click.echo("Edited winner.")
+            # #272 Phase-2d: TopicBatchService requires an explicit site_config.
+            async with container_for_cli(pool) as container:
+                await TopicBatchService(
+                    pool, site_config=container.site_config,
+                ).edit_winner(
+                    batch_id=batch_id, topic=topic, angle=angle,
+                )
+                click.echo("Edited winner.")
         finally:
             await pool.close()
 
@@ -353,8 +366,12 @@ def resolve_batch(batch_id: UUID) -> None:
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            await TopicBatchService(pool).resolve_batch(batch_id=batch_id)
-            click.echo(f"Resolved {batch_id}")
+            # #272 Phase-2d: TopicBatchService requires an explicit site_config.
+            async with container_for_cli(pool) as container:
+                await TopicBatchService(
+                    pool, site_config=container.site_config,
+                ).resolve_batch(batch_id=batch_id)
+                click.echo(f"Resolved {batch_id}")
         finally:
             await pool.close()
 
@@ -377,10 +394,14 @@ def reject_batch(batch_id: UUID, reason: str) -> None:
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            await TopicBatchService(pool).reject_batch(
-                batch_id=batch_id, reason=reason,
-            )
-            click.echo(f"Rejected {batch_id}")
+            # #272 Phase-2d: TopicBatchService requires an explicit site_config.
+            async with container_for_cli(pool) as container:
+                await TopicBatchService(
+                    pool, site_config=container.site_config,
+                ).reject_batch(
+                    batch_id=batch_id, reason=reason,
+                )
+                click.echo(f"Rejected {batch_id}")
         finally:
             await pool.close()
 

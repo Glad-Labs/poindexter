@@ -26,6 +26,7 @@ import pytest
 from services.jobs.static_export_reconciliation import (
     StaticExportReconciliationJob,
 )
+from services.site_config import SiteConfig
 
 
 def _make_pool(db_count: int, db_latest: datetime | None) -> Any:
@@ -104,11 +105,13 @@ class TestStaticExportReconciliation:
             "services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
+            _sc = SiteConfig()
             result = await job.run(
                 pool,
                 config={
                     "alert_on_drift": True,
                     "r2_manifest_url": "https://example.test/static/manifest.json",
+                    "_site_config": _sc,
                 },
             )
 
@@ -117,7 +120,7 @@ class TestStaticExportReconciliation:
         assert result.changes_made == 1
         assert result.metrics["drift"] == 1
         assert result.metrics["rebuild_ok"] == 1
-        rebuild_mock.assert_awaited_once_with(pool)
+        rebuild_mock.assert_awaited_once_with(pool, site_config=_sc)
         finding_mock.assert_called_once()
         finding_kwargs = finding_mock.call_args.kwargs
         assert finding_kwargs["dedup_key"] == "r2_static_drift"
@@ -136,17 +139,19 @@ class TestStaticExportReconciliation:
             "services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
+            _sc = SiteConfig()
             result = await job.run(
                 pool,
                 config={
                     "alert_on_drift": True,
                     "r2_manifest_url": "https://example.test/static/manifest.json",
+                    "_site_config": _sc,
                 },
             )
 
         # Rebuild failed in this scenario, so ok=False (matches rebuild outcome)
         assert result.ok is False
-        rebuild_mock.assert_awaited_once_with(pool)
+        rebuild_mock.assert_awaited_once_with(pool, site_config=_sc)
         # Finding should be critical when rebuild also failed
         finding_kwargs = finding_mock.call_args.kwargs
         assert finding_kwargs["severity"] == "critical"
@@ -170,6 +175,7 @@ class TestStaticExportReconciliation:
                 config={
                     "alert_on_drift": False,
                     "r2_manifest_url": "https://example.test/static/manifest.json",
+                    "_site_config": SiteConfig(),
                 },
             )
 

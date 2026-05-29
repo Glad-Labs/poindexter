@@ -39,17 +39,12 @@ from services.topic_ranking import (
 )
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
+# setter were removed. ``TopicBatchService`` now REQUIRES a keyword-only
+# ``site_config`` in its constructor; construction sites thread it
+# (jobs read ``config.get("_site_config")``, the CLI passes
+# ``container.site_config``, tests pass ``SiteConfig()``). The internal
+# ``topic_ranking`` helpers receive ``self._site_config``.
 
 logger = get_logger(__name__)
 
@@ -100,18 +95,11 @@ class BatchView:
 
 
 class TopicBatchService:
-    def __init__(self, pool, *, site_config: SiteConfig | None = None):
+    def __init__(self, pool, *, site_config: SiteConfig):
         self._pool = pool
         self._niche_svc = NicheService(pool)
-        # Phase-1 DI shim (#272): prefer the injected SiteConfig, fall back
-        # to the lifespan-bound module global (still wired via
-        # set_site_config) for back-compat with existing positional
-        # ``TopicBatchService(pool)`` constructions. Phase-2 removes the
-        # module global + this fallback entirely.
-        import services.topic_batch_service as _mod
-        self._site_config = (
-            site_config if site_config is not None else _mod.site_config
-        )
+        # #272 Phase-2d: injection is mandatory — no module-global fallback.
+        self._site_config = site_config
 
     async def run_sweep(self, *, niche_id: UUID) -> BatchSnapshot | None:
         niche = await self._niche_svc.get_by_id(niche_id)
@@ -160,9 +148,9 @@ class TopicBatchService:
             from services.topic_ranking import llm_final_score
 
             goals = await self._niche_svc.get_goals(niche.id)
-            # #272 Phase-2b: topic_ranking no longer carries a lifespan-bound
-            # module global — pass this module's own wired site_config.
-            scored = await llm_final_score(top10, goals, site_config=site_config)
+            # #272 Phase-2d: topic_ranking has no module global — pass the
+            # DI-injected ``self._site_config``.
+            scored = await llm_final_score(top10, goals, site_config=self._site_config)
 
             ranked = sorted(
                 scored.values(), key=lambda c: -(c.llm_score or 0)
@@ -333,9 +321,9 @@ class TopicBatchService:
         ):
             return []
         from services.internal_rag_source import InternalRagSource
-        # ``topic_batch_service`` keeps its own lifespan-bound module-level
-        # ``site_config`` (still wired via WIRED_MODULES); pass it down to the
-        # migrated ``InternalRagSource`` (caller-bridge, #272 leaf batch 5).
+        # Pass the DI-injected ``self._site_config`` down to the migrated
+        # ``InternalRagSource`` (caller-bridge, #272 leaf batch 5 →
+        # Phase-2d: topic_batch_service is now required-DI, no module global).
         rag = InternalRagSource(self._pool, site_config=self._site_config)
         # Per spec: per-kind limit defaults to 4, all 6 valid kinds
         # except git_commit (which still needs git-log plumbing).
@@ -427,10 +415,10 @@ class TopicBatchService:
         from services.topic_ranking import embed_text
 
         goals = await self._niche_svc.get_goals(niche.id)
-        # #272 Phase-2b: thread this module's wired site_config into the
+        # #272 Phase-2d: thread the DI-injected site_config into the
         # topic_ranking helpers (no module global there anymore).
         goal_vecs = {
-            g.goal_type: await goal_vector_for(g.goal_type, site_config=site_config)
+            g.goal_type: await goal_vector_for(g.goal_type, site_config=self._site_config)
             for g in goals
         }
 
@@ -442,7 +430,7 @@ class TopicBatchService:
             # operator to see + reject.
             if not text or not text.strip():
                 return 0.0, {g.goal_type: 0.0 for g in goals}
-            vec = await embed_text(text, site_config=site_config)
+            vec = await embed_text(text, site_config=self._site_config)
             raw, breakdown = weighted_cosine_score(vec, goal_vecs, goals)
             return apply_decay(score=raw, decay_factor=decay), breakdown
 

@@ -66,7 +66,19 @@ WIRED_MODULES: tuple[str, ...] = (
     # build a per-call instance from a lifespan-bound SiteConfig
     # (caller-bridge); the back-compat free-function wrappers now require an
     # explicit ``site_config=`` kwarg.
-    "services.static_export_service",
+    # ``services.static_export_service`` + ``services.quality_service`` +
+    # ``services.validator_config`` + ``services.topic_batch_service`` removed
+    # from WIRED_MODULES 2026-05-29 (#272 Phase-2d). Their module-level
+    # ``site_config`` globals + ``set_site_config`` setters are deleted;
+    # injection is now mandatory. ``export_post`` / ``export_full_rebuild`` /
+    # ``_upload_json`` take a required ``site_config=``; ``UnifiedQualityService``
+    # / ``TopicBatchService`` take a required ctor ``site_config=``;
+    # ``is_validator_enabled`` + ``_legacy_first_person_bypass`` take a required
+    # keyword ``site_config=``. Callers thread the run-bound instance
+    # (publish_service ``_sc`` / the CMS rebuild route's
+    # ``get_site_config_dependency`` / jobs' ``config["_site_config"]`` / the CLI
+    # ``container.site_config`` / pipeline stages via
+    # ``context.get("site_config")``).
     # ``services.telegram_config`` migrated to constructor DI 2026-05-28
     # (SiteConfig DI migration PR 3). Reach it via
     # ``container.telegram_config`` instead of importing free functions.
@@ -106,7 +118,14 @@ WIRED_MODULES: tuple[str, ...] = (
     # Callers thread the run-bound instance (pipeline stages →
     # ``context.get("site_config")``; the ``two_pass_writer`` atom → its
     # run-bound SiteConfig; ``UnifiedQualityService`` → its own
-    # ``self._site_config`` / the still-wired ``quality_service`` global).
+    # ``self._site_config``).
+    # ``services.content_validator`` STAYS wired (#272 Phase-2d): its public
+    # validator functions (``validate_content`` / ``_check_code_block_density``
+    # / ``verify_content_urls``) now require an explicit ``site_config=``, but
+    # the module global + ``set_site_config`` are retained ONLY for the
+    # import-time ``GLAD_LABS_FACTS = _get_company_facts()`` read (no
+    # SiteConfig exists at import). That global still needs wiring, so the
+    # module remains in this list (option b in the migration plan).
     "services.content_validator",
     # ``services.research_service`` migrated to required-keyword DI
     # 2026-05-29 (#272 Phase-2b). ``ResearchService.__init__`` /
@@ -133,21 +152,19 @@ WIRED_MODULES: tuple[str, ...] = (
     # ``services.topic_ranking`` migrated to required-keyword DI
     # 2026-05-29 (#272 Phase-2b). ``embed_text`` / ``goal_vector_for`` /
     # ``llm_final_score`` (and the internal ``_ollama_chat_json``) now
-    # require a ``site_config=`` kwarg; ``topic_batch_service`` (still
-    # wired) and ``internal_rag_source`` / ``ai_content_generator`` (own
-    # module globals) thread their instances. No module-level attr remains.
+    # require a ``site_config=`` kwarg; ``topic_batch_service`` (now also
+    # required-DI, #272 Phase-2d) and ``internal_rag_source`` /
+    # ``ai_content_generator`` thread their instances. No module-level attr
+    # remains.
     "services.database_service",
     # ``services.quality_scorers`` removed from WIRED_MODULES 2026-05-29
     # (#272 Phase-2c) — see the batch note above.
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup). ``QualityDimensions`` now requires a ``site_config``
     # field (typed Optional for dataclass field-ordering, required at runtime);
-    # construction sites in ``quality_service`` thread that module's own
-    # still-wired ``site_config`` global.
-    "services.quality_service",
-    "services.validator_config",
+    # construction sites in ``quality_service`` thread that module's injected
+    # ``self._site_config`` (#272 Phase-2d removed the quality_service global).
     "services.template_runner",
-    "services.topic_batch_service",
     # ``services.pipeline_architect`` removed from WIRED_MODULES 2026-05-29
     # (#272 Phase-2c) — see the batch note above.
     "services.prompt_manager",

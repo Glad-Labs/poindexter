@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from services.site_config import SiteConfig
 from services.static_export_service import (
     _build_json_feed,
     _build_sitemap,
@@ -21,6 +22,22 @@ from services.static_export_service import (
     export_full_rebuild,
     export_post,
 )
+
+
+def _seeded_sc() -> SiteConfig:
+    """SiteConfig seeded with the brand keys the export entrypoints read.
+
+    #272 Phase-2d: ``export_post`` / ``export_full_rebuild`` require an
+    explicit ``site_config`` (no module global). Tests pass this instance.
+    """
+    sc = SiteConfig()
+    sc._config.update({
+        "public_site_url": "https://example.com",
+        "site_url": "https://example.com",
+        "site_title": "Test Site",
+        "site_name": "Test Site",
+    })
+    return sc
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -248,7 +265,9 @@ class TestExportPost:
             mock_upload.return_value = "https://r2.dev/static/test.json"
 
             from services.static_export_service import export_post
-            result = await export_post(mock_pool, "test-post-title-abc123")
+            result = await export_post(
+                mock_pool, "test-post-title-abc123", site_config=_seeded_sc(),
+            )
 
             assert result is True
             # Should upload: individual post, index, feed, sitemap, manifest = 5 calls
@@ -260,7 +279,9 @@ class TestExportPost:
 
         with patch("services.static_export_service._upload_json", new_callable=AsyncMock):
             from services.static_export_service import export_post
-            result = await export_post(mock_pool, "nonexistent-slug")
+            result = await export_post(
+                mock_pool, "nonexistent-slug", site_config=_seeded_sc(),
+            )
 
             assert result is False
 
@@ -403,7 +424,9 @@ class TestExportPostFailurePaths:
             return None  # signal upload failure
 
         with patch("services.static_export_service._upload_json", side_effect=fake_upload):
-            result = await export_post(mock_pool, "test-post-title-abc123")
+            result = await export_post(
+                mock_pool, "test-post-title-abc123", site_config=_seeded_sc(),
+            )
         assert result is False
 
     @pytest.mark.asyncio
@@ -416,7 +439,7 @@ class TestExportPostFailurePaths:
 
         broken_pool.acquire = _explode
 
-        result = await export_post(broken_pool, "any-slug")
+        result = await export_post(broken_pool, "any-slug", site_config=_seeded_sc())
         assert result is False
 
 
@@ -462,15 +485,9 @@ class TestExportFullRebuild:
         authors = [{"id": "a1", "name": "Matt"}]
         pool = _make_full_rebuild_pool(posts, cats, authors)
 
-        with patch("services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload, \
-             patch("services.static_export_service.site_config") as mock_sc:
+        with patch("services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload:
             mock_upload.return_value = "https://r2/x"
-            mock_sc.get.side_effect = lambda k, d=None: None
-            mock_sc.require.side_effect = lambda k: {
-                "site_url": "https://example.com",
-                "site_name": "Test Site",
-            }[k]
-            result = await export_full_rebuild(pool)
+            result = await export_full_rebuild(pool, site_config=_seeded_sc())
 
         assert result["success"] is True
         assert result["posts_exported"] == 3
@@ -493,14 +510,8 @@ class TestExportFullRebuild:
                 return None
             return f"https://r2/{key}"
 
-        with patch("services.static_export_service._upload_json", side_effect=fake_upload), \
-             patch("services.static_export_service.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d=None: None
-            mock_sc.require.side_effect = lambda k: {
-                "site_url": "https://example.com",
-                "site_name": "Test Site",
-            }[k]
-            result = await export_full_rebuild(pool)
+        with patch("services.static_export_service._upload_json", side_effect=fake_upload):
+            result = await export_full_rebuild(pool, site_config=_seeded_sc())
 
         assert result["success"] is False
         assert any("fail" in e for e in result["errors"])
@@ -515,13 +526,7 @@ class TestExportFullRebuild:
 
         broken_pool.acquire = _explode
 
-        with patch("services.static_export_service.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d=None: None
-            mock_sc.require.side_effect = lambda k: {
-                "site_url": "https://example.com",
-                "site_name": "Test Site",
-            }[k]
-            result = await export_full_rebuild(broken_pool)
+        result = await export_full_rebuild(broken_pool, site_config=_seeded_sc())
 
         assert result["success"] is False
         assert "error" in result

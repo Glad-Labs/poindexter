@@ -696,7 +696,9 @@ async def publish_post_from_task(
             try:
                 from services.static_export_service import export_post
 
-                promote_export_success = await export_post(pool, existing["slug"])
+                promote_export_success = await export_post(
+                    pool, existing["slug"], site_config=_sc,
+                )
                 if not promote_export_success:
                     logger.warning(
                         "[STATIC_EXPORT] Promote-path export_post returned "
@@ -1188,7 +1190,7 @@ async def publish_post_from_task(
             from services.static_export_service import export_post
 
             _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-            static_export_success = await export_post(_pool, slug)
+            static_export_success = await export_post(_pool, slug, site_config=_sc)
             if static_export_success:
                 logger.info("[STATIC_EXPORT] Synchronous export complete for %s", slug)
             else:
@@ -1664,7 +1666,7 @@ async def fire_post_distribution_hooks(
         try:
             from services.static_export_service import export_post
             _spawn_background(
-                export_post(pool, slug),
+                export_post(pool, slug, site_config=_sc),
                 name=f"static_export({slug})",
             )
             fired["hooks"].append("static_export")

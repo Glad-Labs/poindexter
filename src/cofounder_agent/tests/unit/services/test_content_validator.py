@@ -7,6 +7,10 @@ fabricated quotes, and company fact validation.
 
 import pytest
 
+from services.site_config import SiteConfig
+
+_SC = SiteConfig()
+
 from services.content_validator import (
     GLAD_LABS_FACTS,
     ValidationResult,
@@ -22,8 +26,7 @@ class TestValidateContentClean:
             "How to Use FastAPI",
             "FastAPI is a modern web framework for building APIs with Python. "
             "It provides automatic documentation and type checking.",
-            "FastAPI",
-        )
+            "FastAPI", site_config=_SC)
         assert result.passed is True
         assert result.critical_count == 0
 
@@ -34,7 +37,7 @@ class TestValidateContentClean:
             "Each layer is cached, making subsequent builds faster. "
             "The best practice is to use multi-stage builds to reduce image size. "
         ) * 10  # ~400 words
-        result = validate_content("Docker Best Practices", content, "Docker")
+        result = validate_content("Docker Best Practices", content, "Docker", site_config=_SC)
         assert result.passed is True
 
 
@@ -43,13 +46,13 @@ class TestFakeNames:
 
     def test_catches_fake_ceo(self):
         content = "Sarah Johnson, CEO at some company, said this was transformative."
-        result = validate_content("AI Trends", content, "AI")
+        result = validate_content("AI Trends", content, "AI", site_config=_SC)
         assert any("fabricated" in i.description.lower() or "name" in i.description.lower()
                     for i in result.issues)
 
     def test_catches_fake_doctor(self):
         content = "Dr. Smith Williams published a groundbreaking study on AI."
-        result = validate_content("AI Research", content, "AI")
+        result = validate_content("AI Research", content, "AI", site_config=_SC)
         assert any("name" in i.description.lower() or "fabricated" in i.description.lower()
                     for i in result.issues)
 
@@ -59,7 +62,7 @@ class TestFakeStatistics:
 
     def test_catches_fake_percentage(self):
         content = "Studies show a 47% reduction in deployment time when using Docker."
-        result = validate_content("Docker", content, "Docker")
+        result = validate_content("Docker", content, "Docker", site_config=_SC)
         has_stat_warning = any("statistic" in i.description.lower() or "percentage" in i.description.lower()
                               for i in result.issues)
         # This should flag as a potential hallucinated stat
@@ -67,7 +70,7 @@ class TestFakeStatistics:
 
     def test_catches_fake_research_firm(self):
         content = "According to a 2024 study by McKinsey, AI adoption has increased 300%."
-        result = validate_content("AI Adoption", content, "AI")
+        result = validate_content("AI Adoption", content, "AI", site_config=_SC)
         assert any("statistic" in i.description.lower() or "study" in i.description.lower() or "citation" in i.description.lower()
                     for i in result.issues)
 
@@ -84,7 +87,7 @@ class TestCompanyFactValidation:
     def test_catches_impossible_age_claim(self):
         company = GLAD_LABS_FACTS["company_name"]
         content = f"{company} has been operating for over 10 years in the AI space."
-        result = validate_content("About Us", content, "company")
+        result = validate_content("About Us", content, "company", site_config=_SC)
         assert any("claim" in i.description.lower() or "years" in i.description.lower()
                     for i in result.issues)
 
@@ -94,7 +97,7 @@ class TestFabricatedQuotes:
 
     def test_catches_attributed_quote(self):
         content = '"This changes everything for our industry," says Marcus Chen, VP of Engineering.'
-        result = validate_content("Industry News", content, "tech")
+        result = validate_content("Industry News", content, "tech", site_config=_SC)
         assert any("quote" in i.description.lower() or "fabricated" in i.description.lower() or "name" in i.description.lower()
                     for i in result.issues)
 
@@ -104,34 +107,34 @@ class TestImagePlaceholders:
 
     def test_catches_image_placeholder(self):
         content = "Here is some text.\n[IMAGE-1: A futuristic cityscape with AI robots]\nMore text follows."
-        result = validate_content("AI Future", content, "AI")
+        result = validate_content("AI Future", content, "AI", site_config=_SC)
         assert not result.passed
         assert any("placeholder" in i.description.lower() for i in result.issues)
         assert any(i.category == "image_placeholder" for i in result.issues)
 
     def test_catches_figure_placeholder(self):
         content = "The architecture is shown below.\n[FIGURE: System architecture diagram]\nAs you can see..."
-        result = validate_content("Architecture", content, "tech")
+        result = validate_content("Architecture", content, "tech", site_config=_SC)
         assert any(i.category == "image_placeholder" for i in result.issues)
 
     def test_catches_diagram_placeholder(self):
         content = "[DIAGRAM: Flow chart showing the data pipeline]"
-        result = validate_content("Pipeline", content, "tech")
+        result = validate_content("Pipeline", content, "tech", site_config=_SC)
         assert any(i.category == "image_placeholder" for i in result.issues)
 
     def test_catches_screenshot_placeholder(self):
         content = "[SCREENSHOT: Dashboard showing metrics]"
-        result = validate_content("Metrics", content, "tech")
+        result = validate_content("Metrics", content, "tech", site_config=_SC)
         assert any(i.category == "image_placeholder" for i in result.issues)
 
     def test_no_false_positive_on_markdown_links(self):
         content = "Check out [this article](https://example.com) for more details."
-        result = validate_content("Links", content, "tech")
+        result = validate_content("Links", content, "tech", site_config=_SC)
         assert not any(i.category == "image_placeholder" for i in result.issues)
 
     def test_image_placeholder_is_critical(self):
         content = "[IMAGE-1: A beautiful sunset over the ocean]"
-        result = validate_content("Sunset", content, "nature")
+        result = validate_content("Sunset", content, "nature", site_config=_SC)
         image_issues = [i for i in result.issues if i.category == "image_placeholder"]
         assert all(i.severity == "critical" for i in image_issues)
 
@@ -141,41 +144,41 @@ class TestUnresolvedPlaceholders:
 
     def test_catches_curly_brace_template(self):
         content = "Related reading: [posts/{slug}] on this topic."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert not result.passed
         assert any(i.category == "unresolved_placeholder" for i in result.issues)
 
     def test_catches_bare_uuid_reference(self):
         content = "Related: [posts/a1b2c3d4-e5f6-7890-abcd-1234567890ef] explains more."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert not result.passed
         assert any(i.category == "unresolved_placeholder" for i in result.issues)
 
     def test_catches_bare_slug_reference(self):
         content = "More on this in [posts/llm-workforce-thesis]."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "unresolved_placeholder" for i in result.issues)
 
     def test_catches_post_id_variant(self):
         content = "Cross-reference: [POST_ID: 12345] for details."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "unresolved_placeholder" for i in result.issues)
 
     def test_does_not_fire_on_resolved_markdown_link(self):
         # Real Markdown link: bracket immediately followed by paren.
         content = "Read [posts/llm-workforce-thesis](/posts/llm-workforce-thesis) for more."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert not any(i.category == "unresolved_placeholder" for i in result.issues)
 
     def test_does_not_fire_on_prose_brackets(self):
         # A real sentence with brackets but no posts/ path.
         content = "The system [logs everything] for audit purposes."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert not any(i.category == "unresolved_placeholder" for i in result.issues)
 
     def test_unresolved_placeholder_is_critical(self):
         content = "See [posts/llm-workforce-thesis] for context."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         ph_issues = [i for i in result.issues if i.category == "unresolved_placeholder"]
         assert ph_issues, "expected at least one unresolved_placeholder issue"
         assert all(i.severity == "critical" for i in ph_issues)
@@ -186,12 +189,12 @@ class TestLeakedImagePrompts:
 
     def test_catches_italic_image_prompt(self):
         content = "Here is the header image.\n*A split-screen comparison showing old vs new architecture with dramatic lighting*"
-        result = validate_content("Architecture", content, "tech")
+        result = validate_content("Architecture", content, "tech", site_config=_SC)
         assert any(i.category == "leaked_image_prompt" for i in result.issues)
 
     def test_no_false_positive_on_short_italic(self):
         content = "This is *important* text."
-        result = validate_content("Test", content, "test")
+        result = validate_content("Test", content, "test", site_config=_SC)
         assert not any(i.category == "leaked_image_prompt" for i in result.issues)
 
 
@@ -199,17 +202,17 @@ class TestValidationResult:
     """Test the ValidationResult data structure."""
 
     def test_passed_when_no_critical(self):
-        result = validate_content("Clean Title", "This is clean content with no issues.", "topic")
+        result = validate_content("Clean Title", "This is clean content with no issues.", "topic", site_config=_SC)
         assert result.passed is True
         assert isinstance(result.issues, list)
 
     def test_score_penalty_calculation(self):
-        result = validate_content("Clean Title", "Clean content.", "topic")
+        result = validate_content("Clean Title", "Clean content.", "topic", site_config=_SC)
         assert result.score_penalty >= 0
         assert result.score_penalty <= 100
 
     def test_critical_count_property(self):
-        result = validate_content("Clean", "[IMAGE-1: a photo]", "topic")
+        result = validate_content("Clean", "[IMAGE-1: a photo]", "topic", site_config=_SC)
         assert result.critical_count >= 1
 
     def test_warning_count_property(self):
@@ -220,11 +223,11 @@ class TestValidationResult:
             "AWS makes deployment easy. AWS (Amazon Web Services) keeps "
             "adding services."
         )
-        result = validate_content("Clean", content, "topic")
+        result = validate_content("Clean", content, "topic", site_config=_SC)
         assert result.warning_count >= 1
 
     def test_score_penalty_critical_is_10(self):
-        result = validate_content("Clean", "[IMAGE-1: photo]", "topic")
+        result = validate_content("Clean", "[IMAGE-1: photo]", "topic", site_config=_SC)
         # 1 critical → at least 10 penalty
         assert result.score_penalty >= 10
 
@@ -235,7 +238,7 @@ class TestValidationResult:
             "AWS makes deployment easy. AWS (Amazon Web Services) keeps "
             "adding services."
         )
-        result = validate_content("Clean", content, "topic")
+        result = validate_content("Clean", content, "topic", site_config=_SC)
         if result.warning_count > 0 and result.critical_count == 0:
             # Penalty should be a multiple of 3
             assert result.score_penalty % 3 == 0
@@ -249,17 +252,17 @@ class TestValidationResult:
 class TestHallucinatedLinks:
     def test_catches_our_guide_reference(self):
         content = "For more details, check out our guide on building scalable systems."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "hallucinated_link" for i in result.issues)
 
     def test_catches_as_we_discussed_in_previous(self):
         content = "As we discussed in a previous post, this approach has tradeoffs."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "hallucinated_link" for i in result.issues)
 
     def test_catches_check_out_our_post(self):
         content = "Check out our post on Docker best practices for more info."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "hallucinated_link" for i in result.issues)
 
     def test_hallucinated_link_is_critical(self):
@@ -267,7 +270,7 @@ class TestHallucinatedLinks:
         # is a fail" direction — a link that looks valid but leads
         # nowhere is functionally a lie to the reader.
         content = "Read our guide on optimization techniques."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         link_issues = [i for i in result.issues if i.category == "hallucinated_link"]
         assert link_issues, "expected a hallucinated_link issue"
         assert all(i.severity == "critical" for i in link_issues)
@@ -281,22 +284,22 @@ class TestHallucinatedLinks:
 class TestBrandContradictions:
     def test_catches_openai_pricing_reference(self):
         content = "Compared to OpenAI API pricing, the local model is cheaper."
-        result = validate_content("Title", content, "AI")
+        result = validate_content("Title", content, "AI", site_config=_SC)
         assert any(i.category == "brand_contradiction" for i in result.issues)
 
     def test_catches_anthropic_subscription(self):
         content = "After paying for the Anthropic API subscription, costs added up fast."
-        result = validate_content("Title", content, "AI")
+        result = validate_content("Title", content, "AI", site_config=_SC)
         assert any(i.category == "brand_contradiction" for i in result.issues)
 
     def test_catches_paying_per_token(self):
         content = "Instead of paying per token to OpenAI, we run everything locally."
-        result = validate_content("Title", content, "AI")
+        result = validate_content("Title", content, "AI", site_config=_SC)
         assert any(i.category == "brand_contradiction" for i in result.issues)
 
     def test_brand_contradiction_is_warning(self):
         content = "OpenAI API costs eat into margins."
-        result = validate_content("Title", content, "AI")
+        result = validate_content("Title", content, "AI", site_config=_SC)
         contradictions = [i for i in result.issues if i.category == "brand_contradiction"]
         assert all(i.severity == "warning" for i in contradictions)
 
@@ -309,32 +312,32 @@ class TestBrandContradictions:
 class TestFabricatedExperiences:
     def test_catches_sat_in_meeting(self):
         content = "Last week I sat in a meeting with a startup founder who needed help."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "fabricated_experience" for i in result.issues)
 
     def test_catches_at_my_company(self):
         content = "At my current company, we use this exact pattern."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "fabricated_experience" for i in result.issues)
 
     def test_catches_client_of_mine(self):
         content = "A client of mine asked about this issue last week."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "fabricated_experience" for i in result.issues)
 
     def test_catches_recent_anecdote(self):
         content = "Last month we deployed this to production and it worked."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "fabricated_experience" for i in result.issues)
 
     def test_catches_dollar_amount_anecdote(self):
         content = "It saved us $1,200/month in compute costs."
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "fabricated_experience" for i in result.issues)
 
     def test_catches_fabricated_dialogue(self):
         content = '"This is a great approach for our use case," he said with a smile.'
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "fabricated_experience" for i in result.issues)
 
 
@@ -348,8 +351,7 @@ class TestTitleYearClaims:
         result = validate_content(
             "What I Learned in 5 Years of Building AI Systems",
             "Some content here.",
-            "AI",
-        )
+            "AI", site_config=_SC)
         # Critical because company is < 1 year old
         assert any(
             i.category == "glad_labs_claim" and "year" in i.description.lower()
@@ -360,15 +362,14 @@ class TestTitleYearClaims:
         result = validate_content(
             "Three Years of Lessons from Production",
             "Some content here.",
-            "tech",
-        )
+            "tech", site_config=_SC)
         assert any(
             i.category == "glad_labs_claim" and "year" in i.description.lower()
             for i in result.issues
         )
 
     def test_does_not_flag_one_year(self):
-        result = validate_content("After 1 Year of Building", "content", "tech")
+        result = validate_content("After 1 Year of Building", "content", "tech", site_config=_SC)
         # Singular year is valid since company is ~1 year old
         year_claims = [
             i for i in result.issues
@@ -377,7 +378,7 @@ class TestTitleYearClaims:
         assert len(year_claims) == 0
 
     def test_numeric_year_claim_is_critical(self):
-        result = validate_content("10 Years of Wisdom", "content", "tech")
+        result = validate_content("10 Years of Wisdom", "content", "tech", site_config=_SC)
         year_issues = [
             i for i in result.issues
             if i.category == "glad_labs_claim" and "year" in i.description.lower()
@@ -396,14 +397,14 @@ class TestLateAcronymExpansion:
             "We use a CRM for tracking leads. The CRM integrates with our other tools. "
             "Our CRM (Customer Relationship Management) is essential to operations."
         )
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         assert any(i.category == "late_acronym_expansion" for i in result.issues)
 
     def test_does_not_flag_first_use_expansion(self):
         content = (
             "Our CRM (Customer Relationship Management) is essential. The CRM tracks leads."
         )
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         # Expansion was on first use, not flagged
         assert not any(i.category == "late_acronym_expansion" for i in result.issues)
 
@@ -412,7 +413,7 @@ class TestLateAcronymExpansion:
             "We rely on AWS for hosting. AWS provides everything. AWS makes deployment easy. "
             "AWS (Amazon Web Services) keeps adding services."
         )
-        result = validate_content("Title", content, "tech")
+        result = validate_content("Title", content, "tech", site_config=_SC)
         late_issues = [i for i in result.issues if i.category == "late_acronym_expansion"]
         # If matched, should be warning severity
         for i in late_issues:
@@ -451,35 +452,35 @@ class TestStripHtml:
 
 class TestEdgeCases:
     def test_empty_title_and_content(self):
-        result = validate_content("", "", "")
+        result = validate_content("", "", "", site_config=_SC)
         assert result.passed is True
         assert result.issues == []
 
     def test_none_title_treated_as_empty(self):
-        result = validate_content(None, "content here", "topic")  # type: ignore[arg-type]
+        result = validate_content(None, "content here", "topic", site_config=_SC)  # type: ignore[arg-type]
         assert isinstance(result, ValidationResult)
 
     def test_none_content_treated_as_empty(self):
-        result = validate_content("title", None, "topic")  # type: ignore[arg-type]
+        result = validate_content("title", None, "topic", site_config=_SC)  # type: ignore[arg-type]
         assert isinstance(result, ValidationResult)
         assert result.passed is True
 
     def test_html_stripped_before_pattern_matching(self):
         """HTML tags should not interfere with pattern matching."""
         content = "<p>[IMAGE-1: a photo]</p>"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "image_placeholder" for i in result.issues)
 
     def test_line_numbers_recorded_in_issues(self):
         """Issues should have a line_number > 0 when matched."""
         content = "First line.\nSecond line.\n[IMAGE-1: third line photo]"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         image_issues = [i for i in result.issues if i.category == "image_placeholder"]
         assert all(i.line_number > 0 for i in image_issues)
 
     def test_matched_text_truncated_to_100_chars(self):
         long_match = "[IMAGE-1: " + "x" * 200 + "]"
-        result = validate_content("Title", long_match, "topic")
+        result = validate_content("Title", long_match, "topic", site_config=_SC)
         image_issues = [i for i in result.issues if i.category == "image_placeholder"]
         for i in image_issues:
             assert len(i.matched_text) <= 100
@@ -492,7 +493,7 @@ class TestBannedHeaders:
 
     def test_conclusion_header_is_warning(self):
         content = "Some intro paragraph.\n\n## Conclusion\n\nwrap up.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         banned = [i for i in result.issues if i.category == "banned_header"]
         assert banned, "Expected banned_header issue for ## Conclusion"
         assert banned[0].severity == "warning"
@@ -500,27 +501,27 @@ class TestBannedHeaders:
 
     def test_introduction_header_is_warning(self):
         content = "First line.\n\n## Introduction\n\nhi there.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "banned_header" for i in result.issues)
 
     def test_summary_header_is_warning(self):
         content = "Some content.\n\n## Summary\n\nhere it is.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "banned_header" for i in result.issues)
 
     def test_creative_header_is_ok(self):
         content = "Content.\n\n## Why Most Developers Get This Wrong\n\nBody.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert not any(i.category == "banned_header" for i in result.issues)
 
     def test_conclusion_case_insensitive(self):
         content = "Body.\n\n### CONCLUSION\n\nwrap.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "banned_header" for i in result.issues)
 
     def test_trailing_colon_still_caught(self):
         content = "Body.\n\n## Conclusion:\n\nwrap.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "banned_header" for i in result.issues)
 
 
@@ -530,28 +531,28 @@ class TestFillerIntros:
 
     def test_in_this_post_intro_flagged(self):
         content = "In this post, we will explore how to build a thing.\n\n## Body\n\ncontent.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "filler_intro" for i in result.issues)
 
     def test_in_this_article_intro_flagged(self):
         content = "In this article we will cover the steps.\n\n## Section\n\ncontent.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "filler_intro" for i in result.issues)
 
     def test_in_todays_fast_paced_flagged(self):
         content = "In today's fast-paced digital world, things move quickly.\n\n## Body\n\nx.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert any(i.category == "filler_intro" for i in result.issues)
 
     def test_strong_hook_is_fine(self):
         content = "PostgreSQL will crumble under load if you ignore connection pooling.\n\n## Body\n\nx.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert not any(i.category == "filler_intro" for i in result.issues)
 
     def test_only_checks_first_500_chars(self):
         """Filler phrases deep in the body should NOT trigger (intro-only check)."""
         content = "Strong hook about concrete problem. " + ("Body text. " * 60) + "In this post, deep content.\n"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         assert not any(i.category == "filler_intro" for i in result.issues)
 
 
@@ -576,7 +577,7 @@ class TestBannedTransitionOpeners:
             "Additionally, the operator can tune the TTL per route. "
             "In conclusion, the trade-off lands on the side of caching.\n"
         )
-        result = validate_content("Caching post", content, "infra")
+        result = validate_content("Caching post", content, "infra", site_config=_SC)
         warnings = [i for i in result.issues if i.category == "banned_transition_opener"]
         assert len(warnings) == 1
         assert "4" in warnings[0].description or "4×" in warnings[0].description
@@ -588,7 +589,7 @@ class TestBannedTransitionOpeners:
             "Furthermore, it reduces tail latency for cold reads. "
             "Moreover, it shrinks the blast radius of a stuck upstream.\n"
         )
-        result = validate_content("Caching post", content, "infra")
+        result = validate_content("Caching post", content, "infra", site_config=_SC)
         assert not any(i.category == "banned_transition_opener" for i in result.issues)
 
     def test_midsentence_match_is_ignored(self):
@@ -598,7 +599,7 @@ class TestBannedTransitionOpeners:
             "The team would, additionally, prefer concrete examples. "
             "Notably-named patterns aside, prose carries the post.\n"
         )
-        result = validate_content("Style post", content, "writing")
+        result = validate_content("Style post", content, "writing", site_config=_SC)
         assert not any(i.category == "banned_transition_opener" for i in result.issues)
 
     def test_clean_post_passes(self):
@@ -607,7 +608,7 @@ class TestBannedTransitionOpeners:
             "Without it, a burst of cold-cache reads will queue behind every "
             "long write. PgBouncer in transaction mode is the default we reach for.\n"
         )
-        result = validate_content("Pooling", content, "infra")
+        result = validate_content("Pooling", content, "infra", site_config=_SC)
         assert not any(i.category == "banned_transition_opener" for i in result.issues)
 
 
@@ -629,7 +630,7 @@ class TestBuzzwordDensity:
             "to careful design. It weaves together a tapestry of components, "
             "each well-tested.\n"
         )
-        result = validate_content("Arch post", content, "infra")
+        result = validate_content("Arch post", content, "infra", site_config=_SC)
         warnings = [i for i in result.issues if i.category == "buzzword_density"]
         assert len(warnings) == 1
         # Description should call out the count and list the offenders.
@@ -643,7 +644,7 @@ class TestBuzzwordDensity:
             "We delve into the topic. The result is a testament to discipline. "
             "Nothing else is going on here.\n"
         )
-        result = validate_content("Two buzzwords", content, "infra")
+        result = validate_content("Two buzzwords", content, "infra", site_config=_SC)
         assert not any(i.category == "buzzword_density" for i in result.issues)
 
     def test_one_buzzword_repeated_many_times_stays_silent(self):
@@ -653,7 +654,7 @@ class TestBuzzwordDensity:
             "We delve into the topic. We delve more deeply. We delve further. "
             "And we delve again, because the topic is rich.\n"
         )
-        result = validate_content("Delvers anonymous", content, "infra")
+        result = validate_content("Delvers anonymous", content, "infra", site_config=_SC)
         assert not any(i.category == "buzzword_density" for i in result.issues)
 
     def test_multiword_phrase_at_its_core_counts(self):
@@ -662,7 +663,7 @@ class TestBuzzwordDensity:
             "At its core, the design is simple. At the heart of the system "
             "is a queue. The multifaceted approach pays off.\n"
         )
-        result = validate_content("Multi-word", content, "infra")
+        result = validate_content("Multi-word", content, "infra", site_config=_SC)
         warnings = [i for i in result.issues if i.category == "buzzword_density"]
         assert len(warnings) == 1
         assert "at its core" in warnings[0].description
@@ -675,7 +676,7 @@ class TestBuzzwordDensity:
             "Delve into this. The system is a Testament to good design. "
             "It's a multifaceted approach.\n"
         )
-        result = validate_content("Caps post", content, "infra")
+        result = validate_content("Caps post", content, "infra", site_config=_SC)
         warnings = [i for i in result.issues if i.category == "buzzword_density"]
         assert len(warnings) == 1
 
@@ -685,7 +686,7 @@ class TestBuzzwordDensity:
             "A delver into ancient lore. A testament that holds promise. "
             "Multifaceted means many-sided.\n"
         )
-        result = validate_content("Word boundaries", content, "infra")
+        result = validate_content("Word boundaries", content, "infra", site_config=_SC)
         warnings = [i for i in result.issues if i.category == "buzzword_density"]
         # "testament" + "multifaceted" = 2 distinct ≤ threshold 2 → no fire
         assert not warnings
@@ -696,7 +697,7 @@ class TestBuzzwordDensity:
             "Without it, a burst of cold-cache reads will queue behind every "
             "long write. PgBouncer in transaction mode is the default.\n"
         )
-        result = validate_content("Pooling", content, "infra")
+        result = validate_content("Pooling", content, "infra", site_config=_SC)
         assert not any(i.category == "buzzword_density" for i in result.issues)
 
 
@@ -738,7 +739,7 @@ class TestKnownWrongHardwareFacts:
 
     def test_rtx_5090_24gb_detected(self):
         content = "The NVIDIA GeForce RTX 5090, with its massive VRAM (24GB), allows local inference."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
         assert len(hw_issues) >= 1
         assert result.passed is False  # critical = blocks approval
@@ -746,28 +747,28 @@ class TestKnownWrongHardwareFacts:
     def test_rtx_5090_24gb_reversed_order(self):
         """'24GB VRAM on the 5090' (number before product name) is also caught."""
         content = "With 24GB of VRAM, the RTX 5090 is a beast for local AI."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
         assert len(hw_issues) >= 1
 
     def test_rtx_5090_32gb_is_fine(self):
         """Correct spec (32GB) should NOT be flagged."""
         content = "The RTX 5090 ships with 32GB GDDR7 VRAM for local LLM inference."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
         assert hw_issues == []
 
     def test_false_positive_cost_not_triggered(self):
         """'5090 costs $24,000' should NOT match (24 is a dollar amount, not GB)."""
         content = "The RTX 5090 system costs approximately $24,000 fully loaded."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
         assert hw_issues == []
 
     def test_false_positive_other_gpu_not_triggered(self):
         """'RTX 4090 24GB' should NOT match (4090 actually has 24GB — it's correct)."""
         content = "The RTX 4090 with its 24GB VRAM was the previous king of consumer AI."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
         assert hw_issues == []
 
@@ -782,26 +783,26 @@ class TestFillerPhrases:
 
     def test_many_organizations_have_found(self):
         content = "Many organizations have found that self-hosting is cost-effective. Details here."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert len(filler) >= 1
         assert result.passed is True  # warning, not critical
 
     def test_future_of_ai_is_here(self):
         content = "The future of AI is here and it's running on local hardware."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert len(filler) >= 1
 
     def test_unlock_the_potential(self):
         content = "Unlock the full potential of your local GPU with these techniques."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert len(filler) >= 1
 
     def test_concrete_claim_not_flagged(self):
         content = "Quantized 4-bit models run at 45 tokens/second on the RTX 5090."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert filler == []
 
@@ -836,7 +837,7 @@ class TestWarningThresholdPromotion:
 
     def test_many_warnings_promotes_to_critical(self):
         content = self._many_filler_phrases()
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert len(filler) >= 4, (
             f"expected many filler_phrase matches, got {len(filler)}"
@@ -859,7 +860,7 @@ class TestWarningThresholdPromotion:
             "The future of local inference is here today. "
             "Regular prose continues without any filler afterwards."
         )
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert len(filler) == 2, (
             f"expected exactly 2 filler matches, got {len(filler)}"
@@ -896,7 +897,7 @@ class TestNamedSourceNoUrlPromotion:
         content = (
             "This technique works well in practice, as highlighted in this Medium article."
         )
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         assert unlinked, "expected an unlinked_citation match"
         assert all(i.severity == "warning" for i in unlinked), \
@@ -906,7 +907,7 @@ class TestNamedSourceNoUrlPromotion:
 
     def test_article_on_redis_memory_usage_without_url_stays_warning_by_default(self):
         content = "As noted in this article on Redis memory usage, caching matters."
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         assert unlinked
         assert all(i.severity == "warning" for i in unlinked)
@@ -919,7 +920,7 @@ class TestNamedSourceNoUrlPromotion:
             "This technique works, as highlighted in this Medium article "
             "https://medium.com/@someone/example-post-12345 which explains the details."
         )
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         if unlinked:
             assert all(i.severity == "warning" for i in unlinked)
@@ -929,7 +930,7 @@ class TestNamedSourceNoUrlPromotion:
         # remain a warning (unless the count threshold fires, which it
         # doesn't here since we only have one match).
         content = "The Shadow Price of Speed: What Tech Teams Get Wrong Every Time"
-        result = validate_content("Title", content, "topic")
+        result = validate_content("Title", content, "topic", site_config=_SC)
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         if unlinked:
             assert all(i.severity == "warning" for i in unlinked)
@@ -967,7 +968,7 @@ class TestPrometheusCounterEmission:
             "The future of AI is here and it's running on local hardware.\n"
             "Unlock the full potential of your local GPU with these techniques.\n"
         )
-        validate_content("Title", content, "topic")
+        validate_content("Title", content, "topic", site_config=_SC)
         after = self._read_counter(rule)
         assert after - before >= 3, (
             f"expected counter to advance by at least 3, went from {before} to {after}"
@@ -984,8 +985,7 @@ class TestPrometheusCounterEmission:
         validate_content(
             "Title",
             "Many organizations have found this approach works.",
-            "topic",
-        )
+            "topic", site_config=_SC)
         after_filler = self._read_counter(rule_filler)
         after_unlinked = self._read_counter(rule_unlinked)
         assert after_filler > before_filler
@@ -1021,8 +1021,7 @@ class TestHallucinatedReferenceDetection:
             "How asyncio Works",
             content,
             topic="asyncio",
-            tags=["ai-ml", "backend"],
-        )
+            tags=["ai-ml", "backend"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert not hallucinated, (
             f"real asyncio APIs should not be flagged, got: {[h.matched_text for h in hallucinated]}"
@@ -1038,8 +1037,7 @@ class TestHallucinatedReferenceDetection:
             "How asyncio Works",
             content,
             topic="asyncio",
-            tags=["ai-ml"],
-        )
+            tags=["ai-ml"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert any(
             "schedule_callback" in h.matched_text for h in hallucinated
@@ -1055,8 +1053,7 @@ class TestHallucinatedReferenceDetection:
             "Asyncio Deep Dive",
             content,
             topic="asyncio",
-            tags=["ai-ml"],
-        )
+            tags=["ai-ml"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         cadquery_hits = [
             h for h in hallucinated if "cadquery" in h.matched_text.lower()
@@ -1087,8 +1084,7 @@ class TestHallucinatedReferenceDetection:
             "Prose Test",
             content,
             topic="general",
-            tags=["business"],
-        )
+            tags=["business"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert not hallucinated, (
             f"bare prose should not be flagged as hallucinated, got: "
@@ -1106,8 +1102,7 @@ class TestHallucinatedReferenceDetection:
             "Common variable patterns",
             content,
             topic="asyncio",
-            tags=["backend"],
-        )
+            tags=["backend"], site_config=_SC)
         # None of those dotted expressions should fire hallucinated_reference
         # because the roots (app, client, response, loop) are whitelisted.
         hallucinated = self._hallucinated_issues(result)
@@ -1126,8 +1121,7 @@ class TestHallucinatedReferenceDetection:
             "Web Stack",
             content,
             topic="web-dev",
-            tags=["web-dev", "backend"],
-        )
+            tags=["web-dev", "backend"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert not hallucinated, (
             f"top-500 PyPI packages should pass, got: "
@@ -1144,8 +1138,7 @@ class TestHallucinatedReferenceDetection:
             "Local Models",
             content,
             topic="ollama",
-            tags=["ai-ml"],
-        )
+            tags=["ai-ml"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert not hallucinated, (
             f"Ollama model names should pass, got: "
@@ -1168,8 +1161,7 @@ class TestHallucinatedReferenceDetection:
             "Fake References",
             content,
             topic="python",
-            tags=["backend"],
-        )
+            tags=["backend"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         # 4+ matches should exceed the default threshold of 3 and promote.
         assert len(hallucinated) >= 4, (
@@ -1186,7 +1178,7 @@ class TestHallucinatedReferenceDetection:
         """Calling validate_content without tags must still work."""
         content = "The `schedule_callback(event)` is not a real function."
         # Positional form — no regression in legacy callers.
-        result = validate_content("Asyncio", content, "asyncio")
+        result = validate_content("Asyncio", content, "asyncio", site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert hallucinated, (
             "schedule_callback should still be flagged without tags"
@@ -1201,8 +1193,7 @@ class TestHallucinatedReferenceDetection:
         result = validate_content(
             "Ai-ml Asyncio Deep Dive",
             content,
-            topic="asyncio",
-        )
+            topic="asyncio", site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
         assert any(
             "cadquery" in h.matched_text.lower() for h in hallucinated
@@ -1258,7 +1249,7 @@ class TestJsonEnvelopeLeakDetection:
     def test_lone_brace_terminator_flagged_as_envelope_leak(self):
         """Final line is just ``}`` → ``json_envelope_leak`` (NOT truncation)."""
         content = self._LONG_BODY + '"\n}'
-        result = validate_content("FastAPI Intro", content, "FastAPI")
+        result = validate_content("FastAPI Intro", content, "FastAPI", site_config=_SC)
         cats = [i.category for i in result.issues]
         assert "json_envelope_leak" in cats
         assert "truncated_content" not in cats
@@ -1272,7 +1263,7 @@ class TestJsonEnvelopeLeakDetection:
     def test_lone_bracket_terminator_flagged_as_envelope_leak(self):
         """``]`` final line — same shape but JSON array wrapper."""
         content = self._LONG_BODY + '"\n]'
-        result = validate_content("FastAPI Intro", content, "FastAPI")
+        result = validate_content("FastAPI Intro", content, "FastAPI", site_config=_SC)
         cats = [i.category for i in result.issues]
         assert "json_envelope_leak" in cats
 
@@ -1280,7 +1271,7 @@ class TestJsonEnvelopeLeakDetection:
         """``"}`` line — common when the writer dumped a quoted string
         immediately followed by the envelope close."""
         content = self._LONG_BODY + '\n"}'
-        result = validate_content("FastAPI Intro", content, "FastAPI")
+        result = validate_content("FastAPI Intro", content, "FastAPI", site_config=_SC)
         cats = [i.category for i in result.issues]
         assert "json_envelope_leak" in cats
 
@@ -1290,7 +1281,7 @@ class TestJsonEnvelopeLeakDetection:
         detection."""
         # Ends mid-sentence with no terminator at all
         content = self._LONG_BODY + " The team began to investigate when"
-        result = validate_content("FastAPI Intro", content, "FastAPI")
+        result = validate_content("FastAPI Intro", content, "FastAPI", site_config=_SC)
         cats = [i.category for i in result.issues]
         assert "truncated_content" in cats
         assert "json_envelope_leak" not in cats
@@ -1299,7 +1290,7 @@ class TestJsonEnvelopeLeakDetection:
         """A complete sentence-terminated body fires neither rule —
         baseline."""
         content = self._LONG_BODY + " Conclusion: the framework wins."
-        result = validate_content("FastAPI Intro", content, "FastAPI")
+        result = validate_content("FastAPI Intro", content, "FastAPI", site_config=_SC)
         cats = [i.category for i in result.issues]
         assert "truncated_content" not in cats
         assert "json_envelope_leak" not in cats

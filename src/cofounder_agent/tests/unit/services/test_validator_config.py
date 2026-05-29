@@ -14,6 +14,17 @@ from __future__ import annotations
 import pytest
 
 from services import validator_config as vc
+from services.site_config import SiteConfig
+
+
+def _sc(**overrides) -> SiteConfig:
+    """Fresh SiteConfig for the now-required ``site_config=`` kwarg (#272
+    Phase-2d). ``overrides`` seed app_settings keys (e.g. the legacy
+    ``qa_allow_first_person_niches`` CSV)."""
+    sc = SiteConfig()
+    for k, v in overrides.items():
+        sc._config[k] = v
+    return sc
 
 
 @pytest.fixture(autouse=True)
@@ -32,21 +43,21 @@ def _reset_validator_cache():
 class TestIsValidatorEnabled:
     def test_unknown_rule_fails_open(self):
         """A rule with no DB row reports as enabled (preserves current behavior)."""
-        assert vc.is_validator_enabled("never_seen_rule") is True
+        assert vc.is_validator_enabled("never_seen_rule", site_config=_sc()) is True
 
     def test_disabled_rule_returns_false(self):
         vc.seed_cache_for_tests({
             "first_person_claims": {"enabled": False},
         })
-        assert vc.is_validator_enabled("first_person_claims") is False
+        assert vc.is_validator_enabled("first_person_claims", site_config=_sc()) is False
 
     def test_enabled_rule_with_no_niche_scope_runs_for_any_niche(self):
         vc.seed_cache_for_tests({
             "fake_stat": {"enabled": True, "applies_to_niches": None},
         })
-        assert vc.is_validator_enabled("fake_stat", niche="ai_ml") is True
-        assert vc.is_validator_enabled("fake_stat", niche="dev_diary") is True
-        assert vc.is_validator_enabled("fake_stat", niche=None) is True
+        assert vc.is_validator_enabled("fake_stat", niche="ai_ml", site_config=_sc()) is True
+        assert vc.is_validator_enabled("fake_stat", niche="dev_diary", site_config=_sc()) is True
+        assert vc.is_validator_enabled("fake_stat", niche=None, site_config=_sc()) is True
 
     def test_niche_scoped_rule_only_runs_in_listed_niches(self):
         vc.seed_cache_for_tests({
@@ -55,9 +66,9 @@ class TestIsValidatorEnabled:
                 "applies_to_niches": ["ai_ml", "gaming"],
             },
         })
-        assert vc.is_validator_enabled("code_block_density", niche="ai_ml") is True
-        assert vc.is_validator_enabled("code_block_density", niche="gaming") is True
-        assert vc.is_validator_enabled("code_block_density", niche="dev_diary") is False
+        assert vc.is_validator_enabled("code_block_density", niche="ai_ml", site_config=_sc()) is True
+        assert vc.is_validator_enabled("code_block_density", niche="gaming", site_config=_sc()) is True
+        assert vc.is_validator_enabled("code_block_density", niche="dev_diary", site_config=_sc()) is False
 
     def test_niche_scoped_rule_with_no_post_niche_returns_false(self):
         """A rule pinned to specific niches but called with niche=None
@@ -68,7 +79,7 @@ class TestIsValidatorEnabled:
                 "applies_to_niches": ["ai_ml"],
             },
         })
-        assert vc.is_validator_enabled("code_block_density", niche=None) is False
+        assert vc.is_validator_enabled("code_block_density", niche=None, site_config=_sc()) is False
 
     def test_niche_match_is_case_insensitive(self):
         vc.seed_cache_for_tests({
@@ -77,8 +88,8 @@ class TestIsValidatorEnabled:
                 "applies_to_niches": ["dev_diary"],
             },
         })
-        assert vc.is_validator_enabled("first_person_claims", niche="DEV_DIARY") is True
-        assert vc.is_validator_enabled("first_person_claims", niche="Dev_Diary") is True
+        assert vc.is_validator_enabled("first_person_claims", niche="DEV_DIARY", site_config=_sc()) is True
+        assert vc.is_validator_enabled("first_person_claims", niche="Dev_Diary", site_config=_sc()) is True
 
 
 # ---------------------------------------------------------------------------
@@ -97,35 +108,27 @@ class TestLegacyFirstPersonBypass:
 
     def test_csv_bypass_disables_first_person_for_listed_niche(self):
         """Niche listed in the legacy CSV -> validator reports disabled."""
-        import services.validator_config as _scm
-        site_config = _scm.site_config
-        site_config._config["qa_allow_first_person_niches"] = "dev_diary"
+        sc = _sc(qa_allow_first_person_niches="dev_diary")
         # No DB row: rule otherwise fails open. Bypass should still kick in.
-        assert vc.is_validator_enabled("first_person_claims", niche="dev_diary") is False
+        assert vc.is_validator_enabled("first_person_claims", niche="dev_diary", site_config=sc) is False
         # Other niches still run the rule.
-        assert vc.is_validator_enabled("first_person_claims", niche="ai_ml") is True
+        assert vc.is_validator_enabled("first_person_claims", niche="ai_ml", site_config=sc) is True
 
     def test_csv_bypass_does_not_affect_other_rules(self):
         """The CSV legacy bridge is scoped to first_person_claims only."""
-        import services.validator_config as _scm
-        site_config = _scm.site_config
-        site_config._config["qa_allow_first_person_niches"] = "dev_diary"
+        sc = _sc(qa_allow_first_person_niches="dev_diary")
         # Some unrelated rule with no DB row -> still enabled regardless of niche.
-        assert vc.is_validator_enabled("fake_stat", niche="dev_diary") is True
+        assert vc.is_validator_enabled("fake_stat", niche="dev_diary", site_config=sc) is True
 
     def test_csv_bypass_case_insensitive(self):
-        import services.validator_config as _scm
-        site_config = _scm.site_config
-        site_config._config["qa_allow_first_person_niches"] = "DEV_DIARY,gaming"
-        assert vc.is_validator_enabled("first_person_claims", niche="dev_diary") is False
-        assert vc.is_validator_enabled("first_person_claims", niche="GAMING") is False
-        assert vc.is_validator_enabled("first_person_claims", niche="ai_ml") is True
+        sc = _sc(qa_allow_first_person_niches="DEV_DIARY,gaming")
+        assert vc.is_validator_enabled("first_person_claims", niche="dev_diary", site_config=sc) is False
+        assert vc.is_validator_enabled("first_person_claims", niche="GAMING", site_config=sc) is False
+        assert vc.is_validator_enabled("first_person_claims", niche="ai_ml", site_config=sc) is True
 
     def test_empty_csv_means_no_bypass(self):
-        import services.validator_config as _scm
-        site_config = _scm.site_config
-        site_config._config["qa_allow_first_person_niches"] = ""
-        assert vc.is_validator_enabled("first_person_claims", niche="dev_diary") is True
+        sc = _sc(qa_allow_first_person_niches="")
+        assert vc.is_validator_enabled("first_person_claims", niche="dev_diary", site_config=sc) is True
 
 
 # ---------------------------------------------------------------------------

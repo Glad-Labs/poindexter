@@ -19,6 +19,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.site_config import SiteConfig
+
+_SC = SiteConfig()
+
 from services import content_validator as cv
 from services.content_validator import (
     ValidationIssue,
@@ -66,7 +70,7 @@ def _make_httpx_client(head_responses: dict[str, MagicMock] | None = None,
 class TestVerifyContentUrls:
     @pytest.mark.asyncio
     async def test_no_urls_returns_empty(self):
-        issues = await verify_content_urls("Just plain prose with no links.")
+        issues = await verify_content_urls("Just plain prose with no links.", site_config=_SC)
         assert issues == []
 
     @pytest.mark.asyncio
@@ -78,7 +82,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "See [the docs](https://example.com/doc) for details."
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         # Only "no_citations" is a possible warning; live-link itself is fine
         # but we expect at least no critical dead_link issue
         critical = [i for i in issues if i.severity == "critical"]
@@ -93,7 +97,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Broken: [link](https://example.com/missing)"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         dead = [i for i in issues if i.category == "dead_link"]
         assert len(dead) == 1
         assert dead[0].severity == "critical"
@@ -108,7 +112,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Server error: https://example.com/server-down"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         assert any(i.category == "dead_link" for i in issues)
 
     @pytest.mark.asyncio
@@ -121,7 +125,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Slow link: [docs](https://slow.example.com/x)"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         slow = [i for i in issues if i.category == "slow_link"]
         assert len(slow) == 1
         assert slow[0].severity == "warning"
@@ -135,7 +139,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Bad: [link](https://no-such-host.invalid/)"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         unresolvable = [i for i in issues if i.category == "unresolvable_link"]
         assert len(unresolvable) == 1
         assert unresolvable[0].severity == "warning"
@@ -145,11 +149,13 @@ class TestVerifyContentUrls:
     async def test_internal_links_skipped(self):
         """Configured site_domains are skipped — no HEAD attempted."""
         ctx, client = _make_httpx_client({})
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="example.com")
+        # #272 Phase-2d: verify_content_urls reads site_domains from the
+        # passed site_config (no module global). Seed it locally.
+        sc = SiteConfig()
+        sc._config["site_domains"] = "example.com"
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Internal: [home](https://example.com/about)"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=sc)
         # No HEAD call should have happened (internal skip)
         assert client.head.await_count == 0
         # But the no_citations warning will fire because all URLs are internal
@@ -161,11 +167,11 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client({
             "https://other.com/x": _make_response(200),
         })
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="example.com")
+        sc = SiteConfig()
+        sc._config["site_domains"] = "example.com"
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "External: [ref](https://other.com/x)"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=sc)
         no_cite = [i for i in issues if i.category == "no_citations"]
         assert no_cite == []
 
@@ -177,7 +183,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Internal: [api](http://service.localhost/api)"
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         # service.localhost ends with '.localhost' -> skip
         assert client.head.await_count == 0
 
@@ -190,7 +196,7 @@ class TestVerifyContentUrls:
              patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Visit https://bare.example.com/path for more."
-            issues = await verify_content_urls(content)
+            issues = await verify_content_urls(content, site_config=_SC)
         # Should have HEAD'd the bare URL
         assert client.head.await_count == 1
 
@@ -429,8 +435,7 @@ class TestTitleDiversity:
             title="Mastering Python Async",
             content="A long enough body. " * 100,
             topic="python async",
-            tags=[],
-        )
+            tags=[], site_config=_SC)
         diversity = [i for i in result.issues if i.category == "title_diversity"]
         # Either the rule is enabled or it's been disabled by config; either is fine,
         # but if it fires it should be a warning about 'mastering'
@@ -443,7 +448,6 @@ class TestTitleDiversity:
             title="Postgres LISTEN/NOTIFY in production",
             content="A long enough body. " * 100,
             topic="postgres",
-            tags=[],
-        )
+            tags=[], site_config=_SC)
         diversity = [i for i in result.issues if i.category == "title_diversity"]
         assert diversity == []

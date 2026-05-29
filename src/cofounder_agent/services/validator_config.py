@@ -55,18 +55,12 @@ from typing import Any
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
+# setter were removed. ``is_validator_enabled`` now REQUIRES a keyword-only
+# ``site_config`` (threaded down into the legacy first-person CSV bypass).
+# Callers thread it: pipeline-stage consumers via
+# ``context.get("site_config")`` and ``score_accuracy`` via its own required
+# ``site_config`` param. The rule-cache + locks below are unaffected.
 
 logger = get_logger(__name__)
 
@@ -285,7 +279,7 @@ def seed_cache_for_tests(rules: dict[str, dict[str, Any]]) -> None:
 def _legacy_first_person_bypass(
     niche: str | None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> bool:
     """Return True iff the legacy CSV bypass applies for ``niche``.
 
@@ -294,19 +288,13 @@ def _legacy_first_person_bypass(
     consulted when the rule name is ``first_person_claims`` — every
     other rule reads niche scope exclusively from ``applies_to_niches``.
 
-    The keyword-only ``site_config`` param is the Phase-1 DI shim
-    (glad-labs-stack#272): callers may pass an explicit ``SiteConfig``
-    instance; when omitted we fall back to the module-global so existing
-    callers keep working unchanged.
+    #272 Phase-2d: ``site_config`` is REQUIRED (keyword-only). The caller
+    (``is_validator_enabled``) threads its own required ``site_config``.
     """
     if not niche:
         return False
-    # Phase-1 DI shim (#272): prefer an explicitly-passed SiteConfig,
-    # else fall back to the lifespan-wired module global via self-import.
-    import services.validator_config as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
     try:
-        csv = _sc.get("qa_allow_first_person_niches", "")
+        csv = site_config.get("qa_allow_first_person_niches", "")
     except Exception:
         return False
     if not csv:
@@ -319,7 +307,7 @@ def is_validator_enabled(
     name: str,
     niche: str | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> bool:
     """Should validator ``name`` run for a post in ``niche``?
 
@@ -335,9 +323,10 @@ def is_validator_enabled(
     applies if ``niche`` is in the legacy
     ``qa_allow_first_person_niches`` CSV setting (PR #160 path).
 
-    The keyword-only ``site_config`` param is the Phase-1 DI shim
-    (glad-labs-stack#272): when passed it is threaded down into the
-    legacy bypass lookup; when omitted the module-global is used.
+    #272 Phase-2d: ``site_config`` is REQUIRED (keyword-only) — it is
+    threaded down into the legacy bypass lookup. Callers pass the
+    run-bound SiteConfig (pipeline stages → ``context.get("site_config")``;
+    ``score_accuracy`` → its own required ``site_config`` param).
     """
     if name == "first_person_claims" and _legacy_first_person_bypass(
         niche, site_config=site_config

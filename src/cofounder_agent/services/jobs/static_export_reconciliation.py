@@ -219,7 +219,12 @@ class StaticExportReconciliationJob:
         try:
             from services.static_export_service import export_full_rebuild
 
-            rebuild_result = await export_full_rebuild(pool)
+            # #272 Phase-2d: export_full_rebuild requires an explicit
+            # site_config. The scheduler seeds the run-bound instance into
+            # ``config["_site_config"]`` before invoking the job.
+            rebuild_result = await export_full_rebuild(
+                pool, site_config=config["_site_config"],
+            )
             rebuild_ok = bool(rebuild_result.get("success"))
         except Exception as e:
             logger.exception(
