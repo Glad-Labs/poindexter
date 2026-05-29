@@ -34,7 +34,7 @@ def set_site_config(sc: SiteConfig) -> None:
 logger = get_logger(__name__)
 
 
-async def run_scheduled_publisher(get_pool, *, site_config=None):
+async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig | None = None):
     """
     Background loop that checks for posts with status='scheduled'
     and published_at <= NOW(), then publishes them.
@@ -45,16 +45,18 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
             provided, used to read ``scheduled_publisher_poll_seconds``;
             falls back to the module singleton for back-compat.
     """
+    # Phase-1 DI shim (#272): resolve the effective SiteConfig once.
+    # Current callers pass nothing, so default-None must fall back to the
+    # lifespan-bound module global (which set_site_config() rebinds). Read
+    # the global off the module object so the rebind is observed.
+    import services.scheduled_publisher as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
     # Poll interval tunable via app_settings.scheduled_publisher_poll_seconds (#198)
     try:
-        if site_config is not None:
-            _poll_interval = int(
-                site_config.get("scheduled_publisher_poll_seconds", 60)
-            )
-        else:
-            _poll_interval = site_config.get_int(
-                "scheduled_publisher_poll_seconds", 60,
-            )
+        _poll_interval = int(
+            _sc.get("scheduled_publisher_poll_seconds", 60)
+        )
     except Exception:
         _poll_interval = 60
     logger.info(
@@ -173,7 +175,7 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
                         # bust the Vercel ISR cache, otherwise the post
                         # won't appear on www.gladlabs.io until the next
                         # 5-minute window.
-                        await _revalidate_for_row(row)
+                        await _revalidate_for_row(row, site_config=_sc)
         except asyncio.CancelledError:
             logger.info("[scheduled_publisher] Shutting down")
             break
@@ -181,7 +183,7 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
             logger.error("[scheduled_publisher] Error: %s", e, exc_info=True)
 
 
-async def _revalidate_for_row(row) -> None:
+async def _revalidate_for_row(row, *, site_config: SiteConfig | None = None) -> None:
     """Trigger ISR revalidation for a freshly-promoted scheduled post.
 
     Pulled out as a helper so the main loop body stays readable and
@@ -189,7 +191,13 @@ async def _revalidate_for_row(row) -> None:
 
     Never raises — revalidation failure must not poison the loop or
     block subsequent rows in the same batch.
+
+    ``site_config`` is threaded in by ``run_scheduled_publisher`` (Phase-1
+    DI shim, #272); default-None falls back to the lifespan-bound module
+    global for back-compat with any direct caller.
     """
+    import services.scheduled_publisher as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     try:
         slug = row["slug"]
     except (KeyError, TypeError):
@@ -209,7 +217,7 @@ async def _revalidate_for_row(row) -> None:
         # helpers now require an explicit site_config. Pass this module's
         # lifespan-bound instance (caller-bridge).
         from services.revalidation_service import trigger_isr_revalidate
-        ok = await trigger_isr_revalidate(slug, site_config=site_config)
+        ok = await trigger_isr_revalidate(slug, site_config=_sc)
         if ok:
             logger.info(
                 "[scheduled_publisher] ISR revalidation triggered for %s",
