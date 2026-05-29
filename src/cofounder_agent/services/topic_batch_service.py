@@ -100,9 +100,18 @@ class BatchView:
 
 
 class TopicBatchService:
-    def __init__(self, pool):
+    def __init__(self, pool, *, site_config: SiteConfig | None = None):
         self._pool = pool
         self._niche_svc = NicheService(pool)
+        # Phase-1 DI shim (#272): prefer the injected SiteConfig, fall back
+        # to the lifespan-bound module global (still wired via
+        # set_site_config) for back-compat with existing positional
+        # ``TopicBatchService(pool)`` constructions. Phase-2 removes the
+        # module global + this fallback entirely.
+        import services.topic_batch_service as _mod
+        self._site_config = (
+            site_config if site_config is not None else _mod.site_config
+        )
 
     async def run_sweep(self, *, niche_id: UUID) -> BatchSnapshot | None:
         niche = await self._niche_svc.get_by_id(niche_id)
@@ -144,7 +153,7 @@ class TopicBatchService:
             # slice — pre-rank + LLM-final-score then sees up to 2*N
             # candidates. Same key gates the slice inside
             # _embed_and_pre_rank so both ends of the funnel stay consistent.
-            top_n = site_config.get_int("niche_top_n_per_pool", 5)
+            top_n = self._site_config.get_int("niche_top_n_per_pool", 5)
             top10 = pool_external[:top_n] + pool_internal[:top_n]
 
             # Lazy import so tests can patch services.topic_ranking.llm_final_score.
@@ -271,7 +280,7 @@ class TopicBatchService:
                 plugin_cfg.config if plugin_cfg else {}
             )
             extract_config.update({
-                "_site_config": site_config,
+                "_site_config": self._site_config,
                 "niche_slug": niche.slug,
                 "niche_id": str(niche.id),
             })
@@ -327,7 +336,7 @@ class TopicBatchService:
         # ``topic_batch_service`` keeps its own lifespan-bound module-level
         # ``site_config`` (still wired via WIRED_MODULES); pass it down to the
         # migrated ``InternalRagSource`` (caller-bridge, #272 leaf batch 5).
-        rag = InternalRagSource(self._pool, site_config=site_config)
+        rag = InternalRagSource(self._pool, site_config=self._site_config)
         # Per spec: per-kind limit defaults to 4, all 6 valid kinds
         # except git_commit (which still needs git-log plumbing).
         # Operator-tunable via niche_internal_rag_per_kind_limit
@@ -340,7 +349,7 @@ class TopicBatchService:
             "memory_file",
             "post_history",
         ]
-        per_kind_limit = site_config.get_int(
+        per_kind_limit = self._site_config.get_int(
             "niche_internal_rag_per_kind_limit", 4,
         )
         cands = await rag.generate(
@@ -361,7 +370,7 @@ class TopicBatchService:
         the default). Tunable via
         ``niche_carry_forward_decay_factor`` (migration 0119).
         """
-        decay = site_config.get_float(
+        decay = self._site_config.get_float(
             "niche_carry_forward_decay_factor", 0.7,
         )
         async with self._pool.acquire() as conn:
@@ -498,7 +507,7 @@ class TopicBatchService:
         int_scored.sort(key=lambda c: -c.embedding_score)
         # Same niche_top_n_per_pool key the run_sweep funnel uses so the
         # two ends of the pre-rank/final-score pipeline stay in lockstep.
-        top_n = site_config.get_int("niche_top_n_per_pool", 5)
+        top_n = self._site_config.get_int("niche_top_n_per_pool", 5)
         return ext_scored[:top_n], int_scored[:top_n]
 
     async def _write_batch(
@@ -524,7 +533,7 @@ class TopicBatchService:
 
         # Batch lifetime — operator-tunable via niche_batch_expires_days
         # (migration 0119). Default 7 matches the prior hardcoded value.
-        expires_days = site_config.get_int("niche_batch_expires_days", 7)
+        expires_days = self._site_config.get_int("niche_batch_expires_days", 7)
         expires = datetime.now(timezone.utc) + timedelta(days=expires_days)
         rank_in_batch = 0
 
