@@ -545,6 +545,89 @@ Restart Claude Desktop after editing.
 
 ---
 
+## OpenClaw watchdog can't restart the gateway — "port 18789 is still busy before restart" (false positive)
+
+**Symptom.** `scripts/openclaw-watchdog.ps1` (Scheduled Task, every 2 min) keeps firing but never restores the gateway. `~/.openclaw/logs/watchdog.log` fills with `Gateway recovery FAILED after 3 attempts`. Running `openclaw gateway start` (or `restart`) by hand prints:
+
+```
+Gateway start failed: Error: gateway port 18789 is still busy before restart
+```
+
+But `Get-NetTCPConnection -LocalPort 18789` returns nothing and `curl http://localhost:18789/` is refused — the port really is free.
+
+**Root cause.** Upstream bug in OpenClaw's Windows Scheduled-Task installer (`node_modules/openclaw/dist/schtasks-*.js`). Its `waitForGatewayPortRelease` helper polls `inspectPortUsage`, which shells out to `Get-CimInstance Win32_Process` with a 1.5 s timeout. When that snapshot times out (common on a busy machine) it returns `"unknown"` instead of `"free"`, the polling loop never sees `"free"`, and the CLI throws `port … is still busy before restart` even though the port is empty. Both the `start` and `restart` subcommands of `openclaw gateway` go through this path.
+
+The bare gateway entry — `node node_modules/openclaw/dist/index.js gateway --port 18789` — does NOT contain `waitForGatewayPortRelease` and is unaffected. OpenClaw itself writes this exact invocation into `~/.openclaw/gateway.cmd` (it's what the OpenClaw Scheduled Task launches). The fix bypasses the broken wrapper by invoking `gateway.cmd` directly.
+
+**Fix.** Patch `scripts/openclaw-watchdog.ps1` (the script is intentionally gitignored — Matt-specific operator state, see `.gitignore`) so `Start-Gateway`/`Restart-Gateway` skip `openclaw gateway start/restart` and drive `gateway.cmd` instead. Three changes:
+
+1. Add a `$GATEWAY_CMD` constant alongside `$GATEWAY_PORT`:
+
+   ```powershell
+   $GATEWAY_CMD = "$env:USERPROFILE\.openclaw\gateway.cmd"
+   ```
+
+2. Add `Stop-PortListeners` — authoritative kill of whatever owns the gateway port via `Get-NetTCPConnection` (no PowerShell-snapshot timeout, no false positives):
+
+   ```powershell
+   function Stop-PortListeners {
+       param([int]$Port = $GATEWAY_PORT)
+       $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen `
+           -ErrorAction SilentlyContinue
+       if (-not $listeners) { return }
+       $ownerPids = @($listeners |
+           Select-Object -ExpandProperty OwningProcess -ErrorAction SilentlyContinue |
+           Where-Object { $_ -is [int] -and $_ -gt 0 } |
+           Sort-Object -Unique)
+       foreach ($ownerPid in $ownerPids) {
+           Write-Log "INFO" "Stopping PID $ownerPid (listener on port $Port)"
+           Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
+       }
+       if ($ownerPids.Count -gt 0) { Start-Sleep -Seconds 2 }
+   }
+   ```
+
+3. Rewrite `Start-Gateway` to prefer `gateway.cmd`, and rewrite `Restart-Gateway` to skip the broken CLI restart and drive `Start-Gateway` after killing the listener:
+
+   ```powershell
+   function Start-Gateway {
+       Write-Log "INFO" "Starting OpenClaw gateway..."
+       Stop-StaleOpenClawProcesses
+       try {
+           if (Test-Path $GATEWAY_CMD) {
+               Start-Process -FilePath "cmd.exe" `
+                   -ArgumentList "/c", "`"$GATEWAY_CMD`"" `
+                   -WindowStyle Hidden
+           } else {
+               Write-Log "WARN" "$GATEWAY_CMD not found; falling back to 'openclaw gateway start' (may trip upstream port-busy false positive)"
+               Start-Process -FilePath "powershell.exe" `
+                   -ArgumentList "-NoProfile", "-Command", "openclaw gateway start" `
+                   -WindowStyle Hidden
+           }
+           Start-Sleep -Seconds 10
+           return (Test-GatewayHTTP)
+       } catch {
+           Write-Log "ERROR" "Failed to start gateway: $_"
+           return $false
+       }
+   }
+
+   function Restart-Gateway {
+       Write-Log "INFO" "Restarting OpenClaw gateway (kill listener + cold start; bypasses upstream busy-check bug)..."
+       Stop-PortListeners
+       Stop-StaleOpenClawProcesses
+       return (Start-Gateway)
+   }
+   ```
+
+After saving, the next Scheduled Task fire (within 2 min) picks up the new logic — no service restart needed; the script is re-read on each run.
+
+**Verify.** Tail `~/.openclaw/logs/watchdog.log` and confirm the next cycle ends with `Gateway HTTP responding` instead of `Gateway recovery FAILED`. Once stable, follow up by reversing the silencing migration that Glad-Labs/poindexter#600 added to `operator_url_probe_skip_keys` so the brain probe pages on real openclaw outages again.
+
+Closes Glad-Labs/poindexter#519.
+
+---
+
 ## Search page returns no results on the live site
 
 **Symptom.** Visiting `https://www.gladlabs.io/search?q=anything` shows "No articles found" or "Failed to search articles."
