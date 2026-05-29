@@ -137,10 +137,10 @@ class TestWireSiteConfigModules:
 
         # Check the critical modules — pulling them in via importlib
         # so the test doesn't fail at import time if one's unavailable.
-        # (#272 Phase-2f: content_router_service no longer carries a
-        # module global, so verify a still-wired module instead —
-        # publish_service still owns its ``site_config`` attr.)
-        for modname in ("services.ollama_client", "services.publish_service"):
+        # (#272 Phase-2g: publish_service no longer carries a module
+        # global, so verify still-wired modules instead — gpu_scheduler
+        # still owns its ``site_config`` attr.)
+        for modname in ("services.ollama_client", "services.gpu_scheduler"):
             mod = __import__(modname, fromlist=["site_config"])
             cfg = getattr(mod, "site_config", None)
             assert cfg is sentinel, (
@@ -155,7 +155,7 @@ class TestWireSiteConfigModules:
         bogus_list = (
             "services.ollama_client",  # real
             "services.this_module_does_not_exist_anywhere",  # bogus
-            "services.publish_service",  # real, must still get wired
+            "services.gpu_scheduler",  # real, must still get wired
         )
         with patch.object(di_wiring, "WIRED_MODULES", bogus_list):
             from services.site_config import SiteConfig
@@ -167,11 +167,11 @@ class TestWireSiteConfigModules:
         assert count == 2
 
         # The real one downstream of the broken entry still got wired.
-        # (#272 Phase-2f: publish_service still owns a module-global
-        # ``site_config`` + ``set_site_config``; content_router_service
-        # no longer does.)
-        import services.publish_service as ps
-        assert getattr(ps, "site_config", None) is sentinel
+        # (#272 Phase-2g: gpu_scheduler still owns a module-global
+        # ``site_config`` + ``set_site_config``; publish_service no
+        # longer does.)
+        import services.gpu_scheduler as gs
+        assert getattr(gs, "site_config", None) is sentinel
 
 
 # ---------------------------------------------------------------------------

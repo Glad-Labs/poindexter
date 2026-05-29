@@ -78,9 +78,10 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client({
             "https://example.com/doc": _make_response(200),
         })
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "See [the docs](https://example.com/doc) for details."
             issues = await verify_content_urls(content, site_config=_SC)
         # Only "no_citations" is a possible warning; live-link itself is fine
@@ -93,9 +94,10 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client({
             "https://example.com/missing": _make_response(404),
         })
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Broken: [link](https://example.com/missing)"
             issues = await verify_content_urls(content, site_config=_SC)
         dead = [i for i in issues if i.category == "dead_link"]
@@ -108,9 +110,10 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client({
             "https://example.com/server-down": _make_response(500),
         })
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Server error: https://example.com/server-down"
             issues = await verify_content_urls(content, site_config=_SC)
         assert any(i.category == "dead_link" for i in issues)
@@ -121,9 +124,10 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client(
             head_exception=httpx.TimeoutException("slow server"),
         )
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Slow link: [docs](https://slow.example.com/x)"
             issues = await verify_content_urls(content, site_config=_SC)
         slow = [i for i in issues if i.category == "slow_link"]
@@ -135,9 +139,10 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client(
             head_exception=ConnectionError("DNS failure"),
         )
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Bad: [link](https://no-such-host.invalid/)"
             issues = await verify_content_urls(content, site_config=_SC)
         unresolvable = [i for i in issues if i.category == "unresolvable_link"]
@@ -179,9 +184,10 @@ class TestVerifyContentUrls:
     async def test_localhost_via_endswith_suffix_skipped(self):
         """Hostnames ending in '.localhost' (per the source's check) are skipped."""
         ctx, client = _make_httpx_client({})
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Internal: [api](http://service.localhost/api)"
             issues = await verify_content_urls(content, site_config=_SC)
         # service.localhost ends with '.localhost' -> skip
@@ -192,9 +198,10 @@ class TestVerifyContentUrls:
         ctx, client = _make_httpx_client({
             "https://bare.example.com/path": _make_response(200),
         })
-        with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "site_config") as sc:
-            sc.get = MagicMock(return_value="")
+        # #272 Phase-2g: site_config is injected, not a module global.
+        # ``_SC`` (fresh SiteConfig) returns an empty ``site_domains`` so
+        # external links are HEAD-checked exactly as before.
+        with patch("httpx.AsyncClient", return_value=ctx):
             content = "Visit https://bare.example.com/path for more."
             issues = await verify_content_urls(content, site_config=_SC)
         # Should have HEAD'd the bare URL

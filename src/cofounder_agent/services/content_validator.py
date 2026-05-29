@@ -20,38 +20,23 @@ import time as _time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import services.content_validator as _mod  # self-import for module-global fallback
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
 if TYPE_CHECKING:
     import httpx
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-#
-# #272 Phase-2d: the public entry points (``validate_content`` /
-# ``_check_code_block_density`` / ``verify_content_urls``) now REQUIRE an
-# explicit ``site_config`` — callers thread the run-bound instance. The
-# module global + ``set_site_config()`` are RETAINED solely for the
-# import-time ``GLAD_LABS_FACTS = _get_company_facts()`` read below
-# (``_get_company_facts`` has no SiteConfig in scope at import time), so
-# ``content_validator`` stays in ``di_wiring.WIRED_MODULES``. Everything
-# else routes through the required param.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module.
-
-    #272 Phase-2d: retained only to wire the global consumed by the
-    import-time ``_get_company_facts()`` path. The public validator
-    functions take a required ``site_config`` and never read the global.
-    """
-    global site_config
-    site_config = sc
+# #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
+# setter are DELETED. injection is now mandatory — the public entry points
+# (``validate_content`` / ``_check_code_block_density`` / ``verify_content_urls``)
+# all REQUIRE an explicit keyword ``site_config`` and callers thread the
+# run-bound instance. The sole remaining import-time read
+# (``GLAD_LABS_FACTS = _get_company_facts()`` below) builds the fact patterns
+# from a fresh env-fallback ``SiteConfig()`` — identical to the previous
+# behaviour, since at module-import time the old global was still its empty
+# default (the lifespan setter never ran before this module finished
+# importing). ``content_validator`` is therefore removed from
+# ``di_wiring.WIRED_MODULES``.
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -123,14 +108,14 @@ _NAMED_SOURCE_KEYWORDS = (
 def _get_company_facts(site_config: SiteConfig | None = None) -> dict:
     """Load company facts from DB (site_config) with env fallback.
 
-    #272 Phase-2d (option b): this helper keeps an OPTIONAL ``site_config``
-    with a module-global fallback specifically for the import-time call
-    (``GLAD_LABS_FACTS = _get_company_facts()`` below), which has no
-    SiteConfig in scope. The other validator functions went required;
-    this one cannot, because it runs at module import before any
-    SiteConfig exists. The module global is retained for exactly this path.
+    #272 Phase-2g: ``site_config`` is OPTIONAL only because the import-time
+    call (``GLAD_LABS_FACTS = _get_company_facts()`` below) has no SiteConfig
+    in scope. When omitted, a fresh env-fallback ``SiteConfig()`` is used —
+    which is exactly what the deleted module global resolved to at import
+    time (the lifespan setter never ran before import completed), so the
+    derived fact patterns are byte-for-byte identical to before.
     """
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config if site_config is not None else SiteConfig()
     return {
         "company_name": _sc.get("company_name", "My Company"),
         "founded_date": _sc.get("company_founded_date", "2025-01-01"),

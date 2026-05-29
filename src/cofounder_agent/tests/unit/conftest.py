@@ -115,7 +115,10 @@ for _key, _value in _TEST_BRAND_CONFIG.items():
 # DI seam in place. ``set_site_config()`` is the canonical wiring path
 # main.py uses; we use it here for parity.
 _SHARED_TEST_MODULES = (
-    "services.publish_service",
+    # ``services.publish_service`` removed from _SHARED_TEST_MODULES 2026-05-29
+    # (#272 Phase-2g); no module-level site_config attr to share. Tests pass
+    # ``site_config=`` to ``publish_post_from_task`` /
+    # ``fire_post_distribution_hooks`` / ``_ping_search_engines`` directly.
     # ``services.image_service`` removed from _SHARED_TEST_MODULES 2026-05-29
     # (#272 Phase-2e); no module-level site_config attr to share. Tests
     # construct ``ImageService(site_config=...)`` / ``get_image_service(
@@ -148,7 +151,12 @@ _SHARED_TEST_MODULES = (
     # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
     # share. Tests pass ``site_config=`` to ``send_post_newsletter`` /
     # ``_build_html`` / ``_send_via_smtp`` directly.
-    "services.content_validator",
+    # ``services.content_validator`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2g); the module global + ``set_site_config`` are
+    # deleted. Tests pass ``site_config=`` to ``validate_content`` /
+    # ``_check_code_block_density`` / ``verify_content_urls`` directly (and the
+    # import-time ``GLAD_LABS_FACTS`` derives from a fresh env-fallback
+    # SiteConfig, identical to before).
     # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the MultiModelQA constructor.
@@ -181,7 +189,10 @@ _SHARED_TEST_MODULES = (
     # ``services.topic_batch_service`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2d); no module-level site_config attr to share.
     # Tests construct ``TopicBatchService(pool, site_config=SiteConfig())``.
-    "services.database_service",
+    # ``services.database_service`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2g); the module global + ``set_site_config`` are
+    # deleted and ``DatabaseService.__init__`` takes a REQUIRED ``site_config``.
+    # Tests construct ``DatabaseService(site_config=SiteConfig(...))`` directly.
     # ``services.quality_scorers`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272

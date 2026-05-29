@@ -35,17 +35,15 @@ from .users_db import UsersDatabase
 from .writing_style_db import WritingStyleDatabase
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
+# setter are DELETED. injection is now mandatory — ``__init__`` takes a
+# REQUIRED ``site_config`` and stores it on ``self._site_config``. Bootstrap
+# nuance: ``DatabaseService`` is constructed very early (before site_config
+# has loaded from the DB, which it does via this very pool), so the caller
+# passes the app's lifespan-bound SiteConfig instance — initially empty,
+# populated in-place by ``site_config.load(pool)`` AFTER construction. The
+# pool-size reads in ``initialize()`` therefore use literal defaults exactly
+# as before. ``database_service`` is removed from ``di_wiring.WIRED_MODULES``.
 
 
 logger = get_logger(__name__)
@@ -71,7 +69,8 @@ class DatabaseService:
         self,
         database_url: str | None = None,
         local_database_url: str | None = None,
-        site_config: SiteConfig | None = None,
+        *,
+        site_config: SiteConfig,
     ):
         """
         Initialize database service coordinator with asyncpg.
@@ -82,22 +81,17 @@ class DatabaseService:
             local_database_url: PostgreSQL connection URL (local brain DB)
                                Optional: LOCAL_DATABASE_URL env var or passed explicitly
                                When not set, local_pool = pool (backward compatible)
-            site_config: Injected SiteConfig (Phase-1 DI shim, #272). When None
-                         (the default — every existing caller), falls back to the
-                         module-level ``site_config`` global so behavior is
-                         identical to today. Bootstrap nuance: this service is
-                         constructed very early, before ``site_config`` has loaded
-                         from the DB (it loads via this very pool), so at
-                         pool-creation time ``.get()`` returns literal defaults —
-                         the fallback preserves that exact behavior.
+            site_config: Injected SiteConfig (#272 Phase-2g). REQUIRED. Bootstrap
+                         nuance: this service is constructed very early, before
+                         ``site_config`` has loaded from the DB (it loads via this
+                         very pool), so callers pass the app's lifespan-bound
+                         SiteConfig instance — initially empty, populated in-place
+                         by ``site_config.load(pool)`` after construction. At
+                         pool-creation time in ``initialize()`` ``.get()`` returns
+                         literal defaults, which is the intended behaviour.
         """
-        # Phase-1 DI shim (#272). Store the explicitly-injected instance, or
-        # ``None`` to mean "fall back to the module-level global". The
-        # ``_site_config`` property resolves the global lazily at read time
-        # so a late ``set_site_config()`` rebind — and tests that patch
-        # ``services.database_service.site_config`` after construction — keep
-        # the exact behavior the global-read code had before this shim.
-        self._injected_site_config = site_config
+        # #272 Phase-2g: injection is mandatory; store the run-bound instance.
+        self._site_config = site_config
         if database_url:
             self.database_url = database_url
         else:
@@ -178,19 +172,6 @@ class DatabaseService:
         self.writing_style: WritingStyleDatabase | None = None
         self.embeddings: EmbeddingsDatabase | None = None
         self.audit: AuditLogger | None = None
-
-    @property
-    def _site_config(self) -> SiteConfig:
-        """Resolve the active SiteConfig (Phase-1 DI shim, #272).
-
-        Returns the explicitly-injected instance when one was passed to
-        ``__init__``; otherwise the module-level global (read live so a
-        late ``set_site_config()`` rebind is honored — identical to the
-        pre-shim ``site_config.get(...)`` reads).
-        """
-        if self._injected_site_config is not None:
-            return self._injected_site_config
-        return site_config
 
     async def initialize(self) -> None:
         """Initialize connection pool(s) and all delegate modules."""

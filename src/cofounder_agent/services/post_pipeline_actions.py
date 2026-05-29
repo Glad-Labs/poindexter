@@ -455,6 +455,7 @@ async def _maybe_auto_publish(
             database_service=database_service,
             task_id=task_id,
             quality_score=quality_score,
+            site_config=site_config,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(

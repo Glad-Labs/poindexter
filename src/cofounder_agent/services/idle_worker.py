@@ -192,7 +192,12 @@ class IdleWorker:
 
             from services.database_service import DatabaseService
             from services.publish_service import fire_post_distribution_hooks
+            from services.site_config import SiteConfig
 
+            # #272 Phase-2g: DatabaseService + fire_post_distribution_hooks
+            # both require a site_config. Thread this worker's wired instance
+            # (env-fallback when unset).
+            _sc = self._site_config or SiteConfig()
             advanced = 0
             for row in rows:
                 pid = row["post_id"]
@@ -203,9 +208,9 @@ class IdleWorker:
                 if already:
                     continue
                 try:
-                    db = DatabaseService()
+                    db = DatabaseService(site_config=_sc)
                     db._pool = self.pool
-                    result = await fire_post_distribution_hooks(db, pid)
+                    result = await fire_post_distribution_hooks(db, pid, site_config=_sc)
                     if result.get("fired"):
                         advanced += 1
                         await self.pool.execute(
@@ -250,8 +255,13 @@ class IdleWorker:
                 try:
                     from services.database_service import DatabaseService
                     from services.publish_service import publish_post_from_task
+                    from services.site_config import SiteConfig
 
-                    db = DatabaseService()
+                    # #272 Phase-2g: DatabaseService + publish_post_from_task
+                    # require a site_config — thread this worker's wired
+                    # instance (env-fallback when unset).
+                    _sc = self._site_config or SiteConfig()
+                    db = DatabaseService(site_config=_sc)
                     db._pool = self.pool
                     task = await db.get_task(str(task_id))
                     if not task:
@@ -263,6 +273,7 @@ class IdleWorker:
                         queue_social=True,
                         draft_mode=False,
                         honor_pacing=False,
+                        site_config=_sc,
                     )
                     if result.success:
                         await self.pool.execute(

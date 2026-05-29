@@ -195,8 +195,17 @@ class StartupManager:
             from services.database_service import DatabaseService
 
             config = get_config()
+            # #272 Phase-2g: DatabaseService takes a REQUIRED site_config.
+            # Pass the lifespan-bound instance threaded into this manager —
+            # it's still empty here (loaded in-place later by
+            # ``site_config.load(pool)`` in main.py's lifespan), so the
+            # pool-size reads in ``initialize()`` use defaults exactly as
+            # before. A bare-boot path with no injected SiteConfig falls
+            # back to a fresh env-fallback instance.
+            from services.site_config import SiteConfig
             self.database_service = DatabaseService(
                 local_database_url=config.local_database_url,
+                site_config=self._site_config or SiteConfig(),
             )
 
             for attempt in range(1, max_attempts + 1):

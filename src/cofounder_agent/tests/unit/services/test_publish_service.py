@@ -31,6 +31,15 @@ from services.publish_service import (
     _parse_json_field,
     publish_post_from_task,
 )
+from services.site_config import SiteConfig
+
+# #272 Phase-2g: publish_service's module-level ``site_config`` global +
+# ``set_site_config`` (and the ``_resolve_site_config`` fallback) were
+# deleted; ``publish_post_from_task`` / ``fire_post_distribution_hooks`` /
+# ``_ping_search_engines`` now take a REQUIRED ``site_config=``. Tests pass
+# this shared env-fallback instance (seeded with the brand keys the publish
+# path reads — chiefly ``site_url`` for the search-engine ping).
+_TEST_SC = SiteConfig(initial_config={"site_url": "https://www.test-site.example.com"})
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -307,6 +316,7 @@ class TestPublishHappyPath:
                 publisher="test-user",
                 trigger_revalidation=True,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -374,6 +384,7 @@ class TestPublishHappyPath:
                 publisher="t",
                 trigger_revalidation=False,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         db.create_post.assert_awaited_once()
@@ -410,6 +421,7 @@ class TestPublishHappyPath:
                 publisher="t",
                 trigger_revalidation=False,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         post_data = db.create_post.call_args[0][0]
@@ -444,6 +456,7 @@ class TestPublishHappyPath:
                 db_service=db, task=task, task_id=tid,
                 publisher="t", trigger_revalidation=False,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         post_data = db.create_post.call_args[0][0]
@@ -484,6 +497,7 @@ class TestPublishHappyPath:
                 db_service=db, task=task, task_id=tid,
                 publisher="t", trigger_revalidation=False,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         post_data = db.create_post.call_args[0][0]
@@ -504,6 +518,7 @@ class TestPublishHappyPath:
 
         result = await publish_post_from_task(
             db_service=db, task=task, task_id=task_id, queue_social=False,
+            site_config=_TEST_SC,
         )
 
         assert result.success is True
@@ -522,6 +537,7 @@ class TestPublishHappyPath:
         with _LazyImportContext():
             await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-12345678", queue_social=False,
+                site_config=_TEST_SC,
             )
 
         db.update_task_status.assert_awaited_once()
@@ -542,6 +558,7 @@ class TestPublishHappyPath:
         with _LazyImportContext():
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id=tid, queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -564,7 +581,7 @@ class TestPublishMissingContent:
         task = _make_task(topic="AI", content="")
 
         result = await publish_post_from_task(
-            db_service=db, task=task, task_id="tid-00000000"
+            db_service=db, task=task, task_id="tid-00000000", site_config=_TEST_SC,
         )
 
         assert result.success is False
@@ -577,7 +594,7 @@ class TestPublishMissingContent:
         task = _make_task(topic="", content="")
 
         result = await publish_post_from_task(
-            db_service=db, task=task, task_id="tid-00000001"
+            db_service=db, task=task, task_id="tid-00000001", site_config=_TEST_SC,
         )
 
         assert result.success is False
@@ -599,6 +616,7 @@ class TestPublishMissingContent:
         with _LazyImportContext():
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-fallback", queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -626,6 +644,7 @@ class TestPublishDbFailure:
         with _LazyImportContext():
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-fail", queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is False
@@ -769,7 +788,7 @@ class TestSearchEnginePing:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
             # Should not raise
-            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test")
+            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test", site_config=_TEST_SC)
 
     @pytest.mark.asyncio
     async def test_ping_success_completes(self):
@@ -783,7 +802,7 @@ class TestSearchEnginePing:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test")
+            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test", site_config=_TEST_SC)
 
         # Both IndexNow and Google ping were attempted
         assert mock_client.get.await_count == 2
@@ -814,6 +833,7 @@ class TestDevtoCrossPost:
         with _LazyImportContext(overrides={"services.devto_service": devto_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-devto", queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -849,6 +869,7 @@ class TestScheduledPublishApplied:
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-sched",
                 queue_social=False, honor_pacing=True,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -872,6 +893,7 @@ class TestScheduledPublishApplied:
             await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-nosched",
                 queue_social=False, honor_pacing=True,
+                site_config=_TEST_SC,
             )
 
         post_data = db.create_post.call_args[0][0]
@@ -901,6 +923,7 @@ class TestWebhookNonBlocking:
         with _LazyImportContext(overrides={"services.webhook_delivery_service": webhook_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-webhook", queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -939,6 +962,7 @@ class TestRevalidation:
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-reval",
                 trigger_revalidation=True, queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -956,6 +980,7 @@ class TestRevalidation:
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-noreval",
                 trigger_revalidation=False, queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -1220,6 +1245,7 @@ class TestPublishGateDeferral:
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-gated",
                 queue_social=True, trigger_revalidation=True,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -1304,7 +1330,7 @@ class TestFirePostDistributionHooks:
         db.pool = pool
         db.cloud_pool = None
 
-        result = await fire_post_distribution_hooks(db, "post-1")
+        result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
         assert result == {"fired": False, "reason": "pending_gates"}
 
     @pytest.mark.asyncio
@@ -1323,7 +1349,7 @@ class TestFirePostDistributionHooks:
         db.pool = pool
         db.cloud_pool = None
 
-        result = await fire_post_distribution_hooks(db, "ghost-post")
+        result = await fire_post_distribution_hooks(db, "ghost-post", site_config=_TEST_SC)
         assert result == {"fired": False, "reason": "post_not_found"}
 
     @pytest.mark.asyncio
@@ -1354,7 +1380,7 @@ class TestFirePostDistributionHooks:
             "services.static_export_service": export_mod,
             "services.revalidation_service": reval_mod,
         }):
-            result = await fire_post_distribution_hooks(db, "post-1")
+            result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
         assert result["fired"] is True
         assert result["status_flipped"] is True
@@ -1389,7 +1415,7 @@ class TestFirePostDistributionHooks:
             "services.social_poster": social_mod,
             "services.devto_service": devto_mod,
         }):
-            result = await fire_post_distribution_hooks(db, "post-1")
+            result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
         assert result["fired"] is True
         assert "status_flipped" not in result
@@ -1430,7 +1456,7 @@ class TestFirePostDistributionHooks:
             "services.podcast_service": podcast_mod,
             "services.video_service": video_mod,
         }):
-            result = await fire_post_distribution_hooks(db, "post-1")
+            result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
         assert "podcast" in result["hooks"]
         assert "short" in result["hooks"]
@@ -1462,7 +1488,7 @@ class TestFirePostDistributionHooks:
             "services.social_poster": social_mod,
             "services.devto_service": devto_mod,
         }):
-            result = await fire_post_distribution_hooks(db, "post-1")
+            result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
         assert result["fired"] is True
         assert "social" not in result["hooks"]
@@ -1495,7 +1521,7 @@ class TestFirePostDistributionHooks:
             "services.social_poster": social_mod,
             "services.devto_service": devto_mod,
         }):
-            result = await fire_post_distribution_hooks(db, "post-1")
+            result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
         assert result["fired"] is True
 
@@ -1523,14 +1549,15 @@ class TestPingSearchEnginesEmptyConfig:
         # AsyncMock so the await resolves to '' (key absent → ping skipped).
         sc.get_secret = AsyncMock(return_value="")
 
-        with patch("services.publish_service.site_config", sc):
-            mock_client = AsyncMock()
-            mock_client.get = AsyncMock()
-            with patch("httpx.AsyncClient") as mock_cls:
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        # #272 Phase-2g: site_config is injected, not patched on a module
+        # global. Pass the empty-URL MagicMock directly.
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock()
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-                await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test")
+            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test", site_config=sc)
 
         # Both pings were skipped → no GET calls
         mock_client.get.assert_not_called()
@@ -1594,6 +1621,7 @@ class TestMediaSpawnRespectsPolicy:
                 publisher="test-user",
                 trigger_revalidation=False,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True
@@ -1654,6 +1682,7 @@ class TestMediaSpawnRespectsPolicy:
                 publisher="test-user",
                 trigger_revalidation=False,
                 queue_social=False,
+                site_config=_TEST_SC,
             )
 
         assert result.success is True

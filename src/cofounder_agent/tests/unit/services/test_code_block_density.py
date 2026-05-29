@@ -24,10 +24,15 @@ from services.content_validator import (
     _is_tech_post,
     validate_content,
 )
-# The content_validator module owns its own ``site_config`` attr
-# (post-#330 sweep). Use that for seeding density-test settings.
-import services.content_validator as _content_validator_mod
-site_config = _content_validator_mod.site_config
+from services.site_config import SiteConfig
+
+# #272 Phase-2g: content_validator's module-level ``site_config`` global was
+# deleted; injection is mandatory. The density tests own a local SiteConfig
+# instance, seed its ``_config`` via ``_seed_density_settings`` (which sets
+# every density key each test, so there's no cross-test leak), and thread it
+# into ``validate_content`` / ``_check_code_block_density`` via the required
+# ``site_config=`` kwarg.
+site_config = SiteConfig()
 
 
 # ---------------------------------------------------------------------------

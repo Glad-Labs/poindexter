@@ -30,6 +30,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.site_config import SiteConfig
+
+# #272 Phase-2g: publish_post_from_task requires an injected site_config.
+_TEST_SC = SiteConfig(initial_config={"site_url": "https://www.test-site.example.com"})
+
 
 def _make_task() -> dict[str, Any]:
     return {
@@ -121,6 +126,7 @@ async def test_stage_only_creates_post_at_status_approved() -> None:
             stage_only=True,
             trigger_revalidation=False,
             queue_social=False,
+            site_config=_TEST_SC,
         )
 
     assert result.success, f"stage_only path failed: {result.error}"
@@ -159,6 +165,7 @@ async def test_stage_only_skips_distributed_at_stamp() -> None:
             stage_only=True,
             trigger_revalidation=False,
             queue_social=False,
+            site_config=_TEST_SC,
         )
 
     assert captured["post_data"].get("distributed_at") is None, (
@@ -192,6 +199,7 @@ async def test_stage_only_leaves_task_at_status_approved_not_published() -> None
             stage_only=True,
             trigger_revalidation=False,
             queue_social=False,
+            site_config=_TEST_SC,
         )
 
     # Should have exactly one status update — to 'approved', not 'published'.
@@ -220,6 +228,7 @@ async def test_stage_only_and_draft_mode_are_mutually_exclusive() -> None:
             publisher="operator-test",
             stage_only=True,
             draft_mode=True,
+            site_config=_TEST_SC,
         )
 
 
@@ -256,6 +265,7 @@ async def test_publish_promotes_existing_approved_post_to_published() -> None:
         publisher="operator-test",
         stage_only=False,
         draft_mode=False,
+        site_config=_TEST_SC,
     )
 
     # Result mirrors the existing post (no duplicate row created).
@@ -314,6 +324,7 @@ async def test_publish_skips_when_post_already_published() -> None:
         publisher="operator-test",
         stage_only=False,
         draft_mode=False,
+        site_config=_TEST_SC,
     )
 
     assert result.success is True
@@ -353,6 +364,7 @@ async def test_stage_only_does_not_promote_existing_approved() -> None:
         publisher="operator-test",
         stage_only=True,
         draft_mode=False,
+        site_config=_TEST_SC,
     )
 
     assert result.success is True
@@ -561,6 +573,7 @@ async def test_publish_promote_triggers_r2_export() -> None:
             publisher="operator-test",
             stage_only=False,
             draft_mode=False,
+            site_config=_TEST_SC,
         )
 
     assert result.success is True

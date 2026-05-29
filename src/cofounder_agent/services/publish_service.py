@@ -24,36 +24,15 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from utils.text_utils import extract_title_from_content
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
-def _resolve_site_config(site_config: "SiteConfig | None") -> SiteConfig:
-    """Phase-1 DI shim (#272): resolve the effective SiteConfig.
-
-    Prefers an explicitly injected instance; otherwise falls back to the
-    module-global ``site_config`` (the one ``set_site_config`` wires at
-    lifespan startup). The self-module import dodges the local-name
-    shadow created when a function declares ``site_config`` as a keyword
-    param — at that point the bare name ``site_config`` refers to the
-    parameter, not the module global, so we reach the global via the
-    module object instead. Back-compat: every caller that passes nothing
-    keeps the pre-shim behaviour (read the module global).
-    """
-    if site_config is not None:
-        return site_config
-    import services.publish_service as _mod
-
-    return _mod.site_config
+# #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
+# setter (and the ``_resolve_site_config`` fallback shim) are DELETED.
+# injection is now mandatory — the public entries (``publish_post_from_task`` /
+# ``fire_post_distribution_hooks``) and the internal ``_ping_search_engines``
+# all take a REQUIRED keyword ``site_config`` and callers thread the run-bound
+# instance (routes via ``Depends(get_site_config_dependency)``; the Prefect
+# post-pipeline auto-publish path via its threaded SiteConfig; the
+# scheduled-publisher / idle-worker via their wired instance).
+# ``publish_service`` is removed from ``di_wiring.WIRED_MODULES``.
 
 
 logger = get_logger(__name__)
@@ -249,12 +228,17 @@ async def _ping_search_engines(
     site_url: str,
     post_url: str,
     *,
-    site_config: "SiteConfig | None" = None,
+    site_config: SiteConfig,
 ) -> None:
-    """Notify search engines about new content via IndexNow and Google ping."""
+    """Notify search engines about new content via IndexNow and Google ping.
+
+    #272 Phase-2g: ``site_config`` is REQUIRED (keyword-only). The only
+    callers are ``publish_post_from_task`` / ``fire_post_distribution_hooks``
+    in this module, which thread their own required ``_sc``.
+    """
     import httpx
 
-    _sc = _resolve_site_config(site_config)
+    _sc = site_config
 
     # Tight caps on external SEO pings — they're fire-and-forget, we don't
     # want them to delay anything else if the target is slow.
@@ -511,7 +495,7 @@ async def publish_post_from_task(
     stage_only: bool = False,
     honor_pacing: bool = False,
     background_tasks=None,
-    site_config: "SiteConfig | None" = None,
+    site_config: SiteConfig,
 ) -> PublishResult:
     """Create a published post from a completed content task.
 
@@ -545,8 +529,8 @@ async def publish_post_from_task(
             "publish_post_from_task: stage_only and draft_mode are "
             "mutually exclusive (status='approved' vs status='draft')."
         )
-    # Phase-1 DI shim (#272): resolve once, then thread/read via _sc below.
-    _sc = _resolve_site_config(site_config)
+    # #272 Phase-2g: site_config is REQUIRED — thread/read via _sc below.
+    _sc = site_config
     from utils.json_encoder import convert_decimals, safe_json_dumps
 
     # ---------------------------------------------------------------
@@ -1470,11 +1454,14 @@ async def publish_post_from_task(
             try:
                 from services.newsletter_service import send_post_newsletter
                 _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                # #272 Phase-2b: newsletter_service no longer carries a
-                # lifespan-bound module global — pass this module's own
-                # wired site_config explicitly.
+                # #272 Phase-2b/2g: newsletter_service requires a site_config —
+                # pass the run-bound instance resolved at the top of
+                # ``publish_post_from_task`` (the ``_sc`` closure variable).
+                # (Pre-2g this read the outer ``site_config`` param, which was
+                # the as-passed kwarg — possibly None — a latent bug now that
+                # injection is mandatory.)
                 result = await send_post_newsletter(
-                    _pool, ptitle, pexcerpt, pslug, site_config=site_config,
+                    _pool, ptitle, pexcerpt, pslug, site_config=_sc,
                 )
                 logger.info("[NEWSLETTER] Result: %s", result)
             except Exception as e:
@@ -1561,7 +1548,7 @@ async def fire_post_distribution_hooks(
     db_service,
     post_id: str,
     *,
-    site_config: "SiteConfig | None" = None,
+    site_config: SiteConfig,
 ) -> dict[str, Any]:
     """Re-fire the distribution hooks (social/devto/podcast/video/short/RSS)
     for a post whose approval gates have just cleared.
@@ -1574,8 +1561,8 @@ async def fire_post_distribution_hooks(
     swallowed and logged — distribution hooks are best-effort by
     design (the post is already on the public site at this point).
     """
-    # Phase-1 DI shim (#272): resolve once, then read/thread via _sc below.
-    _sc = _resolve_site_config(site_config)
+    # #272 Phase-2g: site_config is REQUIRED — read/thread via _sc below.
+    _sc = site_config
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
 
     # Defensive: don't fire if there are still pending gates. Concurrent

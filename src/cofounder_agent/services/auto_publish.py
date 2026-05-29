@@ -89,6 +89,7 @@ async def auto_publish_task(
     database_service: Any,
     task_id: str,
     quality_score: float,
+    site_config: Any,
 ) -> bool:
     """Auto-approve and publish a task that has cleared the quality floor.
 
@@ -108,6 +109,11 @@ async def auto_publish_task(
       image-less posts; the operator-facing approval queue is the
       right surface for that)
     - ``publish_post_from_task`` returned ``success=False``
+
+    site_config (#272 Phase-2g): REQUIRED. Threaded down to
+    ``publish_post_from_task`` (which now requires it). The Prefect
+    post-pipeline path (``post_pipeline_actions._maybe_auto_publish``)
+    passes its run-bound instance.
     """
     from services.publish_service import publish_post_from_task
 
@@ -189,6 +195,7 @@ async def auto_publish_task(
         publisher="auto_publish",
         trigger_revalidation=True,
         queue_social=True,
+        site_config=site_config,
     )
 
     if not result.success:

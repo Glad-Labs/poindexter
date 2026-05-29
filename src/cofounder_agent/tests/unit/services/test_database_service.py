@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.database_service import DatabaseService
+from services.site_config import SiteConfig
 
 
 def _has_brain_module() -> bool:
@@ -87,9 +88,17 @@ def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
 
 def make_service(
     database_url: str = "postgresql://user:pass@localhost:5432/test_db",
+    site_config: SiteConfig | None = None,
 ) -> DatabaseService:
-    """Return a DatabaseService without actually initializing a pool."""
-    return DatabaseService(database_url=database_url)
+    """Return a DatabaseService without actually initializing a pool.
+
+    #272 Phase-2g: ``DatabaseService`` takes a REQUIRED ``site_config``;
+    default to a fresh env-fallback instance for tests that don't care.
+    """
+    return DatabaseService(
+        database_url=database_url,
+        site_config=site_config if site_config is not None else SiteConfig(),
+    )
 
 
 def _attach_mock_modules(svc: DatabaseService) -> dict:
@@ -113,7 +122,10 @@ def _attach_mock_modules(svc: DatabaseService) -> dict:
 
 class TestDatabaseServiceInit:
     def test_explicit_url_used(self):
-        svc = DatabaseService(database_url="postgresql://user:pass@host:5432/db")
+        svc = DatabaseService(
+            database_url="postgresql://user:pass@host:5432/db",
+            site_config=SiteConfig(),
+        )
         assert svc.database_url == "postgresql://user:pass@host:5432/db"
 
     def test_reads_database_url_env_var(self, monkeypatch):
@@ -127,7 +139,7 @@ class TestDatabaseServiceInit:
         _boot = _ensure_brain_bootstrap_stub(monkeypatch)
         monkeypatch.setattr(_boot, "BOOTSTRAP_FILE", _boot.BOOTSTRAP_DIR / "nonexistent.toml")
         monkeypatch.setenv("DATABASE_URL", "postgresql://env:env@host/envdb")
-        svc = DatabaseService()
+        svc = DatabaseService(site_config=SiteConfig())
         assert svc.database_url == "postgresql://env:env@host/envdb"
 
     def test_raises_when_no_url(self, monkeypatch):
@@ -148,7 +160,7 @@ class TestDatabaseServiceInit:
         # try to hit Telegram/Discord during the run.
         with patch("brain.operator_notifier.notify_operator", create=True):
             with pytest.raises(SystemExit) as excinfo:
-                DatabaseService()
+                DatabaseService(site_config=SiteConfig())
         assert excinfo.value.code == 2
 
     def test_pool_starts_as_none(self):
@@ -197,7 +209,16 @@ class TestDatabaseServiceLifecycle:
         """GH-92: database_pool_min_size / database_pool_max_size come from
         app_settings via site_config — never hardcoded, never from raw env.
         Set an app_settings value and prove asyncpg.create_pool receives it."""
-        svc = make_service()
+        # #272 Phase-2g: inject the SiteConfig stub via the constructor
+        # (the module-level ``site_config`` global was deleted).
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(
+            side_effect=lambda key, default=None: {
+                "database_pool_min_size": "3",
+                "database_pool_max_size": "42",
+            }.get(key, default)
+        )
+        svc = make_service(site_config=fake_site_config)
         mock_pool = AsyncMock()
         # Capture every asyncpg.create_pool call. ``initialize()`` may
         # provision a second (local) pool when ``LOCAL_DATABASE_URL`` is
@@ -210,18 +231,9 @@ class TestDatabaseServiceLifecycle:
             all_calls.append(kwargs)
             return mock_pool
 
-        # Build a SiteConfig-like stub that returns app_settings values.
-        fake_site_config = MagicMock()
-        fake_site_config.get = MagicMock(
-            side_effect=lambda key, default=None: {
-                "database_pool_min_size": "3",
-                "database_pool_max_size": "42",
-            }.get(key, default)
-        )
-
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.site_config", fake_site_config
-        ), patch("services.database_service.UsersDatabase"), patch(
+            "services.database_service.UsersDatabase"
+        ), patch(
             "services.database_service.TasksDatabase"
         ), patch("services.database_service.ContentDatabase"), patch(
             "services.database_service.AdminDatabase"
@@ -243,7 +255,11 @@ class TestDatabaseServiceLifecycle:
         ``min_size`` must stay ≤ 5 — oversized pools reserve connections
         against ``max_connections`` even when the worker is idle, which
         is the exact exhaustion pattern GH-92 fixed."""
-        svc = make_service()
+        # site_config.get with no app_settings value falls through to default.
+        # #272 Phase-2g: injected via the constructor (no module global).
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(side_effect=lambda key, default=None: default)
+        svc = make_service(site_config=fake_site_config)
         mock_pool = AsyncMock()
         created_kwargs: dict = {}
 
@@ -251,13 +267,9 @@ class TestDatabaseServiceLifecycle:
             created_kwargs.update(kwargs)
             return mock_pool
 
-        # site_config.get with no app_settings value falls through to default.
-        fake_site_config = MagicMock()
-        fake_site_config.get = MagicMock(side_effect=lambda key, default=None: default)
-
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.site_config", fake_site_config
-        ), patch("services.database_service.UsersDatabase"), patch(
+            "services.database_service.UsersDatabase"
+        ), patch(
             "services.database_service.TasksDatabase"
         ), patch("services.database_service.ContentDatabase"), patch(
             "services.database_service.AdminDatabase"
@@ -492,6 +504,7 @@ class TestDualPoolInitialize:
         svc = DatabaseService(
             database_url="postgresql://cloud",
             local_database_url="postgresql://local",
+            site_config=SiteConfig(),
         )
 
         cloud_pool = AsyncMock(name="cloud_pool")
@@ -525,6 +538,7 @@ class TestDualPoolInitialize:
         svc = DatabaseService(
             database_url="postgresql://cloud",
             local_database_url="postgresql://local",
+            site_config=SiteConfig(),
         )
 
         cloud_pool = AsyncMock(name="cloud_pool")
@@ -556,7 +570,7 @@ class TestDualPoolInitialize:
 
         monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
         monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
-        svc = DatabaseService(database_url="postgresql://cloud")
+        svc = DatabaseService(database_url="postgresql://cloud", site_config=SiteConfig())
 
         only_pool = AsyncMock(name="only_pool")
         create_pool = AsyncMock(return_value=only_pool)
@@ -582,7 +596,7 @@ class TestDualPoolInitialize:
     async def test_initialize_failure_propagates(self):
         from services.database_service import DatabaseService
 
-        svc = DatabaseService(database_url="postgresql://bad")
+        svc = DatabaseService(database_url="postgresql://bad", site_config=SiteConfig())
 
         with patch("asyncpg.create_pool", new=AsyncMock(side_effect=ConnectionError("refused"))):
             with pytest.raises(ConnectionError):
@@ -594,7 +608,7 @@ class TestCloseDualPool:
     async def test_close_closes_both_pools_when_separate(self):
         from services.database_service import DatabaseService
 
-        svc = DatabaseService(database_url="x")
+        svc = DatabaseService(database_url="x", site_config=SiteConfig())
         cloud_pool = AsyncMock(name="cloud")
         local_pool = AsyncMock(name="local")
         svc.pool = cloud_pool
@@ -609,7 +623,7 @@ class TestCloseDualPool:
         """When local_pool is the same instance as pool, close it only once."""
         from services.database_service import DatabaseService
 
-        svc = DatabaseService(database_url="x")
+        svc = DatabaseService(database_url="x", site_config=SiteConfig())
         shared = AsyncMock(name="shared")
         svc.pool = shared
         svc.local_pool = shared

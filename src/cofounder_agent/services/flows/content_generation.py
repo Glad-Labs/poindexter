@@ -416,9 +416,16 @@ async def _build_default_database_service() -> Any:
     from brain.bootstrap import resolve_database_url
 
     from services.database_service import DatabaseService
+    from services.site_config import SiteConfig
 
     dsn = resolve_database_url()
-    db = DatabaseService(local_database_url=dsn)
+    # #272 Phase-2g: DatabaseService takes a REQUIRED site_config. This path
+    # opens the pool BEFORE the subprocess SiteConfig is loaded from it (the
+    # flow body calls ``build_and_wire_subprocess_with_container`` on this
+    # pool afterwards), so a fresh env-fallback SiteConfig() is correct here —
+    # the pool-size reads in ``initialize()`` use defaults, matching the
+    # empty module global this path resolved before.
+    db = DatabaseService(local_database_url=dsn, site_config=SiteConfig())
     await db.initialize()
     return db
 

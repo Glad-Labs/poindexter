@@ -212,6 +212,7 @@ async def approve_task(
     publish_at: str | None = None,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
 ):
     """
     Approve or reject a task for publishing.
@@ -453,6 +454,7 @@ async def approve_task(
                     draft_mode=False,
                     stage_only=True,
                     honor_pacing=False,
+                    site_config=site_config_dep,
                 )
                 if stage_result.success:
                     merged_result["post_id"] = stage_result.post_id
@@ -484,6 +486,7 @@ async def approve_task(
                     queue_social=True,
                     draft_mode=False,
                     honor_pacing=False,
+                    site_config=site_config_dep,
                 )
                 if pub_result.success:
                     merged_result["post_id"] = pub_result.post_id
@@ -581,6 +584,7 @@ async def publish_task(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
+    site_config_dep=Depends(get_site_config_dependency),
 ):
     """
     Publish an approved task to specified channels.
@@ -645,6 +649,7 @@ async def publish_task(
             trigger_revalidation=True,
             queue_social=True,
             background_tasks=background_tasks,
+            site_config=site_config_dep,
         )
 
         if not pub_result.success:

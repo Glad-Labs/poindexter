@@ -399,8 +399,12 @@ class TestAutoPublish:
                 settings_service=settings,
             )
 
+        # #272 Phase-2g: auto_publish_task now requires site_config (threaded
+        # down to the publish path). _maybe_auto_publish forwards the
+        # run-bound instance it received from run_post_pipeline_actions.
         auto_pub_mock.assert_awaited_once_with(
             database_service=db, task_id="t-auto-pub", quality_score=90.0,
+            site_config=site,
         )
         # publish_service handles its own notification; the post-pipeline
         # helper does NOT also fire one.

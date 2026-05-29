@@ -3,13 +3,18 @@ import logging
 
 from services.database_service import DatabaseService
 from services.migrations import MigrationService
+from services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 
 
 async def run_migrations():
-    # Initialize database service
-    db_service = DatabaseService()
+    # Initialize database service. #272 Phase-2g: DatabaseService takes a
+    # REQUIRED site_config; this standalone migration entrypoint has no
+    # lifespan-bound instance in scope, so it passes a fresh env-fallback
+    # SiteConfig() — identical to the empty module global this path used to
+    # resolve at pool-creation time (pool sizes fall back to defaults).
+    db_service = DatabaseService(site_config=SiteConfig())
     await db_service.initialize()
 
     # Run migrations
