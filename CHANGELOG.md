@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.21.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.20.0...v0.21.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** poindexter experiments CLI (Phase 1 PR 3) ([#706](https://github.com/Glad-Labs/glad-labs-stack/issues/706)) ([f9f53d8](https://github.com/Glad-Labs/glad-labs-stack/commit/f9f53d8075f1c8b481fc144ca4b260966233a0ac))
+
 ## [0.20.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.19.0...v0.20.0) (2026-05-29)
 
 
