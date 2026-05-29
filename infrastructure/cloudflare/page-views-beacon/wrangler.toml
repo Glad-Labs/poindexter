@@ -1,0 +1,13 @@
+name = "page-views-beacon"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+# Analytics Engine binding — operator creates the dataset in CF dashboard
+# and references it here. Per-operator binding lives in their wrangler env.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "page_views_ae"
+
+# Custom domain — operator routes their own subdomain (e.g. beacon.example.com)
+# to this Worker via Cloudflare dashboard or `wrangler routes add`.
+# Don't commit a route block with an operator-specific hostname.

@@ -69,7 +69,10 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         "/api/public",
         "/api/auth",
         "/api/cms/status",
-        "/api/track",
+        # `/api/track` removed 2026-05-28 — the /api/track/view endpoint
+        # was deleted along with the Vercel proxy that fronted it. Beacon
+        # is now a Cloudflare Worker → CF Analytics Engine path; backend
+        # ingest is via sync_cloudflare_analytics job, no inbound route.
         "/health",
         "/docs",
         "/redoc",

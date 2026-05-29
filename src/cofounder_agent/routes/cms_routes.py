@@ -893,74 +893,23 @@ async def list_tags(
 
 
 # ============================================================================
-# ANALYTICS — lightweight view tracking (feeds Grafana + revenue engine)
+# ANALYTICS — page-view aggregates from CF Analytics Engine
 # ============================================================================
-
-
-@router.post("/api/track/view")
-@limiter.limit("120/minute")
-async def track_page_view(request: Request) -> JSONResponse:
-    """Track a page view. Called by the frontend beacon. No auth required.
-
-    Body: {"path": "/posts/slug-here", "slug": "slug-here", "referrer": "..."}
-    Returns: 204 No Content
-
-    Also writes a ``page_view_received`` row to ``audit_log`` so silent
-    beacon failure surfaces in Grafana: if the audit-event rate falls to
-    zero while Cloudflare reports real traffic, the beacon path has
-    broken somewhere between the browser and this endpoint. This is the
-    drift detector for the silent-since-2026-04-09 regression.
-    """
-    import json as _json
-
-    try:
-        body = await request.json()
-        path = body.get("path", "")[:500]
-        slug = body.get("slug", "")[:500]
-        referrer = body.get("referrer", "")[:1000]
-        ua = (request.headers.get("user-agent") or "")[:500]
-
-        if not path:
-            return JSONResponse(status_code=204, content=None)
-
-        pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO page_views (path, slug, referrer, user_agent) VALUES ($1, $2, $3, $4)",
-                path, slug, referrer, ua,
-            )
-
-        # Also increment view_count on the post for quick access
-        if slug:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE posts SET view_count = COALESCE(view_count, 0) + 1 WHERE slug = $1",
-                    slug,
-                )
-
-        # Drift detector — append to audit_log so Grafana can chart beacon
-        # rate. A flatline here while Cloudflare shows traffic means the
-        # beacon path has regressed (the 2026-04-09 silent-failure mode).
-        # Wrapped in its own try/except — never let the drift signal break
-        # the beacon itself.
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO audit_log (event_type, source, details, severity)
-                    VALUES ($1, $2, $3::jsonb, $4)
-                    """,
-                    "page_view_received",
-                    "track_page_view",
-                    _json.dumps({"path": path, "slug": slug, "has_referrer": bool(referrer)}),
-                    "info",
-                )
-        except Exception:
-            logger.debug("[TRACK_VIEW] audit_log drift-row insert failed (non-fatal)", exc_info=True)
-    except Exception:
-        logger.warning("[TRACK_VIEW] Page view tracking failed (non-fatal)", exc_info=True)
-
-    return JSONResponse(status_code=204, content=None)
+#
+# The legacy /api/track/view endpoint was deleted 2026-05-28 along with the
+# Vercel proxy that fronted it (web/public-site/app/api/page-views/route.ts).
+# The endpoint had been receiving zero traffic since 2026-04-09 because the
+# Vercel serverless functions that fronted it cannot reach the operator's
+# local Docker network (poindexter-worker:8002).
+#
+# The replacement is a Cloudflare Worker beacon at
+# infrastructure/cloudflare/page-views-beacon/ that writes one data point
+# per view to Cloudflare Analytics Engine. Backend job
+# services/jobs/sync_cloudflare_analytics.py pulls aggregated rows out
+# via the CF AE SQL HTTP API every 5 minutes and inserts them into the
+# existing page_views table — the consumer surfaces (Grafana panels,
+# posts.view_count updates, lab_outcomes_v1.views_*_post_publish columns)
+# all keep reading from page_views unchanged.
 
 
 @router.get("/api/analytics/views")

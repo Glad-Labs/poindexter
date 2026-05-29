@@ -419,6 +419,16 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
         # loads until the poetry packaging issue is resolved.
         ("jobs", "services.jobs.sync_page_views", "SyncPageViewsJob"),
+        # CF Analytics Engine → page_views ingest. Closes the 50-day silent
+        # gap (page_views beacon broken since 2026-04-09 because the Vercel
+        # proxy couldn't reach the local worker). Now: Worker beacon at
+        # infrastructure/cloudflare/page-views-beacon/ writes to CF AE; this
+        # job pulls every 5 min via the SQL HTTP API.
+        (
+            "jobs",
+            "services.jobs.sync_cloudflare_analytics",
+            "SyncCloudflareAnalyticsJob",
+        ),
         ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),

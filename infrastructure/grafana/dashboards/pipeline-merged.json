@@ -3435,6 +3435,65 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "stat",
+      "id": 54,
+      "title": "Page views (last 24h)",
+      "description": "Page views from CF Analytics Engine landed in page_views by sync_cloudflare_analytics. Red at 0 means the Worker beacon or the sync job is broken (silent-failure detector — the same regression mode that ran 2026-04-09 → 2026-05-28).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 160
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 10 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Page views\" FROM page_views WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

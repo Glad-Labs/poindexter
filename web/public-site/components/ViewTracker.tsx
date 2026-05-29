@@ -8,13 +8,17 @@ interface ViewTrackerProps {
 
 /**
  * ViewTracker — own-analytics beacon. Fires once per post mount and POSTs
- * to the same-origin `/api/page-views` Next.js route, which forwards to
- * the backend `/api/track/view` server-side.
+ * to a Cloudflare Worker beacon (Analytics Engine), which the backend
+ * `sync_cloudflare_analytics` job pulls into the local `page_views` table
+ * every 5 minutes.
  *
- * Going through a same-origin Next.js route (instead of calling the backend
- * directly from the browser) avoids CORS entirely — the prior incarnation
- * pointed at a Railway URL and was silently broken by CORS regression on
- * 2026-04-09 before being deleted in cleanup commit 721115e2d on 2026-04-21.
+ * URL resolution: `NEXT_PUBLIC_BEACON_URL` wins when set (production). It
+ * falls back to the same-origin `/api/page-views` route for local dev
+ * convenience — but that route was deleted server-side because Vercel
+ * serverless functions can't reach the operator's local Docker network
+ * (the silent 2026-04-09 → 2026-05-28 regression), so the fallback is
+ * effectively a no-op in dev too (sendBeacon swallows the 404). Acceptable
+ * for dev; production must set `NEXT_PUBLIC_BEACON_URL`.
  *
  * The component returns null and never blocks render. Failures are
  * fire-and-forget (sendBeacon with fetch fallback) so beacon misfires do
@@ -29,7 +33,7 @@ export function ViewTracker({ slug }: ViewTrackerProps) {
       referrer: document.referrer || '',
     });
 
-    const url = '/api/page-views';
+    const url = process.env.NEXT_PUBLIC_BEACON_URL || '/api/page-views';
 
     // Prefer sendBeacon (survives page unload during quick bounce-outs).
     try {
@@ -42,12 +46,16 @@ export function ViewTracker({ slug }: ViewTrackerProps) {
       // fall through to fetch
     }
 
-    // Fallback: fire-and-forget fetch with keepalive.
+    // Fallback: fire-and-forget fetch with keepalive. Use no-cors so
+    // cross-origin Worker beacons don't get blocked by preflight when
+    // sendBeacon is unavailable — the body still reaches the Worker, we
+    // just can't read the response (which we don't need anyway).
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: payload,
       keepalive: true,
+      mode: 'no-cors',
     }).catch(() => {
       // Swallow — beacon is non-essential for the reader.
     });
