@@ -3,9 +3,15 @@
 Uses the YouTube Data API v3 ``videos.insert`` endpoint with a
 resumable upload. OAuth 2.0 refresh tokens are stored in
 ``app_settings`` as secrets; refresh is handled silently by
-:mod:`google.oauth2.credentials`. Free-tier quota is 10,000 units/day
-and a single insert costs ~1,600 units, so a single channel can ship
-~6 uploads/day without hitting the wall.
+:mod:`google.oauth2.credentials`.
+
+**Cost note (per `feedback_no_paid_apis`):** the YouTube Data API
+v3 is FREE — quota is enforced in units (10,000/day default), NOT
+dollars. A single ``videos.insert`` costs ~1,600 units, so a single
+channel can ship ~6 uploads/day before hitting the quota wall. This
+adapter does NOT consume the paid-cloud-LLM budget envelope; it can
+ship to operators who have set "no paid APIs" without violating the
+rule.
 
 Ships **inert** until the operator opts in:
 
@@ -105,14 +111,25 @@ class YouTubePublishAdapter:
             pool = getattr(site_config, "_pool", None)
         return CostGuard(site_config=site_config, pool=pool)
 
-    async def _check_gating(self) -> tuple[bool, str | None, dict[str, str]]:
+    async def _check_gating(
+        self,
+        *,
+        force: bool = False,
+    ) -> tuple[bool, str | None, dict[str, str]]:
         """Resolve enabled flag + OAuth secrets.
 
         Returns ``(ready, error_msg_when_not_ready, secrets_dict)``.
         Centralized here because both ``publish()`` and ``status()``
         need the same gating logic before talking to Google.
+
+        ``force=True`` bypasses the enabled-flag check (but still
+        requires all three OAuth secrets). This is the smoke-test
+        escape hatch used by ``poindexter integrations youtube test``
+        — it lets the operator dry-run an upload end-to-end while the
+        adapter is still officially disabled in app_settings, so they
+        can verify the wiring before flipping the live switch.
         """
-        if not bool(self._get("enabled", False)):
+        if not force and not bool(self._get("enabled", False)):
             return (
                 False,
                 "youtube adapter disabled in app_settings (set "
@@ -219,8 +236,13 @@ class YouTubePublishAdapter:
             time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z"
         )
 
-        # Gating — disabled OR missing secrets → fail loudly.
-        ready, error, secrets = await self._check_gating()
+        # Gating — disabled OR missing secrets → fail loudly. The
+        # ``_force`` kwarg (set by ``poindexter integrations youtube
+        # test``) bypasses the enabled-flag check so the operator can
+        # validate the OAuth wiring end-to-end before flipping the
+        # adapter live in app_settings.
+        force = bool(kwargs.get("_force", False))
+        ready, error, secrets = await self._check_gating(force=force)
         if not ready:
             return PublishResult(
                 platform=self.name,

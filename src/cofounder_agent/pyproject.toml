@@ -214,9 +214,26 @@ sentence-transformers = "^3.4"
 prefect = "~3.6.29"
 langchain-openai = ">=1.2"
 
+# YouTube Data API v3 — used by services/publish_adapters/youtube.py
+# for the videos.insert resumable upload path. Declared as an optional
+# extra (`poetry install --extras youtube`) so the worker image only
+# pulls them in when YouTube publishing is actually wired.
+#
+# NOTE on cost: the YouTube Data API v3 is FREE — quota is enforced
+# in units (10,000/day default), NOT dollars. videos.insert is ~1,600
+# units, so a single channel can ship ~6 uploads/day without paying
+# anything. This is NOT a `feedback_no_paid_apis` violation.
+google-auth = { version = "^2.36.0", optional = true }
+google-auth-oauthlib = { version = "^1.2.1", optional = true }
+google-api-python-client = { version = "^2.151.0", optional = true }
+
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
 profiling = ["pyroscope-io"]
+# YouTube publishing — the operator opts in once they've run the OAuth
+# consent flow (`poindexter integrations youtube setup`). See
+# services/publish_adapters/youtube.py + Glad-Labs/poindexter#40.
+youtube = ["google-auth", "google-auth-oauthlib", "google-api-python-client"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing
