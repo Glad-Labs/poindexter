@@ -244,8 +244,19 @@ async def generate_canonical_title(
     primary_keyword: str,
     content_excerpt: str,
     existing_titles: str = "",
+    *,
+    site_config: SiteConfig | None = None,
 ) -> str | None:
-    """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
+    """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles.
+
+    Phase-1 DI shim (#272): pass ``site_config`` to inject the instance
+    explicitly. When omitted (the default), falls back to the lifespan-bound
+    module global — non-breaking for existing callers.
+    """
+    # Resolve the SiteConfig via self-module import so the keyword param
+    # doesn't shadow the module global of the same name.
+    import services.title_generation as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     try:
         from plugins.registry import get_all_llm_providers
         from services.llm_providers.dispatcher import resolve_tier_model
@@ -273,7 +284,7 @@ async def generate_canonical_title(
         # niche. Falls back to the legacy pipeline_writer_model setting
         # if the tier mapping isn't seeded; pages the operator and
         # aborts (no silent default) if both miss.
-        pool = getattr(site_config, "_pool", None)
+        pool = getattr(_sc, "_pool", None)
         model: str | None = None
         if pool is not None:
             try:
@@ -287,14 +298,14 @@ async def generate_canonical_title(
                     tier_err,
                 )
         if not model:
-            fallback = site_config.get("pipeline_writer_model") or ""
+            fallback = _sc.get("pipeline_writer_model") or ""
             if not fallback:
                 from services.integrations.operator_notify import notify_operator
                 await notify_operator(
                     "title_generation: cost_tier='standard' has no model "
                     "AND pipeline_writer_model is empty — title regen aborted",
                     critical=False,
-                    site_config=site_config,
+                    site_config=_sc,
                 )
                 return None
             model = fallback.removeprefix("ollama/")
@@ -302,7 +313,7 @@ async def generate_canonical_title(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             temperature=0.7,
-            max_tokens=site_config.get_int(
+            max_tokens=_sc.get_int(
                 "content_router_seo_title_max_tokens", 4000,
             ),
         )
@@ -323,7 +334,11 @@ async def generate_canonical_title(
         return None
 
 
-async def check_title_originality(title: str) -> dict:
+async def check_title_originality(
+    title: str,
+    *,
+    site_config: SiteConfig | None = None,
+) -> dict:
     """Web-search the title; return similarity summary.
 
     Return shape::
@@ -355,6 +370,11 @@ async def check_title_originality(title: str) -> dict:
     network is down, ``external_fail_open=True`` and the pipeline
     continues as if nothing matched.
     """
+    # Resolve the SiteConfig via self-module import so the keyword param
+    # doesn't shadow the module global of the same name (Phase-1 DI shim, #272).
+    import services.title_generation as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+
     result: dict = {
         "is_original": True,
         "similar_titles": [],
@@ -367,8 +387,8 @@ async def check_title_originality(title: str) -> dict:
     }
 
     try:
-        threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
-        enabled = site_config.get_bool("qa_title_originality_enabled", True)
+        threshold = _sc.get_float("qa_title_similarity_threshold", 0.6)
+        enabled = _sc.get_bool("qa_title_originality_enabled", True)
         if not enabled:
             return result
     except Exception:
@@ -376,7 +396,7 @@ async def check_title_originality(title: str) -> dict:
 
     try:
         from services.web_research import WebResearcher
-        researcher = WebResearcher(site_config=site_config)
+        researcher = WebResearcher(site_config=_sc)
         search_results = await researcher.search_simple(
             f'"{title}"', num_results=8,
         )
@@ -420,7 +440,7 @@ async def check_title_originality(title: str) -> dict:
             TitleOriginalityExternalChecker,
         )
         ext = await TitleOriginalityExternalChecker(
-            site_config=site_config
+            site_config=_sc
         ).check_external_title_duplicates(title)
         result["external_verbatim_match"] = ext.verbatim_match
         result["external_near_match"] = ext.near_match
