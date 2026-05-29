@@ -56,7 +56,7 @@ def _write_bytes(path: str, content: bytes) -> None:
         f.write(content)
 
 
-def _video_server_url() -> str:
+def _video_server_url(*, site_config: SiteConfig | None = None) -> str:
     """Resolve VIDEO_SERVER_URL from site_config per-call.
 
     Previously captured at module-import time. Since this module
@@ -72,7 +72,9 @@ def _video_server_url() -> str:
     422 on every call. Migration 20260528_040918 fixes existing DBs;
     this guard catches operator-introduced regressions.
     """
-    url = site_config.get("video_server_url", "http://host.docker.internal:9837")
+    import services.video_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+    url = _sc.get("video_server_url", "http://host.docker.internal:9837")
     if ":9840" in url:
         logger.warning(
             "[VIDEO] video_server_url=%r points at the Wan2.1 T2V model server "
@@ -85,12 +87,16 @@ def _video_server_url() -> str:
     return url
 
 
-def _sdxl_server_url() -> str:
+def _sdxl_server_url(*, site_config: SiteConfig | None = None) -> str:
     """Resolve SDXL_SERVER_URL from site_config per-call (same rationale)."""
-    return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+    import services.video_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+    return _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
-async def _resolve_slideshow_prompt_model() -> str:
+async def _resolve_slideshow_prompt_model(
+    *, site_config: SiteConfig | None = None
+) -> str:
     """Bridge ``cost_tier='standard'`` -> concrete model id for SDXL prompt-gen.
 
     Lane B batch 2 sweep migration. Order:
@@ -109,7 +115,9 @@ async def _resolve_slideshow_prompt_model() -> str:
     pinning ``cost_tier.standard.model`` to a thinking model should also
     set ``video_slideshow_prompt_model`` to override per-call.
     """
-    pool = getattr(site_config, "_pool", None)
+    import services.video_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
+    pool = getattr(_sc, "_pool", None)
     if pool is not None:
         try:
             return await resolve_tier_model(pool, "standard")
@@ -120,14 +128,14 @@ async def _resolve_slideshow_prompt_model() -> str:
     else:
         tier_exc = RuntimeError("no asyncpg pool available")
 
-    fallback = site_config.get("video_slideshow_prompt_model")
+    fallback = _sc.get("video_slideshow_prompt_model")
     if fallback:
         await notify_operator(
             f"video_service: cost_tier='standard' resolution failed "
             f"({tier_exc}); falling back to "
             f"video_slideshow_prompt_model={fallback!r}",
             critical=False,
-            site_config=site_config,
+            site_config=_sc,
         )
         return str(fallback)
 
@@ -136,7 +144,7 @@ async def _resolve_slideshow_prompt_model() -> str:
         f"video_slideshow_prompt_model is empty — slideshow prompt generation "
         f"will use deterministic fallback prompts: {tier_exc}",
         critical=True,
-        site_config=site_config,
+        site_config=_sc,
     )
     raise RuntimeError(
         "video_service: no model resolvable via tier or "
@@ -566,6 +574,8 @@ async def generate_video_for_post(
     podcast_path: str | None = None,
     force: bool = False,
     pre_generated_scenes: list[str] | None = None,
+    *,
+    site_config: SiteConfig | None = None,
     **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a video for a published post.
@@ -578,18 +588,24 @@ async def generate_video_for_post(
         content: Post content excerpt (context for image prompts).
         podcast_path: Path to podcast MP3 file. If None, checks default location.
         force: Regenerate even if video exists.
-        **provider_kwargs: Swallows extra kwargs passed by the
-            ``KenBurnsSlideshowProvider`` wrapper (e.g.
-            ``site_config=...``). The function reads its
-            ``site_config`` from the lifespan-bound module-level
-            attribute (see ``set_site_config``) regardless, so
-            forwarding is a no-op — but accepting the kwarg keeps the
-            wrapper's existing keyword call from raising TypeError.
+        site_config: Phase-1 DI shim (Glad-Labs/glad-labs-stack#272). When
+            provided, this instance is used for every config read and
+            threaded into the shimmed readers this function calls
+            (``_video_server_url``). Defaults to ``None``, in which case
+            the lifespan-bound module-level ``site_config`` attribute
+            (see ``set_site_config``) is used — fully back-compatible.
+        **provider_kwargs: Swallows any other extra kwargs passed by the
+            ``KenBurnsSlideshowProvider`` wrapper. ``site_config`` is now
+            an explicit keyword-only param above; remaining unknown
+            kwargs are still accepted to keep the wrapper's existing
+            keyword call from raising TypeError.
 
     Returns:
         VideoResult with file path and duration info.
     """
-    del provider_kwargs  # explicit no-op; lifespan site_config wins
+    del provider_kwargs  # explicit no-op; only site_config is threaded
+    import services.video_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}.mp4"
 
@@ -718,7 +734,7 @@ async def generate_video_for_post(
     # and silently no-op'd on /home/appuser/... paths, so the video-server
     # received an unmangled container path and returned "Audio file not
     # found" for every video regen attempt (Glad-Labs/glad-labs-stack#198).
-    host_home = site_config.get("host_home", "")
+    host_home = _sc.get("host_home", "")
     if not host_home:
         return VideoResult(
             success=False,
@@ -743,7 +759,7 @@ async def generate_video_for_post(
     logger.info("[VIDEO] Rendering video (%d images + audio)", len(image_paths))
     try:
         async with httpx.AsyncClient(timeout=600) as client:
-            resp = await client.post(f"{_video_server_url()}/generate", json={
+            resp = await client.post(f"{_video_server_url(site_config=_sc)}/generate", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
@@ -934,6 +950,8 @@ async def generate_short_video_for_post(
     pre_generated_scenes: list[str] | None = None,
     pre_generated_summary: str | None = None,
     force: bool = False,
+    *,
+    site_config: SiteConfig | None = None,
     **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
@@ -942,11 +960,15 @@ async def generate_short_video_for_post(
     Uses post images + SDXL images for visuals.
     Output: 1080x1920 MP4, max 60 seconds.
 
-    ``**provider_kwargs`` swallows extras passed by the
-    ``KenBurnsSlideshowProvider`` wrapper (``site_config=...``) — same
-    rationale as ``generate_video_for_post``.
+    ``site_config`` is the Phase-1 DI shim (Glad-Labs/glad-labs-stack#272) —
+    same back-compat semantics as ``generate_video_for_post``: when ``None``
+    the lifespan-bound module-level attribute is used. ``**provider_kwargs``
+    still swallows any other extras passed by the
+    ``KenBurnsSlideshowProvider`` wrapper.
     """
-    del provider_kwargs  # explicit no-op; lifespan site_config wins
+    del provider_kwargs  # explicit no-op; only site_config is threaded
+    import services.video_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}-short.mp4"
 
@@ -1005,7 +1027,7 @@ async def generate_short_video_for_post(
 
     # See path-translation comment in ``generate_video_for_post``; same
     # bind-mount shape applies to the shorts pipeline.
-    host_home = site_config.get("host_home", "")
+    host_home = _sc.get("host_home", "")
     if not host_home:
         return VideoResult(
             success=False,
@@ -1029,7 +1051,7 @@ async def generate_short_video_for_post(
     logger.info("[SHORT] Rendering short video (%d images, summary audio)", len(image_paths))
     try:
         async with httpx.AsyncClient(timeout=300) as client:
-            resp = await client.post(f"{_video_server_url()}/generate-short", json={
+            resp = await client.post(f"{_video_server_url(site_config=_sc)}/generate-short", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
