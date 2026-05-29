@@ -143,7 +143,9 @@ _SHARED_TEST_MODULES = (
     "services.template_runner",
     "services.pipeline_architect",
     "services.prompt_manager",
-    "services.retention_janitor",
+    # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 3); no module-level site_config attr to share. Tests
+    # construct ``RetentionJanitor(site_config=...)`` directly.
     "services.ai_content_generator",
     "services.social_poster",
     "services.gpu_scheduler",
@@ -156,7 +158,10 @@ _SHARED_TEST_MODULES = (
     # site_config attr to share. Tests construct ``URLValidator(site_config=...)``
     # / ``URLScraper(site_config=...)`` directly.
     "services.web_research",
-    "services.revalidation_service",
+    # ``services.revalidation_service`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 3); no module-level site_config attr to share. Tests
+    # construct ``RevalidationService(site_config=...)`` directly (or call
+    # the back-compat free-function wrappers with an explicit site_config).
     "services.static_export_service",
     # ``services.telegram_config`` migrated to constructor DI 2026-05-28
     # (SiteConfig DI migration PR 3); no module-level site_config attr

@@ -10,24 +10,40 @@ that promotes scheduled→published) shares the same revalidation
 helper. Previously the bypass paths inserted directly into ``posts``
 and never told Vercel to bust its 5-minute ISR cache.
 
-Three helpers are exposed:
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 3) converted the
+module-level ``site_config`` singleton + ``set_site_config`` setter to
+constructor DI. The composition root wires a ``RevalidationService`` via
+``AppContainer.revalidation_service``; the three helpers are now methods
+on that class. Thin module-level free-function wrappers are retained for
+back-compat — they REQUIRE an explicit ``site_config`` (no module global
+to fall back on) and delegate to ``RevalidationService``. Unmigrated
+callers build one per-call from their own lifespan-bound ``site_config``
+(caller-bridge), e.g.
+``RevalidationService(site_config=site_config).trigger_isr_revalidate(slug)``.
 
-* ``trigger_nextjs_revalidation_detailed(paths, tags, *, site_config)``
+Three helpers are exposed (as ``RevalidationService`` methods, mirrored
+by module-level wrappers):
+
+* ``trigger_nextjs_revalidation_detailed(paths, tags)``
   — the low-level POST. Returns a ``RevalidationResult`` carrying
   ``success`` + the upstream HTTP status + the truncated error body
   + the request duration. Callers who need to surface the underlying
   failure (e.g. the operator-facing ``/api/revalidate-cache`` route)
   use this one.
-* ``trigger_nextjs_revalidation(paths, tags, *, site_config=None)`` —
+* ``trigger_nextjs_revalidation(paths, tags)`` —
   thin wrapper that returns the boolean ``success`` for backwards
   compatibility with every existing caller. Internal failure context
   is captured in the structured log line.
-* ``trigger_isr_revalidate(slug, paths, tags, site_config)`` — the
+* ``trigger_isr_revalidate(slug, paths, tags)`` — the
   publish-time wrapper. Always includes the canonical site routes
   (``/``, ``/archive``, ``/posts``, ``/sitemap.xml``) and the
   slug-specific ``/posts/<slug>`` path + ``post:<slug>`` cache tag.
   Idempotent, never raises — revalidation failure must not roll back
   a publish.
+
+The module-level shared httpx client (``_shared_http_client`` / ``aclose``)
+stays module-scoped: it's a process-wide connection pool, not a
+SiteConfig dependency, and ``main.py``'s lifespan shutdown closes it.
 """
 
 import time
@@ -39,19 +55,6 @@ import httpx
 from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# set_site_config() for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
 
 logger = get_logger(__name__)
 
@@ -292,48 +295,17 @@ async def _post_revalidate(
         )
 
 
-async def trigger_nextjs_revalidation_detailed(
+async def _trigger_nextjs_revalidation_detailed(
+    site_cfg: Any,
     paths: list | None = None,
     tags: list | None = None,
-    *,
-    site_config: object | None = None,
 ) -> RevalidationResult:
-    """Trigger Next.js ISR revalidation and return the full result struct.
-
-    Use this when the caller wants to surface the failure reason
-    (operator-facing route, monitoring, tests). Never raises.
-    """
+    """Core: trigger Next.js ISR revalidation and return the full struct."""
     if paths is None:
         paths = ["/", "/archive"]
     if tags is None:
         tags = ["posts", "post-index"]
-
-    site_cfg = site_config if site_config is not None else globals()["site_config"]
     return await _post_revalidate(paths, tags, site_cfg)
-
-
-async def trigger_nextjs_revalidation(
-    paths: list | None = None,
-    tags: list | None = None,
-    *,
-    site_config: object | None = None,
-) -> bool:
-    """Trigger Next.js ISR revalidation on the public site (legacy bool API).
-
-    Thin wrapper over ``trigger_nextjs_revalidation_detailed``. Existing
-    callers that only care about success/failure stay untouched. Code
-    that needs the upstream status code / error body uses the detailed
-    variant instead.
-
-    Returns:
-        True if revalidation succeeded (HTTP 200), False otherwise.
-        Never raises — a publish must not be rolled back by a
-        revalidation failure.
-    """
-    result = await trigger_nextjs_revalidation_detailed(
-        paths, tags, site_config=site_config,
-    )
-    return result.success
 
 
 # Canonical paths that EVERY publish must revalidate, in addition to
@@ -348,44 +320,27 @@ _CANONICAL_PATHS = ("/", "/archive", "/posts", "/sitemap.xml", "/feed.xml")
 _CANONICAL_TAGS = ("posts", "post-index")
 
 
-async def trigger_isr_revalidate(
+async def _trigger_isr_revalidate(
+    site_cfg: Any,
     slug: str,
     paths: list[str] | None = None,
     tags: list[str] | None = None,
-    site_config: object | None = None,
 ) -> bool:
-    """Publish-time ISR revalidation helper used by every publish path.
+    """Core: publish-time ISR revalidation used by every publish path.
 
-    Glad-Labs/poindexter#327: this is the ONE function that any code
-    path which materializes a published post must call. It is safe to
-    call from the canonical ``publish_service.publish_post_from_task``
-    flow, the ``/go-live`` admin endpoint, and the
-    ``scheduled_publisher`` background loop.
+    Glad-Labs/poindexter#327: this is the ONE code path any caller that
+    materializes a published post must reach — the canonical
+    ``publish_service.publish_post_from_task`` flow, the ``/go-live``
+    admin endpoint, and the ``scheduled_publisher`` background loop.
 
     Always merges the canonical site routes (``/``, ``/archive``,
     ``/posts``, ``/sitemap.xml``) and tags (``posts``, ``post-index``)
     with the slug-specific path (``/posts/<slug>``) and tag
-    (``post:<slug>``). Extra ``paths`` / ``tags`` from the caller are
-    union'd in.
+    (``post:<slug>``). Extra ``paths`` / ``tags`` are union'd in.
 
-    Idempotent + safe to call from anywhere:
-    * Reads ``revalidate_secret`` via the async ``get_secret``.
-    * Skips with a ``logger.warning`` if the secret is empty (no
-      raise).
-    * httpx call has a 10s timeout; success/failure is logged but
-      ``trigger_isr_revalidate`` never raises — a revalidation
-      failure must not roll back a publish.
-
-    Args:
-        slug: Post slug (e.g. ``my-great-post-aaaaaaaa``).
-        paths: Optional extra paths to revalidate beyond the canonical
-            set + the slug path.
-        tags: Optional extra tags to revalidate beyond the canonical
-            set + ``post:<slug>``.
-        site_config: ``SiteConfig`` instance (DI-preferred).
-
-    Returns:
-        True on HTTP 200, False on any failure (skipped, error, etc.).
+    Idempotent + never raises (a revalidation failure must not roll back
+    a publish). Reads ``revalidate_secret`` via the async ``get_secret``;
+    skips with a ``logger.warning`` if empty.
     """
     # Build the merged path list. dict-with-None preserves insertion
     # order while de-duping — set() would shuffle output and make
@@ -408,8 +363,98 @@ async def trigger_isr_revalidate(
         if t:
             merged_tags[t] = None
 
-    return await trigger_nextjs_revalidation(
-        list(merged_paths),
-        list(merged_tags),
-        site_config=site_config,
+    result = await _trigger_nextjs_revalidation_detailed(
+        site_cfg, list(merged_paths), list(merged_tags),
     )
+    return result.success
+
+
+# ---------------------------------------------------------------------------
+# RevalidationService — constructor-DI surface (#272 leaf batch 3)
+# ---------------------------------------------------------------------------
+
+
+class RevalidationService:
+    """Next.js ISR revalidation, wired to an injected SiteConfig.
+
+    Constructed by ``AppContainer.revalidation_service``. Holds only the
+    injected ``SiteConfig``; the shared httpx connection pool stays
+    module-level (process-wide resource).
+    """
+
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        self._site_config = site_config
+
+    async def trigger_nextjs_revalidation_detailed(
+        self,
+        paths: list | None = None,
+        tags: list | None = None,
+    ) -> RevalidationResult:
+        """Trigger ISR revalidation, returning the full result struct."""
+        return await _trigger_nextjs_revalidation_detailed(
+            self._site_config, paths, tags,
+        )
+
+    async def trigger_nextjs_revalidation(
+        self,
+        paths: list | None = None,
+        tags: list | None = None,
+    ) -> bool:
+        """Trigger ISR revalidation, returning the boolean ``success``."""
+        result = await _trigger_nextjs_revalidation_detailed(
+            self._site_config, paths, tags,
+        )
+        return result.success
+
+    async def trigger_isr_revalidate(
+        self,
+        slug: str,
+        paths: list[str] | None = None,
+        tags: list[str] | None = None,
+    ) -> bool:
+        """Publish-time ISR revalidation (canonical paths + slug merged in)."""
+        return await _trigger_isr_revalidate(
+            self._site_config, slug, paths, tags,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Module-level free-function wrappers (back-compat)
+# ---------------------------------------------------------------------------
+#
+# Retained so the many existing call sites + their test patches keep
+# working unchanged through the migration. Unlike the pre-migration
+# versions these REQUIRE an explicit ``site_config`` — there is no module
+# global to fall back on. Each delegates to the core helpers above.
+
+
+async def trigger_nextjs_revalidation_detailed(
+    paths: list | None = None,
+    tags: list | None = None,
+    *,
+    site_config: Any,
+) -> RevalidationResult:
+    """Back-compat wrapper — see :meth:`RevalidationService.trigger_nextjs_revalidation_detailed`."""
+    return await _trigger_nextjs_revalidation_detailed(site_config, paths, tags)
+
+
+async def trigger_nextjs_revalidation(
+    paths: list | None = None,
+    tags: list | None = None,
+    *,
+    site_config: Any,
+) -> bool:
+    """Back-compat wrapper — see :meth:`RevalidationService.trigger_nextjs_revalidation`."""
+    result = await _trigger_nextjs_revalidation_detailed(site_config, paths, tags)
+    return result.success
+
+
+async def trigger_isr_revalidate(
+    slug: str,
+    paths: list[str] | None = None,
+    tags: list[str] | None = None,
+    *,
+    site_config: Any,
+) -> bool:
+    """Back-compat wrapper — see :meth:`RevalidationService.trigger_isr_revalidate`."""
+    return await _trigger_isr_revalidate(site_config, slug, paths, tags)

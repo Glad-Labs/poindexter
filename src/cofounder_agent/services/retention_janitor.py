@@ -22,6 +22,25 @@ Rules:
   - embeddings is NEVER pruned — that's the knowledge base.
   - Gitea's action_* / commit_* / issue / etc. tables are Gitea's, not ours.
   - cost_logs is truncated more gently (financial record; default 365).
+
+Usage:
+    from services.retention_janitor import RetentionJanitor
+
+    janitor = RetentionJanitor(site_config=site_config)
+    await janitor.run_once(pool)         # single pass
+    await janitor.run_forever(pool)      # background loop
+
+The composition root (``services/container.py::AppContainer``) wires a
+``RetentionJanitor`` via ``container.retention_janitor``. Callers that are
+not yet migrated build one per-call from their own lifespan-bound
+``site_config`` (caller-bridge pattern).
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 3) converted this
+module from the module-level ``site_config`` singleton + ``set_site_config``
+setter + free functions (``run_once`` / ``run_forever``) to a
+``RetentionJanitor`` class with constructor DI. The free functions became
+instance methods with identical signatures (minus the now-redundant
+``site_config=`` kwarg, which is held on ``self._site_config``).
 """
 
 from __future__ import annotations
@@ -33,32 +52,7 @@ from typing import Any
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = get_logger(__name__)
-
-
-def _resolve_site_config(site_config: Any) -> Any:
-    """DI seam (glad-labs-stack#330) — fall back to the module
-    singleton when caller doesn't pass an instance. Module-level
-    import so the CI guardrail at
-    ``scripts/ci/check_site_config_singleton.py`` doesn't flag the
-    fallback path as a direct singleton dependency.
-    """
-    if site_config is not None:
-        return site_config
-    return site_config
 
 
 # Tables the janitor is allowed to prune. Tuples of
@@ -86,108 +80,111 @@ _JANITOR_TARGETS: list[tuple[str, str, int]] = [
 ]
 
 
-def _retention_days_for(
-    table: str, default_days: int, *, site_config: Any = None,
-) -> int:
-    """Resolve retention window for a single table.
+class RetentionJanitor:
+    """Periodic pruner for unbounded high-churn tables.
 
-    ``retention_days__<table>`` is the canonical key. A missing or zero
-    value disables pruning for that table (NOT "prune everything"). Zero
-    means "skip" because zero-day retention is dangerous and never what
-    an operator wants by accident.
+    Constructed by ``AppContainer.retention_janitor`` per the SiteConfig
+    constructor-DI migration. Reads per-table ``retention_days__<table>``
+    keys and the ``retention_janitor_interval_hours`` loop interval from
+    the injected ``SiteConfig``.
     """
-    sc = _resolve_site_config(site_config)
-    key = f"retention_days__{table}"
-    value = sc.get(key, "")
-    if not value:
-        return default_days
-    try:
-        n = int(value)
-    except (TypeError, ValueError):
-        logger.warning(
-            "[retention_janitor] %s is not an integer: %r — falling back to default",
-            key, value,
-        )
-        return default_days
-    return n
 
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        self._site_config = site_config
 
-async def _prune_one(pool: Any, table: str, ts_col: str, days: int) -> int:
-    """Delete rows older than ``days`` from ``table``. Returns rows affected."""
-    if days <= 0:
-        logger.debug("[retention_janitor] %s: retention=0 — skip", table)
-        return 0
-    sql = (
-        f"DELETE FROM {table} "  # noqa: S608  # nosec B608  # table is a whitelisted constant from _JANITOR_TARGETS
-        f"WHERE {ts_col} < (NOW() - INTERVAL '{int(days)} days')"
-    )
-    async with pool.acquire() as conn:
-        result = await conn.execute(sql)
-        # asyncpg returns "DELETE N"
+    def _retention_days_for(self, table: str, default_days: int) -> int:
+        """Resolve retention window for a single table.
+
+        ``retention_days__<table>`` is the canonical key. A missing or zero
+        value disables pruning for that table (NOT "prune everything"). Zero
+        means "skip" because zero-day retention is dangerous and never what
+        an operator wants by accident.
+        """
+        key = f"retention_days__{table}"
+        value = self._site_config.get(key, "")
+        if not value:
+            return default_days
         try:
-            deleted = int(result.split()[-1])
-        except (ValueError, IndexError):
-            deleted = 0
-        return deleted
-
-
-async def run_once(pool: Any, *, site_config: Any = None) -> dict[str, int]:
-    """Run a single pass over every janitor target. Returns per-table
-    rows-deleted counts. Never raises — pruning is additive ops; a
-    single-table failure shouldn't tank the cycle.
-    """
-    results: dict[str, int] = {}
-    for table, ts_col, default_days in _JANITOR_TARGETS:
-        try:
-            days = _retention_days_for(
-                table, default_days, site_config=site_config,
-            )
-            deleted = await _prune_one(pool, table, ts_col, days)
-            results[table] = deleted
-            if deleted:
-                logger.info(
-                    "[retention_janitor] %s: deleted %s rows older than %sd",
-                    table, deleted, days,
-                )
-        except Exception as exc:
-            logger.warning(
-                "[retention_janitor] %s prune failed (non-fatal): %s", table, exc,
-            )
-            results[table] = -1
-    return results
-
-
-async def run_forever(
-    pool: Any,
-    *,
-    interval_hours_default: float = 24.0,
-    site_config: Any = None,
-) -> None:
-    """Long-running loop — awaits ``retention_janitor_interval_hours``
-    between cycles. Intended to be launched as a background task from
-    startup_manager.
-    """
-    sc = _resolve_site_config(site_config)
-    while True:
-        try:
-            hours_raw = sc.get(
-                "retention_janitor_interval_hours", str(interval_hours_default),
-            )
-            hours = float(hours_raw or interval_hours_default)
+            n = int(value)
         except (TypeError, ValueError):
-            hours = interval_hours_default
-        sleep_s = max(60.0, hours * 3600.0)
-
-        started = datetime.now(timezone.utc)
-        try:
-            results = await run_once(pool, site_config=sc)
-            total_deleted = sum(v for v in results.values() if v > 0)
-            logger.info(
-                "[retention_janitor] Cycle complete: %s total rows deleted across %s tables (started %s)",
-                total_deleted, len([v for v in results.values() if v >= 0]), started.isoformat(),
-            )
-        except Exception as exc:
             logger.warning(
-                "[retention_janitor] Cycle raised (non-fatal): %s", exc,
+                "[retention_janitor] %s is not an integer: %r — falling back to default",
+                key, value,
             )
-        await asyncio.sleep(sleep_s)
+            return default_days
+        return n
+
+    async def _prune_one(self, pool: Any, table: str, ts_col: str, days: int) -> int:
+        """Delete rows older than ``days`` from ``table``. Returns rows affected."""
+        if days <= 0:
+            logger.debug("[retention_janitor] %s: retention=0 — skip", table)
+            return 0
+        sql = (
+            f"DELETE FROM {table} "  # noqa: S608  # nosec B608  # table is a whitelisted constant from _JANITOR_TARGETS
+            f"WHERE {ts_col} < (NOW() - INTERVAL '{int(days)} days')"
+        )
+        async with pool.acquire() as conn:
+            result = await conn.execute(sql)
+            # asyncpg returns "DELETE N"
+            try:
+                deleted = int(result.split()[-1])
+            except (ValueError, IndexError):
+                deleted = 0
+            return deleted
+
+    async def run_once(self, pool: Any) -> dict[str, int]:
+        """Run a single pass over every janitor target. Returns per-table
+        rows-deleted counts. Never raises — pruning is additive ops; a
+        single-table failure shouldn't tank the cycle.
+        """
+        results: dict[str, int] = {}
+        for table, ts_col, default_days in _JANITOR_TARGETS:
+            try:
+                days = self._retention_days_for(table, default_days)
+                deleted = await self._prune_one(pool, table, ts_col, days)
+                results[table] = deleted
+                if deleted:
+                    logger.info(
+                        "[retention_janitor] %s: deleted %s rows older than %sd",
+                        table, deleted, days,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[retention_janitor] %s prune failed (non-fatal): %s", table, exc,
+                )
+                results[table] = -1
+        return results
+
+    async def run_forever(
+        self,
+        pool: Any,
+        *,
+        interval_hours_default: float = 24.0,
+    ) -> None:
+        """Long-running loop — awaits ``retention_janitor_interval_hours``
+        between cycles. Intended to be launched as a background task from
+        startup_manager.
+        """
+        while True:
+            try:
+                hours_raw = self._site_config.get(
+                    "retention_janitor_interval_hours", str(interval_hours_default),
+                )
+                hours = float(hours_raw or interval_hours_default)
+            except (TypeError, ValueError):
+                hours = interval_hours_default
+            sleep_s = max(60.0, hours * 3600.0)
+
+            started = datetime.now(timezone.utc)
+            try:
+                results = await self.run_once(pool)
+                total_deleted = sum(v for v in results.values() if v > 0)
+                logger.info(
+                    "[retention_janitor] Cycle complete: %s total rows deleted across %s tables (started %s)",
+                    total_deleted, len([v for v in results.values() if v >= 0]), started.isoformat(),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[retention_janitor] Cycle raised (non-fatal): %s", exc,
+                )
+            await asyncio.sleep(sleep_s)

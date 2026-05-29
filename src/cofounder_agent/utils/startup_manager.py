@@ -129,13 +129,15 @@ class StartupManager:
             # background; retention windows configurable per table via
             # app_settings.retention_days__<table>.
             try:
-                from services.retention_janitor import run_forever as _retention_loop
+                # SiteConfig DI migration (#272 leaf batch 3): retention_janitor
+                # is now a ``RetentionJanitor`` class. Build one per-call from
+                # the lifespan-bound SiteConfig (caller-bridge) until
+                # startup_manager itself reaches for the AppContainer.
+                from services.retention_janitor import RetentionJanitor
                 if self.database_service and self.database_service.pool:
+                    _janitor = RetentionJanitor(site_config=self._site_config)
                     asyncio.create_task(
-                        _retention_loop(
-                            self.database_service.pool,
-                            site_config=self._site_config,
-                        ),
+                        _janitor.run_forever(self.database_service.pool),
                         name="retention_janitor",
                     )
                     logger.info("[retention_janitor] Started background loop")

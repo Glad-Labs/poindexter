@@ -59,7 +59,11 @@ WIRED_MODULES: tuple[str, ...] = (
     # ``container.url_validator`` / ``container.url_scraper``, or build a
     # per-call instance from a lifespan-bound SiteConfig (caller-bridge).
     "services.web_research",
-    "services.revalidation_service",
+    # ``services.revalidation_service`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 3). Reach it via ``container.revalidation_service`` or
+    # build a per-call instance from a lifespan-bound SiteConfig
+    # (caller-bridge); the back-compat free-function wrappers now require an
+    # explicit ``site_config=`` kwarg.
     "services.static_export_service",
     # ``services.telegram_config`` migrated to constructor DI 2026-05-28
     # (SiteConfig DI migration PR 3). Reach it via
@@ -92,7 +96,10 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.topic_batch_service",
     "services.pipeline_architect",
     "services.prompt_manager",
-    "services.retention_janitor",
+    # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
+    # (#272 leaf batch 3). Reach it via ``container.retention_janitor`` or
+    # build a per-call instance from a lifespan-bound SiteConfig
+    # (caller-bridge); ``startup_manager`` constructs ``RetentionJanitor``.
     "services.ai_content_generator",
     "services.image_service",
     "services.content_router_service",

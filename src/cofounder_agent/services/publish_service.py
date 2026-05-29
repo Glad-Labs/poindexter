@@ -1127,7 +1127,7 @@ async def publish_post_from_task(
         try:
             from services.revalidation_service import trigger_isr_revalidate
 
-            revalidation_success = await trigger_isr_revalidate(slug)
+            revalidation_success = await trigger_isr_revalidate(slug, site_config=site_config)
             if not revalidation_success:
                 logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
         except Exception as reval_err:
@@ -1640,7 +1640,7 @@ async def fire_post_distribution_hooks(
         # rather than waiting for natural ISR expiry.
         try:
             from services.revalidation_service import trigger_isr_revalidate
-            ok = await trigger_isr_revalidate(slug)
+            ok = await trigger_isr_revalidate(slug, site_config=site_config)
             if ok:
                 fired["hooks"].append("isr_revalidate")
         except Exception as e:

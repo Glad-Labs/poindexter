@@ -20,6 +20,8 @@ from services.revalidation_service import (
     trigger_nextjs_revalidation,  # noqa: F401 — re-exported for legacy tests
     trigger_nextjs_revalidation_detailed,
 )
+from services.site_config import SiteConfig
+from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -39,6 +41,7 @@ class RevalidateCacheRequest(BaseModel):
 async def revalidate_cache(
     request_data: RevalidateCacheRequest,
     token: str = Depends(verify_api_token),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.
@@ -71,7 +74,7 @@ async def revalidate_cache(
     # Use the detailed variant so the operator (or whoever called this
     # route) sees the upstream HTTP status + body on failure instead of
     # a blank "success": false.
-    result = await trigger_nextjs_revalidation_detailed(paths, tags)
+    result = await trigger_nextjs_revalidation_detailed(paths, tags, site_config=site_config)
 
     if result.success:
         message = "Cache revalidation successful"

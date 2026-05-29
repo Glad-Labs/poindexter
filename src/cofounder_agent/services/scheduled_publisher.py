@@ -205,8 +205,11 @@ async def _revalidate_for_row(row) -> None:
         )
         return
     try:
+        # SiteConfig DI migration (#272 leaf batch 3): the revalidation
+        # helpers now require an explicit site_config. Pass this module's
+        # lifespan-bound instance (caller-bridge).
         from services.revalidation_service import trigger_isr_revalidate
-        ok = await trigger_isr_revalidate(slug)
+        ok = await trigger_isr_revalidate(slug, site_config=site_config)
         if ok:
             logger.info(
                 "[scheduled_publisher] ISR revalidation triggered for %s",

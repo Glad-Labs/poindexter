@@ -19,6 +19,14 @@ helper that every publish path must call. Verifies:
 * Empty secret — call is skipped with a logger warning, returns
   False without raising.
 * Never raises — httpx errors return False instead of bubbling up.
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 3): the module is
+now a ``RevalidationService`` class. The legacy module-level
+``site_config`` singleton + ``set_site_config`` setter are gone; the
+back-compat free-function wrappers now REQUIRE an explicit
+``site_config=`` kwarg. These tests exercise both the wrappers (passing
+a stub SiteConfig) and the class methods directly, plus the
+``AppContainer.revalidation_service`` wiring.
 """
 
 import asyncio
@@ -33,6 +41,7 @@ from services.revalidation_service import (
     _CANONICAL_TAGS,
     DEFAULT_REVALIDATE_URL,
     RevalidationResult,
+    RevalidationService,
     _resolve_revalidate_url,
     trigger_isr_revalidate,
     trigger_nextjs_revalidation,
@@ -402,7 +411,7 @@ class TestScheduledPublisherCallsHelper:
 
         called_with: list[str] = []
 
-        async def fake_revalidate(slug: str) -> bool:
+        async def fake_revalidate(slug: str, *, site_config=None) -> bool:
             called_with.append(slug)
             return True
 
@@ -448,7 +457,7 @@ class TestScheduledPublisherCallsHelper:
 
         seen: list[str] = []
 
-        async def fake_revalidate(slug: str) -> bool:
+        async def fake_revalidate(slug: str, *, site_config=None) -> bool:
             seen.append(slug)
             if slug == "first":
                 raise RuntimeError("revalidate exploded")
@@ -551,3 +560,79 @@ class TestTriggerNextjsRevalidationDetailed:
             ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
         assert ok is False
         assert isinstance(ok, bool)
+
+
+# ---------------------------------------------------------------------------
+# RevalidationService class — constructor DI (#272 leaf batch 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRevalidationServiceClass:
+    """The class methods mirror the free-function wrappers, reading the
+    injected SiteConfig instead of an explicit kwarg."""
+
+    def test_site_config_is_required(self):
+        with pytest.raises(TypeError):
+            RevalidationService()  # type: ignore[call-arg]
+
+    @pytest.mark.asyncio
+    async def test_detailed_method_uses_injected_site_config(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(200)
+        svc = RevalidationService(site_config=cfg)
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await svc.trigger_nextjs_revalidation_detailed(["/"], ["posts"])
+        assert isinstance(result, RevalidationResult)
+        assert result.success is True
+        assert result.url == "https://www.gladlabs.io/api/revalidate"
+
+    @pytest.mark.asyncio
+    async def test_bool_method_returns_success(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(500, text="boom")
+        svc = RevalidationService(site_config=cfg)
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            ok = await svc.trigger_nextjs_revalidation(["/"], ["posts"])
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_isr_method_merges_canonical_and_slug(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(200)
+        svc = RevalidationService(site_config=cfg)
+        slug = "great-article-aaaaaaaa"
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            ok = await svc.trigger_isr_revalidate(slug)
+        assert ok is True
+        body = client.post.call_args.kwargs["json"]
+        for path in _CANONICAL_PATHS:
+            assert path in body["paths"]
+        assert f"/posts/{slug}" in body["paths"]
+        assert f"post:{slug}" in body["tags"]
+
+
+# ---------------------------------------------------------------------------
+# Container wiring (#272 leaf batch 3: cached_property on AppContainer)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAppContainerWiring:
+    """``AppContainer.revalidation_service`` returns a memoised instance
+    wired to the container's SiteConfig."""
+
+    def test_app_container_exposes_revalidation_service(self):
+        from services.container import AppContainer
+        from services.site_config import SiteConfig
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        svc = container.revalidation_service
+        assert isinstance(svc, RevalidationService)
+
+    def test_cached_property_memoises(self):
+        from services.container import AppContainer
+        from services.site_config import SiteConfig
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.revalidation_service is container.revalidation_service

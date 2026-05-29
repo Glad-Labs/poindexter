@@ -30,6 +30,8 @@ from fastapi import FastAPI
 
 from services.r2_upload_service import R2UploadService
 from services.redis_cache import RedisCache
+from services.retention_janitor import RetentionJanitor
+from services.revalidation_service import RevalidationService
 from services.site_config import SiteConfig
 from services.telegram_config import TelegramConfig
 from services.url_scraper import URLScraper
@@ -229,3 +231,30 @@ class AppContainer:
         (caller-bridge); this property is the canonical wiring seam.
         """
         return URLScraper(site_config=self.site_config)
+
+    @cached_property
+    def revalidation_service(self) -> RevalidationService:
+        """Next.js ISR revalidation (#272 leaf batch 3, 2026-05-29).
+
+        Wraps ``SiteConfig`` for the revalidate URL chain + the async
+        ``revalidate_secret`` read. Every publish path (publish_service,
+        /go-live route, scheduled_publisher, the operator-facing
+        /api/revalidate-cache route) reaches the helpers via a per-call
+        instance built from its own lifespan-bound SiteConfig
+        (caller-bridge); this property is the canonical wiring seam. The
+        process-wide httpx connection pool stays module-level in
+        ``services.revalidation_service``.
+        """
+        return RevalidationService(site_config=self.site_config)
+
+    @cached_property
+    def retention_janitor(self) -> RetentionJanitor:
+        """Retention pruner for unbounded high-churn tables (#272 leaf batch 3).
+
+        Reads per-table ``retention_days__<table>`` keys + the
+        ``retention_janitor_interval_hours`` loop interval from
+        ``SiteConfig``. ``startup_manager`` builds its own instance from
+        the lifespan-bound SiteConfig to launch the background loop
+        (caller-bridge); this property is the canonical wiring seam.
+        """
+        return RetentionJanitor(site_config=self.site_config)
