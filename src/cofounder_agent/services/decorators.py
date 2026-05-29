@@ -4,10 +4,33 @@ Performance Monitoring Decorators
 Provides decorators for tracking performance metrics across database operations,
 API calls, and agent executions.
 
-Environment Variables:
-    SLOW_QUERY_THRESHOLD_MS: Milliseconds to consider a query slow (default: 100ms)
-    LOG_ALL_QUERIES: Log all queries regardless of performance (default: false)
-    ENABLE_QUERY_MONITORING: Enable/disable query monitoring (default: true)
+DI seam (SiteConfig constructor-DI migration PR 6, 2026-05-28
+— ``docs/architecture/2026-05-28-site-config-di-migration.md``):
+
+This module has been migrated to the constructor-DI pattern via the
+``Decorators`` class. ``AppContainer.decorators`` constructs an instance
+once per entry-point bootstrap and pins it as the module-level
+``_default_decorators`` facade so the existing ``@log_query_performance(...)``
+call-site ergonomics keep working.
+
+**Why Option B (facade) and not Option A (pure DI)**: there are ~50
+``@log_query_performance(...)`` decoration sites across ``services/*_db.py``
+modules (``content_db`` / ``admin_db`` / ``tasks_db`` / ``writing_style_db``
+/ ``users_db``). Forcing every site to switch from
+``@log_query_performance(...)`` to ``@container.decorators.log_query_performance(...)``
+would touch every DB-layer class — a huge mechanical change for no
+behaviour win during the migration. A thin module-level facade that
+delegates to ``_default_decorators`` keeps every call site
+zero-change; the container still owns construction; tests still get a
+clean injection seam via ``set_default_decorators``.
+
+A future refactor pass can move to pure DI once Module v1 work pulls
+the DB-layer modules into their owning Module.
+
+Settings consumed (all from ``site_config``):
+    slow_query_threshold_ms: Milliseconds to consider a query slow (default: 100)
+    log_all_queries: Log all queries regardless of performance (default: false)
+    enable_query_monitoring: Enable/disable query monitoring (default: true)
 
 Usage:
     from services.decorators import log_query_performance
@@ -28,83 +51,167 @@ from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Tests can call set_site_config() directly for isolation; falls back
-# to a fresh env-fallback instance when unset (e.g. during import or
-# in legacy test rigs).
-site_config: SiteConfig = SiteConfig()
 
+class Decorators:
+    """Performance-monitoring decorator factory with constructor DI.
 
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+    Holds the ``SiteConfig`` reference used by the logging branches in
+    ``log_query_performance``. Constructed once per entry-point bootstrap
+    by ``AppContainer.decorators`` and pinned as the module-level
+    ``_default_decorators`` so the bare ``log_query_performance`` import
+    keeps working at every call site.
 
-
-def _sc() -> SiteConfig:
-    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly).
-
-    decorators is a leaf utility used by every async DB call, so threading
-    SiteConfig through every callsite would be churn for no win. The
-    setter-bound instance keeps reads pointing at the live, DB-loaded
-    config without re-importing the deleted module-level singleton.
+    Per the SiteConfig DI migration design (fail-loud): the constructor
+    raises ``TypeError`` when ``site_config`` is missing. No silent
+    fallback to an env-var default.
     """
-    return site_config
+
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        if site_config is None:
+            raise TypeError(
+                "Decorators(site_config=...) requires a SiteConfig instance"
+            )
+        self._site_config = site_config
+
+    # ------------------------------------------------------------------
+    # Site-config reads — kept as methods so the per-call lookup path
+    # mirrors the pre-migration ``_slow_query_threshold_ms()`` module
+    # helpers (the values are NOT captured at decoration time — they're
+    # read every time the wrapper runs, so a settings update flows
+    # through without a worker restart).
+    # ------------------------------------------------------------------
+
+    def _slow_query_threshold_ms(self) -> int:
+        """Read slow_query_threshold_ms from site_config per-call."""
+        return self._site_config.get_int("slow_query_threshold_ms", 100)
+
+    def _log_all_queries(self) -> bool:
+        return self._site_config.get_bool("log_all_queries", False)
+
+    def _enable_query_monitoring(self) -> bool:
+        return self._site_config.get_bool("enable_query_monitoring", True)
+
+    def log_query_performance(
+        self,
+        operation: str,
+        category: str = "database",
+        slow_threshold_ms: int | None = None,
+    ):
+        """Method form — bound to this instance's SiteConfig."""
+        return _build_log_query_performance(
+            decorators=self,
+            operation=operation,
+            category=category,
+            slow_threshold_ms=slow_threshold_ms,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Module-level facade — kept zero-churn for the ~50 ``@log_query_performance``
+# decoration sites under ``services/*_db.py``.
+#
+# ``_default_decorators`` is set by ``AppContainer.decorators`` during
+# container construction (see ``services/container.py``). It can also be
+# overridden by tests via ``set_default_decorators(Decorators(site_config=...))``.
+#
+# Until set, ``_ensure_default()`` lazily constructs a fallback instance
+# with a fresh empty ``SiteConfig`` — same behaviour as pre-migration
+# ``site_config: SiteConfig = SiteConfig()``. This keeps imports cheap and
+# avoids crashing tests that import this module before any container or
+# fixture has run. Production entry points (worker lifespan, Prefect
+# subprocess, brain daemon, CLI) all construct an ``AppContainer``, which
+# replaces the fallback with the DB-loaded instance before any decorated
+# function runs.
+# ---------------------------------------------------------------------------
+
+_default_decorators: Decorators | None = None
+
+
+def _ensure_default() -> Decorators:
+    """Return the module-level Decorators instance, lazily constructing
+    a fallback if no AppContainer or test has set one yet."""
+    global _default_decorators
+    if _default_decorators is None:
+        _default_decorators = Decorators(site_config=SiteConfig())
+    return _default_decorators
+
+
+def set_default_decorators(decorators: Decorators | None) -> None:
+    """Pin (or unpin) the module-level ``Decorators`` facade.
+
+    Called by ``AppContainer.decorators`` at container construction so
+    the module-level ``log_query_performance`` decorator routes through
+    the container-wired ``SiteConfig`` instance. Tests can also call
+    this directly to swap in a stub-config-backed instance, then call
+    ``set_default_decorators(None)`` in teardown to reset.
+    """
+    global _default_decorators
+    _default_decorators = decorators
+
+
+# ---------------------------------------------------------------------------
+# Test/back-compat shims for the module-level reads. These are the same
+# names the pre-migration code exposed (``_slow_query_threshold_ms`` etc.);
+# the existing unit tests monkeypatch them directly, so keeping the names
+# means the tests keep working without churn. Each one delegates to the
+# current ``_default_decorators``.
+# ---------------------------------------------------------------------------
 
 
 def _slow_query_threshold_ms() -> int:
-    """Read SLOW_QUERY_THRESHOLD_MS from site_config per-call.
-
-    Previously captured at module import time — but the decorators
-    module imports before site_config.load() runs in lifespan, so the
-    captured values were always the env-var/default fallback. Switching
-    settings in app_settings had no effect until a worker restart,
-    which contradicts the DB-first config promise.
-
-    Uses site_config.get_int which already validates and falls back
-    to the default on bad data — no try/except needed here.
-    """
-    return _sc().get_int("slow_query_threshold_ms", 100)
+    return _ensure_default()._slow_query_threshold_ms()
 
 
 def _log_all_queries() -> bool:
-    return _sc().get_bool("log_all_queries", False)
+    return _ensure_default()._log_all_queries()
 
 
 def _enable_query_monitoring() -> bool:
-    return _sc().get_bool("enable_query_monitoring", True)
+    return _ensure_default()._enable_query_monitoring()
 
 
-def log_query_performance(
+def _build_log_query_performance(
+    *,
+    decorators: Decorators | None,
     operation: str,
-    category: str = "database",
-    slow_threshold_ms: int | None = None,
-):
+    category: str,
+    slow_threshold_ms: int | None,
+) -> Callable:
+    """Construct the actual decorator.
+
+    ``decorators`` is captured at decoration time and used as the source
+    of the per-call site_config reads inside the wrapper. When ``None``
+    (the module-level facade path), the wrapper falls through to the
+    module-level helpers — those re-resolve ``_default_decorators`` on
+    every call, so a late container construction still propagates.
+
+    The module-level ``_slow_query_threshold_ms`` / ``_log_all_queries`` /
+    ``_enable_query_monitoring`` helpers are kept around explicitly so
+    the existing unit tests' ``monkeypatch.setattr("services.decorators.
+    _enable_query_monitoring", ...)`` calls keep targeting the same
+    surface.
     """
-    Decorator to log query performance metrics.
 
-    Captures execution time, logs slow queries, and includes context about the operation.
+    def _read_enable_query_monitoring() -> bool:
+        if decorators is None:
+            return _enable_query_monitoring()
+        return decorators._enable_query_monitoring()
 
-    Args:
-        operation: Name of the database operation (e.g., "get_tasks", "list_content")
-        category: Category of operation for grouping (e.g., "task_retrieval", "content")
-        slow_threshold_ms: Override threshold for slow query warning (default: from env)
+    def _read_slow_query_threshold_ms() -> int:
+        if decorators is None:
+            return _slow_query_threshold_ms()
+        return decorators._slow_query_threshold_ms()
 
-    Returns:
-        Decorator function that wraps the target async function
-
-    Example:
-        @log_query_performance(operation="get_tasks_paginated", category="task_retrieval")
-        async def get_tasks_paginated(self, offset, limit):
-            # Database query here
-            return results
-    """
+    def _read_log_all_queries() -> bool:
+        if decorators is None:
+            return _log_all_queries()
+        return decorators._log_all_queries()
 
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             # Skip if monitoring disabled
-            if not _enable_query_monitoring():
+            if not _read_enable_query_monitoring():
                 return await func(*args, **kwargs)
 
             # Start timing
@@ -141,7 +248,9 @@ def log_query_performance(
 
                 # Determine if this is a slow query
                 threshold = (
-                    slow_threshold_ms if slow_threshold_ms is not None else _slow_query_threshold_ms()
+                    slow_threshold_ms
+                    if slow_threshold_ms is not None
+                    else _read_slow_query_threshold_ms()
                 )
                 is_slow = duration_ms > threshold
 
@@ -185,7 +294,7 @@ def log_query_performance(
                         f"[{operation}] ⚠️  SLOW QUERY: {duration_ms:.2f}ms (threshold: {threshold}ms)",
                         extra=context,
                     )
-                elif _log_all_queries():
+                elif _read_log_all_queries():
                     logger.info(
                         f"[{operation}] Query completed in {duration_ms:.2f}ms", extra=context
                     )
@@ -200,3 +309,41 @@ def log_query_performance(
     return decorator
 
 
+def log_query_performance(
+    operation: str,
+    category: str = "database",
+    slow_threshold_ms: int | None = None,
+):
+    """
+    Decorator to log query performance metrics.
+
+    Module-level facade — delegates to ``_default_decorators`` (the
+    container-wired ``Decorators`` instance). Passing ``decorators=None``
+    means the wrapper reads through the late-bound module-level helpers
+    on every call, so a container construction that happens AFTER class
+    decoration (which is the normal order — modules import first, then
+    the lifespan builds the container) propagates fresh settings without
+    a re-decoration.
+
+    Captures execution time, logs slow queries, and includes context about the operation.
+
+    Args:
+        operation: Name of the database operation (e.g., "get_tasks", "list_content")
+        category: Category of operation for grouping (e.g., "task_retrieval", "content")
+        slow_threshold_ms: Override threshold for slow query warning (default: from site_config)
+
+    Returns:
+        Decorator function that wraps the target async function
+
+    Example:
+        @log_query_performance(operation="get_tasks_paginated", category="task_retrieval")
+        async def get_tasks_paginated(self, offset, limit):
+            # Database query here
+            return results
+    """
+    return _build_log_query_performance(
+        decorators=None,
+        operation=operation,
+        category=category,
+        slow_threshold_ms=slow_threshold_ms,
+    )

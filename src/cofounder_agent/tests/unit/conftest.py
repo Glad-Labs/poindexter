@@ -147,7 +147,9 @@ _SHARED_TEST_MODULES = (
     "services.ai_content_generator",
     "services.social_poster",
     "services.gpu_scheduler",
-    "services.decorators",
+    # ``services.decorators`` migrated to AppContainer (DI migration PR 6,
+    # 2026-05-28). The module-level ``Decorators`` facade is seeded below
+    # via ``_share_test_decorators()`` using the same shared SiteConfig.
     "services.ollama_client",
     "services.url_validator",
     "services.url_scraper",
@@ -181,6 +183,26 @@ def _share_test_site_config() -> None:
 
 
 _share_test_site_config()
+
+
+def _share_test_decorators() -> None:
+    """SiteConfig DI migration PR 6 (decorators) seam.
+
+    The ``services.decorators`` module no longer exposes a
+    ``set_site_config`` setter (migrated to ``AppContainer.decorators``
+    via the Option B facade). Tests still want their seeded brand config
+    visible through ``log_query_performance``, so we construct a
+    ``Decorators`` instance pinned to the shared test ``SiteConfig`` and
+    install it as the module-level default.
+    """
+    try:
+        from services.decorators import Decorators, set_default_decorators
+        set_default_decorators(Decorators(site_config=site_config))
+    except Exception:
+        pass
+
+
+_share_test_decorators()
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +328,8 @@ def _reset_singletons_between_tests():
         # modules pointing at an empty config that fails
         # ``site_config.require("site_url")`` in subsequent tests.
         _share_test_site_config()
+        # Same reasoning for the migrated ``services.decorators`` facade.
+        _share_test_decorators()
     except Exception:
         pass
 

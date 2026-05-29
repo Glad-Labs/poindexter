@@ -24,11 +24,14 @@ along with ``services/di_wiring.py`` and the per-module
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
 from services.site_config import SiteConfig
+
+if TYPE_CHECKING:
+    from services.decorators import Decorators
 
 
 class ServiceContainer:
@@ -133,3 +136,33 @@ class AppContainer:
     # here. Concrete typing happens on the caller side; the container
     # just holds the reference and passes it down to services.
     pool: Any
+
+    # -- Migrated services --------------------------------------------------
+    #
+    # Added by SiteConfig DI migration PRs. Each cached_property
+    # constructs the underlying service once per container instance,
+    # wired with the container's ``site_config`` (and ``pool`` where
+    # relevant). Order matches the migration PR ledger; new entries get
+    # appended.
+
+    @cached_property
+    def decorators(self) -> "Decorators":
+        """Performance-monitoring decorators (PR 6, 2026-05-28).
+
+        Option B (facade) per the migration design doc. Constructing this
+        property also pins the constructed ``Decorators`` instance onto
+        ``services.decorators._default_decorators`` so the module-level
+        ``@log_query_performance(...)`` decoration sites under
+        ``services/*_db.py`` route through this container's ``SiteConfig``.
+
+        Side-effect on first read is deliberate: there's no per-DB-layer
+        injection seam for the ~50 existing decorator call sites, and we
+        want fresh-DB-loaded settings to take effect the moment the
+        container is built — which happens once per entry-point boot.
+        Subsequent containers (test fixtures, etc.) overwrite the pin.
+        """
+        from services.decorators import Decorators, set_default_decorators
+
+        instance = Decorators(site_config=self.site_config)
+        set_default_decorators(instance)
+        return instance

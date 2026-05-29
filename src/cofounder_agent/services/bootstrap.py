@@ -99,4 +99,18 @@ async def build_container(pool: Any) -> AppContainer:
         "[BOOTSTRAP] AppContainer built (site_config loaded %d non-secret settings)",
         len(site_config._config),  # noqa: SLF001
     )
-    return AppContainer(site_config=site_config, pool=pool)
+    container = AppContainer(site_config=site_config, pool=pool)
+
+    # ------------------------------------------------------------------
+    # Eager-init the Option B facade services. These properties have
+    # side-effects (pinning a module-level ``_default_*`` reference) and
+    # must run at bootstrap time so the module-level decorator imports
+    # (e.g. ``@log_query_performance(...)`` at class definition) see the
+    # container-wired SiteConfig instead of the lazy empty fallback the
+    # instant the container is built. Read order is intentional — kept
+    # explicit rather than hidden behind a registry so adding a new
+    # facade service is a one-line change here.
+    # ------------------------------------------------------------------
+    _ = container.decorators  # pins ``services.decorators._default_decorators``
+
+    return container

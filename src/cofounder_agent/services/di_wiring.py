@@ -50,8 +50,9 @@ logger = logging.getLogger(__name__)
 # by lifecycle for readability:
 WIRED_MODULES: tuple[str, ...] = (
     # Core infra: scheduler, decorators, HTTP/Ollama clients
+    # ``services.decorators`` migrated to AppContainer (PR 6, 2026-05-28
+    # — see ``docs/architecture/2026-05-28-site-config-di-migration.md``).
     "services.gpu_scheduler",
-    "services.decorators",
     "services.ollama_client",
     "services.url_validator",
     "services.url_scraper",

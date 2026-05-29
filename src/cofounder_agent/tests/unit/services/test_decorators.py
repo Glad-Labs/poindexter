@@ -331,24 +331,72 @@ class TestLogQueryPerformanceLogging:
         warn_extra = mock_logger.warning.call_args.kwargs["extra"]
         assert warn_extra["slow"] is True
 
-    def test_set_site_config_rewires_module_attr(self):
-        """set_site_config() must replace the module-level `site_config`
-        so subsequent _sc() / _enable_query_monitoring() reads see the new
-        instance. Regression guard for the post-#330 DI seam."""
+    def test_set_default_decorators_rewires_module_facade(self):
+        """``set_default_decorators(...)`` must replace the module-level
+        ``_default_decorators`` instance so subsequent module-level
+        ``_enable_query_monitoring()`` reads see the new SiteConfig.
+
+        Regression guard for the SiteConfig DI migration PR 6 facade
+        (replaces the post-#330 ``set_site_config`` seam)."""
         from services import decorators as dec_mod
+        from services.decorators import Decorators, set_default_decorators
         from services.site_config import SiteConfig
 
-        original = dec_mod.site_config
+        original = dec_mod._default_decorators
         try:
-            sentinel = SiteConfig(initial_config={"enable_query_monitoring": "false"})
-            dec_mod.set_site_config(sentinel)
-            assert dec_mod.site_config is sentinel
-            assert dec_mod._sc() is sentinel
+            sentinel_cfg = SiteConfig(
+                initial_config={"enable_query_monitoring": "false"}
+            )
+            sentinel = Decorators(site_config=sentinel_cfg)
+            set_default_decorators(sentinel)
+            assert dec_mod._default_decorators is sentinel
             # The new instance has monitoring disabled — verify the
-            # convenience reader picks that up.
+            # module-level convenience reader picks that up.
             assert dec_mod._enable_query_monitoring() is False
         finally:
-            dec_mod.set_site_config(original)
+            set_default_decorators(original)
+
+    def test_decorators_constructor_requires_site_config(self):
+        """Decorators(site_config=None) must raise TypeError loudly.
+
+        Fail-loud invariant from the SiteConfig DI migration: no silent
+        empty-SiteConfig fallback at the class boundary."""
+        from services.decorators import Decorators
+
+        with pytest.raises(TypeError, match="SiteConfig"):
+            Decorators(site_config=None)  # type: ignore[arg-type]
+
+    def test_decorators_method_form_uses_instance_site_config(self):
+        """The method form ``Decorators(...).log_query_performance(...)``
+        must read settings from the instance's own SiteConfig, not the
+        module-level facade — confirms Option A is still wired."""
+        from services.decorators import Decorators
+        from services.site_config import SiteConfig
+
+        cfg = SiteConfig(initial_config={"enable_query_monitoring": "false"})
+        dec = Decorators(site_config=cfg)
+
+        # Monitoring disabled on the instance's SiteConfig — wrapped fn
+        # must run with the bypass path (no timing wrap, raw return).
+        called = []
+
+        @dec.log_query_performance(operation="instance_form", category="test")
+        async def fn():
+            called.append(True)
+            return "bypassed"
+
+        async def _drive():
+            return await fn()
+
+        # Reuse pytest_asyncio-equivalent invocation via asyncio.run rather
+        # than the class-level @pytest.mark.asyncio because this method is
+        # synchronous on purpose (the assertion is about Decorator wiring,
+        # not async semantics).
+        import asyncio
+
+        result = asyncio.run(_drive())
+        assert result == "bypassed"
+        assert called == [True]
 
     def test_functools_wraps_preserves_function_metadata(self):
         """@functools.wraps must preserve __name__ and __doc__ so
