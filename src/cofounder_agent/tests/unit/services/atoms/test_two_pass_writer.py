@@ -62,7 +62,7 @@ async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None):
         return "A clean first draft with no markers."
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
-    async def fake_embed(text): return [0.0] * 768
+    async def fake_embed(text, *, site_config=None): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
@@ -93,10 +93,10 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     async def fake_revise(prompt, **kwargs):
         return next(drafts)
     monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
-    async def fake_research(query, max_sources=2):
+    async def fake_research(query, max_sources=2, *, site_config=None):
         return f"External research result for: {query}"
     monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
-    async def fake_embed(text): return [0.0] * 768
+    async def fake_embed(text, *, site_config=None): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
@@ -120,10 +120,10 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
         counter["n"] += 1
         return f"Revised with [EXTERNAL_NEEDED: another thing {counter['n']}]."
     monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
-    async def fake_research(query, max_sources=2):
+    async def fake_research(query, max_sources=2, *, site_config=None):
         return "fact"
     monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
-    async def fake_embed(text): return [0.0] * 768
+    async def fake_embed(text, *, site_config=None): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
     result = await two_pass.run(
@@ -169,13 +169,13 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
     async def fake_revise(prompt, **kwargs):
         return next(drafts)
     monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
-    async def fake_research(query, max_sources=2):
+    async def fake_research(query, max_sources=2, *, site_config=None):
         return "ok"
     monkeypatch.setattr(
         "services.research_service.research_topic",
         fake_research, raising=False,
     )
-    async def fake_embed(text):
+    async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 

@@ -22,19 +22,6 @@ import re
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = get_logger(__name__)
 
 # Verified reference links — official documentation that won't go stale.
@@ -128,7 +115,7 @@ _DEFAULT_KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
 
 
 def get_known_references(
-    *, site_config: SiteConfig | None = None
+    *, site_config: SiteConfig
 ) -> dict[str, list[dict[str, str]]]:
     """Return the reference-link database, preferring app_settings if set.
 
@@ -136,12 +123,11 @@ def get_known_references(
     valid, replaces the default tech-oriented list entirely. Malformed
     JSON logs a warning and falls back to defaults. (#198)
 
-    Phase-1 DI shim (#272): accepts an optional ``site_config`` kwarg.
-    When omitted, falls back to the lifespan-bound module global via a
-    self-module import so existing callers keep working unchanged.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required. The module
+    no longer carries a lifespan-bound global; callers (``ResearchService``
+    via ``self._site_config``) thread the injected instance.
     """
-    import services.research_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     import json as _json
     try:
         raw = _sc.get("known_references_json", "")
@@ -187,13 +173,12 @@ KNOWN_REFERENCES = _DEFAULT_KNOWN_REFERENCES
 class ResearchService:
     """Builds research context for content generation."""
 
-    def __init__(self, pool=None, settings_service=None, *, site_config: SiteConfig | None = None):
-        import services.research_service as _mod
+    def __init__(self, pool=None, settings_service=None, *, site_config: SiteConfig):
         self.pool = pool
         self.settings = settings_service
-        # Phase-1 DI shim (#272): store an injected SiteConfig or fall
-        # back to the lifespan-bound module global via self-module import.
-        self._site_config = site_config if site_config is not None else _mod.site_config
+        # DI (#272 Phase-2b): ``site_config`` is keyword-required — the
+        # module no longer carries a lifespan-bound global to fall back to.
+        self._site_config = site_config
 
     async def build_context(
         self,
@@ -323,7 +308,7 @@ async def research_topic(
     query: str,
     max_sources: int | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
     """Shim for the TWO_PASS writer mode's external fact-augmentation step.
 
@@ -342,9 +327,11 @@ async def research_topic(
     references). Plumbing a true cap requires refactoring
     ``ResearchService.build_context`` itself, which is out of scope for
     Task 14.
+
+    DI (#272 Phase-2b): ``site_config`` is keyword-required — the
+    ``two_pass_writer`` atom threads the run's lifespan-bound instance.
     """
-    import services.research_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     if max_sources is None:
         try:
             max_sources = _sc.get_int(

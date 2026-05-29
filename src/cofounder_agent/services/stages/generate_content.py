@@ -126,6 +126,7 @@ class GenerateContentStage:
             database_service, task_id, topic,
             source_tags=context.get("tags") or [],
             source_category=context.get("category") or "",
+            site_config=context.get("site_config"),
         )
 
         # Surface the research corpus on the context so the downstream
@@ -430,6 +431,8 @@ class GenerateContentStage:
         topic: str,
         source_tags: list[str] | None = None,
         source_category: str | None = None,
+        *,
+        site_config: Any = None,
     ) -> str:
         """Layer caller-provided + ResearchService + RAG contexts into one blob.
 
@@ -456,7 +459,8 @@ class GenerateContentStage:
         try:
             from services.research_service import ResearchService
             research_svc = ResearchService(
-                pool=database_service.pool if database_service else None
+                pool=database_service.pool if database_service else None,
+                site_config=site_config,
             )
             auto = await research_svc.build_context(topic)
             if auto:

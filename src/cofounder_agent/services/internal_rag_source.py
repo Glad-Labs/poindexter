@@ -155,7 +155,11 @@ class InternalRagSource:
             "research.distill_topic_angle",
             joined=joined,
         )
-        raw = await _ollama_chat_json(prompt, model=model)
+        # #272 Phase-2b: topic_ranking._ollama_chat_json no longer carries a
+        # lifespan-bound module global — pass our injected SiteConfig.
+        raw = await _ollama_chat_json(
+            prompt, model=model, site_config=self._site_config,
+        )
         import json
         parsed = json.loads(raw)
         # `dict.get(k, default)` returns the actual None/empty when the key

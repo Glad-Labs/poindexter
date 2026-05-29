@@ -11,6 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.research_service import KNOWN_REFERENCES, ResearchService
+from services.site_config import SiteConfig
+
+# #272 Phase-2b: research_service's constructor + free functions take a
+# keyword-required ``site_config``. Tests pass this empty instance — the
+# known-references / max-sources reads fall back to defaults on it.
+_SC = SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -26,12 +32,12 @@ def mock_pool():
 
 @pytest.fixture
 def service(mock_pool):
-    return ResearchService(pool=mock_pool)
+    return ResearchService(pool=mock_pool, site_config=_SC)
 
 
 @pytest.fixture
 def service_no_pool():
-    return ResearchService(pool=None)
+    return ResearchService(pool=None, site_config=_SC)
 
 
 # ---------------------------------------------------------------------------
@@ -242,12 +248,12 @@ class TestConstructor:
     def test_pool_and_settings(self):
         pool = MagicMock()
         settings = MagicMock()
-        svc = ResearchService(pool=pool, settings_service=settings)
+        svc = ResearchService(pool=pool, settings_service=settings, site_config=_SC)
         assert svc.pool is pool
         assert svc.settings is settings
 
     def test_defaults_to_none(self):
-        svc = ResearchService()
+        svc = ResearchService(site_config=_SC)
         assert svc.pool is None
         assert svc.settings is None
 
@@ -291,11 +297,9 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value="")
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        # #272 Phase-2b: get_known_references takes a keyword-required
+        # ``site_config`` — pass the stub directly (no module global).
+        refs = get_known_references(site_config=sc)
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
     def test_parses_valid_json_override(self):
@@ -303,11 +307,7 @@ class TestGetKnownReferences:
         custom = '{"woodworking": [{"title": "Wood Magazine", "url": "https://woodmagazine.com"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         assert "woodworking" in refs
         assert refs["woodworking"][0]["url"] == "https://woodmagazine.com"
         # Defaults are replaced wholesale — the tech keywords are gone
@@ -320,11 +320,7 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value="{not valid json")
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
     def test_non_dict_top_level_falls_back_to_defaults(self):
@@ -335,11 +331,7 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value='[1, 2, 3]')
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
     def test_lowercases_top_level_keys(self):
@@ -347,11 +339,7 @@ class TestGetKnownReferences:
         custom = '{"COOKING": [{"title": "Cookbook", "url": "https://cookbook.com"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         # Keys are lowercased so keyword lookup is case-insensitive
         assert "cooking" in refs
         assert "COOKING" not in refs
@@ -367,11 +355,7 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         assert len(refs["x"]) == 1
         assert refs["x"][0]["url"] == "https://a.com"
 
@@ -384,11 +368,7 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         assert "good" in refs
         assert "bad" not in refs
 
@@ -404,11 +384,7 @@ class TestGetKnownReferences:
         custom = '{"x": [{"title": "No URL"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        # Patch the per-module site_config attribute directly — research_service
-        # holds its own bound copy (DI seam, poindexter#330) so swapping
-        # services.site_config.site_config doesn't reach the consumer.
-        with patch("services.research_service.site_config", sc):
-            refs = get_known_references()
+        refs = get_known_references(site_config=sc)
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
 
@@ -429,13 +405,12 @@ class TestResearchTopicShim:
         with patch("services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="VERIFIED REFERENCES: ...")
-            result = await research_topic("FastAPI")
+            result = await research_topic("FastAPI", site_config=_SC)
         assert "VERIFIED REFERENCES" in result
-        # Constructed with pool=None — no DB lookup. Phase-1 DI shim (#272)
-        # also threads the resolved SiteConfig (module global when no kwarg
-        # is passed) so the service shares the lifespan-bound instance.
-        import services.research_service as _mod
-        MockSvc.assert_called_once_with(pool=None, site_config=_mod.site_config)
+        # Constructed with pool=None — no DB lookup. #272 Phase-2b: the
+        # keyword-required SiteConfig is threaded into the service so it
+        # shares the run-bound instance.
+        MockSvc.assert_called_once_with(pool=None, site_config=_SC)
 
     @pytest.mark.asyncio
     async def test_returns_empty_string_when_no_context_built(self):
@@ -444,7 +419,7 @@ class TestResearchTopicShim:
         with patch("services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="")
-            result = await research_topic("xyz")
+            result = await research_topic("xyz", site_config=_SC)
         assert result == ""
 
     @pytest.mark.asyncio
@@ -456,7 +431,7 @@ class TestResearchTopicShim:
         with patch("services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(side_effect=RuntimeError("DDG rate-limited"))
-            result = await research_topic("FastAPI")
+            result = await research_topic("FastAPI", site_config=_SC)
         assert result.startswith("[research stub for:")
         assert "FastAPI" in result
 
@@ -465,26 +440,27 @@ class TestResearchTopicShim:
         """When caller passes max_sources, the function does NOT consult
         site_config (defensive — settings may not be loaded yet)."""
         from services.research_service import research_topic
+        # A SiteConfig whose get_int would raise — proves the explicit
+        # max_sources short-circuits before any settings read.
+        sc = MagicMock()
+        sc.get_int = MagicMock(side_effect=AssertionError("must not read settings"))
         with patch("services.research_service.ResearchService") as MockSvc:
             instance = MockSvc.return_value
             instance.build_context = AsyncMock(return_value="ctx")
-            # If site_config import was attempted, this would raise
-            with patch.dict("sys.modules", {"services.site_config": None}):
-                result = await research_topic("topic", max_sources=5)
+            result = await research_topic("topic", max_sources=5, site_config=sc)
         assert result == "ctx"
 
     @pytest.mark.asyncio
     async def test_max_sources_falls_back_to_2_when_settings_unavailable(self):
-        """When max_sources is None and site_config raises, default to 2."""
+        """When max_sources is None and site_config.get_int raises, default to 2."""
         from services.research_service import research_topic
-        # Patch site_config to raise so the shim hits the except branch
+        # site_config.get_int raises so the shim hits the except branch.
         bad_sc = MagicMock()
         bad_sc.get_int = MagicMock(side_effect=RuntimeError("settings not loaded"))
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=bad_sc)}):
-            with patch("services.research_service.ResearchService") as MockSvc:
-                instance = MockSvc.return_value
-                instance.build_context = AsyncMock(return_value="ctx")
-                result = await research_topic("topic")
+        with patch("services.research_service.ResearchService") as MockSvc:
+            instance = MockSvc.return_value
+            instance.build_context = AsyncMock(return_value="ctx")
+            result = await research_topic("topic", site_config=bad_sc)
         assert result == "ctx"
 
 
@@ -501,7 +477,7 @@ class TestFindReferencesPartialMatch:
         """Verifies the cap of `refs[:1]` for partial matches — only the
         first ref under each partial-matched keyword is added."""
         from services.research_service import ResearchService
-        svc = ResearchService(pool=None)
+        svc = ResearchService(pool=None, site_config=_SC)
         # "monitoring" keyword has 3 refs in DEFAULTS; full substring match
         # would return all 3. Partial-word match should only return the 1st.
         # We construct a topic that contains "monitoring" as a word but

@@ -151,7 +151,9 @@ class TopicBatchService:
             from services.topic_ranking import llm_final_score
 
             goals = await self._niche_svc.get_goals(niche.id)
-            scored = await llm_final_score(top10, goals)
+            # #272 Phase-2b: topic_ranking no longer carries a lifespan-bound
+            # module global — pass this module's own wired site_config.
+            scored = await llm_final_score(top10, goals, site_config=site_config)
 
             ranked = sorted(
                 scored.values(), key=lambda c: -(c.llm_score or 0)
@@ -416,8 +418,11 @@ class TopicBatchService:
         from services.topic_ranking import embed_text
 
         goals = await self._niche_svc.get_goals(niche.id)
+        # #272 Phase-2b: thread this module's wired site_config into the
+        # topic_ranking helpers (no module global there anymore).
         goal_vecs = {
-            g.goal_type: await goal_vector_for(g.goal_type) for g in goals
+            g.goal_type: await goal_vector_for(g.goal_type, site_config=site_config)
+            for g in goals
         }
 
         async def score_one(text: str, decay: float) -> tuple[float, dict[str, float]]:
@@ -428,7 +433,7 @@ class TopicBatchService:
             # operator to see + reject.
             if not text or not text.strip():
                 return 0.0, {g.goal_type: 0.0 for g in goals}
-            vec = await embed_text(text)
+            vec = await embed_text(text, site_config=site_config)
             raw, breakdown = weighted_cosine_score(vec, goal_vecs, goals)
             return apply_decay(score=raw, decay_factor=decay), breakdown
 

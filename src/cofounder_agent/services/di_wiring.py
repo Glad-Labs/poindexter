@@ -87,7 +87,10 @@ WIRED_MODULES: tuple[str, ...] = (
     # ``citation_verifier`` still exposes ``set_http_client`` and stays in
     # ``http_client.WIRED_HTTP_CLIENT_MODULES`` — that's the separate shared
     # httpx-client plumbing, not the SiteConfig seam.
-    "services.newsletter_service",
+    # ``services.newsletter_service`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2b). ``send_post_newsletter`` now requires a
+    # ``site_config=`` kwarg; ``publish_service`` passes its own wired
+    # module ``site_config`` (caller-bridge). No module-level attr remains.
     "services.podcast_service",
     # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup). ``MultiModelQA`` now requires a ``site_config=``
@@ -95,7 +98,12 @@ WIRED_MODULES: tuple[str, ...] = (
     # thread the lifespan-bound SiteConfig via the context / caller-bridge.
     "services.image_decision_agent",
     "services.content_validator",
-    "services.research_service",
+    # ``services.research_service`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2b). ``ResearchService.__init__`` /
+    # ``research_topic`` / ``get_known_references`` now require a
+    # ``site_config=`` kwarg; the ``generate_content`` stage threads
+    # ``context.get("site_config")`` and the ``two_pass_writer`` atom
+    # threads its run-bound instance. No module-level attr remains.
     # ``services.research_quality_service`` migrated to constructor DI
     # 2026-05-29 (#272 leaf batch 4). Reach it via
     # ``container.research_quality_service`` or build a per-call instance
@@ -112,7 +120,12 @@ WIRED_MODULES: tuple[str, ...] = (
     # ``topic_batch_service`` constructs
     # ``InternalRagSource(pool, site_config=...)`` from its own lifespan-bound
     # SiteConfig (caller-bridge).
-    "services.topic_ranking",
+    # ``services.topic_ranking`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2b). ``embed_text`` / ``goal_vector_for`` /
+    # ``llm_final_score`` (and the internal ``_ollama_chat_json``) now
+    # require a ``site_config=`` kwarg; ``topic_batch_service`` (still
+    # wired) and ``internal_rag_source`` / ``ai_content_generator`` (own
+    # module globals) thread their instances. No module-level attr remains.
     "services.database_service",
     "services.quality_scorers",
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272

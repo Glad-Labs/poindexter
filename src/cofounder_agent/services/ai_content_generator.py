@@ -1380,7 +1380,9 @@ async def generate_with_context(
         instructions=instructions,
         snippet_block=snippet_block,
     )
-    return await _ollama_chat_json(prompt, model=model)
+    # #272 Phase-2b: topic_ranking._ollama_chat_json no longer carries a
+    # lifespan-bound module global — pass this module's wired site_config.
+    return await _ollama_chat_json(prompt, model=model, site_config=site_config)
 
 
 if __name__ == "__main__":

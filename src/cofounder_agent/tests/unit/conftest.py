@@ -125,12 +125,18 @@ _SHARED_TEST_MODULES = (
     "services.image_decision_agent",
     "services.podcast_service",
     "services.video_service",
-    "services.newsletter_service",
+    # ``services.newsletter_service`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
+    # share. Tests pass ``site_config=`` to ``send_post_newsletter`` /
+    # ``_build_html`` / ``_send_via_smtp`` directly.
     "services.content_validator",
     # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the MultiModelQA constructor.
-    "services.research_service",
+    # ``services.research_service`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
+    # share. Tests construct ``ResearchService(site_config=...)`` and pass
+    # ``site_config=`` to ``research_topic`` / ``get_known_references``.
     # ``services.research_quality_service`` migrated to constructor DI
     # 2026-05-29 (#272 leaf batch 4); no module-level site_config attr to
     # share. Tests construct ``ResearchQualityService(site_config=...)``
@@ -149,7 +155,10 @@ _SHARED_TEST_MODULES = (
     # ``services.internal_rag_source`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 5); no module-level site_config attr to share. Tests
     # construct ``InternalRagSource(pool, site_config=...)`` directly.
-    "services.topic_ranking",
+    # ``services.topic_ranking`` migrated to required-keyword DI
+    # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
+    # share. Tests pass ``site_config=`` to ``embed_text`` /
+    # ``goal_vector_for`` / ``llm_final_score`` (and their fakes accept it).
     "services.topic_batch_service",
     "services.database_service",
     "services.quality_scorers",

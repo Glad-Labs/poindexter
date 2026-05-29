@@ -212,7 +212,7 @@ async def test_glad_labs_sweep_produces_a_batch(db_pool, monkeypatch):
 
     # Hermetic embedding + LLM scoring — patch the source module so the
     # lazy imports inside TopicBatchService pick up the fakes.
-    async def fake_embed_text(text):
+    async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
@@ -220,7 +220,7 @@ async def test_glad_labs_sweep_produces_a_batch(db_pool, monkeypatch):
         "services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 80 - idx * 5

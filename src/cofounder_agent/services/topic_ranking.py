@@ -13,19 +13,6 @@ from services.niche_service import NicheGoal
 from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
 logger = get_logger(__name__)
 
 
@@ -48,19 +35,18 @@ GOAL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def _resolve_goal_descriptions(*, site_config: SiteConfig | None = None) -> dict[str, str]:
+def _resolve_goal_descriptions(*, site_config: SiteConfig) -> dict[str, str]:
     """Return goal-type → prose mapping, preferring the
     ``niche_goal_descriptions`` app_setting (JSON blob) over the in-code
     default. Falls back silently to ``GOAL_DESCRIPTIONS`` if the setting
     is missing, empty, or malformed — keeps test fixtures and bare
     installs working without the migration applied.
 
-    Phase-1 DI shim (#272): accepts an optional keyword-only
-    ``site_config``; defaults to the module global when not supplied so
-    existing callers stay non-breaking.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required — the public
+    callers (``goal_vector_for`` / ``llm_final_score``) thread the
+    injected instance.
     """
-    import services.topic_ranking as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     try:
         raw = _sc.get("niche_goal_descriptions", "")
         if not raw:
@@ -80,7 +66,7 @@ def _resolve_goal_descriptions(*, site_config: SiteConfig | None = None) -> dict
 _GOAL_VEC_CACHE: dict[str, list[float]] = {}
 
 
-async def _embed_text_cached(text: str, *, site_config: SiteConfig | None = None) -> list[float]:
+async def _embed_text_cached(text: str, *, site_config: SiteConfig) -> list[float]:
     """Embed via the registered ollama_native provider.
 
     The embedding service is responsible for its own caching (or not).
@@ -91,14 +77,12 @@ async def _embed_text_cached(text: str, *, site_config: SiteConfig | None = None
     through the ``LLMProvider`` Protocol (matches the pattern in
     ``services.publish_service`` etc.).
 
-    Phase-1 DI shim (#272): accepts an optional keyword-only
-    ``site_config``; defaults to the module global when not supplied. The
+    DI (#272 Phase-2b): ``site_config`` is keyword-required. The
     embed-model read drives only the provider call, not the
     ``_GOAL_VEC_CACHE`` key (which is keyed on goal_type prose), so
     threading the param is cache-safe.
     """
-    import services.topic_ranking as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     from plugins.registry import get_all_llm_providers
     providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
@@ -110,34 +94,23 @@ async def _embed_text_cached(text: str, *, site_config: SiteConfig | None = None
     return await provider.embed(text, model=embed_model)
 
 
-async def embed_text(text: str, *, site_config: SiteConfig | None = None) -> list[float]:
+async def embed_text(text: str, *, site_config: SiteConfig) -> list[float]:
     """Public embedding helper. Writer modes and the batch service import
     this rather than reaching into ``_embed_text_cached`` directly.
 
-    Phase-1 DI shim (#272): threads an optional ``site_config`` down to
-    the reader; defaults to the module global when unset. We only forward
-    the kwarg when it's actually supplied so existing monkeypatched test
-    doubles for ``_embed_text_cached`` (positional-only fakes) keep
-    working through the default path — back-compat per #272.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required and threaded
+    straight down to the reader.
     """
-    if site_config is not None:
-        return await _embed_text_cached(text, site_config=site_config)
-    return await _embed_text_cached(text)
+    return await _embed_text_cached(text, site_config=site_config)
 
 
-async def goal_vector_for(goal_type: str, *, site_config: SiteConfig | None = None) -> list[float]:
+async def goal_vector_for(goal_type: str, *, site_config: SiteConfig) -> list[float]:
     if goal_type in _GOAL_VEC_CACHE:
         return _GOAL_VEC_CACHE[goal_type]
     descriptions = _resolve_goal_descriptions(site_config=site_config)
     if goal_type not in descriptions:
         raise ValueError(f"unknown goal_type: {goal_type!r}")
-    # Only forward the kwarg when supplied — keeps positional-only
-    # monkeypatched ``_embed_text_cached`` fakes working on the default
-    # path (back-compat per #272).
-    if site_config is not None:
-        vec = await _embed_text_cached(descriptions[goal_type], site_config=site_config)
-    else:
-        vec = await _embed_text_cached(descriptions[goal_type])
+    vec = await _embed_text_cached(descriptions[goal_type], site_config=site_config)
     _GOAL_VEC_CACHE[goal_type] = vec
     return vec
 
@@ -195,7 +168,7 @@ from services.langfuse_shim import langfuse_context, observe
 @observe(as_type="generation", name="topic_ranking._ollama_chat_json")
 async def _ollama_chat_json(
     prompt: str, *, model: str, pool: object | None = None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
     """One-shot LLM chat call returning the assistant's content as a string.
 
@@ -233,12 +206,10 @@ async def _ollama_chat_json(
     through here, so wrapping at this layer covers all three call sites
     at once.
     """
-    # Phase-1 DI shim (#272): resolve the SiteConfig from the optional
-    # keyword-only param, falling back to the module global so existing
-    # callers stay non-breaking. Self-module import avoids param/global
-    # name shadowing.
-    import services.topic_ranking as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    # DI (#272 Phase-2b): ``site_config`` is keyword-required — every
+    # caller (``llm_final_score``, ``ai_content_generator``,
+    # ``internal_rag_source``) threads its own wired instance.
+    _sc = site_config
 
     messages = [{"role": "user", "content": prompt}]
     timeout = _sc.get_float(
@@ -321,7 +292,7 @@ async def llm_final_score(
     weights: list[NicheGoal],
     *,
     model: str | None = None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> dict[str, ScoredCandidate]:
     """Single LLM call ranks the (already-shortlisted) candidates against weighted goals.
 
@@ -341,13 +312,11 @@ async def llm_final_score(
     raises ``ValueError`` if neither is set — surfaces misconfig at
     pipeline-entry instead of as an opaque Ollama 404 mid-call.
     """
-    # Phase-1 DI shim (#272): resolve the SiteConfig from the optional
-    # keyword-only param, falling back to the module global. Threaded
+    # DI (#272 Phase-2b): ``site_config`` is keyword-required — threaded
     # down into resolve_local_model, the goal-descriptions reader, and
     # the LLM-chat helper so every downstream read honors the injected
     # instance.
-    import services.topic_ranking as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     if model is None:
         from services.llm_text import resolve_local_model
         model = resolve_local_model(site_config=_sc)
@@ -359,13 +328,7 @@ async def llm_final_score(
         weights_descr=weights_descr,
         cand_block=cand_block,
     )
-    # Only forward the injected SiteConfig when one was explicitly
-    # supplied — keeps monkeypatched ``_ollama_chat_json`` fakes that
-    # predate the param working on the default path (back-compat #272).
-    if site_config is not None:
-        raw = await _ollama_chat_json(prompt, model=model, site_config=_sc)
-    else:
-        raw = await _ollama_chat_json(prompt, model=model)
+    raw = await _ollama_chat_json(prompt, model=model, site_config=_sc)
     parsed = json.loads(raw)
     result: dict[str, ScoredCandidate] = {}
     for c in candidates:

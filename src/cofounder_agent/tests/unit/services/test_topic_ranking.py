@@ -6,9 +6,16 @@ from services.topic_ranking import (
     GOAL_DESCRIPTIONS, goal_vector_for, weighted_cosine_score,
 )
 from services.niche_service import NicheGoal
+from services.site_config import SiteConfig
 
 
 pytestmark = pytest.mark.asyncio
+
+
+# #272 Phase-2b: topic_ranking's public helpers take a keyword-required
+# ``site_config``. Tests pass this empty instance — the embed-model /
+# goal-descriptions reads fall back to their defaults on it.
+_SC = SiteConfig()
 
 
 async def test_all_goal_types_have_descriptions():
@@ -20,12 +27,12 @@ async def test_all_goal_types_have_descriptions():
 
 async def test_goal_vector_caches_embeddings(monkeypatch):
     calls = []
-    async def fake_embed(text):
+    async def fake_embed(text, *, site_config=None):
         calls.append(text)
         return [0.1] * 768
     monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
-    v1 = await goal_vector_for("TRAFFIC")
-    v2 = await goal_vector_for("TRAFFIC")
+    v1 = await goal_vector_for("TRAFFIC", site_config=_SC)
+    v2 = await goal_vector_for("TRAFFIC", site_config=_SC)
     assert v1 == v2
     # _embed_text_cached itself caches, so calls should be 1
     assert len(calls) == 1
@@ -46,7 +53,7 @@ async def test_weighted_cosine_score_combines_per_goal_signals():
 async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
     from services.topic_ranking import llm_final_score, ScoredCandidate
 
-    async def fake_ollama_chat(prompt: str, *, model: str) -> str:
+    async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # Simulated JSON response from glm-4.7-5090
         return '{"c1": {"score": 87.5, "breakdown": {"TRAFFIC": 0.5, "EDUCATION": 0.375}},'  \
                ' "c2": {"score": 42.0, "breakdown": {"TRAFFIC": 0.2, "EDUCATION": 0.22}}}'
@@ -60,7 +67,7 @@ async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
     # Pass model= explicitly so the test doesn't go through
     # resolve_local_model (poindexter#485 fail-loud sweep) — that
     # path is exercised in test_llm_text.py.
-    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest")
+    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
     assert scored["c1"].llm_score == 87.5
     assert scored["c2"].llm_score == 42.0
 
@@ -125,12 +132,12 @@ async def test_goal_vector_for_unknown_goal_type_raises(monkeypatch):
     # short-circuit before the goal_type check.
     monkeypatch.setattr(topic_ranking, "_GOAL_VEC_CACHE", {})
 
-    async def fake_embed(text):  # pragma: no cover — must not be called
+    async def fake_embed(text, *, site_config=None):  # pragma: no cover — must not be called
         raise AssertionError("embed should not run for an unknown goal_type")
     monkeypatch.setattr(topic_ranking, "_embed_text_cached", fake_embed)
 
     with pytest.raises(ValueError, match="unknown goal_type"):
-        await topic_ranking.goal_vector_for("NOT_A_REAL_GOAL")
+        await topic_ranking.goal_vector_for("NOT_A_REAL_GOAL", site_config=_SC)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +180,7 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
     embedding_score * 100. Verifies the warn-and-recover branch."""
     from services.topic_ranking import llm_final_score, ScoredCandidate
 
-    async def fake_ollama_chat(prompt: str, *, model: str) -> str:
+    async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # 'present' is scored; 'missing' is omitted entirely.
         return '{"present": {"score": 91.0, "breakdown": {"TRAFFIC": 0.91}}}'
     monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
@@ -185,7 +192,7 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
     weights = [NicheGoal("TRAFFIC", 100)]
     # Same pattern as above: bypass resolve_local_model for the
     # tests that aren't exercising the model-resolution contract.
-    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest")
+    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
 
     assert scored["present"].llm_score == 91.0
     # Backfilled: embedding_score (0.42) * 100 = 42.0; breakdown is {}
@@ -208,22 +215,21 @@ async def test_llm_final_score_raises_value_error_when_no_model_configured(monke
     masked misconfiguration as an opaque "model not found" at LLM
     call time. Now it raises ``ValueError`` at resolution time.
     """
-    from services import topic_ranking
     from services.topic_ranking import llm_final_score, ScoredCandidate
 
     # Clean SiteConfig with no model setting and no cost_tier fallback —
     # mirrors a misconfigured fork. The resolver must NOT silently
-    # use a hardcoded model.
+    # use a hardcoded model. #272 Phase-2b: pass the stub explicitly via
+    # the now-required ``site_config=`` kwarg (no module global to patch).
     stub_sc = MagicMock()
     stub_sc.get = MagicMock(return_value="")
-    monkeypatch.setattr(topic_ranking, "site_config", stub_sc)
 
     candidates = [ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6)]
     weights = [NicheGoal("TRAFFIC", 100)]
 
     with pytest.raises(ValueError, match="no writer model resolvable"):
         # Note: no model= kwarg → forces resolution
-        await llm_final_score(candidates, weights)
+        await llm_final_score(candidates, weights, site_config=stub_sc)
 
 
 # ---------------------------------------------------------------------------

@@ -10,36 +10,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.newsletter_service as _newsletter_service_mod  # noqa: E402
-
 from services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
     send_post_newsletter,
 )
+from services.site_config import SiteConfig
 
 
-# Seed the newsletter_service module's per-module ``site_config`` attr
-# (post-#330 sweep — each module owns its DI seam, no shared singleton).
-# Uses an autouse fixture instead of a module-import seed because the
-# conftest's _share_test_site_config rebinds the module attr on every
-# test; a module-level seed gets overwritten before the first test runs.
-@pytest.fixture(autouse=True)
-def _seed_newsletter_site_config():
-    sc = _newsletter_service_mod.site_config
-    prior_url = sc._config.get("site_url")
-    prior_co = sc._config.get("company_name")
-    sc._config["site_url"] = "https://test.example.com"
-    sc._config["company_name"] = "Test Company"
-    yield
-    if prior_url is None:
-        sc._config.pop("site_url", None)
-    else:
-        sc._config["site_url"] = prior_url
-    if prior_co is None:
-        sc._config.pop("company_name", None)
-    else:
-        sc._config["company_name"] = prior_co
+# #272 Phase-2b: newsletter_service no longer carries a lifespan-bound
+# module global — every entry point takes a keyword-required
+# ``site_config``. This module-level instance seeds the brand keys the
+# HTML builder reads (site_url / company_name / site_name); tests pass it
+# explicitly.
+_SC = SiteConfig(initial_config={
+    "site_url": "https://test.example.com",
+    "company_name": "Test Company",
+    "site_name": "Test Site",
+})
 
 # ---------------------------------------------------------------------------
 # _build_html
@@ -51,28 +39,28 @@ _FAKE_TOKEN = "fake_unsubscribe_token_abcdef0123456789"
 
 class TestBuildHtml:
     def test_includes_title_and_link(self):
-        html = _build_html("My Post", "An excerpt", "my-post-slug", unsubscribe_token=_FAKE_TOKEN)
+        html = _build_html("My Post", "An excerpt", "my-post-slug", unsubscribe_token=_FAKE_TOKEN, site_config=_SC)
         assert "My Post" in html
         assert "my-post-slug" in html
         assert "test.example.com/posts/my-post-slug" in html
 
     def test_includes_first_name_greeting(self):
-        html = _build_html("T", "E", "s", first_name="Matt", unsubscribe_token=_FAKE_TOKEN)
+        html = _build_html("T", "E", "s", first_name="Matt", unsubscribe_token=_FAKE_TOKEN, site_config=_SC)
         assert "Hi Matt," in html
 
     def test_generic_greeting_when_no_name(self):
-        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN)
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN, site_config=_SC)
         assert "Hi there," in html
 
     def test_includes_unsubscribe_link(self):
-        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN)
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN, site_config=_SC)
         assert "unsubscribe" in html.lower()
 
     def test_unsubscribe_link_contains_per_subscriber_token(self):
         """Cycle-5 #252 — the email body's unsubscribe URL must carry
         the subscriber's token; without it the endpoint refuses the
         unsubscribe request."""
-        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN)
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN, site_config=_SC)
         assert f"token={_FAKE_TOKEN}" in html
 
 
@@ -121,31 +109,31 @@ class TestSendNewsletterDisabled:
     @pytest.mark.asyncio
     async def test_returns_skipped_when_disabled(self):
         pool = AsyncMock()
-        with patch("services.newsletter_service.site_config") as mock_cfg:
-            mock_cfg.get_bool.return_value = False
-            mock_cfg.get.return_value = ""
-            mock_cfg.get_int.return_value = 50
-            mock_cfg.get_secret = AsyncMock(return_value="")
-            result = await send_post_newsletter(pool, "Title", "Excerpt", "slug")
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.return_value = False
+        mock_cfg.get.return_value = ""
+        mock_cfg.get_int.return_value = 50
+        mock_cfg.get_secret = AsyncMock(return_value="")
+        result = await send_post_newsletter(pool, "Title", "Excerpt", "slug", site_config=mock_cfg)
         assert result["skipped_reason"] == "disabled"
 
     @pytest.mark.asyncio
     async def test_returns_skipped_when_no_resend_key(self):
         pool = AsyncMock()
-        with patch("services.newsletter_service.site_config") as mock_cfg:
-            mock_cfg.get_bool.return_value = True
-            mock_cfg.get.side_effect = lambda k, d="": {
-                "newsletter_provider": "resend",
-                "newsletter_from_email": "x@y.com",
-                "newsletter_from_name": "Test",
-                "smtp_host": "",
-                "smtp_user": "",
-            }.get(k, d)
-            mock_cfg.get_int.return_value = 50
-            # resend_api_key is is_secret=true — fetched via get_secret. This
-            # test exercises the missing-key branch so return "" for both.
-            mock_cfg.get_secret = AsyncMock(return_value="")
-            result = await send_post_newsletter(pool, "T", "E", "s")
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.return_value = True
+        mock_cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "resend",
+            "newsletter_from_email": "x@y.com",
+            "newsletter_from_name": "Test",
+            "smtp_host": "",
+            "smtp_user": "",
+        }.get(k, d)
+        mock_cfg.get_int.return_value = 50
+        # resend_api_key is is_secret=true — fetched via get_secret. This
+        # test exercises the missing-key branch so return "" for both.
+        mock_cfg.get_secret = AsyncMock(return_value="")
+        result = await send_post_newsletter(pool, "T", "E", "s", site_config=mock_cfg)
         assert result["skipped_reason"] == "no_api_key"
 
 
@@ -164,37 +152,37 @@ class TestSendNewsletterSuccess:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.newsletter_service.site_config") as mock_cfg:
-            mock_cfg.get_bool.side_effect = lambda k, d=False: {
-                "newsletter_enabled": True,
-                "smtp_use_tls": True,
-            }.get(k, d)
-            mock_cfg.get.side_effect = lambda k, d="": {
-                "newsletter_provider": "resend",
-                "newsletter_from_email": "x@y.com",
-                "newsletter_from_name": "Test",
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.side_effect = lambda k, d=False: {
+            "newsletter_enabled": True,
+            "smtp_use_tls": True,
+        }.get(k, d)
+        mock_cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "resend",
+            "newsletter_from_email": "x@y.com",
+            "newsletter_from_name": "Test",
+            "resend_api_key": "re_test_key",
+            "smtp_host": "",
+            "smtp_user": "",
+        }.get(k, d)
+        mock_cfg.get_int.side_effect = lambda k, d=0: {
+            "smtp_port": 587,
+            "newsletter_batch_size": 50,
+            "newsletter_batch_delay_seconds": 0,
+        }.get(k, d)
+        # smtp_password and resend_api_key are both is_secret=true rows
+        # — fetched via the async get_secret path. Mock as a side-effect
+        # function so resend_api_key still returns a usable value.
+        async def _get_secret(k, d=""):
+            return {
+                "smtp_password": "",
                 "resend_api_key": "re_test_key",
-                "smtp_host": "",
-                "smtp_user": "",
             }.get(k, d)
-            mock_cfg.get_int.side_effect = lambda k, d=0: {
-                "smtp_port": 587,
-                "newsletter_batch_size": 50,
-                "newsletter_batch_delay_seconds": 0,
-            }.get(k, d)
-            # smtp_password and resend_api_key are both is_secret=true rows
-            # — fetched via the async get_secret path. Mock as a side-effect
-            # function so resend_api_key still returns a usable value.
-            async def _get_secret(k, d=""):
-                return {
-                    "smtp_password": "",
-                    "resend_api_key": "re_test_key",
-                }.get(k, d)
-            mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
+        mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
 
-            with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
-                mock_send.return_value = True
-                result = await send_post_newsletter(pool, "New Post", "Great stuff", "new-post")
+        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = True
+            result = await send_post_newsletter(pool, "New Post", "Great stuff", "new-post", site_config=mock_cfg)
 
         assert result["sent"] == 2
         assert result["failed"] == 0
@@ -211,28 +199,28 @@ class TestSendNewsletterSuccess:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.newsletter_service.site_config") as mock_cfg:
-            mock_cfg.get_bool.side_effect = lambda k, d=False: {
-                "newsletter_enabled": True,
-                "smtp_use_tls": True,
-            }.get(k, d)
-            mock_cfg.get.side_effect = lambda k, d="": {
-                "newsletter_provider": "resend",
-                "newsletter_from_email": "x@y.com",
-                "newsletter_from_name": "Test",
-            }.get(k, d)
-            mock_cfg.get_int.side_effect = lambda k, d=0: {
-                "newsletter_batch_size": 50,
-                "newsletter_batch_delay_seconds": 0,
-            }.get(k, d)
-            async def _get_secret(k, d=""):
-                return {"smtp_password": "", "resend_api_key": "re_test_key"}.get(k, d)
-            mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.side_effect = lambda k, d=False: {
+            "newsletter_enabled": True,
+            "smtp_use_tls": True,
+        }.get(k, d)
+        mock_cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "resend",
+            "newsletter_from_email": "x@y.com",
+            "newsletter_from_name": "Test",
+        }.get(k, d)
+        mock_cfg.get_int.side_effect = lambda k, d=0: {
+            "newsletter_batch_size": 50,
+            "newsletter_batch_delay_seconds": 0,
+        }.get(k, d)
+        async def _get_secret(k, d=""):
+            return {"smtp_password": "", "resend_api_key": "re_test_key"}.get(k, d)
+        mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
 
-            send_results = [True, False, True]
-            with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
-                mock_send.side_effect = send_results
-                result = await send_post_newsletter(pool, "T", "E", "s")
+        send_results = [True, False, True]
+        with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
+            mock_send.side_effect = send_results
+            result = await send_post_newsletter(pool, "T", "E", "s", site_config=mock_cfg)
 
         assert result["sent"] == 2
         assert result["failed"] == 1
@@ -242,23 +230,23 @@ class TestSendNewsletterSuccess:
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[])
 
-        with patch("services.newsletter_service.site_config") as mock_cfg:
-            mock_cfg.get_bool.side_effect = lambda k, d=False: {
-                "newsletter_enabled": True,
-            }.get(k, d)
-            mock_cfg.get.side_effect = lambda k, d="": {
-                "newsletter_provider": "resend",
-                "resend_api_key": "key",
-                "newsletter_from_email": "x@y.com",
-                "newsletter_from_name": "Test",
-            }.get(k, d)
-            mock_cfg.get_int.side_effect = lambda k, d=0: {
-                "newsletter_batch_size": 50,
-                "newsletter_batch_delay_seconds": 0,
-            }.get(k, d)
-            mock_cfg.get_secret = AsyncMock(return_value="")
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.side_effect = lambda k, d=False: {
+            "newsletter_enabled": True,
+        }.get(k, d)
+        mock_cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "resend",
+            "resend_api_key": "key",
+            "newsletter_from_email": "x@y.com",
+            "newsletter_from_name": "Test",
+        }.get(k, d)
+        mock_cfg.get_int.side_effect = lambda k, d=0: {
+            "newsletter_batch_size": 50,
+            "newsletter_batch_delay_seconds": 0,
+        }.get(k, d)
+        mock_cfg.get_secret = AsyncMock(return_value="")
 
-            result = await send_post_newsletter(pool, "T", "E", "s")
+        result = await send_post_newsletter(pool, "T", "E", "s", site_config=mock_cfg)
 
         assert result["total_subscribers"] == 0
         assert result["sent"] == 0
@@ -357,6 +345,7 @@ class TestSendViaSmtp:
             result = await _send_via_smtp(
                 cfg, "to@example.com", "Subject", "<html/>",
                 unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
             )
 
         assert result is True
@@ -383,6 +372,7 @@ class TestSendViaSmtp:
             result = await _send_via_smtp(
                 cfg, "to@example.com", "S", "<html/>",
                 unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
             )
 
         assert result is False
@@ -409,6 +399,7 @@ class TestSendViaSmtp:
             await _send_via_smtp(
                 cfg, "to@example.com", "S", "<html/>",
                 unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
             )
 
         kwargs = fake_aiosmtplib.send.await_args.kwargs
@@ -476,18 +467,18 @@ class TestSendNewsletterSmtpProvider:
 
         pool = AsyncMock()
 
-        with patch("services.newsletter_service.site_config") as mock_cfg:
-            mock_cfg.get_bool.side_effect = lambda k, d=False: {
-                "newsletter_enabled": True,
-            }.get(k, d)
-            mock_cfg.get.side_effect = lambda k, d="": {
-                "newsletter_provider": "smtp",
-                "smtp_host": "",  # missing
-            }.get(k, d)
-            mock_cfg.get_int.side_effect = lambda k, d=0: d
-            mock_cfg.get_secret = AsyncMock(return_value="")
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.side_effect = lambda k, d=False: {
+            "newsletter_enabled": True,
+        }.get(k, d)
+        mock_cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "smtp",
+            "smtp_host": "",  # missing
+        }.get(k, d)
+        mock_cfg.get_int.side_effect = lambda k, d=0: d
+        mock_cfg.get_secret = AsyncMock(return_value="")
 
-            result = await send_post_newsletter(pool, "T", "E", "s")
+        result = await send_post_newsletter(pool, "T", "E", "s", site_config=mock_cfg)
 
         assert result["sent"] == 0
         assert result.get("skipped_reason") == "no_smtp_host"
@@ -502,26 +493,27 @@ class TestSendNewsletterSmtpProvider:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.newsletter_service.site_config") as mock_cfg, \
-             patch("services.newsletter_service._send_via_smtp", new_callable=AsyncMock) as mock_smtp, \
+        mock_cfg = MagicMock()
+        mock_cfg.get_bool.side_effect = lambda k, d=False: {
+            "newsletter_enabled": True, "smtp_use_tls": True,
+        }.get(k, d)
+        mock_cfg.get.side_effect = lambda k, d="": {
+            "newsletter_provider": "smtp",
+            "smtp_host": "smtp.example.com",
+            "newsletter_from_email": "from@x.com",
+            "newsletter_from_name": "Test",
+            "smtp_user": "user",
+        }.get(k, d)
+        mock_cfg.get_int.side_effect = lambda k, d=0: d
+        # smtp_password is now a secret — fetched via the async path.
+        mock_cfg.get_secret = AsyncMock(return_value="pass")
+
+        with patch("services.newsletter_service._send_via_smtp", new_callable=AsyncMock) as mock_smtp, \
              patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_resend:
-            mock_cfg.get_bool.side_effect = lambda k, d=False: {
-                "newsletter_enabled": True, "smtp_use_tls": True,
-            }.get(k, d)
-            mock_cfg.get.side_effect = lambda k, d="": {
-                "newsletter_provider": "smtp",
-                "smtp_host": "smtp.example.com",
-                "newsletter_from_email": "from@x.com",
-                "newsletter_from_name": "Test",
-                "smtp_user": "user",
-            }.get(k, d)
-            mock_cfg.get_int.side_effect = lambda k, d=0: d
-            # smtp_password is now a secret — fetched via the async path.
-            mock_cfg.get_secret = AsyncMock(return_value="pass")
             mock_smtp.return_value = True
             mock_resend.return_value = True
 
-            result = await send_post_newsletter(pool, "T", "E", "s")
+            result = await send_post_newsletter(pool, "T", "E", "s", site_config=mock_cfg)
 
         assert result["sent"] == 1
         mock_smtp.assert_awaited_once()

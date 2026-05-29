@@ -21,38 +21,22 @@ import asyncio
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
 logger = get_logger(__name__)
 
 
-def _site_url(*, site_config: SiteConfig | None = None) -> str:
-    """Return the canonical site URL. Reads site_config lazily because
-    this module may be imported before site_config has been populated
-    from the DB. Fails loud (RuntimeError) if the setting is missing —
-    silently sending newsletters with broken links would be worse.
+def _site_url(*, site_config: SiteConfig) -> str:
+    """Return the canonical site URL. Fails loud (RuntimeError) if the
+    setting is missing — silently sending newsletters with broken links
+    would be worse.
 
-    Phase-1 DI shim (#272): callers may pass an explicit ``site_config``;
-    when omitted it falls back to the lifespan-bound module global. The
-    self-module import dodges the local-name shadow introduced by the
-    keyword-only parameter.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required. The module
+    no longer carries a lifespan-bound global; the public entry point
+    threads the injected instance down through every helper.
     """
-    import services.newsletter_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
-    return _sc.require("site_url")
+    return site_config.require("site_url")
 
 
-async def _cfg(*, site_config: SiteConfig | None = None) -> dict:
+async def _cfg(*, site_config: SiteConfig) -> dict:
     """Load newsletter config from DB.
 
     ``smtp_password`` (and ``resend_api_key``) are ``is_secret=true`` rows
@@ -60,11 +44,9 @@ async def _cfg(*, site_config: SiteConfig | None = None) -> dict:
     so they MUST be fetched via the async ``get_secret`` path. See
     Glad-Labs/poindexter#221 for the schema flip.
 
-    Phase-1 DI shim (#272): accepts an explicit ``site_config``; falls
-    back to the lifespan-bound module global when omitted.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required.
     """
-    import services.newsletter_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     return {
         "enabled": _sc.get_bool("newsletter_enabled", False),
         "provider": _sc.get("newsletter_provider", "resend"),
@@ -97,7 +79,7 @@ async def _get_active_subscribers(pool) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _unsubscribe_url(token: str, *, site_config: SiteConfig | None = None) -> str:
+def _unsubscribe_url(token: str, *, site_config: SiteConfig) -> str:
     """Per-subscriber unsubscribe URL.
 
     Centralised so the email template and the ``List-Unsubscribe``
@@ -105,8 +87,8 @@ def _unsubscribe_url(token: str, *, site_config: SiteConfig | None = None) -> st
     agree on shape or one-click clients (Gmail/Apple Mail) silently
     fall back to the inline link.
 
-    Phase-1 DI shim (#272): threads ``site_config`` through to
-    ``_site_url``; falls back to the module global when omitted.
+    DI (#272 Phase-2b): threads the keyword-required ``site_config``
+    through to ``_site_url``.
     """
     return f"{_site_url(site_config=site_config)}/newsletter/unsubscribe?token={token}"
 
@@ -118,7 +100,7 @@ def _build_html(
     first_name: str | None = None,
     *,
     unsubscribe_token: str,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
     """Build a simple, clean newsletter email body.
 
@@ -126,12 +108,11 @@ def _build_html(
     sensible default and a typo'd positional call would silently ship
     emails with a broken unsubscribe link.
 
-    Phase-1 DI shim (#272): accepts an explicit ``site_config`` (threaded
-    to ``_site_url`` / ``_unsubscribe_url`` and used for the company /
-    site-name reads); falls back to the lifespan-bound module global.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required (threaded to
+    ``_site_url`` / ``_unsubscribe_url`` and used for the company /
+    site-name reads).
     """
-    import services.newsletter_service as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
     post_url = f"{_site_url(site_config=_sc)}/posts/{slug}"
     unsubscribe_url = _unsubscribe_url(unsubscribe_token, site_config=_sc)
@@ -198,7 +179,7 @@ async def _send_via_smtp(
     html: str,
     *,
     unsubscribe_token: str,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> bool:
     """Send a single email via SMTP.
 
@@ -210,9 +191,9 @@ async def _send_via_smtp(
     silently break inbox-native unsubscribe even after we fix the
     inline link.
 
-    Phase-1 DI shim (#272): threads ``site_config`` to the
-    ``_unsubscribe_url`` call so the header URL resolves against the
-    same config flowing through the rest of the send chain.
+    DI (#272 Phase-2b): ``site_config`` is keyword-required and threaded
+    to the ``_unsubscribe_url`` call so the header URL resolves against
+    the same config flowing through the rest of the send chain.
     """
     try:
         from email.mime.multipart import MIMEMultipart
@@ -261,7 +242,7 @@ async def send_post_newsletter(
     excerpt: str,
     slug: str,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> dict:
     """Send newsletter to all active subscribers about a new post.
 
@@ -270,11 +251,10 @@ async def send_post_newsletter(
         title: post title
         excerpt: post excerpt/description
         slug: post URL slug
-        site_config: optional explicit SiteConfig (Phase-1 DI shim, #272).
-            When omitted the module falls back to the lifespan-bound
-            global, so existing callers are unaffected. When provided it
-            flows through the full send chain (_cfg / _build_html /
-            _send_via_smtp).
+        site_config: the lifespan-bound SiteConfig (keyword-required as of
+            #272 Phase-2b). Flows through the full send chain (_cfg /
+            _build_html / _send_via_smtp). The ``publish_service`` caller
+            passes its own lifespan-bound module ``site_config``.
 
     Returns:
         dict with sent, failed, skipped counts

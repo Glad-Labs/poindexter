@@ -1433,7 +1433,12 @@ async def publish_post_from_task(
             try:
                 from services.newsletter_service import send_post_newsletter
                 _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug)
+                # #272 Phase-2b: newsletter_service no longer carries a
+                # lifespan-bound module global — pass this module's own
+                # wired site_config explicitly.
+                result = await send_post_newsletter(
+                    _pool, ptitle, pexcerpt, pslug, site_config=site_config,
+                )
                 logger.info("[NEWSLETTER] Result: %s", result)
             except Exception as e:
                 logger.warning("[NEWSLETTER] Failed (non-fatal): %s", e)

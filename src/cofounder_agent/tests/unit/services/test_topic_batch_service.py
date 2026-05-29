@@ -71,7 +71,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
     # ``embed_text`` (used for candidate texts via lazy import in
     # TopicBatchService) AND the private ``_embed_text_cached`` (used by
     # ``goal_vector_for`` to embed goal description anchors).
-    async def fake_embed_text(text):
+    async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
@@ -79,7 +79,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
         "services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
         # Return the same candidates with a descending llm_score so order
         # is deterministic. Use enumerate to mimic the spec: first → 80,
         # then 75, 70, …
@@ -163,7 +163,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
         fake_internal_generate,
     )
 
-    async def fake_embed_text(text):
+    async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
 
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
@@ -171,7 +171,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
         "services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 50 - idx
