@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.27.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.27.0...v0.27.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **youtube:** publish videos with SEO description + tags + back-link ([#275](https://github.com/Glad-Labs/glad-labs-stack/issues/275)) ([#728](https://github.com/Glad-Labs/glad-labs-stack/issues/728)) ([0d6bcb0](https://github.com/Glad-Labs/glad-labs-stack/commit/0d6bcb066caa4b452b8aa22b495f3c63d5baf2b7))
+
 ## [0.27.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.26.1...v0.27.0) (2026-05-29)
 
 
