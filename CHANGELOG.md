@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.17.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.16.0...v0.17.0) (2026-05-29)
+
+
+### Features
+
+* **analytics:** Cloudflare Analytics Engine beacon (closes [#269](https://github.com/Glad-Labs/glad-labs-stack/issues/269)) ([#697](https://github.com/Glad-Labs/glad-labs-stack/issues/697)) ([30b8332](https://github.com/Glad-Labs/glad-labs-stack/commit/30b83324e243d054f903b137370a2f30b761ef06))
+
 ## [0.16.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.15.0...v0.16.0) (2026-05-28)
 
 
