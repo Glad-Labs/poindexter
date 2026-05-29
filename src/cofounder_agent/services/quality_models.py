@@ -113,6 +113,11 @@ class QualityDimensions:
     CRITICAL_FLOOR: float = 50.0
     CRITICAL_DIMENSIONS: tuple = ("clarity", "relevance")
 
+    # Phase-1 DI seam (#272): optional injected SiteConfig. Defaults to None so
+    # existing construction sites are unaffected; average() falls back to the
+    # live module-global `site_config` when not supplied.
+    site_config: "SiteConfig | None" = None
+
     def average(self) -> float:
         """Calculate overall score with minimum-dimension enforcement.
 
@@ -143,7 +148,12 @@ class QualityDimensions:
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
         try:
-            effective_floor = site_config.get_float(
+            # Phase-1 DI (#272): prefer the injected instance, fall back to the
+            # live module-global via self-module import (avoids name shadowing).
+            import services.quality_models as _mod
+
+            _sc = self.site_config if self.site_config is not None else _mod.site_config
+            effective_floor = _sc.get_float(
                 "qa_critical_floor", self.CRITICAL_FLOOR,
             )
         except Exception:
