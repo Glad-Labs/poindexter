@@ -333,7 +333,7 @@ class TestGenerateVideoForPost:
         so the test is independent of the test runner's actual home dir.
         Previous version hardcoded ``/root/.poindexter`` which silently
         no-op'd once the container user changed from root to appuser
-        (Glad-Labs/glad-labs-stack#198).
+        (Glad-Labs/poindexter#198).
         """
         video_dir = tmp_path / "video"
         video_dir.mkdir()
