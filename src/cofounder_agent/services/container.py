@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from services.citation_verifier import CitationVerifier
 from services.r2_upload_service import R2UploadService
 from services.redis_cache import RedisCache
+from services.research_quality_service import ResearchQualityService
 from services.retention_janitor import RetentionJanitor
 from services.revalidation_service import RevalidationService
 from services.seed_url_fetcher import SeedURLFetcher
@@ -314,3 +315,24 @@ class AppContainer:
         property is the canonical SiteConfig wiring seam.
         """
         return TitleOriginalityExternalChecker(site_config=self.site_config)
+
+    @cached_property
+    def research_quality_service(self) -> ResearchQualityService:
+        """Research-source filter / dedup / credibility scorer (#272 leaf batch 4).
+
+        Reads the ``research_*_weight`` scoring tunables +
+        ``research_min_snippet_length`` / ``research_min_snippet_words`` /
+        ``research_dedup_similarity_threshold`` + the
+        ``research_tier1_domains`` / ``research_tier2_domains`` overrides
+        from ``SiteConfig`` at construction. ``research_service`` builds its
+        own per-call instance from the context SiteConfig (caller-bridge);
+        this property is the canonical wiring seam for container-aware
+        callers + tests.
+
+        ``WebhookDeliveryService`` migrated in the same batch but needs a
+        runtime ``pool`` the container can't supply at build time, so it has
+        no cached_property here — ``main.py``'s lifespan constructs it as
+        ``WebhookDeliveryService(pool, site_config=self.site_config)``
+        (caller-bridge).
+        """
+        return ResearchQualityService(site_config=self.site_config)

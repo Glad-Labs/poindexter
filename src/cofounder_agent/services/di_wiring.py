@@ -71,7 +71,11 @@ WIRED_MODULES: tuple[str, ...] = (
     # (SiteConfig DI migration PR 3). Reach it via
     # ``container.telegram_config`` instead of importing free functions.
     "services.video_service",
-    "services.webhook_delivery_service",
+    # ``services.webhook_delivery_service`` migrated to constructor DI
+    # 2026-05-29 (#272 leaf batch 4). ``main.py``'s lifespan constructs
+    # ``WebhookDeliveryService(pool, site_config=...)`` from the
+    # lifespan-bound SiteConfig (caller-bridge); no container build-time
+    # property because the runtime pool can't be supplied at build time.
     # Content pipeline + QA
     "services.publish_service",
     # ``services.citation_verifier`` + ``services.seed_url_fetcher`` +
@@ -89,7 +93,10 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.image_decision_agent",
     "services.content_validator",
     "services.research_service",
-    "services.research_quality_service",
+    # ``services.research_quality_service`` migrated to constructor DI
+    # 2026-05-29 (#272 leaf batch 4). Reach it via
+    # ``container.research_quality_service`` or build a per-call instance
+    # from a lifespan-bound SiteConfig (caller-bridge).
     "services.self_review",
     "services.title_generation",
     "services.internal_rag_source",

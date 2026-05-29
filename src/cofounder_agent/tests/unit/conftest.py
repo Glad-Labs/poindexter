@@ -126,7 +126,10 @@ _SHARED_TEST_MODULES = (
     "services.content_validator",
     "services.multi_model_qa",
     "services.research_service",
-    "services.research_quality_service",
+    # ``services.research_quality_service`` migrated to constructor DI
+    # 2026-05-29 (#272 leaf batch 4); no module-level site_config attr to
+    # share. Tests construct ``ResearchQualityService(site_config=...)``
+    # directly.
     # ``services.seed_url_fetcher`` + ``services.title_originality_external``
     # migrated to constructor DI 2026-05-29 (#272 leaf batch 2); no
     # module-level site_config attr to share. Tests construct
@@ -172,7 +175,10 @@ _SHARED_TEST_MODULES = (
     # (SiteConfig DI migration PR 3); no module-level site_config attr
     # to share. Tests construct ``TelegramConfig(site_config=...)``
     # directly.
-    "services.webhook_delivery_service",
+    # ``services.webhook_delivery_service`` migrated to constructor DI
+    # 2026-05-29 (#272 leaf batch 4); no module-level site_config attr to
+    # share. Tests construct ``WebhookDeliveryService(pool, site_config=...)``
+    # directly.
     "services.devto_service",
     "utils.route_utils",
 )

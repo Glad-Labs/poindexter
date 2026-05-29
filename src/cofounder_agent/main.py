@@ -409,7 +409,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
                 webhook_service = WebhookDeliveryService(
                     services["database"].pool,
-                    app.state.site_config,
+                    site_config=app.state.site_config,
                 )
                 await webhook_service.start()
                 app.state.webhook_service = webhook_service

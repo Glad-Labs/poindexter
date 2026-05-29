@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from services.site_config import SiteConfig
 from services.webhook_delivery_service import (
     MAX_RETRIES,
     WebhookDeliveryService,
@@ -101,7 +102,7 @@ class TestServiceLifecycle:
     def test_defaults_when_env_unset(self):
         pool, _ = _make_pool()
         with patch.dict("os.environ", {}, clear=True):
-            svc = WebhookDeliveryService(pool)
+            svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         assert svc.webhook_url == ""
         # `webhook_token` is no longer an attribute — it's read at delivery
         # time via `_get_webhook_token()` so the encrypted is_secret value
@@ -114,12 +115,13 @@ class TestServiceLifecycle:
         pool, _ = _make_pool()
         env = {"OPENCLAW_WEBHOOK_URL": "https://openclaw.example.com"}
         with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+            svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         assert svc.webhook_url == "https://openclaw.example.com"
         # Token is fetched async via get_secret (which decrypts is_secret rows).
-        # Mock site_config.get_secret to return our test value.
-        with patch(
-            "services.webhook_delivery_service.site_config.get_secret",
+        # Mock the injected site_config.get_secret to return our test value.
+        with patch.object(
+            svc._site_config,
+            "get_secret",
             new_callable=AsyncMock,
             return_value="secret123",
         ):
@@ -130,7 +132,7 @@ class TestServiceLifecycle:
         """If no webhook URL is configured, start() returns immediately."""
         pool, _ = _make_pool()
         with patch.dict("os.environ", {}, clear=True):
-            svc = WebhookDeliveryService(pool)
+            svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         await svc.start()
         assert svc._running is False
         assert svc._client is None
@@ -140,7 +142,7 @@ class TestServiceLifecycle:
         pool, _ = _make_pool()
         env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
         with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+            svc = WebhookDeliveryService(pool, site_config=SiteConfig())
 
         with patch("asyncio.create_task"):
             await svc.start()
@@ -152,7 +154,7 @@ class TestServiceLifecycle:
     async def test_stop_closes_client(self):
         pool, _ = _make_pool()
         mock_client = AsyncMock()
-        svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         svc._running = True
         svc._client = mock_client
 
@@ -171,7 +173,7 @@ class TestFormatMessage:
 
     def setup_method(self):
         pool, _ = _make_pool()
-        self.svc = WebhookDeliveryService(pool)
+        self.svc = WebhookDeliveryService(pool, site_config=SiteConfig())
 
     def test_task_completed(self):
         msg = self.svc._format_message(
@@ -261,7 +263,7 @@ class TestDeliverPending:
 
         env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
         with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+            svc = WebhookDeliveryService(pool, site_config=SiteConfig())
 
         await svc._deliver_pending()
 
@@ -280,7 +282,7 @@ class TestDeliverPending:
 
         env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
         with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+            svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         svc._deliver_event = AsyncMock()
 
         await svc._deliver_pending()
@@ -305,7 +307,7 @@ class TestDeliverEvent:
             "OPENCLAW_WEBHOOK_TOKEN": "tok_secret",
         }
         with patch.dict("os.environ", env, clear=True):
-            self.svc = WebhookDeliveryService(self.pool)
+            self.svc = WebhookDeliveryService(self.pool, site_config=SiteConfig())
         self.svc._client = AsyncMock()
 
     @pytest.mark.asyncio
@@ -317,8 +319,9 @@ class TestDeliverEvent:
         row = _make_row(event_id=42)
         # Token is now read at delivery time via get_secret (#325 sweep);
         # mock the call so the headers test still asserts the bearer.
-        with patch(
-            "services.webhook_delivery_service.site_config.get_secret",
+        with patch.object(
+            self.svc._site_config,
+            "get_secret",
             new_callable=AsyncMock,
             return_value="tok_secret",
         ):
@@ -366,7 +369,7 @@ class TestDeliverEvent:
     async def test_no_token_sends_no_auth_header(self):
         env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
         with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(self.pool)
+            svc = WebhookDeliveryService(self.pool, site_config=SiteConfig())
         svc._client = AsyncMock()
         response = MagicMock()
         response.raise_for_status = MagicMock()
@@ -407,7 +410,7 @@ class TestDeliveryLoop:
     @pytest.mark.asyncio
     async def test_loop_calls_deliver_pending(self):
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         svc._running = True
 
         call_count = 0
@@ -428,7 +431,7 @@ class TestDeliveryLoop:
     async def test_loop_survives_exception(self):
         """Errors in _deliver_pending don't kill the loop."""
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, site_config=SiteConfig())
         svc._running = True
 
         call_count = 0

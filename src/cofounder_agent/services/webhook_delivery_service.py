@@ -14,18 +14,18 @@ import httpx
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# set_site_config() for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# 2026-05-29 — SiteConfig DI migration (#272 leaf batch 4) converted this
+# module from the module-level ``site_config`` singleton + ``set_site_config``
+# setter to constructor DI via ``WebhookDeliveryService`` taking
+# ``site_config`` in ``__init__`` (stored as ``self._site_config``). The
+# ``openclaw_webhook_url`` sync read (at init) and the async
+# ``openclaw_webhook_token`` ``get_secret`` read (at delivery time) now go
+# through ``self._site_config``. The runtime ``pool`` is supplied by the
+# caller, so there is no container build-time cached_property; ``main.py``'s
+# lifespan constructs ``WebhookDeliveryService(pool, site_config=...)`` from
+# the lifespan-bound SiteConfig (caller-bridge pattern). The module-level
+# free function ``emit_webhook_event`` does not touch SiteConfig and is
+# unchanged.
 
 logger = get_logger(__name__)
 
@@ -34,10 +34,11 @@ POLL_INTERVAL = 5  # seconds
 
 
 class WebhookDeliveryService:
-    def __init__(self, pool):
+    def __init__(self, pool, *, site_config: SiteConfig):
         self.pool = pool
+        self._site_config = site_config
         # webhook_url is plaintext, captured at init is fine.
-        self.webhook_url = site_config.get("openclaw_webhook_url", "")
+        self.webhook_url = self._site_config.get("openclaw_webhook_url", "")
         # webhook_token is is_secret=true (#325 bug class) — capturing the
         # sync .get() value at __init__ would store the ciphertext. Read
         # via the async get_secret accessor at delivery time instead.
@@ -48,7 +49,7 @@ class WebhookDeliveryService:
 
     async def _get_webhook_token(self) -> str:
         """Read the bearer token at call time (is_secret=true row)."""
-        return await site_config.get_secret("openclaw_webhook_token", "")
+        return await self._site_config.get_secret("openclaw_webhook_token", "")
 
     async def start(self):
         """Start the delivery loop."""

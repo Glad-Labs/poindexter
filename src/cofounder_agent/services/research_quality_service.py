@@ -12,18 +12,15 @@ from difflib import SequenceMatcher
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
+# 2026-05-29 — SiteConfig DI migration (#272 leaf batch 4) converted this
+# module from the module-level ``site_config`` singleton + ``set_site_config``
+# setter to constructor DI via ``ResearchQualityService`` taking
+# ``site_config`` in ``__init__``. The ``_weight`` static helper became an
+# instance method reading ``self._site_config``. The composition root
+# (``services/container.py::AppContainer.research_quality_service``) wires a
+# ``ResearchQualityService``; callers that aren't yet migrated build a
+# per-call instance from their own lifespan-bound SiteConfig (caller-bridge
+# pattern, ``ResearchQualityService(site_config=site_config)``).
 
 logger = get_logger(__name__)
 
@@ -65,11 +62,9 @@ class ResearchQualityService:
     # Weights for overall source score — tunable via app_settings so
     # different niches can prioritize differently (e.g. a news blog
     # weighs recency higher, a how-to site weighs credibility higher). (#198)
-    @staticmethod
-    def _weight(key: str, default: float) -> float:
+    def _weight(self, key: str, default: float) -> float:
         try:
-            _sc = site_config
-            return _sc.get_float(f"research_{key}_weight", default)
+            return self._site_config.get_float(f"research_{key}_weight", default)
         except Exception:
             return default
 
@@ -116,7 +111,8 @@ class ResearchQualityService:
     # Similarity threshold for deduplication — tunable via app_settings.
     SIMILARITY_THRESHOLD = 0.7  # 70% similar = duplicate
 
-    def __init__(self):
+    def __init__(self, *, site_config: SiteConfig):
+        self._site_config = site_config
         self.logger = logger
         # Resolve tunables from app_settings on init. Re-instantiate the
         # service to pick up app_settings changes.
@@ -125,7 +121,7 @@ class ResearchQualityService:
         self.recency_weight = self._weight("recency", self.RECENCY_WEIGHT)
         self.uniqueness_weight = self._weight("uniqueness", self.UNIQUENESS_WEIGHT)
         try:
-            _sc = site_config
+            _sc = self._site_config
             self.min_snippet_length = _sc.get_int(
                 "research_min_snippet_length", self.MIN_SNIPPET_LENGTH
             )
