@@ -212,6 +212,7 @@ async def _emit_progress(
     event_type: str,
     payload: dict[str, Any],
     notify_operator_message: str | None = None,
+    site_config: SiteConfig | None = None,
 ) -> None:
     """Fan progress events out to Discord (when enabled).
 
@@ -219,14 +220,21 @@ async def _emit_progress(
     on the signature so the dozen call sites don't churn — they're now
     unused at this layer. A future Langfuse-tracing wire-up will read
     ``event_type`` + ``payload`` to populate span attributes.
+
+    ``site_config`` is the Phase-1 DI shim (Glad-Labs/poindexter#272):
+    callers may pass an explicit instance; when omitted we fall back to
+    the module-level lifespan-bound global. The self-module import dodges
+    the param/global name shadow introduced by the new keyword.
     """
     del pool, event_type, payload  # see docstring — kept for source-compat
     if not notify_operator_message:
         return
+    import services.template_runner as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     try:
         from services.integrations.operator_notify import notify_operator
         stream_on = bool(
-            site_config.get_bool(
+            _sc.get_bool(
                 "template_runner_progress_streaming", True,
             )
         )
@@ -657,11 +665,19 @@ class TemplateRunner:
         pool: Any,
         *,
         checkpointer_dsn: str | None = None,
+        site_config: SiteConfig | None = None,
     ) -> None:
         self._pool = pool
         # Optional override; production resolves via brain.bootstrap when
         # None. Tests inject a sandbox DSN explicitly.
         self._checkpointer_dsn = checkpointer_dsn
+        # Phase-1 DI shim (Glad-Labs/poindexter#272): prefer an injected
+        # SiteConfig, else fall back to the module-level lifespan-bound
+        # global. Self-module import dodges the param/global name shadow.
+        import services.template_runner as _mod
+        self._site_config = (
+            site_config if site_config is not None else _mod.site_config
+        )
 
     async def run(
         self,
@@ -714,6 +730,7 @@ class TemplateRunner:
                 f"▶️ Pipeline {template_slug} starting "
                 f"(task {str(initial_state.get('task_id') or '')[:8]})"
             ),
+            site_config=self._site_config,
         )
 
         # Partition input into (data_state, services) so the
@@ -775,6 +792,7 @@ class TemplateRunner:
                 f"🏁 Pipeline {template_slug} {'complete' if ok else f'halted at {halted_at}'} "
                 f"(task {str(initial_state.get('task_id') or '')[:8]}, {len(records)} nodes)"
             ),
+            site_config=self._site_config,
         )
 
         # Outcome feedback loop — write one capability_outcomes row per
@@ -828,6 +846,7 @@ class TemplateRunner:
                 f"💥 Pipeline {template_slug} crashed: {type(exc).__name__} "
                 f"(task {str(initial_state.get('task_id') or '')[:8]})"
             ),
+            site_config=self._site_config,
         )
         return TemplateRunSummary(
             ok=False,
@@ -950,7 +969,7 @@ class TemplateRunner:
         the SiteConfig DI cycle at module import time."""
         try:
             return bool(
-                site_config.get_bool(
+                self._site_config.get_bool(
                     "template_runner_use_postgres_checkpointer", False,
                 )
             )
