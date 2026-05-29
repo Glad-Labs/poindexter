@@ -82,34 +82,34 @@ logger = get_logger(__name__)
 
 
 # Private repo URL scrub — defense in depth, mirrors the same set used
-# by ``atoms.narrate_bundle`` (PR #680). Glad-Labs/glad-labs-stack is
+# by ``atoms.narrate_bundle`` (PR #680). Glad-Labs/poindexter is
 # the private operator repo; only Glad-Labs/poindexter is public. The
 # two_pass writer is grounded by embedding snippets + external web
 # research — neither source feeds private-repo URLs into the prompt,
 # but the model can still echo a URL from training data. This scrub
 # runs on every returned draft before the caller persists it.
 _PRIVATE_REPO_PULL_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)"
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/pull/(\d+)\)"
 )
 _PRIVATE_REPO_COMMIT_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/poindexter/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
 )
 _PRIVATE_REPO_PULL_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+    r"<https?://github\.com/Glad-Labs/poindexter/pull/(\d+)>"
 )
 _PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"<https?://github\.com/Glad-Labs/poindexter/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
 )
 _PRIVATE_REPO_PULL_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)"
+    r"https?://github\.com/Glad-Labs/poindexter/pull/(\d+)"
 )
 _PRIVATE_REPO_COMMIT_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"https?://github\.com/Glad-Labs/poindexter/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
 )
-_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/glad-labs-stack\b")
+_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/poindexter\b")
 
 
 def _scrub_private_repo_refs(text: str) -> str:
