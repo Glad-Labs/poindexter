@@ -729,14 +729,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 exc_info=True,
             )
 
-        # Close URLValidator's shared httpx client. Same rationale as
-        # gpu_scheduler — the singleton pools connections across all
-        # batch validations and needs to release them at shutdown.
-        try:
-            from services.url_validator import get_url_validator
-            await get_url_validator().aclose()
-        except Exception as e:
-            logger.error(f"[STOP] Error closing url_validator httpx client: {e}", exc_info=True)
+        # NOTE: URLValidator no longer has a process-wide singleton to
+        # close at shutdown. As of the #272 SiteConfig DI migration the
+        # ``url_validation`` pipeline stage builds a short-lived
+        # ``URLValidator(site_config=...)`` per run (caller-bridge from
+        # the context SiteConfig); each instance's httpx client is
+        # released when the instance is GC'd at the end of the stage.
 
         # Close the process-wide shared httpx client last — every
         # migrated caller stops dereferencing it via the

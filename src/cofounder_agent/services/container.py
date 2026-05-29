@@ -32,6 +32,8 @@ from services.r2_upload_service import R2UploadService
 from services.redis_cache import RedisCache
 from services.site_config import SiteConfig
 from services.telegram_config import TelegramConfig
+from services.url_scraper import URLScraper
+from services.url_validator import URLValidator
 
 if TYPE_CHECKING:
     from services.decorators import Decorators
@@ -203,3 +205,27 @@ class AppContainer:
     def r2_upload_service(self) -> R2UploadService:
         """Object-store uploader (R2 / S3 / B2 / MinIO) — SiteConfig DI migration PR 4."""
         return R2UploadService(site_config=self.site_config)
+
+    @cached_property
+    def url_validator(self) -> URLValidator:
+        """Broken-link / hallucinated-URL checker (#272 leaf batch 1, 2026-05-29).
+
+        Wraps ``SiteConfig`` for the ``site_name`` (User-Agent) and
+        ``site_domain`` (internal-skip) reads. The ``url_validation``
+        pipeline stage builds its own per-run instance from the context
+        SiteConfig (caller-bridge); this property is the canonical wiring
+        seam for container-aware callers + tests.
+        """
+        return URLValidator(site_config=self.site_config)
+
+    @cached_property
+    def url_scraper(self) -> URLScraper:
+        """URL → structured-content scraper for topic seeding (#272 leaf batch 1).
+
+        Reads ``site_contact_url`` / ``scraper_bot_name`` (User-Agent),
+        ``arxiv_base_url``, and the ``url_scraper_allow_internal_ips``
+        SSRF override from ``SiteConfig``. ``routes/topics_routes.py``
+        builds its own per-request instance from the DI'd SiteConfig
+        (caller-bridge); this property is the canonical wiring seam.
+        """
+        return URLScraper(site_config=self.site_config)

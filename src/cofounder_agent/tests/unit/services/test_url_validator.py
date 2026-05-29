@@ -3,6 +3,11 @@ Unit tests for services/url_validator.py.
 
 Covers URL extraction from markdown/HTML, cache behavior, internal domain
 skipping, and async validation (with mocked HTTP).
+
+Rewritten 2026-05-29 (#272 leaf batch 1) after the module was converted
+from a module-level ``site_config`` singleton + ``get_url_validator()``
+accessor to constructor DI. ``URLValidator`` now requires a ``site_config``
+kwarg; tests construct ``SiteConfig(initial_config={...})`` directly.
 """
 
 import asyncio
@@ -12,12 +17,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from services.site_config import SiteConfig
 from services.url_validator import URLValidator
 
 
 @pytest.fixture
 def validator():
-    return URLValidator(timeout=2.0, cache_ttl=60)
+    return URLValidator(
+        site_config=SiteConfig(initial_config={"site_domain": "localhost:3000"}),
+        timeout=2.0,
+        cache_ttl=60,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -223,3 +233,56 @@ class TestValidateUrls:
             )
         assert result["https://good.com"] == "valid"
         assert result["https://bad.com"] == "invalid"
+
+
+# ---------------------------------------------------------------------------
+# Construction (constructor DI — #272 leaf batch 1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestConstruction:
+    def test_site_config_is_required(self):
+        """No default — passing nothing must raise per fail-loud principle."""
+        with pytest.raises(TypeError):
+            URLValidator()  # type: ignore[call-arg]
+
+    def test_skip_domains_reads_site_config(self):
+        """``_skip_domains`` resolves the operator's site_domain at call time."""
+        v = URLValidator(site_config=SiteConfig(initial_config={"site_domain": "mybrand.io"}))
+        skip = v._skip_domains()
+        assert "mybrand.io" in skip
+        assert "www.mybrand.io" in skip
+        assert "localhost" in skip
+
+    def test_is_internal_uses_injected_config(self):
+        v = URLValidator(site_config=SiteConfig(initial_config={"site_domain": "mybrand.io"}))
+        assert v._is_internal("https://mybrand.io/posts/1") is True
+        assert v._is_internal("https://external.com/x") is False
+
+
+# ---------------------------------------------------------------------------
+# Container wiring (#272: cached_property on AppContainer)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAppContainerWiring:
+    """``AppContainer.url_validator`` returns a memoised URLValidator."""
+
+    def test_app_container_exposes_url_validator(self):
+        from services.container import AppContainer
+
+        site_config = SiteConfig(initial_config={"site_domain": "wired.example"})
+        container = AppContainer(site_config=site_config, pool=MagicMock())
+
+        v = container.url_validator
+        assert isinstance(v, URLValidator)
+        # Reads through to the container's SiteConfig.
+        assert "wired.example" in v._skip_domains()
+
+    def test_cached_property_memoises(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.url_validator is container.url_validator

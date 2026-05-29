@@ -151,8 +151,10 @@ _SHARED_TEST_MODULES = (
     # 2026-05-28). The module-level ``Decorators`` facade is seeded below
     # via ``_share_test_decorators()`` using the same shared SiteConfig.
     "services.ollama_client",
-    "services.url_validator",
-    "services.url_scraper",
+    # ``services.url_validator`` + ``services.url_scraper`` migrated to
+    # constructor DI 2026-05-29 (#272 leaf batch 1); no module-level
+    # site_config attr to share. Tests construct ``URLValidator(site_config=...)``
+    # / ``URLScraper(site_config=...)`` directly.
     "services.web_research",
     "services.revalidation_service",
     "services.static_export_service",

@@ -12,12 +12,18 @@ every HTTP request and after every redirect:
 - override flag ``url_scraper_allow_internal_ips=true``      — allows
 
 All DNS + HTTP is mocked — no real network access required.
+
+Rewritten 2026-05-29 (#272 leaf batch 1): the SSRF helpers
+``_resolve_and_check`` / ``_safe_get`` now take an explicit ``SiteConfig``
+argument (the ``url_scraper_allow_internal_ips`` override read) rather than
+reaching a module-level singleton. ``scrape_url`` is a method on
+``URLScraper(site_config=...)``.
 """
 
 from __future__ import annotations
 
 import socket
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -27,6 +33,7 @@ from services.url_scraper import (
     MAX_REDIRECTS,
     SSRFBlockedError,
     URLScrapeError,
+    URLScraper,
     _is_blocked_ip,
     _resolve_and_check,
     _safe_get,
@@ -93,10 +100,6 @@ def _site_config(values: dict | None = None) -> MagicMock:
     sc.get.side_effect = _get
     sc.get_bool.side_effect = _get_bool
     return sc
-
-
-def _patch_site_config(monkeypatch, values: dict | None = None):
-    monkeypatch.setattr("services.url_scraper.site_config", _site_config(values))
 
 
 def _mock_getaddrinfo(monkeypatch, mapping: dict[str, list[str]]):
@@ -180,96 +183,87 @@ class TestIsBlockedIp:
 
 @pytest.mark.unit
 class TestResolveAndCheck:
-    def test_rejects_loopback_literal(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    def test_rejects_loopback_literal(self):
         with pytest.raises(SSRFBlockedError, match="127.0.0.1"):
-            _resolve_and_check("http://127.0.0.1:9091/metrics")
+            _resolve_and_check("http://127.0.0.1:9091/metrics", _site_config({}))
 
-    def test_rejects_ipv6_loopback_literal(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    def test_rejects_ipv6_loopback_literal(self):
         with pytest.raises(SSRFBlockedError):
-            _resolve_and_check("http://[::1]:8080/")
+            _resolve_and_check("http://[::1]:8080/", _site_config({}))
 
-    def test_rejects_localhost_hostname(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    def test_rejects_localhost_hostname(self):
         with pytest.raises(SSRFBlockedError, match="localhost"):
-            _resolve_and_check("http://localhost:18443/")
+            _resolve_and_check("http://localhost:18443/", _site_config({}))
 
     def test_rejects_rfc1918_via_dns(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"intranet.example.com": ["10.0.0.5"]})
         with pytest.raises(SSRFBlockedError, match="10.0.0.5"):
-            _resolve_and_check("http://intranet.example.com/")
+            _resolve_and_check("http://intranet.example.com/", _site_config({}))
 
     @pytest.mark.parametrize(
         "ip",
         ["10.5.5.5", "192.168.1.10", "172.16.0.1", "172.20.30.40"],
     )
     def test_rejects_private_ranges_via_dns(self, monkeypatch, ip):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"private.example.com": [ip]})
         with pytest.raises(SSRFBlockedError):
-            _resolve_and_check("http://private.example.com/")
+            _resolve_and_check("http://private.example.com/", _site_config({}))
 
-    def test_rejects_cloud_metadata_literal(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    def test_rejects_cloud_metadata_literal(self):
         with pytest.raises(SSRFBlockedError, match="169.254.169.254"):
-            _resolve_and_check("http://169.254.169.254/latest/meta-data/")
+            _resolve_and_check("http://169.254.169.254/latest/meta-data/", _site_config({}))
 
-    def test_rejects_cgnat_tailscale(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    def test_rejects_cgnat_tailscale(self):
         with pytest.raises(SSRFBlockedError, match="100.64"):
-            _resolve_and_check("http://100.64.1.50:3000/")
+            _resolve_and_check("http://100.64.1.50:3000/", _site_config({}))
 
     def test_rejects_tailscale_via_dns(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"node.tail.ts.net": ["100.64.0.42"]})
         with pytest.raises(SSRFBlockedError, match="100.64.0.42"):
-            _resolve_and_check("https://node.tail.ts.net/")
+            _resolve_and_check("https://node.tail.ts.net/", _site_config({}))
 
     def test_allows_public_dns_result(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"one.one.one.one": ["1.1.1.1"]})
         # Should NOT raise — public IP is allowed.
-        _resolve_and_check("https://one.one.one.one/")
+        _resolve_and_check("https://one.one.one.one/", _site_config({}))
 
     def test_allows_8_8_8_8(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"dns.google": ["8.8.8.8"]})
-        _resolve_and_check("https://dns.google/resolve")
+        _resolve_and_check("https://dns.google/resolve", _site_config({}))
 
     def test_blocks_when_any_resolved_ip_is_private(self, monkeypatch):
         """Multi-A record where ONE entry is private should still reject —
         an attacker round-robins to the internal IP on connect."""
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(
             monkeypatch,
             {"mixed.example.com": ["1.1.1.1", "10.0.0.1"]},
         )
         with pytest.raises(SSRFBlockedError, match="10.0.0.1"):
-            _resolve_and_check("https://mixed.example.com/")
+            _resolve_and_check("https://mixed.example.com/", _site_config({}))
 
     def test_dns_failure_raises_url_scrape_error(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         # No mapping → gaierror inside _resolve_hostname
         _mock_getaddrinfo(monkeypatch, {})
         with pytest.raises(URLScrapeError, match="DNS lookup failed"):
-            _resolve_and_check("https://nope.invalid/")
+            _resolve_and_check("https://nope.invalid/", _site_config({}))
 
-    def test_override_flag_allows_loopback(self, monkeypatch):
-        _patch_site_config(monkeypatch, {"url_scraper_allow_internal_ips": True})
+    def test_override_flag_allows_loopback(self):
         # No raise — operator override is in effect.
-        _resolve_and_check("http://127.0.0.1:9091/")
+        _resolve_and_check(
+            "http://127.0.0.1:9091/",
+            _site_config({"url_scraper_allow_internal_ips": True}),
+        )
 
     def test_override_flag_allows_private_via_dns(self, monkeypatch):
-        _patch_site_config(monkeypatch, {"url_scraper_allow_internal_ips": "true"})
         _mock_getaddrinfo(monkeypatch, {"intranet.example.com": ["10.0.0.5"]})
-        _resolve_and_check("http://intranet.example.com/")
+        _resolve_and_check(
+            "http://intranet.example.com/",
+            _site_config({"url_scraper_allow_internal_ips": "true"}),
+        )
 
-    def test_no_hostname_raises(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    def test_no_hostname_raises(self):
         with pytest.raises(URLScrapeError, match="no hostname"):
-            _resolve_and_check("http:///oops")
+            _resolve_and_check("http:///oops", _site_config({}))
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +278,6 @@ class TestSafeGetRedirects:
 
         This is the canonical SSRF-via-redirect scenario the guard exists for.
         """
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"evil.example.com": ["1.2.3.4"]})
 
         # First hop: 302 → 127.0.0.1; second hop must be refused.
@@ -296,10 +289,9 @@ class TestSafeGetRedirects:
         ])
 
         with pytest.raises(SSRFBlockedError, match="127.0.0.1"):
-            await _safe_get(client, "https://evil.example.com/")
+            await _safe_get(client, "https://evil.example.com/", _site_config({}))
 
     async def test_blocks_redirect_to_cloud_metadata(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"public.example.com": ["1.2.3.4"]})
         client = _FakeAsyncClient([
             _FakeResponse(
@@ -308,10 +300,9 @@ class TestSafeGetRedirects:
             ),
         ])
         with pytest.raises(SSRFBlockedError, match="169.254.169.254"):
-            await _safe_get(client, "https://public.example.com/")
+            await _safe_get(client, "https://public.example.com/", _site_config({}))
 
     async def test_blocks_redirect_via_dns_to_private(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(
             monkeypatch,
             {
@@ -326,10 +317,9 @@ class TestSafeGetRedirects:
             ),
         ])
         with pytest.raises(SSRFBlockedError, match="10.0.0.1"):
-            await _safe_get(client, "https://public.example.com/")
+            await _safe_get(client, "https://public.example.com/", _site_config({}))
 
     async def test_blocks_non_http_redirect_scheme(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"public.example.com": ["1.2.3.4"]})
         client = _FakeAsyncClient([
             _FakeResponse(
@@ -338,10 +328,9 @@ class TestSafeGetRedirects:
             ),
         ])
         with pytest.raises(SSRFBlockedError, match="non-http"):
-            await _safe_get(client, "https://public.example.com/")
+            await _safe_get(client, "https://public.example.com/", _site_config({}))
 
     async def test_allows_redirect_to_public_ip(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(
             monkeypatch,
             {
@@ -356,7 +345,7 @@ class TestSafeGetRedirects:
             ),
             _FakeResponse(status_code=200, text="hello"),
         ])
-        resp = await _safe_get(client, "https://public.example.com/")
+        resp = await _safe_get(client, "https://public.example.com/", _site_config({}))
         assert resp.status_code == 200
         assert resp.text == "hello"
         assert client.requested_urls == [
@@ -365,7 +354,6 @@ class TestSafeGetRedirects:
         ]
 
     async def test_caps_redirect_chain(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
         _mock_getaddrinfo(monkeypatch, {"public.example.com": ["1.2.3.4"]})
         # Endless 302 loop back to itself; should give up after MAX_REDIRECTS.
         responses = [
@@ -377,35 +365,35 @@ class TestSafeGetRedirects:
         ]
         client = _FakeAsyncClient(responses)
         with pytest.raises(URLScrapeError, match="Too many redirects"):
-            await _safe_get(client, "https://public.example.com/")
+            await _safe_get(client, "https://public.example.com/", _site_config({}))
 
 
 # ---------------------------------------------------------------------------
-# scrape_url end-to-end — the public surface the route handler hits
+# URLScraper.scrape_url end-to-end — the public surface the route handler hits
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestScrapeUrlSSRF:
-    async def test_blocks_127_0_0_1_at_entry(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    async def test_blocks_127_0_0_1_at_entry(self):
+        scraper = URLScraper(site_config=_site_config({}))
         with pytest.raises(SSRFBlockedError):
-            await url_scraper.scrape_url("http://127.0.0.1:9091/metrics")
+            await scraper.scrape_url("http://127.0.0.1:9091/metrics")
 
-    async def test_blocks_localhost_at_entry(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    async def test_blocks_localhost_at_entry(self):
+        scraper = URLScraper(site_config=_site_config({}))
         with pytest.raises(SSRFBlockedError):
-            await url_scraper.scrape_url("http://localhost:18443/")
+            await scraper.scrape_url("http://localhost:18443/")
 
-    async def test_blocks_cloud_metadata_at_entry(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    async def test_blocks_cloud_metadata_at_entry(self):
+        scraper = URLScraper(site_config=_site_config({}))
         with pytest.raises(SSRFBlockedError):
-            await url_scraper.scrape_url("http://169.254.169.254/")
+            await scraper.scrape_url("http://169.254.169.254/")
 
-    async def test_blocks_tailscale_cgnat_at_entry(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
+    async def test_blocks_tailscale_cgnat_at_entry(self):
+        scraper = URLScraper(site_config=_site_config({}))
         with pytest.raises(SSRFBlockedError):
-            await url_scraper.scrape_url("http://100.64.0.42:3000/")
+            await scraper.scrape_url("http://100.64.0.42:3000/")
 
     async def test_override_flag_unblocks_loopback_end_to_end(self, monkeypatch):
         """With url_scraper_allow_internal_ips=true the call proceeds.
@@ -414,8 +402,8 @@ class TestScrapeUrlSSRF:
         care that the SSRF gate stopped raising. Mock httpx so no real
         network call escapes the test.
         """
-        _patch_site_config(
-            monkeypatch, {"url_scraper_allow_internal_ips": True},
+        scraper = URLScraper(
+            site_config=_site_config({"url_scraper_allow_internal_ips": True}),
         )
         # Fake the AsyncClient so scrape_url -> _fetch -> _safe_get sees
         # a tame 200 response.
@@ -430,7 +418,7 @@ class TestScrapeUrlSSRF:
             "AsyncClient",
             lambda **kwargs: client,
         )
-        out = await url_scraper.scrape_url("http://127.0.0.1:9091/metrics")
+        out = await scraper.scrape_url("http://127.0.0.1:9091/metrics")
         assert isinstance(out, dict)
         # Title parsed without the SSRF gate firing → contract met.
         assert "internal" in out["title"].lower()

@@ -1,11 +1,15 @@
 """Unit tests for services.url_scraper.
 
-Targets ``scrape_url`` (generic + GitHub + arXiv routes) and the
-helpers ``_build_user_agent``, ``_first_text``. Generic-route extraction
-is delegated to trafilatura post-#204 (the heuristics ``_meta_content``
-used to encode are now provided by the library itself).
+Targets ``URLScraper.scrape_url`` (generic + GitHub + arXiv routes) and the
+helpers ``_build_user_agent``, ``_first_text``.
 
-Lifts the module from 0% to ~95% coverage with mocked httpx.
+Rewritten 2026-05-29 (#272 leaf batch 1) after the module was converted
+from free functions reading a module-level ``site_config`` singleton to a
+``URLScraper`` class with constructor DI. ``_build_user_agent`` now takes
+an explicit ``site_config`` argument; ``scrape_url`` is a method on
+``URLScraper`` that delegates to the module-level ``_scrape_url`` /
+``_scrape_github`` / ``_scrape_arxiv`` / ``_scrape_generic`` helpers (which
+the routing tests still patch directly).
 """
 
 from __future__ import annotations
@@ -17,11 +21,12 @@ import pytest
 from bs4 import BeautifulSoup
 
 from services import url_scraper
+from services.site_config import SiteConfig
 from services.url_scraper import (
     URLScrapeError,
+    URLScraper,
     _build_user_agent,
     _first_text,
-    scrape_url,
 )
 
 
@@ -87,7 +92,29 @@ def _site_config(values: dict | None = None) -> MagicMock:
     sc = MagicMock()
     values = values or {}
     sc.get.side_effect = lambda key, default="": values.get(key, default)
+
+    def _get_bool(key, default=False):
+        raw = values.get(key, default)
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).lower() in ("true", "1", "yes", "on")
+
+    sc.get_bool.side_effect = _get_bool
     return sc
+
+
+def _scraper(values: dict | None = None) -> URLScraper:
+    """Build a URLScraper wired to a mock SiteConfig returning *values*.
+
+    Defaults to ``url_scraper_allow_internal_ips=True`` so the SSRF guard
+    doesn't reject the fake/example.com hostnames these scrape-route tests
+    use (those resolve to public IPs in CI but to nothing under the mocked
+    httpx client). SSRF-specific behavior is covered in
+    ``test_url_scraper_ssrf.py``.
+    """
+    vals = {"url_scraper_allow_internal_ips": True}
+    vals.update(values or {})
+    return URLScraper(site_config=_site_config(vals))
 
 
 # ---------------------------------------------------------------------------
@@ -95,50 +122,33 @@ def _site_config(values: dict | None = None) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def _patch_site_config(monkeypatch, values: dict | None = None):
-    """Replace the url_scraper module's site_config attr with a mock that
-    returns *values*. Post #330 sweep, each module owns its own
-    ``site_config`` attr wired by main.py at lifespan startup; tests
-    patch the per-module attr directly.
-    """
-    monkeypatch.setattr(
-        "services.url_scraper.site_config",
-        _site_config(values),
-    )
-
-
 @pytest.mark.unit
 class TestBuildUserAgent:
-    def test_returns_fallback_when_no_contact_configured(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
-        ua = _build_user_agent()
+    def test_returns_fallback_when_no_contact_configured(self):
+        ua = _build_user_agent(_site_config({}))
         assert "PoindexterBot" in ua
         assert "no-contact-configured" in ua
 
-    def test_uses_contact_url_when_set(self, monkeypatch):
-        _patch_site_config(
-            monkeypatch, {"site_contact_url": "https://example.com/contact"},
+    def test_uses_contact_url_when_set(self):
+        ua = _build_user_agent(
+            _site_config({"site_contact_url": "https://example.com/contact"}),
         )
-        ua = _build_user_agent()
         assert "+https://example.com/contact" in ua
 
-    def test_uses_default_bot_name_when_unset(self, monkeypatch):
-        _patch_site_config(monkeypatch, {})
-        ua = _build_user_agent()
+    def test_uses_default_bot_name_when_unset(self):
+        ua = _build_user_agent(_site_config({}))
         assert "PoindexterBot/1.0" in ua
 
-    def test_uses_custom_bot_name_when_set(self, monkeypatch):
-        _patch_site_config(
-            monkeypatch,
-            {"scraper_bot_name": "AcmeBot/2.5", "site_contact_url": ""},
+    def test_uses_custom_bot_name_when_set(self):
+        ua = _build_user_agent(
+            _site_config({"scraper_bot_name": "AcmeBot/2.5", "site_contact_url": ""}),
         )
-        ua = _build_user_agent()
         assert "AcmeBot/2.5" in ua
         assert "no-contact-configured" in ua
 
 
 # ---------------------------------------------------------------------------
-# scrape_url — input validation
+# scrape_url — input validation + routing
 # ---------------------------------------------------------------------------
 
 
@@ -146,16 +156,16 @@ class TestBuildUserAgent:
 class TestScrapeUrlValidation:
     async def test_empty_url_raises(self):
         with pytest.raises(URLScrapeError, match="Invalid URL"):
-            await scrape_url("")
+            await _scraper().scrape_url("")
 
     async def test_non_http_scheme_raises(self):
         with pytest.raises(URLScrapeError, match="Invalid URL"):
-            await scrape_url("ftp://example.com/foo")
+            await _scraper().scrape_url("ftp://example.com/foo")
 
     async def test_routes_github_to_github_scraper(self):
         with patch.object(url_scraper, "_scrape_github", AsyncMock(return_value={"x": 1})) as m, \
                 patch.object(url_scraper, "_scrape_generic", AsyncMock()) as g:
-            result = await scrape_url("https://github.com/owner/repo")
+            result = await _scraper().scrape_url("https://github.com/owner/repo")
         m.assert_awaited_once()
         g.assert_not_called()
         assert result == {"x": 1}
@@ -163,14 +173,14 @@ class TestScrapeUrlValidation:
     async def test_routes_arxiv_to_arxiv_scraper(self):
         with patch.object(url_scraper, "_scrape_arxiv", AsyncMock(return_value={"x": 2})) as m, \
                 patch.object(url_scraper, "_scrape_generic", AsyncMock()) as g:
-            result = await scrape_url("https://arxiv.org/abs/1234.5678")
+            result = await _scraper().scrape_url("https://arxiv.org/abs/1234.5678")
         m.assert_awaited_once()
         g.assert_not_called()
         assert result == {"x": 2}
 
     async def test_routes_other_to_generic_scraper(self):
         with patch.object(url_scraper, "_scrape_generic", AsyncMock(return_value={"x": 3})) as g:
-            result = await scrape_url("https://example.com/article")
+            result = await _scraper().scrape_url("https://example.com/article")
         g.assert_awaited_once()
         assert result == {"x": 3}
 
@@ -219,7 +229,7 @@ class TestScrapeGeneric:
     async def test_full_html_extracts_og_title_and_metadata(self):
         responses = [_FakeResponse(text=_HTML_FULL)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://example.com/post")
+            result = await _scraper().scrape_url("https://example.com/post")
         assert result["title"] == "OG Title Wins"
         assert result["excerpt"] == "An excerpt."
         assert result["author"] == "Jane Doe"
@@ -233,38 +243,31 @@ class TestScrapeGeneric:
     async def test_falls_back_to_h1_or_title(self):
         responses = [_FakeResponse(text=_HTML_FALLBACK_TITLE)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://example.com/post")
+            result = await _scraper().scrape_url("https://example.com/post")
         assert result["title"] == "Just A Title"
 
     async def test_uses_untitled_when_nothing_found(self):
         responses = [_FakeResponse(text=_HTML_NO_TITLE_AT_ALL)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://example.com/post")
-        # "Untitled" or the body's first text are both acceptable
-        # depending on what BeautifulSoup picks. The contract is that we
-        # don't crash and get *something*.
+            result = await _scraper().scrape_url("https://example.com/post")
         assert isinstance(result["title"], str)
 
     async def test_truncates_huge_content(self):
-        # 100k chars of plain text inside <article>
         big = "x" * 100_000
         html = f"<html><body><article>{big}</article></body></html>"
         responses = [_FakeResponse(text=html)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://example.com/big")
+            result = await _scraper().scrape_url("https://example.com/big")
         assert len(result["content_full"]) <= url_scraper.MAX_CONTENT_CHARS
 
     async def test_http_error_is_wrapped(self):
         responses = [_FakeResponse(text="", is_success=False)]
         with _patch_async_client(responses):
             with pytest.raises(URLScrapeError, match="Fetch failed"):
-                await scrape_url("https://example.com/dead")
+                await _scraper().scrape_url("https://example.com/dead")
 
-    async def test_passes_user_agent_from_site_config(self, monkeypatch):
-        # USER_AGENT is frozen at module import from the site_config
-        # singleton. To test that the value flows through into the HTTP
-        # headers we patch it directly — simpler than reloading the
-        # module to re-run `_build_user_agent`.
+    async def test_passes_user_agent_from_site_config(self):
+        """The UA built from the injected SiteConfig flows into HTTP headers."""
         captured: dict = {}
 
         class _Recorder:
@@ -280,12 +283,9 @@ class TestScrapeGeneric:
             async def get(self, url, **kwargs):
                 return _FakeResponse(text=_HTML_FULL)
 
-        # USER_AGENT was a module-level constant captured at import time
-        # (broken — singleton hadn't loaded yet). Now resolved per-call
-        # via _build_user_agent(); patch the module's site_config attr.
-        _patch_site_config(monkeypatch, {"site_contact_url": "https://acme.test/c"})
+        scraper = _scraper({"site_contact_url": "https://acme.test/c"})
         with patch.object(url_scraper.httpx, "AsyncClient", _Recorder):
-            await scrape_url("https://example.com/x")
+            await scraper.scrape_url("https://example.com/x")
         assert "+https://acme.test/c" in captured["headers"]["User-Agent"]
 
 
@@ -305,7 +305,7 @@ class TestScrapeGitHub:
         })
         readme_response = _FakeResponse(text="# Widget\n\nReadme body.")
         with _patch_async_client([repo_response, readme_response]):
-            result = await scrape_url("https://github.com/octo/widget")
+            result = await _scraper().scrape_url("https://github.com/octo/widget")
         assert result["content_type"] == "github"
         assert "octo/widget" in result["title"]
         assert "Widgetizer" in result["title"]
@@ -314,23 +314,19 @@ class TestScrapeGitHub:
         assert "Readme body" in result["content_full"]
 
     async def test_short_path_falls_back_to_generic(self):
-        # github.com/foo (no repo) — falls back to _scrape_generic.
         with patch.object(
             url_scraper, "_scrape_generic", AsyncMock(return_value={"y": 1}),
         ) as g:
-            result = await scrape_url("https://github.com/foo")
+            result = await _scraper().scrape_url("https://github.com/foo")
         g.assert_awaited_once()
         assert result == {"y": 1}
 
     async def test_handles_missing_repo_metadata_gracefully(self):
-        # Repo endpoint returns 404; readme also fails. Helper still
-        # returns a dict with sensible defaults.
         repo = _FakeResponse(json_data={}, is_success=False, status_code=404)
         readme = _FakeResponse(text="", is_success=False, status_code=404)
         with _patch_async_client([repo, readme]):
-            result = await scrape_url("https://github.com/owner/repo")
+            result = await _scraper().scrape_url("https://github.com/owner/repo")
         assert result["content_type"] == "github"
-        # Title falls back to "owner/repo — GitHub repo".
         assert "owner/repo" in result["title"]
         assert result["content_full"] == ""
 
@@ -344,7 +340,7 @@ class TestScrapeGitHub:
 
         with patch.object(url_scraper.httpx, "AsyncClient", _Boom):
             with pytest.raises(URLScrapeError, match="GitHub fetch failed"):
-                await scrape_url("https://github.com/owner/repo")
+                await _scraper().scrape_url("https://github.com/owner/repo")
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +365,7 @@ class TestScrapeArxiv:
     async def test_extracts_title_abstract_authors(self):
         responses = [_FakeResponse(text=_ARXIV_HTML)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://arxiv.org/abs/1234.5678")
+            result = await _scraper().scrape_url("https://arxiv.org/abs/1234.5678")
         assert result["content_type"] == "arxiv"
         assert "Real Paper Title" in result["title"]
         assert "Title:" not in result["title"]  # prefix stripped
@@ -380,41 +376,33 @@ class TestScrapeArxiv:
     async def test_pdf_url_normalized_to_abs(self):
         responses = [_FakeResponse(text=_ARXIV_HTML)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://arxiv.org/pdf/1234.5678")
-        # Result url should now point at /abs/.
+            result = await _scraper().scrape_url("https://arxiv.org/pdf/1234.5678")
         assert "/abs/1234.5678" in result["url"]
 
-    async def test_uses_arxiv_base_url_from_site_config(self, monkeypatch):
-        # _scrape_arxiv reads `arxiv_base_url` from the site_config
-        # singleton at call time (not from a kwarg). Patch the singleton
-        # so the test is isolated from real DB state.
-        _patch_site_config(
-            monkeypatch, {"arxiv_base_url": "https://mirror.example/"},
-        )
+    async def test_uses_arxiv_base_url_from_site_config(self):
+        scraper = _scraper({"arxiv_base_url": "https://mirror.example/"})
         responses = [_FakeResponse(text=_ARXIV_HTML)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://arxiv.org/abs/1234.5678")
+            result = await scraper.scrape_url("https://arxiv.org/abs/1234.5678")
         assert "mirror.example" in result["url"]
 
     async def test_unrecognized_arxiv_url_uses_input_url(self):
-        # No /abs/<id> or /pdf/<id> — falls into the `else: abs_url = url`
-        # branch.
         responses = [_FakeResponse(text=_ARXIV_HTML)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://arxiv.org/list/cs.AI/2604")
+            result = await _scraper().scrape_url("https://arxiv.org/list/cs.AI/2604")
         assert result["url"] == "https://arxiv.org/list/cs.AI/2604"
 
     async def test_http_error_wraps(self):
         responses = [_FakeResponse(text="", is_success=False)]
         with _patch_async_client(responses):
             with pytest.raises(URLScrapeError, match="arXiv fetch failed"):
-                await scrape_url("https://arxiv.org/abs/9999.0000")
+                await _scraper().scrape_url("https://arxiv.org/abs/9999.0000")
 
     async def test_handles_missing_abstract_block(self):
         html = "<html><body><h1 class='title'>Just A Title</h1></body></html>"
         responses = [_FakeResponse(text=html)]
         with _patch_async_client(responses):
-            result = await scrape_url("https://arxiv.org/abs/1111.2222")
+            result = await _scraper().scrape_url("https://arxiv.org/abs/1111.2222")
         assert result["content_full"] == ""
         assert result["author"] is None
 
@@ -439,3 +427,33 @@ class TestHelpers:
     def test_first_text_returns_empty_when_missing(self):
         soup = BeautifulSoup("<html></html>", "html.parser")
         assert _first_text(soup, "h1") == ""
+
+
+# ---------------------------------------------------------------------------
+# Construction + container wiring (#272 leaf batch 1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestConstruction:
+    def test_site_config_is_required(self):
+        with pytest.raises(TypeError):
+            URLScraper()  # type: ignore[call-arg]
+
+
+@pytest.mark.unit
+class TestAppContainerWiring:
+    """``AppContainer.url_scraper`` returns a memoised URLScraper."""
+
+    def test_app_container_exposes_url_scraper(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        scraper = container.url_scraper
+        assert isinstance(scraper, URLScraper)
+
+    def test_cached_property_memoises(self):
+        from services.container import AppContainer
+
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.url_scraper is container.url_scraper

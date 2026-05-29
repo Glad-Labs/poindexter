@@ -18,8 +18,9 @@ from pydantic import BaseModel, Field
 from middleware.api_token_auth import verify_api_token
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
-from services.url_scraper import URLScrapeError, scrape_url
-from utils.route_utils import get_database_dependency
+from services.site_config import SiteConfig
+from services.url_scraper import URLScrapeError, URLScraper
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -61,14 +62,18 @@ async def from_url(
     request: FromUrlRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Scrape a URL and queue a content task with it as the research seed.
 
     The research stage of the pipeline will use this URL as a primary
     source instead of doing general web search.
     """
+    # Caller-bridge: build a URLScraper from the lifespan-bound SiteConfig
+    # (#272 DI migration). Cheap to construct — holds only the SiteConfig.
+    scraper = URLScraper(site_config=site_config)
     try:
-        scraped = await scrape_url(request.url)
+        scraped = await scraper.scrape_url(request.url)
     except URLScrapeError as e:
         raise HTTPException(status_code=400, detail=f"Could not scrape URL: {e}") from e
     except Exception as e:
@@ -139,6 +144,7 @@ async def from_urls(
     request: FromUrlsRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Scrape multiple URLs and queue the top N as content tasks.
 
@@ -148,9 +154,12 @@ async def from_urls(
     """
     import asyncio
 
+    # Caller-bridge: one URLScraper for the whole batch (#272 DI migration).
+    scraper = URLScraper(site_config=site_config)
+
     async def safe_scrape(u: str) -> tuple[str, dict | None, str | None]:
         try:
-            return (u, await scrape_url(u), None)
+            return (u, await scraper.scrape_url(u), None)
         except URLScrapeError as e:
             return (u, None, str(e))
         except Exception as e:

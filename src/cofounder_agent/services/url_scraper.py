@@ -8,6 +8,24 @@ Supports:
 
 Uses httpx + beautifulsoup4 (already deps). Respects timeouts, user-agent,
 and returns a structured dict compatible with DiscoveredTopic.
+
+Usage:
+    from services.url_scraper import URLScraper
+
+    scraper = URLScraper(site_config=site_config)
+    result = await scraper.scrape_url("https://example.com/post")
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 1) converted this
+module from the module-level ``site_config`` singleton + ``set_site_config``
+setter to constructor DI via a ``URLScraper`` class. The composition root
+(``services/container.py::AppContainer.url_scraper``) wires one; callers
+that aren't yet migrated build a per-request instance from their own
+lifespan-bound SiteConfig (caller-bridge pattern). The pure SSRF helpers
+(``_is_blocked_ip`` / ``_resolve_hostname`` / ``_safe_get`` /
+``_resolve_and_check``) stay module-level — ``_resolve_and_check`` and
+``_safe_get`` now take the ``SiteConfig`` explicitly (the
+``url_scraper_allow_internal_ips`` override read) rather than reaching a
+module global.
 """
 
 from __future__ import annotations
@@ -66,33 +84,16 @@ _BLOCKED_NETWORKS_V6: tuple[ipaddress.IPv6Network, ...] = (
     ipaddress.IPv6Network("::/128"),
 )
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Falls back to a fresh env-fallback instance when unset.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
-def _sc() -> SiteConfig:
-    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
-    return site_config
-
-
-def _build_user_agent() -> str:
+def _build_user_agent(site_config: SiteConfig) -> str:
     """Build the URL-scraper User-Agent string from site_config (#198).
 
-    Lazy — read per-call so post-lifespan edits to ``site_contact_url`` /
+    Read per-call so post-lifespan edits to ``site_contact_url`` /
     ``scraper_bot_name`` take effect without a worker restart. Uses
     site_contact_url for the bot identifier so operators can bring their
     own brand. Falls back to a neutral generic if unset.
     """
-    sc = _sc()
-    contact = sc.get("site_contact_url", "").strip()
-    bot_name = sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
+    contact = site_config.get("site_contact_url", "").strip()
+    bot_name = site_config.get("scraper_bot_name", "PoindexterBot/1.0").strip()
     identifier = f"+{contact}" if contact else "no-contact-configured"
     return (
         f"Mozilla/5.0 (compatible; {bot_name}; {identifier}) "
@@ -160,7 +161,7 @@ def _resolve_hostname(hostname: str, port: int) -> list[str]:
     return out
 
 
-def _resolve_and_check(url: str, site_config_obj: SiteConfig | None = None) -> None:
+def _resolve_and_check(url: str, site_config: SiteConfig) -> None:
     """Resolve *url*'s hostname and reject if any IP is in the denylist.
 
     Called before every HTTP request and after every redirect. The operator
@@ -181,8 +182,7 @@ def _resolve_and_check(url: str, site_config_obj: SiteConfig | None = None) -> N
         SSRFBlockedError: if any resolved IP is private/loopback/etc.
         URLScrapeError: if the URL is malformed or DNS fails.
     """
-    sc = site_config_obj if site_config_obj is not None else _sc()
-    if sc.get_bool("url_scraper_allow_internal_ips", default=False):
+    if site_config.get_bool("url_scraper_allow_internal_ips", default=False):
         return
 
     parsed = urlparse(url)
@@ -227,8 +227,8 @@ def _resolve_and_check(url: str, site_config_obj: SiteConfig | None = None) -> N
 async def _safe_get(
     client: httpx.AsyncClient,
     url: str,
+    site_config: SiteConfig,
     *,
-    site_config_obj: SiteConfig | None = None,
     extra_headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     """Manual redirect loop with an IP re-check at every hop (SSRF guard).
@@ -240,7 +240,7 @@ async def _safe_get(
     """
     current = url
     for hop in range(MAX_REDIRECTS + 1):
-        _resolve_and_check(current, site_config_obj)
+        _resolve_and_check(current, site_config)
         kwargs: dict = {}
         if extra_headers:
             kwargs["headers"] = extra_headers
@@ -271,7 +271,7 @@ async def _safe_get(
     raise URLScrapeError(f"Redirect loop exhausted for {url!r}")
 
 
-async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+async def _scrape_url(url: str, site_config: SiteConfig, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """Scrape a URL and return structured content.
 
     Returns:
@@ -301,15 +301,15 @@ async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
     # through ``_scrape_github`` (per CodeQL py/incomplete-url-substring-
     # sanitization).
     if hostname == "github.com" or hostname.endswith(".github.com"):
-        return await _scrape_github(url, timeout)
+        return await _scrape_github(url, site_config, timeout)
     if hostname == "arxiv.org" or hostname.endswith(".arxiv.org"):
-        return await _scrape_arxiv(url, timeout)
+        return await _scrape_arxiv(url, site_config, timeout)
 
     # Default: generic HTML article extraction
-    return await _scrape_generic(url, timeout)
+    return await _scrape_generic(url, site_config, timeout)
 
 
-async def _fetch(url: str, timeout: float) -> str:
+async def _fetch(url: str, site_config: SiteConfig, timeout: float) -> str:
     """Fetch HTML with a reasonable user agent.
 
     Performs an SSRF check before each request and after every redirect via
@@ -319,18 +319,18 @@ async def _fetch(url: str, timeout: float) -> str:
     """
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout, connect=5.0),
-        headers={"User-Agent": _build_user_agent()},
+        headers={"User-Agent": _build_user_agent(site_config)},
         follow_redirects=False,  # we do manual redirects to re-run the IP check
     ) as client:
-        resp = await _safe_get(client, url)
+        resp = await _safe_get(client, url, site_config)
         resp.raise_for_status()
         return resp.text
 
 
-async def _scrape_generic(url: str, timeout: float) -> dict:
+async def _scrape_generic(url: str, site_config: SiteConfig, timeout: float) -> dict:
     """Extract title + main content from a generic HTML page."""
     try:
-        html = await _fetch(url, timeout)
+        html = await _fetch(url, site_config, timeout)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"Fetch failed: {e}") from e
 
@@ -391,14 +391,14 @@ async def _scrape_generic(url: str, timeout: float) -> dict:
     }
 
 
-async def _scrape_github(url: str, timeout: float) -> dict:
+async def _scrape_github(url: str, site_config: SiteConfig, timeout: float) -> dict:
     """Extract README + metadata from a GitHub repo URL.
 
     Accepts: https://github.com/owner/repo[/...]
     """
     parts = urlparse(url).path.strip("/").split("/")
     if len(parts) < 2:
-        return await _scrape_generic(url, timeout)
+        return await _scrape_generic(url, site_config, timeout)
 
     owner, repo = parts[0], parts[1]
     api_url = f"https://api.github.com/repos/{owner}/{repo}"
@@ -407,15 +407,16 @@ async def _scrape_github(url: str, timeout: float) -> dict:
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=5.0),
-            headers={"User-Agent": _build_user_agent(), "Accept": "application/vnd.github+json"},
+            headers={"User-Agent": _build_user_agent(site_config), "Accept": "application/vnd.github+json"},
             follow_redirects=False,  # SSRF guard — see _safe_get docstring
         ) as client:
-            repo_resp = await _safe_get(client, api_url)
+            repo_resp = await _safe_get(client, api_url, site_config)
             repo_data = repo_resp.json() if repo_resp.is_success else {}
 
             readme_resp = await _safe_get(
                 client,
                 readme_url,
+                site_config,
                 extra_headers={"Accept": "application/vnd.github.raw"},
             )
             readme_text = readme_resp.text if readme_resp.is_success else ""
@@ -438,14 +439,14 @@ async def _scrape_github(url: str, timeout: float) -> dict:
     }
 
 
-async def _scrape_arxiv(url: str, timeout: float) -> dict:
+async def _scrape_arxiv(url: str, site_config: SiteConfig, timeout: float) -> dict:
     """Extract abstract from arXiv paper URL.
 
     Handles both /abs/ and /pdf/ URLs.
     arxiv_base_url setting lets operators point at a mirror or
     local-proxied instance (#198).
     """
-    _arxiv_base = _sc().get("arxiv_base_url", "https://arxiv.org").rstrip("/")
+    _arxiv_base = site_config.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
     # Normalize to /abs/ URL for HTML scraping
     m = re.search(r"arxiv\.org/(abs|pdf)/(\d+\.\d+)", url)
     if m:
@@ -455,7 +456,7 @@ async def _scrape_arxiv(url: str, timeout: float) -> dict:
         abs_url = url
 
     try:
-        html = await _fetch(abs_url, timeout)
+        html = await _fetch(abs_url, site_config, timeout)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"arXiv fetch failed: {e}") from e
 
@@ -499,3 +500,22 @@ def _first_text(soup: BeautifulSoup, selector: str) -> str:
     """Get first matching element's text, or empty string."""
     el = soup.select_one(selector) if "." in selector or "#" in selector else soup.find(selector)
     return el.get_text(strip=True) if el else ""
+
+
+class URLScraper:
+    """URL → structured-content scraper with SSRF guard, wired to a SiteConfig.
+
+    Constructed by ``AppContainer.url_scraper`` (#272 leaf batch 1). Holds
+    only the injected ``SiteConfig`` (read for User-Agent identity, arXiv
+    base URL, and the ``url_scraper_allow_internal_ips`` SSRF override).
+    Every scrape opens its own short-lived ``httpx.AsyncClient`` — there's
+    no pooled connection to close.
+    """
+
+    def __init__(self, *, site_config: SiteConfig) -> None:
+        self._site_config = site_config
+
+    async def scrape_url(self, url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+        """Scrape *url* and return structured content. See module-level
+        ``_scrape_url`` for the returned dict shape + raised errors."""
+        return await _scrape_url(url, self._site_config, timeout)

@@ -54,8 +54,10 @@ WIRED_MODULES: tuple[str, ...] = (
     # — see ``docs/architecture/2026-05-28-site-config-di-migration.md``).
     "services.gpu_scheduler",
     "services.ollama_client",
-    "services.url_validator",
-    "services.url_scraper",
+    # ``services.url_validator`` + ``services.url_scraper`` migrated to
+    # constructor DI 2026-05-29 (#272 leaf batch 1). Reach them via
+    # ``container.url_validator`` / ``container.url_scraper``, or build a
+    # per-call instance from a lifespan-bound SiteConfig (caller-bridge).
     "services.web_research",
     "services.revalidation_service",
     "services.static_export_service",

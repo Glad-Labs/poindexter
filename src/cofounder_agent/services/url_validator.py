@@ -6,11 +6,23 @@ hallucinated references. Designed to run non-blocking alongside the
 content pipeline: warnings are logged but publication is never held up.
 
 Usage:
-    from services.url_validator import get_url_validator
+    from services.url_validator import URLValidator
 
-    validator = get_url_validator()
+    validator = URLValidator(site_config=site_config)
     urls = validator.extract_urls(markdown_content)
     results = await validator.validate_urls(urls)
+
+The composition root (``services/container.py::AppContainer``) wires a
+``URLValidator`` via ``container.url_validator``. Callers that are not
+yet migrated build one per-call from their own lifespan-bound
+``site_config`` (caller-bridge pattern, e.g.
+``URLValidator(site_config=context.get("site_config"))``).
+
+2026-05-29 — SiteConfig DI migration (#272 leaf batch 1) converted this
+module from the module-level ``site_config`` singleton + ``set_site_config``
+setter + ``get_url_validator()`` accessor to constructor DI. The
+``_skip_domains`` / ``_is_internal`` free-function/staticmethod helpers
+became instance methods reading ``self._site_config``.
 """
 
 import re
@@ -23,23 +35,6 @@ from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Tests can call set_site_config() directly for isolation; falls back
-# to a fresh env-fallback instance when unset (e.g. during import or
-# in legacy test rigs).
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
-def _sc() -> SiteConfig:
-    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
-    return site_config
-
 
 # Cache entry: (is_valid: bool, status_code: int | None, checked_at: float)
 _CacheEntry = tuple[bool, int | None, float]
@@ -47,12 +42,6 @@ _CacheEntry = tuple[bool, int | None, float]
 # 7 days in seconds
 _CACHE_TTL = 7 * 24 * 60 * 60
 
-
-def _skip_domains() -> set[str]:
-    """Internal domains to skip during validation (resolved per call so
-    the post-lifespan site_domain change actually takes effect)."""
-    site_domain = _sc().get("site_domain", "localhost:3000").split(":")[0]
-    return {site_domain, f"www.{site_domain}", "localhost", "127.0.0.1"}
 
 # Regex for extracting URLs from markdown / HTML content
 # Matches http(s):// URLs in markdown links, raw URLs, and href attributes
@@ -71,7 +60,14 @@ _URL_PATTERN = re.compile(
 class URLValidator:
     """Async URL validator with in-memory cache and batch support."""
 
-    def __init__(self, timeout: float = 5.0, cache_ttl: int = _CACHE_TTL):
+    def __init__(
+        self,
+        *,
+        site_config: SiteConfig,
+        timeout: float = 5.0,
+        cache_ttl: int = _CACHE_TTL,
+    ):
+        self._site_config = site_config
         self._timeout = timeout
         self._cache_ttl = cache_ttl
         self._cache: dict[str, _CacheEntry] = {}
@@ -158,7 +154,7 @@ class URLValidator:
 
         is_valid = False
         status_code = None
-        ua = f"{_sc().get('site_name', 'ContentPipeline')}-LinkChecker/1.0"
+        ua = f"{self._site_config.get('site_name', 'ContentPipeline')}-LinkChecker/1.0"
 
         try:
             client = self._get_http_client()
@@ -238,27 +234,17 @@ class URLValidator:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _is_internal(url: str) -> bool:
+    def _skip_domains(self) -> set[str]:
+        """Internal domains to skip during validation (resolved per call so
+        a post-lifespan ``site_domain`` change actually takes effect)."""
+        site_domain = self._site_config.get("site_domain", "localhost:3000").split(":")[0]
+        return {site_domain, f"www.{site_domain}", "localhost", "127.0.0.1"}
+
+    def _is_internal(self, url: str) -> bool:
         """Check if URL belongs to an internal domain we should skip."""
         try:
             from urllib.parse import urlparse
             host = urlparse(url).hostname or ""
-            return host in _skip_domains()
+            return host in self._skip_domains()
         except Exception:
             return False
-
-
-# ============================================================================
-# Module-level singleton
-# ============================================================================
-
-_instance: URLValidator | None = None
-
-
-def get_url_validator() -> URLValidator:
-    """Get the module-level URLValidator singleton."""
-    global _instance
-    if _instance is None:
-        _instance = URLValidator()
-    return _instance

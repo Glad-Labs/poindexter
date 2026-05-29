@@ -23,11 +23,18 @@ class TestProtocol:
 
 
 def _patch_validator(urls, results):
+    """Patch ``URLValidator`` so the stage's
+    ``URLValidator(site_config=...)`` construction returns our stub.
+
+    The stage does a local ``from services.url_validator import URLValidator``,
+    so the name resolves from the source module at call time — patching
+    ``services.url_validator.URLValidator`` intercepts it (#272 DI migration;
+    the old ``get_url_validator()`` accessor is gone)."""
     v = SimpleNamespace(
         extract_urls=lambda _c: urls,
         validate_urls=AsyncMock(return_value=results),
     )
-    return patch("services.url_validator.get_url_validator", return_value=v)
+    return patch("services.url_validator.URLValidator", return_value=v)
 
 
 @pytest.mark.asyncio
@@ -74,7 +81,7 @@ class TestExecute:
             extract_urls=lambda _c: ["https://x.example"],
             validate_urls=AsyncMock(side_effect=RuntimeError("network down")),
         )
-        with patch("services.url_validator.get_url_validator", return_value=broken_v):
+        with patch("services.url_validator.URLValidator", return_value=broken_v):
             result = await UrlValidationStage().execute(ctx, {})
         # ok=False but halts_on_failure=False → runner continues
         assert result.ok is False
