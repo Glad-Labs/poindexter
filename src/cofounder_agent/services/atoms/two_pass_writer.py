@@ -71,6 +71,12 @@ _POOL_REGISTRY: dict[str, Any] = {}
 # from state["pool_thread"]. Site_config can't ride in the LangGraph
 # state because it's not msgpack-serializable for the checkpointer.
 _SITE_CONFIG_REGISTRY: dict[str, Any] = {}
+# Phase 1 lab harness — per-task variant writer-model override.
+# Strings are msgpack-friendly, so technically this could ride on
+# state, but keeping all "things the caller injects per task" in
+# parallel module-level registries keeps the lookup pattern uniform
+# (and means the experiment harness doesn't widen the TypedDict).
+_MODEL_OVERRIDE_REGISTRY: dict[str, str] = {}
 
 logger = get_logger(__name__)
 
@@ -427,7 +433,15 @@ async def _revise_node(state: _State) -> _State:
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
-    model = resolve_local_model(site_config=site_config)
+    # Phase 1 lab harness — when the caller passed a writer_model_override
+    # (because pick_variant assigned a model-axis variant), it lives in
+    # the parallel _MODEL_OVERRIDE_REGISTRY (string is msgpack-friendly
+    # but keeping the override registry pattern uniform with pool / site
+    # config). resolve_local_model accepts the explicit string and returns
+    # it after stripping the ``ollama/`` prefix — no app_settings hit on
+    # the variant path.
+    model_override = _MODEL_OVERRIDE_REGISTRY.get(state["pool_thread"])
+    model = resolve_local_model(model=model_override, site_config=site_config)
     aug_block = "\n\n".join(
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
         for r in state["research_results"]
@@ -525,6 +539,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
       now uses ``narrate_bundle`` directly so this is effectively
       dormant for live traffic), the writer includes a GROUND TRUTH
       section in the prompt with structured facts.
+    - ``writer_model_override`` — Phase 1 lab harness. When set
+      (string), the writer's ``_revise_node`` uses this model exactly
+      instead of resolving from app_settings. Routed via
+      ``_MODEL_OVERRIDE_REGISTRY`` (same per-thread pattern as the
+      pool / site_config). None / unset = production default.
 
     Defense in depth: every returned ``draft`` runs through the private-
     repo URL scrub before returning, mirroring the post-LLM scrub layer
@@ -535,6 +554,9 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
     thread_id = f"two_pass-{niche_id}-{topic[:32]}"
     _POOL_REGISTRY[thread_id] = pool
     _SITE_CONFIG_REGISTRY[thread_id] = kw.get("site_config")
+    writer_model_override = kw.get("writer_model_override")
+    if writer_model_override:
+        _MODEL_OVERRIDE_REGISTRY[thread_id] = str(writer_model_override)
     try:
         cb_kw = kw.get("context_bundle") or {}
         initial: _State = {
@@ -566,3 +588,4 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
     finally:
         _POOL_REGISTRY.pop(thread_id, None)
         _SITE_CONFIG_REGISTRY.pop(thread_id, None)
+        _MODEL_OVERRIDE_REGISTRY.pop(thread_id, None)

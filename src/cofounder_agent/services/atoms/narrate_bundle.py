@@ -468,9 +468,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # chains pipeline_writer_model → cost_tier.standard.model → raise.
     # If neither setting resolves, the atom now fails loud instead of
     # silently trying a model the operator may not have.
+    #
+    # Phase 1 lab harness — when an experiment assigned a model-axis
+    # variant, ``experiment_runner.apply_variant_to_state`` stamps
+    # ``writer_model`` onto state. ``resolve_local_model`` accepts the
+    # explicit string and returns it after the ``ollama/`` prefix strip
+    # so no app_settings hit happens on the variant path. None = inherit
+    # the niche default via the cost_tier chain.
     from services.llm_text import resolve_local_model
     site_config = state.get("site_config")
-    model = resolve_local_model(site_config=site_config)
+    model_override = state.get("writer_model")
+    model = resolve_local_model(model=model_override, site_config=site_config)
 
     bundle_text = _format_bundle_for_narrative(bundle)
     system_prompt, prompt_template_key, prompt_template_version = (

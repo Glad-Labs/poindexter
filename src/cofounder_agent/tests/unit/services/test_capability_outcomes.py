@@ -109,15 +109,17 @@ class TestRecordRunLabFields:
         written = await record_run(pool, summary, state)
         assert written == 1
         sql, args = pool.executed[0]
-        # niche_slug is the 13th positional in the INSERT — easier to
-        # assert by looking at the tail of the args tuple (the SQL
-        # column order is enforced by the writer).
-        # Layout per record_run INSERT:
+        # Trailing positional layout per record_run INSERT (Phase 1):
         #   ... metrics(jsonb), niche_slug, prompt_template_key,
-        #   prompt_template_version
-        assert args[-3] == "glad-labs"
-        assert args[-2] is None  # prompt_template_key absent
-        assert args[-1] is None  # prompt_template_version absent
+        #   prompt_template_version, variant_id.
+        # variant_id was added 2026-05-28 (Phase 1 lab harness — PR
+        # following #699). Asserting by negative index keeps the test
+        # robust against future column additions but does require the
+        # offsets to shift when a new column lands at the tail.
+        assert args[-4] == "glad-labs"
+        assert args[-3] is None  # prompt_template_key absent
+        assert args[-2] is None  # prompt_template_version absent
+        assert args[-1] is None  # variant_id absent (no experiment active)
 
     async def test_metrics_dict_overrides_state_niche(self):
         """A per-record metrics niche_slug takes precedence over the
@@ -135,7 +137,7 @@ class TestRecordRunLabFields:
         state = {"task_id": "t1", "niche_slug": "glad-labs"}
         await record_run(pool, summary, state)
         _, args = pool.executed[0]
-        assert args[-3] == "ai-engineering"
+        assert args[-4] == "ai-engineering"
 
     async def test_stamps_prompt_template_key_and_version_from_metrics(self):
         """The atom returns prompt provenance in its metrics dict via the
@@ -158,9 +160,10 @@ class TestRecordRunLabFields:
         state = {"task_id": "t2", "niche_slug": "tech"}
         await record_run(pool, summary, state)
         _, args = pool.executed[0]
-        assert args[-3] == "tech"
-        assert args[-2] == "atoms.two_pass_writer.revise_prompt"
-        assert args[-1] == 4
+        assert args[-4] == "tech"
+        assert args[-3] == "atoms.two_pass_writer.revise_prompt"
+        assert args[-2] == 4
+        assert args[-1] is None  # no variant assigned
 
     async def test_version_coerced_from_string_int(self):
         """Defensive coercion — if the atom sends a string version
@@ -178,7 +181,10 @@ class TestRecordRunLabFields:
         )
         await record_run(pool, summary, {"task_id": "t3"})
         _, args = pool.executed[0]
-        assert args[-1] == 12
+        # prompt_template_version is the second-to-last column post-
+        # Phase-1 (variant_id is the new tail). Asserting at args[-2]
+        # documents the new column order.
+        assert args[-2] == 12
 
     async def test_version_unparseable_becomes_null(self):
         """A non-numeric version string (rare — most prompts carry an
@@ -195,7 +201,7 @@ class TestRecordRunLabFields:
         )
         await record_run(pool, summary, {"task_id": "t4"})
         _, args = pool.executed[0]
-        assert args[-1] is None
+        assert args[-2] is None
 
     async def test_all_fields_default_to_null_when_unset(self):
         """A barebones state + record (no niche, no prompt) writes NULLs
@@ -208,6 +214,7 @@ class TestRecordRunLabFields:
         )
         await record_run(pool, summary, {"task_id": "t5"})
         _, args = pool.executed[0]
+        assert args[-4] is None
         assert args[-3] is None
         assert args[-2] is None
         assert args[-1] is None
@@ -222,7 +229,12 @@ class TestRecordRunLabFields:
 class TestRecordOneLabFields:
     async def test_accepts_new_lab_kwargs(self):
         """The single-row writer also supports the new kwargs —
-        backwards-compatible defaults so existing callers don't break."""
+        backwards-compatible defaults so existing callers don't break.
+
+        Trailing positional column order post-Phase-1:
+            niche_slug, prompt_template_key, prompt_template_version,
+            variant_id.
+        """
         pool = _Pool()
         ok = await record_one(
             pool,
@@ -235,9 +247,27 @@ class TestRecordOneLabFields:
         )
         assert ok is True
         _, args = pool.executed[0]
-        assert args[-3] == "brand-niche"
-        assert args[-2] == "test.prompt"
-        assert args[-1] == 2
+        assert args[-4] == "brand-niche"
+        assert args[-3] == "test.prompt"
+        assert args[-2] == 2
+        # variant_id defaults to None per feedback_backcompat_now_required.
+        assert args[-1] is None
+
+    async def test_accepts_variant_id_kwarg(self):
+        """Phase 1 lab harness — record_one's new variant_id kwarg
+        threads onto the INSERT. None / unset preserves pre-Phase-1
+        behavior; setting it stamps the column."""
+        pool = _Pool()
+        ok = await record_one(
+            pool,
+            task_id="variant-1",
+            template_slug="canonical_blog",
+            node_name="atoms.test",
+            variant_id="00000000-0000-0000-0000-0000000000aa",
+        )
+        assert ok is True
+        _, args = pool.executed[0]
+        assert args[-1] == "00000000-0000-0000-0000-0000000000aa"
 
     async def test_existing_call_shape_unchanged(self):
         """Backwards-compat — the pre-Phase-0 signature (no lab kwargs)
@@ -252,7 +282,9 @@ class TestRecordOneLabFields:
         )
         assert ok is True
         _, args = pool.executed[0]
-        # New columns land as None when not passed
+        # New columns land as None when not passed (including
+        # Phase 1's variant_id at the tail).
+        assert args[-4] is None
         assert args[-3] is None
         assert args[-2] is None
         assert args[-1] is None

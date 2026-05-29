@@ -144,6 +144,14 @@ class GenerateContentStage:
         # is the durable seam.
         niche_slug = await self._read_niche_slug(database_service, task_id)
         if niche_slug:
+            # Surface niche_slug on context so downstream stages /
+            # record_run see it consistently. content_router_service
+            # already seeds this for tasks created via the niche path,
+            # but stamping again here is idempotent and covers the
+            # legacy code paths that read it directly off
+            # pipeline_tasks.niche_slug for the first time at this
+            # stage.
+            context["niche_slug"] = niche_slug
             logger.info(
                 "STAGE 2: niche=%s — dispatching to atoms.two_pass_writer",
                 niche_slug,
@@ -155,6 +163,7 @@ class GenerateContentStage:
                 tags=tags,
                 database_service=database_service,
                 task_id=task_id,
+                niche_slug=niche_slug,
                 site_config=context.get("site_config"),
             )
         else:
@@ -387,6 +396,14 @@ class GenerateContentStage:
         niche_for_metrics = context.get("niche_slug")
         if niche_for_metrics:
             stage_metrics["niche_slug"] = niche_for_metrics
+        # Phase 1 lab harness — surface the experiment-runner variant
+        # assignment (when present) so record_run stamps variant_id on
+        # this stage's outcome row. ``_generate_via_two_pass_atom``
+        # stashes the variant on metrics + on context for downstream
+        # stages. None when no experiment was active for the niche
+        # (the common path).
+        if metrics.get("variant_id") is not None:
+            stage_metrics["variant_id"] = metrics.get("variant_id")
 
         return StageResult(
             ok=True,
@@ -649,6 +666,7 @@ class GenerateContentStage:
         tags: list[str],
         database_service: Any,
         task_id: str,
+        niche_slug: str | None = None,
         site_config: Any = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """Run ``atoms.two_pass_writer`` and shape the result into the
@@ -662,6 +680,17 @@ class GenerateContentStage:
 
         Pre-2026-05-28 this dispatched through the now-deleted
         ``writer_rag_modes.dispatch_writer_mode("TWO_PASS")`` indirection.
+
+        Phase 1 lab harness (PR #699 + this PR) — when ``niche_slug`` is
+        provided, this method calls
+        :func:`services.experiment_runner.pick_variant` exactly once for
+        the task. If a variant is returned, the model resolution
+        short-circuits to the variant's ``writer_model`` (when set) and
+        the variant identifiers are surfaced on the returned ``metrics``
+        dict so the recorder stamps them on the capability_outcomes row.
+        Failure-safe: a variant-runner exception falls back to the
+        no-variant production path (per the design doc's "Posture:
+        testing in production").
         """
         from services.atoms import two_pass_writer
 
@@ -677,6 +706,28 @@ class GenerateContentStage:
             raise ValueError(
                 "atoms.two_pass_writer requires database_service.pool but it is None"
             )
+
+        # Phase 1 lab harness hook — pick a variant from the niche's
+        # active experiment, if any. Returns None for the common path
+        # (no experiment running for this niche); production behavior
+        # unchanged. The runner is internally fail-safe — any DB hiccup
+        # logs a warning + returns None; this call cannot raise.
+        variant = None
+        if niche_slug:
+            try:
+                from services import experiment_runner
+                variant = await experiment_runner.pick_variant(
+                    pool, niche_slug, str(task_id),
+                )
+            except Exception as exc:  # noqa: BLE001 — defense in depth
+                # pick_variant is itself wrapped in try/except, but a
+                # bug at the import seam (e.g. test patching a missing
+                # symbol) shouldn't crash the writer.
+                logger.warning(
+                    "[generate_content] experiment_runner.pick_variant "
+                    "raised: %s — falling back to no variant", exc,
+                )
+                variant = None
 
         # niche_id is not strictly needed by the modes themselves — the modes
         # query the global embeddings table by topic+angle similarity. If a
@@ -714,9 +765,21 @@ class GenerateContentStage:
         # neither pipeline_writer_model nor cost_tier.standard.model
         # is set; the writer-mode dispatch below would fail for the
         # same reason, so we're not regressing observability.
+        #
+        # Phase 1 lab harness — when a variant assigns ``writer_model``,
+        # it short-circuits ``resolve_local_model`` (which accepts an
+        # explicit model string and returns it after the ``ollama/``
+        # prefix strip). The GPU lock label uses the same resolved
+        # value so observability + scheduling match the model the
+        # variant actually exercises.
         from services.gpu_scheduler import gpu
         from services.llm_text import resolve_local_model
-        scheduler_model_label = resolve_local_model(site_config=site_config)
+        variant_model_override = (
+            variant.writer_model if variant is not None else None
+        )
+        scheduler_model_label = resolve_local_model(
+            model=variant_model_override, site_config=site_config,
+        )
         async with gpu.lock(
             "ollama", model=scheduler_model_label,
             task_id=task_id, phase="generate_content",
@@ -732,6 +795,12 @@ class GenerateContentStage:
                 # reads from the injected SiteConfig instead of
                 # importing the legacy module-level singleton.
                 site_config=site_config,
+                # Phase 1 lab harness — when set, the writer atom's
+                # _revise_node calls resolve_local_model(writer_model_override=...)
+                # to honour the variant's model choice. None for the
+                # production path (writer falls back to site_config
+                # resolution as before).
+                writer_model_override=variant_model_override,
             )
 
         draft = result.get("draft") or ""
@@ -764,6 +833,20 @@ class GenerateContentStage:
         if result.get("prompt_template_version") is not None:
             metrics["prompt_template_version"] = result.get(
                 "prompt_template_version"
+            )
+        # Phase 1 lab harness — when a variant was assigned, stamp its
+        # ids on the metrics dict so capability_outcomes.record_run
+        # picks them up + writes them to the variant_id column on the
+        # row. The model_selection_log gains an attribution entry so
+        # the operator can trace "which experiment caused this model
+        # choice?" by reading the metrics JSON.
+        if variant is not None:
+            metrics["variant_id"] = variant.variant_id
+            metrics["variant_label"] = variant.variant_label
+            metrics["experiment_id"] = variant.experiment_id
+            metrics["experiment_key"] = variant.experiment_key
+            metrics["model_selection_log"]["generate_content"]["variant"] = (
+                f"{variant.experiment_key}/{variant.variant_label}"
             )
         return draft, model_used, metrics
 

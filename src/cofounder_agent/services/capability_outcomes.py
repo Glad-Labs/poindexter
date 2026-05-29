@@ -120,6 +120,20 @@ async def record_run(
                     except (TypeError, ValueError):
                         prompt_template_version = None
 
+                # Phase 1 lab harness (PR #699 + this PR): variant_id
+                # threads from the writer-atom hook (set on state at
+                # entry by ``experiment_runner.apply_variant_to_state``)
+                # through every downstream node. None when no
+                # experiment was active for the niche (the common path
+                # — production behaviour unchanged when no harness is
+                # running). The FK ON DELETE SET NULL means a later
+                # variant cleanup doesn't break this row.
+                variant_id = (
+                    metrics.get("variant_id")
+                    or state.get("variant_id")
+                    or None
+                )
+
                 await conn.execute(
                     """
                     INSERT INTO capability_outcomes
@@ -128,9 +142,9 @@ async def record_run(
                        ok, halted, failure_reason, elapsed_ms,
                        quality_score, metrics,
                        niche_slug, prompt_template_key,
-                       prompt_template_version)
+                       prompt_template_version, variant_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                            $12::jsonb, $13, $14, $15)
+                            $12::jsonb, $13, $14, $15, $16::uuid)
                     """,
                     task_id, template_slug, node_name, atom_name,
                     capability_tier, model_used,
@@ -141,6 +155,7 @@ async def record_run(
                     quality_score,
                     json.dumps(metrics, default=str),
                     niche_slug, prompt_template_key, prompt_template_version,
+                    variant_id,
                 )
                 written += 1
     except Exception as exc:  # noqa: BLE001
@@ -166,6 +181,7 @@ async def record_one(
     niche_slug: str | None = None,
     prompt_template_key: str | None = None,
     prompt_template_version: int | None = None,
+    variant_id: str | None = None,
 ) -> bool:
     """Single-row writer for ad-hoc outcome logging (e.g. from inside
     an atom that wants to record an extra-fine-grained event). Returns
@@ -173,8 +189,12 @@ async def record_one(
 
     Phase 0 lab observability (2026-05-28) adds optional
     ``niche_slug`` / ``prompt_template_key`` /
-    ``prompt_template_version`` kwargs — additive + defaulted so
-    existing callers keep working unchanged per
+    ``prompt_template_version`` kwargs.
+
+    Phase 1 lab harness (PR following #699) adds optional ``variant_id``
+    — the writer-atom hook stamps it onto the per-record call when an
+    experiment assigned a variant. ``None`` (the default) preserves the
+    pre-Phase-1 behaviour for every existing caller per
     ``feedback_backcompat_now_required``.
     """
     if pool is None:
@@ -189,15 +209,16 @@ async def record_one(
                    ok, halted, failure_reason, elapsed_ms,
                    quality_score, metrics,
                    niche_slug, prompt_template_key,
-                   prompt_template_version)
+                   prompt_template_version, variant_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                        $12::jsonb, $13, $14, $15)
+                        $12::jsonb, $13, $14, $15, $16::uuid)
                 """,
                 task_id, template_slug, node_name, atom_name,
                 capability_tier, model_used,
                 ok, halted, failure_reason, elapsed_ms, quality_score,
                 json.dumps(metrics or {}, default=str),
                 niche_slug, prompt_template_key, prompt_template_version,
+                variant_id,
             )
         return True
     except Exception as exc:  # noqa: BLE001

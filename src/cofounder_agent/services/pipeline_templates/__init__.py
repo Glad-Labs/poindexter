@@ -206,6 +206,32 @@ def dev_diary(
         atom_input: dict[str, Any] = dict(state)
         for svc_key, svc_value in _services_from_config(config).items():
             atom_input.setdefault(svc_key, svc_value)
+
+        # Phase 1 lab harness — pick a variant from the niche's active
+        # experiment, if any. Identical hook to the two_pass writer
+        # path (see services/stages/generate_content.py). Returns None
+        # for the common path (no experiment running for this niche);
+        # production behavior unchanged. The runner is internally
+        # fail-safe — any DB hiccup logs a warning + returns None.
+        variant = None
+        nb_niche = atom_input.get("niche_slug")
+        nb_task_id = atom_input.get("task_id")
+        nb_db = atom_input.get("database_service")
+        nb_pool = getattr(nb_db, "pool", None) if nb_db is not None else None
+        if nb_niche and nb_pool is not None and nb_task_id:
+            try:
+                from services import experiment_runner
+                variant = await experiment_runner.pick_variant(
+                    nb_pool, str(nb_niche), str(nb_task_id),
+                )
+                experiment_runner.apply_variant_to_state(atom_input, variant)
+            except Exception as exc:  # noqa: BLE001 — defense in depth
+                logger.warning(
+                    "[dev_diary] experiment_runner.pick_variant raised: "
+                    "%s — falling back to no variant", exc,
+                )
+                variant = None
+
         try:
             result = await _narrate_atom.run(atom_input)
             elapsed_ms = int((_time.time() - t0) * 1000)
@@ -215,32 +241,54 @@ def dev_diary(
                 # auto_publish_gate's training signal). Without this,
                 # quality_score lands on pipeline_versions but never on
                 # the per-node outcome row.
+                metrics_dict: dict[str, Any] = {
+                    "model_used": result.get("model_used", ""),
+                    "quality_score": result.get("quality_score"),
+                    "word_count": len((result.get("content") or "").split()),
+                    # Phase 0 lab observability — propagates the
+                    # prompt resolution provenance from the atom
+                    # to capability_outcomes.{prompt_template_*}
+                    # columns via record_run.
+                    "prompt_template_key": result.get("prompt_template_key"),
+                    "prompt_template_version": result.get(
+                        "prompt_template_version"
+                    ),
+                    # niche_slug rides on state too, but stamping
+                    # it here keeps the per-record metrics dict
+                    # self-contained for downstream consumers.
+                    "niche_slug": (
+                        atom_input.get("niche_slug") or None
+                    ),
+                }
+                # Phase 1 lab harness — when a variant was assigned,
+                # stamp its id on the metrics dict so
+                # capability_outcomes.record_run picks it up + writes
+                # it to the variant_id column. ``apply_variant_to_state``
+                # already set it on atom_input above, but stamping
+                # here on metrics keeps the per-record dict
+                # self-contained.
+                if variant is not None:
+                    metrics_dict["variant_id"] = variant.variant_id
+                    metrics_dict["variant_label"] = variant.variant_label
+                    metrics_dict["experiment_id"] = variant.experiment_id
+                    metrics_dict["experiment_key"] = variant.experiment_key
                 record_sink.append(
                     TemplateRunRecord(
                         name="atoms.narrate_bundle", ok=True,
                         detail=f"{len(result.get('content','') or '')} chars",
                         elapsed_ms=elapsed_ms,
-                        metrics={
-                            "model_used": result.get("model_used", ""),
-                            "quality_score": result.get("quality_score"),
-                            "word_count": len((result.get("content") or "").split()),
-                            # Phase 0 lab observability — propagates the
-                            # prompt resolution provenance from the atom
-                            # to capability_outcomes.{prompt_template_*}
-                            # columns via record_run.
-                            "prompt_template_key": result.get("prompt_template_key"),
-                            "prompt_template_version": result.get(
-                                "prompt_template_version"
-                            ),
-                            # niche_slug rides on state too, but stamping
-                            # it here keeps the per-record metrics dict
-                            # self-contained for downstream consumers.
-                            "niche_slug": (
-                                atom_input.get("niche_slug") or None
-                            ),
-                        },
+                        metrics=metrics_dict,
                     )
                 )
+            # Forward variant_id to the returned state so downstream
+            # nodes (source_featured_image, finalize_task) — and
+            # ultimately record_run via state-level fallback — see the
+            # same variant the writer used.
+            if variant is not None:
+                result["variant_id"] = variant.variant_id
+                result["variant_label"] = variant.variant_label
+                result["experiment_id"] = variant.experiment_id
+                result["experiment_key"] = variant.experiment_key
             return result
         except Exception as exc:
             elapsed_ms = int((_time.time() - t0) * 1000)
