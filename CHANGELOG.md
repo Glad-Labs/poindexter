@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.25.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.24.0...v0.25.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate decorators to constructor DI (DI migration PR 6) ([#720](https://github.com/Glad-Labs/glad-labs-stack/issues/720)) ([09a0722](https://github.com/Glad-Labs/glad-labs-stack/commit/09a0722ec3efa2ed2e2f5387308b775270aa38af))
+
 ## [0.24.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.23.0...v0.24.0) (2026-05-29)
 
 
