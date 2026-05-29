@@ -1,133 +1,166 @@
-"""`poindexter experiments` — operate on the experiments + experiment_assignments tables.
+"""``poindexter experiments`` — operator surface for the Phase 1 lab harness.
 
-A/B experiment harness CLI. Wraps :class:`services.experiment_service.ExperimentService`
-so operators can declare experiments, flip status, inspect assignments, and conclude
-experiments without touching SQL.
+The CLI is the canonical operator surface for the variant-experiments
+harness landed in PR #699 (schema) + #702 (runner). See the design doc
+``docs/architecture/2026-05-28-phase-1-variant-experiments-design.md``
+for the wider picture; this file is the operator-facing thin layer over
+the ``experiments`` + ``experiment_variants`` tables + the
+``experiment_variant_scorecard_v1`` view.
 
-The harness itself (assign / record_outcome on the hot path) is wired into the
-content pipeline via ``content_router_service.process_content_generation_task``;
-this CLI is the operator-facing half.
+Subcommands:
 
-All commands go directly to the DB via the same DSN resolution pattern as
-``poindexter webhooks``. No HTTP layer — the table is small, operator-only,
-and doesn't need the worker roundtrip.
+- ``poindexter experiments list``                            — table of experiments
+- ``poindexter experiments create <key> --niche= --description=``
+                                                             — insert a draft
+- ``poindexter experiments add-variant <key> --label=...``   — add a variant to a draft
+- ``poindexter experiments activate <key>``                  — flip draft to active
+- ``poindexter experiments status <key>``                    — render the scorecard
+- ``poindexter experiments conclude <key> --winner=L --note=...``
+                                                             — mark concluded, record winner
+
+Design constraints enforced here:
+
+- **One active experiment per niche** — ``activate`` checks the partial
+  unique index from PR #699 in the application layer too so the operator
+  gets a friendly "another experiment is active, conclude it first"
+  instead of an asyncpg ``UniqueViolationError``.
+- **Add-variant gated on draft status** — ``draft`` is the only mutable
+  state for variants. ``active`` / ``paused`` / ``concluded`` reject the
+  add-variant call so an in-flight experiment can't have its arms
+  changed under the runner (the design allows mid-experiment variant
+  additions but Phase 1 keeps the simpler rule per "one axis varying"
+  scientific-method posture).
+- **Activate requires >=2 variants** — a one-variant "experiment" is
+  meaningless; uniform random over a singleton always picks the same arm.
+- **Conclude records but does not promote** — Phase 1 ships manual
+  promotion per the design doc's line 200-203. The CLI persists the
+  winner_variant_label + conclusion_note, then prints the next-step
+  guidance the operator follows to actually promote the winning config
+  (Langfuse production label for prompt variants, ``app_settings.cost_tier.standard.model``
+  for model variants, etc.). No silent code path moves prod defaults.
+
+Patterns match ``poindexter/cli/topics.py``: Click group, lazy
+``import asyncpg`` inside each ``_impl()``, DSN via
+``poindexter.cli._bootstrap.resolve_dsn``, async impl wrapped in
+``asyncio.run(_impl())``. Tests under
+``tests/unit/cli/test_experiments_cli.py`` patch ``asyncpg.create_pool``
++ the niche service the same way ``test_topics_cli.py`` does.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import sys
-from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._bootstrap import resolve_dsn as _dsn
 
 
-def _run(coro):
-    return asyncio.run(coro)
+# ---------------------------------------------------------------------------
+# Status / objective constants — kept in lockstep with the CHECK constraints
+# in migration 20260529_000342_phase1_experiments_harness_foundation.py
+# ---------------------------------------------------------------------------
+
+_VALID_STATUSES = ("draft", "active", "paused", "concluded")
+_VALID_OBJECTIVE_FUNCTIONS = (
+    "views_7d", "views_24h", "approval_rate",
+    "views_per_dollar", "composite_score",
+)
 
 
-async def _open_pool():
-    """Open a small asyncpg pool — the ExperimentService takes a pool, not
-    a connection. Keeps min/max=1 so the CLI exits cleanly without hanging
-    on idle connections.
-    """
-    import asyncpg
-
-    from ._bootstrap import ensure_secret_key
-
-    # Load POINDEXTER_SECRET_KEY from bootstrap.toml into env so the
-    # langfuse_secret_key decrypt path inside _make_service can succeed.
-    # Worker processes inherit it at container start; bare CLI shells
-    # don't. Same fix pattern as the finance + dev-diary CLIs.
-    ensure_secret_key()
-    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=1)
-
-
-async def _make_service(pool):
-    """Construct a LangfuseExperimentService for the CLI process.
-
-    Post-#202 the experiment harness lives entirely in Langfuse — the
-    service needs ``langfuse_host`` / ``langfuse_public_key`` /
-    ``langfuse_secret_key`` from ``app_settings`` to construct a
-    Langfuse client. We pre-fetch those once and stuff them into a
-    dict-backed shim so the CLI doesn't import the full SiteConfig
-    module (heavy + async-only).
-    """
-    from plugins.secrets import get_secret
-    from services.langfuse_experiments import LangfuseExperimentService
-
-    # langfuse_public_key + langfuse_secret_key are is_secret=true with
-    # enc:v1: ciphertext on a real install. Direct ``SELECT value`` returns
-    # the ciphertext, which then breaks the Langfuse client's HMAC sig.
-    # Route through plugins.secrets.get_secret which pgp_sym_decrypts
-    # transparently. Same bug class as the alert_sync + finance CLI
-    # decryption fixes (2026-05-13).
-    creds: dict[str, str] = {}
-    async with pool.acquire() as conn:
-        for key in ("langfuse_host", "langfuse_public_key", "langfuse_secret_key"):
-            creds[key] = (await get_secret(conn, key)) or ""
-
-    class _StubSiteConfig:
-        def get(self, key: str, default: Any = None) -> Any:
-            return creds.get(key, default)
-
-    return LangfuseExperimentService(site_config=_StubSiteConfig(), pool=pool)
+# ---------------------------------------------------------------------------
+# Group root
+# ---------------------------------------------------------------------------
 
 
 @click.group(
     name="experiments",
-    help="Manage A/B experiments (variants, assignments, outcomes).",
+    help=(
+        "Operator commands for the Phase 1 variant-experiments harness.\n\n"
+        "Manages rows in ``experiments`` + ``experiment_variants``. The "
+        "writer atom samples active variants via ``services.experiment_runner.pick_variant``; "
+        "this CLI is the surface that creates, activates, observes, and "
+        "concludes them. See "
+        "``docs/architecture/2026-05-28-phase-1-variant-experiments-design.md``."
+    ),
 )
 def experiments_group() -> None:
     pass
 
 
+# ---------------------------------------------------------------------------
+# experiments list
+# ---------------------------------------------------------------------------
+
+
 @experiments_group.command("list")
 @click.option(
-    "--status", default="",
-    type=click.Choice(["", "draft", "running", "paused", "complete"]),
-    help="Filter by status.",
+    "--status",
+    type=click.Choice(_VALID_STATUSES),
+    default=None,
+    help="Filter to a single status. Omit for all.",
 )
-@click.option("--json", "json_output", is_flag=True)
-def experiments_list(status: str, json_output: bool) -> None:
-    """List experiments with current status + assignment counts."""
+@click.option(
+    "--niche",
+    default=None,
+    help="Filter to a single niche_slug. Omit for all niches.",
+)
+@click.option(
+    "--json", "json_output", is_flag=True,
+    help="Emit JSON (one array of objects) instead of the tabular default.",
+)
+def experiments_list(
+    status: str | None, niche: str | None, json_output: bool,
+) -> None:
+    """List experiments with key/niche/status + variant + outcome counts.
 
-    async def _run_list():
+    Tabular by default; pass ``--json`` for machine-readable output.
+    Sorted most-recent first so the operator's latest work surfaces at
+    the top.
+    """
+    async def _impl():
         import asyncpg
-        conn = await asyncpg.connect(_dsn())
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            where = ""
-            args: list[Any] = []
+            where = ["TRUE"]
+            args: list = []
             if status:
-                where = "WHERE e.status = $1"
                 args.append(status)
-            rows = await conn.fetch(
-                f"""
-                SELECT e.key, e.description, e.status, e.assignment_field,
-                       e.created_at, e.started_at, e.completed_at,
-                       e.winner_variant,
-                       (
-                         SELECT COUNT(*) FROM experiment_assignments a
-                         WHERE a.experiment_id = e.id
-                       ) AS assignments
-                  FROM experiments e
-                  {where}
-              ORDER BY e.created_at DESC
-                """,
-                *args,
-            )
-            return [dict(r) for r in rows]
+                where.append(f"e.status = ${len(args)}")
+            if niche:
+                args.append(niche)
+                where.append(f"e.niche_slug = ${len(args)}")
+            sql = f"""
+            SELECT
+                e.key,
+                e.niche_slug,
+                e.status,
+                e.objective_function,
+                e.created_at,
+                e.activated_at,
+                e.concluded_at,
+                e.winner_variant_label,
+                (
+                    SELECT COUNT(*) FROM experiment_variants ev
+                    WHERE ev.experiment_id = e.id
+                ) AS variant_count,
+                (
+                    SELECT COUNT(*) FROM capability_outcomes co
+                    JOIN experiment_variants ev2 ON ev2.id = co.variant_id
+                    WHERE ev2.experiment_id = e.id
+                ) AS outcome_count
+            FROM experiments e
+            WHERE {' AND '.join(where)}
+            ORDER BY e.created_at DESC
+            """
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(sql, *args)
         finally:
-            await conn.close()
+            await pool.close()
+        return [dict(r) for r in rows]
 
-    try:
-        rows = _run(_run_list())
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    rows = asyncio.run(_impl())
 
     if json_output:
         click.echo(json.dumps(rows, indent=2, default=str))
@@ -138,342 +171,572 @@ def experiments_list(status: str, json_output: bool) -> None:
         return
 
     click.echo(
-        f"{'KEY':<32} {'STATUS':<10} {'FIELD':<12} {'ASSIGNS':<8} {'WINNER':<16}"
+        f"{'KEY':<48} {'NICHE':<14} {'STATUS':<10} "
+        f"{'VARS':>4} {'RUNS':>5} {'WINNER':<10}"
     )
     for r in rows:
-        color = {
-            "running": "green",
-            "draft": "yellow",
-            "paused": "yellow",
-            "complete": "cyan",
-        }.get(r["status"], "white")
-        winner = r["winner_variant"] or "—"
-        line = (
-            f"{r['key']:<32} {r['status']:<10} "
-            f"{r['assignment_field']:<12} {r['assignments']:<8} {winner:<16}"
-        )
-        click.secho(line, fg=color)
-
-
-@experiments_group.command("show")
-@click.argument("key")
-@click.option("--json", "json_output", is_flag=True)
-def experiments_show(key: str, json_output: bool) -> None:
-    """Show full details of an experiment including variants and metadata."""
-
-    async def _run_show():
-        import asyncpg
-        conn = await asyncpg.connect(_dsn())
-        try:
-            row = await conn.fetchrow(
-                """
-                SELECT id::text AS id, key, description, status, variants,
-                       assignment_field, created_at, started_at,
-                       completed_at, winner_variant
-                  FROM experiments
-                 WHERE key = $1
-                """,
-                key,
-            )
-            if not row:
-                return None
-            data = dict(row)
-            # variants comes back as str/jsonb depending on asyncpg build.
-            v = data["variants"]
-            if isinstance(v, str):
-                try:
-                    data["variants"] = json.loads(v)
-                except json.JSONDecodeError:
-                    pass
-            count = await conn.fetchval(
-                "SELECT COUNT(*) FROM experiment_assignments WHERE experiment_id = $1::uuid",
-                data["id"],
-            )
-            data["assignment_count"] = int(count or 0)
-            return data
-        finally:
-            await conn.close()
-
-    try:
-        row = _run(_run_show())
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if not row:
-        click.echo(f"(no experiment named {key!r})", err=True)
-        sys.exit(1)
-
-    if json_output:
-        click.echo(json.dumps(row, indent=2, default=str))
-        return
-
-    click.secho(f"{row['key']}", fg="cyan")
-    click.echo(f"  description       {row['description']}")
-    click.echo(f"  status            {row['status']}")
-    click.echo(f"  assignment_field  {row['assignment_field']}")
-    click.echo(f"  assignments       {row['assignment_count']}")
-    click.echo(f"  created_at        {row['created_at']}")
-    click.echo(f"  started_at        {row['started_at'] or '—'}")
-    click.echo(f"  completed_at      {row['completed_at'] or '—'}")
-    click.echo(f"  winner_variant    {row['winner_variant'] or '—'}")
-    click.echo("  variants:")
-    for v in row.get("variants") or []:
-        cfg = v.get("config", {})
-        cfg_str = json.dumps(cfg, separators=(",", ":")) if cfg else "{}"
+        winner = r["winner_variant_label"] or "-"
         click.echo(
-            f"    - {v.get('key', '?'):<16} weight={v.get('weight', '?'):<3} config={cfg_str}"
+            f"{r['key']:<48} {r['niche_slug']:<14} {r['status']:<10} "
+            f"{r['variant_count']:>4} {r['outcome_count']:>5} {winner:<10}"
         )
+
+
+# ---------------------------------------------------------------------------
+# experiments create
+# ---------------------------------------------------------------------------
 
 
 @experiments_group.command("create")
-@click.option("--key", required=True, help="Stable slug for this experiment.")
-@click.option("--description", required=True, help="Human description.")
+@click.argument("key")
 @click.option(
-    "--variants", required=True,
+    "--niche", "niche_slug", required=True,
+    help="Niche slug this experiment runs on (must exist in ``niches``).",
+)
+@click.option(
+    "--description", default="",
+    help="Free-text description of the hypothesis being tested.",
+)
+@click.option(
+    "--objective",
+    type=click.Choice(_VALID_OBJECTIVE_FUNCTIONS),
+    default="views_7d", show_default=True,
     help=(
-        "JSON list of variants — each is {key, weight, config}. Example: "
-        "'[{\"key\":\"control\",\"weight\":50,\"config\":{}}, "
-        "{\"key\":\"variant_a\",\"weight\":50,\"config\":{\"writer_model\":\"glm-4.7-5090\"}}]'"
+        "Which metric the scorecard ranks variants by. ``views_7d`` is "
+        "the design default — see the design doc's reward-stack section."
+    ),
+)
+def experiments_create(
+    key: str, niche_slug: str, description: str, objective: str,
+) -> None:
+    """Create a new draft experiment for ``<key>`` on ``--niche``.
+
+    The experiment lands in ``draft`` status — add variants with
+    ``add-variant``, then ``activate`` once two or more are configured.
+
+    Rejects:
+
+    - Duplicate ``<key>`` (caught at the DB UNIQUE constraint level;
+      surfaced as a clean message).
+    - Unknown niche (caught by NicheService lookup before the INSERT).
+    """
+    async def _impl():
+        import asyncpg
+        from services.niche_service import NicheService
+
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        try:
+            n = await NicheService(pool).get_by_slug(niche_slug)
+            if not n:
+                raise click.ClickException(f"unknown niche: {niche_slug}")
+            try:
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO experiments
+                            (key, niche_slug, description, objective_function)
+                        VALUES ($1, $2, $3, $4)
+                        RETURNING id::text AS id
+                        """,
+                        key, niche_slug, description, objective,
+                    )
+            except asyncpg.UniqueViolationError as exc:
+                raise click.ClickException(
+                    f"experiment {key!r} already exists (UNIQUE key violation)"
+                ) from exc
+        finally:
+            await pool.close()
+        return row["id"]
+
+    new_id = asyncio.run(_impl())
+    click.echo(
+        f"Created experiment {key!r} (id={new_id}, niche={niche_slug}, "
+        f"objective={objective}, status=draft).\n"
+        f"Next: poindexter experiments add-variant {key} --label=A ..."
+    )
+
+
+# ---------------------------------------------------------------------------
+# experiments add-variant
+# ---------------------------------------------------------------------------
+
+
+@experiments_group.command("add-variant")
+@click.argument("key")
+@click.option(
+    "--label", required=True,
+    help=(
+        "Case-sensitive variant label (e.g. ``A``, ``B``, ``control``, "
+        "``treatment``). Must be unique within the experiment."
     ),
 )
 @click.option(
-    "--assignment-field", default="task_id", show_default=True,
-    help="Which context field to hash for sticky assignment.",
+    "--prompt-template", "prompt_template_key", default=None,
+    help=(
+        "Override the prompt-template key for this variant. NULL means "
+        "inherit the niche default (held-constant axis)."
+    ),
 )
 @click.option(
-    "--start", is_flag=True,
-    help="Skip draft and create directly in 'running' status.",
+    "--prompt-version", "prompt_template_version", type=int, default=None,
+    help="Override the prompt template version (integer).",
 )
-def experiments_create(
+@click.option(
+    "--writer-model", default=None,
+    help=(
+        "Override the writer model for this variant (e.g. ``gemma4:31b``). "
+        "NULL means inherit the niche default."
+    ),
+)
+@click.option(
+    "--rag-config", default=None,
+    help=(
+        "JSON object merged into the niche-default rag_config. Use for "
+        "RAG-axis variants only (held-constant in Phase 1 prompt/model A/Bs)."
+    ),
+)
+@click.option(
+    "--weight", type=float, default=1.0, show_default=True,
+    help=(
+        "Allocation weight. Ignored by Phase 1 (uniform random); on the "
+        "schema for Phase 2's bandit."
+    ),
+)
+def experiments_add_variant(
     key: str,
-    description: str,
-    variants: str,
-    assignment_field: str,
-    start: bool,
+    label: str,
+    prompt_template_key: str | None,
+    prompt_template_version: int | None,
+    writer_model: str | None,
+    rag_config: str | None,
+    weight: float,
 ) -> None:
-    """Create a new experiment row.
+    """Add a variant to a draft experiment.
 
-    Variants are validated by ExperimentService.create() — must be ≥2,
-    weights must sum to ~100, each entry needs key/weight/config.
+    Rejects:
+
+    - Unknown experiment ``<key>``.
+    - Experiment not in ``draft`` status (active / paused / concluded
+      experiments can't take new variants — the runner's allocation
+      is locked once activated, per the scientific-method posture).
+    - Duplicate ``--label`` within the experiment (DB UNIQUE
+      ``(experiment_id, label)`` violation).
+    - Malformed ``--rag-config`` JSON.
     """
-    try:
-        parsed = json.loads(variants)
-    except json.JSONDecodeError as e:
-        click.echo(f"Error: invalid --variants JSON: {e}", err=True)
-        sys.exit(1)
-
-    async def _run_create():
-        pool = await _open_pool()
+    rag_config_parsed: dict = {}
+    if rag_config:
         try:
-            svc = await _make_service(pool)
-            return await svc.create(
-                key=key,
-                description=description,
-                variants=parsed,
-                assignment_field=assignment_field,
-                status="running" if start else "draft",
+            parsed = json.loads(rag_config)
+        except json.JSONDecodeError as exc:
+            raise click.ClickException(f"invalid --rag-config JSON: {exc}")
+        if not isinstance(parsed, dict):
+            raise click.ClickException(
+                "--rag-config must be a JSON object, got "
+                f"{type(parsed).__name__}"
             )
-        finally:
-            await pool.close()
+        rag_config_parsed = parsed
 
-    try:
-        new_id = _run(_run_create())
-    except ValueError as e:
-        # ExperimentService.create raises ValueError on validation failure.
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    state = "running" if start else "draft"
-    click.secho(f"Created experiment {key!r} (id={new_id}, status={state})", fg="green")
-
-
-@experiments_group.command("start")
-@click.argument("key")
-def experiments_start(key: str) -> None:
-    """Flip an experiment from draft → running.
-
-    Sets started_at to NOW() if it isn't already set. No-op + warning if
-    the experiment doesn't exist or is already running/complete.
-    """
-    async def _run_start():
+    async def _impl():
         import asyncpg
-        conn = await asyncpg.connect(_dsn())
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            result = await conn.execute(
-                """
-                UPDATE experiments
-                   SET status = 'running',
-                       started_at = COALESCE(started_at, NOW())
-                 WHERE key = $1 AND status = 'draft'
-                """,
-                key,
-            )
-            return result
+            async with pool.acquire() as conn:
+                exp = await conn.fetchrow(
+                    "SELECT id::text AS id, status FROM experiments WHERE key = $1",
+                    key,
+                )
+                if exp is None:
+                    raise click.ClickException(f"unknown experiment: {key}")
+                if exp["status"] != "draft":
+                    raise click.ClickException(
+                        f"experiment {key!r} is {exp['status']!r}; "
+                        "only draft experiments can take new variants"
+                    )
+                try:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO experiment_variants (
+                            experiment_id, label, weight,
+                            prompt_template_key, prompt_template_version,
+                            writer_model, rag_config
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                        RETURNING id::text AS id
+                        """,
+                        exp["id"], label, weight,
+                        prompt_template_key, prompt_template_version,
+                        writer_model, json.dumps(rag_config_parsed),
+                    )
+                except asyncpg.UniqueViolationError as exc:
+                    raise click.ClickException(
+                        f"variant label {label!r} already exists on "
+                        f"experiment {key!r}"
+                    ) from exc
         finally:
-            await conn.close()
+            await pool.close()
+        return row["id"]
 
-    try:
-        result = _run(_run_start())
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if result.endswith(" 0"):
-        click.echo(
-            f"(no draft experiment named {key!r} — check `poindexter experiments show {key}`)",
-            err=True,
-        )
-        sys.exit(1)
-    click.secho(f"{key}: started", fg="green")
+    new_id = asyncio.run(_impl())
+    click.echo(
+        f"Added variant {label!r} to {key!r} (id={new_id}, "
+        f"model={writer_model or '<inherit>'}, "
+        f"prompt={prompt_template_key or '<inherit>'}"
+        + (f"/v{prompt_template_version}" if prompt_template_version else "")
+        + ")."
+    )
 
 
-@experiments_group.command("pause")
+# ---------------------------------------------------------------------------
+# experiments activate
+# ---------------------------------------------------------------------------
+
+
+@experiments_group.command("activate")
 @click.argument("key")
-def experiments_pause(key: str) -> None:
-    """Flip an experiment from running → paused.
+def experiments_activate(key: str) -> None:
+    """Flip a draft experiment to active.
 
-    Existing assignments stay observable. New ``assign()`` calls return
-    None so the pipeline falls back to default (un-experimented) config.
+    Sets ``status = 'active'`` and stamps ``activated_at = NOW()``.
+    Once active, the writer-atom hook (PR #702) starts sampling this
+    experiment's variants on tasks for the experiment's niche.
+
+    Rejects:
+
+    - Unknown ``<key>``.
+    - Experiment not in ``draft`` (already active / paused / concluded).
+    - Fewer than 2 variants (a one-variant experiment is meaningless —
+      uniform random over a singleton always picks the same arm).
+    - Another experiment already active on the same niche (the partial
+      unique index from PR #699 enforces this at the DB layer; we
+      check at the application layer too so the operator gets a
+      friendly error message that points at ``conclude`` instead of
+      an asyncpg ``UniqueViolationError`` traceback).
     """
-    async def _run_pause():
+    async def _impl():
         import asyncpg
-        conn = await asyncpg.connect(_dsn())
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            result = await conn.execute(
-                "UPDATE experiments SET status = 'paused' WHERE key = $1 AND status = 'running'",
-                key,
-            )
-            return result
-        finally:
-            await conn.close()
-
-    try:
-        result = _run(_run_pause())
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if result.endswith(" 0"):
-        click.echo(f"(no running experiment named {key!r})", err=True)
-        sys.exit(1)
-    click.secho(f"{key}: paused", fg="yellow")
-
-
-@experiments_group.command("assign")
-@click.argument("subject_id")
-@click.argument("experiment_key")
-def experiments_assign(subject_id: str, experiment_key: str) -> None:
-    """Manually assign a subject to a variant.
-
-    Useful for backfilling assignments for tasks that ran before the
-    experiment was started, or for testing the bucketing logic. Sticky
-    — re-running with the same subject_id returns the prior assignment.
-    """
-    async def _run_assign():
-        pool = await _open_pool()
-        try:
-            svc = await _make_service(pool)
-            return await svc.assign(
-                experiment_key=experiment_key,
-                subject_id=subject_id,
-            )
+            async with pool.acquire() as conn:
+                exp = await conn.fetchrow(
+                    """
+                    SELECT id::text AS id, status, niche_slug,
+                           (SELECT COUNT(*) FROM experiment_variants ev
+                            WHERE ev.experiment_id = e.id) AS variant_count
+                    FROM experiments e WHERE key = $1
+                    """,
+                    key,
+                )
+                if exp is None:
+                    raise click.ClickException(f"unknown experiment: {key}")
+                if exp["status"] != "draft":
+                    raise click.ClickException(
+                        f"experiment {key!r} is {exp['status']!r}; "
+                        "only draft experiments can be activated"
+                    )
+                if exp["variant_count"] < 2:
+                    raise click.ClickException(
+                        f"experiment {key!r} has only {exp['variant_count']} "
+                        "variant(s); need >=2 to activate "
+                        "(one-variant experiment is meaningless)"
+                    )
+                # Pre-flight the "one active per niche" rule with a friendly
+                # error before the UNIQUE index would surface as UniqueViolationError.
+                conflict = await conn.fetchval(
+                    """
+                    SELECT key FROM experiments
+                    WHERE niche_slug = $1 AND status = 'active'
+                    LIMIT 1
+                    """,
+                    exp["niche_slug"],
+                )
+                if conflict:
+                    raise click.ClickException(
+                        f"niche {exp['niche_slug']!r} already has an active "
+                        f"experiment: {conflict!r}. Conclude it first with "
+                        f"`poindexter experiments conclude {conflict} "
+                        "--winner=... --note=...`"
+                    )
+                await conn.execute(
+                    """
+                    UPDATE experiments
+                    SET status = 'active', activated_at = NOW()
+                    WHERE id = $1::uuid
+                    """,
+                    exp["id"],
+                )
         finally:
             await pool.close()
 
-    try:
-        variant = _run(_run_assign())
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if variant is None:
-        click.echo(
-            f"(no assignment — experiment {experiment_key!r} is not running)",
-            err=True,
-        )
-        sys.exit(1)
-    click.secho(f"{subject_id} → {variant}", fg="green")
+    asyncio.run(_impl())
+    click.echo(
+        f"Activated {key!r}. The runner will now sample its variants on "
+        "the niche's tasks. Watch progress with "
+        f"`poindexter experiments status {key}`."
+    )
 
 
-@experiments_group.command("report")
+# ---------------------------------------------------------------------------
+# experiments status — scorecard render
+# ---------------------------------------------------------------------------
+
+
+@experiments_group.command("status")
 @click.argument("key")
-@click.option("--json", "json_output", is_flag=True)
-def experiments_report(key: str, json_output: bool) -> None:
-    """Per-variant rollup of n + average numeric metrics.
+@click.option(
+    "--json", "json_output", is_flag=True,
+    help="Emit the scorecard rows as JSON instead of the tabular default.",
+)
+def experiments_status(key: str, json_output: bool) -> None:
+    """Render the scorecard for an experiment.
 
-    Aggregates whatever metric keys are present in the JSONB ``metrics``
-    column on each assignment row. Only numeric values are averaged —
-    string / bool / nested values are skipped.
+    Reads ``experiment_variant_scorecard_v1`` (the view created by
+    PR #699). Per-variant rows include: label, posts attempted,
+    approval rate, mean edit distance, mean views 24h / 7d, mean cost,
+    total cost. Rows are sorted by approval rate desc (with NULL last
+    for variants that haven't been sampled yet) so the leader surfaces
+    at the top.
+
+    Print includes the experiment's ``objective_function`` so the
+    operator knows which column to interpret as "winning" — Phase 1
+    ranks manually; the view exposes everything; the objective tells
+    you which one matters most.
     """
-    async def _run_report():
-        pool = await _open_pool()
+    async def _impl():
+        import asyncpg
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            svc = await _make_service(pool)
-            return await svc.summary(key)
+            async with pool.acquire() as conn:
+                exp = await conn.fetchrow(
+                    """
+                    SELECT key, niche_slug, status, objective_function,
+                           description, created_at, activated_at,
+                           concluded_at, winner_variant_label,
+                           conclusion_note
+                    FROM experiments WHERE key = $1
+                    """,
+                    key,
+                )
+                if exp is None:
+                    raise click.ClickException(f"unknown experiment: {key}")
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        variant_label,
+                        variant_active,
+                        paused_at,
+                        paused_reason,
+                        posts_attempted,
+                        posts_approved,
+                        approval_rate_pct,
+                        avg_edit_distance_pct,
+                        avg_views_24h,
+                        avg_views_7d,
+                        avg_cost_per_post,
+                        total_cost
+                    FROM experiment_variant_scorecard_v1
+                    WHERE experiment_key = $1
+                    ORDER BY approval_rate_pct DESC NULLS LAST, variant_label
+                    """,
+                    key,
+                )
         finally:
             await pool.close()
+        return dict(exp), [dict(r) for r in rows]
 
-    try:
-        report = _run(_run_report())
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if not report:
-        click.echo(
-            f"(no data — experiment {key!r} has no assignments yet, or it doesn't exist)",
-            err=True,
-        )
-        sys.exit(1)
+    exp, rows = asyncio.run(_impl())
 
     if json_output:
-        click.echo(json.dumps(report, indent=2, default=str))
+        click.echo(
+            json.dumps(
+                {"experiment": exp, "variants": rows},
+                indent=2, default=str,
+            )
+        )
         return
 
-    click.secho(f"Experiment report: {key}", fg="cyan")
-    click.echo()
-    for variant, data in sorted(report.items()):
-        n = data.get("n", 0)
-        click.secho(f"  {variant}  (n={n})", fg="white", bold=True)
-        metrics = data.get("metrics", {}) or {}
-        if not metrics:
-            click.echo("    (no numeric metrics recorded)")
-            continue
-        for metric, value in sorted(metrics.items()):
-            click.echo(f"    {metric:<32} {value:.4f}")
+    click.echo(f"Experiment: {exp['key']}")
+    click.echo(f"  niche             {exp['niche_slug']}")
+    click.echo(f"  status            {exp['status']}")
+    click.echo(f"  objective         {exp['objective_function']}")
+    click.echo(f"  description       {exp['description'] or '-'}")
+    click.echo(f"  created_at        {exp['created_at']}")
+    click.echo(f"  activated_at      {exp['activated_at'] or '-'}")
+    click.echo(f"  concluded_at      {exp['concluded_at'] or '-'}")
+    if exp["winner_variant_label"]:
+        click.echo(f"  winner            {exp['winner_variant_label']}")
+    if exp["conclusion_note"]:
+        click.echo(f"  conclusion_note   {exp['conclusion_note']}")
+    click.echo("")
+    if not rows:
+        click.echo("(no variants defined yet)")
+        return
+
+    header = (
+        f"{'LABEL':<14} {'ACT':<4} {'RUNS':>5} {'APPR':>5} "
+        f"{'APPR%':>6} {'EDIT%':>6} {'V24':>6} {'V7D':>6} "
+        f"{'$/POST':>8} {'$TOTAL':>8}"
+    )
+    click.echo(header)
+    for r in rows:
+        active_marker = "Y" if r["variant_active"] else "n"
+        appr_pct = (
+            f"{float(r['approval_rate_pct']):.1f}"
+            if r["approval_rate_pct"] is not None else "-"
+        )
+        edit_pct = (
+            f"{float(r['avg_edit_distance_pct']) * 100:.1f}"
+            if r["avg_edit_distance_pct"] is not None else "-"
+        )
+        v24 = (
+            f"{float(r['avg_views_24h']):.1f}"
+            if r["avg_views_24h"] is not None else "-"
+        )
+        v7d = (
+            f"{float(r['avg_views_7d']):.1f}"
+            if r["avg_views_7d"] is not None else "-"
+        )
+        per_post = (
+            f"{float(r['avg_cost_per_post']):.4f}"
+            if r["avg_cost_per_post"] is not None else "-"
+        )
+        total = (
+            f"{float(r['total_cost']):.2f}"
+            if r["total_cost"] is not None else "-"
+        )
+        click.echo(
+            f"{r['variant_label']:<14} {active_marker:<4} "
+            f"{int(r['posts_attempted'] or 0):>5} "
+            f"{int(r['posts_approved'] or 0):>5} "
+            f"{appr_pct:>6} {edit_pct:>6} {v24:>6} {v7d:>6} "
+            f"{per_post:>8} {total:>8}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# experiments conclude
+# ---------------------------------------------------------------------------
 
 
 @experiments_group.command("conclude")
 @click.argument("key")
 @click.option(
     "--winner", required=True,
-    help="Which variant key won — must match one of the declared variants.",
+    help=(
+        "Variant label of the winning arm (e.g. ``A``, ``gemma4-31b``). "
+        "Must match an existing variant on the experiment."
+    ),
 )
-def experiments_conclude(key: str, winner: str) -> None:
-    """Mark an experiment complete with the winning variant.
+@click.option(
+    "--note", default="",
+    help=(
+        "Free-text rationale (e.g. ``B won 73% approval — promoting``). "
+        "Stored on the experiments row for the historical record."
+    ),
+)
+def experiments_conclude(key: str, winner: str, note: str) -> None:
+    """Mark an experiment concluded and record the winning variant.
 
-    No auto-promotion — the operator promotes the winning config into
-    production app_settings manually so wins can be reviewed.
+    Updates ``status = 'concluded'``, ``concluded_at = NOW()``,
+    ``winner_variant_label = <winner>``, ``conclusion_note = <note>``
+    on the experiments row. Atomic — either every column is set or
+    the row stays untouched.
+
+    Rejects:
+
+    - Unknown ``<key>``.
+    - Experiment already concluded.
+    - ``--winner`` doesn't match any variant on the experiment.
+
+    Phase 1 is **manual promotion** — this command records the
+    operator's decision but does NOT mutate any niche / app_settings
+    default. The CLI prints the next-step guidance after the update
+    so the operator knows what to flip in Langfuse / app_settings to
+    actually promote the winning config to production.
     """
-    async def _run_conclude():
-        pool = await _open_pool()
+    async def _impl():
+        import asyncpg
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            svc = await _make_service(pool)
-            await svc.conclude(experiment_key=key, winner_variant=winner)
+            async with pool.acquire() as conn:
+                exp = await conn.fetchrow(
+                    """
+                    SELECT id::text AS id, status, niche_slug
+                    FROM experiments WHERE key = $1
+                    """,
+                    key,
+                )
+                if exp is None:
+                    raise click.ClickException(f"unknown experiment: {key}")
+                if exp["status"] == "concluded":
+                    raise click.ClickException(
+                        f"experiment {key!r} is already concluded"
+                    )
+                variant = await conn.fetchrow(
+                    """
+                    SELECT label, writer_model,
+                           prompt_template_key, prompt_template_version
+                    FROM experiment_variants
+                    WHERE experiment_id = $1::uuid AND label = $2
+                    """,
+                    exp["id"], winner,
+                )
+                if variant is None:
+                    labels = await conn.fetch(
+                        """
+                        SELECT label FROM experiment_variants
+                        WHERE experiment_id = $1::uuid ORDER BY label
+                        """,
+                        exp["id"],
+                    )
+                    raise click.ClickException(
+                        f"--winner={winner!r} does not match any variant on "
+                        f"{key!r}. Defined variants: "
+                        f"{[r['label'] for r in labels]}"
+                    )
+                await conn.execute(
+                    """
+                    UPDATE experiments
+                    SET status = 'concluded',
+                        concluded_at = NOW(),
+                        winner_variant_label = $2,
+                        conclusion_note = $3
+                    WHERE id = $1::uuid
+                    """,
+                    exp["id"], winner, note,
+                )
         finally:
             await pool.close()
+        return dict(exp), dict(variant)
 
-    try:
-        _run(_run_conclude())
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    exp, variant = asyncio.run(_impl())
+    click.echo(
+        f"Concluded {key!r} (niche={exp['niche_slug']}). "
+        f"Winner: {winner!r}."
+    )
+    if note:
+        click.echo(f"Note: {note}")
+    # Next-step guidance — Phase 1 is manual promotion. Tell the operator
+    # WHERE to flip the winning config to make it the production default.
+    click.echo("")
+    click.echo("Phase 1 is manual promotion — to roll the winner to production:")
+    if variant["writer_model"]:
+        click.echo(
+            f"  * Writer model winner: {variant['writer_model']!r}. "
+            "Update app_settings.cost_tier.standard.model "
+            "(or the appropriate tier) to promote."
+        )
+    if variant["prompt_template_key"]:
+        ver = variant["prompt_template_version"]
+        click.echo(
+            f"  * Prompt winner: {variant['prompt_template_key']}"
+            + (f"/v{ver}" if ver else "")
+            + ". Promote in Langfuse by moving the production label to "
+            "this version."
+        )
+    if not variant["writer_model"] and not variant["prompt_template_key"]:
+        click.echo(
+            "  * (Winning variant has no overrides — was a control/RAG-only "
+            "test. No production flip required.)"
+        )
 
-    click.secho(f"{key}: concluded (winner={winner})", fg="cyan")
+
+__all__ = ["experiments_group"]
