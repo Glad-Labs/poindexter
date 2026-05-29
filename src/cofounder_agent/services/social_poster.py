@@ -45,7 +45,7 @@ def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
     global site_config
     site_config = sc
-from services.telegram_config import get_telegram_bot_token, get_telegram_chat_id
+from services.telegram_config import TelegramConfig
 
 from .ollama_client import OllamaClient
 
@@ -331,9 +331,15 @@ async def _notify(message: str) -> None:
         ) as client:
             logger.info("[social_poster] Notifying: %s", message[:80])
             # Telegram — direct bot API. Token is is_secret=true; must be
-            # fetched via get_telegram_bot_token() (async, decrypted).
-            _tg_token = await get_telegram_bot_token()
-            _tg_chat = get_telegram_chat_id()
+            # fetched via TelegramConfig.get_telegram_bot_token() (async,
+            # decrypted). The class is constructed per-call against the
+            # module's lifespan-bound ``site_config`` so a future
+            # ``social_poster`` migration to constructor DI is a clean
+            # cut-over to ``self._telegram_config`` without surface
+            # changes here. (DI migration PR 3, 2026-05-28.)
+            _tg = TelegramConfig(site_config=site_config)
+            _tg_token = await _tg.get_telegram_bot_token()
+            _tg_chat = _tg.get_telegram_chat_id()
             if _tg_token and _tg_chat:
                 await client.post(
                     f"https://api.telegram.org/bot{_tg_token}/sendMessage",

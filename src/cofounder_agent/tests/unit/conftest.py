@@ -157,7 +157,10 @@ _SHARED_TEST_MODULES = (
     "services.r2_upload_service",
     "services.revalidation_service",
     "services.static_export_service",
-    "services.telegram_config",
+    # ``services.telegram_config`` migrated to constructor DI 2026-05-28
+    # (SiteConfig DI migration PR 3); no module-level site_config attr
+    # to share. Tests construct ``TelegramConfig(site_config=...)``
+    # directly.
     "services.webhook_delivery_service",
     "services.devto_service",
     "utils.route_utils",

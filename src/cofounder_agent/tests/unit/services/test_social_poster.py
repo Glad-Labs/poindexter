@@ -348,17 +348,22 @@ class TestNotify:
 
     @pytest.mark.asyncio
     @patch("services.social_poster._get_discord_ops_channel", return_value="test-discord-channel-id")
-    @patch("services.social_poster.get_telegram_chat_id", return_value="test-chat-id")
-    @patch("services.social_poster.get_telegram_bot_token", new_callable=AsyncMock)
+    @patch("services.social_poster.TelegramConfig")
     @patch("services.social_poster._openclaw_token", new_callable=AsyncMock)
     @patch("services.social_poster.httpx.AsyncClient")
     async def test_sends_telegram_and_discord(
-        self, mock_client_cls, mock_openclaw_token, mock_tg_token, mock_chat, mock_channel
+        self, mock_client_cls, mock_openclaw_token, mock_tg_cls, mock_channel
     ):
         from services.social_poster import _notify
 
+        # ``_notify`` constructs ``TelegramConfig(site_config=site_config)``
+        # per-call now (post-DI-migration PR 3). Stub the class with an
+        # instance whose helpers return the values the test asserts on.
+        mock_tg_instance = MagicMock()
+        mock_tg_instance.get_telegram_chat_id.return_value = "test-chat-id"
+        mock_tg_instance.get_telegram_bot_token = AsyncMock(return_value="test-bot-token")
+        mock_tg_cls.return_value = mock_tg_instance
         # Token + openclaw secret are async (is_secret=true rows after #325 sweep)
-        mock_tg_token.return_value = "test-bot-token"
         mock_openclaw_token.return_value = "test-openclaw-token"
 
         mock_client = AsyncMock()

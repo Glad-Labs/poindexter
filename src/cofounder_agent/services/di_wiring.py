@@ -60,7 +60,9 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.r2_upload_service",
     "services.revalidation_service",
     "services.static_export_service",
-    "services.telegram_config",
+    # ``services.telegram_config`` migrated to constructor DI 2026-05-28
+    # (SiteConfig DI migration PR 3). Reach it via
+    # ``container.telegram_config`` instead of importing free functions.
     "services.video_service",
     "services.webhook_delivery_service",
     # Content pipeline + QA

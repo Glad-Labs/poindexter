@@ -30,6 +30,7 @@ from fastapi import FastAPI
 
 from services.redis_cache import RedisCache
 from services.site_config import SiteConfig
+from services.telegram_config import TelegramConfig
 
 if TYPE_CHECKING:
     from services.decorators import Decorators
@@ -145,6 +146,16 @@ class AppContainer:
     # wired with the container's ``site_config`` (and ``pool`` where
     # relevant). Order matches the migration PR ledger; new entries get
     # appended.
+
+    @cached_property
+    def telegram_config(self) -> TelegramConfig:
+        """Telegram bot credentials resolver (DI migration PR 3).
+
+        First service to migrate to constructor DI. ``TelegramConfig``
+        wraps ``SiteConfig`` and exposes ``get_telegram_chat_id`` /
+        ``get_telegram_bot_token`` / ``telegram_configured``.
+        """
+        return TelegramConfig(site_config=self.site_config)
 
     @cached_property
     def decorators(self) -> "Decorators":
