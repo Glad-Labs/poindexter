@@ -312,9 +312,11 @@ async def _draft_node(state: _State) -> _State:
                 f"commit, use the exact title and link to the URL given):\n\n"
                 f"{ground_truth}"
             )
+    site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     draft = await generate_with_context(
         topic=state["topic"], angle=state["angle"],
         snippets=state["snippets"], extra_instructions=instruction,
+        site_config=site_config,
     )
     return {**state, "draft": draft}
 

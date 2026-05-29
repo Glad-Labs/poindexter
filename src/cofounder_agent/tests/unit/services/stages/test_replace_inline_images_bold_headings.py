@@ -24,6 +24,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from services.site_config import SiteConfig
+
 
 def _make_plan_images_result(*sections: str):
     """Build a minimal ImagePlanResult clone shaped like the real one
@@ -65,6 +67,7 @@ async def test_bold_pseudo_headings_anchor_inline_image_placeholders():
     ):
         result_content, info = await _plan_and_inject_placeholders(
             content, "the topic", "technology",
+            site_config=SiteConfig(),
         )
 
     placeholder_count = result_content.count("[IMAGE-")
@@ -101,6 +104,7 @@ async def test_real_h2_headings_still_take_priority():
     ):
         result_content, _info = await _plan_and_inject_placeholders(
             content, "topic", "technology",
+            site_config=SiteConfig(),
         )
 
     assert result_content.count("[IMAGE-") == 1
@@ -128,6 +132,7 @@ async def test_inline_bold_text_does_not_anchor_placeholders():
     ):
         result_content, _info = await _plan_and_inject_placeholders(
             content, "topic", "technology",
+            site_config=SiteConfig(),
         )
 
     assert "[IMAGE-" not in result_content, (

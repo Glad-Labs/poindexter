@@ -157,7 +157,7 @@ class ReplaceInlineImagesStage:
         placeholders = _PLACEHOLDER_RE.findall(content_text)
         if not placeholders:
             content_text, plan = await _plan_and_inject_placeholders(
-                content_text, topic, category,
+                content_text, topic, category, site_config=site_config,
             )
             if plan is not None and plan.get("featured_image_plan"):
                 updates["featured_image_plan"] = plan["featured_image_plan"]
@@ -239,12 +239,18 @@ async def _plan_and_inject_placeholders(
     content_text: str,
     topic: str,
     category: str,
+    *,
+    site_config: Any,
 ) -> tuple[str, dict[str, Any] | None]:
     """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
 
     Returns ``(content_text, info)`` where info may carry a
     ``featured_image_plan`` (if the agent recommends one) or an
     ``agent_error`` string (if the decision agent crashed).
+
+    ``site_config`` is the run-bound SiteConfig threaded from
+    ``execute`` (``context.get("site_config")``) — ``plan_images``
+    requires it post-#272 Phase-2c.
     """
     try:
         from services.image_decision_agent import plan_images
@@ -253,7 +259,10 @@ async def _plan_and_inject_placeholders(
         return content_text, {"agent_error": str(e)}
 
     try:
-        plan = await plan_images(content_text, topic, category, max_images=3)
+        plan = await plan_images(
+            content_text, topic, category, max_images=3,
+            site_config=site_config,
+        )
     except Exception as agent_err:
         logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
         return content_text, {"agent_error": str(agent_err)}

@@ -59,7 +59,7 @@ def _fake_pool_with_no_snippets():
 
 async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
-    async def fake_pass1(topic, angle, snippets, extra_instructions=None):
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None):
         return "A clean first draft with no markers."
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
@@ -87,7 +87,7 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
         "First draft with [EXTERNAL_NEEDED: a fact] inside.",
         "Revised draft with the actual fact inside.",
     ])
-    async def fake_pass1(topic, angle, snippets, extra_instructions=None):
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None):
         return next(drafts)
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_revise(prompt, **kwargs):
@@ -112,7 +112,7 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
 async def test_loop_caps_at_max_revisions(monkeypatch):
     """Pathological: every revision adds new markers. Loop must terminate at _MAX_REVISION_LOOPS=3."""
     counter = {"n": 0}
-    async def always_needs_more(topic, angle, snippets, extra_instructions=None):
+    async def always_needs_more(topic, angle, snippets, extra_instructions=None, site_config=None):
         counter["n"] += 1
         return f"Draft with [EXTERNAL_NEEDED: thing {counter['n']}] inside."
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", always_needs_more, raising=False)
@@ -160,7 +160,7 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
         "First draft with [EXTERNAL_NEEDED: a fact] inside.",
         "Revised draft — clean prose, no JSON wrapper.",
     ])
-    async def fake_pass1(topic, angle, snippets, extra_instructions=None):
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None):
         return next(drafts)
     monkeypatch.setattr(
         "services.ai_content_generator.generate_with_context",

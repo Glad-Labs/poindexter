@@ -30,17 +30,11 @@ from services.site_config import SiteConfig
 if TYPE_CHECKING:
     import httpx
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
+# shim were removed. ``plan_images`` now requires an explicit
+# ``site_config=`` kwarg; callers thread the run-bound instance (the
+# ``replace_inline_images`` stage → ``context.get("site_config")``). The
+# module is no longer in ``di_wiring.WIRED_MODULES``.
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -85,7 +79,7 @@ async def plan_images(
     category: str = "technology",
     max_images: int = 4,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> ImagePlanResult:
     """Analyze article content and plan image placement + sourcing.
 
@@ -97,6 +91,9 @@ async def plan_images(
         topic: Article topic/title
         category: Content category (technology, gaming, etc.)
         max_images: Maximum number of inline images (excluding featured)
+        site_config: REQUIRED (#272 Phase-2c) — the run-bound SiteConfig,
+            threaded by the ``replace_inline_images`` stage via
+            ``context.get("site_config")``.
 
     Returns:
         ImagePlanResult with per-image decisions
@@ -105,13 +102,7 @@ async def plan_images(
 
     from services.llm_providers.dispatcher import resolve_tier_model
 
-    # Phase-1 DI shim (#272): prefer the injected SiteConfig; fall back to
-    # the module-global via a self-import so the ``site_config`` param
-    # name shadow doesn't trip us. The module global stays in place
-    # (Phase-2 removes it). Default ``None`` keeps every existing caller
-    # working unchanged.
-    import services.image_decision_agent as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
 
     ollama_url = _sc.get("ollama_base_url", "http://host.docker.internal:11434")
 

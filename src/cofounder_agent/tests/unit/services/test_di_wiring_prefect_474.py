@@ -78,12 +78,14 @@ class TestWiredModulesList:
             # without a paired fix elsewhere means a known failure mode is
             # un-pinned.
             "services.ollama_client",
-            "services.ai_content_generator",
             # ``services.multi_model_qa`` removed from this pin 2026-05-29
             # (#272 Phase-2): it migrated to constructor DI and no longer
             # carries a module-global ``site_config``. Construction sites
             # thread the SiteConfig explicitly, so the 2026-05-11 bleed
             # cannot recur via this module.
+            # ``services.ai_content_generator`` removed from this pin
+            # 2026-05-29 (#272 Phase-2c) for the same reason — its ctor +
+            # free functions now require an explicit ``site_config=`` kwarg.
             "services.content_router_service",
             "services.prompt_manager",
             "services.gpu_scheduler",
@@ -131,7 +133,7 @@ class TestWireSiteConfigModules:
 
         # Check the critical modules — pulling them in via importlib
         # so the test doesn't fail at import time if one's unavailable.
-        for modname in ("services.ollama_client", "services.ai_content_generator"):
+        for modname in ("services.ollama_client", "services.content_router_service"):
             mod = __import__(modname, fromlist=["site_config"])
             cfg = getattr(mod, "site_config", None)
             assert cfg is sentinel, (
@@ -146,7 +148,7 @@ class TestWireSiteConfigModules:
         bogus_list = (
             "services.ollama_client",  # real
             "services.this_module_does_not_exist_anywhere",  # bogus
-            "services.ai_content_generator",  # real, must still get wired
+            "services.content_router_service",  # real, must still get wired
         )
         with patch.object(di_wiring, "WIRED_MODULES", bogus_list):
             from services.site_config import SiteConfig
@@ -158,8 +160,8 @@ class TestWireSiteConfigModules:
         assert count == 2
 
         # The real one downstream of the broken entry still got wired.
-        import services.ai_content_generator as aig
-        assert getattr(aig, "site_config", None) is sentinel
+        import services.content_router_service as crs
+        assert getattr(crs, "site_config", None) is sentinel
 
 
 # ---------------------------------------------------------------------------

@@ -96,7 +96,17 @@ WIRED_MODULES: tuple[str, ...] = (
     # Phase-2 bulk cleanup). ``MultiModelQA`` now requires a ``site_config=``
     # kwarg; construction sites (cross_model_qa stage, post_pipeline_actions)
     # thread the lifespan-bound SiteConfig via the context / caller-bridge.
-    "services.image_decision_agent",
+    # ``services.image_decision_agent`` + ``services.quality_scorers`` +
+    # ``services.pipeline_architect`` + ``services.ai_content_generator``
+    # migrated to required-keyword DI 2026-05-29 (#272 Phase-2c). No
+    # module-level ``site_config`` attr / ``set_site_config`` remains:
+    # ``plan_images`` / ``qa_cfg`` + ``score_*`` / ``compose`` /
+    # ``AIContentGenerator.__init__`` + ``generate_with_context`` +
+    # ``_resolve_rag_writer_model`` now require a ``site_config=`` kwarg.
+    # Callers thread the run-bound instance (pipeline stages →
+    # ``context.get("site_config")``; the ``two_pass_writer`` atom → its
+    # run-bound SiteConfig; ``UnifiedQualityService`` → its own
+    # ``self._site_config`` / the still-wired ``quality_service`` global).
     "services.content_validator",
     # ``services.research_service`` migrated to required-keyword DI
     # 2026-05-29 (#272 Phase-2b). ``ResearchService.__init__`` /
@@ -127,7 +137,8 @@ WIRED_MODULES: tuple[str, ...] = (
     # wired) and ``internal_rag_source`` / ``ai_content_generator`` (own
     # module globals) thread their instances. No module-level attr remains.
     "services.database_service",
-    "services.quality_scorers",
+    # ``services.quality_scorers`` removed from WIRED_MODULES 2026-05-29
+    # (#272 Phase-2c) — see the batch note above.
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup). ``QualityDimensions`` now requires a ``site_config``
     # field (typed Optional for dataclass field-ordering, required at runtime);
@@ -137,13 +148,15 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.validator_config",
     "services.template_runner",
     "services.topic_batch_service",
-    "services.pipeline_architect",
+    # ``services.pipeline_architect`` removed from WIRED_MODULES 2026-05-29
+    # (#272 Phase-2c) — see the batch note above.
     "services.prompt_manager",
     # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3). Reach it via ``container.retention_janitor`` or
     # build a per-call instance from a lifespan-bound SiteConfig
     # (caller-bridge); ``startup_manager`` constructs ``RetentionJanitor``.
-    "services.ai_content_generator",
+    # ``services.ai_content_generator`` removed from WIRED_MODULES 2026-05-29
+    # (#272 Phase-2c) — see the batch note above.
     "services.image_service",
     "services.content_router_service",
     # ``services.seo_content_generator`` migrated to constructor DI 2026-05-29

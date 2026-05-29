@@ -122,7 +122,13 @@ _SHARED_TEST_MODULES = (
     # (#272 leaf batch 5); no module-level site_config attr to share. Tests
     # construct ``ContentMetadataGenerator(site_config=...)`` /
     # ``SEOOptimizedContentGenerator(ai, site_config=...)`` directly.
-    "services.image_decision_agent",
+    # ``services.image_decision_agent`` + ``services.quality_scorers`` +
+    # ``services.pipeline_architect`` + ``services.ai_content_generator``
+    # migrated to required-keyword DI 2026-05-29 (#272 Phase-2c); no
+    # module-level site_config attr to share. Tests pass ``site_config=``
+    # to ``plan_images`` / ``qa_cfg`` + ``score_*`` / ``compose`` /
+    # ``AIContentGenerator(...)`` / ``generate_with_context`` directly (or
+    # via ``UnifiedQualityService(site_config=...)``).
     "services.podcast_service",
     "services.video_service",
     # ``services.newsletter_service`` migrated to required-keyword DI
@@ -161,19 +167,22 @@ _SHARED_TEST_MODULES = (
     # ``goal_vector_for`` / ``llm_final_score`` (and their fakes accept it).
     "services.topic_batch_service",
     "services.database_service",
-    "services.quality_scorers",
+    # ``services.quality_scorers`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2c) — see the batch note above.
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the QualityDimensions dataclass.
     "services.quality_service",
     "services.validator_config",
     "services.template_runner",
-    "services.pipeline_architect",
+    # ``services.pipeline_architect`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2c) — see the batch note above.
     "services.prompt_manager",
     # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3); no module-level site_config attr to share. Tests
     # construct ``RetentionJanitor(site_config=...)`` directly.
-    "services.ai_content_generator",
+    # ``services.ai_content_generator`` removed from _SHARED_TEST_MODULES
+    # 2026-05-29 (#272 Phase-2c) — see the batch note above.
     "services.social_poster",
     "services.gpu_scheduler",
     # ``services.decorators`` migrated to AppContainer (DI migration PR 6,

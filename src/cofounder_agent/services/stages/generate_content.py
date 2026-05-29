@@ -112,7 +112,9 @@ class GenerateContentStage:
 
         logger.info("STAGE 2: Generating blog content...")
 
-        content_generator = get_content_generator()
+        content_generator = get_content_generator(
+            site_config=context.get("site_config"),
+        )
         preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
 
         # Fetch active writing style samples for voice/tone matching.

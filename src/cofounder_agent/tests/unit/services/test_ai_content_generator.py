@@ -23,16 +23,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.ai_content_generator import AIContentGenerator, ContentValidationResult
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_generator() -> AIContentGenerator:
+def _make_generator(site_config=None) -> AIContentGenerator:
     """Instantiate AIContentGenerator. ProviderChecker is gone post-v2.8
-    so no provider-availability patches are needed anymore."""
-    return AIContentGenerator(quality_threshold=7.5)
+    so no provider-availability patches are needed anymore.
+
+    ``site_config`` is REQUIRED on the ctor post-#272 Phase-2c; default to
+    a fresh empty :class:`SiteConfig` (env-fallback defaults) when the
+    test doesn't supply one."""
+    return AIContentGenerator(
+        quality_threshold=7.5,
+        site_config=site_config if site_config is not None else SiteConfig(),
+    )
 
 
 def _good_content(topic: str = "Python programming", word_count: int = 1000) -> str:
@@ -113,7 +121,7 @@ class TestAIContentGeneratorInit:
         assert gen.quality_threshold == 7.5
 
     def test_custom_quality_threshold(self):
-        gen = AIContentGenerator(quality_threshold=6.0)
+        gen = AIContentGenerator(quality_threshold=6.0, site_config=SiteConfig())
         assert gen.quality_threshold == 6.0
 
     def test_initial_state(self):
@@ -506,7 +514,7 @@ class TestGetContentGenerator:
         import services.ai_content_generator as mod
         mod._generator = None
         from services.ai_content_generator import get_content_generator
-        gen = get_content_generator()
+        gen = get_content_generator(site_config=SiteConfig())
         assert isinstance(gen, AIContentGenerator)
         mod._generator = None
 
@@ -514,8 +522,8 @@ class TestGetContentGenerator:
         import services.ai_content_generator as mod
         mod._generator = None
         from services.ai_content_generator import get_content_generator
-        g1 = get_content_generator()
-        g2 = get_content_generator()
+        g1 = get_content_generator(site_config=SiteConfig())
+        g2 = get_content_generator(site_config=SiteConfig())
         assert g1 is g2
         mod._generator = None
 
@@ -1133,49 +1141,44 @@ class TestResolveWriterModels:
 
     @pytest.mark.asyncio
     async def test_falls_through_to_pipeline_writer_model_when_tier_unset(self):
-        # Phase-1 DI shim (#272): the generator now binds its SiteConfig at
-        # construction time, so the module-global patch must be in place
-        # *before* _make_generator() so the instance captures the mock.
+        # #272 Phase-2c: the generator binds its SiteConfig at construction
+        # time (required ctor kwarg), so inject the mock directly instead
+        # of patching a (now-removed) module global.
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d="": {
+            "pipeline_writer_model": "legacy-writer",
+            "pipeline_fallback_model": "legacy-fallback",
+        }.get(k, _d)
         with patch(
             "services.llm_providers.dispatcher.resolve_tier_model",
             side_effect=RuntimeError("no tier mapping"),
-        ), patch(
-            "services.ai_content_generator.site_config",
-        ) as sc:
-            sc.get.side_effect = lambda k, _d="": {
-                "pipeline_writer_model": "legacy-writer",
-                "pipeline_fallback_model": "legacy-fallback",
-            }.get(k, _d)
-            gen = _make_generator()
+        ):
+            gen = _make_generator(site_config=sc)
             ordered = await gen._resolve_writer_models(None, pool=object())
         assert ordered == ["legacy-writer", "legacy-fallback"]
 
     @pytest.mark.asyncio
     async def test_no_pool_skips_tier_lookup(self):
-        # Patch the module global before construction so the DI-bound
-        # instance (#272) reads the mock via self._site_config.
-        with patch(
-            "services.ai_content_generator.site_config",
-        ) as sc:
-            sc.get.side_effect = lambda k, _d="": (
-                "legacy" if k == "pipeline_writer_model" else _d
-            )
-            gen = _make_generator()
-            ordered = await gen._resolve_writer_models(None, pool=None)
+        # Inject the mock SiteConfig directly (#272 Phase-2c).
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d="": (
+            "legacy" if k == "pipeline_writer_model" else _d
+        )
+        gen = _make_generator(site_config=sc)
+        ordered = await gen._resolve_writer_models(None, pool=None)
         assert ordered == ["legacy"]
 
     @pytest.mark.asyncio
     async def test_duplicates_dropped(self):
-        gen = _make_generator()
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d="": "duplicate" if k in (
+            "pipeline_writer_model", "pipeline_fallback_model",
+        ) else _d
+        gen = _make_generator(site_config=sc)
         with patch(
             "services.llm_providers.dispatcher.resolve_tier_model",
             return_value="duplicate",
-        ), patch(
-            "services.ai_content_generator.site_config",
-        ) as sc:
-            sc.get.side_effect = lambda k, _d="": "duplicate" if k in (
-                "pipeline_writer_model", "pipeline_fallback_model",
-            ) else _d
+        ):
             ordered = await gen._resolve_writer_models("duplicate", pool=object())
         assert ordered == ["duplicate"]
 

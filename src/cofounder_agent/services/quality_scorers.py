@@ -15,17 +15,12 @@ from typing import Any
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
+# shim were removed. ``qa_cfg`` + every ``score_*`` function now require an
+# explicit ``site_config=`` kwarg; the sole production consumer
+# (``UnifiedQualityService``) threads its own ``self._site_config`` (or the
+# still-wired ``quality_service`` module global). This module is no longer
+# in ``di_wiring.WIRED_MODULES``.
 
 
 logger = get_logger(__name__)
@@ -35,20 +30,17 @@ logger = get_logger(__name__)
 # Config loader
 # ---------------------------------------------------------------------------
 
-def qa_cfg(*, site_config: SiteConfig | None = None) -> dict:
+def qa_cfg(*, site_config: SiteConfig) -> dict:
     """Load all QA pipeline thresholds from DB via site_config.
 
     Every threshold in the QA pipeline is tunable via app_settings
     (key prefix: qa_). Returns a dict of all values with sensible defaults.
     Change any value with a simple SQL UPDATE on app_settings.
 
-    Phase-1 DI shim (#272): accepts an optional injected ``site_config``.
-    When omitted (the back-compat path), it falls back to the module-level
-    ``site_config`` global wired by ``set_site_config()``. The self-module
-    import dodges the local-parameter name shadowing the module global.
+    ``site_config`` is REQUIRED (#272 Phase-2c) — callers thread the
+    run-bound :class:`SiteConfig`.
     """
-    import services.quality_scorers as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
     return {
         # --- Overall pipeline ---
         "pass_threshold": _sc.get_float("qa_pass_threshold", 70.0),
@@ -110,11 +102,11 @@ def score_clarity(
     word_count: int,
     cfg: dict | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> float:
     """Score clarity based on sentence structure and word count.
     Thresholds tunable via qa_clarity_* app_settings keys.
-    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``."""
     cfg = cfg or qa_cfg(site_config=site_config)
     if word_count == 0 or sentence_count == 0:
         return 5.0
@@ -135,17 +127,14 @@ def score_accuracy(
     context: dict[str, Any],
     cfg: dict | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> float:
     """Score accuracy based on citation patterns and factual anchors.
     Thresholds tunable via qa_accuracy_* app_settings keys.
 
-    Phase-1 DI shim (#272): optional injected ``site_config`` threads down
-    to ``qa_cfg`` and the inline ``site_domain`` / ``trusted_source_domains``
-    reads. When omitted, falls back to the module-level global via a
-    self-module import (dodges the local-param name shadow)."""
-    import services.quality_scorers as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``
+    and the inline ``site_domain`` / ``trusted_source_domains`` reads."""
+    _sc = site_config
     cfg = cfg or qa_cfg(site_config=_sc)
     score = cfg["accuracy_baseline"]
     content_lower = content.lower()
@@ -240,11 +229,11 @@ def score_completeness(
     context: dict[str, Any],
     cfg: dict | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> float:
     """Score completeness based on depth signals beyond raw word count.
     Thresholds tunable via qa_completeness_* app_settings keys.
-    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``."""
     cfg = cfg or qa_cfg(site_config=site_config)
     word_count = len(content.split())
     score = 0.0
@@ -291,11 +280,11 @@ def score_relevance(
     context: dict[str, Any],
     cfg: dict | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> float:
     """Score relevance using topic-word family matching to resist keyword stuffing.
     Thresholds tunable via qa_relevance_* app_settings keys.
-    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``."""
     cfg = cfg or qa_cfg(site_config=site_config)
     topic = context.get("topic", "") or context.get("primary_keyword", "")
     if not topic:
@@ -336,7 +325,7 @@ def score_seo(
     context: dict[str, Any],
     cfg: dict | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> float:
     """Score SEO quality. Baseline tunable via qa_seo_baseline.
 
@@ -348,7 +337,7 @@ def score_seo(
     - Primary keywords missing (-1.0, dragging an otherwise-fine post
       below the passing threshold)
 
-    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``.
+    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``.
     """
     cfg = cfg or qa_cfg(site_config=site_config)
     score = cfg["seo_baseline"]
@@ -414,10 +403,10 @@ def score_engagement(
     content: str,
     cfg: dict | None = None,
     *,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> float:
     """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline.
-    Phase-1 DI shim (#272): optional ``site_config`` threads to ``qa_cfg``."""
+    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``."""
     cfg = cfg or qa_cfg(site_config=site_config)
     score = cfg["engagement_baseline"]
 

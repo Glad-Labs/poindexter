@@ -69,7 +69,10 @@ class QualityEvaluationStage:
         # Orchestrator-level constructor — cheap, each invocation gets a
         # fresh instance (matches legacy behavior). Reusing would be a
         # future optimization but not part of this migration.
-        quality_service = UnifiedQualityService(database_service=database_service)
+        quality_service = UnifiedQualityService(
+            database_service=database_service,
+            site_config=context.get("site_config"),
+        )
 
         quality_result = await quality_service.evaluate(
             content=content_text,

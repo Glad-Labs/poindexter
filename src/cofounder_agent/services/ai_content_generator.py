@@ -43,35 +43,14 @@ from services.logger_config import get_logger
 from .prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
-
-
-def _resolve_module_site_config(sc: SiteConfig | None) -> SiteConfig:
-    """Phase-1 DI shim resolver (Glad-Labs/glad-labs-stack#272).
-
-    Returns the explicitly-passed ``SiteConfig`` when one is provided,
-    otherwise falls back to the lifespan-bound module global. The global
-    is read via ``import services.ai_content_generator as _mod`` rather
-    than the bare ``site_config`` name so a local parameter named
-    ``site_config`` can never shadow the module-global lookup. Lets new
-    callers thread their own instance while every existing caller keeps
-    working untouched (Phase-2 will remove the global fallback).
-    """
-    if sc is not None:
-        return sc
-    import services.ai_content_generator as _mod
-
-    return _mod.site_config
+# Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
+# shim + ``_resolve_module_site_config`` helper were removed.
+# ``AIContentGenerator.__init__`` requires a ``site_config=`` kwarg; the
+# free functions ``generate_with_context`` + ``_resolve_rag_writer_model``
+# require a ``site_config=`` kwarg too. Callers thread the run-bound
+# instance (stages → ``context.get("site_config")``; the
+# ``two_pass_writer`` atom → its run-bound SiteConfig). This module is no
+# longer in ``di_wiring.WIRED_MODULES``.
 
 
 logger = get_logger(__name__)
@@ -99,22 +78,20 @@ class AIContentGenerator:
     def __init__(
         self,
         quality_threshold: float = 5.0,
-        site_config: SiteConfig | None = None,
+        *,
+        site_config: SiteConfig,
     ):
         """Initialize content generator
 
         Args:
             quality_threshold: Minimum quality score (0-10) for content acceptance
-            site_config: Optional DI seam (Glad-Labs/glad-labs-stack#272).
-                When ``None`` (the default), the instance binds the
-                lifespan-wired module global, so existing callers are
-                unaffected. New callers may pass their own instance.
+            site_config: REQUIRED DI seam (#272 Phase-2c). Callers thread
+                the run-bound instance (the ``generate_content`` stage via
+                ``get_content_generator(site_config=...)``).
         """
         self.quality_threshold = quality_threshold
-        # Phase-1 DI shim: bind the injected SiteConfig or fall back to the
-        # module global. Every instance-method read goes through
-        # ``self._site_config`` from here on.
-        self._site_config = _resolve_module_site_config(site_config)
+        # Every instance-method read goes through ``self._site_config``.
+        self._site_config = site_config
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
@@ -1240,18 +1217,24 @@ Take action today—the insights you gain will compound over time.
 _generator: AIContentGenerator | None = None
 
 
-def get_content_generator() -> AIContentGenerator:
-    """Get or create global content generator"""
+def get_content_generator(*, site_config: SiteConfig) -> AIContentGenerator:
+    """Get or create the global content generator.
+
+    ``site_config`` is REQUIRED (#272 Phase-2c). The cached instance
+    binds the first-supplied run-bound SiteConfig — which is the single
+    shared lifespan instance (``.reload()`` mutates it in place), so the
+    cache stays correct across reloads.
+    """
     global _generator
     if _generator is None:
-        _generator = AIContentGenerator()
+        _generator = AIContentGenerator(site_config=site_config)
     return _generator
 
 
 async def test_generation():
     """Test content generation"""
     logger = get_logger(__name__)
-    generator = get_content_generator()
+    generator = AIContentGenerator(site_config=SiteConfig())
 
     logger.info("Testing content generation...")
     logger.debug("Ollama available: %s", generator.ollama_available)
@@ -1284,7 +1267,7 @@ async def test_generation():
 
 
 async def _resolve_rag_writer_model(
-    *, site_config: SiteConfig | None = None,
+    *, site_config: SiteConfig,
 ) -> str:
     """Resolve writer model for the RAG ``generate_with_*`` helpers.
 
@@ -1310,7 +1293,7 @@ async def _resolve_rag_writer_model(
     from services.integrations.operator_notify import notify_operator
     from services.llm_providers.dispatcher import resolve_tier_model
 
-    _sc = _resolve_module_site_config(site_config)
+    _sc = site_config
     pool = getattr(_sc, "_pool", None)
     if pool is not None:
         try:
@@ -1350,7 +1333,7 @@ async def _resolve_rag_writer_model(
 async def generate_with_context(
     *, topic: str, angle: str, snippets: list[dict],
     extra_instructions: str | None = None,
-    site_config: SiteConfig | None = None,
+    site_config: SiteConfig,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1360,10 +1343,13 @@ async def generate_with_context(
     via the cost-tier API (Lane B sweep) — operators tune
     ``app_settings.cost_tier.standard.model`` or the legacy
     ``pipeline_writer_model`` per-call-site backstop.
+
+    ``site_config`` is REQUIRED (#272 Phase-2c) — the ``two_pass_writer``
+    atom threads its run-bound instance.
     """
     from services.topic_ranking import _ollama_chat_json
 
-    _sc = _resolve_module_site_config(site_config)
+    _sc = site_config
     snippet_max_chars = _sc.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
@@ -1381,8 +1367,8 @@ async def generate_with_context(
         snippet_block=snippet_block,
     )
     # #272 Phase-2b: topic_ranking._ollama_chat_json no longer carries a
-    # lifespan-bound module global — pass this module's wired site_config.
-    return await _ollama_chat_json(prompt, model=model, site_config=site_config)
+    # lifespan-bound module global — pass the run-bound site_config.
+    return await _ollama_chat_json(prompt, model=model, site_config=_sc)
 
 
 if __name__ == "__main__":

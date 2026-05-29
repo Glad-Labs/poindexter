@@ -143,8 +143,11 @@ class TestContentGeneration:
     async def test_generate_blog_post_with_ollama(self):
         """AIContentGenerator.generate_blog_post produces non-empty content via Ollama."""
         from services.ai_content_generator import AIContentGenerator
+        from services.site_config import SiteConfig
 
-        gen = AIContentGenerator(quality_threshold=2.0)  # Low threshold for speed
+        gen = AIContentGenerator(
+            quality_threshold=2.0, site_config=SiteConfig(),
+        )  # Low threshold for speed
         content, model_used, metrics = await gen.generate_blog_post(
             topic="benefits of unit testing",
             style="technical",

@@ -63,7 +63,7 @@ class GenerateSeoMetadataStage:
             from services.site_config import SiteConfig
             site_config = SiteConfig()
         seo_generator = get_seo_content_generator(
-            get_content_generator(), site_config=site_config
+            get_content_generator(site_config=site_config), site_config=site_config
         )
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic, content=content_text, topic=topic,

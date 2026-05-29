@@ -183,8 +183,8 @@ class TestAIContentGeneratorResolveRAGModel:
         with patch(
             "services.llm_providers.dispatcher.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
-        ), patch("services.ai_content_generator.site_config", sc):
-            model = await _resolve_rag_writer_model()
+        ):
+            model = await _resolve_rag_writer_model(site_config=sc)
         # Bare model name (ollama/ stripped) per provider contract.
         assert model == "gemma3:27b"
 
@@ -201,8 +201,8 @@ class TestAIContentGeneratorResolveRAGModel:
             AsyncMock(side_effect=RuntimeError("no model configured")),
         ), patch(
             "services.integrations.operator_notify.notify_operator", notify,
-        ), patch("services.ai_content_generator.site_config", sc):
-            model = await _resolve_rag_writer_model()
+        ):
+            model = await _resolve_rag_writer_model(site_config=sc)
         assert model == "glm-4.7-5090:latest"
         assert notify.await_count == 1
 
@@ -219,9 +219,9 @@ class TestAIContentGeneratorResolveRAGModel:
             AsyncMock(side_effect=RuntimeError("no model configured")),
         ), patch(
             "services.integrations.operator_notify.notify_operator", notify,
-        ), patch("services.ai_content_generator.site_config", sc):
+        ):
             with pytest.raises(RuntimeError):
-                await _resolve_rag_writer_model()
+                await _resolve_rag_writer_model(site_config=sc)
         assert notify.await_count == 1
         assert notify.await_args.kwargs.get("critical") is True
 

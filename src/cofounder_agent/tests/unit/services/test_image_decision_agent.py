@@ -173,7 +173,10 @@ class TestPlanImagesShortCircuits:
     async def test_no_sections_returns_empty(self):
         # Content with no h2/h3 headings AND no bold pseudo-headings
         # short-circuits — nothing to anchor images to.
-        result = await plan_images("Just a paragraph with no headings.", "topic")
+        result = await plan_images(
+            "Just a paragraph with no headings.", "topic",
+            site_config=_patched_site_config(),
+        )
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
         assert result.featured_image is None
@@ -200,15 +203,15 @@ class TestPlanImagesShortCircuits:
         # Force the downstream HTTP path to fail loudly — if we get past
         # the short-circuit, the test wants to see the agent try to call
         # Ollama (and fail). Pretty proof the short-circuit didn't fire.
-        with patch(
-            "services.image_decision_agent.site_config", _patched_site_config(),
-        ), patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.get = AsyncMock(side_effect=RuntimeError("ollama-not-reachable"))
             mock_client_cls.return_value.__aenter__.return_value = mock_client
             mock_client_cls.return_value.__aexit__.return_value = None
 
-            result = await plan_images(content, "the topic")
+            result = await plan_images(
+                content, "the topic", site_config=_patched_site_config(),
+            )
 
         # Empty result is fine — the assertion that matters is the
         # agent attempted to reach Ollama (proof the short-circuit
@@ -232,7 +235,9 @@ class TestPlanImagesShortCircuits:
         # Same no-headings expectation as the original short-circuit test.
         # If this test fails by NOT short-circuiting, our regex is too
         # permissive and would inject images mid-paragraph.
-        result = await plan_images(content, "topic")
+        result = await plan_images(
+            content, "topic", site_config=_patched_site_config(),
+        )
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
         assert result.featured_image is None
@@ -271,9 +276,8 @@ class TestPlanImagesHappyPath:
         )
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Test Topic", category="technology")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Test Topic", category="technology", site_config=mock_site)
 
         assert result.featured_image is not None
         assert result.featured_image.source == "sdxl"
@@ -300,9 +304,8 @@ class TestPlanImagesHappyPath:
         )
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Test", max_images=3)
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Test", max_images=3, site_config=mock_site)
 
         assert len(result.images) == 3
 
@@ -323,9 +326,8 @@ class TestPlanImagesThinkingModel:
         )
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is not None
         assert result.featured_image.style == "dramatic"
@@ -343,9 +345,8 @@ class TestPlanImagesThinkingModel:
         )
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is not None
         assert result.featured_image.style == "editorial"
@@ -361,9 +362,8 @@ class TestPlanImagesErrorPaths:
         client.__aexit__ = AsyncMock(return_value=False)
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         # Graceful fallback — empty result, no exception raised
         assert isinstance(result, ImagePlanResult)
@@ -377,9 +377,8 @@ class TestPlanImagesErrorPaths:
         )
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
@@ -404,9 +403,8 @@ class TestPlanImagesErrorPaths:
         mock_site = _patched_site_config()
         # Patch asyncio.sleep so we don't actually wait 3s
         with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site), \
              patch("asyncio.sleep", new=AsyncMock()):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is not None
         assert client.post.await_count == 2
@@ -419,9 +417,8 @@ class TestPlanImagesErrorPaths:
         )
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is None
         assert result.images == []
@@ -456,9 +453,8 @@ class TestPlanImagesCostTierResolution:
         # Wire a fake pool that resolves cost_tier.budget.model first.
         mock_site._pool = _FakePool("ollama/resolved-tier-model")
 
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         # The /api/generate body received the cost-tier-resolved model
         # (with the ollama/ prefix stripped to match provider expectations).
@@ -483,9 +479,8 @@ class TestPlanImagesCostTierResolution:
         mock_site = _patched_site_config(model_role="ollama/per-site-fallback")
         mock_site._pool = _FakePool(None)  # tier mapping missing
 
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("services.image_decision_agent.site_config", mock_site):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         post_call = client.post.await_args_list[0]
         body = post_call.kwargs.get("json") or post_call.args[1]
@@ -499,12 +494,11 @@ class TestPlanImagesCostTierResolution:
         mock_site._pool = _FakePool(None)
 
         notify = AsyncMock()
-        with patch("services.image_decision_agent.site_config", mock_site), \
-             patch(
-                 "services.integrations.operator_notify.notify_operator",
-                 new=notify,
-             ):
-            result = await plan_images(SAMPLE_CONTENT, "Topic")
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=notify,
+        ):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert isinstance(result, ImagePlanResult)
         assert result.images == []

@@ -8,6 +8,7 @@ No DB or LLM calls — all functions are stateless heuristics.
 
 import pytest
 
+from services.site_config import SiteConfig
 from services.quality_scorers import (
     check_keywords,
     count_syllables,
@@ -48,6 +49,12 @@ _CFG = {
     "engagement_baseline": 6.0,
 }
 
+# #272 Phase-2c: site_config is now a REQUIRED kwarg on qa_cfg + every
+# score_* function. These tests supply ``cfg=_CFG`` so qa_cfg is never
+# actually reached, but the kwarg must still be passed to satisfy the
+# signature. A bare empty SiteConfig is fine here.
+_SC = SiteConfig()
+
 
 # ---------------------------------------------------------------------------
 # score_clarity
@@ -58,30 +65,30 @@ class TestScoreClarity:
     def test_ideal_sentence_length(self):
         # 17 words per sentence (ideal range 15-20)
         content = "word " * 170  # 170 words
-        result = score_clarity(content, sentence_count=10, word_count=170, cfg=_CFG)
+        result = score_clarity(content, sentence_count=10, word_count=170, cfg=_CFG, site_config=_SC)
         assert result == 9.0
 
     def test_good_sentence_length(self):
         # 12 words per sentence (good range 10-25)
-        result = score_clarity("text", sentence_count=10, word_count=120, cfg=_CFG)
+        result = score_clarity("text", sentence_count=10, word_count=120, cfg=_CFG, site_config=_SC)
         assert result == 8.0
 
     def test_ok_sentence_length(self):
         # 9 words per sentence (ok range 8-30)
-        result = score_clarity("text", sentence_count=10, word_count=90, cfg=_CFG)
+        result = score_clarity("text", sentence_count=10, word_count=90, cfg=_CFG, site_config=_SC)
         assert result == 7.0
 
     def test_poor_sentence_length(self):
         # 5 words per sentence (too short)
-        result = score_clarity("text", sentence_count=10, word_count=50, cfg=_CFG)
+        result = score_clarity("text", sentence_count=10, word_count=50, cfg=_CFG, site_config=_SC)
         assert result == 5.0
 
     def test_zero_words(self):
-        result = score_clarity("", sentence_count=0, word_count=0, cfg=_CFG)
+        result = score_clarity("", sentence_count=0, word_count=0, cfg=_CFG, site_config=_SC)
         assert result == 5.0
 
     def test_returns_float(self):
-        result = score_clarity("text", sentence_count=5, word_count=100, cfg=_CFG)
+        result = score_clarity("text", sentence_count=5, word_count=100, cfg=_CFG, site_config=_SC)
         assert isinstance(result, float)
 
 
@@ -92,35 +99,35 @@ class TestScoreClarity:
 @pytest.mark.unit
 class TestScoreAccuracy:
     def test_baseline_score(self):
-        result = score_accuracy("Simple text with no links or citations.", {}, cfg=_CFG)
+        result = score_accuracy("Simple text with no links or citations.", {}, cfg=_CFG, site_config=_SC)
         assert result == pytest.approx(7.0, abs=0.5)
 
     def test_reputable_link_bonus(self):
         content = "See https://github.com/example/repo for the code."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result > 7.0
 
     def test_first_person_penalty(self):
         content = "I built this application. We created a new framework. I developed the API."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result < 7.0
 
     def test_meta_commentary_penalty(self):
         content = "In this article we will explore how Docker works. This post discusses containers."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result < 7.0
 
     def test_score_capped_at_10(self):
         # Lots of reputable links and citations
         links = " ".join(f"https://github.com/repo{i}" for i in range(20))
         content = f"According to research, {links}"
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result <= 10.0
 
     def test_score_floored_at_0(self):
         # Heavy penalties
         claims = " ".join("I built something." for _ in range(10))
-        result = score_accuracy(claims, {}, cfg=_CFG)
+        result = score_accuracy(claims, {}, cfg=_CFG, site_config=_SC)
         assert result >= 0.0
 
 
@@ -133,28 +140,28 @@ class TestScoreCompleteness:
     def test_long_content_scores_higher(self):
         long_content = "word " * 2000
         short_content = "word " * 100
-        long_score = score_completeness(long_content, {}, cfg=_CFG)
-        short_score = score_completeness(short_content, {}, cfg=_CFG)
+        long_score = score_completeness(long_content, {}, cfg=_CFG, site_config=_SC)
+        short_score = score_completeness(short_content, {}, cfg=_CFG, site_config=_SC)
         assert long_score > short_score
 
     def test_headings_add_bonus(self):
         content = "## Heading 1\nParagraph.\n\n## Heading 2\nMore text.\n\n## Heading 3\nEven more."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         # Headings should contribute positively
         assert result > _CFG["completeness_word_min"]
 
     def test_score_capped_at_10(self):
         content = ("## Section\n\n" + "word " * 500 + "\n\n") * 10
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         assert result <= 10.0
 
     def test_truncated_content_penalized(self):
         # Content that ends mid-sentence
         content = "word " * 200 + "This sentence is not"
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         # compare with completed version
         content_complete = "word " * 200 + "This sentence is complete."
-        result_complete = score_completeness(content_complete, {}, cfg=_CFG)
+        result_complete = score_completeness(content_complete, {}, cfg=_CFG, site_config=_SC)
         assert result < result_complete or result == result_complete  # truncation detected
 
 
@@ -166,22 +173,22 @@ class TestScoreCompleteness:
 class TestScoreRelevance:
     def test_high_relevance(self):
         content = "Docker containers provide isolated environments. Docker containers are used for deployment and orchestration."
-        result = score_relevance(content, {"topic": "Docker containers deployment"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "Docker containers deployment"}, cfg=_CFG, site_config=_SC)
         assert result >= 5.0  # Topic words need 4+ chars; coverage depends on matching
 
     def test_no_topic_returns_default(self):
-        result = score_relevance("some content", {}, cfg=_CFG)
+        result = score_relevance("some content", {}, cfg=_CFG, site_config=_SC)
         assert result == _CFG["relevance_no_topic_default"]
 
     def test_keyword_stuffing_penalized(self):
         content = " ".join(["Docker"] * 50 + ["word"] * 50)
-        result = score_relevance(content, {"topic": "Docker"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "Docker"}, cfg=_CFG, site_config=_SC)
         # High density should cap the score
         assert result <= 7.0
 
     def test_no_relevance(self):
         content = "Cooking recipes and gardening tips for beginners."
-        result = score_relevance(content, {"topic": "Kubernetes deployment"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "Kubernetes deployment"}, cfg=_CFG, site_config=_SC)
         assert result < 6.0
 
 
@@ -192,15 +199,15 @@ class TestScoreRelevance:
 @pytest.mark.unit
 class TestScoreSeo:
     def test_baseline(self):
-        result = score_seo("Plain text.", {}, cfg=_CFG)
+        result = score_seo("Plain text.", {}, cfg=_CFG, site_config=_SC)
         assert result == _CFG["seo_baseline"]
 
     def test_headers_bonus(self):
-        result = score_seo("## Heading\nSome content.", {}, cfg=_CFG)
+        result = score_seo("## Heading\nSome content.", {}, cfg=_CFG, site_config=_SC)
         assert result > _CFG["seo_baseline"]
 
     def test_capped_at_10(self):
-        result = score_seo("## H\n\nParagraph\n\nMore", {"topic": "## H"}, cfg=_CFG)
+        result = score_seo("## H\n\nParagraph\n\nMore", {"topic": "## H"}, cfg=_CFG, site_config=_SC)
         assert result <= 10.0
 
 
@@ -236,27 +243,27 @@ class TestScoreReadability:
 @pytest.mark.unit
 class TestScoreEngagement:
     def test_baseline(self):
-        result = score_engagement("Plain text.", cfg=_CFG)
+        result = score_engagement("Plain text.", cfg=_CFG, site_config=_SC)
         assert result == _CFG["engagement_baseline"]
 
     def test_questions_boost(self):
         content = "What is Docker? Why use containers? How does it work?"
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_lists_boost(self):
         content = "Features:\n- Fast\n- Reliable\n- Secure"
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_code_blocks_boost(self):
         content = "Example:\n```python\nprint('hello')\n```"
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_capped_at_10(self):
         content = "What? Why? How?\n\n- A\n- B\n\n```code```\n\n**bold**\n\nP1\n\nP2\n\nP3\n\nP4"
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result <= 10.0
 
 
@@ -419,7 +426,7 @@ class TestGenerateSuggestions:
 class TestQaCfg:
     def test_returns_dict_with_expected_keys(self):
         from services.quality_scorers import qa_cfg
-        cfg = qa_cfg()
+        cfg = qa_cfg(site_config=_SC)
         assert isinstance(cfg, dict)
         # Spot check keys
         for key in [
@@ -433,13 +440,13 @@ class TestQaCfg:
 
     def test_threshold_values_are_numeric(self):
         from services.quality_scorers import qa_cfg
-        cfg = qa_cfg()
+        cfg = qa_cfg(site_config=_SC)
         for k, v in cfg.items():
             assert isinstance(v, (int, float)), f"{k} should be numeric, got {type(v).__name__}"
 
     def test_clarity_ranges_have_sensible_ordering(self):
         from services.quality_scorers import qa_cfg
-        cfg = qa_cfg()
+        cfg = qa_cfg(site_config=_SC)
         assert cfg["clarity_ideal_min"] < cfg["clarity_ideal_max"]
         assert cfg["clarity_good_min"] <= cfg["clarity_ideal_min"]
         assert cfg["clarity_good_max"] >= cfg["clarity_ideal_max"]
@@ -454,42 +461,42 @@ class TestQaCfg:
 class TestScoreAccuracyDetailed:
     def test_bad_link_penalty(self):
         content = "Visit https://random-spam-site.example for the worst content."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result < 7.0
 
     def test_citation_bracket_pattern(self):
         content = "As shown by prior work [1], [2], and [3] on this topic."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result > 7.0
 
     def test_author_year_citation(self):
         content = "This was demonstrated (Smith 2023) and reproduced (Jones 2024)."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result > 7.0
 
     def test_according_to_phrase(self):
         content = "According to recent research, the technique works well."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result > 7.0
 
     def test_named_quote_bonus(self):
         content = '"This approach significantly improves performance," said the researcher.'
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result >= 7.0
 
     def test_first_person_singular_penalized(self):
         content = "I shipped this last month. I built the entire system myself."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result < 7.0
 
     def test_first_person_plural_penalized(self):
         content = "We launched the platform yesterday. We built it from scratch."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result < 7.0
 
     def test_meta_commentary_lets_us_dive_in(self):
         content = "Let's dive into how containers work in production."
-        result = score_accuracy(content, {}, cfg=_CFG)
+        result = score_accuracy(content, {}, cfg=_CFG, site_config=_SC)
         assert result < 7.0
 
 
@@ -504,7 +511,7 @@ class TestScoreCompletenessDetailed:
         intro = ("word " * 35).strip() + "."  # >= 30 words, terminal punctuation
         rest = "\n\nMore content."
         content = intro + rest
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         # Score includes the intro bonus
         assert result > _CFG["completeness_word_min"]
 
@@ -513,45 +520,45 @@ class TestScoreCompletenessDetailed:
         body = "\n\n" + ("word " * 50).strip() + "."
         conclusion = "\n\n" + ("word " * 25).strip() + "."  # >= 20 words, ends with period
         content = intro + body + conclusion
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         assert result > _CFG["completeness_word_min"]
 
     def test_list_bonus(self):
         content = "Intro paragraph here.\n\n- Item one\n- Item two\n- Item three."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         # Lists contribute to score
         assert result > _CFG["completeness_word_min"]
 
     def test_word_count_500_tier(self):
         content = ("word " * 500).strip() + "."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         # Should hit the 500 tier baseline (3.5)
         assert result >= _CFG["completeness_word_500"] - 0.1
 
     def test_word_count_1000_tier(self):
         content = ("word " * 1000).strip() + "."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         assert result >= _CFG["completeness_word_1000"] - 0.1
 
     def test_word_count_1500_tier(self):
         content = ("word " * 1500).strip() + "."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         assert result >= _CFG["completeness_word_1500"] - 0.1
 
     def test_word_count_2000_tier(self):
         content = ("word " * 2000).strip() + "."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         assert result >= _CFG["completeness_word_2000"] - 0.1
 
     def test_min_tier_for_short_content(self):
         content = ("word " * 50).strip() + "."
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         assert result >= _CFG["completeness_word_min"] - 0.1
 
     def test_five_paragraphs_bonus(self):
         paras = ["paragraph one with words."] * 5
         content = "\n\n".join(paras)
-        result = score_completeness(content, {}, cfg=_CFG)
+        result = score_completeness(content, {}, cfg=_CFG, site_config=_SC)
         # Should be more than just min word tier
         assert result > _CFG["completeness_word_min"]
 
@@ -566,26 +573,26 @@ class TestScoreRelevanceDetailed:
     def test_med_coverage_score(self):
         # Topic has 2 words, content matches 1 → 50% coverage → med_coverage tier
         content = "Docker provides containerization. " * 5
-        result = score_relevance(content, {"topic": "Docker Kubernetes"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "Docker Kubernetes"}, cfg=_CFG, site_config=_SC)
         assert result == _CFG["relevance_med_coverage"]
 
     def test_low_coverage_score(self):
         # 25-50% coverage
         content = "Docker is one choice among many. " * 5
-        result = score_relevance(content, {"topic": "Docker Kubernetes Helm Argo"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "Docker Kubernetes Helm Argo"}, cfg=_CFG, site_config=_SC)
         # 1 of 4 = 25% coverage
         assert result == _CFG["relevance_low_coverage"]
 
     def test_none_coverage_score(self):
         # < 25% coverage
         content = "Cooking recipes for dinner."
-        result = score_relevance(content, {"topic": "Docker Kubernetes Helm Argo"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "Docker Kubernetes Helm Argo"}, cfg=_CFG, site_config=_SC)
         assert result == _CFG["relevance_none_coverage"]
 
     def test_soft_stuffing_caps_score(self):
         # Build content with high but not extreme density of an exact topic
         content = "kafka " * 20 + " ".join(["filler"] * 80)
-        result = score_relevance(content, {"topic": "kafka"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "kafka"}, cfg=_CFG, site_config=_SC)
         # Density between soft and hard threshold
         assert result <= 7.0
 
@@ -597,14 +604,14 @@ class TestScoreRelevanceDetailed:
             + ("filler content here for word count " * 30)
             + "Postgres covers many use cases."
         )
-        result = score_relevance(content, {"primary_keyword": "Postgres"}, cfg=_CFG)
+        result = score_relevance(content, {"primary_keyword": "Postgres"}, cfg=_CFG, site_config=_SC)
         # 1/1 topic words matched, density well below soft stuffing → high_coverage
         assert result == _CFG["relevance_high_coverage"]
 
     def test_topic_words_under_4_chars_filtered(self):
         # Words < 4 chars are filtered, so "AI" topic returns no_topic_default
         content = "AI is everywhere these days."
-        result = score_relevance(content, {"topic": "AI"}, cfg=_CFG)
+        result = score_relevance(content, {"topic": "AI"}, cfg=_CFG, site_config=_SC)
         assert result == _CFG["relevance_no_topic_default"]
 
 
@@ -617,26 +624,26 @@ class TestScoreRelevanceDetailed:
 class TestScoreSeoDetailed:
     def test_paragraph_separator_bonus(self):
         content = "Para 1.\n\nPara 2."
-        result = score_seo(content, {}, cfg=_CFG)
+        result = score_seo(content, {}, cfg=_CFG, site_config=_SC)
         assert result > _CFG["seo_baseline"]
 
     def test_topic_at_beginning_bonus(self):
         content = "Docker containers are awesome and very useful for deployment."
-        result = score_seo(content, {"topic": "Docker"}, cfg=_CFG)
+        result = score_seo(content, {"topic": "Docker"}, cfg=_CFG, site_config=_SC)
         assert result > _CFG["seo_baseline"]
 
     def test_topic_not_at_beginning_no_bonus(self):
         content = "Containers are awesome with Docker."
-        result_with = score_seo(content, {"topic": "Docker"}, cfg=_CFG)
-        result_without = score_seo(content, {}, cfg=_CFG)
+        result_with = score_seo(content, {"topic": "Docker"}, cfg=_CFG, site_config=_SC)
+        result_without = score_seo(content, {}, cfg=_CFG, site_config=_SC)
         assert result_with == result_without
 
     def test_keywords_present_boosts_score(self):
         """Primary keyword in content should earn a +1.5 bonus over a run
         with no keywords context at all."""
         content = "Docker containers are fantastic for reproducible deploys."
-        with_kw = score_seo(content, {"keywords": ["Docker"]}, cfg=_CFG)
-        without_kw = score_seo(content, {}, cfg=_CFG)
+        with_kw = score_seo(content, {"keywords": ["Docker"]}, cfg=_CFG, site_config=_SC)
+        without_kw = score_seo(content, {}, cfg=_CFG, site_config=_SC)
         assert with_kw > without_kw
 
     def test_keywords_missing_penalizes_score(self):
@@ -644,13 +651,13 @@ class TestScoreSeoDetailed:
         the score by 1.0 — previously the pipeline computed this check and
         threw the result away."""
         content = "Containers are fantastic for reproducible deploys."
-        with_missing = score_seo(content, {"keywords": ["Docker"]}, cfg=_CFG)
-        without_kw = score_seo(content, {}, cfg=_CFG)
+        with_missing = score_seo(content, {"keywords": ["Docker"]}, cfg=_CFG, site_config=_SC)
+        without_kw = score_seo(content, {}, cfg=_CFG, site_config=_SC)
         assert with_missing < without_kw
 
     def test_keyword_penalty_floors_at_zero(self):
         """Score is clamped >= 0 even when penalties stack."""
-        result = score_seo("", {"keywords": ["Docker"]}, cfg=_CFG)
+        result = score_seo("", {"keywords": ["Docker"]}, cfg=_CFG, site_config=_SC)
         assert result >= 0.0
 
 
@@ -693,28 +700,28 @@ class TestScoreReadabilityTiers:
 class TestScoreEngagementDetailed:
     def test_bullet_dash_bonus(self):
         content = "- one\n- two\n- three"
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_bullet_asterisk_bonus(self):
         content = "* one\n* two"
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_single_question_smaller_bonus(self):
         content = "What is this?"
-        single_q = score_engagement(content, cfg=_CFG)
-        triple_q = score_engagement("What? Why? How?", cfg=_CFG)
+        single_q = score_engagement(content, cfg=_CFG, site_config=_SC)
+        triple_q = score_engagement("What? Why? How?", cfg=_CFG, site_config=_SC)
         assert triple_q >= single_q
 
     def test_bold_double_asterisk_bonus(self):
         content = "Plain. **bold text** here."
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_underscore_bold_bonus(self):
         content = "Plain. __also bold__ here."
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
     def test_paragraph_pacing_bonus(self):
@@ -725,7 +732,7 @@ class TestScoreEngagementDetailed:
             + ("Long " * 30) + "\n\n"
             + ("Very " * 50)
         )
-        result = score_engagement(content, cfg=_CFG)
+        result = score_engagement(content, cfg=_CFG, site_config=_SC)
         assert result > _CFG["engagement_baseline"]
 
 

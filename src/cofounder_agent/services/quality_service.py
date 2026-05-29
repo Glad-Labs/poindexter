@@ -176,13 +176,24 @@ class UnifiedQualityService:
 
         logger.info("UnifiedQualityService initialized")
 
-    @staticmethod
-    def _qa_cfg() -> dict:
+    def _resolve_site_config(self) -> SiteConfig:
+        """Resolve the SiteConfig to thread into ``quality_scorers`` calls.
+
+        Prefers the DI-injected ``self._site_config`` (set by ``main.py``
+        and the ``quality_evaluation`` stage). Falls back to the
+        still-wired ``quality_service`` module global for callers /
+        tests that construct ``UnifiedQualityService`` without a
+        SiteConfig (#272 Phase-2c: ``quality_scorers`` no longer carries
+        its own wired global, so the consumer supplies one).
+        """
+        return self._site_config if self._site_config is not None else site_config
+
+    def _qa_cfg(self) -> dict:
         """Load all QA pipeline thresholds from DB via site_config.
 
         Delegates to :func:`quality_scorers.qa_cfg`.
         """
-        return _qa_cfg_fn()
+        return _qa_cfg_fn(site_config=self._resolve_site_config())
 
     async def evaluate(
         self,
@@ -519,11 +530,16 @@ class UnifiedQualityService:
 
     def _score_clarity(self, content: str, sentence_count: int, word_count: int) -> float:
         """Score clarity. Delegates to quality_scorers."""
-        return _score_clarity_fn(content, sentence_count, word_count)
+        return _score_clarity_fn(
+            content, sentence_count, word_count,
+            site_config=self._resolve_site_config(),
+        )
 
     def _score_accuracy(self, content: str, context: dict[str, Any]) -> float:
         """Score accuracy. Delegates to quality_scorers."""
-        return _score_accuracy_fn(content, context)
+        return _score_accuracy_fn(
+            content, context, site_config=self._resolve_site_config(),
+        )
 
     @staticmethod
     def detect_truncation(content: str) -> bool:
@@ -532,15 +548,21 @@ class UnifiedQualityService:
 
     def _score_completeness(self, content: str, context: dict[str, Any]) -> float:
         """Score completeness. Delegates to quality_scorers."""
-        return _score_completeness_fn(content, context)
+        return _score_completeness_fn(
+            content, context, site_config=self._resolve_site_config(),
+        )
 
     def _score_relevance(self, content: str, context: dict[str, Any]) -> float:
         """Score relevance. Delegates to quality_scorers."""
-        return _score_relevance_fn(content, context)
+        return _score_relevance_fn(
+            content, context, site_config=self._resolve_site_config(),
+        )
 
     def _score_seo(self, content: str, context: dict[str, Any]) -> float:
         """Score SEO quality. Delegates to quality_scorers."""
-        return _score_seo_fn(content, context)
+        return _score_seo_fn(
+            content, context, site_config=self._resolve_site_config(),
+        )
 
     def _score_readability(self, content: str) -> float:
         """Score readability. Delegates to quality_scorers."""
@@ -826,7 +848,9 @@ class UnifiedQualityService:
 
     def _score_engagement(self, content: str) -> float:
         """Score engagement. Delegates to quality_scorers."""
-        return _score_engagement_fn(content)
+        return _score_engagement_fn(
+            content, site_config=self._resolve_site_config(),
+        )
 
     # ========================================================================
     # UTILITY METHODS

@@ -54,17 +54,11 @@ from services.template_runner import (
     make_stage_node,
 )
 
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# ``set_site_config()`` for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
+# Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
+# shim were removed. ``compose`` now requires an explicit ``site_config=``
+# kwarg; callers thread the run-bound instance (stages →
+# ``context.get("site_config")``). The module is no longer in
+# ``di_wiring.WIRED_MODULES``.
 
 logger = logging.getLogger(__name__)
 
@@ -187,10 +181,10 @@ class ArchitectResult:
 async def compose(
     intent: str,
     *,
+    site_config: SiteConfig,
     context: dict[str, Any] | None = None,
     max_attempts: int = 3,
     pool: Any = None,
-    site_config: SiteConfig | None = None,
 ) -> ArchitectResult:
     """Ask the local writer LLM to compose a graph for the given intent.
 
@@ -207,17 +201,11 @@ async def compose(
     OpenAI-compat per app_settings). When ``None``, the call falls
     back to direct httpx → local Ollama (tests / bootstrap only).
 
-    ``site_config`` is the Phase-1 DI shim (#272): callers may now pass a
-    :class:`SiteConfig` explicitly. When ``None`` (the historical default),
-    we fall back to the module-global ``site_config`` so existing callers
-    and test patches against the module attribute keep working unchanged.
+    ``site_config`` is REQUIRED (#272 Phase-2c): callers thread the
+    run-bound :class:`SiteConfig` (pipeline stages →
+    ``context.get("site_config")``).
     """
-    # Phase-1 back-compat shim (#272): prefer an explicitly-injected
-    # SiteConfig; otherwise read the module global via a self-import so
-    # ``set_site_config()`` rebinds and test monkeypatches of the module
-    # attribute are still observed at call time.
-    import services.pipeline_architect as _mod
-    _sc = site_config if site_config is not None else _mod.site_config
+    _sc = site_config
 
     catalog_text = to_catalog_text()
     if not catalog_text.strip():
