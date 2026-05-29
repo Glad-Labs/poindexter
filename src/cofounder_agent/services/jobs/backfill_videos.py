@@ -17,11 +17,121 @@ Config (``plugin.job.backfill_videos``):
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from plugins.job import JobResult
 
 logger = logging.getLogger(__name__)
+
+# External YouTube Data API v3 limits — NOT operator-tunable settings.
+# The adapter (services/publish_adapters/youtube.py) enforces the hard
+# caps; we build values that stay comfortably under them so the upload
+# never 400s mid-stream.
+#   - description ≤ 5000 chars (YouTube hard cap). We compose to ≤ 4800
+#     to leave headroom for the back-link line / trailing whitespace.
+#   - tags: ≤ 30 individual tags AND ≤ 500 chars when comma-joined.
+_YOUTUBE_DESCRIPTION_BUDGET = 4800
+_YOUTUBE_MAX_TAGS = 30
+_YOUTUBE_TAGS_JOINED_LIMIT = 500
+
+
+def _strip_markup(text: str) -> str:
+    """Strip HTML/markdown tags and collapse whitespace.
+
+    Mirrors the ``re.sub(r"<[^>]+>", "", ...)`` + whitespace-collapse
+    approach used for the SEO excerpt in
+    ``publish_service`` (~line 546) so the video description body reads
+    as plain text rather than leaking ``<img>`` / ``<a>`` markup.
+    """
+    if not text:
+        return ""
+    stripped = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def _parse_seo_keywords(seo_keywords: str) -> list[str]:
+    """Parse the comma-separated ``posts.seo_keywords`` column into tags.
+
+    Strips each keyword, drops empties, caps at 30 tags, and trims
+    trailing tags until the comma-joined string fits YouTube's combined
+    500-char tag limit. Returns ``[]`` when there are no usable keywords
+    (caller converts that to ``tags=None``).
+    """
+    tags = [k.strip() for k in (seo_keywords or "").split(",") if k.strip()]
+    tags = tags[:_YOUTUBE_MAX_TAGS]
+    # Drop trailing tags until the joined string is under the limit.
+    while tags and len(",".join(tags)) > _YOUTUBE_TAGS_JOINED_LIMIT:
+        tags.pop()
+    return tags
+
+
+def _build_youtube_description(
+    *,
+    seo_description: str,
+    body: str,
+    site_config: Any,
+    slug: str,
+) -> str:
+    """Compose the YouTube video description from SEO metadata + body.
+
+    Layout::
+
+        {seo_description}
+
+        Read the full post: {site_url}/posts/{slug}
+
+        {body_excerpt}
+
+    ``seo_description`` comes from ``posts.excerpt`` (empty string when
+    null). ``body_excerpt`` is the stripped content body, trimmed so the
+    TOTAL composed description stays ≤ 4800 chars. The "Read the full
+    post" line is omitted gracefully (logged at info) when ``site_url``
+    can't be resolved or ``slug`` is missing — never raises.
+    """
+    seo_description = (seo_description or "").strip()
+
+    # Resolve the canonical back-link. Missing site_url / slug → omit the
+    # line (the only deliberate graceful fallback here, per the #275
+    # design); log it so the operator knows why it's absent.
+    backlink = ""
+    site_url = ""
+    if site_config is not None:
+        try:
+            site_url = str(site_config.require("site_url") or "").rstrip("/")
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "[BACKFILL_VIDEOS] site_url unavailable — omitting "
+                "YouTube back-link: %s", exc,
+            )
+            site_url = ""
+    if site_url and slug:
+        backlink = f"Read the full post: {site_url}/posts/{slug}"
+    elif not slug:
+        logger.info(
+            "[BACKFILL_VIDEOS] slug missing — omitting YouTube back-link",
+        )
+
+    body_excerpt = _strip_markup(body)
+
+    # Compose with blank-line separators, skipping empty segments so a
+    # null seo_description doesn't leave a leading blank line.
+    header_parts = [p for p in (seo_description, backlink) if p]
+    header = "\n\n".join(header_parts)
+
+    if not header:
+        # No SEO desc and no back-link — description is just the body.
+        return body_excerpt[:_YOUTUBE_DESCRIPTION_BUDGET]
+
+    if not body_excerpt:
+        return header[:_YOUTUBE_DESCRIPTION_BUDGET]
+
+    # Reserve room for the header + the "\n\n" joining it to the body,
+    # then trim the body to fit the remaining budget.
+    remaining = _YOUTUBE_DESCRIPTION_BUDGET - len(header) - 2
+    if remaining <= 0:
+        return header[:_YOUTUBE_DESCRIPTION_BUDGET]
+    return f"{header}\n\n{body_excerpt[:remaining]}"
 
 
 class BackfillVideosJob:
@@ -61,9 +171,15 @@ class BackfillVideosJob:
             # called out in ``feedback_filter_on_seams_not_slugs`` —
             # slug-pattern exclusions in this query were the hack Matt
             # rejected 2026-05-19.
+            # ``excerpt`` carries the SEO meta description and
+            # ``seo_keywords`` is a comma-separated string column — both
+            # are threaded into the YouTube payload so videos publish
+            # with proper SEO metadata instead of a raw-body description
+            # and no tags (glad-labs-stack#275). ``slug`` builds the
+            # canonical back-link.
             posts = await cloud.fetch(
                 """
-                SELECT id::text, title, content
+                SELECT id::text, title, content, excerpt, seo_keywords, slug
                 FROM posts
                 WHERE status = 'published'
                   AND media_to_generate && ARRAY['video','video_long','video_short']::text[]
@@ -135,6 +251,9 @@ class BackfillVideosJob:
                         video_path=str(video_path),
                         title=post["title"],
                         content=post["content"] or "",
+                        seo_description=post["excerpt"] or "",
+                        seo_keywords=post["seo_keywords"] or "",
+                        slug=post["slug"] or "",
                     )
                 if generated >= max_per_cycle:
                     break
@@ -165,6 +284,9 @@ async def _dispatch_video_publishers(
     video_path: str,
     title: str,
     content: str,
+    seo_description: str = "",
+    seo_keywords: str = "",
+    slug: str = "",
 ) -> None:
     """Fire enabled video-platform adapters with the freshly-generated MP4.
 
@@ -175,6 +297,21 @@ async def _dispatch_video_publishers(
     operator sees attempt history on the adapter row.
 
     Safe to call even when no adapters are configured — returns silently.
+
+    **SEO payload (glad-labs-stack#275).** The YouTube payload is built
+    from the post's structured SEO fields rather than the raw blog body:
+
+    - ``description`` = ``{seo_description}`` (from ``posts.excerpt``) +
+      a canonical "Read the full post: {site_url}/posts/{slug}" back-link
+      + the markup-stripped body, composed to stay ≤ 4800 chars (under
+      YouTube's 5000 cap). The back-link line is omitted gracefully (and
+      logged) when ``site_url`` can't be resolved or ``slug`` is missing.
+    - ``tags`` = the parsed ``posts.seo_keywords`` (comma-separated),
+      stripped, capped at 30 tags and ≤ 500 joined chars; ``None`` when
+      there are no keywords.
+
+    ``seo_description`` / ``seo_keywords`` / ``slug`` are loaded from the
+    ``posts`` row by the caller and threaded through here.
     """
     if pool is None:
         logger.debug("[BACKFILL_VIDEOS] no pool — skipping platform dispatch")
@@ -260,10 +397,16 @@ async def _dispatch_video_publishers(
         )
         return
 
-    # Truncate content to a reasonable video-description length here so
-    # every adapter receives the same trimmed body. Adapter-specific
-    # caps (YouTube=5000) apply on top.
-    description = (content or "").strip()[:4000]
+    # Build the SEO-rich description + tags from the post's structured
+    # fields (glad-labs-stack#275). Both stay under YouTube's documented
+    # caps; the adapter re-clamps as a backstop.
+    description = _build_youtube_description(
+        seo_description=seo_description,
+        body=content,
+        site_config=site_config,
+        slug=slug,
+    )
+    tags = _parse_seo_keywords(seo_keywords)
 
     for row in rows:
         platform = row["platform"]
@@ -271,6 +414,8 @@ async def _dispatch_video_publishers(
             "media_path": video_path,
             "title": title,
             "description": description,
+            # Falsy tags → None; the handler treats None as "no tags".
+            "tags": tags or None,
             "post_id": post_id,
         }
         try:

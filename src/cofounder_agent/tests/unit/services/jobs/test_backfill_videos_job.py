@@ -12,7 +12,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.backfill_videos import BackfillVideosJob
+from services.jobs.backfill_videos import (
+    BackfillVideosJob,
+    _build_youtube_description,
+    _dispatch_video_publishers,
+    _parse_seo_keywords,
+)
+from services.site_config import SiteConfig
 
 
 def _sc(value: Any = "") -> MagicMock:
@@ -40,7 +46,14 @@ def _fake_asyncpg(rows: list[dict] | None = None):
 
 
 def _row(post_id: str = "abc123", title: str = "Hello") -> dict:
-    return {"id": post_id, "title": title, "content": "Body text"}
+    return {
+        "id": post_id,
+        "title": title,
+        "content": "Body text",
+        "excerpt": "An SEO meta description.",
+        "seo_keywords": "ai, automation",
+        "slug": f"{post_id}-slug",
+    }
 
 
 @pytest.mark.unit
@@ -189,3 +202,191 @@ class TestBackfillVideosJobRun:
         # First failed, second succeeded.
         assert result.changes_made == 1
         assert call_count == 2
+
+
+# --------------------------------------------------------------------------
+# YouTube SEO payload composition (glad-labs-stack#275)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestParseSeoKeywords:
+    def test_parses_comma_separated(self):
+        assert _parse_seo_keywords("ai, automation, gaming") == [
+            "ai", "automation", "gaming",
+        ]
+
+    def test_strips_and_drops_empties(self):
+        assert _parse_seo_keywords("  ai , , automation,  ") == [
+            "ai", "automation",
+        ]
+
+    def test_empty_string_returns_empty_list(self):
+        assert _parse_seo_keywords("") == []
+
+    def test_caps_at_30_tags(self):
+        many = ",".join(f"tag{i}" for i in range(50))
+        tags = _parse_seo_keywords(many)
+        assert len(tags) == 30
+
+    def test_caps_joined_length_at_500(self):
+        # 30 tags of 40 chars each → joined length far over 500; helper
+        # drops trailing tags until the joined string fits.
+        long_tags = ",".join("x" * 40 for _ in range(30))
+        tags = _parse_seo_keywords(long_tags)
+        assert len(",".join(tags)) <= 500
+        assert len(tags) < 30
+
+
+@pytest.mark.unit
+class TestBuildYouTubeDescription:
+    def _sc_with_url(self, url: str = "https://gladlabs.io") -> SiteConfig:
+        return SiteConfig(initial_config={"site_url": url})
+
+    def test_starts_with_seo_description_and_has_url_and_body(self):
+        desc = _build_youtube_description(
+            seo_description="Meta description here.",
+            body="<p>Hello <b>world</b></p>",
+            site_config=self._sc_with_url(),
+            slug="my-post",
+        )
+        assert desc.startswith("Meta description here.")
+        assert "Read the full post: https://gladlabs.io/posts/my-post" in desc
+        # markup stripped from the body
+        assert "Hello world" in desc
+        assert "<p>" not in desc
+
+    def test_total_stays_under_budget(self):
+        big_body = "word " * 5000  # ~25k chars
+        desc = _build_youtube_description(
+            seo_description="Short meta.",
+            body=big_body,
+            site_config=self._sc_with_url(),
+            slug="my-post",
+        )
+        assert len(desc) <= 4800
+
+    def test_null_seo_description_no_leading_blank(self):
+        desc = _build_youtube_description(
+            seo_description="",
+            body="Body content.",
+            site_config=self._sc_with_url(),
+            slug="my-post",
+        )
+        # No leading blank line / leading newline.
+        assert not desc.startswith("\n")
+        assert desc.startswith("Read the full post:")
+
+    def test_missing_site_url_omits_backlink_no_crash(self):
+        # SiteConfig with no site_url → require() raises → line omitted.
+        sc = SiteConfig(initial_config={})
+        desc = _build_youtube_description(
+            seo_description="Meta description.",
+            body="Body content.",
+            site_config=sc,
+            slug="my-post",
+        )
+        assert "Read the full post" not in desc
+        assert desc.startswith("Meta description.")
+        assert "Body content." in desc
+
+    def test_missing_slug_omits_backlink(self):
+        desc = _build_youtube_description(
+            seo_description="Meta description.",
+            body="Body content.",
+            site_config=self._sc_with_url(),
+            slug="",
+        )
+        assert "Read the full post" not in desc
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDispatchPayload:
+    """End-to-end payload-shape assertions for _dispatch_video_publishers."""
+
+    def _adapter_rows(self) -> list[dict]:
+        return [{
+            "name": "yt",
+            "platform": "youtube",
+            "handler_name": "youtube",
+            "config": {},
+            "metadata": {},
+        }]
+
+    async def _run_dispatch(self, *, seo_description, seo_keywords, slug,
+                            site_config) -> dict:
+        """Invoke _dispatch_video_publishers and return the captured payload."""
+        # Plain object exposing only ``fetch`` (no ``acquire``) so the
+        # dispatcher takes the pool.fetch branch.
+        class _Pool:
+            fetch = AsyncMock(return_value=self._adapter_rows())
+
+        pool = _Pool()
+
+        captured: dict[str, Any] = {}
+
+        async def _fake_dispatch(surface, handler, payload, **kwargs):
+            captured.update(payload)
+            return {"success": True}
+
+        fake_registry = MagicMock()
+        fake_registry.dispatch = AsyncMock(side_effect=_fake_dispatch)
+
+        fake_approval = MagicMock()
+        fake_approval.is_approved = AsyncMock(return_value=True)
+
+        with patch("services.integrations.registry", fake_registry), \
+             patch("services.integrations.handlers.load_all", MagicMock()), \
+             patch("services.media_approval_service", fake_approval):
+            await _dispatch_video_publishers(
+                pool=pool,
+                site_config=site_config,
+                post_id="post-1",
+                video_path="/tmp/post-1.mp4",
+                title="My Title",
+                content="<p>Hello <b>world</b></p>",
+                seo_description=seo_description,
+                seo_keywords=seo_keywords,
+                slug=slug,
+            )
+        return captured
+
+    async def test_payload_description_and_tags(self):
+        sc = SiteConfig(initial_config={"site_url": "https://gladlabs.io"})
+        payload = await self._run_dispatch(
+            seo_description="Great meta description.",
+            seo_keywords="ai, automation, gaming",
+            slug="my-post",
+            site_config=sc,
+        )
+        assert payload["description"].startswith("Great meta description.")
+        assert "https://gladlabs.io/posts/my-post" in payload["description"]
+        assert "Hello world" in payload["description"]
+        assert payload["tags"] == ["ai", "automation", "gaming"]
+        assert payload["media_path"] == "/tmp/post-1.mp4"
+        assert payload["title"] == "My Title"
+        assert payload["post_id"] == "post-1"
+
+    async def test_missing_seo_fields_tags_none_no_crash(self):
+        sc = SiteConfig(initial_config={"site_url": "https://gladlabs.io"})
+        payload = await self._run_dispatch(
+            seo_description="",       # null excerpt
+            seo_keywords="",          # null seo_keywords
+            slug="my-post",
+            site_config=sc,
+        )
+        # No leading blank line, no crash, tags omitted (None).
+        assert not payload["description"].startswith("\n")
+        assert payload["tags"] is None
+
+    async def test_missing_site_url_omits_backlink(self):
+        sc = SiteConfig(initial_config={})  # no site_url
+        payload = await self._run_dispatch(
+            seo_description="Meta desc.",
+            seo_keywords="ai",
+            slug="my-post",
+            site_config=sc,
+        )
+        assert "Read the full post" not in payload["description"]
+        assert payload["tags"] == ["ai"]
