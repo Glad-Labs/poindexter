@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.31.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.30.0...v0.31.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate revalidation_service + retention_janitor to constructor DI ([#272](https://github.com/Glad-Labs/glad-labs-stack/issues/272) leaf batch 3) ([#747](https://github.com/Glad-Labs/glad-labs-stack/issues/747)) ([398910c](https://github.com/Glad-Labs/glad-labs-stack/commit/398910ca39268e8c0c127417f791edc9d242817f))
+
 ## [0.30.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.29.0...v0.30.0) (2026-05-29)
 
 
