@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.20.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.19.0...v0.20.0) (2026-05-29)
+
+
+### Features
+
+* **di:** AppContainer scaffold + bootstrap.build_container (PR 1) ([#705](https://github.com/Glad-Labs/glad-labs-stack/issues/705)) ([45ff471](https://github.com/Glad-Labs/glad-labs-stack/commit/45ff471ad36fb124d4100c63847c58b6fa424fe5))
+
 ## [0.19.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.18.0...v0.19.0) (2026-05-29)
 
 
