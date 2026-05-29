@@ -37,6 +37,25 @@ def set_site_config(sc: SiteConfig) -> None:
     site_config = sc
 
 
+def _resolve_site_config(site_config: "SiteConfig | None") -> SiteConfig:
+    """Phase-1 DI shim (#272): resolve the effective SiteConfig.
+
+    Prefers an explicitly injected instance; otherwise falls back to the
+    module-global ``site_config`` (the one ``set_site_config`` wires at
+    lifespan startup). The self-module import dodges the local-name
+    shadow created when a function declares ``site_config`` as a keyword
+    param — at that point the bare name ``site_config`` refers to the
+    parameter, not the module global, so we reach the global via the
+    module object instead. Back-compat: every caller that passes nothing
+    keeps the pre-shim behaviour (read the module global).
+    """
+    if site_config is not None:
+        return site_config
+    import services.publish_service as _mod
+
+    return _mod.site_config
+
+
 logger = get_logger(__name__)
 
 
@@ -226,9 +245,16 @@ async def _sync_published_post(post_id: str) -> None:
             pass
 
 
-async def _ping_search_engines(site_url: str, post_url: str) -> None:
+async def _ping_search_engines(
+    site_url: str,
+    post_url: str,
+    *,
+    site_config: "SiteConfig | None" = None,
+) -> None:
     """Notify search engines about new content via IndexNow and Google ping."""
     import httpx
+
+    _sc = _resolve_site_config(site_config)
 
     # Tight caps on external SEO pings — they're fire-and-forget, we don't
     # want them to delay anything else if the target is slow.
@@ -241,8 +267,8 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
         # indexnow_key is is_secret=true since 2026-05-12 — must fetch via
         # async get_secret. The endpoint URL is NOT a secret so it stays
         # on the sync cache.
-        _indexnow_key = await site_config.get_secret("indexnow_key", "")
-        _indexnow_url = site_config.get(
+        _indexnow_key = await _sc.get_secret("indexnow_key", "")
+        _indexnow_url = _sc.get(
             "indexnow_ping_url", "https://api.indexnow.org/indexnow"
         )
         if _indexnow_url:
@@ -258,7 +284,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
 
         # Search-engine sitemap ping (Google's /ping endpoint by default;
         # set google_sitemap_ping_url='' to skip).
-        _sitemap_ping = site_config.get(
+        _sitemap_ping = _sc.get(
             "google_sitemap_ping_url", "https://www.google.com/ping"
         )
         if _sitemap_ping:
@@ -485,6 +511,7 @@ async def publish_post_from_task(
     stage_only: bool = False,
     honor_pacing: bool = False,
     background_tasks=None,
+    site_config: "SiteConfig | None" = None,
 ) -> PublishResult:
     """Create a published post from a completed content task.
 
@@ -518,6 +545,8 @@ async def publish_post_from_task(
             "publish_post_from_task: stage_only and draft_mode are "
             "mutually exclusive (status='approved' vs status='draft')."
         )
+    # Phase-1 DI shim (#272): resolve once, then thread/read via _sc below.
+    _sc = _resolve_site_config(site_config)
     from utils.json_encoder import convert_decimals, safe_json_dumps
 
     # ---------------------------------------------------------------
@@ -1095,7 +1124,7 @@ async def publish_post_from_task(
             # observed during the 2026-05-17 auto-publish stress test.
             devto_svc = DevToCrossPostService(
                 getattr(db_service, "cloud_pool", None) or db_service.pool,
-                site_config=site_config,
+                site_config=_sc,
             )
             if background_tasks:
                 background_tasks.add_task(
@@ -1127,7 +1156,7 @@ async def publish_post_from_task(
         try:
             from services.revalidation_service import trigger_isr_revalidate
 
-            revalidation_success = await trigger_isr_revalidate(slug, site_config=site_config)
+            revalidation_success = await trigger_isr_revalidate(slug, site_config=_sc)
             if not revalidation_success:
                 logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
         except Exception as reval_err:
@@ -1178,11 +1207,11 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
     # ---------------------------------------------------------------
-    site_url = site_config.require("site_url")
+    site_url = _sc.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
     if not _gates_block_distribution:
         _spawn_background(
-            _ping_search_engines(site_url, published_url_full),
+            _ping_search_engines(site_url, published_url_full, site_config=_sc),
             name=f"ping_search_engines({slug})",
         )
 
@@ -1320,7 +1349,7 @@ async def publish_post_from_task(
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
 
-                _delay = int(site_config.get("short_video_post_publish_delay_seconds", "180"))
+                _delay = int(_sc.get("short_video_post_publish_delay_seconds", "180"))
                 await _aio.sleep(_delay)
                 try:
                     result = await generate_short_video_for_post(
@@ -1351,9 +1380,9 @@ async def publish_post_from_task(
             from pathlib import Path
 
             from services.r2_upload_service import R2UploadService
-            _r2 = R2UploadService(site_config=site_config)
+            _r2 = R2UploadService(site_config=_sc)
             # Give podcast/video/short generation time to complete
-            _delay = int(site_config.get("media_upload_delay_seconds", "240"))
+            _delay = int(_sc.get("media_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
             await _r2.upload_podcast_episode(pid)
             await _r2.upload_video_episode(pid)
@@ -1366,7 +1395,7 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                _api_base = _sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 # Per-call temp file via tempfile.mkstemp avoids hardcoded
                 # /tmp paths (Bandit B108) and prevents collisions when
                 # multiple publishes run concurrently.
@@ -1395,7 +1424,7 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                _api_base = _sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 # Per-call temp file via tempfile.mkstemp avoids hardcoded
                 # /tmp paths (Bandit B108).
                 _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")
@@ -1523,6 +1552,8 @@ async def publish_post_from_task(
 async def fire_post_distribution_hooks(
     db_service,
     post_id: str,
+    *,
+    site_config: "SiteConfig | None" = None,
 ) -> dict[str, Any]:
     """Re-fire the distribution hooks (social/devto/podcast/video/short/RSS)
     for a post whose approval gates have just cleared.
@@ -1535,6 +1566,8 @@ async def fire_post_distribution_hooks(
     swallowed and logged — distribution hooks are best-effort by
     design (the post is already on the public site at this point).
     """
+    # Phase-1 DI shim (#272): resolve once, then read/thread via _sc below.
+    _sc = _resolve_site_config(site_config)
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
 
     # Defensive: don't fire if there are still pending gates. Concurrent
@@ -1645,7 +1678,7 @@ async def fire_post_distribution_hooks(
         # rather than waiting for natural ISR expiry.
         try:
             from services.revalidation_service import trigger_isr_revalidate
-            ok = await trigger_isr_revalidate(slug, site_config=site_config)
+            ok = await trigger_isr_revalidate(slug, site_config=_sc)
             if ok:
                 fired["hooks"].append("isr_revalidate")
         except Exception as e:
@@ -1671,7 +1704,7 @@ async def fire_post_distribution_hooks(
     # 2. Dev.to
     try:
         from services.devto_service import DevToCrossPostService
-        devto_svc = DevToCrossPostService(pool, site_config=site_config)
+        devto_svc = DevToCrossPostService(pool, site_config=_sc)
         _spawn_background(
             devto_svc.cross_post_by_post_id(post_id),
             name=f"devto_crosspost({post_id})",
@@ -1682,9 +1715,9 @@ async def fire_post_distribution_hooks(
 
     # 3. Search engine pings
     try:
-        site_url = site_config.require("site_url")
+        site_url = _sc.require("site_url")
         _spawn_background(
-            _ping_search_engines(site_url, f"{site_url}/posts/{slug}"),
+            _ping_search_engines(site_url, f"{site_url}/posts/{slug}", site_config=_sc),
             name=f"ping_search_engines({slug})",
         )
         fired["hooks"].append("search_engines")

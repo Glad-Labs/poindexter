@@ -1690,5 +1690,8 @@ class TestStorageDelayKeyName:
         import services.publish_service as ps
 
         src = inspect.getsource(ps)
-        assert 'site_config.get("media_upload_delay_seconds"' in src
+        # Phase-1 DI shim (#272) renamed the receiver from the module
+        # global ``site_config`` to the resolved ``_sc`` local; the
+        # storage-agnostic key name is what this test actually pins.
+        assert '.get("media_upload_delay_seconds"' in src
         assert "media_r2_upload_delay_seconds" not in src
