@@ -20,6 +20,7 @@ import time as _time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import services.content_validator as _mod  # self-import for module-global fallback
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -30,6 +31,14 @@ if TYPE_CHECKING:
 # Defaults to a fresh env-fallback instance until the lifespan setter
 # fires. Tests can either patch this attribute directly or call
 # ``set_site_config()`` for explicit wiring.
+#
+# Phase-1 DI shim (#272): public entry points now accept an optional
+# ``site_config`` keyword. When a caller supplies one it is threaded down
+# to internal readers; when omitted, readers fall back to the module
+# global ``_mod.site_config`` (via the self-import above to dodge the
+# local-name shadow inside functions that take a ``site_config`` param).
+# The global + ``set_site_config()`` stay in place for back-compat;
+# Phase-2 removes them.
 site_config: SiteConfig = SiteConfig()
 
 
@@ -105,17 +114,23 @@ _NAMED_SOURCE_KEYWORDS = (
 # ============================================================================
 
 
-def _get_company_facts() -> dict:
-    """Load company facts from DB (site_config) with env fallback."""
+def _get_company_facts(site_config: SiteConfig | None = None) -> dict:
+    """Load company facts from DB (site_config) with env fallback.
+
+    Phase-1 DI shim (#272): accepts an optional ``site_config``. When
+    omitted (the module-import call below has no SiteConfig in scope) it
+    falls back to the module global ``_mod.site_config`` — non-breaking.
+    """
+    _sc = site_config if site_config is not None else _mod.site_config
     return {
-        "company_name": site_config.get("company_name", "My Company"),
-        "founded_date": site_config.get("company_founded_date", "2025-01-01"),
-        "founded_year": site_config.get_int("company_founded_year", 2025),
-        "age_months": site_config.get_int("company_age_months", 12),
-        "team_size": site_config.get_int("company_team_size", 1),
-        "founder_name": site_config.get("company_founder_name", "Founder"),
+        "company_name": _sc.get("company_name", "My Company"),
+        "founded_date": _sc.get("company_founded_date", "2025-01-01"),
+        "founded_year": _sc.get_int("company_founded_year", 2025),
+        "age_months": _sc.get_int("company_age_months", 12),
+        "team_size": _sc.get_int("company_team_size", 1),
+        "founder_name": _sc.get("company_founder_name", "Founder"),
         "known_employees": set(),
-        "real_products": set(site_config.get("company_products", "").split(",")) if site_config.get("company_products") else set(),
+        "real_products": set(_sc.get("company_products", "").split(",")) if _sc.get("company_products") else set(),
         "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "vercel", "grafana"},
     }
 
@@ -1129,18 +1144,23 @@ def _check_code_block_density(
     content: str,
     topic: str,
     tags: list[str],
+    site_config: SiteConfig | None = None,
 ) -> list[ValidationIssue]:
     """GH-234: warn when tech-tagged posts ship without enough code.
 
     All thresholds + the tag list are read from ``app_settings`` via
     ``site_config`` so operators can tune per niche without redeploys.
     Returns warnings only — never critical.
+
+    Phase-1 DI shim (#272): ``site_config`` is threaded from
+    ``validate_content``; falls back to ``_mod.site_config`` when omitted.
     """
-    if not site_config.get_bool("code_density_check_enabled", True):
+    _sc = site_config if site_config is not None else _mod.site_config
+    if not _sc.get_bool("code_density_check_enabled", True):
         return []
     tech_tags = {
         t.strip().lower()
-        for t in site_config.get_list(
+        for t in _sc.get_list(
             "code_density_tag_filter",
             "technical,ai,programming,ml,python,javascript,rust,go",
         )
@@ -1149,9 +1169,9 @@ def _check_code_block_density(
     if not _is_tech_post(tags, topic, tech_tags):
         return []
 
-    min_blocks_per_700w = site_config.get_int("code_density_min_blocks_per_700w", 1)
-    min_line_ratio_pct = site_config.get_int("code_density_min_line_ratio_pct", 20)
-    long_post_floor_words = site_config.get_int("code_density_long_post_floor_words", 300)
+    min_blocks_per_700w = _sc.get_int("code_density_min_blocks_per_700w", 1)
+    min_line_ratio_pct = _sc.get_int("code_density_min_line_ratio_pct", 20)
+    long_post_floor_words = _sc.get_int("code_density_long_post_floor_words", 300)
 
     block_count, code_lines, total_non_empty = _count_code_blocks_and_lines(content)
     prose_text = _strip_code_blocks_for_word_count(content)
@@ -1217,12 +1237,19 @@ def validate_content(
     topic: str = "",
     tags: list[str] | None = None,
     niche: str | None = None,
+    site_config: SiteConfig | None = None,
 ) -> ValidationResult:
     """
     Validate content against hard quality rules.
 
     Returns ValidationResult with pass/fail and list of issues.
     Content fails if ANY critical issue is found.
+
+    site_config (Phase-1 DI shim, #272): optional SiteConfig instance.
+    When supplied it is threaded down to internal readers
+    (``_check_code_block_density`` + the inline threshold reads here);
+    when omitted it falls back to the module global ``_mod.site_config``.
+    Backwards compatible — existing callers need no change.
 
     tags (GH-83 part b): optional list of the post's topic tags. When
     provided, the hallucinated-reference rule uses them to detect
@@ -1240,6 +1267,8 @@ def validate_content(
     # load doesn't pull in asyncpg for callers (tests, scripts) that
     # never reach validate_content().
     from services.validator_config import is_validator_enabled
+
+    _sc = site_config if site_config is not None else _mod.site_config
 
     def _enabled(rule_name: str) -> bool:
         return is_validator_enabled(rule_name, niche=niche)
@@ -1332,7 +1361,7 @@ def validate_content(
     # or whether the writer surface-summarized a topic that needed
     # demonstration. Tag list + thresholds are DB-tunable.
     if _enabled("code_block_density"):
-        issues.extend(_check_code_block_density(content, topic, tags))
+        issues.extend(_check_code_block_density(content, topic, tags, site_config=_sc))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)
     if _enabled("brand_contradiction"):
@@ -1471,7 +1500,7 @@ def validate_content(
     # score penalty applies once even if the writer over-used several
     # different openers. Tunable via app_settings.
     if _enabled("banned_transition_opener"):
-        _bto_threshold = site_config.get_int("banned_transition_opener_threshold", 2)
+        _bto_threshold = _sc.get_int("banned_transition_opener_threshold", 2)
         # Match either at the start of a line (paragraph break / heading
         # break) or right after a sentence terminator + whitespace. Both
         # lookbehinds are fixed length, which Python's re module requires.
@@ -1506,7 +1535,7 @@ def validate_content(
     # >2 = 3 distinct, mirroring the banned_transition_opener pattern
     # of "> threshold").
     if _enabled("buzzword_density"):
-        _bd_threshold = site_config.get_int("buzzword_density_threshold", 2)
+        _bd_threshold = _sc.get_int("buzzword_density_threshold", 2)
         _bd_matches = list(_LLM_TELL_RE.finditer(content))
         _bd_distinct = sorted({m.group(0).lower() for m in _bd_matches})
         if len(_bd_distinct) > _bd_threshold:
@@ -1666,7 +1695,7 @@ def validate_content(
     # instance being a hard veto. Flip the setting back to ``true``
     # if a future writer regression starts emitting fabricated
     # attributions and the threshold path doesn't catch it.
-    _named_source_promote_enabled = site_config.get_bool(
+    _named_source_promote_enabled = _sc.get_bool(
         "content_validator_named_source_promote_enabled", False,
     )
     if _named_source_promote_enabled:
@@ -1698,7 +1727,7 @@ def validate_content(
     # (a) Per-rule threshold promotion. Read the threshold from
     # site_config (DB-first) with a hardcoded floor of 3 so the guard
     # still fires on a cold-boot environment with no settings loaded.
-    _warning_threshold = site_config.get_int(
+    _warning_threshold = _sc.get_int(
         "content_validator_warning_reject_threshold", 3,
     )
     # Per-category override: ``unlinked_citation`` is more tolerant than the
@@ -1709,7 +1738,7 @@ def validate_content(
     # other categories still use the global threshold. Tunable via
     # ``content_validator_unlinked_citation_warning_threshold``.
     _per_category_overrides = {
-        "unlinked_citation": site_config.get_int(
+        "unlinked_citation": _sc.get_int(
             "content_validator_unlinked_citation_warning_threshold", 6,
         ),
     }
@@ -1759,13 +1788,22 @@ def validate_content(
 # Call separately from the async pipeline (validate_content is sync)
 # ============================================================================
 
-async def verify_content_urls(content: str) -> list[ValidationIssue]:
+async def verify_content_urls(
+    content: str,
+    site_config: SiteConfig | None = None,
+) -> list[ValidationIssue]:
     """Extract all URLs from content and verify they resolve.
 
     Returns a list of ValidationIssues for dead/broken links.
     This is async because it makes HTTP requests.
+
+    site_config (Phase-1 DI shim, #272): optional SiteConfig used to read
+    the ``site_domains`` skip-list; falls back to ``_mod.site_config``
+    when omitted. Backwards compatible.
     """
     import httpx
+
+    _sc = site_config if site_config is not None else _mod.site_config
 
     issues: list[ValidationIssue] = []
     # Extract markdown links: [text](url) and bare https:// URLs
@@ -1787,7 +1825,7 @@ async def verify_content_urls(content: str) -> list[ValidationIssue]:
     # Skip internal links (our own site) and known-good domains.
     # Domain list comes from site_config (site_domains = comma-separated),
     # not hardcoded — lets operators bring their own brand (#198).
-    _raw = site_config.get("site_domains", "")
+    _raw = _sc.get("site_domains", "")
     skip_domains = {d.strip().lower() for d in _raw.split(",") if d.strip()}
     skip_domains.add("localhost")
 
