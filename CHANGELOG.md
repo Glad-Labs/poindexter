@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.31.0...v0.32.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate web_research + citation_verifier + seed_url_fetcher + title_originality_external ([#272](https://github.com/Glad-Labs/glad-labs-stack/issues/272) leaf batch 2) ([#748](https://github.com/Glad-Labs/glad-labs-stack/issues/748)) ([92f445e](https://github.com/Glad-Labs/glad-labs-stack/commit/92f445eb4a5aec8c6f40ee57a44a7c1c4ac68fd6))
+
 ## [0.31.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.30.0...v0.31.0) (2026-05-29)
 
 
