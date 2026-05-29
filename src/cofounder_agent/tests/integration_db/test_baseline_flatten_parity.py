@@ -1,8 +1,10 @@
 """Regression guard for the squashed baseline migration.
 
-The 0000_baseline.py + .schema.sql + .seeds.sql triple has absorbed two
-flatten passes — Phase A on 2026-05-08 (169 historical files) and
-Phase C on 2026-05-28 (61 timestamped files). Future drift between the
+The 0000_baseline.py + .schema.sql + .seeds.sql triple has absorbed three
+flatten passes — Phase A on 2026-05-08 (169 historical files), Phase C on
+2026-05-28 (61 timestamped files), and Phase D on 2026-05-29 (5 post-#691
+files: media-notify seed, lab-observability columns + view, Cloudflare
+beacon seeds, experiments harness + winner-label). Future drift between the
 sanitized schema SQL and the runner-discovered schema is the most
 likely break mode: someone edits one file without touching the other,
 the baseline still applies (because ON CONFLICT / IF NOT EXISTS swallow
@@ -64,6 +66,20 @@ _REQUIRED_TABLES = (
     "module_schema_migrations",
     # Newsletter (Phase C added unsubscribe_token)
     "newsletter_subscribers",
+    # Phase D (post-#691) — experiments harness foundation
+    "experiments",
+    "experiment_variants",
+)
+
+
+# ---------------------------------------------------------------------------
+# Views the baseline must materialise (Phase D absorbed these).
+# ---------------------------------------------------------------------------
+_REQUIRED_VIEWS = (
+    # 20260528_204250_lab_observability_columns_and_view.py
+    "lab_outcomes_v1",
+    # 20260529_000342_phase1_experiments_harness_foundation.py
+    "experiment_variant_scorecard_v1",
 )
 
 
@@ -89,6 +105,21 @@ _REQUIRED_COLUMNS = (
     ("niches", "default_template_slug"),
     # 20260510_014520 — gen_random_uuid default on posts.id
     ("posts", "id"),
+    # Phase D (post-#691) lab-observability columns
+    # 20260528_204250_lab_observability_columns_and_view.py
+    ("capability_outcomes", "niche_slug"),
+    ("capability_outcomes", "prompt_template_key"),
+    ("capability_outcomes", "prompt_template_version"),
+    ("routing_outcomes", "niche_slug"),
+    ("routing_outcomes", "prompt_template_key"),
+    ("routing_outcomes", "prompt_template_version"),
+    ("published_post_edit_metrics", "model_used"),
+    ("published_post_edit_metrics", "prompt_template_key"),
+    ("published_post_edit_metrics", "prompt_template_version"),
+    # 20260529_000342 — experiment telemetry FK on capability_outcomes
+    ("capability_outcomes", "variant_id"),
+    # 20260529_012228_phase1_experiments_winner_label.py
+    ("experiments", "winner_variant_label"),
 )
 
 
@@ -123,6 +154,13 @@ _REQUIRED_APP_SETTINGS_KEYS = (
     "ops_triage_writer_model",
     "prefect_stuck_flow_pending_threshold_minutes",
     "alert_repeat_suppress_window_minutes",
+    # Phase D (post-#691) seeded keys — the net seeds.sql change
+    # 20260528_193105_seed_media_approval_discord_notify_enabled_toggle.py
+    "media_approval_discord_notify_enabled",
+    # 20260528_223439_seed_cloudflare_analytics_beacon_keys.py
+    "cloudflare_analytics_api_token",
+    "cloudflare_analytics_last_sync",
+    "cloudflare_beacon_url",
 )
 
 
@@ -153,6 +191,21 @@ async def test_required_tables_exist(test_pool) -> None:
     assert not missing, (
         f"baseline lost {len(missing)} required table(s) — "
         f"schema.sql may have drifted from runner-loaded SQL: {missing}"
+    )
+
+
+async def test_required_views_exist(test_pool) -> None:
+    """Phase D absorbed the lab + experiment-scorecard views; the baseline
+    schema.sql must recreate them or downstream reads break."""
+    async with test_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT viewname FROM pg_views WHERE schemaname = 'public'"
+        )
+    present = {r["viewname"] for r in rows}
+    missing = sorted(set(_REQUIRED_VIEWS) - present)
+    assert not missing, (
+        f"baseline lost {len(missing)} required view(s) — "
+        f"a Phase-D view may have been dropped from schema.sql: {missing}"
     )
 
 

@@ -1,10 +1,27 @@
 """Baseline migration — schema + seed data as of v0.6.0.
 
 This single migration replaces the 169 legacy ``0xxx_*.py`` files
-(squashed 2026-05-08 under Glad-Labs/poindexter#30) PLUS the 61
-timestamped ``20260509_*`` through ``20260528_*`` migrations that
-accumulated since (squashed 2026-05-28 — Phase C). 230 total
+(squashed 2026-05-08 under Glad-Labs/poindexter#30) PLUS the 66
+timestamped ``20260509_*`` through ``20260529_*`` migrations that
+accumulated since (61 squashed 2026-05-28 — Phase C; a further 5
+post-#691 migrations folded in 2026-05-29 — Phase D). 235 total
 historical migrations folded into this one file.
+
+The Phase D flatten (2026-05-29) absorbed the five migrations that
+landed after the Phase C squash (#691):
+
+- ``20260528_193105`` — seed ``media_approval_discord_notify_enabled``.
+- ``20260528_204250`` — lab-observability columns (niche_slug /
+  prompt_template_key / prompt_template_version across
+  capability_outcomes + routing_outcomes + published_post_edit_metrics)
+  + the ``lab_outcomes_v1`` view.
+- ``20260528_223439`` — seed the 3 Cloudflare Analytics beacon keys
+  (``cloudflare_analytics_api_token`` is is_secret=true and is seeded
+  with an EMPTY value, same as every other secret in seeds.sql).
+- ``20260529_000342`` — ``experiments`` + ``experiment_variants`` tables,
+  ``capability_outcomes.variant_id`` FK, extended ``lab_outcomes_v1`` +
+  ``experiment_variant_scorecard_v1`` view.
+- ``20260529_012228`` — ``experiments.winner_variant_label`` column.
 
 Why the second flatten:
 
@@ -28,11 +45,12 @@ so diffs are readable):
   out by design; ``poindexter setup`` writes per-operator credentials
   into bootstrap.toml + ``app_settings`` at install time.
 
-The Phase C flatten was parity-checked against the live result of
-applying ``0000_baseline + 61 timestamped`` on a throwaway DB
-(``flatten_old``) versus applying this baseline alone
-(``flatten_new``); schema dumps + seeded-data tables were
-byte-equivalent after timestamp/restrict-token normalization.
+Each flatten was parity-checked against the live result of applying
+``0000_baseline + N timestamped`` on a throwaway DB (``regen_old``)
+versus applying this baseline alone (``regen_new``); schema dumps +
+seeded-data tables were equivalent after timestamp/restrict-token
+normalization. Phase D (2026-05-29) re-ran this check against the
+post-#691 tree.
 
 New schema changes from here on go in fresh timestamped migrations
 (``YYYYMMDD_HHMMSS_<slug>.py``) — same convention as before; the runner

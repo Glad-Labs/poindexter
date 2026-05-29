@@ -6,13 +6,7 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
 --
 --
 
---
---
-
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
-
---
---
 
 --
 --
@@ -22,13 +16,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 --
 --
 
---
---
-
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
-
---
---
 
 --
 --
@@ -516,7 +504,11 @@ CREATE TABLE IF NOT EXISTS public.capability_outcomes (
     elapsed_ms integer DEFAULT 0 NOT NULL,
     quality_score numeric(5,2),
     metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    niche_slug text,
+    prompt_template_key text,
+    prompt_template_version integer,
+    variant_id uuid
 );
 
 --
@@ -941,6 +933,228 @@ CREATE SEQUENCE IF NOT EXISTS public.embeddings_id_seq
 --
 
 ALTER SEQUENCE public.embeddings_id_seq OWNED BY public.embeddings.id;
+
+--
+--
+
+CREATE TABLE IF NOT EXISTS public.experiment_variants (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    experiment_id uuid NOT NULL,
+    label text NOT NULL,
+    weight numeric DEFAULT 1.0 NOT NULL,
+    prompt_template_key text,
+    prompt_template_version integer,
+    writer_model text,
+    rag_config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    paused_at timestamp with time zone,
+    paused_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+--
+
+CREATE TABLE IF NOT EXISTS public.experiments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    key text NOT NULL,
+    niche_slug text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    objective_function text DEFAULT 'views_7d'::text NOT NULL,
+    min_approval_rate_pct integer DEFAULT 50 NOT NULL,
+    min_posts_before_pause integer DEFAULT 10 NOT NULL,
+    cost_alert_multiplier numeric DEFAULT 3.0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    activated_at timestamp with time zone,
+    concluded_at timestamp with time zone,
+    conclusion_note text,
+    winner_variant_label text,
+    CONSTRAINT experiments_objective_function_check CHECK ((objective_function = ANY (ARRAY['views_7d'::text, 'views_24h'::text, 'approval_rate'::text, 'views_per_dollar'::text, 'composite_score'::text]))),
+    CONSTRAINT experiments_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'paused'::text, 'concluded'::text])))
+);
+
+--
+--
+
+CREATE TABLE IF NOT EXISTS public.page_views (
+    id bigint NOT NULL,
+    path character varying(500),
+    slug character varying(500),
+    referrer character varying(1000),
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+--
+--
+
+CREATE TABLE IF NOT EXISTS public.posts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    title text,
+    slug character varying(500),
+    status character varying(50),
+    category_id uuid,
+    view_count integer DEFAULT 0,
+    published_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    site_id uuid,
+    seo_description character varying(500),
+    seo_keywords character varying(1000),
+    cover_image_url character varying(1000),
+    created_by character varying(255),
+    updated_by character varying(255),
+    content text,
+    excerpt text,
+    seo_title character varying(255),
+    featured_image_url character varying(1000),
+    featured_image_data jsonb DEFAULT '{}'::jsonb,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    author character varying(255),
+    reading_time integer,
+    word_count integer,
+    author_id uuid,
+    tag_ids uuid[] DEFAULT '{}'::uuid[],
+    preview_token text,
+    distributed_at timestamp with time zone,
+    awaiting_gate character varying(64),
+    gate_artifact jsonb DEFAULT '{}'::jsonb NOT NULL,
+    gate_paused_at timestamp with time zone,
+    media_to_generate text[] DEFAULT '{}'::text[] NOT NULL,
+    cli_idempotency_key text,
+    video_shot_list jsonb
+);
+
+--
+--
+
+CREATE TABLE IF NOT EXISTS public.published_post_edit_metrics (
+    id bigint NOT NULL,
+    task_id text NOT NULL,
+    post_id bigint,
+    niche_slug text,
+    category text,
+    approver text NOT NULL,
+    pre_approve_hash text NOT NULL,
+    post_approve_hash text NOT NULL,
+    char_diff_count integer DEFAULT 0 NOT NULL,
+    line_diff_count integer DEFAULT 0 NOT NULL,
+    pre_approve_len integer DEFAULT 0 NOT NULL,
+    post_approve_len integer DEFAULT 0 NOT NULL,
+    approve_method text,
+    approved_at timestamp with time zone DEFAULT now() NOT NULL,
+    metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
+    model_used text,
+    prompt_template_key text,
+    prompt_template_version integer
+);
+
+--
+--
+
+CREATE TABLE IF NOT EXISTS public.routing_outcomes (
+    id bigint NOT NULL,
+    task_id character varying(255),
+    task_type character varying(100),
+    task_category character varying(50),
+    worker_id character varying(100),
+    model_used character varying(200),
+    compute_tier character varying(20),
+    estimated_cost double precision,
+    actual_cost double precision,
+    quality_score double precision,
+    duration_ms integer,
+    success boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    niche_slug character varying(100),
+    prompt_template_key character varying(200),
+    prompt_template_version integer
+);
+
+--
+--
+
+CREATE OR REPLACE VIEW public.lab_outcomes_v1 AS
+ SELECT co.task_id,
+    co.niche_slug,
+    co.template_slug,
+    co.atom_name,
+    co.model_used,
+    co.prompt_template_key,
+    co.prompt_template_version,
+    co.ok AS atom_ok,
+    co.halted AS atom_halted,
+    co.quality_score AS atom_quality_score,
+    co.elapsed_ms,
+    co.created_at AS run_at,
+    ro.actual_cost,
+    ro.estimated_cost,
+    ro.compute_tier,
+    ro.success AS routing_success,
+    pem.approver,
+    pem.char_diff_count,
+    pem.line_diff_count,
+    pem.pre_approve_len,
+    pem.post_approve_len,
+    pem.approve_method,
+    pem.approved_at,
+    pv_count.views_24h AS views_24h_post_publish,
+    pv_count.views_7d AS views_7d_post_publish,
+    ev.label AS variant_label,
+    ev.id AS variant_id,
+    e.key AS experiment_key,
+    e.status AS experiment_status,
+    e.objective_function AS experiment_objective_function
+   FROM (((((public.capability_outcomes co
+     LEFT JOIN public.routing_outcomes ro ON (((ro.task_id)::text = co.task_id)))
+     LEFT JOIN public.published_post_edit_metrics pem ON ((pem.task_id = co.task_id)))
+     LEFT JOIN LATERAL ( SELECT count(*) FILTER (WHERE ((pv.created_at >= pem.approved_at) AND (pv.created_at <= (pem.approved_at + '24:00:00'::interval)))) AS views_24h,
+            count(*) FILTER (WHERE ((pv.created_at >= pem.approved_at) AND (pv.created_at <= (pem.approved_at + '7 days'::interval)))) AS views_7d
+           FROM (public.page_views pv
+             JOIN public.posts p ON (((p.slug)::text = (pv.slug)::text)))
+          WHERE ((pem.approved_at IS NOT NULL) AND ((p.metadata ->> 'pipeline_task_id'::text) = co.task_id))) pv_count ON (true))
+     LEFT JOIN public.experiment_variants ev ON ((ev.id = co.variant_id)))
+     LEFT JOIN public.experiments e ON ((e.id = ev.experiment_id)))
+  WHERE (co.created_at > (now() - '90 days'::interval));
+
+--
+--
+
+COMMENT ON VIEW public.lab_outcomes_v1 IS 'Unified read surface for the content R&D lab — joins capability_outcomes + routing_outcomes + published_post_edit_metrics + page_views per task. Phase 0 (2026-05-28). Bandit/dashboards/learnings digest read from this view.';
+
+--
+--
+
+CREATE OR REPLACE VIEW public.experiment_variant_scorecard_v1 AS
+ SELECT e.id AS experiment_id,
+    e.key AS experiment_key,
+    e.niche_slug,
+    e.status AS experiment_status,
+    e.objective_function,
+    ev.id AS variant_id,
+    ev.label AS variant_label,
+    ev.weight,
+    ev.active AS variant_active,
+    ev.paused_at,
+    ev.paused_reason,
+    count(DISTINCT lo.task_id) AS posts_attempted,
+    count(DISTINCT lo.task_id) FILTER (WHERE (lo.approver IS NOT NULL)) AS posts_approved,
+    round((((count(DISTINCT lo.task_id) FILTER (WHERE (lo.approver IS NOT NULL)))::numeric / (NULLIF(count(DISTINCT lo.task_id), 0))::numeric) * (100)::numeric), 1) AS approval_rate_pct,
+    avg(((lo.char_diff_count)::numeric / (NULLIF(lo.pre_approve_len, 0))::numeric)) FILTER (WHERE (lo.approver IS NOT NULL)) AS avg_edit_distance_pct,
+    avg(lo.views_24h_post_publish) AS avg_views_24h,
+    avg(lo.views_7d_post_publish) AS avg_views_7d,
+    avg(lo.actual_cost) AS avg_cost_per_post,
+    sum(lo.actual_cost) AS total_cost
+   FROM ((public.experiments e
+     JOIN public.experiment_variants ev ON ((ev.experiment_id = e.id)))
+     LEFT JOIN public.lab_outcomes_v1 lo ON ((lo.variant_id = ev.id)))
+  GROUP BY e.id, e.key, e.niche_slug, e.status, e.objective_function, ev.id, ev.label, ev.weight, ev.active, ev.paused_at, ev.paused_reason;
+
+--
+--
+
+COMMENT ON VIEW public.experiment_variant_scorecard_v1 IS 'Per-variant rollup for active+concluded experiments. Read by the poindexter experiments status CLI (PR 3) and the Grafana panels (PR 4). objective_function tells the consumer which column to rank on. Phase 1 ranks manually; Phase 2 bandit reads this directly.';
 
 --
 --
@@ -1485,18 +1699,6 @@ ALTER TABLE public.orchestrator_training_data ALTER COLUMN id ADD GENERATED BY D
 --
 --
 
-CREATE TABLE IF NOT EXISTS public.page_views (
-    id bigint NOT NULL,
-    path character varying(500),
-    slug character varying(500),
-    referrer character varying(1000),
-    user_agent text,
-    created_at timestamp with time zone DEFAULT now()
-);
-
---
---
-
 CREATE SEQUENCE IF NOT EXISTS public.page_views_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -1767,67 +1969,6 @@ CREATE TABLE IF NOT EXISTS public.post_tags (
 --
 --
 
-CREATE TABLE IF NOT EXISTS public.posts (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    title text,
-    slug character varying(500),
-    status character varying(50),
-    category_id uuid,
-    view_count integer DEFAULT 0,
-    published_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    site_id uuid,
-    seo_description character varying(500),
-    seo_keywords character varying(1000),
-    cover_image_url character varying(1000),
-    created_by character varying(255),
-    updated_by character varying(255),
-    content text,
-    excerpt text,
-    seo_title character varying(255),
-    featured_image_url character varying(1000),
-    featured_image_data jsonb DEFAULT '{}'::jsonb,
-    metadata jsonb DEFAULT '{}'::jsonb,
-    author character varying(255),
-    reading_time integer,
-    word_count integer,
-    author_id uuid,
-    tag_ids uuid[] DEFAULT '{}'::uuid[],
-    preview_token text,
-    distributed_at timestamp with time zone,
-    awaiting_gate character varying(64),
-    gate_artifact jsonb DEFAULT '{}'::jsonb NOT NULL,
-    gate_paused_at timestamp with time zone,
-    media_to_generate text[] DEFAULT '{}'::text[] NOT NULL,
-    cli_idempotency_key text,
-    video_shot_list jsonb
-);
-
---
---
-
-CREATE TABLE IF NOT EXISTS public.published_post_edit_metrics (
-    id bigint NOT NULL,
-    task_id text NOT NULL,
-    post_id bigint,
-    niche_slug text,
-    category text,
-    approver text NOT NULL,
-    pre_approve_hash text NOT NULL,
-    post_approve_hash text NOT NULL,
-    char_diff_count integer DEFAULT 0 NOT NULL,
-    line_diff_count integer DEFAULT 0 NOT NULL,
-    pre_approve_len integer DEFAULT 0 NOT NULL,
-    post_approve_len integer DEFAULT 0 NOT NULL,
-    approve_method text,
-    approved_at timestamp with time zone DEFAULT now() NOT NULL,
-    metrics jsonb DEFAULT '{}'::jsonb NOT NULL
-);
-
---
---
-
 CREATE SEQUENCE IF NOT EXISTS public.published_post_edit_metrics_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -1973,25 +2114,6 @@ CREATE TABLE IF NOT EXISTS public.revenue_events (
     external_id text,
     external_data jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
---
---
-
-CREATE TABLE IF NOT EXISTS public.routing_outcomes (
-    id bigint NOT NULL,
-    task_id character varying(255),
-    task_type character varying(100),
-    task_category character varying(50),
-    worker_id character varying(100),
-    model_used character varying(200),
-    compute_tier character varying(20),
-    estimated_cost double precision,
-    actual_cost double precision,
-    quality_score double precision,
-    duration_ms integer,
-    success boolean,
-    created_at timestamp with time zone DEFAULT now()
 );
 
 --
@@ -2606,6 +2728,30 @@ ALTER TABLE ONLY public.embeddings
 --
 --
 
+ALTER TABLE ONLY public.experiment_variants
+    ADD CONSTRAINT experiment_variants_experiment_id_label_key UNIQUE (experiment_id, label);
+
+--
+--
+
+ALTER TABLE ONLY public.experiment_variants
+    ADD CONSTRAINT experiment_variants_pkey PRIMARY KEY (id);
+
+--
+--
+
+ALTER TABLE ONLY public.experiments
+    ADD CONSTRAINT experiments_key_key UNIQUE (key);
+
+--
+--
+
+ALTER TABLE ONLY public.experiments
+    ADD CONSTRAINT experiments_pkey PRIMARY KEY (id);
+
+--
+--
+
 ALTER TABLE ONLY public.external_metrics
     ADD CONSTRAINT external_metrics_pkey PRIMARY KEY (id);
 
@@ -3202,6 +3348,11 @@ CREATE INDEX IF NOT EXISTS idx_capability_outcomes_atom_model ON public.capabili
 --
 --
 
+CREATE INDEX IF NOT EXISTS idx_capability_outcomes_niche_template ON public.capability_outcomes USING btree (niche_slug, prompt_template_key, created_at DESC) WHERE (niche_slug IS NOT NULL);
+
+--
+--
+
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_task ON public.capability_outcomes USING btree (task_id) WHERE (task_id IS NOT NULL);
 
 --
@@ -3213,6 +3364,11 @@ CREATE INDEX IF NOT EXISTS idx_capability_outcomes_template ON public.capability
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_tier ON public.capability_outcomes USING btree (capability_tier, ok) WHERE (capability_tier IS NOT NULL);
+
+--
+--
+
+CREATE INDEX IF NOT EXISTS idx_capability_outcomes_variant ON public.capability_outcomes USING btree (variant_id) WHERE (variant_id IS NOT NULL);
 
 --
 --
@@ -3318,6 +3474,21 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_text_search ON public.embeddings USING
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_writer ON public.embeddings USING btree (writer);
+
+--
+--
+
+CREATE INDEX IF NOT EXISTS idx_experiment_variants_active_lookup ON public.experiment_variants USING btree (experiment_id) WHERE active;
+
+--
+--
+
+CREATE INDEX IF NOT EXISTS idx_experiments_key ON public.experiments USING btree (key);
+
+--
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_experiments_one_active_per_niche ON public.experiments USING btree (niche_slug) WHERE (status = 'active'::text);
 
 --
 --
@@ -3903,6 +4074,12 @@ ALTER TABLE ONLY public.campaign_email_logs
 --
 --
 
+ALTER TABLE ONLY public.capability_outcomes
+    ADD CONSTRAINT capability_outcomes_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES public.experiment_variants(id) ON DELETE SET NULL;
+
+--
+--
+
 ALTER TABLE ONLY public.discovery_runs
     ADD CONSTRAINT discovery_runs_batch_id_fkey FOREIGN KEY (batch_id) REFERENCES public.topic_batches(id);
 
@@ -3911,6 +4088,12 @@ ALTER TABLE ONLY public.discovery_runs
 
 ALTER TABLE ONLY public.discovery_runs
     ADD CONSTRAINT discovery_runs_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
+
+--
+--
+
+ALTER TABLE ONLY public.experiment_variants
+    ADD CONSTRAINT experiment_variants_experiment_id_fkey FOREIGN KEY (experiment_id) REFERENCES public.experiments(id) ON DELETE CASCADE;
 
 --
 --
