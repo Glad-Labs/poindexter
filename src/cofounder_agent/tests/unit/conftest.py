@@ -154,7 +154,6 @@ _SHARED_TEST_MODULES = (
     "services.url_validator",
     "services.url_scraper",
     "services.web_research",
-    "services.redis_cache",
     "services.r2_upload_service",
     "services.revalidation_service",
     "services.static_export_service",

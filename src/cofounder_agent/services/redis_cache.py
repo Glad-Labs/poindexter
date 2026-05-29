@@ -13,12 +13,16 @@ Features:
 - Configurable cache prefixes for organization
 
 Configuration:
-Set REDIS_URL environment variable:
-    export REDIS_URL="redis://localhost:6379/0"
-    export REDIS_ENABLED="true"
+``redis_url`` and ``redis_enabled`` are read from app_settings via the
+injected ``SiteConfig``. For local development without Redis, set
+``redis_enabled=false`` in app_settings — the system will work normally
+but without cache benefits.
 
-For local development without Redis, set REDIS_ENABLED=false
-The system will work normally but without cache benefits.
+Construction:
+``RedisCache`` is constructed via ``AppContainer.redis_cache`` (which
+calls :meth:`RedisCache.create` with the lifespan-bound ``SiteConfig``).
+Constructor-DI per the 2026-05-28 SiteConfig DI migration — no module
+singletons.
 """
 
 # Lazy type-hint evaluation — the ``Redis`` type may resolve to ``None``
@@ -36,18 +40,6 @@ from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
-
-# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
-# Defaults to a fresh env-fallback instance until the lifespan setter
-# fires. Tests can either patch this attribute directly or call
-# set_site_config() for explicit wiring.
-site_config: SiteConfig = SiteConfig()
-
-
-def set_site_config(sc: SiteConfig) -> None:
-    """Wire the lifespan-bound SiteConfig instance for this module."""
-    global site_config
-    site_config = sc
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]
@@ -67,33 +59,21 @@ except ImportError:
 logger = get_logger(__name__)
 
 
-def _cache_ttl(key: str, default: int) -> int:
-    """Resolve a TTL from app_settings (cache_<key>_ttl_seconds) with a default.
-
-    Read at class-load time — restart the worker to pick up app_settings
-    changes. (#198)
-    """
-    try:
-        return site_config.get_int(f"cache_{key}_ttl_seconds", default)
-    except Exception:
-        return default
-
-
 class CacheConfig:
     """Configuration for cache behavior.
 
-    All TTLs read from app_settings with sensible defaults; operators
-    tune per-category without a code change via keys like
-    `cache_default_ttl_seconds`, `cache_query_ttl_seconds`, etc. (#198)
+    TTL defaults are sensible class-level constants; operators tune at
+    runtime by passing custom ``ttl=`` values to :meth:`RedisCache.set`
+    or by subclassing.
     """
 
-    # Default TTLs (Time-To-Live) in seconds — values come from app_settings
-    DEFAULT_TTL = _cache_ttl("default", 3600)        # 1 hour
-    QUERY_CACHE_TTL = _cache_ttl("query", 1800)       # 30 minutes for DB queries
-    USER_CACHE_TTL = _cache_ttl("user", 300)          # 5 minutes for user data
-    METRICS_CACHE_TTL = _cache_ttl("metrics", 60)     # 1 minute for rapidly changing metrics
-    CONTENT_CACHE_TTL = _cache_ttl("content", 7200)   # 2 hours for content
-    MODEL_CACHE_TTL = _cache_ttl("model", 86400)      # 1 day for model configs
+    # Default TTLs (Time-To-Live) in seconds
+    DEFAULT_TTL = 3600        # 1 hour
+    QUERY_CACHE_TTL = 1800    # 30 minutes for DB queries
+    USER_CACHE_TTL = 300      # 5 minutes for user data
+    METRICS_CACHE_TTL = 60    # 1 minute for rapidly changing metrics
+    CONTENT_CACHE_TTL = 7200  # 2 hours for content
+    MODEL_CACHE_TTL = 86400   # 1 day for model configs
 
     # Cache key prefixes for organization
     PREFIX_QUERY = "query:"
@@ -112,40 +92,78 @@ class RedisCache:
     Handles async Redis operations with automatic fallback when Redis is unavailable.
     Provides convenience methods for common cache operations.
 
-    Uses dependency injection instead of singleton pattern:
-        redis_cache = await RedisCache.create()
-        app.state.redis_cache = redis_cache
+    Constructor-DI per the 2026-05-28 SiteConfig DI migration. Reach
+    a wired instance via ``AppContainer.redis_cache``:
 
-        # Then in routes/services:
-        async def my_route(request: Request):
-            redis_cache = request.app.state.redis_cache
-            value = await redis_cache.get(key)
+        container = await build_container(pool)
+        cache = container.redis_cache  # cached_property, builds on first access
+        value = await cache.get(key)
     """
 
-    def __init__(self, redis_instance: Redis | None = None, enabled: bool = False):
+    def __init__(
+        self,
+        *,
+        site_config: SiteConfig,
+        redis_instance: Redis | None = None,
+        enabled: bool = False,
+    ):
         """
-        Initialize RedisCache with a Redis instance.
+        Initialize RedisCache.
 
         Args:
+            site_config: SiteConfig instance (required, keyword-only). Used by
+                :meth:`create` to resolve ``redis_url`` + ``redis_enabled``.
+                Required even when ``redis_instance`` is pre-built so
+                instances always carry their config dependency for any
+                future re-resolution (reload, reconnect, etc.).
             redis_instance: Connected Redis instance (or None if disabled)
             enabled: Whether caching is enabled
+
+        Raises:
+            TypeError: if ``site_config`` is missing (fail-loud — a
+                misconstructed RedisCache should crash at the call site
+                rather than silently fall through to disabled mode).
         """
+        if site_config is None:
+            raise TypeError(
+                "RedisCache requires a site_config kwarg (keyword-only). "
+                "Construct via AppContainer.redis_cache or pass an "
+                "explicit SiteConfig instance."
+            )
+        self._site_config: SiteConfig = site_config
         self._instance: Redis | None = redis_instance
         self._enabled = enabled
 
     @classmethod
-    async def create(cls) -> RedisCache:
+    async def create(cls, *, site_config: SiteConfig) -> RedisCache:
         """
-        Factory method to create a RedisCache instance with environment configuration.
+        Factory method to create a RedisCache instance using the injected SiteConfig.
+
+        Reads ``redis_url`` (secret) and ``redis_enabled`` from
+        ``site_config`` and constructs a connected instance. On any
+        failure (Redis disabled, SDK missing, connection refused) returns
+        an instance with caching disabled — every cache operation
+        no-ops cleanly so callers don't need to special-case Redis being
+        absent.
+
+        Args:
+            site_config: SiteConfig instance (required, keyword-only).
 
         Returns:
-            RedisCache: Instance with Redis connection if available, disabled otherwise
+            RedisCache: Instance with Redis connection if available,
+                disabled otherwise.
         """
+        if site_config is None:
+            raise TypeError(
+                "RedisCache.create requires a site_config kwarg "
+                "(keyword-only)."
+            )
+
         if not REDIS_AVAILABLE:
             logger.warning("Redis not available - caching disabled")
-            return cls(redis_instance=None, enabled=False)
+            return cls(site_config=site_config, redis_instance=None, enabled=False)
 
-        # `redis_url` is is_secret=true (the URL embeds the auth password,
+        # ``redis_url`` is is_secret=true (the URL embeds the auth password,
         # encrypted with the enc:v1: prefix). Sync .get() returns the
         # ciphertext for is_secret rows — aioredis would then fail to parse
         # it as a URL and Redis would silently fall through to disabled mode.
@@ -158,7 +176,7 @@ class RedisCache:
 
         if not redis_enabled:
             logger.info("Redis disabled via REDIS_ENABLED=false")
-            return cls(redis_instance=None, enabled=False)
+            return cls(site_config=site_config, redis_instance=None, enabled=False)
 
         try:
             # Create async Redis connection
@@ -178,7 +196,11 @@ class RedisCache:
             logger.info("   URL: %s...", redis_url.split('@')[0] if '@' in redis_url else redis_url)
             logger.info("   Default TTL: %ss", CacheConfig.DEFAULT_TTL)
 
-            return cls(redis_instance=redis_instance, enabled=True)
+            return cls(
+                site_config=site_config,
+                redis_instance=redis_instance,
+                enabled=True,
+            )
 
         except Exception as e:
             # Redis is optional — the system falls back to no-cache mode.
@@ -190,7 +212,11 @@ class RedisCache:
                 redis_url.split('@')[0] if '@' in redis_url else redis_url,
                 type(e).__name__,
             )
-            return cls(redis_instance=None, enabled=False)
+            return cls(
+                site_config=site_config,
+                redis_instance=None,
+                enabled=False,
+            )
 
     async def is_available(self) -> bool:
         """Check if Redis is initialized and available."""

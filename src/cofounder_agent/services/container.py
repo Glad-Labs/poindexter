@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
+from services.redis_cache import RedisCache
 from services.site_config import SiteConfig
 
 if TYPE_CHECKING:
@@ -166,3 +167,22 @@ class AppContainer:
         instance = Decorators(site_config=self.site_config)
         set_default_decorators(instance)
         return instance
+
+    @cached_property
+    def redis_cache(self) -> RedisCache:
+        """Bare ``RedisCache`` wired to the container's SiteConfig.
+
+        Returns a synchronously-constructed instance with no Redis
+        connection — every cache operation no-ops cleanly until a
+        caller upgrades the instance via :meth:`RedisCache.create`.
+
+        The worker lifespan + brain daemon construct the *connected*
+        instance via ``await RedisCache.create(site_config=...)`` and
+        attach it to ``app.state.redis_cache``; route handlers that
+        need the connected cache should reach for that. This property
+        exists so tests + lightweight callers can ask the container
+        for a RedisCache without async setup, and so the DI migration
+        has a single source of truth for "where does RedisCache wire
+        up its SiteConfig dependency".
+        """
+        return RedisCache(site_config=self.site_config)

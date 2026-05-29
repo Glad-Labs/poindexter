@@ -204,6 +204,36 @@ class TestAppContainerConstruction:
         assert first is second
 
 
+class TestAppContainerRedisCache:
+    """``AppContainer.redis_cache`` cached_property — DI migration PR 5."""
+
+    def test_redis_cache_wired_with_site_config(self):
+        """The container constructs a RedisCache carrying its SiteConfig."""
+        from services.redis_cache import RedisCache
+
+        site_config = SiteConfig()
+        container = AppContainer(site_config=site_config, pool=MagicMock())
+        cache = container.redis_cache
+        assert isinstance(cache, RedisCache)
+        assert cache._site_config is site_config
+
+    def test_redis_cache_memoised(self):
+        """Two accesses return the same instance (cached_property)."""
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.redis_cache is container.redis_cache
+
+    def test_redis_cache_defaults_disabled(self):
+        """Bare construction returns a disabled (no Redis connection) cache.
+
+        The connected variant lives in ``startup_manager._setup_redis_cache``
+        via ``await RedisCache.create(...)``. The container's property
+        just provides the dependency-wiring seam.
+        """
+        container = AppContainer(site_config=SiteConfig(), pool=MagicMock())
+        assert container.redis_cache._enabled is False
+        assert container.redis_cache._instance is None
+
+
 class TestBuildContainer:
     """``services.bootstrap.build_container`` happy + sad paths."""
 

@@ -13,10 +13,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.redis_cache import CacheConfig, RedisCache, cached
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def site_config():
+    """A stub SiteConfig instance for RedisCache constructor DI."""
+    return SiteConfig()
 
 
 @pytest.fixture
@@ -42,15 +49,15 @@ def mock_redis():
 
 
 @pytest.fixture
-def cache(mock_redis):
+def cache(mock_redis, site_config):
     """An enabled RedisCache backed by the mock Redis client."""
-    return RedisCache(redis_instance=mock_redis, enabled=True)
+    return RedisCache(site_config=site_config, redis_instance=mock_redis, enabled=True)
 
 
 @pytest.fixture
-def disabled_cache():
+def disabled_cache(site_config):
     """A disabled RedisCache (no Redis instance)."""
-    return RedisCache(redis_instance=None, enabled=False)
+    return RedisCache(site_config=site_config, redis_instance=None, enabled=False)
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +102,8 @@ class TestIsAvailable:
         assert await disabled_cache.is_available() is False
 
     @pytest.mark.asyncio
-    async def test_not_available_when_no_instance(self):
-        c = RedisCache(redis_instance=None, enabled=True)
+    async def test_not_available_when_no_instance(self, site_config):
+        c = RedisCache(site_config=site_config, redis_instance=None, enabled=True)
         # enabled=True but no instance -> still False
         assert await c.is_available() is False
 
@@ -490,41 +497,52 @@ class TestClose:
 
 class TestCreate:
     @pytest.mark.asyncio
-    async def test_create_disabled_via_env(self):
-        with patch.dict("os.environ", {"REDIS_ENABLED": "false"}):
-            with patch("services.redis_cache.REDIS_AVAILABLE", True):
-                instance = await RedisCache.create()
-                assert instance._enabled is False
+    async def test_create_disabled_via_site_config(self):
+        sc = SiteConfig(initial_config={"redis_enabled": "false"})
+        with patch("services.redis_cache.REDIS_AVAILABLE", True):
+            instance = await RedisCache.create(site_config=sc)
+            assert instance._enabled is False
 
     @pytest.mark.asyncio
-    async def test_create_when_redis_not_available(self):
+    async def test_create_when_redis_not_available(self, site_config):
         with patch("services.redis_cache.REDIS_AVAILABLE", False):
-            instance = await RedisCache.create()
+            instance = await RedisCache.create(site_config=site_config)
             assert instance._enabled is False
             assert instance._instance is None
 
     @pytest.mark.asyncio
     async def test_create_connection_failure_returns_disabled(self):
+        sc = SiteConfig(initial_config={"redis_enabled": "true"})
         mock_aioredis = MagicMock()
         mock_aioredis.from_url = AsyncMock(side_effect=ConnectionError("refused"))
         with patch("services.redis_cache.REDIS_AVAILABLE", True):
             with patch("services.redis_cache.aioredis", mock_aioredis):
-                with patch.dict("os.environ", {"REDIS_ENABLED": "true"}):
-                    instance = await RedisCache.create()
-                    assert instance._enabled is False
+                instance = await RedisCache.create(site_config=sc)
+                assert instance._enabled is False
 
     @pytest.mark.asyncio
     async def test_create_success(self):
+        sc = SiteConfig(initial_config={"redis_enabled": "true"})
         mock_redis_inst = AsyncMock()
         mock_redis_inst.ping = AsyncMock()
         mock_aioredis = MagicMock()
         mock_aioredis.from_url = AsyncMock(return_value=mock_redis_inst)
         with patch("services.redis_cache.REDIS_AVAILABLE", True):
             with patch("services.redis_cache.aioredis", mock_aioredis):
-                with patch.dict("os.environ", {"REDIS_ENABLED": "true"}):
-                    instance = await RedisCache.create()
-                    assert instance._enabled is True
-                    assert instance._instance is mock_redis_inst
+                instance = await RedisCache.create(site_config=sc)
+                assert instance._enabled is True
+                assert instance._instance is mock_redis_inst
+
+    @pytest.mark.asyncio
+    async def test_create_requires_site_config(self):
+        """Fail-loud when site_config is missing — no silent fallback."""
+        with pytest.raises(TypeError):
+            await RedisCache.create(site_config=None)
+
+    def test_constructor_requires_site_config(self):
+        """Fail-loud when site_config is missing in the ctor too."""
+        with pytest.raises(TypeError):
+            RedisCache(site_config=None, redis_instance=None, enabled=False)
 
 
 # ---------------------------------------------------------------------------

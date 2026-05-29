@@ -405,12 +405,21 @@ class StartupManager:
             logger.warning(f"   [WARNING] JWT blocklist init failed: {e!s}", exc_info=True)
 
     async def _setup_redis_cache(self) -> None:
-        """Initialize Redis cache for query optimization"""
+        """Initialize Redis cache for query optimization.
+
+        Constructed via :meth:`RedisCache.create` with the injected
+        SiteConfig (2026-05-28 DI migration — RedisCache no longer reads
+        a module-level singleton). If the StartupManager was instantiated
+        without a SiteConfig (early-boot / bare-test path), build a fresh
+        env-fallback instance so create() still gets a valid dependency.
+        """
         logger.info("  [INFO] Initializing Redis cache for query optimization...")
         try:
             from services.redis_cache import RedisCache
+            from services.site_config import SiteConfig
 
-            self.redis_cache = await RedisCache.create()
+            sc = self._site_config if self._site_config is not None else SiteConfig()
+            self.redis_cache = await RedisCache.create(site_config=sc)
             if self.redis_cache._enabled:
                 logger.info(
                     "   [OK] Redis cache initialized (query performance optimization enabled)"
