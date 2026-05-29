@@ -82,7 +82,9 @@ def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
         return fallback.format(**kwargs)
 
 
-async def _resolve_self_review_model(pool: Any) -> str:
+async def _resolve_self_review_model(
+    pool: Any, *, site_config: SiteConfig | None = None,
+) -> str:
     """Resolve writer-self-review model via cost-tier API + fallback chain.
 
     Lane B sweep migration. Order:
@@ -93,7 +95,13 @@ async def _resolve_self_review_model(pool: Any) -> str:
     ``pool`` may be ``None`` when the caller does not have access to the
     asyncpg pool (e.g. legacy paths); in that case we skip the tier
     resolution and try the per-call-site setting directly.
+
+    Phase-1 DI shim (#272): ``site_config`` is a keyword-only override; when
+    omitted it falls back to the live module global so existing callers are
+    unaffected.
     """
+    import services.self_review as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     if pool is not None:
         try:
             return await resolve_tier_model(pool, "standard")
@@ -104,7 +112,7 @@ async def _resolve_self_review_model(pool: Any) -> str:
     else:
         tier_exc = RuntimeError("no asyncpg pool available")
 
-    fallback = site_config.get("writer_self_review_model")
+    fallback = _sc.get("writer_self_review_model")
     if fallback:
         await notify_operator(
             f"writer_self_review: cost_tier='standard' resolution failed "
@@ -126,6 +134,7 @@ async def _resolve_self_review_model(pool: Any) -> str:
 
 async def self_review_and_revise(
     draft: str, title: str, topic: str, *, pool: Any = None,
+    site_config: SiteConfig | None = None,
 ) -> tuple[str, dict]:
     """Ask the writer model to catch + fix cross-section contradictions.
 
@@ -134,12 +143,19 @@ async def self_review_and_revise(
     - ``enabled`` (bool) — False when the feature flag is off; True otherwise.
     - ``contradictions_found`` (int) — count the detector returned.
     - ``revised`` (bool) — True only when we accepted the revision.
+
+    Phase-1 DI shim (#272): ``site_config`` is a keyword-only override; when
+    omitted it falls back to the live module global so existing callers are
+    unaffected. The resolved instance is threaded down to
+    ``_resolve_self_review_model`` so the whole call chain shares one config.
     """
+    import services.self_review as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
     from plugins.registry import get_all_llm_providers
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
 
     enabled = (
-        str(site_config.get("enable_writer_self_review", "false")).lower() == "true"
+        str(_sc.get("enable_writer_self_review", "false")).lower() == "true"
     )
     if not enabled:
         return draft, stats
@@ -154,7 +170,7 @@ async def self_review_and_revise(
     # _resolve_self_review_model fails loud via notify_operator if both
     # are missing, per feedback_no_silent_defaults.md.
     try:
-        resolved_model = await _resolve_self_review_model(pool)
+        resolved_model = await _resolve_self_review_model(pool, site_config=_sc)
     except RuntimeError as exc:
         logger.warning("[SELF_REVIEW] could not resolve model: %s", exc)
         return draft, stats
@@ -170,7 +186,7 @@ async def self_review_and_revise(
 
     # v2.3: Provider Protocol instead of concrete OllamaClient. The
     # timeout knob survives via the new ``timeout_s`` kwarg (v2.1).
-    timeout_s = site_config.get_int(
+    timeout_s = _sc.get_int(
         "content_router_contradiction_timeout_seconds", 120,
     )
     providers = {p.name: p for p in get_all_llm_providers()}
@@ -186,7 +202,7 @@ async def self_review_and_revise(
             messages=[{"role": "user", "content": review_prompt}],
             model=review_model,
             temperature=0.2,
-            max_tokens=site_config.get_int(
+            max_tokens=_sc.get_int(
                 "content_router_contradiction_review_max_tokens", 1500,
             ),
             timeout_s=timeout_s,
@@ -214,7 +230,7 @@ async def self_review_and_revise(
             messages=[{"role": "user", "content": revise_prompt}],
             model=review_model,
             temperature=0.3,
-            max_tokens=site_config.get_int(
+            max_tokens=_sc.get_int(
                 "content_router_contradiction_revise_max_tokens", 8000,
             ),
             timeout_s=timeout_s,
