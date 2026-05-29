@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-## [0.27.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.27.0...v0.27.1) (2026-05-29)
+## [0.28.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.27.0...v0.28.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate r2_upload_service to constructor DI (DI migration PR 4) ([#723](https://github.com/Glad-Labs/glad-labs-stack/issues/723)) ([7bdd4b1](https://github.com/Glad-Labs/glad-labs-stack/commit/7bdd4b1be7da069046131b02ba7201e16032da53))
 
 
 ### Bug Fixes
