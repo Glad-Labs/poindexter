@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.28.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.28.0...v0.28.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **storage:** finish storage_* cutover, retire r2 public_url + delay key reads ([#731](https://github.com/Glad-Labs/glad-labs-stack/issues/731)) ([#733](https://github.com/Glad-Labs/glad-labs-stack/issues/733)) ([3ce9362](https://github.com/Glad-Labs/glad-labs-stack/commit/3ce93622d7297311ff9b1a171916633f8140e5d7))
+
 ## [0.28.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.27.0...v0.28.0) (2026-05-29)
 
 
