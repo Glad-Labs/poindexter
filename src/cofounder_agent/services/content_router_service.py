@@ -175,6 +175,8 @@ async def process_content_generation_task(
     quality_preference: str | None = None,
     category: str | None = None,
     target_audience: str | None = None,
+    *,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Dispatch one ``pipeline_tasks`` row through its LangGraph template.
 
@@ -192,6 +194,15 @@ async def process_content_generation_task(
     silently running an undefined pipeline.
     """
     from uuid import uuid4
+
+    # Phase-1 DI shim (#272): resolve the SiteConfig to use. Prefer the
+    # injected instance; otherwise fall back to the lifespan-bound module
+    # global via self-import so callers that don't yet pass site_config
+    # keep getting the wired config. The local param name `site_config`
+    # would otherwise shadow the module global, so every use below routes
+    # through `_sc`.
+    import services.content_router_service as _mod
+    _sc = site_config if site_config is not None else _mod.site_config
 
     if not task_id:
         task_id = str(uuid4())
@@ -224,7 +235,7 @@ async def process_content_generation_task(
     # Pull the lifespan-loaded SiteConfig and thread it into the
     # ImageService ctor so the Pexels secret lookup goes through the
     # canonical Phase H DI seam (poindexter#381).
-    image_service = get_image_service(site_config=site_config)
+    image_service = get_image_service(site_config=_sc)
 
     # Settings + style tracker — pulled from the container/app.state
     # during DI transition (#242). Falls back to fresh instances when
@@ -253,7 +264,7 @@ async def process_content_generation_task(
         _experiment_assignment = await assign_pipeline_variant(
             task_id=task_id,
             database_service=database_service,
-            site_config=site_config,
+            site_config=_sc,
             models_by_phase=_models_by_phase,
         )
     except Exception as _exc:
@@ -280,7 +291,7 @@ async def process_content_generation_task(
         # Phase H DI seam — every stage can pull ``site_config`` from
         # context.get('site_config') and forward it into services that
         # need DB-backed settings or secrets (poindexter#381).
-        "site_config": site_config,
+        "site_config": _sc,
         "models_by_phase": _models_by_phase,
         "quality_preference": quality_preference,
         "target_audience": target_audience,
@@ -380,7 +391,7 @@ async def process_content_generation_task(
                 assignment=result.get("experiment_assignment") or {},
                 task_id=task_id,
                 database_service=database_service,
-                site_config=site_config,
+                site_config=_sc,
                 metrics={
                     "quality_score": float(result.get("quality_score") or 0.0),
                     "qa_final_score": float(result.get("qa_final_score") or 0.0),
@@ -422,7 +433,7 @@ async def process_content_generation_task(
         # filterable event_type so dashboards/alerts can ignore it.
         _is_dry_run_halt = False
         try:
-            _dry_raw = site_config.get("pipeline_dry_run_mode", "")
+            _dry_raw = _sc.get("pipeline_dry_run_mode", "")
             _is_dry_run = str(_dry_raw).strip().lower() in ("true", "1", "yes", "on")
             _err_text = str(exc)
             _is_dry_run_halt = _is_dry_run and (
