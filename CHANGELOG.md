@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.41.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.40.0...v0.41.0) (2026-05-30)
+
+
+### Features
+
+* **observability:** delivery-plane dead-man's switch ([#524](https://github.com/Glad-Labs/glad-labs-stack/issues/524)) ([f905003](https://github.com/Glad-Labs/glad-labs-stack/commit/f9050036ceaa121528c2f42adcf37297d0a28df8))
+
+
+### Bug Fixes
+
+* **skills:** apply the package-relative loader path (was left uncommitted) ([63d601a](https://github.com/Glad-Labs/glad-labs-stack/commit/63d601a6123a5e0823e3bf320ee5d93272fd0661))
+
 ## [0.40.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.39.0...v0.40.0) (2026-05-30)
 
 
