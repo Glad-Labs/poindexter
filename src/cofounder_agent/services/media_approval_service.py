@@ -64,9 +64,12 @@ async def _niche_auto_approve_enabled(
     """Return ``(enabled, niche_slug)`` for the per-niche-per-medium
     auto-approve setting.
 
-    Looks up the post's niche via ``posts.niche_slug``, then reads
-    ``niche.<slug>.media.<medium>.auto_approve`` from app_settings.
-    Missing setting → not enabled (the conservative default).
+    Looks up the post's niche via the canonical
+    ``posts.metadata->>'pipeline_task_id'`` → ``pipeline_tasks.niche_slug``
+    seam (``posts`` has no ``niche_slug`` column — the niche lives on the
+    source task), then reads ``niche.<slug>.media.<medium>.auto_approve``
+    from app_settings. Missing setting → not enabled (the conservative
+    default).
 
     ``db`` may be either an asyncpg Pool or Connection — both expose
     the same ``.fetchrow`` / ``.execute`` interface so we don't need
@@ -74,7 +77,13 @@ async def _niche_auto_approve_enabled(
     caller already holds the pool's only free connection).
     """
     niche_row = await db.fetchrow(
-        "SELECT niche_slug FROM posts WHERE id = $1::uuid",
+        """
+        SELECT pt.niche_slug
+        FROM posts p
+        LEFT JOIN pipeline_tasks pt
+            ON pt.task_id = (p.metadata ->> 'pipeline_task_id')
+        WHERE p.id = $1::uuid
+        """,
         post_id,
     )
     if not niche_row or not niche_row["niche_slug"]:

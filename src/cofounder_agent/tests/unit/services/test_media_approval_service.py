@@ -78,6 +78,32 @@ async def test_record_pending_inserts_pending_without_niche(
     assert "ON CONFLICT (post_id, medium) DO NOTHING" in insert_sql
 
 
+async def test_niche_lookup_joins_pipeline_tasks_not_posts_column(
+    mock_db: MagicMock,
+) -> None:
+    """Niche must be resolved via the ``pipeline_task_id`` seam, NOT a
+    (nonexistent) ``posts.niche_slug`` column.
+
+    Regression guard for the silent media-approval crash: ``posts`` has
+    no ``niche_slug`` column, so ``SELECT niche_slug FROM posts`` raised
+    ``column "niche_slug" does not exist`` and every generated podcast /
+    video was uploaded but never entered the approval queue. A MagicMock
+    can't catch a column-vs-schema mismatch, so we assert on the SQL
+    shape directly.
+    """
+    mock_db.fetchrow.return_value = None
+
+    await media_approval_service.record_pending(
+        mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+    )
+
+    niche_sql = mock_db.fetchrow.call_args_list[0].args[0]
+    assert "pipeline_tasks" in niche_sql
+    assert "pipeline_task_id" in niche_sql
+    # The bug was querying a column that doesn't exist on posts.
+    assert "niche_slug FROM posts" not in niche_sql.replace("\n", " ")
+
+
 async def test_record_pending_auto_approves_when_niche_setting_enabled(
     mock_db: MagicMock,
 ) -> None:

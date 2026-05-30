@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from typing import Any
 
 from plugins.job import JobResult
@@ -201,18 +202,26 @@ class BackfillPodcastsJob:
                 )
                 async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
                     feed = await client.get(f"{api_base}/api/podcast/feed.xml", timeout=30)
-                    feed_path = os.path.join(
-                        os.path.expanduser("~"), ".poindexter", "podcast-feed.xml",
+                    # Per-call temp file (matches publish_service) — the
+                    # container's home dir (~/.poindexter) is not writable
+                    # by appuser, which silently killed every feed rebuild.
+                    fd, feed_path = tempfile.mkstemp(
+                        suffix=".xml", prefix="poindexter-podcast-",
                     )
-                    os.makedirs(os.path.dirname(feed_path), exist_ok=True)
-                    with open(feed_path, "w", encoding="utf-8") as f:
-                        f.write(feed.text)
-                    if sc is not None:
-                        r2_svc = R2UploadService(site_config=sc)
-                        await r2_svc.upload_to_r2(
-                            feed_path, "podcast/feed.xml", "application/rss+xml",
-                        )
-                        logger.info("[BACKFILL_PODCASTS] Podcast RSS feed rebuilt on R2")
+                    try:
+                        with os.fdopen(fd, "w", encoding="utf-8") as f:
+                            f.write(feed.text)
+                        if sc is not None:
+                            r2_svc = R2UploadService(site_config=sc)
+                            await r2_svc.upload_to_r2(
+                                feed_path, "podcast/feed.xml", "application/rss+xml",
+                            )
+                            logger.info("[BACKFILL_PODCASTS] Podcast RSS feed rebuilt on R2")
+                    finally:
+                        try:
+                            os.unlink(feed_path)
+                        except OSError:
+                            pass
             except Exception as feed_err:
                 logger.warning(
                     "[BACKFILL_PODCASTS] Feed rebuild failed (non-fatal): %s", feed_err,
