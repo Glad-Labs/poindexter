@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.2...v0.32.3) (2026-05-30)
+
+
+### Bug Fixes
+
+* **sessions:** isolate each overnight Claude session in its own worktree ([#799](https://github.com/Glad-Labs/glad-labs-stack/issues/799)) ([88f620c](https://github.com/Glad-Labs/glad-labs-stack/commit/88f620c0632bcee291d98c7f002d62cb1008ec55))
+
 ## [0.32.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.1...v0.32.2) (2026-05-30)
 
 
