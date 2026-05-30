@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.3...v0.32.4) (2026-05-30)
+
+
+### Bug Fixes
+
+* normalize + validate `post create --media` flavors (closes Glad-Labs/glad-labs-stack[#795](https://github.com/Glad-Labs/glad-labs-stack/issues/795)) ([#801](https://github.com/Glad-Labs/glad-labs-stack/issues/801)) ([09100d0](https://github.com/Glad-Labs/glad-labs-stack/commit/09100d01bcc6fdf0ae9f1791de5ef48f761ff0e5))
+
 ## [0.32.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.2...v0.32.3) (2026-05-30)
 
 
