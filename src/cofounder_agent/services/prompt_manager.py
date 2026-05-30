@@ -23,6 +23,7 @@ Version History:
 """
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -182,6 +183,103 @@ class UnifiedPromptManager:
         self._langfuse_client: Any = None
         self._langfuse_enabled: bool | None = None  # None = unevaluated
         self._initialize_prompts()
+        # Skills load AFTER YAML so a migrated SKILL.md transparently takes
+        # precedence over any leftover YAML entry for the same key — lets us
+        # migrate one prompt file at a time without a flag day. See
+        # docs/architecture/business-os-endgame.md.
+        self._initialize_skills()
+
+    def _initialize_skills(self):
+        """Load pipeline prompts from agentskills.io SKILL.md packs.
+
+        Skills live in the repo-root ``skills/`` tree, namespaced by pack:
+        ``skills/<pack>/<skill>/SKILL.md`` (industry-standard layout, uniform
+        with the existing ``skills/poindexter/`` operator pack). A
+        prompt-bearing skill's frontmatter declares ``metadata.category`` +
+        ``metadata.prompts`` (the keys it provides); the body holds one
+        ``## <key>`` section per prompt with the template in a fenced block.
+
+        Skills WITHOUT a ``metadata.prompts`` block (e.g. the operator action
+        skills under ``skills/poindexter/`` that wrap the CLI/MCP) are silently
+        skipped — they're a different layer (agent-runtime tools), not pipeline
+        prompt text, and share only the file format.
+
+        Each key registers exactly like :meth:`_initialize_prompts` does for
+        YAML, so the resolution chain (Langfuse override -> in-memory default)
+        is unchanged. See docs/architecture/business-os-endgame.md.
+        """
+        # Repo root holds the top-level skills/ tree, a sibling of src/.
+        # __file__ = src/cofounder_agent/services/prompt_manager.py -> parents[3].
+        skills_dir = Path(__file__).resolve().parents[3] / "skills"
+        if not skills_dir.is_dir():
+            return
+
+        for skill_md in sorted(skills_dir.glob("*/*/SKILL.md")):
+            try:
+                # Frontmatter is delimited by the first two '---' lines.
+                _, frontmatter_raw, body = skill_md.read_text(
+                    encoding="utf-8",
+                ).split("---", 2)
+                frontmatter: dict[str, Any] = yaml.safe_load(frontmatter_raw) or {}
+            except Exception:
+                # ValueError = missing frontmatter delimiters; yaml errors etc.
+                logger.error("Failed to load skill: %s", skill_md, exc_info=True)
+                continue
+
+            meta = frontmatter.get("metadata", {}) or {}
+            prompts = meta.get("prompts") or []
+            if not prompts:
+                # Not a prompt-bearing skill (operator action skill, etc.) —
+                # different layer, silently ignore.
+                continue
+
+            category = self._CATEGORY_MAP.get(meta.get("category", ""))
+            if category is None:
+                logger.warning(
+                    "Skill %s declares prompts but has unknown/absent "
+                    "metadata.category — skipping", skill_md,
+                )
+                continue
+
+            for prompt in prompts:
+                key = prompt.get("key")
+                if not key:
+                    continue
+                template = self._extract_skill_section(body, key)
+                if not template:
+                    logger.warning(
+                        "Skill %s declares key %r with no '## %s' section",
+                        skill_md.parent.name, key, key,
+                    )
+                    continue
+                self._register_prompt(
+                    key=key,
+                    category=category,
+                    template=template,
+                    description=prompt.get(
+                        "description", frontmatter.get("description", ""),
+                    ),
+                    output_format=prompt.get("output_format", "text"),
+                )
+
+    @staticmethod
+    def _extract_skill_section(body: str, key: str) -> str:
+        """Return the fenced template under a ``## <key>`` heading, or ''.
+
+        Normalizes to YAML ``|`` (literal block, clip-chomp) semantics — a
+        single trailing newline — so a migrated SKILL.md template is
+        byte-identical to the YAML ``template: |`` it replaced. Downstream
+        snapshot tests pin that trailing ``\\n`` (e.g.
+        test_topic_ranking_prompt.py) and rendered prompts assume it.
+        """
+        match = re.search(
+            rf"^##\s+{re.escape(key)}\s*$\n+```[^\n]*\n(.*?)\n```",
+            body,
+            re.MULTILINE | re.DOTALL,
+        )
+        if not match:
+            return ""
+        return match.group(1).rstrip("\n") + "\n"
 
     def _initialize_prompts(self):
         """Load all prompts from YAML files in the prompts/ directory."""
