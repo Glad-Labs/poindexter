@@ -1,3 +1,10 @@
+# Rendered Alertmanager config (#524) — RenderAlertmanagerConfigJob writes
+# this from alertmanager.yml.tmpl with a real telegram_chat_id substituted
+# in. It must NEVER be committed (public-mirror chat_id leak). The template
+# (.tmpl) is the only tracked source. In prod the render target is a Docker
+# volume, but guard the repo path too in case someone renders locally.
+infrastructure/prometheus/alertmanager.yml
+
 # ============================================================
 # IDE & OS
 # ============================================================

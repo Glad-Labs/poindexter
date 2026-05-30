@@ -58,8 +58,17 @@ SECRETS_DIR = Path(os.environ.get("PROMETHEUS_SECRETS_DIR", "/host-prometheus/se
 
 # (app_settings key, on-disk filename). Files are written into
 # ``SECRETS_DIR`` with mode 0o600 (operator-readable only).
+#
+# ``alertmanager-telegram-token`` (Glad-Labs/poindexter#524): the Telegram
+# bot token for Alertmanager's NATIVE telegram_configs receiver used by the
+# delivery-plane dead-man's switch. Alertmanager mounts this same secrets
+# dir read-only and reads the file via ``bot_token_file``. This keeps the
+# dead-man's-switch delivery path independent of the brain's Python alert
+# dispatcher — the brain only writes the token; Alertmanager does the
+# paging on its own, so even a dead dispatcher still pages the operator.
 _SECRETS: tuple[tuple[str, str], ...] = (
     ("uptime_kuma_api_key", "uptime-kuma-api-key"),
+    ("telegram_bot_token", "alertmanager-telegram-token"),
 )
 
 

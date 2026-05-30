@@ -101,23 +101,57 @@ services:
       timeout: 5s
       retries: 3
 
-  # Alertmanager — Phase D (GitHub #68).
+  # Alertmanager — Phase D (GitHub #68) + dead-man's switch (#524).
   # Consumes Prometheus alert rules, routes them to Telegram/Discord webhooks.
   # Brain daemon will subscribe to the webhook endpoint for auto-remediation
   # once parallel-run with legacy probes is verified.
+  #
+  # #524: the config file is no longer the committed repo YAML — it is
+  # RENDERED by RenderAlertmanagerConfigJob (in the worker) from
+  # alertmanager.yml.tmpl into the shared `alertmanager-config` volume (the
+  # template carries a ${ALERTMANAGER_TELEGRAM_CHAT_ID} placeholder so a
+  # real chat_id never lands in the public mirror). Mirrors how
+  # prometheus-rules is shared between worker (writer) and prometheus
+  # (reader). The startup sidecar chmods the dir + seeds a minimal config
+  # so Alertmanager can boot before the first render lands (≤5 min).
   alertmanager:
     image: prom/alertmanager:latest
     container_name: poindexter-alertmanager
     restart: unless-stopped
+    user: root
+    entrypoint:
+      - "sh"
+      - "-c"
+      - >-
+        chmod 0777 /etc/alertmanager/config
+        && [ -f /etc/alertmanager/config/alertmanager.yml ]
+        || printf 'route:\n  receiver: poindexter-webhook\nreceivers:\n  - name: poindexter-webhook\n' > /etc/alertmanager/config/alertmanager.yml
+        && exec /bin/alertmanager
+        --config.file=/etc/alertmanager/config/alertmanager.yml
+        --storage.path=/alertmanager
+        --web.enable-lifecycle
     ports:
       - "9093:9093"
     volumes:
-      - ./infrastructure/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Rendered config dir — RenderAlertmanagerConfigJob (worker) writes
+      # alertmanager.yml here; Alertmanager reads it. `/-/reload` (enabled
+      # via --web.enable-lifecycle) picks up changes without a restart.
+      - alertmanager-config:/etc/alertmanager/config
       - alertmanager-data:/alertmanager
       # Bearer token for the Poindexter webhook receiver. Must match
       # app_settings.alertmanager_webhook_token. Rotate via:
       #   UPDATE app_settings ... ; echo -n <new> > file ; docker restart poindexter-alertmanager
       - ${USERPROFILE:-.}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
+      # #524 — native-Telegram bot token for the dead-man's-switch receiver.
+      # The whole prometheus secrets dir is mounted ro (same host dir the
+      # prometheus container mounts). brain/prometheus_secret_writer.py
+      # decrypts app_settings.telegram_bot_token (is_secret=true) and writes
+      # it to `alertmanager-telegram-token` in this dir every brain cycle,
+      # alongside the uptime-kuma key. alertmanager.yml.tmpl's
+      # bot_token_file points at the file below. No plaintext token in git.
+      # Mounting the dir (not a single file) avoids the "Docker creates a
+      # directory when the bind source doesn't exist yet" bootstrap trap.
+      - ./infrastructure/prometheus/secrets:/etc/alertmanager/secrets:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -438,6 +472,15 @@ services:
       # Shared with the prometheus container — RenderPrometheusRulesJob
       # writes the DB-sourced rule YAML here; prometheus reads it.
       - prometheus-rules:/etc/prometheus/rules
+      # #524 — shared with the alertmanager container.
+      # RenderAlertmanagerConfigJob reads the template below, substitutes
+      # the chat_id placeholder, and writes the rendered alertmanager.yml
+      # into this volume; alertmanager reads it + /-/reload picks it up.
+      - alertmanager-config:/etc/alertmanager/config
+      # Read-only mount of the alertmanager config template so the render
+      # job can read it (the worker mounts ./src at /app:ro, not the
+      # infrastructure tree, so the template needs its own mount).
+      - ./infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Worker reads every tunable from app_settings (models, prompts, QA
@@ -1580,6 +1623,11 @@ volumes:
     name: gladlabs-prometheus-rules
   alertmanager-data:
     name: gladlabs-alertmanager-data
+  # #524 — rendered Alertmanager config, shared between the worker
+  # (RenderAlertmanagerConfigJob writes alertmanager.yml here) and the
+  # alertmanager container (reads it). Mirrors the prometheus-rules volume.
+  alertmanager-config:
+    name: gladlabs-alertmanager-config
   pgadmin-data:
     name: gladlabs-pgadmin-data
   loki-data:

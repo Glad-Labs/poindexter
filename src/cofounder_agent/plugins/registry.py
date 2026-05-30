@@ -432,6 +432,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
+        (
+            "jobs",
+            "services.jobs.render_alertmanager_config",
+            "RenderAlertmanagerConfigJob",
+        ),
         ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
         ("jobs", "services.jobs.check_published_links", "CheckPublishedLinksJob"),
         ("jobs", "services.jobs.flag_missing_seo", "FlagMissingSeoJob"),

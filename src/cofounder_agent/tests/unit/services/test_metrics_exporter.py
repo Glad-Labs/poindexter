@@ -36,6 +36,8 @@ def _reset_gauges():
         mx.UNAPPLIED_MIGRATIONS_COUNT,
     ):
         g.set(0)
+    # Labeled gauge (#524) — clear the series so each test starts absent.
+    mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.clear()
     yield
 
 
@@ -61,9 +63,10 @@ class TestRefreshMetrics:
     async def test_worker_up_always_set(self):
         from services import metrics_exporter as mx
 
-        # fetchval queue: SELECT 1, pg_stat_activity, max_connections,
-        # embeddings-gap, approval-queue, auto-cancelled, applied-migrations.
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
+        # fetchval queue: SELECT 1, heartbeat-epoch (#524), pg_stat_activity,
+        # max_connections, embeddings-gap, approval-queue, auto-cancelled,
+        # applied-migrations.
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
         with patch(
             "services.metrics_exporter.httpx.AsyncClient"
         ) as mock_http_cls:
@@ -89,7 +92,7 @@ class TestRefreshMetrics:
 
         before = _latency_count()
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -121,7 +124,7 @@ class TestRefreshMetrics:
     async def test_ollama_model_count_set_from_api_tags(self):
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -144,7 +147,7 @@ class TestRefreshMetrics:
         """"Ollama up but no models" — the scenario Gitea #238 flagged."""
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -164,10 +167,10 @@ class TestRefreshMetrics:
     async def test_embeddings_missing_posts_reflects_gap(self):
         from services import metrics_exporter as mx
 
-        # fetchval queue: SELECT 1 → 1, pg_stat_activity → 50,
-        # max_connections → 300, embeddings-gap → 5, queue → 2,
-        # auto-cancelled → 0, applied-migrations → 0.
-        pool, _ = _make_pool([1, 50, 300, 5, 2, 0, 0], [[], []])
+        # fetchval queue: SELECT 1 → 1, heartbeat-epoch (#524),
+        # pg_stat_activity → 50, max_connections → 300, embeddings-gap → 5,
+        # queue → 2, auto-cancelled → 0, applied-migrations → 0.
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 5, 2, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -179,12 +182,13 @@ class TestRefreshMetrics:
 
         # fetchval queue (post-rebase, GH-90 + GH-92 + GH-227):
         #   SELECT 1 → 1
+        #   heartbeat-epoch (#524)
         #   pg_stat_activity → 50, max_connections → 300 (GH-92)
         #   embeddings-gap → 0
         #   queue → 7
         #   auto-cancelled → 0 (GH-90)
         #   applied-migrations → 0 (GH-227)
-        pool, _ = _make_pool([1, 50, 300, 0, 7, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 7, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -200,13 +204,10 @@ class TestRefreshMetrics:
         queries stay useful."""
         from services import metrics_exporter as mx
 
-        # fetchval queue (7 values, current refresh_metrics order):
-        #   SELECT 1, pg_used, pg_max, embeddings-gap, queue,
-        #   cancelled=42, applied-migrations=0.
-        # The worker_heartbeat_age_seconds slot was removed when the
-        # query was retired; the test queue had drifted to 8 values
-        # against a 7-fetchval consumer (closes Glad-Labs/poindexter#509).
-        pool, _ = _make_pool([1, 0, 100, 0, 0, 42, 0], [[], []])
+        # fetchval queue (8 values, current refresh_metrics order):
+        #   SELECT 1, heartbeat-epoch (#524), pg_used, pg_max,
+        #   embeddings-gap, queue, cancelled=42, applied-migrations=0.
+        pool, _ = _make_pool([1, 1_700_000_000.0, 0, 100, 0, 0, 42, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -219,9 +220,10 @@ class TestRefreshMetrics:
         exhausts ``max_connections``."""
         from services import metrics_exporter as mx
 
-        # 7-value fetchval queue: SELECT 1, pg_used=127, pg_max=300,
-        # gap=0, queue=0, cancelled=0, applied-migrations=0.
-        pool, _ = _make_pool([1, 127, 300, 0, 0, 0, 0], [[], []])
+        # 8-value fetchval queue: SELECT 1, heartbeat-epoch (#524),
+        # pg_used=127, pg_max=300, gap=0, queue=0, cancelled=0,
+        # applied-migrations=0.
+        pool, _ = _make_pool([1, 1_700_000_000.0, 127, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -237,10 +239,19 @@ class TestRefreshMetrics:
 
         pool = MagicMock()
         conn = MagicMock()
-        # SELECT 1 → 1, pg_stat_activity raises (one block's try/except
-        # eats that + skips the max_conn fetchval), then gap/queue/cancelled/migrations.
+        # SELECT 1 → 1, heartbeat-epoch (#524) → epoch, pg_stat_activity
+        # raises (its own try/except eats that + skips the max_conn
+        # fetchval), then gap/queue/cancelled/migrations.
         conn.fetchval = AsyncMock(
-            side_effect=[1, RuntimeError("permission denied"), 0, 0, 0, 0]
+            side_effect=[
+                1,
+                1_700_000_000.0,
+                RuntimeError("permission denied"),
+                0,
+                0,
+                0,
+                0,
+            ]
         )
         conn.fetch = AsyncMock(return_value=[])
         ctx = MagicMock()
@@ -266,7 +277,7 @@ class TestRefreshMetrics:
         ``/metrics`` text body consumed by Prometheus."""
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 88, 300, 0, 0, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 1_700_000_000.0, 88, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -290,9 +301,9 @@ class TestRefreshMetrics:
             1 for p in migrations_dir.glob("*.py") if p.name != "__init__.py"
         )
 
-        # 7-value queue: SELECT 1, pg_used, pg_max, gap, queue, cancelled,
-        # applied=on_disk.
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, on_disk], [[], []])
+        # 8-value queue: SELECT 1, heartbeat-epoch (#524), pg_used, pg_max,
+        # gap, queue, cancelled, applied=on_disk.
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, on_disk], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -315,10 +326,10 @@ class TestRefreshMetrics:
         # files on disk.
         applied = max(on_disk - 3, 0)
 
-        # 7-value queue matching the current refresh_metrics fetchval
-        # order (SELECT 1, pg_used, pg_max, gap, queue, cancelled,
-        # applied). Closes Glad-Labs/poindexter#509.
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, applied], [[], []])
+        # 8-value queue matching the current refresh_metrics fetchval
+        # order (SELECT 1, heartbeat-epoch (#524), pg_used, pg_max, gap,
+        # queue, cancelled, applied).
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, applied], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -343,7 +354,7 @@ class TestRefreshMetrics:
         applied_inflated = on_disk + 5
 
         pool, _ = _make_pool(
-            [1, 50, 300, 0, 0, 0, applied_inflated], [[], []]
+            [1, 1_700_000_000.0, 50, 300, 0, 0, 0, applied_inflated], [[], []]
         )
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
@@ -356,7 +367,7 @@ class TestRefreshMetrics:
         ``/metrics`` exposition text Prometheus scrapes."""
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -364,6 +375,104 @@ class TestRefreshMetrics:
         body, _ = mx.render_exposition()
         text = body.decode("utf-8")
         assert "poindexter_unapplied_migrations_count" in text
+
+
+def _heartbeat_series_value(mx):
+    """Return the brain-heartbeat gauge value from the exposition, or None
+    if the series is absent (the dead-man's-switch trigger condition)."""
+    for family in mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.collect():
+        for sample in family.samples:
+            if sample.name == "poindexter_brain_cycle_heartbeat_timestamp_seconds":
+                return sample.value
+    return None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBrainCycleHeartbeat:
+    """#524 — the delivery-plane dead-man's-switch heartbeat gauge.
+
+    The gauge must (a) carry the epoch of the latest brain.cycle_heartbeat
+    row when one exists, and (b) be ABSENT from the exposition entirely on
+    no-row / DB-error so ``absent(...)`` can fire and the staleness check
+    isn't frozen at a stale value.
+    """
+
+    async def test_gauge_set_from_latest_heartbeat_epoch(self):
+        from services import metrics_exporter as mx
+
+        epoch = 1_700_000_123.0
+        # fetchval order: SELECT 1, heartbeat-epoch, pg_used, pg_max, gap,
+        # queue, cancelled, applied.
+        pool, _ = _make_pool([1, epoch, 50, 300, 0, 0, 0, 0], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert _heartbeat_series_value(mx) == epoch
+        body, _ = mx.render_exposition()
+        text = body.decode("utf-8")
+        # A real data sample line must be present (not just HELP/TYPE).
+        sample_lines = [
+            ln
+            for ln in text.splitlines()
+            if ln.startswith("poindexter_brain_cycle_heartbeat_timestamp_seconds{")
+        ]
+        assert sample_lines, "heartbeat sample line missing from exposition"
+
+    async def test_gauge_absent_when_no_heartbeat_row(self):
+        """No brain.cycle_heartbeat row yet → MAX(created_at) is NULL →
+        the series must be cleared so absent() fires (not emitted as 0)."""
+        from services import metrics_exporter as mx
+
+        # Pre-seed a value to prove it gets cleared on the None result.
+        mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.labels(source="audit_log").set(123.0)
+
+        # heartbeat fetchval → None (no rows).
+        pool, _ = _make_pool([1, None, 50, 300, 0, 0, 0, 0], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert _heartbeat_series_value(mx) is None
+        # The HELP/TYPE metadata lines still render (prometheus_client keeps
+        # registered metric metadata), but NO data SAMPLE line may exist —
+        # that absence is what makes ``absent()`` fire. A sample line starts
+        # with the metric name + ``{`` (labels) or a space; metadata lines
+        # start with ``# HELP`` / ``# TYPE``.
+        text = body.decode("utf-8") if (body := mx.render_exposition()[0]) else ""
+        sample_lines = [
+            ln
+            for ln in text.splitlines()
+            if ln.startswith("poindexter_brain_cycle_heartbeat_timestamp_seconds")
+        ]
+        assert sample_lines == []
+
+    async def test_gauge_absent_on_db_error(self):
+        """If the heartbeat query raises, the series must be cleared (not
+        left at a stale value) so the dead-man's switch can fire."""
+        from services import metrics_exporter as mx
+
+        mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.labels(source="audit_log").set(999.0)
+
+        pool = MagicMock()
+        conn = MagicMock()
+        # SELECT 1 → 1, heartbeat query RAISES, then the rest succeed so
+        # the wider refresh still completes (per-block try/except posture).
+        conn.fetchval = AsyncMock(
+            side_effect=[1, RuntimeError("audit_log gone"), 50, 300, 0, 0, 0, 0]
+        )
+        conn.fetch = AsyncMock(return_value=[])
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = MagicMock(return_value=ctx)
+
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert _heartbeat_series_value(mx) is None
 
 
 @pytest.mark.unit

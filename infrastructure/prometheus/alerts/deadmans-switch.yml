@@ -1,0 +1,73 @@
+# Delivery-plane dead-man's switch (Glad-Labs/poindexter#524).
+#
+# WHY THIS IS A STATIC RULE, NOT A DB-RENDERED ONE:
+# Every other alert in this stack funnels through the brain's Python
+# dispatch loop (probe -> alert_events -> alert_dispatch_loop ->
+# Telegram/Discord) AND through the worker webhook receiver. If the
+# brain/dispatcher dies, ALL of those alerts go dark — which is exactly
+# what happened on 2026-05-28 (the content pipeline produced nothing for
+# a day and nothing paged). See
+# docs/audits/2026-05-29-observability-doctor-audit.md Finding #1.
+#
+# This rule lives under alerts/ (the STATIC safety-net rules baked into
+# the repo + bind-mounted read-only), NOT under rules/ (the DB-rendered
+# dir that RenderPrometheusRulesJob writes). The dead-man's switch must
+# not depend on the render job, the worker, or the brain to exist.
+#
+# It pairs with the independent Alertmanager route added in
+# alertmanager.yml.tmpl: alerts labeled `delivery_plane=dead_mans_switch`
+# are delivered straight to Telegram via Alertmanager's NATIVE
+# telegram_configs receiver — bypassing the worker webhook + Python
+# dispatch entirely. Own process (Alertmanager), own token
+# (alertmanager-telegram-token), own route. Three independent axes.
+
+groups:
+  - name: poindexter-delivery-plane
+    interval: 30s
+    rules:
+      # The brain has stopped emitting its cycle heartbeat metric.
+      # CYCLE_SECONDS=300 (5 min), so a healthy brain refreshes the
+      # gauge well inside any of these windows.
+      #
+      # Two independent trigger conditions, OR-ed into one expr so a
+      # single alert fires regardless of failure shape:
+      #
+      #   1. absent(...) — the worker /metrics endpoint is NOT exposing
+      #      the series at all. Happens when the brain has never written
+      #      a heartbeat row, or the worker can't reach Postgres to read
+      #      it (the exporter .clear()s the series on DB error). `for: 10m`
+      #      tolerates a brief scrape gap / cold start.
+      #
+      #   2. time() - <gauge> > 900 — the series IS present but the most
+      #      recent heartbeat is older than 15 minutes (3 missed cycles).
+      #      The brain process is alive enough to be scraped indirectly
+      #      but is no longer completing cycles.
+      #
+      # Either way: the brain is not running its loop, so the normal
+      # alert-delivery plane (which depends on that loop) cannot be
+      # trusted — page out-of-band, immediately.
+      - alert: BrainDeliveryDeadMansSwitch
+        expr: |
+          absent(poindexter_brain_cycle_heartbeat_timestamp_seconds)
+          or (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds > 900)
+        for: 10m
+        labels:
+          severity: critical
+          delivery_plane: dead_mans_switch
+        annotations:
+          summary: "Brain cycle heartbeat has stopped — normal alert plane may be down"
+          description: |
+            The brain daemon has not emitted a `brain.cycle_heartbeat`
+            within the expected window (absent for 10m, OR last heartbeat
+            >15 min old). The brain runs the Python alert-dispatch loop
+            that EVERY other alert depends on, so if it has stopped,
+            those alerts are silently dark.
+
+            This alert is delivered out-of-band via Alertmanager's native
+            Telegram receiver (independent of the brain dispatcher) — see
+            infrastructure/prometheus/alertmanager.yml.tmpl.
+
+            Check: `docker ps` for poindexter-brain-daemon; tail its logs;
+            verify Postgres is reachable from the worker (the heartbeat
+            gauge reads audit_log). The content pipeline is almost
+            certainly not producing while this fires.

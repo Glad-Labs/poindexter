@@ -23,6 +23,11 @@ Infrastructure:
 - ``poindexter_ollama_reachable`` — gauge, 1 if ``/api/tags`` returns 200
 - ``poindexter_ollama_model_count`` — gauge, number of models returned
   by ``/api/tags`` (Gitea #238 — catches "Ollama up but no models")
+- ``poindexter_brain_cycle_heartbeat_timestamp_seconds`` — gauge, Unix
+  epoch of the most recent ``brain.cycle_heartbeat`` audit_log row
+  (poindexter#524). Deliberately CLEARED (absent from exposition) on
+  no-row / DB-error so the static ``BrainDeliveryDeadMansSwitch`` alert
+  can fire via ``absent()`` — the one metric whose absence is alertable.
 
 Content pipeline:
 - ``poindexter_tasks_total`` — counter by ``status``
@@ -115,6 +120,29 @@ PG_CONNECTIONS_USED = Gauge(
 PG_CONNECTIONS_MAX = Gauge(
     "pg_connections_max",
     "Postgres max_connections server setting (denominator for utilization alerts)",
+)
+
+# Delivery-plane dead-man's switch heartbeat (Glad-Labs/poindexter#524).
+# Unix epoch (seconds) of the most recent ``brain.cycle_heartbeat`` row in
+# ``audit_log``. The brain daemon writes one such row at the end of every
+# cycle (CYCLE_SECONDS=300; see brain/brain_daemon.py). The static
+# Prometheus rule ``BrainDeliveryDeadMansSwitch`` fires on BOTH:
+#   - ``absent(...)`` for 10m   (gauge never emitted → DB unreachable or
+#     no heartbeat row ever written), and
+#   - ``time() - <gauge> > 900`` (heartbeat is stale by >15 min).
+#
+# This is the ONE metric whose ABSENCE must be alertable, so it is given a
+# single constant label and ``.clear()``-ed on every no-row / DB-error
+# refresh — that drops the series from the exposition entirely so
+# ``absent()`` can fire. A plain unlabeled Gauge would always emit (last
+# value or 0), which would defeat ``absent()`` and freeze the staleness
+# check at the last-good timestamp forever. Matching the exporter's
+# error posture: on failure we surface NOTHING rather than a stale/0 value.
+BRAIN_CYCLE_HEARTBEAT_TIMESTAMP = Gauge(
+    "poindexter_brain_cycle_heartbeat_timestamp_seconds",
+    "Unix epoch of the most recent brain.cycle_heartbeat audit_log row. "
+    "Absent when the brain has never written one or the DB is unreachable.",
+    ["source"],
 )
 
 OLLAMA_REACHABLE = Gauge(
@@ -331,6 +359,31 @@ async def refresh_metrics(
     except Exception as e:
         logger.debug("refresh_metrics: postgres check failed: %s", e)
         POSTGRES_CONNECTED.set(0)
+
+    # #524: brain cycle heartbeat freshness — the delivery-plane dead-man's
+    # switch. Read the epoch of the most recent ``brain.cycle_heartbeat``
+    # audit_log row and publish it as a gauge. If there's no row or the
+    # query fails, CLEAR the series so it is absent from the exposition and
+    # ``absent(poindexter_brain_cycle_heartbeat_timestamp_seconds)`` can
+    # fire — we deliberately do NOT emit a stale/zero value here (that would
+    # freeze the ``time() - gauge`` staleness check and mask a dead brain).
+    try:
+        async with pool.acquire() as conn:
+            epoch = await conn.fetchval(
+                "SELECT EXTRACT(EPOCH FROM MAX(created_at)) "
+                "FROM audit_log WHERE event_type = 'brain.cycle_heartbeat'"
+            )
+        if epoch is None:
+            # No heartbeat row yet — let absent() fire rather than emit 0.
+            BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.clear()
+        else:
+            BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.labels(source="audit_log").set(
+                float(epoch)
+            )
+    except Exception as e:
+        logger.debug("refresh_metrics: brain heartbeat query failed: %s", e)
+        # DB error → drop the series so the dead-man's switch can fire.
+        BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.clear()
 
     # GH-92: server-side connection utilization. pg_stat_activity counts
     # every backend (ours + gitea + pgadmin + ad-hoc psql). max_connections

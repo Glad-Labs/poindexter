@@ -23,9 +23,9 @@ output**, **delivery-plane fragility**, and the **lack of a single reasoning sur
 together the 40+ independent signals. Exhibit A is the textbook case: at least TWO Grafana rules
 ("Pipeline Stalled" #8, "Zero Published Posts This Week" #12) and `probe_publish_rate` /
 `probe_pipeline_throughput` should have fired. That they didn't points squarely at the
-**delivery plane** (alert_dispatcher / notify_operator / Grafana→webhook), the exact failure
+**delivery plane** (alert*dispatcher / notify_operator / Grafana→webhook), the exact failure
 class the `silent_alerter` meta-watchdog was built for — which means the meta-watchdog itself
-may be silent, or the "frequency increase" produced a _stalled-but-not-stopped_ state the
+may be silent, or the "frequency increase" produced a \_stalled-but-not-stopped* state the
 threshold rules don't catch (queued runs piling behind a held concurrency slot looks "alive").
 
 **Top findings:**
@@ -282,9 +282,24 @@ where it must be reliable.
 
 ### 3.4 Prioritized next steps
 
-1. **(P0, deterministic) Delivery-plane dead-man's-switch.** Out-of-band alert (Prometheus
-   `absent()`/staleness on a brain-emitted heartbeat metric) that fires through a path NOT owned by
-   the brain dispatcher. Directly addresses why Exhibit A was silent.
+1. **(P0, deterministic) Delivery-plane dead-man's-switch. ✅ DONE 2026-05-30 (#524).** Out-of-band
+   alert (Prometheus `absent()`/staleness on a brain-emitted heartbeat metric) that fires through a
+   path NOT owned by the brain dispatcher. Directly addresses why Exhibit A was silent.
+   Implementation (three independent axes — own process, own token, own route):
+   - **Metric:** worker `/metrics` now exposes
+     `poindexter_brain_cycle_heartbeat_timestamp_seconds` (the epoch of the latest
+     `brain.cycle_heartbeat` audit_log row). The series is `.clear()`-ed on no-row / DB-error so
+     `absent()` can fire. (`src/cofounder_agent/services/metrics_exporter.py`)
+   - **Rule:** static `BrainDeliveryDeadMansSwitch` in
+     `infrastructure/prometheus/alerts/deadmans-switch.yml` (the safety-net `alerts/` dir, NOT the
+     DB-rendered `rules/` dir) — fires on `absent(...)` for 10m OR `time() - <gauge> > 900`.
+   - **Delivery:** a SECOND Alertmanager receiver `dead-mans-switch-telegram` using NATIVE
+     `telegram_configs` (bypasses the worker webhook + Python dispatch loop entirely), with a route
+     matching `delivery_plane=dead_mans_switch` ABOVE the default. The config is a `.tmpl` (no real
+     chat_id in the public mirror); `RenderAlertmanagerConfigJob` substitutes
+     `app_settings.telegram_chat_id` and reloads Alertmanager via `/-/reload`. The bot token is
+     written to a bind-mounted file by `brain/prometheus_secret_writer.py` from
+     `app_settings.telegram_bot_token`.
 2. **(P0) Cadence SLO rule.** Compute expected posts/tasks from `prefect_content_flow_cron`; alert
    on shortfall within hours, not days. Closes the frequency-increase-then-slowdown gap.
 3. **(P1) Flip `prefect_stuck_flow_auto_crash` to default-on** (threshold is now well-tuned across

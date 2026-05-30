@@ -290,6 +290,7 @@ sync_page_views = "cofounder_agent.services.jobs.sync_page_views:SyncPageViewsJo
 expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
 db_backup = "cofounder_agent.services.jobs.db_backup:DbBackupJob"
 render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"
+render_alertmanager_config = "cofounder_agent.services.jobs.render_alertmanager_config:RenderAlertmanagerConfigJob"
 postgres_vacuum = "cofounder_agent.services.jobs.postgres_vacuum:PostgresVacuumJob"
 check_published_links = "cofounder_agent.services.jobs.check_published_links:CheckPublishedLinksJob"
 flag_missing_seo = "cofounder_agent.services.jobs.flag_missing_seo:FlagMissingSeoJob"
