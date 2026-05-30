@@ -63,9 +63,10 @@ from services.template_runner import (
 logger = logging.getLogger(__name__)
 
 
-# Prompt key in UnifiedPromptManager + prompt_templates table. YAML
-# default lives at prompts/atoms.yaml; runtime overrides come from the
-# prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
+# Prompt key in UnifiedPromptManager + prompt_templates table. The
+# default lives at skills/content/atoms/SKILL.md; runtime overrides come
+# from the prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
+# The {site_name} placeholder is rendered from site_config by compose().
 _PROMPT_KEY = "atoms.pipeline_architect.system_prompt"
 
 
@@ -83,8 +84,11 @@ def _resolve_system_prompt() -> str:
         return _ARCHITECT_SYSTEM_PROMPT_FALLBACK
 
 
+# The {site_name} placeholder is rendered from the run-bound site_config
+# by compose() (see the .format() call). The JSON-schema braces are
+# escaped as {{ / }} so .format() leaves them as literal single braces.
 _ARCHITECT_SYSTEM_PROMPT_FALLBACK = """\
-You are the Glad Labs pipeline architect. Given an INTENT (high-level
+You are the {{site_name}} pipeline architect. Given an INTENT (high-level
 request) and an ATOM CATALOG (one bullet line per atom, with PURPOSE
 / INPUTS / OUTPUTS / REQUIRES / PRODUCES blocks), produce a JSON
 object describing a LangGraph pipeline that satisfies the intent.
@@ -112,22 +116,22 @@ HARD RULES:
 4. Terminal edges use the literal string "END" as the 'to' value.
 5. The 'entry' field names the first node to run.
 6. Output one valid JSON object matching the schema. The first
-   character is `{` and the last character is `}`.
+   character is `{{` and the last character is `}}`.
 
 JSON SCHEMA:
 
-{
+{{
   "name": "<short_snake_slug>",
   "description": "<one-sentence purpose>",
   "entry": "<node_id_of_entry>",
   "nodes": [
-    {"id": "<unique_node_id>", "atom": "<atom_name_from_catalog>",
-     "config": {<optional state seed values for this node>}}
+    {{"id": "<unique_node_id>", "atom": "<atom_name_from_catalog>",
+     "config": {{<optional state seed values for this node>}}}}
   ],
   "edges": [
-    {"from": "<node_id>", "to": "<node_id_or_'END'>"}
+    {{"from": "<node_id>", "to": "<node_id_or_'END'>"}}
   ]
-}
+}}
 
 COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 
@@ -230,6 +234,15 @@ async def compose(
         from services.llm_text import resolve_local_model
         model = resolve_local_model(site_config=_sc)
 
+    # The migrated prompt carries the operator persona as a {site_name}
+    # placeholder (was hardcoded "Glad Labs"). Render it once from the
+    # run-bound site_config before the loop. Empty string when unset so
+    # .format never raises on a missing key.
+    system_prompt = _resolve_system_prompt().format(
+        site_name=(_sc.get("site_name") if _sc else "") or "",
+        site_url=(_sc.get("site_url") if _sc else "") or "",
+    )
+
     base_user_prompt = f"INTENT: {intent}\n\n"
     if context:
         base_user_prompt += f"CONTEXT: {json.dumps(context, default=str)[:2000]}\n\n"
@@ -255,7 +268,7 @@ async def compose(
             )
 
         full_prompt = (
-            f"{_resolve_system_prompt()}\n\n"
+            f"{system_prompt}\n\n"
             f"---\n\n"
             f"{base_user_prompt}{retry_block}\n\n"
             f"---\n\n"

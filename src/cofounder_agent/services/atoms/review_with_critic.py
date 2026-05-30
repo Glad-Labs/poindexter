@@ -44,9 +44,9 @@ from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 logger = logging.getLogger(__name__)
 
 
-# Prompt key in UnifiedPromptManager + prompt_templates table. YAML
-# default lives at prompts/atoms.yaml; runtime overrides come from the
-# prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
+# Prompt key in UnifiedPromptManager + prompt_templates table. The
+# default lives at skills/content/atoms/SKILL.md; runtime overrides come
+# from the prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
 _PROMPT_KEY = "atoms.review_with_critic.system_prompt"
 
 

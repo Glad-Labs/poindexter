@@ -233,8 +233,11 @@ class UnifiedPromptManager:
                 # different layer, silently ignore.
                 continue
 
-            category = self._CATEGORY_MAP.get(meta.get("category", ""))
-            if category is None:
+            # Pack-level default category. A prompt entry MAY override it
+            # with its own ``category`` (a pack can mix categories — e.g.
+            # the atoms pack spans blog_generation / content_qa / utility).
+            pack_category = self._CATEGORY_MAP.get(meta.get("category", ""))
+            if pack_category is None:
                 logger.warning(
                     "Skill %s declares prompts but has unknown/absent "
                     "metadata.category — skipping", skill_md,
@@ -245,6 +248,18 @@ class UnifiedPromptManager:
                 key = prompt.get("key")
                 if not key:
                     continue
+                category = pack_category
+                prompt_category_str = prompt.get("category")
+                if prompt_category_str:
+                    resolved = self._CATEGORY_MAP.get(prompt_category_str)
+                    if resolved is None:
+                        logger.warning(
+                            "Skill %s key %r declares unknown category %r — "
+                            "falling back to pack category",
+                            skill_md.parent.name, key, prompt_category_str,
+                        )
+                    else:
+                        category = resolved
                 template = self._extract_skill_section(body, key)
                 if not template:
                     logger.warning(

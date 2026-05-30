@@ -144,7 +144,7 @@ _FOOTER = (
 
 
 # Prompt key in UnifiedPromptManager + prompt_templates table. The
-# YAML default lives at prompts/atoms.yaml; runtime overrides come
+# default lives at skills/content/atoms/SKILL.md; runtime overrides come
 # from the prompt_templates DB row with the matching key. Per
 # feedback_prompts_must_be_db_configurable: every prompt is
 # DB-configurable; inline constants are tech debt.
@@ -182,13 +182,15 @@ def _resolve_system_prompt() -> tuple[str, str | None, int | None]:
 
 # Inline fallback — kept in the codebase as the "last resort" prompt for
 # bootstrap / test / DB-unreachable paths. The canonical prompt lives in
-# prompts/atoms.yaml under the key above. Update both when the prompt
-# changes or remove this fallback once Langfuse + DB-only is the
-# established norm.
+# skills/content/atoms/SKILL.md under the key above. The {site_name} /
+# {site_url} placeholders are rendered from the run-bound site_config by
+# the caller (see the .format() after _resolve_system_prompt). Update both
+# when the prompt changes or remove this fallback once Langfuse + DB-only
+# is the established norm.
 _NARRATIVE_SYSTEM_PROMPT_FALLBACK = """\
-You are writing a daily dev diary entry for Glad Labs — a one-person
+You are writing a daily dev diary entry for {site_name} — a one-person
 indie shop building Poindexter, an AI-operated content business.
-This is autobiographical: you ARE Glad Labs writing about today's
+This is autobiographical: you ARE {site_name} writing about today's
 work for other indie builders who'll find the post on the blog.
 
 Write in first-person plural ("we", "our system", "we wrestled
@@ -273,8 +275,8 @@ is grounded in the bundle):
   disagree, the BUNDLE wins. Open the post by referencing a
   specific merged PR from the BUNDLE by its real title and number;
   do not lead with a generic riff on a topic phrase.
-- Names: use names that appear verbatim in a bundle entry. "Glad
-  Labs", "Poindexter", "gladlabs.io", PR/commit authors, and any
+- Names: use names that appear verbatim in a bundle entry. "{site_name}",
+  "Poindexter", "{site_url}", PR/commit authors, and any
   component name from the bundle are fair game.
 - Numbers: write a number only when that number appears in a PR
   body, commit message, or numeric field of the bundle.
@@ -483,6 +485,15 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     bundle_text = _format_bundle_for_narrative(bundle)
     system_prompt, prompt_template_key, prompt_template_version = (
         _resolve_system_prompt()
+    )
+    # The migrated prompt carries the operator persona as {site_name} /
+    # {site_url} placeholders (the brand text used to be hardcoded "Glad
+    # Labs" / "gladlabs.io"). Render them from the run-bound site_config
+    # before the text reaches the model. Empty string when site_config is
+    # absent (bootstrap / tests) so .format never raises on a missing key.
+    system_prompt = system_prompt.format(
+        site_name=(site_config.get("site_name") if site_config else "") or "",
+        site_url=(site_config.get("site_url") if site_config else "") or "",
     )
     # The BUNDLE is the canonical source. Any "topic" string the caller
     # may have stamped on the task row is just a UI label — it can be

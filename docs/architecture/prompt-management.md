@@ -88,9 +88,10 @@ registers these keys exactly as the YAML did.
 
 - `task.creative_blog_generation` / `task.qa_content_evaluation` / `task.business_financial_impact` / `task.business_market_analysis` / `task.business_performance_analysis` / `task.automation_email_campaign` / `task.content_summarization` / `task.utility_json_conversion`
 
-### `prompts/atoms.yaml`
+### `skills/content/atoms/SKILL.md`
 
 - `atoms.narrate_bundle.system_prompt` / `atoms.review_with_critic.system_prompt` / `atoms.pipeline_architect.system_prompt`
+- Migrated from `prompts/atoms.yaml` to the agentskills.io SKILL.md catalog. The `narrate_bundle` and `pipeline_architect` templates carry the operator persona as `{site_name}` / `{site_url}` placeholders, rendered from the run-bound `site_config` by the calling atom before the text reaches the model.
 
 ## How operators tune prompts
 
