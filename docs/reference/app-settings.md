@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-29.**  
+> **Auto-generated from live `app_settings` table on 2026-05-30.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 648 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 649 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (10 keys)
-- [general](#general) (253 keys)
+- [general](#general) (254 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -483,6 +483,7 @@ The worker re-reads on every poll; no restart needed.
 | `storage_bucket` | `` |  | Default S3/R2-compatible bucket name |
 | `storage_endpoint` | `` |  |  |
 | `storage_public_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  |  |
+| `structured_extraction_model` | `gemma3:27b` |  |  |
 | `topic_dedup_engine` | `word_overlap` |  |  |
 | `topic_discovery_ideation_lookback_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `topic_discovery_length_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
