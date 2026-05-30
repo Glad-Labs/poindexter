@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.41.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.0...v0.41.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **observability:** dead-man heartbeat query used nonexistent audit_log.created_at ([b114ac0](https://github.com/Glad-Labs/glad-labs-stack/commit/b114ac01d67d90778c046305f3302cbece597f13))
+
 ## [0.41.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.40.0...v0.41.0) (2026-05-30)
 
 
