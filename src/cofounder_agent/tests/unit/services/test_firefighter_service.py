@@ -452,13 +452,14 @@ class TestDefaultSystemPrompt:
         assert result == _FALLBACK_SYSTEM_PROMPT
 
     def test_yaml_default_matches_inline_fallback(self):
-        """The YAML default (prompts/system.yaml :: ops.triage.system_prompt)
-        and the inline ``_FALLBACK_SYSTEM_PROMPT`` should produce the
-        same operator-persona content. If a future PR edits one
+        """The skill default (skills/ops/triage/SKILL.md ::
+        ops.triage.system_prompt, migrated from prompts/system.yaml in
+        #528) and the inline ``_FALLBACK_SYSTEM_PROMPT`` should produce
+        the same operator-persona content. If a future PR edits one
         without the other they'll drift; this test surfaces that.
 
-        Comparison strips whitespace because YAML may add a trailing
-        newline / indentation that the Python literal doesn't have.
+        Comparison strips whitespace because the SKILL.md loader clips a
+        single trailing newline that the Python literal doesn't have.
         """
         from services.prompt_manager import get_prompt_manager
 

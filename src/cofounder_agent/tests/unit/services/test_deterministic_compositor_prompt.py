@@ -2,11 +2,17 @@
 
 This test is the public contract for the narrative system prompt that
 was migrated out of the inline ``_NARRATIVE_SYSTEM_PROMPT`` constant in
-``services/writer_rag_modes/deterministic_compositor.py`` into
-``prompts/system.yaml`` during Lane A batch 5 of the OSS migration.
-Any future Langfuse edit that drifts the YAML default (or any in-tree
-YAML edit) will trip this snapshot and force a deliberate update.
+``services/writer_rag_modes/deterministic_compositor.py`` into the
+agentskills.io SKILL.md catalog (``skills/content/writer/SKILL.md``,
+key ``narrative.system``) during the system+tasks prompt split (#528).
+Any future Langfuse edit that drifts the SKILL.md default (or any
+in-tree SKILL.md edit) will trip this snapshot and force a deliberate
+update.
 
+The persona's brand is now templated via ``{site_name}`` / ``{site_url}``
+placeholders (no hardcoded brand). The snapshot below is the *rendered*
+form after ``.format(site_name="Glad Labs", site_url="gladlabs.io")`` —
+the wiring a caller would apply with the active ``SiteConfig`` values.
 The match is byte-for-byte intentionally — whitespace and trailing
 newlines are all part of the contract.
 """
@@ -62,7 +68,7 @@ classes."). Plain prose.
 GROUNDING (every name, number, and url comes from the bundle):
 
 - Names: use only names that appear verbatim in a bundle entry.
-  Names like Glad Labs, Poindexter, gladlabs.io, and any
+  Names like Glad Labs, gladlabs.io, and any
   PR/commit author or component name from the bundle are fair game.
 - Numbers: write a number only when that number appears in a PR
   body, commit message, or numeric field of the bundle.
@@ -91,5 +97,20 @@ markdown prose, no headings, no lists.
 @pytest.mark.unit
 class TestDeterministicCompositorPromptSnapshot:
     def test_narrative_system_snapshot(self, pm: UnifiedPromptManager):
-        actual = pm.get_prompt("narrative.system")
+        # Render with the brand a caller would inject from SiteConfig.
+        actual = pm.get_prompt(
+            "narrative.system", site_name="Glad Labs", site_url="gladlabs.io",
+        )
         assert actual == _NARRATIVE_SYSTEM_EXPECTED
+
+    def test_narrative_system_renders_brand_placeholder(
+        self, pm: UnifiedPromptManager,
+    ):
+        """The brand placeholder is wired: formatting with site_name
+        injects the brand and leaves no literal ``{site_name}`` behind."""
+        rendered = pm.get_prompt(
+            "narrative.system", site_name="Glad Labs", site_url="gladlabs.io",
+        )
+        assert "Glad Labs" in rendered
+        assert "{site_name}" not in rendered
+        assert "{site_url}" not in rendered

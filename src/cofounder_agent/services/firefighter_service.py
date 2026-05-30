@@ -331,8 +331,9 @@ def _default_system_prompt(site_config: SiteConfig) -> str:
     outside Langfuse / ``prompt_templates`` reach — operators couldn't
     tune the prompt through the standard UI. Now routes through
     :class:`services.prompt_manager.UnifiedPromptManager`, which
-    chains Langfuse → ``prompt_templates`` DB → ``prompts/system.yaml``
-    default. Per ``feedback_prompts_must_be_db_configurable``.
+    chains Langfuse → ``skills/ops/triage/SKILL.md`` default (migrated
+    from ``prompts/system.yaml`` in #528). Per
+    ``feedback_prompts_must_be_db_configurable``.
 
     Back-compat: operators who had a customised
     ``app_settings.ops_triage_system_prompt`` row should re-apply that
