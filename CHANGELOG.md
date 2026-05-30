@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.6...v0.32.7) (2026-05-30)
+
+
+### Bug Fixes
+
+* **skills:** correct stale/broken operator skills (reject 422, settings list, approve default, pipeline prose, vercel ID scrub) ([#814](https://github.com/Glad-Labs/glad-labs-stack/issues/814)) ([723fb3d](https://github.com/Glad-Labs/glad-labs-stack/commit/723fb3d8ee58d0f2db281f4d45e936b93af25c7b))
+
 ## [0.32.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.5...v0.32.6) (2026-05-30)
 
 
