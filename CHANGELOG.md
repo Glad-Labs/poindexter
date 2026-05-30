@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.5...v0.32.6) (2026-05-30)
+
+
+### Bug Fixes
+
+* **media:** niche via pipeline_task_id seam + writable RSS path (silent media-approval crash) ([#807](https://github.com/Glad-Labs/glad-labs-stack/issues/807)) ([5cd6be9](https://github.com/Glad-Labs/glad-labs-stack/commit/5cd6be98a2831511dfdab74a2706abf9f2cb15ec))
+
 ## [0.32.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.4...v0.32.5) (2026-05-30)
 
 
