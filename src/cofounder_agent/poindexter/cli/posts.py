@@ -58,6 +58,43 @@ def _split_csv(raw: str | None) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+# Canonical media-flavor names that may legitimately appear in
+# ``posts.media_to_generate``. Distinct from the GATE namespace
+# (``MEDIUM_GATE_NAMES`` uses the bare word ``short``) — the generation
+# and backfill code keys off these exact strings:
+# ``services.media_approval_service._VALID_MEDIA``,
+# ``services.jobs.backfill_videos`` (``video``/``video_long``/``video_short``
+# array-overlap filter) and ``services.publish_service`` (``_wants_short``
+# checks ``"video_short"``).
+CANONICAL_MEDIA_NAMES: tuple[str, ...] = (
+    "podcast", "video", "video_long", "video_short",
+)
+
+# Operator-friendly aliases → canonical flavor. The ``--media`` help text
+# and the gate namespace both call the short-form video ``short``; an
+# operator who types ``--media short`` previously got it stored verbatim,
+# and since no consumer matches ``short`` the short-video request silently
+# no-op'd. Normalize it to the ``video_short`` the pipeline actually
+# checks for (fail-loud on anything else, per ``feedback_no_silent_defaults``).
+_MEDIA_ALIASES: dict[str, str] = {"short": "video_short"}
+
+
+def _normalize_media(names: list[str]) -> list[str]:
+    """Map operator media aliases to canonical names, de-duped, order-preserving.
+
+    ``short`` → ``video_short``; canonical names pass through untouched.
+    Collisions (``short`` + ``video_short``) collapse to one entry so the
+    stored array — and the idempotency key derived from it — is stable
+    regardless of which spelling the operator used.
+    """
+    out: list[str] = []
+    for name in names:
+        canonical = _MEDIA_ALIASES.get(name, name)
+        if canonical not in out:
+            out.append(canonical)
+    return out
+
+
 def _operator_identity() -> str:
     """Best-effort operator identity for audit attribution.
 
@@ -401,7 +438,8 @@ def _compute_idempotency_key(
     "--media",
     default=None,
     help="Comma-separated list of media to generate "
-    "(podcast,video,short). Empty/omitted = use default_media_to_generate "
+    "(podcast, video, video_long, video_short; 'short' is accepted as an "
+    "alias for video_short). Empty/omitted = use default_media_to_generate "
     "from app_settings.",
 )
 @click.option(
@@ -466,6 +504,21 @@ def post_create(
                 _split_csv(gates) if gates is not None
                 else _split_csv(site_cfg.get("default_workflow_gates", "topic,draft,final"))
             )
+
+            # Normalize media aliases (``short`` → ``video_short``) BEFORE
+            # the idempotency key is derived from ``resolved_media`` so the
+            # key is alias-invariant, then validate — same fail-loud
+            # contract as ``--gates`` below. A typo'd flavor used to be
+            # stored verbatim and silently never generated
+            # (``feedback_no_silent_defaults``).
+            resolved_media = _normalize_media(resolved_media)
+            for m in resolved_media:
+                if m not in CANONICAL_MEDIA_NAMES:
+                    raise RuntimeError(
+                        f"Unknown media flavor {m!r}. Valid: "
+                        f"{', '.join(CANONICAL_MEDIA_NAMES)} "
+                        f"('short' is accepted as an alias for video_short)."
+                    )
 
             for g in resolved_gates:
                 if g not in CANONICAL_GATE_NAMES:
@@ -873,7 +926,7 @@ def _post_approve_bulk(
             # gracefully on a half-migrated DB.
             try:
                 ceiling = int(
-                    site_cfg.get("cli_post_approve_bulk_max_count", 100)
+                    site_cfg.get("cli_post_approve_bulk_max_count", "100")
                     or 100
                 )
             except (TypeError, ValueError):
