@@ -31,7 +31,7 @@ Write a 60-second video narration (about 150 words) summarizing this article.
 RULES:
 - Start with a compelling hook that grabs attention in the first 5 seconds
 - Cover the 2-3 most important takeaways
-- End with a call to action inviting viewers to read the full article
+- End with a call to action inviting viewers to read the full article at {site_name}
 - Conversational, energetic tone — this is for TikTok/YouTube Shorts
 - No URLs, no markdown, no special characters
 - Write ONLY the narration text, nothing else

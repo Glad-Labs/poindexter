@@ -898,6 +898,13 @@ async def _generate_short_summary_audio(
         "video.short_form_narration",
         title=title,
         content=_strip_markdown(content)[:3000],
+        # Branded spoken CTA: the public skill ships a {site_name}
+        # placeholder so the file stays brand-free; the operator's
+        # deployment renders their configured site name. TTS-friendly —
+        # the site NAME (not a URL), since a spoken URL reads badly in
+        # text-to-speech. Empty string when site_name is unset so the
+        # .format() never KeyErrors on a fresh install.
+        site_name=site_config.get("site_name") or "",
     )
 
     try:
