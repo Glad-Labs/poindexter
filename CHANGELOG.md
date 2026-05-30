@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.41.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.1...v0.41.2) (2026-05-30)
+
+
+### Bug Fixes
+
+* **observability:** drop invalid --web.enable-lifecycle from alertmanager entrypoint ([60b02cf](https://github.com/Glad-Labs/glad-labs-stack/commit/60b02cf2a1441378bbc77541bef72dad55f79b56))
+
 ## [0.41.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.0...v0.41.1) (2026-05-30)
 
 
