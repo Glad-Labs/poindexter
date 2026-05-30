@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.0...v0.32.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **discovery:** reasoning model returns empty JSON → content-gen stall ([#789](https://github.com/Glad-Labs/glad-labs-stack/issues/789)) ([53d96cc](https://github.com/Glad-Labs/glad-labs-stack/commit/53d96cc3b981ba075ed2b7587e60b22504285bd9))
+
 ## [0.32.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.31.0...v0.32.0) (2026-05-29)
 
 
