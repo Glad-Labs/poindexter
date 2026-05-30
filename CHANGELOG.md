@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.37.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.36.0...v0.37.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate two_pass_writer prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#823](https://github.com/Glad-Labs/glad-labs-stack/issues/823)) ([89a9f90](https://github.com/Glad-Labs/glad-labs-stack/commit/89a9f909fb296ba6b3cf6f3d0483528cf0a3e4d0))
+
 ## [0.36.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.35.0...v0.36.0) (2026-05-30)
 
 
