@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.33.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.7...v0.33.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** endgame architecture doc + research-skill catalog brick ([#813](https://github.com/Glad-Labs/glad-labs-stack/issues/813)) ([2cf84bf](https://github.com/Glad-Labs/glad-labs-stack/commit/2cf84bf46fe2d6fc71aade47b63b9c509dd9d9c1))
+
 ## [0.32.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.6...v0.32.7) (2026-05-30)
 
 
