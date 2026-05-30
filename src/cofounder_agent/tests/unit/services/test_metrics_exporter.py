@@ -420,8 +420,30 @@ class TestBrainCycleHeartbeat:
         ]
         assert sample_lines, "heartbeat sample line missing from exposition"
 
+    async def test_heartbeat_query_targets_real_audit_log_schema(self):
+        """Guard the SQL against schema drift: audit_log's timestamp column
+        is ``timestamp`` (NOT ``created_at``). A wrong column silently errors
+        every scrape → the gauge is always cleared → the dead-man's switch
+        fires a CONSTANT false alarm. (This caught a real bug in the original
+        implementation, which mocked fetchval and never hit the schema.)
+        """
+        from services import metrics_exporter as mx
+
+        pool, conn = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        sqls = [c.args[0] for c in conn.fetchval.call_args_list if c.args]
+        hb = [s for s in sqls if "brain.cycle_heartbeat" in s]
+        assert hb, "heartbeat query was never issued"
+        q = hb[0]
+        assert "audit_log" in q
+        assert "created_at" not in q, "audit_log has no created_at column"
+        assert '"timestamp"' in q, "must read the real (quoted) timestamp column"
+
     async def test_gauge_absent_when_no_heartbeat_row(self):
-        """No brain.cycle_heartbeat row yet → MAX(created_at) is NULL →
+        """No brain.cycle_heartbeat row yet → MAX("timestamp") is NULL →
         the series must be cleared so absent() fires (not emitted as 0)."""
         from services import metrics_exporter as mx
 

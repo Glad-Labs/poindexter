@@ -370,7 +370,9 @@ async def refresh_metrics(
     try:
         async with pool.acquire() as conn:
             epoch = await conn.fetchval(
-                "SELECT EXTRACT(EPOCH FROM MAX(created_at)) "
+                # audit_log's timestamp column is "timestamp" (quoted — it's
+                # also a type name); there is NO created_at column here.
+                'SELECT EXTRACT(EPOCH FROM MAX("timestamp")) '
                 "FROM audit_log WHERE event_type = 'brain.cycle_heartbeat'"
             )
         if epoch is None:
