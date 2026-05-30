@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.39.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.38.1...v0.39.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** split system+tasks prompts into content + ops skill packs ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#831](https://github.com/Glad-Labs/glad-labs-stack/issues/831)) ([05eedcf](https://github.com/Glad-Labs/glad-labs-stack/commit/05eedcfb8ea0a753c8c64468b1eae2a916769113))
+
 ## [0.38.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.38.0...v0.38.1) (2026-05-30)
 
 
