@@ -130,21 +130,33 @@ tenant plumbing) until there's reason to build it.
 
 ## Two skill layers, one format
 
-Skills come in two layers that **share the agentskills.io `SKILL.md` format**
-but have different consumers and runtimes. Both live in the repo-root `skills/`
-tree, namespaced by pack — `skills/<pack>/<skill>/SKILL.md` (the industry-standard
-layout):
+Skills come in two layers that **share the agentskills.io `SKILL.md` format**,
+namespaced by pack — `<root>/<pack>/<skill>/SKILL.md`. The two layers have
+different consumers and runtimes, and that difference dictates **where each tree
+physically lives**:
 
-| Layer               | Pack example                | Consumed by                         | Purpose                                                                |
-| ------------------- | --------------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
-| **Operator skills** | `skills/poindexter/<verb>/` | the operator agent (Claude)         | _Drive_ the business — wrap the CLI/MCP (approve-post, cost-report, …) |
-| **Pipeline skills** | `skills/content/<skill>/`   | the worker's `UnifiedPromptManager` | _Procedure text_ a module's stages use (research, blog-generation, …)  |
+| Layer               | Location                                     | Consumed by                         | Purpose                                                                |
+| ------------------- | -------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| **Operator skills** | repo-root `skills/poindexter/<verb>/`        | the operator agent (Claude)         | _Drive_ the business — wrap the CLI/MCP (approve-post, cost-report, …) |
+| **Pipeline skills** | package `src/cofounder_agent/skills/<pack>/` | the worker's `UnifiedPromptManager` | _Procedure text_ a module's stages use (research, blog-generation, …)  |
+
+**Why two locations.** Pipeline skills are loaded by the worker, whose Docker
+image is built `COPY . .` from the **package** (`src/cofounder_agent/` → `/app`).
+The repo root is _not_ in the build context, so a repo-root `skills/` tree is
+invisible inside the container — loading it crashed the worker (the prompt
+manager resolved a repo-root path that only existed on the host). Pipeline skills
+therefore live _inside the package_, as a sibling of the old `prompts/` dir, and
+resolve via a package-relative path (`Path(__file__).parent.parent / "skills"`) —
+identical on the host and at `/app/skills` in the container. Operator skills are
+read by the Claude/agent runtime, which sees the whole repo, so they stay at the
+repo root. The `SKILL.md` _format_ (the owned seam) is the same in both trees.
 
 **Pack = module.** The operator toolset is the `poindexter` pack; each business
 module owns a pack of pipeline skills (`content`, later `finance`, `support`).
-The prompt loader scans the whole tree and registers only prompt-bearing skills
-(those declaring `metadata.prompts`); operator action skills lack that block and
-are silently ignored — they're a different layer, not prompt text.
+The prompt loader scans the package skills tree and registers only prompt-bearing
+skills (those declaring `metadata.prompts`); operator action skills lack that
+block and are a different layer (not prompt text) — and aren't under the package
+tree anyway.
 
 ## How pipeline skills fit the existing prompt stack
 

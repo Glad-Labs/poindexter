@@ -192,25 +192,35 @@ class UnifiedPromptManager:
     def _initialize_skills(self):
         """Load pipeline prompts from agentskills.io SKILL.md packs.
 
-        Skills live in the repo-root ``skills/`` tree, namespaced by pack:
-        ``skills/<pack>/<skill>/SKILL.md`` (industry-standard layout, uniform
-        with the existing ``skills/poindexter/`` operator pack). A
-        prompt-bearing skill's frontmatter declares ``metadata.category`` +
+        Pipeline-skill packs live INSIDE the package at ``<pkg>/skills/``,
+        namespaced by pack: ``skills/<pack>/<skill>/SKILL.md`` (e.g.
+        ``skills/content/research/SKILL.md``). Living inside the package — a
+        sibling of the old ``prompts/`` dir — is what makes them load
+        identically on the host and in the worker container: the Docker image
+        is ``COPY . .`` of the package onto ``/app``, so a package-relative
+        path (``parent.parent``) resolves to ``/app/skills`` in the container
+        and ``src/cofounder_agent/skills`` on the host. (Reaching up to the
+        repo-root ``skills/`` tree crashed in the container — the image never
+        contains the repo root; see business-os-endgame.md.)
+
+        A prompt-bearing skill's frontmatter declares ``metadata.category`` +
         ``metadata.prompts`` (the keys it provides); the body holds one
         ``## <key>`` section per prompt with the template in a fenced block.
 
-        Skills WITHOUT a ``metadata.prompts`` block (e.g. the operator action
-        skills under ``skills/poindexter/`` that wrap the CLI/MCP) are silently
-        skipped — they're a different layer (agent-runtime tools), not pipeline
-        prompt text, and share only the file format.
+        Operator *action* skills (the repo-root ``skills/poindexter/`` pack that
+        wraps the CLI/MCP) are a different layer, consumed by the Claude/agent
+        runtime, not the worker — they are NOT under this tree and aren't
+        loaded here. (Even if one were, the absence of ``metadata.prompts``
+        would skip it.)
 
         Each key registers exactly like :meth:`_initialize_prompts` does for
         YAML, so the resolution chain (Langfuse override -> in-memory default)
         is unchanged. See docs/architecture/business-os-endgame.md.
         """
-        # Repo root holds the top-level skills/ tree, a sibling of src/.
-        # __file__ = src/cofounder_agent/services/prompt_manager.py -> parents[3].
-        skills_dir = Path(__file__).resolve().parents[3] / "skills"
+        # Package-relative, matching the retired prompts/ loader's depth:
+        # __file__ = <pkg>/services/prompt_manager.py -> parent.parent = <pkg>.
+        # Stable on host (src/cofounder_agent) AND in the container (/app).
+        skills_dir = Path(__file__).resolve().parent.parent / "skills"
         if not skills_dir.is_dir():
             return
 
