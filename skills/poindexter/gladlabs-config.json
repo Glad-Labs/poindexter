@@ -1,18 +1,22 @@
 {
   "skills": {
     "entries": {
-      "create_post": { "enabled": true },
-      "batch_create": { "enabled": true },
-      "list_tasks": { "enabled": true },
       "approve_post": { "enabled": true },
-      "reject_post": { "enabled": true },
-      "publish_post": { "enabled": true },
       "cost_report": { "enabled": true },
+      "create_post": { "enabled": true },
+      "find_similar_posts": { "enabled": true },
+      "list_tasks": { "enabled": true },
+      "publish_post": { "enabled": true },
       "quality_report": { "enabled": true },
-      "site_manage": { "enabled": true },
-      "model_status": { "enabled": true },
+      "recall_conversation": { "enabled": true },
+      "recall_decision": { "enabled": true },
+      "reject_post": { "enabled": true },
+      "search_memory": { "enabled": true },
+      "site_settings": { "enabled": true },
       "vercel_status": { "enabled": true },
-      "site_settings": { "enabled": true }
+      "voice_off": { "enabled": true },
+      "voice_on": { "enabled": true },
+      "voice_speak": { "enabled": true }
     }
   }
 }

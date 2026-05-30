@@ -5,25 +5,30 @@ description: Create a new blog post or content task about a given topic. Use whe
 
 # Create Post
 
-Creates a new content task via `POST /api/tasks`. The task is immediately picked up
-by the worker loop (task_executor.py) and run through the full multi-stage pipeline
-defined in `services/content_router_service.py`:
+Creates a new content task via `POST /api/tasks`. Pending tasks are dispatched by
+**Prefect** (`services/flows/content_generation.py`) and run through the 13-stage
+`canonical_blog` LangGraph template registered in
+`services/pipeline_templates/__init__.py`:
 
 1. `verify_task` — task record exists and is processable
-2. `generate_content` — writer model drafts the post (currently `gemma3:27b`)
-3. `quality_evaluation` — early pattern-QA gate (regex validator + scoring)
-4. `url_validation` — live-check external URLs cited in the draft
-5. `replace_inline_images` — SDXL Lightning generates each inline image via the host server on port 9836
-6. `source_featured_image` — SDXL generates the featured image (falls back to Pexels if SDXL is down)
-7. `cross_model_qa` — multi-model QA aggregator: `programmatic_validator`, `ollama_critic` (`qwen3.5:35b`), `topic_delivery`, `internal_consistency`, `image_relevance`, `rendered_preview`
-8. `generate_seo_metadata` — title, description, slug, keywords
-9. `generate_media_scripts` — podcast script + video scene breakdown
-10. `capture_training_data` — snapshot for the feedback loop
-11. `finalize_task` — mark as `awaiting_approval` and notify Discord
+2. `generate_content` — writer model drafts the post (may use a RAG mode)
+3. `writer_self_review` — writer re-reads and tightens its own draft
+4. `resolve_internal_link_placeholders` — closes leaked `[posts/<slug>]` markers
+5. `quality_evaluation` — early pattern-QA gate (regex validator + scoring)
+6. `url_validation` — live-check external URLs cited in the draft
+7. `replace_inline_images` — generates each inline image via the SDXL host server
+8. `source_featured_image` — sources the featured image (falls back to Pexels)
+9. `cross_model_qa` — multi-model QA with DeepEval + guardrails-ai + Ragas rails (advisory)
+10. `generate_seo_metadata` — title, description, slug, keywords
+11. `generate_media_scripts` — podcast script + video scene breakdown
+12. `capture_training_data` — snapshot for the feedback loop
+13. `finalize_task` — mark `awaiting_approval` (or auto-publish if score ≥ threshold)
 
-Tasks that fail the cross_model_qa gate get up to `qa_max_rewrites` (default 2) automatic rewrite attempts before being rejected with a loud reason on the `/pipeline` dashboard.
+The writer model is **DB-configurable** via cost tiers
+(`cost_tier.{free,budget,standard,premium}.model` in `app_settings`), not hardcoded.
 
-The upfront brand filter in `task_executor.py` rejects off-brand topics (not matching AI/ML, gaming, or PC hardware keywords) before the pipeline starts — expect some topics to be rejected immediately with an "off-brand" message.
+Tasks that fail QA get up to `qa_max_rewrites` (default 2) automatic rewrite attempts
+before being rejected with a loud reason on the `/pipeline` dashboard.
 
 ## Usage
 

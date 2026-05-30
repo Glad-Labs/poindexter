@@ -10,11 +10,13 @@ The pipeline ends in one of two terminal states (not "completed" — that status
 removed in the 2026-04 refactor):
 
 - **awaiting_approval** — passed QA, waiting on human review at `/pipeline`
-- **published** — approved and pushed to the site via R2 static export
+- **published** — approved and pushed to the site via Vercel
 
-Each task carries a `quality_score` populated by `multi_model_qa.py` after all
-reviewers (programmatic_validator, ollama_critic, topic_delivery, internal_consistency,
-image_relevance, rendered_preview) finish.
+Each task carries a `quality_score` populated by `multi_model_qa.py` after the
+anti-hallucination QA rails finish. Six OSS rails run (all advisory): DeepEval ×3
+(`deepeval_brand_fabrication`, `deepeval_g_eval`, `deepeval_faithfulness`),
+guardrails-ai ×2 (`guardrails_brand`, `guardrails_competitor`), and Ragas ×1
+(`ragas_eval`, averaging faithfulness + answer-relevancy + context-precision).
 
 ## Usage
 

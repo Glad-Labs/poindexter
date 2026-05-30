@@ -20,7 +20,7 @@ scripts/run.sh [status] [limit]
   - `pending` — queued, waiting for the worker
   - `in_progress` — actively moving through the pipeline
   - `awaiting_approval` — passed QA, in the human review queue at `/pipeline`
-  - `published` — approved and live on R2 static export
+  - `published` — approved and live on the site via Vercel
   - `rejected` — pipeline rejected (off-brand, failed QA after max rewrites, etc.)
   - `failed` — pipeline errored (timeout, worker crash, etc.)
   - `cancelled` — manually cancelled

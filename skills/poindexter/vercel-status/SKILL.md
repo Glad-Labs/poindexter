@@ -9,12 +9,9 @@ Queries the Vercel REST API (`https://api.vercel.com`) directly — does not she
 to the `vercel` CLI. This keeps the skill runnable from any environment that has
 `curl` + `python`, without needing the CLI installed in the openclaw container.
 
-Project and team IDs are read from `.vercel/project.json` at repo root (created by
-`vercel link`). Current values:
-
-- **projectId**: `prj_piKVl6aspWQ1MRhjyEN2KLLeeMx8`
-- **orgId (team)**: `team_iKrfrxGNrHONvqCPv4fYx2Ms`
-- **projectName**: `glad-labs-codebase-public-site`
+The `projectId`, `orgId` (team), and `projectName` are read from `.vercel/project.json`
+at repo root (created by `vercel link`) at runtime — the script reads them itself, so
+they are not duplicated here.
 
 Auth is via `VERCEL_TOKEN` env var, passed as `Authorization: Bearer $VERCEL_TOKEN`.
 Generate at https://vercel.com/account/settings/tokens. If the token is missing the

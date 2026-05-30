@@ -10,20 +10,17 @@ POINDEXTER_TOKEN="$(get_poindexter_token)" || exit 1
 
 TASK_ID="$1"
 REASON="${2:-}"
+FEEDBACK="${3:-$REASON}"
 
-if [ -z "$TASK_ID" ]; then
-  echo "Error: task_id is required"
-  echo "Usage: run.sh \"task_id\" [\"reason\"]"
+if [ -z "$TASK_ID" ] || [ -z "$REASON" ]; then
+  echo "Error: task_id and reason are required"
+  echo "Usage: run.sh \"task_id\" \"reason\" [feedback]"
   exit 1
 fi
 
 echo "Rejecting task: $TASK_ID"
 
-if [ -n "$REASON" ]; then
-  PAYLOAD=$(python -c "import json,sys; print(json.dumps({'reason': sys.argv[1]}))" "$REASON")
-else
-  PAYLOAD='{}'
-fi
+PAYLOAD=$(python -c "import json,sys; print(json.dumps({'reason': sys.argv[1], 'feedback': sys.argv[2]}))" "$REASON" "$FEEDBACK")
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/tasks/${TASK_ID}/reject" \
   -H "Authorization: Bearer ${POINDEXTER_TOKEN}" \

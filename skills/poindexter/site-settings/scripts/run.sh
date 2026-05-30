@@ -27,7 +27,7 @@ case "$ACTION" in
     echo "$RESPONSE" | python -c "
 import sys,json
 d=json.load(sys.stdin)
-for s in d.get('settings',[]):
+for s in d.get('items',[]):
     print(f\"{s.get('category','')}/{s.get('key','')} = {s.get('value','')}\")
 " 2>/dev/null || echo "$RESPONSE"
     ;;
@@ -67,7 +67,7 @@ for s in d.get('settings',[]):
     echo "  get <key>          Get a specific setting"
     echo "  set <key> <value>  Update a setting"
     echo ""
-    echo "Categories: api_keys, pipeline, auth, features, cors, webhooks"
+    echo "Categories: api_keys, pipeline, features, cors, webhooks"
     exit 1
     ;;
 esac

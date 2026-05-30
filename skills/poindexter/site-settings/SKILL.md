@@ -19,7 +19,6 @@ scripts/run.sh set <key> <value>        # Set a setting value
 
 - `api_keys` — LLM provider keys, Pexels, Serper, Sentry
 - `pipeline` — auto_publish_threshold, daily_budget_usd, default_model_tier
-- `auth` — api_token, secret_key, jwt_secret_key
 - `features` — enable_training_capture, enable_mcp_server, etc.
 - `cors` — allowed_origins, rate_limit_per_minute
 - `webhooks` — openclaw_webhook_url, openclaw_webhook_token

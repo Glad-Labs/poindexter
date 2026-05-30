@@ -3,9 +3,8 @@
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
 
-# OAuth helper (Glad-Labs/poindexter#246). Mints a JWT when
-# POINDEXTER_OAUTH_CLIENT_ID/SECRET are set; falls back to legacy
-# POINDEXTER_KEY static-Bearer otherwise.
+# OAuth helper (Glad-Labs/poindexter#246). Mints a JWT from
+# POINDEXTER_OAUTH_CLIENT_ID/SECRET.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "${SCRIPT_DIR}/../../_lib/get_token.sh"
 

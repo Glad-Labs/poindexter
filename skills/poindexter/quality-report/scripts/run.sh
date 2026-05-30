@@ -4,11 +4,10 @@
 # The old "completed" status was removed in the 2026-04 refactor. Terminal
 # states are now:
 #   - awaiting_approval  (passed QA, in human review queue)
-#   - published          (approved and live on R2)
+#   - published          (approved and live on the site via Vercel)
 #
-# Both carry a quality_score populated by multi_model_qa after all reviewers
-# (programmatic_validator, ollama_critic, topic_delivery, internal_consistency,
-# image_relevance, rendered_preview) finish.
+# Both carry a quality_score populated by multi_model_qa after the six OSS QA
+# rails finish (DeepEval x3, guardrails-ai x2, Ragas x1).
 
 set -o pipefail
 
