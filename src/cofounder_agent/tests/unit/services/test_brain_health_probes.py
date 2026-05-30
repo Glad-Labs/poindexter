@@ -378,3 +378,85 @@ class TestProbeTopicQuality:
         assert r["drivers"]["semantic_dedup_rejected"] == 40
         assert r["drivers"]["qa_rejected"] == 15
         assert r["drivers"]["title_not_original"] == 5
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeCadenceSlo:
+    """probe_cadence_slo pages when ACTUAL publish output falls below the
+    operator-CONFIGURED cadence target (issue #525).
+
+    The settings come from app_settings (a single ANY($1) fetch) and the
+    actual count from the posts table. Both are mocked here.
+    """
+
+    def _settings_rows(self, **overrides):
+        """Build the app_settings rows the probe's first fetch returns.
+
+        Pass overrides like enabled='false' or expected='2' to tweak a key;
+        omit a key entirely to exercise the probe's documented defaults.
+        """
+        defaults = {
+            "cadence_slo_enabled": overrides.get("enabled", "true"),
+            "cadence_slo_expected_posts_per_day": overrides.get("expected", "1"),
+            "cadence_slo_window_hours": overrides.get("window", "24"),
+            "cadence_slo_shortfall_ratio": overrides.get("ratio", "0.5"),
+        }
+        # Drop any key whose override is explicitly None (simulate missing row).
+        return [
+            {"key": k, "value": v}
+            for k, v in defaults.items()
+            if v is not None
+        ]
+
+    def _make_pool_with(self, actual, last=None, **overrides):
+        p = _make_pool()
+        p.fetch.return_value = self._settings_rows(**overrides)
+        p.fetchrow.return_value = {"c": actual, "last_published": last}
+        return p
+
+    async def test_breach_fails_when_actual_below_threshold(self):
+        # expected_for_window = 1 * (24/24) = 1; threshold = 0.5 * 1 = 0.5.
+        # actual 0 < 0.5 → breach.
+        p = self._make_pool_with(actual=0)
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is False
+        assert "cadence SLO breach" in r["detail"]
+        assert r["actual"] == 0
+        assert r["expected_for_window"] == 1.0
+
+    async def test_healthy_when_actual_meets_expected(self):
+        # actual 1 >= threshold 0.5 → pass.
+        p = self._make_pool_with(actual=1, last="2026-05-30 09:00:00")
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is True
+        assert "cadence OK" in r["detail"]
+        assert r["actual"] == 1
+
+    async def test_disabled_skips_cleanly(self):
+        p = self._make_pool_with(actual=0, enabled="false")
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is True
+        assert r.get("status") == "disabled"
+        # When disabled, the probe must not even query the posts table.
+        p.fetchrow.assert_not_called()
+
+    async def test_uses_defaults_when_settings_rows_missing(self):
+        # No app_settings rows at all → defaults (1/day, 24h, 0.5) apply.
+        # actual 0 < 0.5 threshold → breach with default-derived expectation.
+        p = _make_pool()
+        p.fetch.return_value = []
+        p.fetchrow.return_value = {"c": 0, "last_published": None}
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is False
+        assert r["expected_for_window"] == 1.0
+        assert r["window_hours"] == 24.0
+
+    async def test_higher_target_widens_breach_window(self):
+        # expected 3/day over 24h → expected_for_window 3, threshold 1.5.
+        # actual 1 < 1.5 → breach even though a post WAS published.
+        p = self._make_pool_with(actual=1, last="2026-05-30 09:00:00", expected="3")
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is False
+        assert r["expected_for_window"] == 3.0
+        assert "target 3/day" in r["detail"]

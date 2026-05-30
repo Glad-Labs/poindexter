@@ -369,6 +369,17 @@ DEFAULTS: dict[str, str] = {
     'brain_anomaly_baseline_window_days': '30',
     'brain_anomaly_current_window_hours': '24',
 
+    # ----- Cadence SLO probe (brain probe_cadence_slo, issue #525) -----
+    # Compares ACTUAL publish output against this CONFIGURED target so a
+    # cadence slowdown is caught within hours (existing publish_rate /
+    # pipeline_throughput probes are too coarse — 3-day / 7-day windows).
+    # NOT derived from prefect_content_flow_cron (that's the flow tick rate,
+    # not the production target).
+    'cadence_slo_enabled': 'true',
+    'cadence_slo_expected_posts_per_day': '1',
+    'cadence_slo_window_hours': '24',
+    'cadence_slo_shortfall_ratio': '0.5',
+
     # ----- Title originality / SEO -----
     'google_sitemap_ping_url': 'https://www.google.com/ping',
     'indexnow_key': '',

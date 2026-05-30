@@ -138,6 +138,7 @@ PROBE_SCHEDULES = {
     "quality_trend": 21600,         # 6 hours
     "topic_quality": 21600,          # 6 hours
     "pipeline_throughput": 21600,    # 6 hours
+    "cadence_slo": 3600,             # 1 hour — catch a cadence shortfall within hours, not days
 }
 
 # Track last run times
@@ -1074,6 +1075,122 @@ async def probe_pipeline_throughput(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
+async def probe_cadence_slo(pool) -> dict:
+    """Probe: page when ACTUAL publish output falls materially below the
+    operator-CONFIGURED cadence target — within hours, not days.
+
+    Why this exists (issue #525)
+    ----------------------------
+    On 2026-05-28 a cadence change quietly slowed the pipeline and NO probe
+    caught it: ``probe_publish_rate`` only fires on 0 posts in 3 days, and
+    ``probe_pipeline_throughput`` only fires on a >50% drop vs the prior
+    7 days. Both are too coarse to notice "producing materially less than
+    the target" promptly.
+
+    This probe compares actual output against a CONFIGURED cadence stored
+    in app_settings — deliberately NOT derived from
+    ``prefect_content_flow_cron`` (that cron is the flow's tick/drain rate,
+    ~every 2 min, not the content *production target*).
+
+    Settings (all DB-first per project rule; defaults seeded in
+    ``services/settings_defaults.py`` + a seed migration):
+
+    * ``cadence_slo_enabled`` (default ``true``) — skip cleanly when false.
+    * ``cadence_slo_expected_posts_per_day`` (default ``1``) — the target.
+    * ``cadence_slo_window_hours`` (default ``24``) — trailing window.
+    * ``cadence_slo_shortfall_ratio`` (default ``0.5``) — page when
+      ``actual < ratio * expected_for_window``.
+
+    expected_for_window = expected_posts_per_day * (window_hours / 24)
+    """
+    try:
+        # Load the four settings in one round-trip. Missing rows fall back to
+        # the documented defaults (a fresh DB seeds them via
+        # settings_defaults + the seed migration, but a brain that races
+        # ahead of the seeder still behaves predictably).
+        rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+            [
+                "cadence_slo_enabled",
+                "cadence_slo_expected_posts_per_day",
+                "cadence_slo_window_hours",
+                "cadence_slo_shortfall_ratio",
+            ],
+        )
+        settings = {r["key"]: r["value"] for r in rows}
+
+        def _bool(val: str | None, default: bool) -> bool:
+            if val is None or val == "":
+                return default
+            return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+        def _float(val: str | None, default: float) -> float:
+            if val is None or val == "":
+                return default
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return default
+
+        enabled = _bool(settings.get("cadence_slo_enabled"), True)
+        if not enabled:
+            return {
+                "ok": True,
+                "status": "disabled",
+                "detail": "cadence SLO disabled (cadence_slo_enabled=false)",
+            }
+
+        expected_per_day = _float(
+            settings.get("cadence_slo_expected_posts_per_day"), 1.0
+        )
+        window_hours = _float(settings.get("cadence_slo_window_hours"), 24.0)
+        shortfall_ratio = _float(settings.get("cadence_slo_shortfall_ratio"), 0.5)
+
+        expected_for_window = expected_per_day * (window_hours / 24.0)
+        threshold = shortfall_ratio * expected_for_window
+
+        # Count posts actually published in the trailing window.
+        # window_hours is interpolated (not a bind param) because asyncpg
+        # can't parameterise an INTERVAL literal cleanly; it's float-coerced
+        # above so no injection surface (matches sibling probes' INTERVAL use).
+        row = await pool.fetchrow(
+            f"""
+            SELECT COUNT(*) AS c, MAX(published_at) AS last_published
+            FROM posts
+            WHERE status = 'published'
+              AND published_at >= NOW() - INTERVAL '{window_hours} hours'
+            """
+        )
+        actual = row["c"] if row else 0
+        last = row["last_published"] if row else None
+
+        breach = actual < threshold
+        detail = (
+            f"cadence SLO breach: {actual} posts in {window_hours:g}h, "
+            f"expected ~{expected_for_window:.1f} "
+            f"(target {expected_per_day:g}/day)"
+            if breach
+            else (
+                f"cadence OK: {actual} posts in {window_hours:g}h "
+                f"(expected ~{expected_for_window:.1f}, "
+                f"target {expected_per_day:g}/day)"
+            )
+        )
+        return {
+            "ok": not breach,
+            "actual": actual,
+            "expected_for_window": round(expected_for_window, 2),
+            "expected_posts_per_day": expected_per_day,
+            "window_hours": window_hours,
+            "shortfall_ratio": shortfall_ratio,
+            "threshold": round(threshold, 2),
+            "last_published": str(last) if last else "never",
+            "detail": detail,
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
 # All probes in execution order
 PROBES = {
     # Infrastructure
@@ -1109,6 +1226,8 @@ PROBES = {
     # Topic & throughput monitoring
     "topic_quality": probe_topic_quality,
     "pipeline_throughput": probe_pipeline_throughput,
+    # Cadence SLO — actual output vs operator-configured target (issue #525)
+    "cadence_slo": probe_cadence_slo,
 }
 
 # Track consecutive failures for alerting
