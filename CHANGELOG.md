@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.4...v0.32.5) (2026-05-30)
+
+
+### Bug Fixes
+
+* **infra:** prettierignore generated docs + node_modules in session worktrees ([#803](https://github.com/Glad-Labs/glad-labs-stack/issues/803)) ([dea0f03](https://github.com/Glad-Labs/glad-labs-stack/commit/dea0f0310e0273e9db5faebcb44a27dc7dcaa91e))
+
 ## [0.32.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.3...v0.32.4) (2026-05-30)
 
 
