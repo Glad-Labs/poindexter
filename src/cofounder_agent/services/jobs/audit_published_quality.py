@@ -50,7 +50,7 @@ class AuditPublishedQualityJob:
         # preview. Previously this job re-derived word_count from the
         # 3000-char preview, which under-counted any post longer than
         # ~500 words and caused false-positive quality-regression
-        # findings — fixed alongside Glad-Labs/glad-labs-stack#484
+        # findings — fixed alongside Glad-Labs/poindexter#484
         # populating posts.word_count at INSERT + backfill.
         query = """
             SELECT p.id, p.title, p.slug,
