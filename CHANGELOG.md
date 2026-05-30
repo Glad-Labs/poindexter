@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.36.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.35.0...v0.36.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate image_generation prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#821](https://github.com/Glad-Labs/glad-labs-stack/issues/821)) ([eecc24c](https://github.com/Glad-Labs/glad-labs-stack/commit/eecc24ca078d20bd3bba950750767bc39d2e8ca2))
+* **skills:** migrate social_media prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#822](https://github.com/Glad-Labs/glad-labs-stack/issues/822)) ([d8bb5c1](https://github.com/Glad-Labs/glad-labs-stack/commit/d8bb5c1707aa9f245f70d2639aa4424fea50aaae))
+
 ## [0.35.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.34.0...v0.35.0) (2026-05-30)
 
 
