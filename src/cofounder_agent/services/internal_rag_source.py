@@ -73,9 +73,17 @@ class InternalRagSource:
         for kind in source_kinds:
             snippets = await self._fetch_recent_snippets(kind, per_kind_limit)
             for primary_ref, snippet, supporting in snippets:
-                topic, angle = await self._distill_topic_angle(
+                distilled = await self._distill_topic_angle(
                     [snippet] + [s["snippet"] for s in supporting],
                 )
+                # Per-candidate resilience: a single empty / unparseable LLM
+                # response must not sink the whole discovery sweep (it did —
+                # 2026-05-28 content-gen stall, where one empty json.loads
+                # bubbled out of run_sweep and discarded every external
+                # candidate too). Skip the bad candidate, keep the rest.
+                if distilled is None:
+                    continue
+                topic, angle = distilled
                 results.append(InternalCandidate(
                     source_kind=kind,
                     primary_ref=primary_ref,
@@ -127,28 +135,30 @@ class InternalRagSource:
             )
         return [(str(r["source_id"]), r["text_preview"] or "", []) for r in rows]
 
-    async def _distill_topic_angle(self, snippets: list[str]) -> tuple[str, str]:
+    async def _distill_topic_angle(
+        self, snippets: list[str]
+    ) -> tuple[str, str] | None:
         """Run a small LLM call to extract a proposed (topic, angle) from raw snippets.
 
-        Snippet truncation length and the LLM model are operator-tunable
-        via ``niche_internal_rag_snippet_max_chars`` and the existing
-        ``pipeline_writer_model`` app_setting (the latter is the codebase-
-        wide writer-model lookup; matches the pattern in
-        ``ai_content_generator.py``).
+        Returns ``None`` when the model returns an empty or unparseable
+        response so the caller can skip this candidate instead of crashing
+        the whole sweep (2026-05-28 content-gen stall).
+
+        Snippet truncation length is operator-tunable via
+        ``niche_internal_rag_snippet_max_chars``. The model resolves via
+        ``resolve_structured_model`` (DB-configurable
+        ``structured_extraction_model``, default ``gemma3:27b``) — a
+        JSON-reliable instruct model — NOT the writer model, because a
+        reasoning writer model (``glm-4.7-5090``) returns empty ``content``
+        under ``response_format=json_object``.
         """
         from services.topic_ranking import _ollama_chat_json
 
         snippet_max = self._site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )
-        # poindexter#485 fail-loud sweep: previously this baked
-        # Matt's "glm-4.7-5090:latest" model name in as a Python-side
-        # fallback. Forks installing Poindexter wouldn't have that
-        # model on Ollama and would hit a confusing "model not found"
-        # at call time. Now chains through the cost-tier API and
-        # raises ValueError if no writer model is resolvable.
-        from services.llm_text import resolve_local_model
-        model = resolve_local_model(site_config=self._site_config)
+        from services.llm_text import resolve_structured_model
+        model = resolve_structured_model(site_config=self._site_config)
         joined = "\n---\n".join(s[:snippet_max] for s in snippets if s)
         from services.prompt_manager import get_prompt_manager
         prompt = get_prompt_manager().get_prompt(
@@ -161,7 +171,20 @@ class InternalRagSource:
             prompt, model=model, site_config=self._site_config,
         )
         import json
-        parsed = json.loads(raw)
+        if not raw or not raw.strip():
+            logger.warning(
+                "[internal_rag] distill returned empty response (model=%s) — "
+                "skipping candidate", model,
+            )
+            return None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "[internal_rag] distill response not valid JSON (model=%s): "
+                "%s — skipping candidate", model, e,
+            )
+            return None
         # `dict.get(k, default)` returns the actual None/empty when the key
         # exists with that value — the default never fires. The LLM
         # occasionally returns `{"topic": ""}`, so fall back to truthy-or

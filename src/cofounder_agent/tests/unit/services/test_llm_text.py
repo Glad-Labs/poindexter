@@ -29,6 +29,7 @@ from services.llm_text import (
     maybe_unwrap_json,
     ollama_chat_text,
     resolve_local_model,
+    resolve_structured_model,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -100,6 +101,46 @@ class TestResolveLocalModel:
     def test_raises_when_no_site_config_and_no_model(self):
         with pytest.raises(ValueError, match="site_config is required"):
             resolve_local_model()
+
+
+# ---------------------------------------------------------------------------
+# resolve_structured_model
+# ---------------------------------------------------------------------------
+
+
+class TestResolveStructuredModel:
+    """The 2026-05-28 stall fix: structured-JSON calls must NOT resolve to a
+    reasoning writer model. This resolver reads the DB-configurable
+    ``structured_extraction_model`` instead."""
+
+    def test_explicit_model_wins_and_strips_prefix(self):
+        assert resolve_structured_model("ollama/gemma3:27b") == "gemma3:27b"
+
+    def test_structured_setting_is_preferred(self):
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda k, d=None: {
+            "structured_extraction_model": "ollama/gemma3:27b",
+            "cost_tier.standard.model": "ollama/glm-4.7-5090:latest",
+        }.get(k, d))
+        assert resolve_structured_model(site_config=sc) == "gemma3:27b"
+
+    def test_falls_back_to_cost_tier_standard(self):
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda k, d=None: {
+            "structured_extraction_model": "",
+            "cost_tier.standard.model": "ollama/qwen3:30b",
+        }.get(k, d))
+        assert resolve_structured_model(site_config=sc) == "qwen3:30b"
+
+    def test_raises_when_nothing_resolves(self):
+        sc = MagicMock()
+        sc.get = MagicMock(return_value="")
+        with pytest.raises(ValueError, match="no structured-extraction model"):
+            resolve_structured_model(site_config=sc)
+
+    def test_raises_when_no_site_config_and_no_model(self):
+        with pytest.raises(ValueError, match="site_config is required"):
+            resolve_structured_model()
 
 
 # ---------------------------------------------------------------------------

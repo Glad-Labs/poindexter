@@ -318,8 +318,12 @@ async def llm_final_score(
     # instance.
     _sc = site_config
     if model is None:
-        from services.llm_text import resolve_local_model
-        model = resolve_local_model(site_config=_sc)
+        # Structured-JSON ranking call: resolve a JSON-reliable model
+        # (DB-configurable ``structured_extraction_model``), NOT the writer
+        # model — a reasoning writer model returns empty ``content`` under
+        # ``response_format=json_object`` (2026-05-28 content-gen stall).
+        from services.llm_text import resolve_structured_model
+        model = resolve_structured_model(site_config=_sc)
     descriptions = _resolve_goal_descriptions(site_config=_sc)
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
     cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
@@ -329,6 +333,16 @@ async def llm_final_score(
         cand_block=cand_block,
     )
     raw = await _ollama_chat_json(prompt, model=model, site_config=_sc)
+    if not raw or not raw.strip():
+        # Empty LLM response would explode json.loads("") with the opaque
+        # "Expecting value: line 1 column 1" — fail loud with context
+        # instead. Caller (run_sweep) degrades the sweep gracefully.
+        raise ValueError(
+            f"topic_ranking.llm_final_score: empty response from model "
+            f"{model!r} (response_format=json_object). A reasoning model "
+            f"may be configured for structured extraction — set "
+            f"``structured_extraction_model`` to a JSON-reliable instruct model."
+        )
     parsed = json.loads(raw)
     result: dict[str, ScoredCandidate] = {}
     for c in candidates:

@@ -265,6 +265,86 @@ async def test_internal_candidate_defaults():
     assert c2.supporting_refs == []
 
 
+async def test_generate_skips_candidates_when_distill_returns_none(monkeypatch):
+    # 2026-05-28 stall fix: a None from _distill_topic_angle (empty /
+    # unparseable LLM response) must be skipped, not turned into a
+    # candidate or allowed to crash the loop.
+    rows_by_table = {
+        "claude_sessions": [
+            {"source_id": "cs-1", "text_preview": "good"},
+            {"source_id": "cs-2", "text_preview": "bad"},
+        ],
+    }
+    pool = _FakePool(rows_by_table=rows_by_table)
+    src = InternalRagSource(pool, site_config=SiteConfig())
+
+    async def fake_distill(snippets):
+        # First snippet distills fine; second returns None (bad response).
+        return ("topic", "angle") if snippets == ["good"] else None
+
+    monkeypatch.setattr(src, "_distill_topic_angle", fake_distill)
+
+    result = await src.generate(
+        niche_id="00000000-0000-0000-0000-000000000001",
+        source_kinds=["claude_session"],
+        per_kind_limit=10,
+    )
+    # Only the good snippet survives — the None one was skipped, not raised.
+    assert len(result) == 1
+    assert result[0].primary_ref == "cs-1"
+
+
+async def test_distill_returns_none_on_empty_response(monkeypatch):
+    # The exact 2026-05-28 failure: a reasoning model returns "" under
+    # json mode. _distill_topic_angle must return None, not crash on
+    # json.loads("").
+    import services.topic_ranking as tr
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(tr, "_ollama_chat_json", AsyncMock(return_value=""))
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) is None
+
+
+async def test_distill_returns_none_on_invalid_json(monkeypatch):
+    import services.topic_ranking as tr
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(tr, "_ollama_chat_json", AsyncMock(return_value="not json at all"))
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) is None
+
+
+async def test_distill_parses_valid_json(monkeypatch):
+    import services.topic_ranking as tr
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value='{"topic": "T", "angle": "A"}'),
+    )
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) == ("T", "A")
+
+
 async def test_valid_source_kinds_includes_all_supported_kinds():
     # Lock down the public list — adding a kind here is a contract change
     # callers (NicheService.set_sources, taps wiring) need to know about.

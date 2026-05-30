@@ -127,6 +127,97 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
     assert run_row["candidates_generated"] == 5
 
 
+async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatch):
+    """2026-05-28 content-gen stall regression guard.
+
+    If internal-RAG discovery raises (e.g. a reasoning model returns
+    empty JSON and json.loads explodes), the sweep must NOT bail and
+    discard the external candidates it already gathered. A batch should
+    still form from the external pool.
+    """
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(
+        slug="resilient-sweep", name="Resilient", batch_size=2,
+    )
+    await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
+
+    # External discovery yields 2 candidates; internal discovery blows up.
+    async def fake_external(self, niche):
+        return [
+            {"kind": "external", "data": {
+                "title": f"Ext topic {i}",
+                "summary": f"summary {i}",
+                "source_name": "hacker_news",
+                "source_ref": f"hn-{i}",
+                "source_url": f"https://news.example/{i}",
+                "category": "ai",
+                "relevance_score": 0.9 - i * 0.1,
+            }}
+            for i in range(2)
+        ]
+
+    async def boom_internal(self, niche):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr(
+        "services.topic_batch_service.TopicBatchService._discover_external",
+        fake_external,
+    )
+    monkeypatch.setattr(
+        "services.topic_batch_service.TopicBatchService._discover_internal",
+        boom_internal,
+    )
+
+    async def fake_embed_text(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr(
+        "services.topic_ranking._embed_text_cached", fake_embed_text,
+    )
+
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+        result = {}
+        for idx, c in enumerate(candidates):
+            c.llm_score = 80 - idx * 5
+            c.score_breakdown = {}
+            result[c.id] = c
+        return result
+
+    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
+    batch = await svc.run_sweep(niche_id=n.id)
+
+    # A batch formed despite the internal failure.
+    assert batch is not None
+    assert batch.status == "open"
+    assert batch.candidate_count == 2
+
+    async with db_pool.acquire() as conn:
+        external_count = await conn.fetchval(
+            "SELECT count(*) FROM topic_candidates WHERE batch_id = $1",
+            batch.id,
+        )
+        internal_count = await conn.fetchval(
+            "SELECT count(*) FROM internal_topic_candidates WHERE batch_id = $1",
+            batch.id,
+        )
+        run_row = await conn.fetchrow(
+            "SELECT * FROM discovery_runs WHERE niche_id = $1 "
+            "ORDER BY started_at DESC LIMIT 1",
+            n.id,
+        )
+    # External candidates survived; internal contributed nothing.
+    assert external_count == 2
+    assert internal_count == 0
+    # The run completed successfully (no error recorded) — internal failure
+    # was swallowed, not propagated.
+    assert run_row is not None
+    assert run_row["batch_id"] == batch.id
+    assert run_row["error"] is None
+
+
 async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
     """Second sweep while an open batch exists should be a no-op (return None).
 

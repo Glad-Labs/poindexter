@@ -127,7 +127,22 @@ class TopicBatchService:
 
         try:
             external = await self._discover_external(niche)
-            internal = await self._discover_internal(niche)
+            # Internal discovery is best-effort: a failure here (e.g. an
+            # LLM distill call returning empty/unparseable JSON) must NOT
+            # sink the whole sweep and discard the external candidates we
+            # already gathered. This was the 2026-05-28 content-gen stall —
+            # one empty json.loads in _discover_internal bubbled out of
+            # run_sweep, so no batch formed for ~2 days even though external
+            # taps were returning candidates fine.
+            try:
+                internal = await self._discover_internal(niche)
+            except Exception:
+                logger.warning(
+                    "Niche %s: internal RAG discovery failed — proceeding "
+                    "with external candidates only this sweep",
+                    niche.slug, exc_info=True,
+                )
+                internal = []
             carried = await self._load_carry_forward(niche.id)
 
             pool_external, pool_internal = await self._embed_and_pre_rank(

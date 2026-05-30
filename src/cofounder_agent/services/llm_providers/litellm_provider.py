@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -248,6 +249,36 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
     return True
 
 
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _recover_reasoning_text(msg: Any) -> str:
+    """Recover a usable assistant payload from a reasoning model that
+    returned empty ``content``.
+
+    Reasoning models (e.g. GLM, DeepSeek-R1 family) routed through LiteLLM
+    surface their chain-of-thought in a separate ``reasoning_content``
+    field, and under ``response_format=json_object`` can leave ``content``
+    empty entirely. The structured answer the model produced is then only
+    reachable via ``reasoning_content``. Some models instead inline the
+    thinking as ``<think>...</think>`` followed by the answer.
+
+    Strategy (best-effort, returns "" when nothing usable is found):
+    1. Prefer ``reasoning_content`` when present; strip any ``<think>``
+       wrapper so a downstream ``json.loads`` sees the bare payload.
+    2. If the reasoning is *only* a think-block with the answer after the
+       closing tag, the strip leaves that trailing answer.
+    """
+    reasoning = (getattr(msg, "reasoning_content", None) or "").strip()
+    if not reasoning:
+        return ""
+    stripped = _THINK_TAG_RE.sub("", reasoning).strip()
+    # If stripping the think wrapper left nothing, the whole reasoning body
+    # IS the candidate payload (the model never closed a think tag) — return
+    # it raw so the caller's parser gets a shot at it.
+    return stripped or reasoning
+
+
 class LiteLLMProvider:
     """LLMProvider implementation backed by LiteLLM.
 
@@ -289,6 +320,17 @@ class LiteLLMProvider:
         # protection extends to the LiteLLM router that's now the default
         # for every cost tier.
         self._allow_paid_base_url = False
+        # Reasoning-model fallback (2026-05-29 content-gen stall fix). A
+        # reasoning model (e.g. ``glm-4.7-5090``) under
+        # ``response_format=json_object`` can emit all its tokens into a
+        # thinking channel and return an EMPTY ``content`` field — which
+        # crashed every ``json.loads`` caller in topic discovery. When this
+        # is on and ``content`` is empty, fall back to the response's
+        # ``reasoning_content`` (and strip any ``<think>`` wrapper) so the
+        # structured payload the model reasoned out is still recoverable.
+        # DB-configurable via
+        # ``plugin.llm_provider.litellm.config.reasoning_content_fallback``.
+        self._reasoning_content_fallback = True
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -320,6 +362,11 @@ class LiteLLMProvider:
         self._timeout = float(provider_config.get("timeout_seconds", self._timeout))
         self._drop_params = bool(
             provider_config.get("drop_params", self._drop_params)
+        )
+        self._reasoning_content_fallback = bool(
+            provider_config.get(
+                "reasoning_content_fallback", self._reasoning_content_fallback
+            )
         )
         prefix = provider_config.get("default_prefix")
         if prefix:
@@ -497,6 +544,19 @@ class LiteLLMProvider:
             msg = getattr(choice, "message", None)
             text = (getattr(msg, "content", None) or "") if msg else ""
             finish_reason = getattr(choice, "finish_reason", "") or ""
+            # Reasoning-model fallback: a thinking model under json mode can
+            # return empty ``content`` with all tokens in ``reasoning_content``.
+            # Recover the reasoned payload so downstream json.loads doesn't
+            # get an empty string. See __init__ for the why.
+            if not text.strip() and self._reasoning_content_fallback and msg:
+                recovered = _recover_reasoning_text(msg)
+                if recovered:
+                    logger.warning(
+                        "[litellm_provider] empty content for model=%s; "
+                        "recovered %d chars from reasoning_content",
+                        resolved_model, len(recovered),
+                    )
+                    text = recovered
 
         usage = getattr(response, "usage", None)
         prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0

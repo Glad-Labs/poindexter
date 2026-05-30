@@ -152,6 +152,20 @@ The `cost_guard.py` daily/monthly cost cap fires before the call to a paid cloud
 
 Every call goes through `cost_logs` (the LiteLLM cost-tracking path). The `cost_logs` table records `model`, `prompt_tokens`, `completion_tokens`, `cost_usd`. Per-call-site filtering is via the `purpose` column. The Cost dashboard in Grafana groups by purpose × model.
 
+### "My writer model is a reasoning model and topic discovery stopped producing content"
+
+This was the 2026-05-28 content-generation stall. Structured-JSON extraction calls (topic-discovery distill + candidate ranking) ask the model for `response_format={"type": "json_object"}`. A **reasoning model** (e.g. `glm-4.7-5090`) can emit all its tokens into a thinking channel and return an **empty `content`** field under JSON mode — so `json.loads("")` crashed the whole discovery sweep and the queue went dry.
+
+Two independent guards now exist, both DB-configurable:
+
+1. **Separate model for structured extraction.** `resolve_structured_model()` reads `structured_extraction_model` (default `gemma3:27b`, a JSON-reliable instruct model) instead of `pipeline_writer_model`. Keep your reasoning model for _writing_ without breaking _extraction_:
+
+   ```sql
+   UPDATE app_settings SET value = 'ollama/gemma3:27b' WHERE key = 'structured_extraction_model';
+   ```
+
+2. **Reasoning-content fallback in the provider.** When `LiteLLMProvider` gets an empty `content` it recovers the payload from the response's `reasoning_content` (stripping any `<think>` wrapper). Toggle via the litellm provider config (`plugin.llm_provider.litellm.config.reasoning_content_fallback`, default `true`). This is distinct from the `thinking_model_substrings` registry (which classifies models by name for unload/VRAM decisions) — the fallback triggers on the _observed_ empty-content symptom, so it catches new reasoning models even before they're added to the substring list.
+
 ## Open questions / future work
 
 - ~~**End-of-Lane-B cleanup:** delete the 5 vestigial `model_router=None` ctor params at `quality_service.py:117/887/897`, `firefighter_service.py:268`, `agents/blog_quality_agent.py:31/138`. They accept any duck-typed router-like object now (the deleted `model_router` module is gone), but the param signatures are noise.~~ Landed 2026-05-09. `quality_service.py` + `agents/blog_quality_agent.py` cleaned (4 occurrences across 2 files + 1 test). `firefighter_service.py:268`'s `model_router` param was _not_ vestigial — it accepts a duck-typed `_ModelRouterLike` Protocol injected from `routes/triage_routes.py` (a function reference for testability, unrelated to the deleted `services/model_router.py` module). The original inventory entry conflated the two; corrected.

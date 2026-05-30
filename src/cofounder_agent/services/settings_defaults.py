@@ -101,6 +101,14 @@ DEFAULTS: dict[str, str] = {
     # stay invisible in pipeline latency.
     'pipeline_writer_unload_grace_seconds': '2',
     'qa_fallback_writer_model': 'gemma3:27b',
+    # why: structured-JSON extraction calls (topic discovery distill +
+    # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
+    # model (pipeline_writer_model) may be a reasoning model that returns
+    # empty content under response_format=json_object — which crashed the
+    # whole topic-discovery sweep (2026-05-28 content-gen stall). Kept
+    # separate + DB-configurable so operators can pin a writing model
+    # without breaking structured extraction.
+    'structured_extraction_model': 'gemma3:27b',
     'use_ollama': 'false',
 
     # ----- LLM providers / endpoints -----

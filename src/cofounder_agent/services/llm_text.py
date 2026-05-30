@@ -111,6 +111,51 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
     )
 
 
+def resolve_structured_model(
+    model: str | None = None, *, site_config: Any = None
+) -> str:
+    """Pick the model for structured-JSON extraction calls (``json_object``).
+
+    Distinct from :func:`resolve_local_model` on purpose. The writer model
+    (``pipeline_writer_model``) may be a *reasoning* model (e.g.
+    ``glm-4.7-5090``) that emits its tokens into a thinking channel and
+    returns an **empty** ``content`` field under
+    ``response_format={"type": "json_object"}``. That empty string then
+    crashed every ``json.loads`` caller in topic discovery (2026-05-28
+    content-generation stall). Structured-extraction call sites resolve
+    their model here instead, reading the DB-configurable
+    ``structured_extraction_model`` so an operator can pin a
+    JSON-reliable instruct model without touching the writer model.
+
+    Resolution order: explicit ``model`` arg → ``structured_extraction_model``
+    → ``cost_tier.standard.model``. The ``ollama/`` prefix is stripped to
+    match the local-call convention. Raises ``ValueError`` when nothing is
+    resolvable (fail loud per ``feedback_no_silent_defaults``).
+    """
+    if model:
+        return model.removeprefix("ollama/")
+    if site_config is None:
+        raise ValueError(
+            "llm_text.resolve_structured_model: site_config is required "
+            "(no hardcoded fallback by design)."
+        )
+    for key in ("structured_extraction_model", "cost_tier.standard.model"):
+        try:
+            val = (site_config.get(key, "") or "").strip()
+        except Exception as e:  # noqa: BLE001 — defensive against test stubs
+            logger.warning(
+                "[llm_text] site_config.get(%r) raised %s — trying next", key, e,
+            )
+            continue
+        if val:
+            return val.removeprefix("ollama/")
+    raise ValueError(
+        "llm_text: no structured-extraction model resolvable — set "
+        "``structured_extraction_model`` OR ``cost_tier.standard.model`` "
+        "via `poindexter set-setting`."
+    )
+
+
 @observe(as_type="generation", name="ollama_chat_text")
 async def ollama_chat_text(
     prompt: str,

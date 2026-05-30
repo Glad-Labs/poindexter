@@ -227,7 +227,11 @@ async def test_llm_final_score_raises_value_error_when_no_model_configured(monke
     candidates = [ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6)]
     weights = [NicheGoal("TRAFFIC", 100)]
 
-    with pytest.raises(ValueError, match="no writer model resolvable"):
+    # 2026-05-28 stall fix: ranking now resolves via
+    # ``resolve_structured_model`` (structured_extraction_model →
+    # cost_tier.standard.model) instead of the writer-model chain, so a
+    # misconfigured fork fails loud here with the structured-model message.
+    with pytest.raises(ValueError, match="no structured-extraction model resolvable"):
         # Note: no model= kwarg → forces resolution
         await llm_final_score(candidates, weights, site_config=stub_sc)
 
