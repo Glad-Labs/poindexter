@@ -16,7 +16,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.prompt_manager import UnifiedPromptManager
+from services.prompt_manager import (
+    PromptCategory,
+    PromptResolution,
+    UnifiedPromptManager,
+)
 
 
 @pytest.fixture
@@ -239,3 +243,134 @@ class TestMultiModelQaPromptSnapshots:
             current_date=today, sources_block="",
         )
         assert f"TODAY'S DATE: {today}" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Edge cases + error paths on the UnifiedPromptManager accessors that back
+# these QA prompts. The snapshots above pin the happy-path render; the tests
+# below pin the failure modes (missing variable / unknown key), the
+# provenance/version metadata the lab stamps on outcome rows, the literal-
+# JSON-brace escaping contract these prompts depend on, and the metadata /
+# listing accessors. None of these are exercised by the migration tests,
+# which only cover the downstream resolver wrappers.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMultiModelQaPromptEdgeCases:
+    def test_missing_required_variable_raises_helpful_keyerror(
+        self, pm: UnifiedPromptManager,
+    ):
+        """qa.review needs ``content``; omitting it must surface the
+        remediation-flavoured KeyError from get_prompt_resolution, not a
+        bare ``KeyError('content')`` from str.format."""
+        with pytest.raises(KeyError) as excinfo:
+            pm.get_prompt(
+                "qa.review",
+                title="T",
+                topic="X",
+                current_date="2026-01-01",
+                sources_block="",
+                # content deliberately omitted
+            )
+        message = str(excinfo.value)
+        assert "qa.review" in message
+        assert "content" in message
+        assert "Please provide" in message
+
+    def test_unknown_qa_key_raises_keyerror_listing_available(
+        self, pm: UnifiedPromptManager,
+    ):
+        """A typo'd key must fail loud and list the registered keys so the
+        caller can self-correct — not return an empty / default string."""
+        with pytest.raises(KeyError) as excinfo:
+            pm.get_prompt("qa.does_not_exist")
+        message = str(excinfo.value)
+        assert "qa.does_not_exist" in message
+        assert "Available:" in message
+        # A real registered key should appear in the available list.
+        assert "qa.review" in message
+
+    def test_resolution_reports_yaml_source_and_int_version(
+        self, pm: UnifiedPromptManager,
+    ):
+        """With no Langfuse wired, qa.review resolves from YAML. The
+        provenance record must say so and coerce the ``v1.1`` YAML version
+        string to the major int (1) the outcome rows store."""
+        resolution = pm.get_prompt_resolution(
+            "qa.review",
+            title="T",
+            topic="X",
+            content="Body.",
+            current_date="2026-01-01",
+            sources_block="",
+        )
+        assert isinstance(resolution, PromptResolution)
+        assert resolution.key == "qa.review"
+        assert resolution.source == "yaml"
+        assert resolution.version == 1
+        assert resolution.text.startswith("Review this blog post")
+
+    def test_literal_json_braces_survive_formatting(
+        self, pm: UnifiedPromptManager,
+    ):
+        """These QA prompts embed literal JSON examples (``{"delivers": ...}``)
+        which only render because the YAML escapes them as ``{{...}}``. Calling
+        with ONLY the documented placeholders must not raise KeyError on those
+        braces and must emit single, unescaped braces in the output."""
+        rendered = pm.get_prompt(
+            "qa.topic_delivery",
+            topic="Quantum gardening",
+            opening="Some opening text",
+        )
+        # The literal JSON example is emitted verbatim, single-braced.
+        assert '{"delivers": true/false' in rendered
+        # And the escaped doubled braces never leak through to the output.
+        assert "{{" not in rendered
+        assert "}}" not in rendered
+
+    def test_extra_kwargs_are_ignored(self, pm: UnifiedPromptManager):
+        """str.format tolerates surplus keyword args. Callers that pass a
+        superset of placeholders (e.g. a shared context dict) must not trip
+        an error — the unused keys are simply dropped."""
+        rendered = pm.get_prompt(
+            "qa.consistency",
+            content="Section A says X. Section B says not X.",
+            unused_key="ignored",
+            another_unused=42,
+        )
+        assert "Section A says X" in rendered
+
+    @pytest.mark.parametrize(
+        "key", ["qa.topic_delivery", "qa.consistency", "qa.review"],
+    )
+    def test_qa_prompt_metadata_is_content_qa(
+        self, pm: UnifiedPromptManager, key: str,
+    ):
+        """get_metadata for each migrated QA prompt reports the CONTENT_QA
+        category — the seam list_prompts(category=...) filtering relies on."""
+        meta = pm.get_metadata(key)
+        assert meta.category == PromptCategory.CONTENT_QA
+
+    def test_get_metadata_unknown_key_raises(self, pm: UnifiedPromptManager):
+        """Metadata lookups for an unregistered key fail loud rather than
+        returning a placeholder PromptMetadata."""
+        with pytest.raises(KeyError):
+            pm.get_metadata("qa.not_a_real_prompt")
+
+    def test_list_prompts_filtered_by_content_qa_includes_qa_review(
+        self, pm: UnifiedPromptManager,
+    ):
+        """Category filtering returns only CONTENT_QA prompts, and the
+        per-key payload carries the category string + version for the UI."""
+        qa_prompts = pm.list_prompts(category=PromptCategory.CONTENT_QA)
+        assert "qa.review" in qa_prompts
+        assert qa_prompts["qa.review"]["category"] == "content_qa"
+        assert qa_prompts["qa.review"]["version"] == "v1.1"
+        # The filter must exclude prompts from other categories.
+        all_prompts = pm.list_prompts()
+        assert len(qa_prompts) < len(all_prompts)
+        assert all(
+            payload["category"] == "content_qa"
+            for payload in qa_prompts.values()
+        )
