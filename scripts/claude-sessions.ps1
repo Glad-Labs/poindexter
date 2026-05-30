@@ -152,6 +152,15 @@ function Run-Session {
         return
     }
 
+    # The husky/lint-staged pre-commit hook (npx lint-staged -> prettier/eslint)
+    # needs node_modules, which a fresh worktree does NOT have (node_modules is
+    # gitignored, not part of the checkout). Without it the hook fails and the
+    # session can't commit (e.g. any commit that stages a .md/.json/.js file).
+    # Junction the shared checkout's node_modules into the worktree so the hook
+    # resolves its tools. A junction (not a copy) is instant and read-shared.
+    # Torn down in finally BEFORE the worktree is removed (see below).
+    cmd /c mklink /J "$wt\node_modules" "$WorkDir\node_modules" 2>&1 | Out-Null
+
     $wtPreamble = "Your working directory on launch is $StartDir, but a DEDICATED git worktree has been created for this session at $wt, already checked out to branch '$branch' (based on the latest origin/main). Before running ANY shell commands, cd into $wt - that is your ISOLATED checkout and all relative paths below are relative to it. Do ALL git and file work there. You are ALREADY on branch '$branch': do NOT run git checkout / git switch / git worktree, do NOT create another branch, and do NOT touch the shared checkout at C:\Users\mattm\glad-labs-website (another session may be using it). When you have changes, commit on '$branch' and push with: git push -u origin $branch ; then open a PR with gh pr create --repo Glad-Labs/glad-labs-stack --base main. Ignore any instruction below to 'create a branch auto/...' - your branch already exists; just use it. If you make no changes, exit without committing. "
     $prompt = $wtPreamble + $RepoPreamble + ($session.Prompt -replace '\{date\}', (Get-Date -Format "yyyy-MM-dd") -replace '\{number\}', 'N')
 
@@ -181,6 +190,12 @@ function Run-Session {
     } catch {
         Add-Content $logFile "`n[ERROR] $($_.Exception.Message)"
     } finally {
+        # Remove the node_modules JUNCTION first, with rmdir — it deletes the
+        # link only and NEVER follows the junction into the shared checkout's
+        # real node_modules. Doing this before `worktree remove` is critical:
+        # a recursive delete that traversed the junction would wipe the shared
+        # node_modules.
+        if (Test-Path "$wt\node_modules") { cmd /c rmdir "$wt\node_modules" 2>&1 | Out-Null }
         # Always tear down the worktree, even on timeout/kill, so it never
         # accumulates stale trees or leaves a half-checked-out branch around.
         # The session's branch + PR live on the remote once pushed; the local

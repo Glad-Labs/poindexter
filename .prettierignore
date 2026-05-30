@@ -1,0 +1,10 @@
+# Auto-generated files — prettier must NOT reformat these.
+# They are produced verbatim by tooling (release-please, the app-settings
+# doc generator, npm). Letting the pre-commit hook's `prettier --write`
+# touch them produces large spurious diffs that conflict with the next
+# generator run (observed 2026-05-30 when a merge restaged them: a 1500-line
+# reformat of app-settings.md landed in a PR that only meant to change code).
+CHANGELOG.md
+docs/reference/app-settings.md
+package-lock.json
+.release-please-manifest.json
