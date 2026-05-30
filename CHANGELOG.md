@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.32.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.1...v0.32.2) (2026-05-30)
+
+
+### Bug Fixes
+
+* **scheduler:** interval jobs never fire under frequent restarts + DB-tunable cadence ([#797](https://github.com/Glad-Labs/glad-labs-stack/issues/797)) ([d811d66](https://github.com/Glad-Labs/glad-labs-stack/commit/d811d66fdf56d3c0e250292f3c21b6832d5a5146))
+
 ## [0.32.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.0...v0.32.1) (2026-05-30)
 
 
