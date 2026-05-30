@@ -45,7 +45,8 @@ $WorkDir  = "C:\Users\mattm\glad-labs-website"
 $LogDir   = "$env:USERPROFILE\.poindexter\logs\claude-sessions"
 $Claude   = "$env:USERPROFILE\.local\bin\claude.exe"
 $TaskPrefix = "Claude Session"
-$RepoPreamble = "Your working directory on launch is C:\Users\mattm. Before running ANY shell commands, cd into C:\Users\mattm\glad-labs-website - that is where the repo lives. All relative paths below are relative to the repo root. Two GitHub repos: Glad-Labs/glad-labs-stack (private, full tree, source of truth, push here for daily work) and Glad-Labs/poindexter (public mirror, auto-synced one-way from glad-labs-stack via GitHub Action). AUTOMATION ROUTING RULE: every issue you create, every PR you open, every comment you write goes to Glad-Labs/glad-labs-stack. Do NOT file issues or PRs against Glad-Labs/poindexter - it is a read-only mirror; anything filed there gets disconnected from the source of truth. You MAY read from Glad-Labs/poindexter (e.g. to dedup against community-filed issues) but you MAY NOT write to it. Humans still file public-flavored bug reports in Glad-Labs/poindexter; automation does not. Use the gh CLI for all GitHub operations (gh pr create, gh issue list, etc.) and pass --repo Glad-Labs/glad-labs-stack explicitly on every write. Gitea was decommissioned 2026-04-30 - do NOT use forgejo MCP tools or any localhost:3001 URLs. "
+$WorktreeRoot = "$env:USERPROFILE\.poindexter\worktrees"
+$RepoPreamble = "Two GitHub repos: Glad-Labs/glad-labs-stack (private, full tree, source of truth, push here for daily work) and Glad-Labs/poindexter (public mirror, auto-synced one-way from glad-labs-stack via GitHub Action). AUTOMATION ROUTING RULE: every issue you create, every PR you open, every comment you write goes to Glad-Labs/glad-labs-stack. Do NOT file issues or PRs against Glad-Labs/poindexter - it is a read-only mirror; anything filed there gets disconnected from the source of truth. You MAY read from Glad-Labs/poindexter (e.g. to dedup against community-filed issues) but you MAY NOT write to it. Humans still file public-flavored bug reports in Glad-Labs/poindexter; automation does not. Use the gh CLI for all GitHub operations (gh pr create, gh issue list, etc.) and pass --repo Glad-Labs/glad-labs-stack explicitly on every write. Gitea was decommissioned 2026-04-30 - do NOT use forgejo MCP tools or any localhost:3001 URLs. "
 
 # Session definitions: name, prompt, schedule, max duration
 $Sessions = @{
@@ -122,16 +123,47 @@ function Run-Session {
 
     $date = Get-Date -Format "yyyy-MM-dd-HHmm"
     $logFile = "$LogDir\$Name-$date.log"
-    $prompt = $RepoPreamble + ($session.Prompt -replace '\{date\}', (Get-Date -Format "yyyy-MM-dd") -replace '\{number\}', 'N')
+
+    # --- Worktree isolation -------------------------------------------------
+    # Each session works in its OWN git worktree on a pre-created branch off
+    # the LATEST origin/main - never in the shared C:\Users\mattm\glad-labs-website
+    # checkout. Two reasons:
+    #   1. Concurrent sessions (and Matt's interactive session) all share that
+    #      one checkout; a `git checkout -b` in one swaps the branch out from
+    #      under another mid-edit -> commits land on the wrong branch / PRs
+    #      get cross-contaminated (observed 2026-05-30). Worktrees give each
+    #      session an isolated HEAD.
+    #   2. Branching off freshly-fetched origin/main means a session never
+    #      inherits another session's unmerged commits as its base.
+    # The Claude process still LAUNCHES from $StartDir so it keeps the shared
+    # C--Users-mattm memory bank (the project-memory key is tied to the launch
+    # dir, not the cwd); the prompt cd's into the worktree for all real work.
+    if (-not (Test-Path $WorktreeRoot)) { New-Item -ItemType Directory -Path $WorktreeRoot -Force | Out-Null }
+    $branch = "auto/$Name-$date"
+    $wt = "$WorktreeRoot\$Name-$date"
+
+    # Clear out any stale worktree registrations from prior crashed runs.
+    git -C $WorkDir worktree prune 2>&1 | Out-Null
+    git -C $WorkDir fetch origin --quiet 2>&1 | Out-Null
+    git -C $WorkDir worktree add -b $branch $wt origin/main 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $wt)) {
+        Add-Content $logFile "`n[ERROR] Failed to create worktree $wt on branch $branch; aborting session (refusing to run in the shared checkout)."
+        Write-Host "FAILED to create worktree for $Name; aborting."
+        return
+    }
+
+    $wtPreamble = "Your working directory on launch is $StartDir, but a DEDICATED git worktree has been created for this session at $wt, already checked out to branch '$branch' (based on the latest origin/main). Before running ANY shell commands, cd into $wt - that is your ISOLATED checkout and all relative paths below are relative to it. Do ALL git and file work there. You are ALREADY on branch '$branch': do NOT run git checkout / git switch / git worktree, do NOT create another branch, and do NOT touch the shared checkout at C:\Users\mattm\glad-labs-website (another session may be using it). When you have changes, commit on '$branch' and push with: git push -u origin $branch ; then open a PR with gh pr create --repo Glad-Labs/glad-labs-stack --base main. Ignore any instruction below to 'create a branch auto/...' - your branch already exists; just use it. If you make no changes, exit without committing. "
+    $prompt = $wtPreamble + $RepoPreamble + ($session.Prompt -replace '\{date\}', (Get-Date -Format "yyyy-MM-dd") -replace '\{number\}', 'N')
 
     Write-Host "[$date] Starting Claude session: $Name"
+    Write-Host "Worktree: $wt (branch $branch)"
     Write-Host "Log: $logFile"
     Write-Host "Max duration: $($session.MaxMinutes) minutes"
 
     # Run Claude Code with the prompt, timeout after MaxMinutes
     # --dangerously-skip-permissions: required for autonomous sessions to
     # run Bash, git, edit files, etc. without blocking on prompts.
-    # Safe because sessions are sandboxed to the repo dir and changes go
+    # Safe because sessions are sandboxed to their worktree and changes go
     # to branches/PRs, never main.
     $timeout = $session.MaxMinutes * 60
     try {
@@ -148,6 +180,14 @@ function Run-Session {
         }
     } catch {
         Add-Content $logFile "`n[ERROR] $($_.Exception.Message)"
+    } finally {
+        # Always tear down the worktree, even on timeout/kill, so it never
+        # accumulates stale trees or leaves a half-checked-out branch around.
+        # The session's branch + PR live on the remote once pushed; the local
+        # branch is disposable (force-delete; unpushed = no-change sessions).
+        git -C $WorkDir worktree remove $wt --force 2>&1 | Out-Null
+        git -C $WorkDir branch -D $branch 2>&1 | Out-Null
+        git -C $WorkDir worktree prune 2>&1 | Out-Null
     }
 
     Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] Session complete: $Name"
