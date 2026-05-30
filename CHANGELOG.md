@@ -9,6 +9,18 @@
 
 * **skills:** migrate video_director pack to skill catalog with {site_name} (closes [#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#837](https://github.com/Glad-Labs/glad-labs-stack/issues/837)) ([0e38d0d](https://github.com/Glad-Labs/glad-labs-stack/commit/0e38d0d6f188f6438f1274a79a3496d70d20e481))
 
+
+### Bug Fixes
+
+* **skills:** move pipeline skill packs into package so the worker can load them ([8a8c4c7](https://github.com/Glad-Labs/glad-labs-stack/commit/8a8c4c744dc1076185a0015a753aa45d2eac9fdc))
+
+## [0.40.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.39.0...v0.40.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate video_director pack to skill catalog with {site_name} (closes [#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#837](https://github.com/Glad-Labs/glad-labs-stack/issues/837)) ([0e38d0d](https://github.com/Glad-Labs/glad-labs-stack/commit/0e38d0d6f188f6438f1274a79a3496d70d20e481))
+
 ## [0.39.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.38.1...v0.39.0) (2026-05-30)
 
 
