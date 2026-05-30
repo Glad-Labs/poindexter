@@ -158,7 +158,8 @@ async def _reload_alertmanager(base_url: str) -> str:
             resp = await http.post(url)
         if resp.status_code == 200:
             return "alertmanager reloaded"
-        # 405/404 means --web.enable-lifecycle is not set on Alertmanager.
+        # Alertmanager enables POST /-/reload by default (no flag needed);
+        # a non-200 here means a malformed config or a version that lacks it.
         return f"reload returned {resp.status_code}"
     except httpx.HTTPError as e:
         logger.warning("render_alertmanager_config: reload failed: %s", e)

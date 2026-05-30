@@ -129,13 +129,13 @@ services:
         && exec /bin/alertmanager
         --config.file=/etc/alertmanager/config/alertmanager.yml
         --storage.path=/alertmanager
-        --web.enable-lifecycle
     ports:
       - "9093:9093"
     volumes:
       # Rendered config dir — RenderAlertmanagerConfigJob (worker) writes
-      # alertmanager.yml here; Alertmanager reads it. `/-/reload` (enabled
-      # via --web.enable-lifecycle) picks up changes without a restart.
+      # alertmanager.yml here; Alertmanager reads it. POST /-/reload picks
+      # up changes without a restart (Alertmanager enables it by default —
+      # unlike Prometheus, it has NO --web.enable-lifecycle flag).
       - alertmanager-config:/etc/alertmanager/config
       - alertmanager-data:/alertmanager
       # Bearer token for the Poindexter webhook receiver. Must match
