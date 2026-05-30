@@ -207,6 +207,9 @@ class GenerateVideoShotListStage:
                 target_duration_s=f"{target_duration_s:.1f}",
                 model=model,
                 now_iso=now_iso,
+                # Operator brand templated into the director persona via
+                # {site_name} (migrated to skills/content/video-director).
+                site_name=(sc.get("site_name") if sc else "") or "",
             )
         except Exception as exc:
             logger.warning(
