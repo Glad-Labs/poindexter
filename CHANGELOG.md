@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.38.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.37.0...v0.38.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate blog_generation prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#826](https://github.com/Glad-Labs/glad-labs-stack/issues/826)) ([7c5ffad](https://github.com/Glad-Labs/glad-labs-stack/commit/7c5ffadc63785f66b09a62d0f96b5e8850bc626c))
+* **skills:** migrate content_qa prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#825](https://github.com/Glad-Labs/glad-labs-stack/issues/825)) ([345f553](https://github.com/Glad-Labs/glad-labs-stack/commit/345f5539f1638c23fb6b4180df20fd1718309ac6))
+
 ## [0.37.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.36.0...v0.37.0) (2026-05-30)
 
 
