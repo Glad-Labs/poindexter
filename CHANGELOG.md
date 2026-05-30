@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.34.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.33.0...v0.34.0) (2026-05-30)
+
+
+### Features
+
+* **brain:** cadence-SLO probe — page on actual-vs-configured throughput shortfall (closes [#525](https://github.com/Glad-Labs/glad-labs-stack/issues/525)) ([#817](https://github.com/Glad-Labs/glad-labs-stack/issues/817)) ([9d51813](https://github.com/Glad-Labs/glad-labs-stack/commit/9d51813377a5c2afbbb9b6083ac169fc44072a6b))
+
 ## [0.33.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.7...v0.33.0) (2026-05-30)
 
 
