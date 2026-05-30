@@ -52,7 +52,7 @@ personal default, etc.):
 3. Run this script locally to verify (``python3
    scripts/ci/check_public_mirror_safety.py``).
 
-The lone exception: ``Glad-Labs/glad-labs-stack`` lives inline in
+The lone exception: ``Glad-Labs/poindexter`` lives inline in
 ``sync-to-github.sh`` instead of here. It's a post-rewrite belt-and-
 suspenders check, scoped to the sync-time pass after the cosmetic sed
 rewrite. Keeping it here would false-positive on every release-please
@@ -400,7 +400,7 @@ _LEAK_PATTERNS = (
         "the operator sets these via `poindexter setup`.",
         multiline=True,
     ),
-    # Note: ``Glad-Labs/glad-labs-stack`` is intentionally NOT a CI-time
+    # Note: ``Glad-Labs/poindexter`` is intentionally NOT a CI-time
     # leak pattern. The sync filter rewrites it to ``Glad-Labs/poindexter``
     # at push time across every text file (see the Python substitution
     # block in ``sync-to-github.sh``), so the public mirror never sees
