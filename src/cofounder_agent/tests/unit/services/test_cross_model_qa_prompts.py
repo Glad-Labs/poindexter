@@ -32,6 +32,15 @@ def pm() -> UnifiedPromptManager:
 # migration. Keeping the snapshot inline (rather than reading from a
 # frozen file) means a reviewer can read both halves of the contract in
 # one place.
+#
+# 2026-05-30 (Glad-Labs/poindexter#528): the prompt moved again, from
+# ``prompts/content_qa.yaml`` to ``skills/content/content-qa/SKILL.md``
+# (agentskills.io catalog). The YAML entry used ``template: |-`` (strip
+# chomp, no trailing newline); the SKILL.md loader normalizes every
+# template to YAML ``|`` clip semantics — exactly one trailing newline.
+# The body is byte-identical; the single trailing ``\n`` below is the only
+# byte that changed, and it's harmless (this rewrite prompt is sent
+# straight to the LLM). See _extract_skill_section in prompt_manager.py.
 # ---------------------------------------------------------------------------
 
 
@@ -66,7 +75,8 @@ ORIGINAL DRAFT:
 Test draft body.
 
 Return ONLY the revised article text. Do not include meta-commentary,
-notes about what you changed, or markdown code fences around the output."""
+notes about what you changed, or markdown code fences around the output.
+"""
 
 
 # ---------------------------------------------------------------------------
