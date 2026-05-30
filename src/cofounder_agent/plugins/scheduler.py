@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -99,12 +100,22 @@ class PluginScheduler:
             logger.warning("scheduler: job %r already registered; skipping", job.name)
             return False
 
+        # Make every job's schedule DB-configurable + visible: persist a
+        # default config blob (with the code-default schedule) to
+        # app_settings on first registration. ON CONFLICT DO NOTHING means
+        # operator edits are never clobbered and re-boots are no-ops. After
+        # this, an operator tunes any job's cadence by editing
+        # ``config.schedule`` in the ``plugin.job.<name>`` row — no code
+        # change, no redeploy (feedback_db_first_config / feedback_no_env_vars).
+        await self._seed_job_config_if_absent(job)
+
         cfg = await PluginConfig.load(self._pool, "job", job.name)
         if not cfg.enabled:
             logger.info("scheduler: job %r disabled in app_settings; skipping", job.name)
             return False
 
-        # Per-install overrides win over the Job's default schedule.
+        # Per-install override (config.schedule in the DB row) wins over the
+        # Job's code-default schedule.
         schedule = cfg.get("schedule", job.schedule)
         trigger = _parse_schedule(schedule)
         if trigger is None:
@@ -146,6 +157,24 @@ class PluginScheduler:
                 self._jobs_failed += 1
                 await self._record_last_run(job.name, ok=False)
 
+        # Anchor interval jobs' first fire to their PERSISTED last run, not
+        # to boot time. APScheduler's IntervalTrigger with no explicit
+        # next_run_time computes the first fire as ``scheduler_start + interval``
+        # — recomputed fresh on every worker boot. Under frequent restarts
+        # (active dev), a long-interval job (e.g. "every 24 hours") has its
+        # next fire perpetually pushed 24h past *this* boot and never runs,
+        # while sub-hour jobs fire fine between restarts. This silently
+        # stalled 7 daily maintenance jobs (last fire 2026-05-26, ~3.8 days
+        # idle). misfire_grace_time=None does NOT fix this: there's no
+        # *missed* fire to coalesce when the trigger re-anchors to boot.
+        # Fix: seed next_run_time from the persisted ``plugin_job_last_run_*``
+        # epoch — overdue jobs fire on the next tick; not-yet-due jobs keep
+        # their real cadence across restarts.
+        next_run_time = await self._interval_next_run(job.name, trigger)
+        add_kwargs: dict[str, Any] = {}
+        if next_run_time is not None:
+            add_kwargs["next_run_time"] = next_run_time
+
         self._scheduler.add_job(
             _runner,
             trigger=trigger,
@@ -154,20 +183,95 @@ class PluginScheduler:
             replace_existing=True,
             coalesce=True,
             max_instances=1 if not getattr(job, "idempotent", False) else 3,
-            # APScheduler default misfire_grace_time=1 silently drops
-            # ``next_run_time=now()`` fires that land >1s past — which
-            # happens every time the worker restarts and a long-interval
-            # job's next fire was already in the past. ``None`` removes
-            # the grace deadline entirely, so missed fires execute on
-            # the next tick instead of being silently dropped.
-            # See ``feedback_apscheduler_misfire_grace_gotcha`` —
-            # `collapse_old_embeddings` had not fired in 30 days
-            # despite a 7-day interval because each worker restart
-            # silently dropped the catch-up.
+            # APScheduler default misfire_grace_time=1 silently drops a
+            # ``next_run_time`` fire that lands >1s in the past — which
+            # happens when the seeded catch-up fire above is already due.
+            # ``None`` removes the grace deadline entirely so the catch-up
+            # executes on the next tick instead of being dropped.
+            # See ``feedback_apscheduler_misfire_grace_gotcha``.
             misfire_grace_time=None,
+            **add_kwargs,
         )
         self._registered.append(job.name)
         return True
+
+    async def _seed_job_config_if_absent(self, job: Any) -> None:
+        """Persist a job's default config blob (including its schedule) to
+        ``app_settings`` so the cadence is DB-configurable + operator-visible.
+
+        Idempotent: ``ON CONFLICT (key) DO NOTHING`` never overwrites an
+        operator-tuned row, so editing ``config.schedule`` survives every
+        worker reboot. Best-effort — a seed failure must not block the job
+        from registering (it just falls back to the code-default schedule).
+        """
+        import json
+
+        key = PluginConfig.settings_key("job", job.name)
+        value = json.dumps({
+            "enabled": True,
+            "interval_seconds": 0,
+            "config": {"schedule": job.schedule},
+        })
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO app_settings (key, value, category, description)
+                    VALUES ($1, $2, 'plugins', $3)
+                    ON CONFLICT (key) DO NOTHING
+                    """,
+                    key,
+                    value,
+                    f"Config for job {job.name} — tune cadence via config.schedule",
+                )
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug(
+                "scheduler: job-config seed skipped for %r: %s", job.name, e
+            )
+
+    async def _interval_next_run(
+        self, job_name: str, trigger: Any
+    ) -> datetime | None:
+        """Compute the first-fire time for an interval job from its persisted
+        last run, so the cadence survives worker restarts.
+
+        Returns:
+            - ``None`` for non-interval (cron) triggers or when there's no
+              persisted last run (fresh install → keep APScheduler's default
+              ``boot + interval``, avoiding a thundering-herd fire on first
+              ever boot).
+            - ``now`` (UTC) when the job is overdue (``last_run + interval``
+              already passed) → fires on the next tick.
+            - ``last_run + interval`` when not yet due → anchors the cadence
+              to the real last run instead of this boot.
+        """
+        if not isinstance(trigger, IntervalTrigger):
+            return None
+        last_epoch = await self._persisted_last_run_epoch(job_name)
+        if last_epoch is None:
+            return None
+        interval_s = trigger.interval.total_seconds()
+        now = datetime.now(timezone.utc)
+        due = datetime.fromtimestamp(last_epoch + interval_s, tz=timezone.utc)
+        return now if due <= now else due
+
+    async def _persisted_last_run_epoch(self, job_name: str) -> float | None:
+        """Read ``plugin_job_last_run_<name>`` (Unix epoch seconds) from
+        app_settings, or ``None`` if absent/unparseable."""
+        try:
+            async with self._pool.acquire() as conn:
+                val = await conn.fetchval(
+                    "SELECT value FROM app_settings WHERE key = $1",
+                    f"plugin_job_last_run_{job_name}",
+                )
+            return float(val) if val not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug(
+                "scheduler: last-run lookup failed for %r: %s", job_name, e
+            )
+            return None
 
     async def register_all(self, jobs: list[Any]) -> list[str]:
         """Register a list of Jobs in one pass. Returns names that were accepted."""

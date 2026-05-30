@@ -9,9 +9,13 @@ need neither real Postgres nor the broken fixture chain.
 
 from __future__ import annotations
 
+import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from plugins.scheduler import PluginScheduler
 
@@ -37,6 +41,104 @@ def _pool_with_conn():
     pool = MagicMock()
     pool.acquire = MagicMock(return_value=_FakePoolCtx(conn))
     return pool, conn
+
+
+def _pool_with_fetchval(value):
+    """Fake pool whose connection.fetchval returns ``value``."""
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value=value)
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=_FakePoolCtx(conn))
+    return pool
+
+
+# ---------------------------------------------------------------------------
+# _interval_next_run — restart-survival anchoring (2026-05-26 daily-job stall)
+# ---------------------------------------------------------------------------
+
+
+async def test_interval_next_run_none_for_cron_trigger():
+    """Cron triggers compute their own next fire — we don't override them."""
+    scheduler = PluginScheduler(_pool_with_fetchval("0"))
+    trigger = CronTrigger.from_crontab("0 13 * * *")
+    assert await scheduler._interval_next_run("x", trigger) is None
+
+
+async def test_interval_next_run_none_when_no_persisted_run():
+    """Fresh install (no last-run row) keeps APScheduler's boot+interval
+    default — avoids a thundering-herd fire on first ever boot."""
+    scheduler = PluginScheduler(_pool_with_fetchval(None))
+    trigger = IntervalTrigger(hours=24)
+    assert await scheduler._interval_next_run("x", trigger) is None
+
+
+async def test_interval_next_run_fires_now_when_overdue():
+    """The 2026-05-26 bug: a 24h job last run ~3.8 days ago must fire on the
+    next tick, not get pushed 24h past this boot."""
+    last = time.time() - 3.8 * 86400  # ~3.8 days ago
+    scheduler = PluginScheduler(_pool_with_fetchval(str(int(last))))
+    trigger = IntervalTrigger(hours=24)
+    before = datetime.now(timezone.utc)
+    nxt = await scheduler._interval_next_run("x", trigger)
+    after = datetime.now(timezone.utc)
+    assert nxt is not None
+    # Overdue → returns ~now, not last+24h (which would be ~2.8 days ago).
+    assert before <= nxt <= after
+
+
+async def test_interval_next_run_anchors_to_last_run_when_not_due():
+    """Not-yet-due job keeps its real cadence: next fire = last_run + interval,
+    anchored to the actual last run rather than this boot."""
+    last = time.time() - 3600  # 1h ago
+    scheduler = PluginScheduler(_pool_with_fetchval(str(int(last))))
+    trigger = IntervalTrigger(hours=24)
+    nxt = await scheduler._interval_next_run("x", trigger)
+    assert nxt is not None
+    expected = datetime.fromtimestamp(int(last) + 86400, tz=timezone.utc)
+    assert abs((nxt - expected).total_seconds()) < 2
+
+
+async def test_seed_job_config_inserts_default_schedule_do_nothing():
+    """First registration seeds a DB-tunable config blob with the job's
+    default schedule, using ON CONFLICT DO NOTHING so operator edits stick."""
+    import json
+
+    pool, conn = _pool_with_conn()
+    scheduler = PluginScheduler(pool)
+
+    job = MagicMock()
+    job.name = "rollup_post_performance"
+    job.schedule = "every 24 hours"
+
+    await scheduler._seed_job_config_if_absent(job)
+
+    assert conn.execute.await_count == 1
+    sql, key, value, desc = conn.execute.await_args.args
+    assert "ON CONFLICT (key) DO NOTHING" in sql
+    assert key == "plugin.job.rollup_post_performance"
+    blob = json.loads(value)
+    assert blob["enabled"] is True
+    assert blob["config"]["schedule"] == "every 24 hours"
+
+
+async def test_seed_job_config_swallows_db_errors():
+    """A seed failure must never block job registration."""
+    class _BrokenPool:
+        def acquire(self):
+            raise RuntimeError("pool down")
+
+    job = MagicMock()
+    job.name = "x"
+    job.schedule = "every 1 hour"
+    # Must not raise.
+    await PluginScheduler(_BrokenPool())._seed_job_config_if_absent(job)
+
+
+async def test_persisted_last_run_epoch_parses_and_handles_missing():
+    assert await PluginScheduler(_pool_with_fetchval("1780000000"))._persisted_last_run_epoch("x") == 1780000000.0
+    assert await PluginScheduler(_pool_with_fetchval(None))._persisted_last_run_epoch("x") is None
+    assert await PluginScheduler(_pool_with_fetchval(""))._persisted_last_run_epoch("x") is None
+    assert await PluginScheduler(_pool_with_fetchval("not-a-number"))._persisted_last_run_epoch("x") is None
 
 
 async def test_record_last_run_writes_two_rows_on_success():
