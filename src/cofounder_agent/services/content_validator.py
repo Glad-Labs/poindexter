@@ -394,8 +394,8 @@ BANNED_TRANSITION_OPENERS = (
 # LLM-tell vocabulary — words and phrases that almost-exclusively signal
 # machine-generated prose. From Matt's 2026-05-19 anti-LLM-tells list
 # (``feedback_writing_anti_llm_tells`` memory). The writer prompts
-# (``prompts/blog_generation.yaml``) already discourage these as
-# negative constraints at generation time; this list is the
+# (``skills/content/blog-generation/SKILL.md``) already discourage these
+# as negative constraints at generation time; this list is the
 # deterministic QA-time enforcement floor that catches drafts the
 # local LLMs produce despite the prompt.
 #

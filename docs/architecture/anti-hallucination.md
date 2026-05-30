@@ -26,13 +26,14 @@ for narrative clarity, but they share one orchestrator entry point.
 
 Files:
 
-- `src/cofounder_agent/prompts/blog_generation.yaml`
+- `skills/content/blog-generation/SKILL.md` (migrated from
+  `prompts/blog_generation.yaml`, #528)
 - `src/cofounder_agent/prompts/system.yaml`
 - `src/cofounder_agent/services/ai_content_generator.py:248-327`
   (`_load_prompts_for_generation` — fetches templates via
   `prompt_manager.get_prompt(...)`)
 
-The public `blog_generation.yaml` and `system.yaml` files are
+The public blog-generation skill and `system.yaml` files are
 **intentionally minimal**. They tell the writer what the article is
 about, what length to hit, and the bare-minimum hygiene rules ("write
 ONLY the article in markdown", "do NOT include image descriptions").

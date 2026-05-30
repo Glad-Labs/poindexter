@@ -1,12 +1,11 @@
 """Regression test for the 2026-05-27 writer-prompt H2 fix.
 
-Pins the MARKDOWN STRUCTURE section in
-``prompts/blog_generation.yaml::blog_generation.initial_draft``. The
-preceding 12 published canonical_blog posts emitted ``**Section
-Title**`` bold-text pseudo-headings instead of real ``## Section``
-markdown, which broke the inline-image planner (planner regex only
-matched real H2/H3, see test_image_decision_agent.py for the parallel
-fallback work).
+Pins the MARKDOWN STRUCTURE section in the
+``blog_generation.initial_draft`` template. The preceding 12 published
+canonical_blog posts emitted ``**Section Title**`` bold-text
+pseudo-headings instead of real ``## Section`` markdown, which broke
+the inline-image planner (planner regex only matched real H2/H3, see
+test_image_decision_agent.py for the parallel fallback work).
 
 PR #599 patched the planner to tolerate bold-text pseudo-headings as a
 side-channel; this prompt edit treats the root cause — instruct the
@@ -17,31 +16,28 @@ runs drift back to bold-text dividers.
 A regression that strips the markdown-structure block from the prompt
 would re-introduce the "0 inline images per post" symptom in
 production within one canonical_blog cycle.
+
+Source note (#528): the blog_generation prompt pack was migrated from
+``prompts/blog_generation.yaml`` to
+``skills/content/blog-generation/SKILL.md`` (agentskills.io format).
+This test now resolves the template through ``UnifiedPromptManager``
+(YAML/skill/Langfuse-agnostic) instead of reading the retired YAML file
+directly.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
-
-
-_PROMPTS_FILE = (
-    Path(__file__).resolve().parents[3]
-    / "prompts"
-    / "blog_generation.yaml"
-)
+from services.prompt_manager import UnifiedPromptManager
 
 
 def _load_prompt(key: str) -> str:
-    raw = yaml.safe_load(_PROMPTS_FILE.read_text(encoding="utf-8"))
-    for entry in raw:
-        if entry.get("key") == key:
-            return entry["template"]
-    raise AssertionError(
-        f"Prompt key {key!r} not found in {_PROMPTS_FILE} — refactor "
-        "likely moved the key. Update this test alongside that change."
-    )
+    pm = UnifiedPromptManager()
+    if key not in pm.prompts:
+        raise AssertionError(
+            f"Prompt key {key!r} not registered — refactor likely moved "
+            "the key. Update this test alongside that change."
+        )
+    return pm.prompts[key]["template"]
 
 
 def test_initial_draft_demands_real_h2_markdown() -> None:

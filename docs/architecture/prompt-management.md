@@ -44,7 +44,11 @@ The seven prompts migrated by Lane A are now keys in the YAML files. Plus the pr
 - `system.content_writer` — base persona prompt for blog content generation
 - `narrative.system` — persona seed for the deterministic-compositor narrative pass
 
-### `prompts/blog_generation.yaml`
+### `skills/content/blog-generation/SKILL.md`
+
+Migrated out of `prompts/blog_generation.yaml` to the agentskills.io
+SKILL.md catalog (#528). The loader (`prompt_manager._initialize_skills`)
+registers these keys exactly as the YAML did.
 
 - `blog_generation.initial_draft`
 - `blog_generation.seo_and_social`
