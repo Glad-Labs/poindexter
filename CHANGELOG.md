@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.35.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.34.0...v0.35.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate podcast prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#819](https://github.com/Glad-Labs/glad-labs-stack/issues/819)) ([b7837a0](https://github.com/Glad-Labs/glad-labs-stack/commit/b7837a0953a944ef97f2258f12c5a672296ce258))
+* **skills:** migrate seo_metadata prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#820](https://github.com/Glad-Labs/glad-labs-stack/issues/820)) ([23d3bbc](https://github.com/Glad-Labs/glad-labs-stack/commit/23d3bbc4534a4aa3b5de5537f58c3fe93f6a5b36))
+* **skills:** migrate video prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#818](https://github.com/Glad-Labs/glad-labs-stack/issues/818)) ([e753442](https://github.com/Glad-Labs/glad-labs-stack/commit/e753442aa00ae04a39deeed366146a7613d9fc2c))
+
 ## [0.34.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.33.0...v0.34.0) (2026-05-30)
 
 
