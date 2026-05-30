@@ -1,14 +1,17 @@
-"""Snapshot test pinning the image_decision_agent YAML prompt.
+"""Snapshot test pinning the image_decision_agent prompt.
 
 This test is the public contract for the image-director prompt that was
 migrated out of the inline f-string in
-``services/image_decision_agent.py`` into ``prompts/image_generation.yaml``
-during Lane A batch 3 of the OSS migration. Any future Langfuse edit
-that drifts the YAML default (or any in-tree YAML edit) will trip this
-snapshot and force a deliberate update.
+``services/image_decision_agent.py`` into the image-generation prompt
+pack, then again from ``prompts/image_generation.yaml`` into the
+agentskills.io catalog at ``skills/content/image-generation/SKILL.md``.
+Any future Langfuse edit that drifts the default (or any in-tree edit)
+will trip this snapshot and force a deliberate update.
 
 The match is byte-for-byte intentionally — whitespace, double-brace
-escaping, and trailing newlines are all part of the contract.
+escaping, and trailing newlines are all part of the contract. The
+SKILL.md loader normalizes every template to YAML ``|`` clip semantics
+(exactly one trailing newline), so the snapshot ends with a newline.
 """
 
 from __future__ import annotations
@@ -73,7 +76,8 @@ Output ONLY valid JSON (no markdown, no explanation):
       "reasoning": "why this visual helps this section"
     }
   ]
-}"""
+}
+"""
 
 
 # ---------------------------------------------------------------------------
