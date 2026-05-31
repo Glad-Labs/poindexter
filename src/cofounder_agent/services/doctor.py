@@ -122,6 +122,7 @@ DEPENDS_ON: dict[str, list[str]] = {
     "embeddings_freshness": ["db_ping"],
     "traffic_anomaly": ["db_ping"],
     "scheduled_tasks": ["db_ping"],
+    "anomaly": ["db_ping"],
     "research_service": ["db_ping"],
     # --- Generation/quality probes: these drive an Ollama model, so an
     #     ollama_models failure is the root cause when they red. ---

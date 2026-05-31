@@ -380,6 +380,18 @@ DEFAULTS: dict[str, str] = {
     'cadence_slo_window_hours': '24',
     'cadence_slo_shortfall_ratio': '0.5',
 
+    # ----- Rolling-baseline anomaly probe (#440) -----
+    # Flags the most recent complete day when a metric sits beyond
+    # `sigma` std devs of its `baseline_days`-day envelope, in the
+    # direction that is bad for that metric. min_samples is the minimum
+    # number of NON-ZERO baseline days required before a metric is
+    # evaluated (guards a young system from false-alarming on first
+    # real activity). See brain/anomaly_probe.py.
+    'anomaly_probe_enabled': 'true',
+    'anomaly_sigma_threshold': '3.0',
+    'anomaly_baseline_days': '7',
+    'anomaly_min_samples': '5',
+
     # ----- Prefect stuck-flow queue-backlog detection (#526) -----
     # Distinct from the stuck-run thresholds (seeded in 0000_baseline):
     # page with probe.prefect_queue_backlog_detected when more than this
