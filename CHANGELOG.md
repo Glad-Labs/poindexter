@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.8](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.7...v0.45.8) (2026-05-31)
+
+
+### Bug Fixes
+
+* **audit:** never silently drop warn/critical findings on DB blip ([#303](https://github.com/Glad-Labs/glad-labs-stack/issues/303)) ([7f792e9](https://github.com/Glad-Labs/glad-labs-stack/commit/7f792e9fc5c7bba63db279be5a7ab9f466e815f5))
+
 ## [0.45.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.6...v0.45.7) (2026-05-31)
 
 
