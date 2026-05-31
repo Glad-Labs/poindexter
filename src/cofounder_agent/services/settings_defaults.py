@@ -380,6 +380,12 @@ DEFAULTS: dict[str, str] = {
     'cadence_slo_window_hours': '24',
     'cadence_slo_shortfall_ratio': '0.5',
 
+    # ----- Scheduler job-failure escalation (#302 / alert audit) -----
+    # When a scheduled job returns ok=False or raises, the scheduler emits a
+    # finding (most jobs) or directly notifies the operator (alert-delivery
+    # jobs). Master switch; default on so failures are never silently swallowed.
+    'scheduler_alert_on_job_failure': 'true',
+
     # ----- Findings per-kind delivery policy (#461) -----
     # Per-kind policy for findings.<kind>.{delivery,fallback,cooldown_minutes,
     # min_severity}. Intended to drive per-kind suppression on the EXISTING

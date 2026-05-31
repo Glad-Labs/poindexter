@@ -44,6 +44,18 @@ _INTERVAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Jobs that ARE the alert-delivery path. Routing their own failure through the
+# findings pipeline would be circular (the bridge can't deliver news of its own
+# death), so these escalate via a direct operator notify instead. Everything
+# else routes through emit_finding -> findings_alert_router -> alert_dispatcher
+# (which dedups). See task #302 / the alert-pipeline audit.
+_CIRCULAR_SAFE_JOBS: frozenset[str] = frozenset(
+    {"findings_alert_router", "render_alertmanager_config", "render_prometheus_rules"}
+)
+# Cooldown for the direct-notify path only (it bypasses alert_dispatcher dedup).
+# The emit_finding path is deduped downstream so it needs no cooldown here.
+_FAILURE_NOTIFY_COOLDOWN_S = 1800  # 30 min
+
 
 def _parse_schedule(schedule: str):
     """Convert a Job.schedule string to an apscheduler trigger.
@@ -88,6 +100,9 @@ class PluginScheduler:
         self._jobs_succeeded: int = 0
         self._jobs_failed: int = 0
         self._last_tick_epoch: float | None = None
+        # Per-job last-failure-notify timestamps for the direct-notify
+        # (circular-safe) escalation path's cooldown. See _escalate_job_failure.
+        self._last_failure_notify: dict[str, datetime] = {}
 
     async def register_job(self, job: Any) -> bool:
         """Add a single Job to the schedule.
@@ -151,10 +166,12 @@ class PluginScheduler:
                     self._jobs_succeeded += 1
                 else:
                     self._jobs_failed += 1
+                    await self._escalate_job_failure(job.name, result.detail or "ok=False")
                 await self._record_last_run(job.name, ok=bool(result.ok))
             except Exception as e:
                 logger.exception("scheduler: job %r raised: %s", job.name, e)
                 self._jobs_failed += 1
+                await self._escalate_job_failure(job.name, f"raised: {e}")
                 await self._record_last_run(job.name, ok=False)
 
         # Anchor interval jobs' first fire to their PERSISTED last run, not
@@ -339,6 +356,64 @@ class PluginScheduler:
             "last_tick_epoch": self._last_tick_epoch,
             "next_run_epoch": next_run_epoch,
         }
+
+    async def _escalate_job_failure(self, job_name: str, detail: str) -> None:
+        """Make a scheduled-job failure LOUD instead of a silent log+counter.
+
+        Without this, a job returning ``ok=False`` (or raising) only bumped
+        ``_jobs_failed`` and logged — no finding, no page, and ``jobs_failed``
+        has no Prometheus alert. A broken job (incl. the alerting bridge
+        itself) reached nobody. See the alert-pipeline audit / task #302.
+
+        Routing:
+        - Most jobs -> ``emit_finding`` (severity warn), which flows through
+          ``findings_alert_router`` -> ``alert_dispatcher`` (deduped, so no
+          cooldown needed here).
+        - Jobs that ARE the alert-delivery path (``_CIRCULAR_SAFE_JOBS``) can't
+          route their own failure through findings, so they escalate via a
+          direct ``notify_operator`` (critical) with a per-job cooldown.
+
+        DB-configurable master switch ``scheduler_alert_on_job_failure``
+        (default on). Best-effort: never raises into the scheduler loop.
+        """
+        try:
+            enabled = True
+            if self._site_config is not None:
+                enabled = self._site_config.get_bool(
+                    "scheduler_alert_on_job_failure", True
+                )
+            if not enabled:
+                return
+
+            if job_name in _CIRCULAR_SAFE_JOBS:
+                now = datetime.now(timezone.utc)
+                last = self._last_failure_notify.get(job_name)
+                if last is not None and (
+                    now - last
+                ).total_seconds() < _FAILURE_NOTIFY_COOLDOWN_S:
+                    return  # already paged within the cooldown window
+                self._last_failure_notify[job_name] = now
+                from services.integrations.operator_notify import notify_operator
+                await notify_operator(
+                    f"🔴 Alerting-infra job '{job_name}' FAILED — the alert "
+                    f"delivery path itself is degraded: {detail[:300]}",
+                    critical=True,
+                )
+            else:
+                from utils.findings import emit_finding
+                emit_finding(
+                    source=f"scheduler.{job_name}",
+                    kind="job_failure",
+                    title=f"scheduled job '{job_name}' failed",
+                    body=detail[:1000],
+                    severity="warn",
+                    dedup_key=f"job-fail:{job_name}",
+                )
+        except Exception as e:  # noqa: BLE001 — escalation must never crash the loop
+            logger.error(
+                "scheduler: failed to escalate job-failure for %r: %s",
+                job_name, e,
+            )
 
     async def _record_last_run(self, name: str, ok: bool) -> None:
         """Stamp ``app_settings`` with this job's last-run epoch + status.
