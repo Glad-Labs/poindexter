@@ -1867,7 +1867,7 @@
       "id": 30,
       "title": "Cloud fallback fires (window)",
       "type": "stat",
-      "description": "cost_logs rows from non-local providers in the dashboard time window — every row is a cloud-fallback fire. Per feedback_cost_controls, treat any sustained nonzero as a signal to inspect.",
+      "description": "PAID inference calls in the window: cost_logs rows from a non-local provider AND cost_usd>0. The cost_usd>0 guard is essential — litellm is the LOCAL router (routes to local Ollama at $0) and is NOT in the exclusion list, so counting bare non-local rows miscounted every local litellm call as a cloud fire (showed 37 at $0). Per feedback_cost_controls, any sustained nonzero = real cloud spend to inspect.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1924,7 +1924,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Cloud fires\" FROM cost_logs WHERE provider NOT IN ('ollama','local','system','electricity','compositor.ffmpeg_local') AND $__timeFilter(created_at);",
+          "rawSql": "SELECT COUNT(*) AS \"Cloud fires\" FROM cost_logs WHERE provider NOT IN ('ollama','local','system','electricity','compositor.ffmpeg_local') AND cost_usd > 0 AND $__timeFilter(created_at);",
           "refId": "A"
         }
       ]
