@@ -244,6 +244,7 @@ pytest-timeout = "^2.0"
 pytest-xdist = "^3.0"
 pytest-forked = "^1.6"
 pytest-benchmark = "^4.0"
+hypothesis = "^6.0"  # property-based tests for the deterministic quality scorers (#337c)
 
 # Code Quality
 black = "^26.3.1"

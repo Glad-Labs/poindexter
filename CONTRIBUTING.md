@@ -66,6 +66,33 @@ Dependencies are kept current by Dependabot (`.github/dependabot.yml`) with a we
 - SQL: Parameterized queries only (`$1, $2, ...`). Never use f-strings in SQL.
 - Tests: Unit tests for all new services. Use pytest with async support.
 
+## Testing conventions
+
+A test only has value if it can FAIL when the code drifts. A test that mocks
+both the input and the boundary it's checking validates nothing — it stays
+green forever, even after the behavior it claims to cover is broken. Avoid that
+trap:
+
+- **Mock exactly one boundary per test.** Either drive the code with a real
+  resource and assert on the real output, or stub the boundary and pass a bare
+  sentinel as input — never both. Stubbing the input row _and_ patching the
+  converter that reads it means neither is actually exercised.
+- **Fake DB rows must be strict.** When a test hand-builds an `asyncpg.Record`,
+  make `__getitem__` raise `KeyError` on a missing column
+  (`row.__getitem__ = lambda self, k, _d=data: _d[k]`) and include only the
+  columns the code under test reads. A loose faker that returns `None` for
+  unknown keys lets a renamed/dropped column pass silently. Prefer the real
+  `db_pool` fixture (runs migrations against a disposable Postgres) when you're
+  testing column-level behavior.
+- **For scalar queries, assert the query — not just the mocked return.** If a
+  function runs `SELECT ... FROM some_table` and you mock the return value, the
+  test won't notice a wrong table/column name. Capture the executed SQL and
+  assert it targets the real schema (e.g. the column actually exists). A scalar
+  mock that returns a plausible value hides a query that errors against the real
+  database.
+- **Don't delete coverage to make a test pass.** Test-collection count must not
+  drop when you refactor a test.
+
 ## Reporting Bugs
 
 Open an issue with:
