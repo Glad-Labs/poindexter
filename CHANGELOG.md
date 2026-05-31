@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.18](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.17...v0.45.18) (2026-05-31)
+
+
+### Bug Fixes
+
+* **seo:** strip unbalanced/trailing ** markdown from generated titles ([1fef6b7](https://github.com/Glad-Labs/glad-labs-stack/commit/1fef6b7822c6fed343d62a53fc4c46251b5ce034))
+
 ## [0.45.17](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.16...v0.45.17) (2026-05-31)
 
 
