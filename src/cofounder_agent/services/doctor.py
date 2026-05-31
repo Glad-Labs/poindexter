@@ -29,7 +29,6 @@ Design doc: ``docs/architecture/poindexter-doctor.md``.
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -123,7 +122,6 @@ DEPENDS_ON: dict[str, list[str]] = {
     "embeddings_freshness": ["db_ping"],
     "traffic_anomaly": ["db_ping"],
     "scheduled_tasks": ["db_ping"],
-    "affiliate_linker": ["db_ping"],
     "research_service": ["db_ping"],
     # --- Generation/quality probes: these drive an Ollama model, so an
     #     ollama_models failure is the root cause when they red. ---

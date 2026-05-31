@@ -188,7 +188,6 @@ The legacy 6-stage chunked StageRunner flow (`content_router_service.process_con
 - `pipeline_versions` — generated content + qa_feedback per task version
 - `posts` — published blog posts. `metadata->>'pipeline_task_id'` is the canonical seam to the source `pipeline_tasks.task_id` — populated by `publish_service.publish_post_from_task` at insert and backfilled for historical rows by migration `20260528_021920`.
 - `app_settings` — all config (replaces env vars)
-- `affiliate_links` — partner links (DB-managed)
 - `page_views` — own analytics tracking
 - `brain_knowledge` — knowledge graph (entity/attribute/value)
 - `brain_queue` — reasoning queue for the brain

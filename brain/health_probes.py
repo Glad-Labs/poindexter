@@ -113,7 +113,6 @@ PROBE_SCHEDULES = {
     "ollama_models": 300,      # 5 min
     "quality_score": 1800,     # 30 min
     "content_gen": 1800,       # 30 min
-    "affiliate_linker": 3600,  # 1 hour
     "research_service": 3600,  # 1 hour
     "image_search": 3600,      # 1 hour
     "grafana_datasources": 300,  # 5 min
@@ -274,22 +273,6 @@ async def probe_content_gen(_pool) -> dict:
         "response_length": len(response_text),
         "detail": "generation working" if has_content else "empty response",
     }
-
-
-async def probe_affiliate_linker(pool) -> dict:
-    """Probe: Check affiliate_links table has active links."""
-    try:
-        row = await pool.fetchrow(
-            "SELECT COUNT(*) as c FROM affiliate_links WHERE active = true"
-        )
-        count = row["c"] if row else 0
-        return {
-            "ok": True,
-            "active_links": count,
-            "detail": f"{count} active affiliate links" if count > 0 else "table exists, no links configured yet",
-        }
-    except Exception as e:
-        return {"ok": False, "detail": str(e)[:200]}
 
 
 async def probe_research_service(pool) -> dict:
@@ -1217,7 +1200,6 @@ PROBES = {
     "podcast_health": probe_podcast_health,
     "newsletter_health": probe_newsletter_health,
     # Data health
-    "affiliate_linker": probe_affiliate_linker,
     "research_service": probe_research_service,
     "image_search": probe_image_search,
     "embeddings_freshness": probe_embeddings_freshness,
