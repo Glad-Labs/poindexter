@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.4...v0.45.5) (2026-05-31)
+
+
+### Reverts
+
+* **brain:** remove duplicate probe_anomaly; detect_anomalies is canonical ([#440](https://github.com/Glad-Labs/glad-labs-stack/issues/440)) ([9fa6667](https://github.com/Glad-Labs/glad-labs-stack/commit/9fa666742ae22b9ad9f78d375cd05befafc3915e))
+
 ## [0.45.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.3...v0.45.4) (2026-05-31)
 
 
