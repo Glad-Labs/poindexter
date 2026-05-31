@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.19](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.18...v0.45.19) (2026-05-31)
+
+
+### Bug Fixes
+
+* **media:** preserve podcast_script + bind site_config so video director fires ([0844582](https://github.com/Glad-Labs/glad-labs-stack/commit/08445828044c41add6b9762ac16c5105dbf11098))
+
 ## [0.45.18](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.17...v0.45.18) (2026-05-31)
 
 
