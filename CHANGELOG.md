@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.41.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.2...v0.41.3) (2026-05-31)
+
+
+### Bug Fixes
+
+* **observability:** atomic write for rendered alertmanager config (EACCES) ([035c9c1](https://github.com/Glad-Labs/glad-labs-stack/commit/035c9c1e8ec39977784650a1ee3eab841ebc61b2))
+
 ## [0.41.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.1...v0.41.2) (2026-05-30)
 
 
