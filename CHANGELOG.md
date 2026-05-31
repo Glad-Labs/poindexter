@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.44.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.43.0...v0.44.0) (2026-05-31)
+
+
+### Features
+
+* **brain:** rolling-baseline anomaly probe ([#440](https://github.com/Glad-Labs/glad-labs-stack/issues/440)) ([10f17c9](https://github.com/Glad-Labs/glad-labs-stack/commit/10f17c990e961187b2c390e9a3dd7f5fdc0c156c))
+
 ## [0.43.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.2...v0.43.0) (2026-05-31)
 
 
