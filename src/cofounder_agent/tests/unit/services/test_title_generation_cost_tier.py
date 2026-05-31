@@ -308,6 +308,48 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
 
 
 @pytest.mark.asyncio
+async def test_topic_is_passed_to_get_prompt():
+    """Regression (#541 follow-up): the ``seo.generate_title`` default
+    template is ``Generate an SEO-friendly title for: {topic}`` — so the
+    call site MUST pass ``topic``. It previously passed only ``content`` +
+    ``primary_keyword``, so every canonical_blog run raised
+    "missing required variable: topic", the broad except swallowed it, and
+    titles silently fell back to the H1/topic. Capture the kwargs and pin
+    that ``topic`` is forwarded."""
+    captured: dict[str, Any] = {}
+    provider = _make_provider({})
+
+    fake_sc = MagicMock()
+    fake_sc._pool = _FakePool("ollama/gemma3:27b")
+    fake_sc.get.return_value = ""
+    fake_sc.get_int.return_value = 4000
+
+    def _get_prompt(key: str, **kwargs: Any) -> str:
+        captured["key"] = key
+        captured["kwargs"] = kwargs
+        return "PROMPT"
+
+    with patch(
+             "plugins.registry.get_all_llm_providers",
+             return_value=[provider],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.side_effect = _get_prompt
+        await generate_canonical_title(
+            topic="How embeddings rank similarity",
+            primary_keyword="embeddings",
+            content_excerpt="Body excerpt",
+            site_config=fake_sc,
+        )
+
+    assert captured["key"] == "seo.generate_title"
+    assert captured["kwargs"].get("topic") == "How embeddings rank similarity", (
+        "generate_canonical_title must forward `topic` to get_prompt — the "
+        "default template requires {topic}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_existing_titles_appended_to_avoidance_prompt():
     """When ``existing_titles`` is supplied the avoidance preamble must
     appear in the prompt sent to the writer — pins the regen-loop contract

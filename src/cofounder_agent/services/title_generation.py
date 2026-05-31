@@ -253,6 +253,7 @@ async def generate_canonical_title(
 
         prompt = pm.get_prompt(
             "seo.generate_title",
+            topic=topic,
             content=content_excerpt,
             primary_keyword=primary_keyword or topic,
         )
