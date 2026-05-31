@@ -55,29 +55,67 @@ class BackfillPodcastsJob:
         max_per_cycle = int(config.get("max_per_cycle", 2))
         r2_sync_cap = int(config.get("r2_sync_cap", 5))
 
+        # Iterate niche-by-niche so an operator can flip ``backfill_podcasts``
+        # OFF for a single niche via one app_settings row
+        # (``niche.<slug>.jobs.backfill_podcasts.enabled = false``) without
+        # touching ``backfill_videos`` or any per-post ``media_to_generate``
+        # array (Glad-Labs/poindexter#521). The global master switch
+        # ``plugin.job.backfill_podcasts.enabled`` still gates the whole job
+        # upstream in the scheduler.
+        #
+        # Filtering still rides the canonical seam, not slug patterns
+        # (``feedback_filter_on_seams_not_slugs``): within an *enabled*
+        # niche we select posts whose ``media_to_generate`` opted into
+        # ``podcast`` AND overlaps that niche's ``default_media_to_generate``
+        # policy array. Posts pick up ``media_to_generate`` at publish time
+        # from ``niches.default_media_to_generate`` (see
+        # ``publish_service.publish_post_from_task`` + migration
+        # ``20260519_134736_niches_default_media_to_generate.py``).
+        from services.jobs.niche_job_flags import niche_job_enabled
+        from services.niche_service import NicheService
+
+        niches = await NicheService(pool).list_active()
+        skipped_niches: list[str] = []
+
         cloud = await asyncpg.connect(cloud_url)
         try:
-            # Filter on the canonical seam: only spawn podcasts for
-            # posts whose niche policy opted in. ``posts.media_to_generate``
-            # is populated at publish time from
-            # ``niches.default_media_to_generate`` (see
-            # ``publish_service.publish_post_from_task`` and migration
-            # ``20260519_134736_niches_default_media_to_generate.py``).
-            # Operators flip a niche on/off for podcasts by updating that
-            # one array, no code change needed. Anti-pattern called out in
-            # ``feedback_filter_on_seams_not_slugs`` — slug-pattern
-            # exclusions in this query were the hack Matt rejected
-            # 2026-05-19.
-            posts = await cloud.fetch(
-                """
-                SELECT id::text, title, content
-                FROM posts
-                WHERE status = 'published'
-                  AND 'podcast' = ANY(media_to_generate)
-                ORDER BY published_at DESC LIMIT $1
-                """,
-                post_limit,
-            )
+            posts: list[Any] = []
+            seen_ids: set[str] = set()
+            for niche in niches:
+                if not niche_job_enabled(sc, niche.slug, self.name):
+                    # Per-niche opt-out — short-circuit before any query.
+                    skipped_niches.append(niche.slug)
+                    logger.info(
+                        "[BACKFILL_PODCASTS] niche %r disabled via "
+                        "niche.%s.jobs.%s.enabled=false — skipping",
+                        niche.slug, niche.slug, self.name,
+                    )
+                    continue
+
+                niche_media = await cloud.fetchval(
+                    "SELECT default_media_to_generate FROM niches WHERE id = $1",
+                    niche.id,
+                )
+                if not niche_media or "podcast" not in niche_media:
+                    # This niche's policy doesn't opt into podcasts at all.
+                    continue
+
+                niche_posts = await cloud.fetch(
+                    """
+                    SELECT id::text, title, content
+                    FROM posts
+                    WHERE status = 'published'
+                      AND 'podcast' = ANY(media_to_generate)
+                      AND media_to_generate && $1::text[]
+                    ORDER BY published_at DESC LIMIT $2
+                    """,
+                    list(niche_media),
+                    post_limit,
+                )
+                for p in niche_posts:
+                    if p["id"] not in seen_ids:
+                        seen_ids.add(p["id"])
+                        posts.append(p)
         finally:
             await cloud.close()
 
@@ -227,8 +265,11 @@ class BackfillPodcastsJob:
                     "[BACKFILL_PODCASTS] Feed rebuild failed (non-fatal): %s", feed_err,
                 )
 
+        detail = f"generated {generated}, uploaded {uploaded}"
+        if skipped_niches:
+            detail += f", skipped_niches={','.join(skipped_niches)}"
         return JobResult(
             ok=True,
-            detail=f"generated {generated}, uploaded {uploaded}",
+            detail=detail,
             changes_made=generated + uploaded,
         )

@@ -158,35 +158,74 @@ class BackfillVideosJob:
         post_limit = int(config.get("post_limit", 20))
         max_per_cycle = int(config.get("max_per_cycle", 1))
 
+        # Iterate niche-by-niche so an operator can flip ``backfill_videos``
+        # OFF for a single niche via one app_settings row
+        # (``niche.<slug>.jobs.backfill_videos.enabled = false``) without
+        # touching ``backfill_podcasts`` or any per-post ``media_to_generate``
+        # array (Glad-Labs/poindexter#521). The global master switch
+        # ``plugin.job.backfill_videos.enabled`` still gates the whole job
+        # upstream in the scheduler.
+        #
+        # Filtering still rides the canonical seam, not slug patterns
+        # (``feedback_filter_on_seams_not_slugs``): within an *enabled*
+        # niche we select published posts whose ``media_to_generate``
+        # overlaps both the video flavors AND that niche's
+        # ``default_media_to_generate`` policy array. Posts pick up
+        # ``media_to_generate`` at publish time from
+        # ``niches.default_media_to_generate`` (see
+        # ``publish_service.publish_post_from_task`` + migration
+        # ``20260519_134736_niches_default_media_to_generate.py``).
+        # ``excerpt`` carries the SEO meta description and ``seo_keywords``
+        # is a comma-separated string column — both are threaded into the
+        # YouTube payload (glad-labs-stack#275). ``slug`` builds the
+        # canonical back-link.
+        from services.jobs.niche_job_flags import niche_job_enabled
+        from services.niche_service import NicheService
+
+        _VIDEO_FLAVORS = ["video", "video_long", "video_short"]
+        niches = await NicheService(pool).list_active()
+        skipped_niches: list[str] = []
+
         cloud = await asyncpg.connect(cloud_url)
         try:
-            # Filter on the canonical seam: only spawn videos for posts
-            # whose niche policy opted in to at least one video flavor.
-            # ``posts.media_to_generate`` is populated at publish time
-            # from ``niches.default_media_to_generate`` (see
-            # ``publish_service.publish_post_from_task`` and migration
-            # ``20260519_134736_niches_default_media_to_generate.py``).
-            # The ``&&`` (array overlap) operator matches a post that
-            # opted in to any of the video media flavors. Anti-pattern
-            # called out in ``feedback_filter_on_seams_not_slugs`` —
-            # slug-pattern exclusions in this query were the hack Matt
-            # rejected 2026-05-19.
-            # ``excerpt`` carries the SEO meta description and
-            # ``seo_keywords`` is a comma-separated string column — both
-            # are threaded into the YouTube payload so videos publish
-            # with proper SEO metadata instead of a raw-body description
-            # and no tags (glad-labs-stack#275). ``slug`` builds the
-            # canonical back-link.
-            posts = await cloud.fetch(
-                """
-                SELECT id::text, title, content, excerpt, seo_keywords, slug
-                FROM posts
-                WHERE status = 'published'
-                  AND media_to_generate && ARRAY['video','video_long','video_short']::text[]
-                ORDER BY published_at DESC LIMIT $1
-                """,
-                post_limit,
-            )
+            posts: list[Any] = []
+            seen_ids: set[str] = set()
+            for niche in niches:
+                if not niche_job_enabled(sc, niche.slug, self.name):
+                    # Per-niche opt-out — short-circuit before any query.
+                    skipped_niches.append(niche.slug)
+                    logger.info(
+                        "[BACKFILL_VIDEOS] niche %r disabled via "
+                        "niche.%s.jobs.%s.enabled=false — skipping",
+                        niche.slug, niche.slug, self.name,
+                    )
+                    continue
+
+                niche_media = await cloud.fetchval(
+                    "SELECT default_media_to_generate FROM niches WHERE id = $1",
+                    niche.id,
+                )
+                if not niche_media or not (set(niche_media) & set(_VIDEO_FLAVORS)):
+                    # This niche's policy doesn't opt into any video flavor.
+                    continue
+
+                niche_posts = await cloud.fetch(
+                    """
+                    SELECT id::text, title, content, excerpt, seo_keywords, slug
+                    FROM posts
+                    WHERE status = 'published'
+                      AND media_to_generate && $1::text[]
+                      AND media_to_generate && $2::text[]
+                    ORDER BY published_at DESC LIMIT $3
+                    """,
+                    _VIDEO_FLAVORS,
+                    list(niche_media),
+                    post_limit,
+                )
+                for p in niche_posts:
+                    if p["id"] not in seen_ids:
+                        seen_ids.add(p["id"])
+                        posts.append(p)
         finally:
             await cloud.close()
 
@@ -264,9 +303,12 @@ class BackfillVideosJob:
                     post["title"][:30] if post.get("title") else post_id[:8], e,
                 )
 
+        detail = f"generated {generated} video(s)"
+        if skipped_niches:
+            detail += f", skipped_niches={','.join(skipped_niches)}"
         return JobResult(
             ok=True,
-            detail=f"generated {generated} video(s)",
+            detail=detail,
             changes_made=generated,
         )
 

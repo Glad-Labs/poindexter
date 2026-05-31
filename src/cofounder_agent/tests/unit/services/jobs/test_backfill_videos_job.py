@@ -21,20 +21,57 @@ from services.jobs.backfill_videos import (
 from services.site_config import SiteConfig
 
 
-def _sc(value: Any = "") -> MagicMock:
+def _sc(value: Any = "", *, job_flags: dict[str, bool] | None = None) -> MagicMock:
     """Build a mock SiteConfig that returns ``value`` from any ``.get()`` call.
 
     Replaces the legacy ``patch("services.site_config.site_config.get", ...)``
     pattern after the job migrated to the DI seam (glad-labs-stack#330).
+
+    ``job_flags`` (Glad-Labs/poindexter#521) maps a
+    ``niche.<slug>.jobs.<job>.enabled`` key to its bool — anything absent
+    defaults to enabled (``True``), matching the fail-safe helper.
     """
+    job_flags = job_flags or {}
     sc = MagicMock()
     sc.get.return_value = value
+    sc.get_bool.side_effect = lambda k, d=False: job_flags.get(k, True)
     return sc
 
 
-def _fake_asyncpg(rows: list[dict] | None = None):
+# Default niche media policy used by the run tests — the baseline
+# ``dev_diary`` niche opts into both video flavors + podcast so the
+# niche-iteration query selects the candidate posts.
+_DEFAULT_NICHE_MEDIA = ["video", "podcast"]
+
+
+def _fake_niche(slug: str = "dev_diary", niche_id: str = "n-1") -> MagicMock:
+    n = MagicMock()
+    n.slug = slug
+    n.id = niche_id
+    return n
+
+
+def _fake_pool(niches: list[Any] | None = None):
+    """A pool stub whose ``NicheService(pool).list_active()`` resolves.
+
+    ``NicheService`` calls ``pool.acquire()`` as an async context manager
+    then ``conn.fetch("SELECT * FROM niches WHERE active ...")``. We can't
+    easily route that through ``NicheService`` row parsing, so the run
+    tests patch ``NicheService.list_active`` directly instead and this
+    pool just needs to be a harmless MagicMock.
+    """
+    return MagicMock()
+
+
+def _fake_asyncpg(
+    rows: list[dict] | None = None,
+    niche_media: list[str] | None = None,
+):
     cloud_conn = AsyncMock()
     cloud_conn.fetch = AsyncMock(return_value=rows or [])
+    cloud_conn.fetchval = AsyncMock(
+        return_value=niche_media if niche_media is not None else _DEFAULT_NICHE_MEDIA
+    )
     cloud_conn.close = AsyncMock(return_value=None)
 
     async def _connect(url: str) -> Any:
@@ -71,6 +108,18 @@ class TestBackfillVideosJobMetadata:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestBackfillVideosJobRun:
+    @pytest.fixture(autouse=True)
+    def _stub_active_niches(self):
+        """Every run test iterates niches now (#521). Stub one active
+        ``dev_diary`` niche so the niche-by-niche loop has something to
+        iterate; the cloud ``fetchval`` (niche media policy) +
+        ``fetch`` (posts) come from ``_fake_asyncpg``."""
+        with patch(
+            "services.niche_service.NicheService.list_active",
+            new=AsyncMock(return_value=[_fake_niche()]),
+        ):
+            yield
+
     async def test_skips_when_no_database_url(self):
         job = BackfillVideosJob()
         result = await job.run(MagicMock(), {"_site_config": _sc("")})
@@ -202,6 +251,102 @@ class TestBackfillVideosJobRun:
         # First failed, second succeeded.
         assert result.changes_made == 1
         assert call_count == 2
+
+
+# --------------------------------------------------------------------------
+# Per-niche enable/disable (Glad-Labs/poindexter#521)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBackfillVideosPerNicheToggle:
+    async def test_disabled_niche_is_skipped(self, tmp_path):
+        """niche.<slug>.jobs.backfill_videos.enabled=false → no posts
+        queried, no generation, niche reported as skipped."""
+        job = BackfillVideosJob()
+        fake_asyncpg, cloud_conn = _fake_asyncpg(rows=[_row("p1")])
+
+        (tmp_path / "podcasts").mkdir(parents=True)
+        (tmp_path / "videos").mkdir(parents=True)
+        (tmp_path / "podcasts" / "p1.mp3").write_bytes(b"fake")
+
+        sc = _sc(
+            "postgres://cloud",
+            job_flags={"niche.dev_diary.jobs.backfill_videos.enabled": False},
+        )
+
+        with patch("services.niche_service.NicheService.list_active",
+                   new=AsyncMock(return_value=[_fake_niche("dev_diary")])), \
+             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+             patch("services.video_service.generate_video_for_post",
+                   new=AsyncMock()) as gen_mock, \
+             patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
+             patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
+            result = await job.run(MagicMock(), {"_site_config": sc})
+
+        assert result.ok is True
+        assert result.changes_made == 0
+        gen_mock.assert_not_awaited()
+        # Short-circuited BEFORE touching the DB for posts.
+        cloud_conn.fetch.assert_not_awaited()
+        assert "skipped_niches=dev_diary" in result.detail
+
+    async def test_absent_setting_defaults_enabled(self, tmp_path):
+        """No app_settings row → niche stays enabled, posts generate."""
+        job = BackfillVideosJob()
+        fake_asyncpg, _ = _fake_asyncpg(rows=[_row("p1", "My Post")])
+
+        (tmp_path / "podcasts").mkdir(parents=True)
+        (tmp_path / "videos").mkdir(parents=True)
+        (tmp_path / "podcasts" / "p1.mp3").write_bytes(b"fake podcast")
+
+        # No job_flags → get_bool returns the passed default (True).
+        sc = _sc("postgres://cloud")
+
+        gen_result = MagicMock(success=True)
+        with patch("services.niche_service.NicheService.list_active",
+                   new=AsyncMock(return_value=[_fake_niche("dev_diary")])), \
+             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+             patch("services.video_service.generate_video_for_post",
+                   new=AsyncMock(return_value=gen_result)) as gen_mock, \
+             patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
+             patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
+            result = await job.run(MagicMock(), {"_site_config": sc})
+
+        assert result.ok is True
+        assert result.changes_made == 1
+        gen_mock.assert_awaited_once()
+        assert "skipped_niches" not in result.detail
+
+    async def test_independent_of_podcast_flag(self, tmp_path):
+        """Disabling backfill_podcasts for a niche does NOT disable
+        backfill_videos — the keys are per-job."""
+        job = BackfillVideosJob()
+        fake_asyncpg, _ = _fake_asyncpg(rows=[_row("p1", "My Post")])
+
+        (tmp_path / "podcasts").mkdir(parents=True)
+        (tmp_path / "videos").mkdir(parents=True)
+        (tmp_path / "podcasts" / "p1.mp3").write_bytes(b"fake podcast")
+
+        sc = _sc(
+            "postgres://cloud",
+            job_flags={"niche.dev_diary.jobs.backfill_podcasts.enabled": False},
+        )
+
+        gen_result = MagicMock(success=True)
+        with patch("services.niche_service.NicheService.list_active",
+                   new=AsyncMock(return_value=[_fake_niche("dev_diary")])), \
+             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+             patch("services.video_service.generate_video_for_post",
+                   new=AsyncMock(return_value=gen_result)) as gen_mock, \
+             patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
+             patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
+            result = await job.run(MagicMock(), {"_site_config": sc})
+
+        assert result.ok is True
+        assert result.changes_made == 1
+        gen_mock.assert_awaited_once()
 
 
 # --------------------------------------------------------------------------
