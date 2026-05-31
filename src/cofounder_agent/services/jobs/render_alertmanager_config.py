@@ -149,6 +149,12 @@ class RenderAlertmanagerConfigJob:
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(rendered)
+                # mkstemp creates the temp 0600 (owner-only). Alertmanager
+                # runs as a different uid (root today, but don't bank on it),
+                # so a shared config it must READ has to be world-readable —
+                # otherwise a future non-root alertmanager silently can't load
+                # its config. Widen to 0644 before the atomic swap.
+                os.chmod(tmp_name, 0o644)
                 os.replace(tmp_name, output_path)
             except OSError:
                 # Don't leave the temp file behind on a failed swap.
