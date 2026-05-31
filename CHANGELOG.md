@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.11](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.10...v0.45.11) (2026-05-31)
+
+
+### Bug Fixes
+
+* **findings:** honor per-kind log_only policy in the alert router ([#300](https://github.com/Glad-Labs/glad-labs-stack/issues/300)) ([dae124f](https://github.com/Glad-Labs/glad-labs-stack/commit/dae124f81f0aa878ea868f88d4628be61a1c7cc7))
+
 ## [0.45.10](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.9...v0.45.10) (2026-05-31)
 
 
