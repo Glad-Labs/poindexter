@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.44.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.44.0...v0.44.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* **brain:** bake anomaly_probe.py into the brain image ([#440](https://github.com/Glad-Labs/glad-labs-stack/issues/440)) ([9de7d76](https://github.com/Glad-Labs/glad-labs-stack/commit/9de7d76d66fd86e0339af943606345c86c97f0e6))
+
 ## [0.44.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.43.0...v0.44.0) (2026-05-31)
 
 
