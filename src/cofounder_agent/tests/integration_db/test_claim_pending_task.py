@@ -109,11 +109,62 @@ async def test_claim_returns_pending_row_and_flips_status(test_pool) -> None:
             )
 
 
+async def test_claim_picks_up_rejected_retry_not_rejected_final(test_pool) -> None:
+    """#541: ``rejected_retry`` is operator-speak for 'regenerate', so the
+    claim must pick it up; ``rejected_final`` is terminal and must NOT be
+    claimed. Insert one of each and verify only the retry is claimed."""
+    from services.flows.content_generation import claim_pending_task
+
+    final_id = "claim-rejected-final-541"
+    retry_id = "claim-rejected-retry-541"
+    async with test_pool.acquire() as setup:
+        for tid in (final_id, retry_id):
+            await setup.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", tid)
+        # final inserted first (older) — claim must still skip it.
+        await setup.execute(
+            """
+            INSERT INTO pipeline_tasks
+                (task_id, task_type, topic, status, stage, style, tone, target_length)
+            VALUES ($1, 'blog_post', 'final - do not claim', 'rejected_final',
+                    'rejected_final', 'technical', 'professional', 900)
+            """,
+            final_id,
+        )
+        await setup.execute(
+            """
+            INSERT INTO pipeline_tasks
+                (task_id, task_type, topic, status, stage, style, tone, target_length)
+            VALUES ($1, 'blog_post', 'retry - should regenerate', 'rejected_retry',
+                    'rejected_retry', 'technical', 'professional', 900)
+            """,
+            retry_id,
+        )
+    try:
+        db = _db_double(test_pool)
+        claimed = await claim_pending_task.fn(db)
+        assert claimed is not None, "rejected_retry row should be claimable (#541)"
+        assert claimed["task_id"] == retry_id, (
+            f"claimed {claimed['task_id']!r}; expected the rejected_retry row, "
+            f"never the rejected_final one"
+        )
+        async with test_pool.acquire() as verify:
+            final_status = await verify.fetchval(
+                "SELECT status FROM pipeline_tasks WHERE task_id = $1", final_id
+            )
+        assert final_status == "rejected_final", (
+            f"rejected_final must stay terminal, got {final_status!r}"
+        )
+    finally:
+        async with test_pool.acquire() as cleanup:
+            for tid in (final_id, retry_id):
+                await cleanup.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", tid)
+
+
 async def test_claim_returns_none_when_queue_empty(test_pool) -> None:
-    """When ``pipeline_tasks`` has no ``status='pending'`` row, the
-    claim helper must return None instead of crashing. We can't rely
-    on the test DB being empty (other tests may leave rows mid-run if
-    cleanup races), so we lock everything pending FOR UPDATE on a
+    """When ``pipeline_tasks`` has no claimable row, the claim helper must
+    return None instead of crashing. We can't rely on the test DB being
+    empty (other tests may leave rows mid-run if cleanup races), so we lock
+    every claimable row (pending + rejected_retry, #541) FOR UPDATE on a
     separate connection to simulate an empty queue."""
     from services.flows.content_generation import claim_pending_task
 
@@ -122,8 +173,8 @@ async def test_claim_returns_none_when_queue_empty(test_pool) -> None:
         await txn.start()
         try:
             await locker.execute(
-                "SELECT 1 FROM pipeline_tasks WHERE status = 'pending' "
-                "FOR UPDATE"
+                "SELECT 1 FROM pipeline_tasks "
+                "WHERE status IN ('pending', 'rejected_retry') FOR UPDATE"
             )
             db = _db_double(test_pool)
             claimed = await claim_pending_task.fn(db)

@@ -72,13 +72,19 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
             # that doesn't exist on this table — see the post-mortem
             # in #410: the unit tests covered the dict-consumer shape
             # but mocked ``fetchrow`` instead of running the real SQL.
+            # Claim fresh ``pending`` work AND operator ``rejected_retry``
+            # tasks (#541): `tasks reject --retry` sets rejected_retry meaning
+            # "regenerate", but nothing transitioned it back to pending, so
+            # those tasks were stranded and never re-ran. ``rejected_final``
+            # stays terminal (excluded). The audit_log rejection event keeps
+            # the learning signal that distinguishes a retry from fresh work.
             row = await conn.fetchrow(
                 """
                 SELECT task_id, topic, style, tone, target_length,
                        category, target_audience, niche_slug,
                        template_slug, primary_keyword, site_id
                 FROM pipeline_tasks
-                WHERE status = 'pending'
+                WHERE status IN ('pending', 'rejected_retry')
                 ORDER BY created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
