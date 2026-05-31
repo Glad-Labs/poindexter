@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.44.1...v0.45.0) (2026-05-31)
+
+
+### Features
+
+* **brain:** findings dispatcher Phase 1 — route audit_log findings ([#461](https://github.com/Glad-Labs/glad-labs-stack/issues/461)) ([30ee0c2](https://github.com/Glad-Labs/glad-labs-stack/commit/30ee0c210fce62c6f92776451e05b4a3f3dfcd29))
+
 ## [0.44.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.44.0...v0.44.1) (2026-05-31)
 
 
