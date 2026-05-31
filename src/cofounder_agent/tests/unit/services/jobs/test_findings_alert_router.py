@@ -20,6 +20,7 @@ from services.jobs.findings_alert_router import (
     _build_alertname,
     _build_fingerprint,
     _normalize_severity,
+    _should_route,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -36,13 +37,23 @@ class _FakePoolCtx:
         return False
 
 
-def _pool_with(*, fetchrow=None, fetch=None, execute=None):
+def _pool_with(*, fetchrow=None, fetch=None, execute=None, policy_rows=None):
     """Build a MagicMock asyncpg-style pool. ``fetchrow`` is for watermark
     read; ``fetch`` is for unrouted-findings select; ``execute`` is for
-    all the inserts/upserts."""
+    all the inserts/upserts. ``policy_rows`` is what the per-kind log_only
+    policy query (``... value = 'log_only'``) returns — routed by SQL so it
+    doesn't collide with the findings fetch."""
     conn = MagicMock()
     conn.fetchrow = AsyncMock(return_value=fetchrow)
-    conn.fetch = AsyncMock(return_value=fetch or [])
+    findings_rows = fetch or []
+    pol_rows = policy_rows or []
+
+    async def _fetch(sql, *args):
+        if "log_only" in sql:  # the _load_log_only_kinds policy query
+            return pol_rows
+        return findings_rows
+
+    conn.fetch = AsyncMock(side_effect=_fetch)
     conn.execute = AsyncMock(return_value=execute)
     pool = MagicMock()
     pool.acquire = MagicMock(return_value=_FakePoolCtx(conn))
@@ -255,3 +266,92 @@ async def test_watermark_unparseable_resets_to_zero():
 
     assert result.ok is True
     assert "watermark 0" in result.detail
+
+
+# ---- #300: per-kind log_only suppression -----------------------------------
+
+
+def test_should_route_suppresses_log_only_warn():
+    assert _should_route("media_drift", "warn", {"media_drift"}) is False
+
+
+def test_should_route_never_suppresses_critical_even_if_log_only():
+    # A critical finding marked log_only is a misconfig we refuse to honour.
+    assert _should_route("media_drift", "critical", {"media_drift"}) is True
+
+
+def test_should_route_routes_unconfigured_kind():
+    # No policy for this kind -> route (stay loud); do NOT fall back to
+    # findings.default=log_only, which would silence new critical kinds.
+    assert _should_route("job_failure", "warn", {"media_drift"}) is True
+
+
+async def test_run_suppresses_log_only_warn_finding_but_advances_watermark():
+    """A warn finding of a log_only kind is recorded (audit_log) but NOT
+    bridged to alert_events — and the watermark still advances so it isn't
+    re-evaluated every cycle."""
+    rows = [{
+        "id": 300,
+        "source": "media_reconciliation",
+        "severity": "warn",
+        "details": json.dumps({"kind": "media_drift", "title": "drift"}),
+    }]
+    pool, conn = _pool_with(
+        fetchrow={"value": "100"},
+        fetch=rows,
+        policy_rows=[{"key": "findings.media_drift.delivery"}],
+    )
+
+    result = await FindingsAlertRouterJob().run(pool, {})
+
+    assert result.ok is True
+    assert result.changes_made == 0           # nothing routed
+    assert "suppressed 1" in result.detail
+    # Only the watermark UPSERT executed — NO alert_events insert.
+    assert conn.execute.await_count == 1
+    upsert_call = conn.execute.await_args_list[0]
+    assert "INSERT INTO app_settings" in upsert_call.args[0]
+    assert upsert_call.args[2] == "300"       # watermark advanced past it
+
+
+async def test_run_still_routes_log_only_kind_when_critical():
+    """Even for a log_only kind, a CRITICAL finding must page (fail loud)."""
+    rows = [{
+        "id": 301,
+        "source": "media_reconciliation",
+        "severity": "critical",
+        "details": json.dumps({"kind": "media_drift", "title": "drift"}),
+    }]
+    pool, conn = _pool_with(
+        fetchrow={"value": "100"},
+        fetch=rows,
+        policy_rows=[{"key": "findings.media_drift.delivery"}],
+    )
+
+    result = await FindingsAlertRouterJob().run(pool, {})
+
+    assert result.changes_made == 1           # routed despite log_only
+    # alert_events insert + watermark upsert.
+    assert conn.execute.await_count == 2
+
+
+async def test_run_routes_unconfigured_kind_normally():
+    """A warn finding whose kind has no log_only policy routes as before —
+    protects newly-added critical kinds (job_failure, missing_table) from
+    being silently swallowed by findings.default."""
+    rows = [{
+        "id": 302,
+        "source": "scheduler.some_job",
+        "severity": "warn",
+        "details": json.dumps({"kind": "job_failure", "title": "boom"}),
+    }]
+    pool, conn = _pool_with(
+        fetchrow={"value": "100"},
+        fetch=rows,
+        policy_rows=[{"key": "findings.media_drift.delivery"}],  # unrelated
+    )
+
+    result = await FindingsAlertRouterJob().run(pool, {})
+
+    assert result.changes_made == 1           # routed
+    assert conn.execute.await_count == 2

@@ -62,6 +62,46 @@ _WATERMARK_KEY = "findings_alert_route_watermark"
 _ROUTABLE_SEVERITIES = ("warn", "warning", "critical")
 
 
+async def _load_log_only_kinds(pool: Any) -> set[str]:
+    """Return finding kinds whose per-kind ``delivery`` policy is ``log_only``.
+
+    These findings stay in ``audit_log`` (queryable) but are NOT bridged to
+    ``alert_events`` — the operator chose "record, don't page" for them
+    (e.g. ``media_drift``, ``*_autofixed``). #300.
+
+    Only EXPLICIT per-kind ``findings.<kind>.delivery='log_only'`` rows
+    suppress. We deliberately do NOT honour ``findings.default.delivery``
+    here: defaulting unknown kinds to log_only would silently swallow any
+    NEW critical finding kind that hasn't been given a policy yet (e.g.
+    ``job_failure``, ``missing_table``), which is exactly the silent-drop the
+    alert audit is eliminating. Unconfigured kinds route (stay loud).
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT key FROM app_settings "
+            "WHERE key LIKE 'findings.%.delivery' AND value = 'log_only'"
+        )
+    kinds: set[str] = set()
+    for r in rows:
+        # key shape: findings.<kind>.delivery
+        parts = r["key"].split(".")
+        if len(parts) == 3 and parts[1] != "default":
+            kinds.add(parts[1])
+    return kinds
+
+
+def _should_route(kind: str, severity: str, log_only_kinds: set[str]) -> bool:
+    """Decide whether a finding becomes an ``alert_events`` row (#300).
+
+    - ``critical`` is ALWAYS routed — a critical finding marked log_only is
+      a misconfiguration we refuse to honour (fail loud).
+    - otherwise suppress only when the kind is explicitly log_only.
+    """
+    if _normalize_severity(severity) == "critical":
+        return True
+    return kind not in log_only_kinds
+
+
 def _normalize_severity(raw: str) -> str:
     """Map emit_finding severities to the Prometheus convention used by
     alert_events. ``warn`` -> ``warning`` so the dispatcher's severity
@@ -155,6 +195,19 @@ async def _fetch_unrouted_findings(pool: Any, watermark: int) -> list[dict[str, 
     return [dict(r) for r in rows]
 
 
+def _finding_kind(finding: dict[str, Any]) -> str:
+    """Extract the finding ``kind`` from a row's details JSON (or 'unknown')."""
+    details_raw = finding.get("details") or {}
+    if isinstance(details_raw, str):
+        try:
+            details_raw = json.loads(details_raw)
+        except json.JSONDecodeError:
+            return "unknown"
+    if not isinstance(details_raw, dict):
+        return "unknown"
+    return details_raw.get("kind") or "unknown"
+
+
 async def _insert_alert_event(pool: Any, finding: dict[str, Any]) -> None:
     """Insert one ``alert_events`` row mirroring the existing probe
     patterns in ``brain/mcp_http_probe.py`` and friends. Dispatcher takes
@@ -220,10 +273,29 @@ class FindingsAlertRouterJob:
                 changes_made=0,
             )
 
+        # Per-kind delivery policy (#300): kinds explicitly marked log_only
+        # are recorded in audit_log but not paged. Loaded once per cycle.
+        log_only_kinds = await _load_log_only_kinds(pool)
+
         routed = 0
+        suppressed = 0
         errors = 0
         max_id = watermark
         for r in rows:
+            kind = _finding_kind(r)
+            severity = r.get("severity") or "info"
+            if not _should_route(kind, severity, log_only_kinds):
+                # Policy says log_only: keep the audit_log row, skip the page.
+                # Advance past it — the decision IS the handling, so it must
+                # not be re-evaluated every cycle.
+                suppressed += 1
+                max_id = max(max_id, int(r["id"]))
+                logger.debug(
+                    "[findings_alert_router] suppressed log_only finding "
+                    "audit_log.id=%s kind=%s severity=%s",
+                    r["id"], kind, severity,
+                )
+                continue
             try:
                 await _insert_alert_event(pool, r)
                 routed += 1
@@ -246,7 +318,8 @@ class FindingsAlertRouterJob:
         return JobResult(
             ok=errors == 0,
             detail=(
-                f"routed {routed} finding(s), {errors} error(s); "
+                f"routed {routed} finding(s), suppressed {suppressed} "
+                f"(log_only), {errors} error(s); "
                 f"watermark {watermark} -> {max_id}"
             ),
             changes_made=routed,
