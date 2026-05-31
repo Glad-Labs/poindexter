@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.6...v0.45.7) (2026-05-31)
+
+
+### Bug Fixes
+
+* **auth:** create missing jwt_blocklist table + escalate structural failure ([#305](https://github.com/Glad-Labs/glad-labs-stack/issues/305)) ([8ca5c4c](https://github.com/Glad-Labs/glad-labs-stack/commit/8ca5c4ca08e9bf8cb16c6621ad2d9ae742d39f5c))
+
 ## [0.45.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.5...v0.45.6) (2026-05-31)
 
 
