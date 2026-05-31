@@ -467,7 +467,7 @@ async def _record_featured_image_asset(
     the post exists in the canonical_blog pipeline — ``post_id`` is
     typically ``None`` here, and the row needs the task_id so the
     publish path can back-stamp the FK once the post is created (see
-    Glad-Labs/glad-labs-stack#193).
+    Glad-Labs/poindexter#193).
     """
     try:
         from services.media_asset_recorder import record_media_asset
@@ -650,7 +650,7 @@ def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]
 async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
     """Fetch the 5 most-recently-published posts' image_style from metadata.
 
-    2026-05-27 fix (Glad-Labs/glad-labs-stack#234): previously opened a
+    2026-05-27 fix (Glad-Labs/poindexter#234): previously opened a
     raw ``asyncpg.connect`` on every image-stage run (one per published
     post). Under burst load the unbounded connections starved the
     Postgres connection budget. Now uses the lifespan pool attached to
