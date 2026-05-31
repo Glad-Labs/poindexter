@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.10](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.9...v0.45.10) (2026-05-31)
+
+
+### Bug Fixes
+
+* **triage:** dedupe the unbounded-resolve-rule warning to once per process ([#304](https://github.com/Glad-Labs/glad-labs-stack/issues/304) follow-up) ([2b210b4](https://github.com/Glad-Labs/glad-labs-stack/commit/2b210b4bafce3fa2b02629a9d1a0fa1c7ea497d0))
+
 ## [0.45.9](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.8...v0.45.9) (2026-05-31)
 
 
