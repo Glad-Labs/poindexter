@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.1...v0.45.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* **content:** unwrap {title,post_body} writer envelope in preview + publish ([6102d8e](https://github.com/Glad-Labs/glad-labs-stack/commit/6102d8e3a54132c66903ed6768e9238975c203b9))
+
 ## [0.45.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.0...v0.45.1) (2026-05-31)
 
 
