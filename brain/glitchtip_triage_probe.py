@@ -106,6 +106,17 @@ ALERT_THRESHOLD_DEFAULT = 100
 ALERT_FRESHNESS_HOURS_SETTING_KEY = "glitchtip_triage_alert_freshness_hours"
 ALERT_FRESHNESS_HOURS_DEFAULT = 24
 
+# Safety ceiling applied to ``resolve`` rules that omit ``max_count`` (#304).
+# A resolve rule with no count ceiling will auto-close an issue at ANY count,
+# so a runaway outage producing thousands of errors gets silently resolved
+# and never paged. We refuse to honour an unbounded resolve: a resolve rule
+# missing max_count is treated as if it carried this ceiling (and a warning
+# is logged). Operators who genuinely want a higher ceiling set it explicitly
+# on the rule, or raise this default. ``ignore`` rules are unaffected —
+# suppression is intentional and non-destructive (the issue stays open).
+DEFAULT_RESOLVE_MAX_COUNT_SETTING_KEY = "glitchtip_triage_default_resolve_max_count"
+DEFAULT_RESOLVE_MAX_COUNT_DEFAULT = 50
+
 # JSONB array of triage rules. Each entry shape:
 #   {
 #     "title_pattern": "<regex>",       # python re, evaluated against title
@@ -183,11 +194,19 @@ async def _read_secret(pool, key: str) -> str:
     return await _shared_read_app_setting(pool, key, default="")
 
 
-async def _read_rules(pool) -> list[dict[str, Any]]:
+async def _read_rules(
+    pool, default_resolve_max_count: int = DEFAULT_RESOLVE_MAX_COUNT_DEFAULT
+) -> list[dict[str, Any]]:
     """Parse the JSONB rules array. Returns [] on any parse failure.
 
     A single bad rule shouldn't disable the entire ruleset, so we
     validate per-entry and skip malformed ones with a warning.
+
+    Bounds unbounded ``resolve`` rules (#304): a resolve rule that omits
+    ``max_count`` is silently dangerous (auto-closes at any count), so we
+    inject ``default_resolve_max_count`` as its ceiling and warn. ``ignore``
+    rules keep their declared (possibly absent) ceiling — suppression is
+    intentional and never closes an issue.
     """
     raw = await _read_setting(pool, RULES_SETTING_KEY, "[]")
     try:
@@ -223,12 +242,24 @@ async def _read_rules(pool) -> list[dict[str, Any]]:
                 pat, exc,
             )
             continue
+        max_count = entry.get("max_count")
+        # #304: never honour an unbounded resolve. A resolve rule with no
+        # max_count would auto-close a runaway outage; bound it to the
+        # configured default and warn so the operator sees the rule is
+        # being clamped (and can set an explicit ceiling if they meant to).
+        if action == "resolve" and max_count is None:
+            logger.warning(
+                "[GLITCHTIP_TRIAGE] resolve rule %r has no max_count — "
+                "bounding to %d (set max_count explicitly to override)",
+                pat, default_resolve_max_count,
+            )
+            max_count = default_resolve_max_count
         cleaned.append({
             "title_pattern": pat,
             "_compiled": compiled,
             "action": action,
             "reason": entry.get("reason") or "",
-            "max_count": entry.get("max_count"),
+            "max_count": max_count,
             "min_age_days": entry.get("min_age_days"),
             "level_in": entry.get("level_in"),
         })
@@ -260,6 +291,20 @@ async def _read_freshness_hours(pool) -> int:
         return max(0, v)
     except ValueError:
         return ALERT_FRESHNESS_HOURS_DEFAULT
+
+
+async def _read_default_resolve_max_count(pool) -> int:
+    """Ceiling injected into ``resolve`` rules that omit ``max_count`` (#304)."""
+    raw = await _read_setting(
+        pool,
+        DEFAULT_RESOLVE_MAX_COUNT_SETTING_KEY,
+        str(DEFAULT_RESOLVE_MAX_COUNT_DEFAULT),
+    )
+    try:
+        v = int(raw)
+        return v if v > 0 else DEFAULT_RESOLVE_MAX_COUNT_DEFAULT
+    except ValueError:
+        return DEFAULT_RESOLVE_MAX_COUNT_DEFAULT
 
 
 def _is_fresh(last_seen_iso: str | None, max_age_hours: int) -> bool:
@@ -562,7 +607,8 @@ async def run_glitchtip_triage_probe(
     org_slug = (await _read_setting(pool, ORG_SLUG_SETTING_KEY, ORG_SLUG_DEFAULT)).strip() or ORG_SLUG_DEFAULT
     threshold = await _read_threshold(pool)
     freshness_hours = await _read_freshness_hours(pool)
-    rules = await _read_rules(pool)
+    default_resolve_max_count = await _read_default_resolve_max_count(pool)
+    rules = await _read_rules(pool, default_resolve_max_count)
 
     if httpx is None:  # pragma: no cover — only when dep is uninstalled
         return {

@@ -66,6 +66,12 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
 # inside a container, so the same DB value works in both environments.
 API_URL = localize_url(os.getenv("API_URL") or "http://localhost:8002")
 LOCAL_OLLAMA = localize_url(os.getenv("OLLAMA_URL") or "http://localhost:11434")
+# Where Alertmanager is reachable from the brain. Used to decide whether the
+# PROMETHEUS_COVERED suppression is safe (#304): if Alertmanager is down, the
+# brain must NOT defer covered-probe alerts to it (that would be a double-blind).
+ALERTMANAGER_URL = localize_url(
+    os.getenv("ALERTMANAGER_URL") or "http://alertmanager:9093"
+)
 
 _config_synced = False
 
@@ -79,7 +85,7 @@ async def _sync_config_from_db(pool):
     network), DB values are fallback for local dev where env vars may
     not be set.
     """
-    global API_URL, LOCAL_OLLAMA, _config_synced
+    global API_URL, LOCAL_OLLAMA, ALERTMANAGER_URL, _config_synced
     if _config_synced:
         return
     try:
@@ -91,6 +97,10 @@ async def _sync_config_from_db(pool):
         LOCAL_OLLAMA = await resolve_url(
             pool, "ollama_base_url",
             default=LOCAL_OLLAMA, env_var="OLLAMA_URL",
+        )
+        ALERTMANAGER_URL = await resolve_url(
+            pool, "alertmanager_url",
+            default=ALERTMANAGER_URL, env_var="ALERTMANAGER_URL",
         )
         _config_synced = True
         logger.info("[PROBES] Config synced: API=%s, Ollama=%s (env wins over DB; URLs localized)",
@@ -1233,10 +1243,45 @@ PROMETHEUS_COVERED_PROBES: frozenset[str] = frozenset({
 })
 
 
+def _alertmanager_healthy_blocking(base_url: str, timeout: float = 3.0) -> bool:
+    """GET ``/-/healthy``; True only on HTTP 200. Blocking (urllib)."""
+    url = f"{base_url.rstrip('/')}/-/healthy"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # nosec B310 — fixed internal scheme
+            return resp.status == 200
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+async def _alertmanager_healthy() -> bool:
+    """Is Alertmanager up and able to deliver alerts?
+
+    Fail-safe (#304): any inability to CONFIRM health returns False, so the
+    PROMETHEUS_COVERED suppression is disabled and the brain pages directly
+    rather than deferring to an Alertmanager that may be down. Never raises.
+    """
+    try:
+        return await asyncio.to_thread(_alertmanager_healthy_blocking, ALERTMANAGER_URL)
+    except Exception:  # pragma: no cover — to_thread plumbing
+        return False
+
+
 async def run_health_probes(pool, notify_fn=None):
     """Run all due health probes, store results in brain_knowledge, alert on failures."""
     await _sync_config_from_db(pool)
     results = {}
+
+    # Whether Prometheus/Alertmanager can actually deliver right now. When it
+    # can't, the brain must NOT suppress alerts for PROMETHEUS_COVERED probes
+    # (otherwise a real outage + Alertmanager outage = double-blind). Checked
+    # once per cycle; only consulted for covered-probe suppression below.
+    am_healthy = await _alertmanager_healthy()
+    if not am_healthy:
+        logger.warning(
+            "[PROBES] Alertmanager unhealthy/unreachable at %s — disabling "
+            "PROMETHEUS_COVERED alert suppression for this cycle (brain will "
+            "page covered-probe failures directly)", ALERTMANAGER_URL,
+        )
 
     for name, probe_fn in PROBES.items():
         if not _is_due(name):
@@ -1255,7 +1300,15 @@ async def run_health_probes(pool, notify_fn=None):
                 try:
                     result = await probe_fn(pool)
                 except Exception as e:
-                    result = {"ok": False, "detail": f"probe crashed: {e}"}
+                    # ``crashed`` distinguishes a bug in the PROBE itself (the
+                    # monitoring code threw) from a clean ``ok=False`` meaning
+                    # the monitored SERVICE is down. They need different
+                    # operator responses (#304) and a crash always pages.
+                    result = {
+                        "ok": False,
+                        "detail": f"probe crashed: {e}",
+                        "crashed": True,
+                    }
                     span.record_exception(e)
                 span.set_attribute("probe.ok", bool(result.get("ok", False)))
             finally:
@@ -1290,24 +1343,45 @@ async def run_health_probes(pool, notify_fn=None):
         # signals. We still track failure counts so remediation logic
         # fires and Gitea issues get filed.
         prom_covered = name in PROMETHEUS_COVERED_PROBES
+        crashed = bool(result.get("crashed"))
+        # Suppress brain-side paging ONLY when Prometheus/Alertmanager truly
+        # owns this signal AND can deliver. A probe CRASH is never suppressed
+        # — it means the monitoring code is broken, which Prometheus does not
+        # cover. And when Alertmanager is down, suppression would be a
+        # double-blind, so we page directly (#304).
+        suppress = prom_covered and am_healthy and not crashed
         if ok:
             if (
                 _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES
                 and notify_fn
-                and not prom_covered
+                and not suppress
             ):
                 notify_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
             _failure_counts[name] = 0
         else:
             _failure_counts[name] = _failure_counts.get(name, 0) + 1
-            logger.warning("[PROBES] %s FAILED (%d consecutive): %s",
-                           name, _failure_counts[name], result.get("detail", ""))
+            logger.warning("[PROBES] %s %s (%d consecutive): %s",
+                           name, "CRASHED" if crashed else "FAILED",
+                           _failure_counts[name], result.get("detail", ""))
             if _failure_counts[name] == ALERT_AFTER_FAILURES:
                 detail = result.get('detail', 'unknown error')
-                if notify_fn and not prom_covered:
-                    notify_fn(
-                        f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
-                    )
+                if notify_fn and not suppress:
+                    if crashed:
+                        notify_fn(
+                            f"⚠️ Probe '{name}' ERRORED {ALERT_AFTER_FAILURES}x "
+                            f"(bug in the probe — monitoring is BLIND for this "
+                            f"check, not necessarily a service outage): {detail}"
+                        )
+                    elif prom_covered and not am_healthy:
+                        notify_fn(
+                            f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x "
+                            f"AND Alertmanager is unreachable — Prometheus "
+                            f"coverage is BLIND, brain is paging directly: {detail}"
+                        )
+                    else:
+                        notify_fn(
+                            f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
+                        )
                 # The Gitea-issue auto-create paper trail was removed when
                 # Gitea was decommissioned (2026-04-30). The notify_operator
                 # call above is now the only escalation; the brain's

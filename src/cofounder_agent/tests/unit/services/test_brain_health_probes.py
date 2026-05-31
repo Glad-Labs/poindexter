@@ -304,6 +304,55 @@ class TestPerProbeSpans:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestConditionalSuppressionAndCrash:
+    """#304 — PROMETHEUS_COVERED suppression is conditional on Alertmanager
+    health, and probe CRASHES always page (distinct from service-down)."""
+
+    async def _run_with(self, probe_fn, *, probe_name, am_healthy):
+        hp._failure_counts.clear()
+        notifies: list[str] = []
+        with patch.dict(hp.PROBES, {probe_name: probe_fn}, clear=True), \
+                patch.object(hp, "_is_due", return_value=True), \
+                patch.object(hp, "ALERT_AFTER_FAILURES", 1), \
+                patch.object(
+                    hp, "_alertmanager_healthy",
+                    new=AsyncMock(return_value=am_healthy),
+                ):
+            hp._config_synced = True
+            await hp.run_health_probes(
+                _make_pool(), notify_fn=lambda m: notifies.append(m)
+            )
+        return notifies
+
+    async def test_covered_probe_suppressed_when_alertmanager_healthy(self):
+        async def fail(_pool):
+            return {"ok": False, "detail": "db down"}
+
+        # db_ping IS in PROMETHEUS_COVERED_PROBES; Alertmanager healthy => Prom owns it.
+        notifies = await self._run_with(fail, probe_name="db_ping", am_healthy=True)
+        assert notifies == []  # suppressed — Prometheus/Alertmanager pages
+
+    async def test_covered_probe_pages_when_alertmanager_down(self):
+        async def fail(_pool):
+            return {"ok": False, "detail": "db down"}
+
+        notifies = await self._run_with(fail, probe_name="db_ping", am_healthy=False)
+        assert len(notifies) == 1
+        assert "Alertmanager is unreachable" in notifies[0]
+
+    async def test_crash_always_pages_even_when_covered_and_am_healthy(self):
+        async def crash(_pool):
+            raise RuntimeError("probe bug")
+
+        # Even a covered probe with healthy Alertmanager pages on a CRASH —
+        # the monitoring code itself is broken, which Prometheus doesn't cover.
+        notifies = await self._run_with(crash, probe_name="db_ping", am_healthy=True)
+        assert len(notifies) == 1
+        assert "ERRORED" in notifies[0]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestProbeTopicQuality:
     """probe_topic_quality attributes rejections to actual drivers.
 

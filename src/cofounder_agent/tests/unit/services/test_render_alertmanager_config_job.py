@@ -94,7 +94,7 @@ class TestRun:
         out = tmp_path / "config" / "alertmanager.yml"
 
         async def fake_reload(_url):
-            return "alertmanager reloaded"
+            return True, "alertmanager reloaded"
 
         monkeypatch.setattr(
             "services.jobs.render_alertmanager_config._reload_alertmanager",
@@ -119,6 +119,36 @@ class TestRun:
         assert "-100999" in written
         assert CHAT_ID_PLACEHOLDER not in written
         assert "alertmanager reloaded" in result.detail
+
+    async def test_reload_failure_makes_job_not_ok(self, tmp_path, monkeypatch):
+        """A written-but-not-reloaded config is a delivery-plane failure:
+        the job must report ok=False so the scheduler escalates it (#304)."""
+        tmpl = tmp_path / "alertmanager.yml.tmpl"
+        tmpl.write_text(_TEMPLATE, encoding="utf-8")
+        out = tmp_path / "config" / "alertmanager.yml"
+
+        async def fake_reload(_url):
+            return False, "reload returned 400 (config NOT live)"
+
+        monkeypatch.setattr(
+            "services.jobs.render_alertmanager_config._reload_alertmanager",
+            fake_reload,
+        )
+
+        result = await RenderAlertmanagerConfigJob().run(
+            pool=None,
+            config={
+                "template_path": str(tmpl),
+                "output_path": str(out),
+                "reload_on_change": True,
+                "_site_config": _StubSiteConfig({"telegram_chat_id": "-100999"}),
+            },
+        )
+
+        assert result.ok is False  # the config is on disk but NOT live
+        assert result.changes_made == 1  # write still happened
+        assert "NOT live" in result.detail
+        assert out.read_text(encoding="utf-8").find("-100999") != -1
 
     async def test_missing_chat_id_fails_loud(self, tmp_path):
         tmpl = tmp_path / "alertmanager.yml.tmpl"
@@ -247,8 +277,9 @@ class TestReloadAlertmanager:
             "AsyncClient",
             lambda **kwargs: _FakeAsyncClient(_FakeResponse(200), **kwargs),
         )
-        result = await _reload_alertmanager("http://am:9093")
-        assert result == "alertmanager reloaded"
+        ok, detail = await _reload_alertmanager("http://am:9093")
+        assert ok is True
+        assert detail == "alertmanager reloaded"
         assert _FakeAsyncClient.posts == ["http://am:9093/-/reload"]
 
     async def test_returns_status_code_on_non_200(self, monkeypatch):
@@ -258,8 +289,9 @@ class TestReloadAlertmanager:
             "AsyncClient",
             lambda **kwargs: _FakeAsyncClient(_FakeResponse(405), **kwargs),
         )
-        result = await _reload_alertmanager("http://am:9093")
-        assert result == "reload returned 405"
+        ok, detail = await _reload_alertmanager("http://am:9093")
+        assert ok is False
+        assert "reload returned 405" in detail
 
     async def test_handles_http_error(self, monkeypatch):
         monkeypatch.setattr(
@@ -269,6 +301,7 @@ class TestReloadAlertmanager:
                 httpx.ConnectError("connection refused"), **kwargs
             ),
         )
-        result = await _reload_alertmanager("http://am:9093")
-        assert result.startswith("reload failed:")
-        assert "connection refused" in result
+        ok, detail = await _reload_alertmanager("http://am:9093")
+        assert ok is False
+        assert detail.startswith("reload failed:")
+        assert "connection refused" in detail

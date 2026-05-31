@@ -169,29 +169,40 @@ class RenderAlertmanagerConfigJob:
                 ok=False, detail=f"write failed: {e}", changes_made=0
             )
 
+        reload_ok = True
         reload_detail = "written (reload skipped)"
         if reload_on_change:
-            reload_detail = await _reload_alertmanager(alertmanager_url)
+            reload_ok, reload_detail = await _reload_alertmanager(alertmanager_url)
 
+        # A failed reload means the new config was written to disk but is NOT
+        # live — Alertmanager is still running the old config, so the updated
+        # chat_id / routing never took effect. That is a silent delivery-plane
+        # failure; surface it as ok=False so the scheduler escalates it (this
+        # job is in _CIRCULAR_SAFE_JOBS -> direct critical page). The write
+        # still happened (changes_made=1) so the next run won't re-write.
         return JobResult(
-            ok=True,
+            ok=reload_ok,
             detail=f"alertmanager config updated; {reload_detail}",
             changes_made=1,
             metrics={"bytes": len(rendered)},
         )
 
 
-async def _reload_alertmanager(base_url: str) -> str:
-    """POST /-/reload; return a short status string for JobResult.detail."""
+async def _reload_alertmanager(base_url: str) -> tuple[bool, str]:
+    """POST /-/reload; return (ok, short status string for JobResult.detail)."""
     url = f"{base_url}/-/reload"
     try:
         async with httpx.AsyncClient(timeout=5.0) as http:
             resp = await http.post(url)
         if resp.status_code == 200:
-            return "alertmanager reloaded"
+            return True, "alertmanager reloaded"
         # Alertmanager enables POST /-/reload by default (no flag needed);
         # a non-200 here means a malformed config or a version that lacks it.
-        return f"reload returned {resp.status_code}"
+        # The config on disk is NOT live — treat as failure, not success.
+        logger.warning(
+            "render_alertmanager_config: reload returned %s", resp.status_code
+        )
+        return False, f"reload returned {resp.status_code} (config NOT live)"
     except httpx.HTTPError as e:
         logger.warning("render_alertmanager_config: reload failed: %s", e)
-        return f"reload failed: {e}"
+        return False, f"reload failed: {e} (config NOT live)"

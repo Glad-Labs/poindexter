@@ -211,7 +211,11 @@ async def test_full_cycle_resolve_ignore_pass_through_and_alert():
             "title_pattern": r"Failed to export span batch.*langfuse",
             "action": "resolve",
             "reason": "langfuse exporter noise",
-            "max_count": None,
+            # Explicit high ceiling: this test exercises the full resolve/
+            # ignore/alert flow, not the #304 default-bounding behaviour, and
+            # the langfuse issue below has count 5000. (An OMITTED max_count
+            # is now bounded to the default 50 — see test_unbounded_resolve_*.)
+            "max_count": 100000,
         },
         {
             "title_pattern": r"AllModelsFailedError",
@@ -340,6 +344,53 @@ async def test_max_count_gates_auto_resolve():
     )
     assert summary["auto_resolved_count"] == 1
     assert client.put_calls[0][0].endswith("/api/0/issues/1/")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unbounded_resolve_rule_is_bounded_to_default(monkeypatch):
+    """#304: a resolve rule with NO max_count must not auto-close a runaway.
+
+    The rule omits max_count, so it gets bounded to the default ceiling (50).
+    A low-count match still resolves; a high-count match (> default) does NOT
+    resolve — it falls through to the threshold/alert path instead of being
+    silently auto-closed.
+    """
+    monkeypatch.setattr(gt, "DEFAULT_RESOLVE_MAX_COUNT_DEFAULT", 50)
+    rules = [
+        {
+            "title_pattern": r"^runaway: ",
+            "action": "resolve",
+            "reason": "no ceiling declared",
+            # max_count intentionally omitted -> bounded to 50
+        },
+    ]
+    pool = _make_pool(
+        settings={
+            "glitchtip_triage_enabled": "true",
+            "glitchtip_triage_alert_threshold_count": "100",
+            "glitchtip_triage_auto_resolve_patterns": json.dumps(rules),
+        },
+        secrets={"glitchtip_triage_api_token": "tok-abc"},
+    )
+    issues = [
+        _issue("1", "runaway: small blip", 5),       # <= 50 -> resolved
+        _issue("2", "runaway: full outage", 5000),   # > 50 -> NOT resolved, alerts
+    ]
+    client = _FakeClient(get_responses=[_FakeResponse(json_data=issues)])
+    notifies: list[dict] = []
+    summary = await gt.run_glitchtip_triage_probe(
+        pool,
+        notify_fn=lambda **kw: notifies.append(kw),
+        http_client_factory=_factory(client),
+    )
+
+    assert summary["auto_resolved_count"] == 1          # only the count-5 one
+    assert client.put_calls[0][0].endswith("/api/0/issues/1/")
+    # The count-5000 runaway was NOT silently auto-closed; it paged instead.
+    assert summary["alerted_count"] == 1
+    assert any("runaway: full outage" in n["title"] or "full outage" in n.get("detail", "")
+               for n in notifies)
 
 
 # ---------------------------------------------------------------------------
