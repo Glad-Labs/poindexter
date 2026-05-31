@@ -15,6 +15,14 @@
 # reasoning). Instead, a `detect-changes` step gates the heavy install +
 # pytest steps on whether any backend code actually changed. Docs-only
 # PRs land the required check in ~30s; backend PRs run the full suite.
+#
+# #534: the docs-only short-circuit applies to PULL REQUESTS ONLY. On a
+# push to `main` the full suite ALWAYS runs. Otherwise a no-test commit
+# (e.g. a release-please changelog/version bump) layered on top of a
+# failing code commit would skip → report `success` → leave main's HEAD
+# showing a green check over a red tree. Pushes to main are infrequent
+# enough that the extra minutes buy an honest "green means tested" signal
+# on the branch everything else trusts.
 name: unit-tests
 
 on:
@@ -65,7 +73,6 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
@@ -75,30 +82,34 @@ jobs:
             exit 0
           fi
 
-          if [ "$EVENT" = "pull_request" ]; then
-            # GitHub checks out a virtual merge commit for pull_request
-            # events (refs/pull/N/merge), where HEAD^1 is current main's
-            # tip and HEAD^2 is the PR head. Diffing against HEAD^1
-            # gives the PR's net changes — what would actually land on
-            # main after merge.
-            #
-            # The previous approach used `github.event.pull_request.base.sha`
-            # which is frozen at PR creation (does NOT update when another
-            # PR merges to main mid-review). That meant a docs-only PR
-            # opened before a separate src/ PR merged would falsely
-            # report "backend code changed" because the diff vs the
-            # frozen base.sha contained both PRs' changes (PR #703 lost
-            # its docs-only short-circuit this way 2026-05-28).
-            #
-            # Fall back to base.sha if HEAD^1 isn't reachable — happens
-            # on fast-forward-only PRs where no merge commit exists.
-            if git cat-file -e "HEAD^1" 2>/dev/null; then
-              base="$(git rev-parse HEAD^1)"
-            else
-              base="$PR_BASE"
-            fi
+          # #534: never skip on push to main. The docs-only short-circuit is
+          # a PR-only optimization. On push, a skipped-but-"success" run on a
+          # no-test commit (release/version bump) would mask a red parent and
+          # leave HEAD falsely green — so always run the full suite here.
+          if [ "$EVENT" = "push" ]; then
+            echo "Push to main — running full suite (HEAD must be honestly green; see #534)."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Only pull_request events reach here (workflow_dispatch + push
+          # returned above). GitHub checks out a virtual merge commit for
+          # pull_request events (refs/pull/N/merge), where HEAD^1 is current
+          # main's tip and HEAD^2 is the PR head. Diffing against HEAD^1 gives
+          # the PR's net changes — what would actually land on main after merge.
+          #
+          # The previous approach used `github.event.pull_request.base.sha`
+          # which is frozen at PR creation (does NOT update when another PR
+          # merges to main mid-review). That meant a docs-only PR opened before
+          # a separate src/ PR merged would falsely report "backend code
+          # changed" because the diff vs the frozen base.sha contained both
+          # PRs' changes (PR #703 lost its docs-only short-circuit this way
+          # 2026-05-28). Fall back to base.sha only if HEAD^1 isn't reachable —
+          # happens on fast-forward-only PRs where no merge commit exists.
+          if git cat-file -e "HEAD^1" 2>/dev/null; then
+            base="$(git rev-parse HEAD^1)"
           else
-            base="$PUSH_BEFORE"
+            base="$PR_BASE"
           fi
 
           # Empty / all-zero base = initial push or unknown — be safe.
