@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.14](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.13...v0.45.14) (2026-05-31)
+
+
+### Bug Fixes
+
+* **preview:** forward resolved SiteConfig into preview_post_html ([#540](https://github.com/Glad-Labs/glad-labs-stack/issues/540)) ([898bf6f](https://github.com/Glad-Labs/glad-labs-stack/commit/898bf6f504224b38db5597e3903f34a249d61604))
+
 ## [0.45.13](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.12...v0.45.13) (2026-05-31)
 
 
