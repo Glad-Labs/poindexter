@@ -392,6 +392,65 @@ DEFAULTS: dict[str, str] = {
     'anomaly_baseline_days': '7',
     'anomaly_min_samples': '5',
 
+    # ----- Findings dispatcher per-kind delivery policy (#461) -----
+    # The brain findings_dispatcher routes audit_log event_type='finding'
+    # rows per findings.<kind>.{delivery,fallback,cooldown_minutes,min_severity}.
+    # delivery in {auto_fix, discord, telegram, github_issue, log_only};
+    # Phase 1 implements discord/telegram/log_only, the rest fall through to
+    # fallback. findings.default is the catch-all so a new kind never silently
+    # pages. media_drift pinned to log_only (dominant + noisy). See
+    # brain/findings_dispatcher.py + the seed migration.
+    'findings.default.delivery': 'log_only',
+    'findings.default.fallback': 'log_only',
+    'findings.default.cooldown_minutes': '1440',
+    'findings.default.min_severity': 'warn',
+    'findings.anomaly.delivery': 'telegram',
+    'findings.anomaly.fallback': 'discord',
+    'findings.anomaly.cooldown_minutes': '60',
+    'findings.anomaly.min_severity': 'critical',
+    'findings.quality_regression.delivery': 'github_issue',
+    'findings.quality_regression.fallback': 'discord',
+    'findings.quality_regression.cooldown_minutes': '1440',
+    'findings.quality_regression.min_severity': 'warn',
+    'findings.broken_link.delivery': 'discord',
+    'findings.broken_link.fallback': 'log_only',
+    'findings.broken_link.cooldown_minutes': '360',
+    'findings.broken_link.min_severity': 'warn',
+    'findings.broken_external_link.delivery': 'auto_fix',
+    'findings.broken_external_link.fallback': 'discord',
+    'findings.broken_external_link.cooldown_minutes': '60',
+    'findings.broken_external_link.min_severity': 'warn',
+    'findings.broken_internal_link.delivery': 'auto_fix',
+    'findings.broken_internal_link.fallback': 'discord',
+    'findings.broken_internal_link.cooldown_minutes': '60',
+    'findings.broken_internal_link.min_severity': 'warn',
+    'findings.missing_seo.delivery': 'auto_fix',
+    'findings.missing_seo.fallback': 'github_issue',
+    'findings.missing_seo.cooldown_minutes': '1440',
+    'findings.missing_seo.min_severity': 'warn',
+    'findings.topic_gap.delivery': 'discord',
+    'findings.topic_gap.fallback': 'log_only',
+    'findings.topic_gap.cooldown_minutes': '1440',
+    'findings.topic_gap.min_severity': 'info',
+    'findings.media_drift.delivery': 'log_only',
+    'findings.r2_static_drift.delivery': 'discord',
+    'findings.r2_static_drift.fallback': 'log_only',
+    'findings.r2_static_drift.cooldown_minutes': '360',
+    'findings.r2_static_drift.min_severity': 'warn',
+    'findings.post_verification_failure.delivery': 'discord',
+    'findings.post_verification_failure.fallback': 'log_only',
+    'findings.post_verification_failure.cooldown_minutes': '360',
+    'findings.post_verification_failure.min_severity': 'warn',
+    'findings.duplicate_post.delivery': 'log_only',
+    'findings.stock_image_regenerated.delivery': 'log_only',
+    'findings.uncategorized_post_autofixed.delivery': 'log_only',
+    'findings.broken_external_link_autofixed.delivery': 'log_only',
+    'findings.broken_internal_link_autofixed.delivery': 'log_only',
+    'findings.cloud_sync_returned_false.delivery': 'discord',
+    'findings.cloud_sync_returned_false.fallback': 'log_only',
+    'findings.cloud_sync_returned_false.cooldown_minutes': '360',
+    'findings.cloud_sync_returned_false.min_severity': 'warn',
+
     # ----- Prefect stuck-flow queue-backlog detection (#526) -----
     # Distinct from the stuck-run thresholds (seeded in 0000_baseline):
     # page with probe.prefect_queue_backlog_detected when more than this

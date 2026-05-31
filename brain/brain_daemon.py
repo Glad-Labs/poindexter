@@ -176,6 +176,19 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_ALERT_DISPATCHER = False
 
 try:
+    # Findings dispatcher — routes audit_log event_type='finding' rows to
+    # delivery channels per per-kind app_settings policy (#461).
+    # See brain/findings_dispatcher.py.
+    from findings_dispatcher import poll_and_dispatch as _poll_findings
+    _HAS_FINDINGS_DISPATCHER = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.findings_dispatcher import poll_and_dispatch as _poll_findings
+        _HAS_FINDINGS_DISPATCHER = True
+    except ImportError:
+        _HAS_FINDINGS_DISPATCHER = False
+
+try:
     # GH#388 — backup-watcher probe + auto-retry. Stats the host-side
     # bind-mount used by the in-stack backup tiers (#385); on staleness,
     # `docker restart`s the responsible container before letting the
@@ -723,6 +736,11 @@ CYCLE_SECONDS = 300  # 5 minutes between full cycles
 # while idle. The loop runs as its own asyncio task so a slow dispatch
 # never stalls the main cycle.
 ALERT_DISPATCH_INTERVAL_SECONDS = 30
+
+# Findings are not operator-facing pages — they accumulate over hours and
+# most route to log_only/discord, so a 5-min cadence is plenty. Its own
+# task so notify round-trips never stall the monitoring cycle (#461).
+FINDINGS_DISPATCH_INTERVAL_SECONDS = 300
 
 # GH-28: Grafana alert sync cadence counter. Incremented each run_cycle;
 # sync_alert_rules fires when the counter hits grafana_alert_sync_interval_cycles
@@ -2133,6 +2151,44 @@ async def alert_dispatch_loop(pool, shutdown_event):
     logger.info("[BRAIN] Alert dispatcher loop stopping")
 
 
+async def findings_dispatch_loop(pool, shutdown_event):
+    """Background task: poll audit_log findings and route them per policy.
+
+    Independent of ``run_cycle`` so a slow Discord/Telegram round-trip never
+    delays monitoring. Best-effort: ``poll_and_dispatch`` swallows per-row
+    errors and marks each finding's state row; this wrapper only handles
+    wholesale failures (DB pool death, etc.). See brain/findings_dispatcher.py.
+    """
+    if not _HAS_FINDINGS_DISPATCHER:
+        logger.info(
+            "[BRAIN] Findings dispatcher unavailable — findings will accumulate "
+            "undelivered. Check brain image build (Dockerfile COPY)."
+        )
+        return
+
+    logger.info(
+        "[BRAIN] Findings dispatcher loop started (interval=%ds)",
+        FINDINGS_DISPATCH_INTERVAL_SECONDS,
+    )
+    while not shutdown_event.is_set():
+        try:
+            await _poll_findings(pool)
+        except Exception as e:
+            logger.warning(
+                "[BRAIN] findings_dispatcher poll failed: %s", e, exc_info=True,
+            )
+
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(),
+                timeout=FINDINGS_DISPATCH_INTERVAL_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            pass  # Normal — interval elapsed, continue polling.
+
+    logger.info("[BRAIN] Findings dispatcher loop stopping")
+
+
 async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
@@ -2711,10 +2767,15 @@ async def main():
     # 5-min monitoring cycle. Skipped in --once mode (one-shot is for
     # debug/CI; the dispatch loop's value is its persistent cadence).
     alert_dispatch_task = None
+    findings_dispatch_task = None
     if not one_shot:
         alert_dispatch_task = asyncio.create_task(
             alert_dispatch_loop(pool, shutdown),
             name="alert_dispatch_loop",
+        )
+        findings_dispatch_task = asyncio.create_task(
+            findings_dispatch_loop(pool, shutdown),
+            name="findings_dispatch_loop",
         )
 
     while not shutdown.is_set():
@@ -2741,6 +2802,13 @@ async def main():
             alert_dispatch_task.cancel()
         except Exception as e:  # noqa: BLE001
             logger.debug("[BRAIN] alert_dispatch_task close failed: %s", e)
+    if findings_dispatch_task is not None:
+        try:
+            await asyncio.wait_for(findings_dispatch_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            findings_dispatch_task.cancel()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[BRAIN] findings_dispatch_task close failed: %s", e)
     if _OAUTH_CLIENT is not None:
         try:
             await _OAUTH_CLIENT.aclose()
