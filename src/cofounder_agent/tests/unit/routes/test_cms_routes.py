@@ -453,6 +453,30 @@ class TestConvertMarkdownToHtml:
         # Result should be processed (though CDATA may be kept as-is)
         assert result is not None
 
+    def test_markdown_inline_image_renders_img_tag(self):
+        """#540: a markdown image must become an <img> so the preview shows
+        it (not literal ![alt](url) text)."""
+        from routes.cms_routes import convert_markdown_to_html
+        html = convert_markdown_to_html("Intro.\n\n![a chart](https://x/y.png)\n\nMore.")
+        assert "<img" in html
+        assert "https://x/y.png" in html
+        assert "![a chart]" not in html  # no literal markdown left
+
+    def test_embedded_inline_img_html_preserved_mid_content(self):
+        """#540: published posts carry inline images as raw <img> between
+        markdown blocks (replace_inline_images output). They must survive +
+        the surrounding markdown must still render."""
+        from routes.cms_routes import convert_markdown_to_html
+        mixed = (
+            "## Section\n\nText before.\n\n"
+            '<img src="https://r2/sdxl/pic.png" alt="diagram" width="1024" loading="lazy" />\n\n'
+            "Text after with *emphasis*."
+        )
+        html = convert_markdown_to_html(mixed)
+        assert "<h2>" in html
+        assert 'src="https://r2/sdxl/pic.png"' in html
+        assert "<em>" in html
+
     def test_lists_convert(self):
         from routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("- item one\n- item two\n- item three")

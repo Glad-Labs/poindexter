@@ -308,6 +308,19 @@ async def preview_post(
                     if post["has_video"]:
                         post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
 
+                # Render content the SAME way as the task path (and the
+                # published page): unwrap any leaked writer JSON envelope, then
+                # markdown -> HTML so headings/emphasis AND inline images (both
+                # `![](…)` markdown and embedded `<img>` HTML) render — instead
+                # of returning raw content where `###` shows as literal text and
+                # markdown images never appear. This is what made the preview
+                # diverge from the published output. (#540)
+                if post.get("content"):
+                    from services.llm_text import maybe_unwrap_json
+                    post["content"] = convert_markdown_to_html(
+                        maybe_unwrap_json(post["content"])
+                    )
+
                 return post
 
             # No post row yet — check content_tasks (pre-approval preview)
