@@ -133,7 +133,13 @@ class GenerateMediaScriptsStage:
 
             if scene_output:
                 video_scenes, short_summary = _parse_scene_output(
-                    scene_output, _normalize_for_speech,
+                    scene_output,
+                    # Bind the run's site_config: _normalize_for_speech
+                    # requires it (#272) but _parse_scene_output invokes the
+                    # normalizer positionally. Passing it bare raised
+                    # "podcast_service requires a site_config", aborting the
+                    # stage and starving the video director (0 shot lists).
+                    lambda t: _normalize_for_speech(t, site_config=sc),
                 )
                 logger.info(
                     "[MEDIA] Video scenes: %d, Short summary: %d chars",
@@ -170,10 +176,22 @@ class GenerateMediaScriptsStage:
             logger.warning("[MEDIA] Script generation failed (non-fatal): %s", e)
             stages = context.setdefault("stages", {})
             stages["4b_media_scripts"] = False
+            # Preserve any podcast_script built before the failure. The video
+            # director only needs the script, so a later scene-parsing error
+            # must NOT discard it — otherwise the director starves and produces
+            # no shot list. Earlier behavior dropped it (root cause of 0 shot
+            # lists alongside the #272 normalizer bug above).
             return StageResult(
-                ok=False,
-                detail=f"{type(e).__name__}: {e}",
-                context_updates={"stages": stages},
+                ok=bool(podcast_script),
+                detail=(
+                    f"{type(e).__name__}: {e} "
+                    f"(podcast_script={len(podcast_script)}c preserved)"
+                ),
+                context_updates={
+                    "podcast_script": podcast_script,
+                    "podcast_script_length": len(podcast_script),
+                    "stages": stages,
+                },
             )
 
 
