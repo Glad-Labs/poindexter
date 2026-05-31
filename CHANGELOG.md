@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.42.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.1...v0.42.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* **ci:** always run unit-tests on push to main ([#534](https://github.com/Glad-Labs/glad-labs-stack/issues/534)) ([98bcc48](https://github.com/Glad-Labs/glad-labs-stack/commit/98bcc487b25fc15898e72e991554ddd3454b5dc5))
+
 ## [0.42.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.0...v0.42.1) (2026-05-31)
 
 
