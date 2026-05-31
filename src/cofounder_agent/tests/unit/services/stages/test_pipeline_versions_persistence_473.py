@@ -100,10 +100,16 @@ class TestFinalizeTaskPersistsToPipelineVersions:
             "qa_approved": True,
             "models_used_by_phase": {"writer": "glm-4.7-5090", "qa": "gemma3:27b"},
             "database_service": db,
-            "quality_result": SimpleNamespace(
-                overall_score=85,
-                format_feedback_text=lambda: "QA passed (88/100)",
-            ),
+            # quality_result is the early QualityAssessment (no
+            # format_feedback_text); QA feedback flows from qa_reviews,
+            # which cross_model_qa writes to state. (#879)
+            "quality_result": SimpleNamespace(overall_score=85),
+            "qa_reviews": [
+                {
+                    "reviewer": "critic", "score": 88, "approved": True,
+                    "feedback": "Solid analysis.", "provider": "ollama",
+                },
+            ],
         }
 
         with patch(
@@ -134,7 +140,11 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         assert data["seo_description"] == "The hidden costs of 128k context windows"
         assert data["seo_keywords"] == "context windows, LLM costs, inference"
         assert data["quality_score"] == 88
-        assert data["qa_feedback"] == "QA passed (88/100)"
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+        assert data["qa_feedback"] == format_qa_feedback_from_reviews(
+            ctx["qa_reviews"], final_score=88, approved=True,
+        )
+        assert data["qa_feedback"]  # non-empty — feedback actually persisted
         assert data["models_used_by_phase"] == {
             "writer": "glm-4.7-5090", "qa": "gemma3:27b",
         }

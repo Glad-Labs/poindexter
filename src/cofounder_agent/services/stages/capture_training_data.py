@@ -47,7 +47,8 @@ class CaptureTrainingDataStage:
         target_length = int(context.get("target_length", 0))
         tags = context.get("tags") or []
         content_text = context.get("content", "")
-        quality_result = context.get("quality_result")
+        from services.quality_models import ensure_quality_assessment
+        quality_result = ensure_quality_assessment(context.get("quality_result"))
         featured_image = context.get("featured_image")
         database_service = context.get("database_service")
 

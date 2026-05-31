@@ -52,7 +52,8 @@ class FinalizeTaskStage:
 
         task_id = context.get("task_id")
         database_service = context.get("database_service")
-        quality_result = context.get("quality_result")
+        from services.quality_models import ensure_quality_assessment
+        quality_result = ensure_quality_assessment(context.get("quality_result"))
 
         if not task_id or database_service is None:
             return StageResult(
@@ -127,14 +128,12 @@ class FinalizeTaskStage:
         )
 
         # GH-86: format the multi-model QA reviewers' feedback into human-readable
-        # text so approvers can see *why* a post scored Q85 vs Q88. Looks at both
-        # the quality_result (MultiModelResult) and any serialized qa_reviews list.
+        # text so approvers can see *why* a post scored Q85 vs Q88, from the
+        # serialized qa_reviews list cross_model_qa writes to state.
         from services.multi_model_qa import format_qa_feedback_from_reviews
         qa_reviews = context.get("qa_reviews") or []
         qa_feedback_text = ""
-        if quality_result is not None and hasattr(quality_result, "format_feedback_text"):
-            qa_feedback_text = quality_result.format_feedback_text()
-        elif qa_reviews:
+        if qa_reviews:
             qa_feedback_text = format_qa_feedback_from_reviews(
                 qa_reviews,
                 final_score=context.get("qa_final_score"),

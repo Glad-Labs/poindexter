@@ -13,13 +13,25 @@ from services.stages.quality_evaluation import QualityEvaluationStage
 
 
 def _fake_quality_result(score: float = 82.5, passing: bool = True, truncated: bool = False):
-    dims = SimpleNamespace(
-        clarity=1.0, accuracy=1.0, completeness=1.0, relevance=1.0,
-        seo_quality=1.0, readability=1.0, engagement=1.0,
+    # Real QualityAssessment so the stage's quality_result.to_dict() call
+    # (the #879 checkpointer-safe storage path) exercises the real method.
+    from services.quality_models import (
+        EvaluationMethod,
+        QualityAssessment,
+        QualityDimensions,
     )
-    return SimpleNamespace(
-        overall_score=score, passing=passing,
-        truncation_detected=truncated, dimensions=dims,
+
+    return QualityAssessment(
+        dimensions=QualityDimensions(
+            clarity=1.0, accuracy=1.0, completeness=1.0, relevance=1.0,
+            seo_quality=1.0, readability=1.0, engagement=1.0,
+        ),
+        overall_score=score,
+        passing=passing,
+        feedback="",
+        suggestions=[],
+        evaluation_method=EvaluationMethod.PATTERN_BASED,
+        truncation_detected=truncated,
     )
 
 

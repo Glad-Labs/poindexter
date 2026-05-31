@@ -189,7 +189,8 @@ class CrossModelQAStage:
         task_id = context.get("task_id", "")
         topic = context.get("topic", "")
         content_text = context.get("content", "")
-        quality_result = context.get("quality_result")
+        from services.quality_models import ensure_quality_assessment
+        quality_result = ensure_quality_assessment(context.get("quality_result"))
 
         if not database_service or not task_id or quality_result is None:
             return StageResult(

@@ -116,7 +116,13 @@ class QualityEvaluationStage:
                 "quality_passing": quality_result.passing,
                 "truncation_detected": quality_result.truncation_detected,
                 "quality_details_initial": details,
-                "quality_result": quality_result,
+                # Store the serializable dict, NOT the live object: the
+                # LangGraph Postgres checkpointer msgpack-encodes every state
+                # channel, and a QualityAssessment object crashes the encode
+                # (#879) — which poisoned the whole state write and dropped
+                # the real score, so finalize_task recorded 0. Consumers
+                # rehydrate via ensure_quality_assessment().
+                "quality_result": quality_result.to_dict(),
                 "stages": stages,
             },
             metrics={

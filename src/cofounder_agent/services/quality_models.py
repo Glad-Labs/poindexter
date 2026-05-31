@@ -222,3 +222,59 @@ class QualityAssessment:
             "refinement_attempts": self.refinement_attempts,
             "needs_refinement": self.needs_refinement,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "QualityAssessment":
+        """Inverse of :meth:`to_dict` — rehydrate from the flat dict form.
+
+        The LangGraph checkpointer (#879) can only persist msgpack-native
+        values, so stages store the ``to_dict()`` form in graph state and
+        rehydrate here at the read site. ``site_config`` is intentionally
+        left None on the rebuilt ``QualityDimensions`` — downstream consumers
+        only read the dimension floats, never call ``.average()`` (the one
+        method that requires it).
+        """
+        dims = QualityDimensions(
+            clarity=d["clarity"],
+            accuracy=d["accuracy"],
+            completeness=d["completeness"],
+            relevance=d["relevance"],
+            seo_quality=d["seo_quality"],
+            readability=d["readability"],
+            engagement=d["engagement"],
+        )
+        method = d.get("evaluation_method")
+        ts = d.get("evaluation_timestamp")
+        return cls(
+            dimensions=dims,
+            overall_score=d["overall_score"],
+            passing=d["passing"],
+            feedback=d.get("feedback", ""),
+            suggestions=d.get("suggestions") or [],
+            evaluation_method=(
+                EvaluationMethod(method) if method else EvaluationMethod.PATTERN_BASED
+            ),
+            evaluation_timestamp=(
+                datetime.fromisoformat(ts) if ts else datetime.now(timezone.utc)
+            ),
+            evaluated_by=d.get("evaluated_by", "UnifiedQualityService"),
+            content_length=d.get("content_length"),
+            word_count=d.get("word_count"),
+            flesch_kincaid_grade_level=d.get("flesch_kincaid_grade_level"),
+            truncation_detected=d.get("truncation_detected", False),
+            refinement_attempts=d.get("refinement_attempts", 0),
+            needs_refinement=d.get("needs_refinement", False),
+        )
+
+
+def ensure_quality_assessment(value: Any) -> "QualityAssessment | None":
+    """Normalize a ``quality_result`` read from pipeline state.
+
+    State may hold either the live ``QualityAssessment`` object (in-process,
+    pre-checkpoint) or its ``to_dict()`` form (after a LangGraph checkpointer
+    round-trip, #879). Only the dict form needs rehydrating; anything else
+    (the live object, or a duck-typed test double) passes through unchanged.
+    """
+    if isinstance(value, dict):
+        return QualityAssessment.from_dict(value)
+    return value

@@ -14,8 +14,76 @@ from services.quality_models import (
     QualityDimensions,
     QualityScore,
     RefinementType,
+    ensure_quality_assessment,
 )
 from services.site_config import SiteConfig
+
+
+def _sample_assessment() -> QualityAssessment:
+    return QualityAssessment(
+        dimensions=QualityDimensions(
+            clarity=88.0, accuracy=90.0, completeness=80.0, relevance=85.0,
+            seo_quality=70.0, readability=60.0, engagement=75.0,
+        ),
+        overall_score=78.0,
+        passing=True,
+        feedback="solid draft",
+        suggestions=["tighten intro"],
+        evaluation_method=EvaluationMethod.PATTERN_BASED,
+        content_length=6218,
+        word_count=859,
+        truncation_detected=False,
+        refinement_attempts=1,
+    )
+
+
+@pytest.mark.unit
+class TestCheckpointerSerializationRoundTrip:
+    """#879: a live QualityAssessment crashes the LangGraph msgpack
+    checkpointer, which poisoned the whole state write and zeroed scores.
+    Stages now store ``to_dict()`` and rehydrate. Pin both halves."""
+
+    def test_to_dict_contains_only_primitive_types(self):
+        """The stored form must be composed entirely of msgpack-native
+        primitives — that's what makes it checkpointer-safe. The live object
+        (nested dataclass + enum + datetime) is what crashed LangGraph's
+        restricted msgpack encoder (#879)."""
+        qa = _sample_assessment()
+
+        def _is_primitive(v: object) -> bool:
+            if isinstance(v, (str, int, float, bool, type(None))):
+                return True
+            if isinstance(v, list):
+                return all(_is_primitive(x) for x in v)
+            if isinstance(v, dict):
+                return all(
+                    isinstance(k, str) and _is_primitive(x) for k, x in v.items()
+                )
+            return False
+
+        d = qa.to_dict()
+        offenders = {k: type(v).__name__ for k, v in d.items() if not _is_primitive(v)}
+        assert not offenders, f"non-primitive values in to_dict(): {offenders}"
+
+    def test_from_dict_round_trips_consumer_fields(self):
+        qa = _sample_assessment()
+        back = QualityAssessment.from_dict(qa.to_dict())
+        # Fields the downstream stages actually read off the object.
+        assert back.overall_score == qa.overall_score
+        assert back.passing == qa.passing
+        assert back.dimensions.clarity == qa.dimensions.clarity
+        assert back.dimensions.engagement == qa.dimensions.engagement
+        assert back.evaluation_method == EvaluationMethod.PATTERN_BASED
+        assert back.feedback == "solid draft"
+        assert back.suggestions == ["tighten intro"]
+
+    def test_ensure_quality_assessment_accepts_object_dict_and_none(self):
+        qa = _sample_assessment()
+        assert ensure_quality_assessment(qa) is qa
+        rehydrated = ensure_quality_assessment(qa.to_dict())
+        assert isinstance(rehydrated, QualityAssessment)
+        assert rehydrated.overall_score == qa.overall_score
+        assert ensure_quality_assessment(None) is None
 
 # ---------------------------------------------------------------------------
 # EvaluationMethod enum
