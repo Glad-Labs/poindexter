@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.42.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.3...v0.42.0) (2026-05-31)
+
+
+### Features
+
+* **brain:** default-on stuck-flow auto-crash + queue-backlog detection ([#526](https://github.com/Glad-Labs/glad-labs-stack/issues/526)) ([ba290fc](https://github.com/Glad-Labs/glad-labs-stack/commit/ba290fc25266da8b06ce85cfa73138b92f947428))
+
 ## [0.41.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.2...v0.41.3) (2026-05-31)
 
 
