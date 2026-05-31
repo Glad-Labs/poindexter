@@ -34,6 +34,8 @@ Config (``plugin.job.render_alertmanager_config``):
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -129,9 +131,32 @@ class RenderAlertmanagerConfigJob:
                 metrics={"bytes": len(rendered)},
             )
 
+        # Atomic write via a temp file in the SAME dir + os.replace. The
+        # worker runs non-root, but the shared volume's seed file
+        # (alertmanager.yml) is created root-owned 0644 by the alertmanager
+        # entrypoint, so a direct truncating write_text() hits EACCES. A
+        # rename only needs write+execute on the (0777, non-sticky) parent
+        # dir — not write access to the existing target — so it replaces the
+        # root-owned seed cleanly, and the swap is atomic (no torn reads by
+        # Alertmanager mid-write).
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(rendered, encoding="utf-8")
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(output_path.parent),
+                prefix=".alertmanager.",
+                suffix=".tmp",
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(rendered)
+                os.replace(tmp_name, output_path)
+            except OSError:
+                # Don't leave the temp file behind on a failed swap.
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
         except OSError as e:
             logger.exception("render_alertmanager_config: write failed: %s", e)
             return JobResult(
