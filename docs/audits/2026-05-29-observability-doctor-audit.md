@@ -42,8 +42,10 @@ threshold rules don't catch (queued runs piling behind a held concurrency slot l
 3. **The Prefect cron + concurrency=1 model is a single point of starvation.** One stuck/PENDING
    run holds the only slot; every scheduled run queues behind it and the pipeline goes idle. This
    exact failure happened twice (romantic-harrier 35h, smoky-chowchow 50h) and drove the creation
-   of `prefect_stuck_flow_probe`. But that probe pages only at warning severity and auto-crash is
-   **opt-in/off by default**, so recovery still waits on a human.
+   of `prefect_stuck_flow_probe`. ~~But that probe pages only at warning severity and auto-crash is
+   opt-in/off by default, so recovery still waits on a human.~~ **(Resolved 2026-05-30, #526:
+   auto-crash now defaults ON and the probe directly detects the queued-behind-the-slot backlog —
+   see Next-step #3.)**
 4. **Broad exception-swallowing is pervasive and intentional** ("best-effort, never crash the
    cycle"). Dozens of `except Exception: logger.debug(...)` sites in the brain. Individually
    defensible; collectively they mean a sick subsystem can log at DEBUG forever and never escalate.
@@ -302,8 +304,17 @@ where it must be reliable.
      `app_settings.telegram_bot_token`.
 2. **(P0) Cadence SLO rule.** Compute expected posts/tasks from `prefect_content_flow_cron`; alert
    on shortfall within hours, not days. Closes the frequency-increase-then-slowdown gap.
-3. **(P1) Flip `prefect_stuck_flow_auto_crash` to default-on** (threshold is now well-tuned across
-   two captured incidents) + add "scheduled runs queued behind held slot > N" detection.
+3. **(P1) Flip `prefect_stuck_flow_auto_crash` to default-on + add queue-backlog detection.
+   ✅ DONE 2026-05-30 (#526).** `prefect_stuck_flow_probe.py`'s `AUTO_CRASH_DEFAULT` is now
+   `"true"` (threshold tuned across romantic-harrier 35h + smoky-chowchow 50h); migration
+   `20260531_003801_flip_prefect_stuck_flow_auto_crash_on_seed_queue_depth.py` flips the still-default
+   prod row (`UPDATE ... WHERE value='false'`) without clobbering an operator override. The probe now
+   ALSO detects "scheduled runs queued behind held slot > N": a separate `/flow_runs/filter` query for
+   `SCHEDULED` runs, counts those whose scheduled start (`next_scheduled_start_time`, falling back to
+   `state.state_details.scheduled_time`) is in the past, and emits a DISTINCT
+   `probe.prefect_queue_backlog_detected` audit event + warning page when the overdue count exceeds
+   `prefect_stuck_flow_queue_depth_threshold` (default 3). The queue check is wrapped defensively so a
+   failure never aborts stuck-run detection.
 4. **(P1) #440 anomaly-detection probe** (rolling 7-day, 3-sigma) — the statistical backbone of the
    doctor's "expected vs actual."
 5. **(P1) Unify into `poindexter doctor`** — single CLI/registry over existing probes + a system

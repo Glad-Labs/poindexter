@@ -380,6 +380,13 @@ DEFAULTS: dict[str, str] = {
     'cadence_slo_window_hours': '24',
     'cadence_slo_shortfall_ratio': '0.5',
 
+    # ----- Prefect stuck-flow queue-backlog detection (#526) -----
+    # Distinct from the stuck-run thresholds (seeded in 0000_baseline):
+    # page with probe.prefect_queue_backlog_detected when more than this
+    # many SCHEDULED runs are overdue (scheduled start in the past) — the
+    # backlog symptom of a held concurrency=1 slot.
+    'prefect_stuck_flow_queue_depth_threshold': '3',
+
     # ----- Title originality / SEO -----
     'google_sitemap_ping_url': 'https://www.google.com/ping',
     'indexnow_key': '',

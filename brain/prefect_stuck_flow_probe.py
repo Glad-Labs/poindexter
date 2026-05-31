@@ -22,9 +22,21 @@ This probe closes that gap. Every brain cycle it queries Prefect for
   1. ``notify_operator()`` paged (Telegram + Discord) with the run id,
      age, and a one-liner fix instruction.
   2. ``audit_log`` row written (``probe.prefect_stuck_flow_detected``).
-  3. *Optional* auto-CRASHED via Prefect's ``/set_state`` API — gated
-     behind ``prefect_stuck_flow_auto_crash`` (default ``"false"`` so
-     opt-in until the operator trusts the threshold).
+  3. Auto-CRASHED via Prefect's ``/set_state`` API — gated behind
+     ``prefect_stuck_flow_auto_crash`` (default ``"true"`` as of
+     Glad-Labs/poindexter#526; the threshold is now tuned across two
+     captured incidents — romantic-harrier 35h RUNNING and
+     smoky-chowchow 50h PENDING — so hands-off recovery is the default.
+     An operator who wants page-only behaviour can set the app_setting
+     back to ``false``).
+
+It ALSO detects the *queue-backlog* symptom directly (#526): scheduled
+runs that have piled up behind a held concurrency slot. A SCHEDULED run
+whose scheduled start time is in the past is "overdue"; when the overdue
+count exceeds ``prefect_stuck_flow_queue_depth_threshold`` (default 3)
+the probe emits a DISTINCT ``probe.prefect_queue_backlog_detected``
+audit event + page, so the backlog surfaces even before the held run
+crosses the stuck-duration threshold.
 
 Why no in-memory dedupe like ``glitchtip_triage_probe``: there should
 never be MORE than one stuck flow run at a time on the
@@ -106,14 +118,27 @@ PENDING_THRESHOLD_MINUTES_DEFAULT = 5
 # any other PENDING sub-state names Prefect emits.
 WATCHED_STATE_TYPES: list[str] = ["RUNNING", "PENDING"]
 
-# Opt-in auto-remediation. When enabled, every detected stuck run gets
-# its state force-transitioned to CRASHED so subsequent scheduled runs
-# can dispatch immediately instead of waiting on operator intervention.
-# Defaults to false because the operator should see the page before
-# the brain takes destructive action — once the threshold is tuned,
-# flip this to true for hands-off recovery.
+# Auto-remediation. When enabled, every detected stuck run gets its
+# state force-transitioned to CRASHED so subsequent scheduled runs can
+# dispatch immediately instead of waiting on operator intervention.
+# Defaults to TRUE as of Glad-Labs/poindexter#526 — the threshold is
+# now tuned across two captured incidents (romantic-harrier 35h RUNNING,
+# smoky-chowchow 50h PENDING) so hands-off recovery is the safe default.
+# The operator can still flip the app_setting back to false for
+# page-only behaviour (see the page before the brain takes action).
 AUTO_CRASH_SETTING_KEY = "prefect_stuck_flow_auto_crash"
-AUTO_CRASH_DEFAULT = "false"
+AUTO_CRASH_DEFAULT = "true"
+
+# Queue-backlog detection (#526). A SCHEDULED run whose scheduled start
+# time is in the past is "overdue" — it should have dispatched already
+# but couldn't, almost always because the single concurrency slot is
+# held by a stuck/PENDING run. When the count of overdue SCHEDULED runs
+# exceeds this threshold the probe pages with a DISTINCT signal, so the
+# backlog surfaces even before the held run crosses the stuck-duration
+# threshold. Default 3 = a couple of missed ticks is noise; a real
+# pile-up is several.
+QUEUE_DEPTH_THRESHOLD_SETTING_KEY = "prefect_stuck_flow_queue_depth_threshold"
+QUEUE_DEPTH_THRESHOLD_DEFAULT = 3
 
 # Probe interval — same 5-minute brain cycle as siblings. Internal
 # behaviour: the probe is cheap (one POST + maybe one set_state per
@@ -204,6 +229,63 @@ async def _fetch_flow_runs_in_states(
 # importers (the brain daemon imports the high-level entry point, but
 # this helper has been around long enough to warrant a soft landing).
 _fetch_running_flow_runs = _fetch_flow_runs_in_states
+
+
+async def _fetch_scheduled_runs(
+    client: Any, base_url: str, flow_names: list[str],
+) -> list[dict[str, Any]]:
+    """POST ``/flow_runs/filter`` for SCHEDULED runs across the named flows.
+
+    Mirrors :func:`_fetch_flow_runs_in_states` payload shape but pins the
+    state type to SCHEDULED — these are the runs that have been queued
+    (by the cron) but not yet dispatched. When the single concurrency
+    slot is held, they pile up here. Returns the raw list of run dicts.
+    """
+    payload = {
+        "sort": "EXPECTED_START_TIME_ASC",
+        "limit": 200,
+        "flow_runs": {
+            "state": {"type": {"any_": ["SCHEDULED"]}},
+        },
+        "flows": {
+            "name": {"any_": flow_names},
+        },
+    }
+    resp = await client.post(
+        f"{base_url.rstrip('/')}/flow_runs/filter",
+        json=payload,
+    )
+    if resp.status_code >= 400:
+        logger.warning(
+            "[PREFECT_STUCK_FLOW] scheduled /flow_runs/filter returned %d: %s",
+            resp.status_code, resp.text[:200],
+        )
+        return []
+    return resp.json() or []
+
+
+def _scheduled_overdue_minutes(run: dict[str, Any]) -> int | None:
+    """How many minutes a SCHEDULED run is overdue, or None.
+
+    The run's intended dispatch time lives on the run itself. Prefect
+    surfaces it as ``next_scheduled_start_time`` on the flow-run object;
+    when that's absent it's nested under
+    ``state.state_details.scheduled_time``. Positive age (via
+    :func:`_age_minutes`) means the scheduled time is in the PAST — i.e.
+    the run is overdue. Returns None if neither timestamp is present or
+    parseable (caller treats None as "can't reason about it — skip").
+    """
+    state = run.get("state") or {}
+    state_details = state.get("state_details") or {}
+    candidates = (
+        run.get("next_scheduled_start_time"),
+        state_details.get("scheduled_time"),
+    )
+    for ts in candidates:
+        age = _age_minutes(ts)
+        if age is not None:
+            return age
+    return None
 
 
 async def _crash_flow_run(
@@ -383,7 +465,10 @@ async def run_prefect_stuck_flow_probe(
         "RUNNING": running_threshold_min,
         "PENDING": pending_threshold_min,
     }
-    auto_crash = await _read_bool(pool, AUTO_CRASH_SETTING_KEY, False)
+    auto_crash = await _read_bool(pool, AUTO_CRASH_SETTING_KEY, True)
+    queue_depth_threshold = await _read_int(
+        pool, QUEUE_DEPTH_THRESHOLD_SETTING_KEY, QUEUE_DEPTH_THRESHOLD_DEFAULT,
+    )
 
     timeout = httpx.Timeout(HTTP_READ_TIMEOUT_S, connect=HTTP_CONNECT_TIMEOUT_S)
     headers = {
@@ -400,6 +485,8 @@ async def run_prefect_stuck_flow_probe(
     crashed_runs: list[dict[str, Any]] = []
     crash_failed: list[dict[str, Any]] = []
     seen = 0
+    overdue_scheduled_count = 0
+    queue_backlog_detected = False
 
     try:
         async with client_cm as client:
@@ -483,6 +570,58 @@ async def run_prefect_stuck_flow_probe(
                             "id": run_id, "name": name,
                             "state": state_type, "age_minutes": age,
                         })
+
+            # --- Queue-backlog detection (#526) -------------------------
+            # Independent of the stuck-run loop above: a separate query
+            # for SCHEDULED runs that have piled up behind the held slot.
+            # Wrapped defensively so a queue-check failure never aborts
+            # the stuck-run detection that already ran.
+            try:
+                scheduled = await _fetch_scheduled_runs(
+                    client, base_url, flow_names,
+                )
+                for srun in scheduled:
+                    overdue = _scheduled_overdue_minutes(srun)
+                    if overdue is not None and overdue > 0:
+                        overdue_scheduled_count += 1
+
+                if overdue_scheduled_count > queue_depth_threshold:
+                    queue_backlog_detected = True
+                    backlog_detail = (
+                        f"Prefect queue backlog: {overdue_scheduled_count} "
+                        f"SCHEDULED {', '.join(flow_names)} run(s) are overdue "
+                        f"(scheduled start in the past) — threshold is "
+                        f"{queue_depth_threshold}. The deployment runs "
+                        f"concurrency=1, so this strongly indicates the single "
+                        f"slot is held by a stuck/PENDING run and scheduled "
+                        f"dispatches are starving. Check the stuck-flow page (if "
+                        f"any) above, or inspect "
+                        f"{base_url}/flow_runs/filter for the held run."
+                    )
+                    await _emit_audit_event(
+                        pool,
+                        "probe.prefect_queue_backlog_detected",
+                        backlog_detail,
+                        payload={
+                            "overdue_count": overdue_scheduled_count,
+                            "threshold": queue_depth_threshold,
+                            "flow_names": flow_names,
+                        },
+                    )
+                    notify_fn(
+                        title=(
+                            f"Prefect queue backlog: {overdue_scheduled_count} "
+                            f"overdue scheduled run(s)"
+                        ),
+                        detail=backlog_detail,
+                        source="brain.prefect_stuck_flow_probe",
+                        severity="warning",
+                    )
+            except Exception as exc:  # noqa: BLE001 — never abort the cycle
+                logger.warning(
+                    "[PREFECT_STUCK_FLOW] queue-backlog check failed "
+                    "(stuck-run detection unaffected): %s", exc,
+                )
     except Exception as exc:
         logger.warning(
             "[PREFECT_STUCK_FLOW] cycle raised: %s — returning unknown", exc,
@@ -503,13 +642,19 @@ async def run_prefect_stuck_flow_probe(
             f"{len(stuck_runs)} stuck "
             f"(RUNNING>={running_threshold_min}m, PENDING>={pending_threshold_min}m); "
             f"{len(crashed_runs)} auto-crashed; "
-            f"{len(crash_failed)} crash failed"
+            f"{len(crash_failed)} crash failed; "
+            f"{overdue_scheduled_count} overdue scheduled "
+            f"(queue threshold {queue_depth_threshold}, "
+            f"backlog={queue_backlog_detected})"
         ),
         "running_seen": seen,
         "stuck_count": len(stuck_runs),
         "auto_crashed_count": len(crashed_runs),
         "crash_failed_count": len(crash_failed),
         "stuck_runs": stuck_runs,
+        "overdue_scheduled_count": overdue_scheduled_count,
+        "queue_depth_threshold": queue_depth_threshold,
+        "queue_backlog_detected": queue_backlog_detected,
         "elapsed_ms": elapsed_ms,
     }
     logger.info("[PREFECT_STUCK_FLOW] %s in %dms", summary["detail"], elapsed_ms)
@@ -530,9 +675,12 @@ class PrefectStuckFlowProbe:
         "Detects Prefect content_generation flow runs stuck in state=RUNNING "
         "beyond app_settings.prefect_stuck_flow_threshold_minutes (default 30m) "
         "or PENDING beyond app_settings.prefect_stuck_flow_pending_threshold_minutes "
-        "(default 5m). Pages on every stuck run and optionally auto-crashes "
-        "when prefect_stuck_flow_auto_crash=true so subsequent dispatches "
-        "resume without operator intervention."
+        "(default 5m). Pages on every stuck run and auto-crashes by default "
+        "(prefect_stuck_flow_auto_crash, default true) so subsequent dispatches "
+        "resume without operator intervention. Also pages a DISTINCT signal "
+        "when overdue SCHEDULED runs pile up beyond "
+        "prefect_stuck_flow_queue_depth_threshold (default 3) — the "
+        "queue-backlog symptom of a held concurrency slot."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
@@ -554,6 +702,9 @@ class PrefectStuckFlowProbe:
                     "stuck_count",
                     "auto_crashed_count",
                     "crash_failed_count",
+                    "overdue_scheduled_count",
+                    "queue_depth_threshold",
+                    "queue_backlog_detected",
                     "elapsed_ms",
                     "status",
                 )
@@ -562,6 +713,7 @@ class PrefectStuckFlowProbe:
             severity=(
                 "warning"
                 if summary.get("stuck_count", 0) > 0
+                or summary.get("queue_backlog_detected", False)
                 else "info"
             ),
         )
