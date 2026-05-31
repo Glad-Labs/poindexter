@@ -368,7 +368,10 @@ async def preview_post(
 
 
 @router.get("/preview/{preview_token}", response_class=Response)
-async def preview_post_html(preview_token: str):
+async def preview_post_html(
+    preview_token: str,
+    site_config_dep = Depends(get_site_config_dependency),
+):
     """
     Render a mobile-friendly HTML preview page for a draft post.
     Accessible over Tailscale — no Next.js needed.
@@ -377,8 +380,10 @@ async def preview_post_html(preview_token: str):
     if not _re.match(r'^[a-f0-9]{32}$', preview_token):
         return Response(content="Not found", status_code=404, media_type="text/html")
 
-    # Reuse the JSON preview endpoint logic
-    post = await preview_post(preview_token)
+    # Reuse the JSON preview endpoint logic. Forward the resolved SiteConfig —
+    # calling preview_post() bare left site_config_dep as an unresolved
+    # Depends sentinel, 500-ing the posts path at the storage_public_url read.
+    post = await preview_post(preview_token, site_config_dep)
     if not post:
         return Response(content="Not found", status_code=404, media_type="text/html")
 

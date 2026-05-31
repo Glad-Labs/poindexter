@@ -477,6 +477,31 @@ class TestConvertMarkdownToHtml:
         assert 'src="https://r2/sdxl/pic.png"' in html
         assert "<em>" in html
 
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestPreviewHtmlForwardsSiteConfig:
+    """#540 regression: preview_post_html must FORWARD the resolved SiteConfig
+    to preview_post. Calling it bare left site_config_dep as an unresolved
+    Depends sentinel and 500'd the posts path at the storage_public_url read."""
+
+    async def test_preview_html_passes_site_config_to_preview_post(self):
+        import routes.cms_routes as cms
+        minimal_post = {
+            "title": "T", "content": "## H\n\nbody", "status": "draft",
+            "quality_score": 90, "excerpt": "", "featured_image_url": "",
+            "has_podcast": False, "has_video": False,
+        }
+        with patch.object(cms, "preview_post", new=AsyncMock(return_value=minimal_post)) as pp:
+            resp = await cms.preview_post_html("a" * 32)
+        # preview_post must be awaited with TWO args (token + site_config),
+        # never bare with just the token.
+        assert pp.await_count == 1
+        assert len(pp.await_args.args) == 2
+        assert pp.await_args.args[0] == "a" * 32
+        # The rendered page came back (not a 500).
+        assert resp.status_code == 200
+
     def test_lists_convert(self):
         from routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("- item one\n- item two\n- item three")
