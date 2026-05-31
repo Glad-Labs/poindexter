@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.15](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.14...v0.45.15) (2026-05-31)
+
+
+### Bug Fixes
+
+* **pipeline:** dispatcher claims rejected_retry so reject --retry regenerates ([29ef7a7](https://github.com/Glad-Labs/glad-labs-stack/commit/29ef7a7a8c5eecd1623fdb4f4e8a769f8df3d221))
+
 ## [0.45.14](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.13...v0.45.14) (2026-05-31)
 
 
