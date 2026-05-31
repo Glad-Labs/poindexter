@@ -159,7 +159,7 @@ class MediaReconciliationJob:
         video_cap = max(0, int(config.get("video_cap_per_cycle", 2)))
         alert_on_drift = bool(config.get("alert_on_drift", True))
         # Filtering moved off slug-prefix patterns onto the canonical
-        # ``posts.media_to_generate`` array (Glad-Labs/glad-labs-stack
+        # ``posts.media_to_generate`` array (Glad-Labs/poindexter
         # #482 + #195). A post's media policy is the array of media
         # types it should produce; an empty array means the post is
         # exempt from podcast/video reconciliation by design (the
