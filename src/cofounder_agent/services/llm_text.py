@@ -293,6 +293,12 @@ _ENVELOPE_PROSE_KEYS: tuple[str, ...] = (
     # both are present, since canonical_blog envelopes pair "title" + "body".
     "body",
     "content",
+    # post_body: the canonical_blog writer periodically emits
+    # {"title": ..., "post_body": "<markdown>"} — must rank above the
+    # generic "post" fragment key so the full body wins. Its absence let a
+    # ```json-fenced {"title","post_body"} envelope reach awaiting_approval
+    # and render as a raw code block in the mobile preview (2026-05-31).
+    "post_body",
     "markdown",
     "article",
     "post",

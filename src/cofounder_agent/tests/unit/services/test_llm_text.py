@@ -364,3 +364,24 @@ class TestMaybeUnwrapJson:
         # the system prompt mentions markdown explicitly.
         wrapped = '{"markdown": "# Heading\\n\\nProse."}'
         assert maybe_unwrap_json(wrapped) == "# Heading\n\nProse."
+
+    def test_unwraps_post_body_envelope(self):
+        # 2026-05-31: the canonical_blog writer emitted
+        # ``{"title": ..., "post_body": "<markdown>"}`` — "post_body" wasn't
+        # in the key list, so a ```json-fenced variant reached
+        # awaiting_approval and rendered as a raw JSON code block in the
+        # mobile preview. Both the bare and fenced shapes must unwrap.
+        bare = '{"title": "Zero Trust", "post_body": "## Section\\n\\nProse."}'
+        assert maybe_unwrap_json(bare) == "## Section\n\nProse."
+        fenced = (
+            "```json\n"
+            '{"title": "Zero Trust", "post_body": "## Section\\n\\nProse."}\n'
+            "```"
+        )
+        assert maybe_unwrap_json(fenced) == "## Section\n\nProse."
+
+    def test_post_body_key_wins_over_post_fragment(self):
+        # "post_body" is the full document; the generic "post" fragment key
+        # must not shadow it (post_body is listed first).
+        wrapped = '{"post": "teaser", "post_body": "Full markdown body."}'
+        assert maybe_unwrap_json(wrapped) == "Full markdown body."

@@ -330,9 +330,16 @@ async def preview_post(
             for dt_field in ("created_at", "updated_at"):
                 if task.get(dt_field):
                     task[dt_field] = task[dt_field].isoformat()
-            # Convert markdown content to HTML for frontend rendering
+            # Unwrap any leaked writer JSON envelope (e.g. a ```json-fenced
+            # {"title": ..., "post_body": "<markdown>"} that slipped past the
+            # generation-time unwrap) BEFORE rendering, so the preview shows
+            # the article — not a raw JSON code block — matching the published
+            # output. Then convert markdown to HTML for frontend rendering.
             if task.get("content"):
-                task["content"] = convert_markdown_to_html(task["content"])
+                from services.llm_text import maybe_unwrap_json
+                task["content"] = convert_markdown_to_html(
+                    maybe_unwrap_json(task["content"])
+                )
             task["id"] = task.get("task_id", "")  # Frontend expects 'id'
             task["is_preview"] = True
             task["is_task_preview"] = True  # Flag: this is a task, not a published post

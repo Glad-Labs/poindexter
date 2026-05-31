@@ -550,6 +550,13 @@ async def publish_post_from_task(
         or merged.get("article", "")
         or ""
     )
+    # Defense at the publish boundary: peel any leaked writer JSON envelope
+    # (e.g. a ```json-fenced {"title": ..., "post_body": "<markdown>"} that
+    # slipped past the generation-time unwrap) so the published article is
+    # markdown, never a raw envelope. Mirrors the preview-render unwrap so
+    # preview and publish produce identical output. No-op on clean prose.
+    from services.llm_text import maybe_unwrap_json
+    draft_content = maybe_unwrap_json(draft_content)
     seo_description = merged.get("seo_description", "") or task.get("seo_description", "")
     # internal tracker: strip any stray HTML (notably <img> tags) from the SEO
     # description before it ships as the post's excerpt + meta description.
