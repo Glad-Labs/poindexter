@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.3...v0.45.4) (2026-05-31)
+
+
+### Reverts
+
+* **brain:** remove duplicate findings_dispatcher; keep existing router ([#461](https://github.com/Glad-Labs/glad-labs-stack/issues/461)) ([5f61118](https://github.com/Glad-Labs/glad-labs-stack/commit/5f611182cdd1033d6dda37f0b6e020994a641045))
+
 ## [0.45.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.2...v0.45.3) (2026-05-31)
 
 
