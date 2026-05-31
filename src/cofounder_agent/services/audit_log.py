@@ -17,6 +17,7 @@ Usage:
 """
 
 import asyncio
+import functools
 from datetime import datetime
 from typing import Any, Optional
 
@@ -25,6 +26,16 @@ from asyncpg import Pool
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+# Severities that MUST NOT vanish silently (#303). A warn/critical finding's
+# audit_log row IS the signal the findings_alert_router later reads, so a
+# dropped write would silently kill the downstream alert. These escalate to
+# error-level (Sentry-visible) instead of debug/warning.
+_LOUD_SEVERITIES = frozenset({"warn", "warning", "critical"})
+
+
+def _is_loud(severity: str | None) -> bool:
+    return (severity or "").lower() in _LOUD_SEVERITIES
 
 # ---------------------------------------------------------------------------
 # Global singleton — set once via init_global_audit_logger()
@@ -63,28 +74,64 @@ def audit_log_bg(
     """
     al = _global_audit_logger
     if al is None:
-        logger.debug("audit_log_bg called before global AuditLogger init — dropping event %s", event_type)
+        _log_dropped_event("global AuditLogger not initialised", event_type, source, severity)
         return
 
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        logger.debug("audit_log_bg: no running event loop — dropping event %s", event_type)
+        _log_dropped_event("no running event loop", event_type, source, severity)
         return
 
     task = loop.create_task(
         al.log(event_type, source, details, task_id=task_id, severity=severity)
     )
-    # Swallow exceptions so a failed log write never propagates
-    task.add_done_callback(_handle_audit_task_exception)
+    # Swallow exceptions so a failed log write never propagates, but keep
+    # warn/critical drops LOUD (#303) — bind the context the callback needs.
+    task.add_done_callback(
+        functools.partial(
+            _handle_audit_task_exception,
+            event_type=event_type,
+            source=source,
+            severity=severity,
+        )
+    )
 
 
-def _handle_audit_task_exception(task: asyncio.Task) -> None:
-    """Callback to silently log (not raise) audit-write failures."""
+def _log_dropped_event(reason: str, event_type: str, source: str, severity: str) -> None:
+    """Log an audit event that could not even be scheduled.
+
+    info-severity drops stay quiet (debug); warn/critical drops escalate to
+    error so they surface in Sentry rather than vanishing (#303).
+    """
+    if _is_loud(severity):
+        logger.error(
+            "DROPPED %s finding (%s): event=%s source=%s — will NOT reach the alert pipeline",
+            severity, reason, event_type, source,
+        )
+    else:
+        logger.debug("audit_log_bg dropped event %s (%s)", event_type, reason)
+
+
+def _handle_audit_task_exception(
+    task: asyncio.Task,
+    *,
+    event_type: str = "",
+    source: str = "",
+    severity: str = "info",
+) -> None:
+    """Callback to log (not raise) audit-write failures that escaped log()."""
     if task.cancelled():
         return
     exc = task.exception()
-    if exc is not None:
+    if exc is None:
+        return
+    if _is_loud(severity):
+        logger.error(
+            "Audit background write FAILED for %s finding event=%s source=%s: %s",
+            severity, event_type, source, exc, exc_info=exc,
+        )
+    else:
         logger.warning("Audit log background write failed: %s", exc)
 
 
@@ -131,10 +178,62 @@ class AuditLogger:
                 severity,
             )
         except Exception:
-            # Never let audit logging crash the caller
-            logger.warning(
-                "Failed to write audit log event=%s source=%s task=%s",
-                event_type, source, task_id,
+            # Never let audit logging crash the caller — but never let a
+            # warn/critical finding vanish silently either (#303). The
+            # audit_log row IS the signal findings_alert_router reads, so a
+            # dropped write kills the downstream alert.
+            sev = (severity or "").lower()
+            if sev == "critical":
+                logger.error(
+                    "CRITICAL finding lost on audit write: event=%s source=%s "
+                    "task=%s — paging operator out-of-band",
+                    event_type, source, task_id,
+                    exc_info=True,
+                )
+                # The router/dispatcher chain depends on this same DB, so page
+                # via the notify chain (Telegram->Discord->alerts.log->stderr),
+                # which is independent of the audit DB that just failed.
+                await self._page_operator_out_of_band(event_type, source, details)
+            elif sev in ("warn", "warning"):
+                logger.error(
+                    "WARN finding lost on audit write: event=%s source=%s task=%s",
+                    event_type, source, task_id,
+                    exc_info=True,
+                )
+            else:
+                logger.warning(
+                    "Failed to write audit log event=%s source=%s task=%s",
+                    event_type, source, task_id,
+                    exc_info=True,
+                )
+
+    async def _page_operator_out_of_band(
+        self,
+        event_type: str,
+        source: str,
+        details: dict[str, Any] | None,
+    ) -> None:
+        """Last-resort page when a CRITICAL finding's audit row failed to persist.
+
+        Best-effort and self-contained: imported lazily (operator_notify does
+        not depend on this module, but keep the import local to avoid any boot
+        ordering surprises) and never raises.
+        """
+        try:
+            from services.integrations.operator_notify import notify_operator
+
+            title = details.get("title") if isinstance(details, dict) else None
+            message = (
+                "[audit-write-failed] A CRITICAL finding could not be persisted "
+                "and will NOT reach the alert pipeline.\n"
+                f"event={event_type} source={source}"
+                + (f"\n{title}" if title else "")
+            )
+            await notify_operator(message, critical=True)
+        except Exception:
+            logger.error(
+                "Out-of-band operator page ALSO failed for lost critical finding "
+                "event=%s source=%s", event_type, source,
                 exc_info=True,
             )
 

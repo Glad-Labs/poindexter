@@ -18,13 +18,14 @@ Covers:
 import asyncio
 import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.audit_log import (
     AuditLogger,
     _handle_audit_task_exception,
+    _is_loud,
     audit_log_bg,
     get_audit_logger,
     init_global_audit_logger,
@@ -257,3 +258,104 @@ class TestHandleAuditTaskException:
         task.exception.return_value = None
         # Should not raise
         _handle_audit_task_exception(task)
+
+
+# ---------------------------------------------------------------------------
+# #303 — warn/critical findings must NOT be silently dropped on a DB blip.
+# The audit_log row IS the signal findings_alert_router reads, so a dropped
+# write would kill the downstream alert.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLoudOnDroppedFindings:
+    def test_is_loud_severity_classification(self):
+        assert _is_loud("critical") is True
+        assert _is_loud("warn") is True
+        assert _is_loud("warning") is True
+        assert _is_loud("CRITICAL") is True
+        assert _is_loud("info") is False
+        assert _is_loud("") is False
+        assert _is_loud(None) is False
+
+    @pytest.mark.asyncio
+    async def test_critical_write_failure_pages_operator_out_of_band(self):
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
+        audit = AuditLogger(pool)
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(),
+        ) as notify:
+            await audit.log(
+                "finding", "jwt_blocklist_service",
+                {"title": "table missing"}, severity="critical",
+            )
+
+        notify.assert_awaited_once()
+        assert notify.await_args.kwargs.get("critical") is True
+
+    @pytest.mark.asyncio
+    async def test_warn_write_failure_does_not_page(self):
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
+        audit = AuditLogger(pool)
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(),
+        ) as notify:
+            await audit.log("finding", "src", {"k": "v"}, severity="warn")
+
+        notify.assert_not_called()  # warn escalates to error log, not a page
+
+    @pytest.mark.asyncio
+    async def test_info_write_failure_stays_quiet(self):
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
+        audit = AuditLogger(pool)
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(),
+        ) as notify:
+            await audit.log("evt", "src", {"k": "v"}, severity="info")
+
+        notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_out_of_band_page_failure_never_raises(self):
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
+        audit = AuditLogger(pool)
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(side_effect=RuntimeError("telegram down too")),
+        ):
+            # Both the audit write AND the out-of-band page fail — must not raise.
+            await audit.log("finding", "src", {"title": "x"}, severity="critical")
+
+    def test_audit_log_bg_loud_when_dropped_with_no_logger(self):
+        import services.audit_log as mod
+        original = mod._global_audit_logger
+        try:
+            mod._global_audit_logger = None
+            with patch.object(mod, "logger") as log:
+                audit_log_bg("finding", "src", severity="critical")
+            log.error.assert_called_once()  # critical drop is LOUD
+        finally:
+            mod._global_audit_logger = original
+
+    def test_audit_log_bg_quiet_when_info_dropped_with_no_logger(self):
+        import services.audit_log as mod
+        original = mod._global_audit_logger
+        try:
+            mod._global_audit_logger = None
+            with patch.object(mod, "logger") as log:
+                audit_log_bg("evt", "src", severity="info")
+            log.error.assert_not_called()
+            log.debug.assert_called_once()
+        finally:
+            mod._global_audit_logger = original
