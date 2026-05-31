@@ -206,6 +206,11 @@ def sanitize_generated_title(raw: str) -> str | None:
         stripped = re.sub(r"^#+\s+", "", stripped)
         stripped = stripped.strip('"').strip("'").strip()
         stripped = re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)
+        # The balanced pass above misses unclosed emphasis the writer
+        # commonly emits — e.g. "Cosine and Dot Products**" (trailing) or
+        # "**Title" (leading). Strip any remaining asterisk runs plus edge
+        # single markers so markdown never reaches a user-facing title.
+        stripped = stripped.replace("**", "").strip("*").strip()
         # Defense in depth: re-strip the QA batch suffix after list/header
         # markers are gone, in case it survived the top-of-function pass
         # (e.g. the suffix arrived on a deeper line).

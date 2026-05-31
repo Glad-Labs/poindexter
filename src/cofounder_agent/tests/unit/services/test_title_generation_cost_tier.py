@@ -201,6 +201,25 @@ def test_sanitize_strips_list_markers_and_bold_wrappers():
     assert sanitize_generated_title("1. **Bold Title Here**") == "Bold Title Here"
 
 
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # The real observed failure: an unclosed trailing ``**`` the
+        # balanced-wrapper pass didn't catch (glm-written, #874 follow-up).
+        (
+            "How Embeddings Measure Similarity: Cosine and Dot Products**",
+            "How Embeddings Measure Similarity: Cosine and Dot Products",
+        ),
+        ("**Leading Bold Title", "Leading Bold Title"),
+        ("Mid **bold** word stays clean", "Mid bold word stays clean"),
+        ("*Single Italic Wrapper*", "Single Italic Wrapper"),
+    ],
+)
+def test_sanitize_strips_stray_and_unbalanced_emphasis(raw: str, expected: str):
+    """Stray/unclosed markdown emphasis must never reach a user-facing title."""
+    assert sanitize_generated_title(raw) == expected
+
+
 def test_sanitize_strips_markdown_header_and_quotes():
     """Header ``#`` prefix and surrounding double-quotes both stripped."""
     assert (
