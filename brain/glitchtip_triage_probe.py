@@ -160,6 +160,12 @@ PROBE_INTERVAL_SECONDS = 300
 # noisy issues, which is the right behavior.
 _alerted_ids: set[str] = set()
 
+# Patterns we've already warned about being auto-bounded (#304). Without this
+# the "resolve rule X has no max_count — bounding to N" warning would repeat
+# every 5-min cycle (~1.4k lines/day) and bury real signal. Once per pattern
+# per process is enough to tell the operator to set an explicit ceiling.
+_warned_unbounded_resolve: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # Settings I/O
@@ -248,11 +254,13 @@ async def _read_rules(
         # configured default and warn so the operator sees the rule is
         # being clamped (and can set an explicit ceiling if they meant to).
         if action == "resolve" and max_count is None:
-            logger.warning(
-                "[GLITCHTIP_TRIAGE] resolve rule %r has no max_count — "
-                "bounding to %d (set max_count explicitly to override)",
-                pat, default_resolve_max_count,
-            )
+            if pat not in _warned_unbounded_resolve:
+                logger.warning(
+                    "[GLITCHTIP_TRIAGE] resolve rule %r has no max_count — "
+                    "bounding to %d (set max_count explicitly to override)",
+                    pat, default_resolve_max_count,
+                )
+                _warned_unbounded_resolve.add(pat)
             max_count = default_resolve_max_count
         cleaned.append({
             "title_pattern": pat,
