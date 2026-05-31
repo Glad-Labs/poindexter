@@ -17,6 +17,7 @@ from .auth import auth_group
 from .auto_publish import auto_publish_group
 from .costs import costs_group
 from .dev_diary import dev_diary_group
+from .doctor import doctor_group
 from .experiments import experiments_group
 from .finance import finance_group
 from .integrations import integrations_group
@@ -86,6 +87,7 @@ main.add_command(auto_publish_group, name="auto-publish")
 main.add_command(dev_diary_group, name="dev-diary")
 main.add_command(publishers_group, name="publishers")
 main.add_command(media_group, name="media")
+main.add_command(doctor_group, name="doctor")
 
 # Declarative-data-plane operator surfaces. Each module manages one of
 # the table+handler pairs (taps, retention, webhooks, qa_gates, etc.).
