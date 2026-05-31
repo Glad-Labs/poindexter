@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.13](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.12...v0.45.13) (2026-05-31)
+
+
+### Bug Fixes
+
+* **preview:** render posts-path content like the task path so preview matches published ([e2252d3](https://github.com/Glad-Labs/glad-labs-stack/commit/e2252d3125864fe5a3a811d0772e542f3121da9e))
+
 ## [0.45.12](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.11...v0.45.12) (2026-05-31)
 
 
