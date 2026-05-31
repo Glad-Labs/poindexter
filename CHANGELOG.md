@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.16](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.15...v0.45.16) (2026-05-31)
+
+
+### Bug Fixes
+
+* **seo:** pass topic to seo.generate_title so LLM title-gen stops failing ([c21968b](https://github.com/Glad-Labs/glad-labs-stack/commit/c21968b306252897ffd2a17dcd1e527490f39cb8))
+
 ## [0.45.15](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.14...v0.45.15) (2026-05-31)
 
 
