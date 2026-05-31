@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.42.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.0...v0.42.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* **brain:** create missing alert_actions table (auto-triage threw every service-down) ([0812fa9](https://github.com/Glad-Labs/glad-labs-stack/commit/0812fa925cec361a4542708510c249451e280b3c))
+
 ## [0.42.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.3...v0.42.0) (2026-05-31)
 
 
