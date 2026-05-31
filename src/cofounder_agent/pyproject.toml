@@ -25,6 +25,11 @@ uvicorn = {version = ">=0.43,<0.48", extras = ["standard"]}
 pydantic = {extras = ["email"], version = "^2.12.5"}
 pydantic-settings = "^2.0"
 
+# CLI — the `poindexter` operator CLI (poindexter/cli/) is built on click.
+# Declared explicitly because the CLI imports it directly; it was relying on
+# a transitive pull-in (surfaced while adding `poindexter doctor`, #527).
+click = "^8.1"
+
 # Database
 asyncpg = "^0.31"
 # sqlalchemy, psycopg2-binary, sqladmin removed — admin panel unused, all DB via asyncpg
