@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.9](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.8...v0.45.9) (2026-05-31)
+
+
+### Bug Fixes
+
+* **alerting:** close 5 monitoring blind-spots in the auto-triage/probe layer ([#304](https://github.com/Glad-Labs/glad-labs-stack/issues/304)) ([dd3d8bb](https://github.com/Glad-Labs/glad-labs-stack/commit/dd3d8bb60a90dc9f3556e1be4e51e1b8e309aad4))
+
 ## [0.45.8](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.7...v0.45.8) (2026-05-31)
 
 
