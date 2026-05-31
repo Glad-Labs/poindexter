@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.5...v0.45.6) (2026-05-31)
+
+
+### Bug Fixes
+
+* **scheduler:** make job failures LOUD instead of log+counter ([#302](https://github.com/Glad-Labs/glad-labs-stack/issues/302), alert audit) ([c9f34c2](https://github.com/Glad-Labs/glad-labs-stack/commit/c9f34c2d7646f848fc8a6317296d4506d8428864))
+
 ## [0.45.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.4...v0.45.5) (2026-05-31)
 
 
