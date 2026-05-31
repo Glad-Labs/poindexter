@@ -28,11 +28,6 @@ except ImportError:
     # package-qualified path.
     from brain.docker_utils import localize_url, resolve_url
 
-try:
-    from anomaly_probe import probe_anomaly  # #440 rolling-baseline probe
-except ImportError:
-    from brain.anomaly_probe import probe_anomaly
-
 logger = logging.getLogger("brain.probes")
 
 # OpenTelemetry is optional — health probes work with or without it.
@@ -118,7 +113,6 @@ PROBE_SCHEDULES = {
     "ollama_models": 300,      # 5 min
     "quality_score": 1800,     # 30 min
     "content_gen": 1800,       # 30 min
-    "anomaly": 1800,           # 30 min (#440 rolling-baseline envelope)
     "research_service": 3600,  # 1 hour
     "image_search": 3600,      # 1 hour
     "grafana_datasources": 300,  # 5 min
@@ -1206,7 +1200,6 @@ PROBES = {
     "podcast_health": probe_podcast_health,
     "newsletter_health": probe_newsletter_health,
     # Data health
-    "anomaly": probe_anomaly,
     "research_service": probe_research_service,
     "image_search": probe_image_search,
     "embeddings_freshness": probe_embeddings_freshness,

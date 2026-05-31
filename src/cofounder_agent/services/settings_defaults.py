@@ -380,26 +380,15 @@ DEFAULTS: dict[str, str] = {
     'cadence_slo_window_hours': '24',
     'cadence_slo_shortfall_ratio': '0.5',
 
-    # ----- Rolling-baseline anomaly probe (#440) -----
-    # Flags the most recent complete day when a metric sits beyond
-    # `sigma` std devs of its `baseline_days`-day envelope, in the
-    # direction that is bad for that metric. min_samples is the minimum
-    # number of NON-ZERO baseline days required before a metric is
-    # evaluated (guards a young system from false-alarming on first
-    # real activity). See brain/anomaly_probe.py.
-    'anomaly_probe_enabled': 'true',
-    'anomaly_sigma_threshold': '3.0',
-    'anomaly_baseline_days': '7',
-    'anomaly_min_samples': '5',
-
-    # ----- Findings dispatcher per-kind delivery policy (#461) -----
-    # The brain findings_dispatcher routes audit_log event_type='finding'
-    # rows per findings.<kind>.{delivery,fallback,cooldown_minutes,min_severity}.
-    # delivery in {auto_fix, discord, telegram, github_issue, log_only};
-    # Phase 1 implements discord/telegram/log_only, the rest fall through to
-    # fallback. findings.default is the catch-all so a new kind never silently
-    # pages. media_drift pinned to log_only (dominant + noisy). See
-    # brain/findings_dispatcher.py + the seed migration.
+    # ----- Findings per-kind delivery policy (#461) -----
+    # Per-kind policy for findings.<kind>.{delivery,fallback,cooldown_minutes,
+    # min_severity}. Intended to drive per-kind suppression on the EXISTING
+    # findings_alert_router (services/jobs/findings_alert_router.py) — e.g.
+    # media_drift -> log_only so it doesn't page. The parallel brain
+    # findings_dispatcher that originally read these was reverted as a
+    # duplicate of findings_alert_router; these settings are kept for the
+    # router enhancement. delivery in {auto_fix, discord, telegram,
+    # github_issue, log_only}; findings.default is the unknown-kind catch-all.
     'findings.default.delivery': 'log_only',
     'findings.default.fallback': 'log_only',
     'findings.default.cooldown_minutes': '1440',
