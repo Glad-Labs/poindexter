@@ -75,6 +75,47 @@ class TestFakeStatistics:
                     for i in result.issues)
 
 
+class TestCitationArtifactsAndPathLeaks:
+    """#532 — flag citation artifacts + leaked internal path tokens."""
+
+    def test_numeric_citation_bracket_flagged(self):
+        content = "Transformers changed everything in NLP as the benchmarks show [12]. " * 3
+        result = validate_content("AI Models", content, "AI", site_config=_SC)
+        assert any(i.category == "citation_artifact" for i in result.issues)
+
+    def test_parenthetical_citation_flagged(self):
+        content = "The attention mechanism was a turning point (Vaswani et al., 2017) for the field. " * 3
+        result = validate_content("AI Models", content, "AI", site_config=_SC)
+        assert any(i.category == "citation_artifact" for i in result.issues)
+
+    def test_author_year_citation_flagged(self):
+        content = "Scaling laws are now well understood (Kaplan, 2020) across model sizes. " * 3
+        result = validate_content("AI Models", content, "AI", site_config=_SC)
+        assert any(i.category == "citation_artifact" for i in result.issues)
+
+    def test_real_markdown_link_not_flagged_as_citation(self):
+        # A genuine Markdown link must NOT trip the numeric-citation rule.
+        content = "See the [official docs](https://example.com/guide) for setup details. " * 3
+        result = validate_content("Docker", content, "Docker", site_config=_SC)
+        assert not any(i.category == "citation_artifact" for i in result.issues)
+
+    def test_leaked_internal_repo_path_flagged(self):
+        content = "The fix lives in src/cofounder_agent/services/image_service.py for the pipeline. " * 3
+        result = validate_content("AI Pipelines", content, "AI", site_config=_SC)
+        assert any(i.category == "leaked_path_token" for i in result.issues)
+
+    def test_internal_package_name_flagged(self):
+        content = "We refactored the cofounder_agent package into smaller modules this week. " * 3
+        result = validate_content("Refactoring", content, "tech", site_config=_SC)
+        assert any(i.category == "leaked_path_token" for i in result.issues)
+
+    def test_generic_tech_path_not_flagged(self):
+        # Generic coding prose must not false-positive on the internal-token rule.
+        content = "Put your handler in app/routes/users.py and import the router. " * 3
+        result = validate_content("Flask", content, "tech", site_config=_SC)
+        assert not any(i.category == "leaked_path_token" for i in result.issues)
+
+
 class TestCompanyFactValidation:
     """Detect impossible claims about the company."""
 

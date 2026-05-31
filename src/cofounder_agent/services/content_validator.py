@@ -230,6 +230,30 @@ LEAKED_IMAGE_PROMPT_PATTERNS = [
     r"(?:^|\n)\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*",  # standalone `*A description...*`
 ]
 
+# Citation artifacts (#532) — bracketed numeric refs and parenthetical
+# academic citations the LLM emits from training on papers/Wikipedia. Real
+# sources in our content must be Markdown links, not these dangling markers.
+CITATION_ARTIFACT_PATTERNS = [
+    # Bare numeric citation bracket "[12]" NOT part of a Markdown link/ref
+    # (excludes ``[n](url)``, ``[n]:`` ref-def, and reference-style ``[t][n]``).
+    r"(?<!\])\[\d{1,3}\](?![\(\:\[])",
+    # "(Smith, 2023)" — author-comma-year.
+    r"\([A-Z][A-Za-z]+,\s+\d{4}[a-z]?\)",
+    # "(Smith et al., 2024)" / "(Smith and Jones, 2024)".
+    r"\([A-Z][A-Za-z]+\s+(?:et\s+al\.?|and\s+[A-Z][A-Za-z]+|&\s+[A-Z][A-Za-z]+),?\s+\d{4}[a-z]?\)",
+]
+
+# Leaked internal path tokens (#532) — poindexter's OWN source identifiers must
+# never appear in published niche content (AI/gaming/hardware). Their presence
+# means the writer regurgitated system/repo context. Kept to UNAMBIGUOUS
+# internal tokens so generic coding prose doesn't false-positive; dev_diary
+# (founder voice about the system) opts out via applies_to_niches.
+LEAKED_PATH_TOKEN_PATTERNS = [
+    r"\bsrc/cofounder_agent[\w./\-]*",
+    r"\bcofounder_agent[/\w.]*",
+    r"\bglad-labs-stack\b",
+]
+
 # Removed 2026-05-01: FIRST_PERSON_TITLE_PATTERNS — Matt killed the title
 # pronoun gate after it became the dominant rejection reason (65 of 91
 # programmatic-validator vetoes in a 24h window were "Title contains
@@ -1390,6 +1414,23 @@ def validate_content(
         issues.extend(_check_patterns(
             full_text, PLACEHOLDER_MARKER_PATTERNS, "critical", "unresolved_placeholder",
             "Unresolved internal-link placeholder leaked to content: '{matched}'"
+        ))
+
+    # 7b-ter. Citation artifacts (#532) — bracketed numeric / parenthetical
+    # academic citations. Warning: usually a hallucinated/dangling reference.
+    if _enabled("citation_artifact"):
+        issues.extend(_check_patterns(
+            full_text, CITATION_ARTIFACT_PATTERNS, "warning", "citation_artifact",
+            "Citation artifact (use a Markdown link or remove): '{matched}'"
+        ))
+
+    # 7b-quater. Leaked internal path tokens (#532) — poindexter source
+    # identifiers in public content. Warning: surfaces a writer/system-context
+    # leak for review without hard-blocking.
+    if _enabled("leaked_path_token"):
+        issues.extend(_check_patterns(
+            full_text, LEAKED_PATH_TOKEN_PATTERNS, "warning", "leaked_path_token",
+            "Leaked internal path/identifier token in content: '{matched}'"
         ))
 
     # 7c. Known-wrong facts -- loaded from DB (fact_overrides table).
