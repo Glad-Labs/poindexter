@@ -12,7 +12,42 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.image_provider import ImageResult
-from services.image_providers.ai_generation import AIGenerationProvider, _build_sdxl_prompt
+from services.image_providers.ai_generation import (
+    AIGenerationProvider,
+    _build_sdxl_prompt,
+    _scrub_human_terms,
+)
+
+
+@pytest.mark.unit
+class TestScrubHumanTerms:
+    """#522 — anthropomorphic terms must be stripped from the positive prompt."""
+
+    def test_strips_people_and_hands(self):
+        cleaned, had = _scrub_human_terms(
+            "a developer typing with both hands at a desk, people in background"
+        )
+        assert had is True
+        for term in ("developer", "hands", "people"):
+            assert term not in cleaned.lower()
+
+    def test_clean_prompt_unchanged(self):
+        prompt = "an isometric server rack, neon lighting, 4k, detailed"
+        cleaned, had = _scrub_human_terms(prompt)
+        assert had is False
+        assert cleaned == prompt
+
+    @pytest.mark.asyncio
+    async def test_fallback_has_no_human_or_negation_tokens(self):
+        # Ollama unreachable -> fallback path; must be human-free and must NOT
+        # carry a counterproductive "no people" token in the POSITIVE prompt.
+        with patch("services.image_providers.ai_generation.http_client", None), \
+             patch("httpx.AsyncClient", side_effect=RuntimeError("offline")):
+            out = await _build_sdxl_prompt("GPU benchmarks", "qwen", site_config=None)
+        low = out.lower()
+        assert "no people" not in low
+        for term in ("people", "person", "hands", "face"):
+            assert term not in low
 
 
 def _mk_provider(name: str, results: list[ImageResult]):

@@ -106,6 +106,38 @@ class AIGenerationProvider:
         return relabelled
 
 
+_HUMAN_TERM_RE = None
+
+
+def _scrub_human_terms(prompt: str) -> tuple[str, bool]:
+    """Strip anthropomorphic terms from an SDXL POSITIVE prompt (#522).
+
+    Faces/hands/people are the worst AI image tells, and a human named in the
+    positive prompt slips past the negative prompt (it's central to the scene
+    SDXL is asked to render). We remove those terms at build time so the
+    builder never emits a human-centric scene. Returns
+    ``(cleaned_prompt, had_human_terms)``.
+    """
+    import re
+
+    global _HUMAN_TERM_RE
+    if _HUMAN_TERM_RE is None:
+        _HUMAN_TERM_RE = re.compile(
+            r"\b(?:people|persons?|humans?|men|women|man|woman|child(?:ren)?|"
+            r"kid|boy|girl|developer|engineer|programmer|coder|worker|team|"
+            r"crowd|figures?|hands?|fingers?|faces?|portrait|selfie|posing|"
+            r"standing|sitting|walking)\b",
+            re.IGNORECASE,
+        )
+    if not _HUMAN_TERM_RE.search(prompt):
+        return prompt, False
+    cleaned = _HUMAN_TERM_RE.sub("", prompt)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+,", ",", cleaned)
+    cleaned = re.sub(r"(?:,\s*){2,}", ", ", cleaned).strip(" ,")
+    return cleaned, True
+
+
 async def _build_sdxl_prompt(
     topic: str, model: str, *, site_config: Any = None,
 ) -> str:
@@ -114,10 +146,17 @@ async def _build_sdxl_prompt(
 
     Shared shape with services/jobs/regenerate_stock_images.py — kept in
     sync so both the Job and the Provider produce similar output.
+
+    Human/anthropomorphic terms are scrubbed from the result (#522): they
+    belong in the NEGATIVE prompt, not the positive — putting "no people" in
+    the positive backfires (SDXL tokenizes "people"), and any human the LLM
+    injects gets stripped so it can't anchor the scene.
     """
+    # NOTE: exclusion lives in the negative prompt; the positive describes the
+    # scene as unpopulated objects/environment only (no "no people" token).
     fallback = (
         f"photorealistic scene related to {topic[:50]}, cinematic lighting, "
-        f"4k, detailed, no people, no text"
+        f"4k, detailed, objects and environment only, unpopulated"
     )
     try:
         import httpx
@@ -131,8 +170,10 @@ async def _build_sdxl_prompt(
             "prompt": (
                 f"Write a Stable Diffusion XL prompt for a blog featured "
                 f"image about: {topic[:80]}\n"
-                f"Requirements: photorealistic scene, cinematic lighting, "
-                f"no people, no text. 1 sentence only. Output ONLY the prompt."
+                f"Requirements: photorealistic scene, cinematic lighting. "
+                f"Depict objects, technology, landscapes, or abstract concepts "
+                f"ONLY — absolutely no people, no humans, no faces, no hands. "
+                f"1 sentence only. Output ONLY the prompt."
             ),
             "stream": False,
             "options": {"num_predict": 100, "temperature": 0.7},
@@ -149,7 +190,15 @@ async def _build_sdxl_prompt(
         resp.raise_for_status()
         generated = resp.json().get("response", "").strip().strip('"')
         if len(generated) > 20:
-            return generated
+            cleaned, had_humans = _scrub_human_terms(generated)
+            if had_humans:
+                logger.info(
+                    "[AIGeneration] scrubbed human/anthropomorphic terms from "
+                    "generated SDXL prompt (#522)"
+                )
+            # Only use the cleaned prompt if scrubbing didn't gut it.
+            if len(cleaned) >= 20:
+                return cleaned
     except Exception as e:
         logger.debug("[AIGeneration] prompt synth failed (using fallback): %s", e)
     return fallback
