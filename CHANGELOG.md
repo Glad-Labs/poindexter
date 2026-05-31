@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.0...v0.45.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* **grafana:** Cloud-fallback-fires panel miscounted local litellm calls as cloud ([#299](https://github.com/Glad-Labs/glad-labs-stack/issues/299)) ([cff370f](https://github.com/Glad-Labs/glad-labs-stack/commit/cff370fb1d000602587a0d3a1e9332d3837ac206))
+
 ## [0.45.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.44.1...v0.45.0) (2026-05-31)
 
 
