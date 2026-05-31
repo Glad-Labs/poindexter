@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.45.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.2...v0.45.3) (2026-05-31)
+
+
+### Bug Fixes
+
+* **brain:** repair glitchtip auto-resolve patterns (invalid JSON) + alertmanager 0644 ([#298](https://github.com/Glad-Labs/glad-labs-stack/issues/298)) ([7b0d38b](https://github.com/Glad-Labs/glad-labs-stack/commit/7b0d38b7bc1bbb062417fbaad52a534a64671abd))
+
 ## [0.45.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.1...v0.45.2) (2026-05-31)
 
 
