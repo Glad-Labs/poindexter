@@ -209,3 +209,11 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/utils/ -q --tb=short -p no:cacheprovider
+
+      # Brain-daemon probe/dispatcher tests. Previously omitted from the
+      # matrix, so brain regressions (e.g. the findings/anomaly probes and
+      # alert_dispatcher) shipped uncovered — closes #461-era CI gap.
+      - name: Unit tests — brain
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/brain/ -q --tb=short -p no:cacheprovider

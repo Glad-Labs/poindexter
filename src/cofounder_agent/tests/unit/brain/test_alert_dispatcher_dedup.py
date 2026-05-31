@@ -353,11 +353,15 @@ class TestThresholdEscalation:
         # /api/triage. Returns a fake 200 with a diagnosis paragraph in
         # the firefighter response shape so _request_summary_diagnosis
         # picks it up.
-        captured: dict[str, object] = {}
+        # Record EVERY triage POST. Both the fire-1 background _triage_one
+        # task and the inline 7th-fire summary call _post_triage_sync, and
+        # they can interleave on the event loop — so we assert against the
+        # full list rather than a single "last call" dict (which a clobber
+        # by the regular-triage task made flaky).
+        captured_payloads: list[dict] = []
 
         def _fake_post(url, payload, token, timeout):
-            captured["url"] = url
-            captured["payload"] = json.loads(payload.decode("utf-8"))
+            captured_payloads.append(json.loads(payload.decode("utf-8")))
             return 200, json.dumps({
                 "diagnosis": "Likely cause: docker socket unreachable.",
                 "model": "ops_triage",
@@ -385,11 +389,17 @@ class TestThresholdEscalation:
         assert "[SUMMARY" in summary_message
         assert "Likely cause: docker socket unreachable." in summary_message
 
-        # The LLM payload must include the burst metadata so the prompt
-        # can produce the requested context-rich paragraph.
-        assert "summary_request" in captured["payload"]
-        assert captured["payload"]["summary_request"] is True
-        annotations = captured["payload"]["annotations"]
+        # Exactly one POST is the summary request (summary_request=True),
+        # carrying the burst metadata so the prompt can produce the
+        # requested context-rich paragraph.
+        summary_payloads = [
+            p for p in captured_payloads if p.get("summary_request") is True
+        ]
+        assert len(summary_payloads) == 1, (
+            f"expected one summary_request POST, got {len(summary_payloads)} "
+            f"of {len(captured_payloads)} total"
+        )
+        annotations = summary_payloads[0]["annotations"]
         assert annotations["repeat_count"] >= 5
         assert annotations["duration_minutes"] >= 30
 
