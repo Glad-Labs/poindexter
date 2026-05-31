@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.45.12](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.11...v0.45.12) (2026-05-31)
+
+
+### Bug Fixes
+
+* **image:** stop the SDXL prompt-builder emitting anthropomorphic/hand prompts ([7ec1bce](https://github.com/Glad-Labs/glad-labs-stack/commit/7ec1bcef77dfbbd6c42b44dc80dc65c09c967a76))
+* **observability:** GPU-metrics-stale gate — distinguish exporter-alive from writing-fresh-data ([ab0f460](https://github.com/Glad-Labs/glad-labs-stack/commit/ab0f460af59e67f0d76e29ed60823e8a68397c9f))
+* **validator:** flag citation artifacts + leaked internal path tokens ([d85047b](https://github.com/Glad-Labs/glad-labs-stack/commit/d85047b351deabdaf66911489b4a2674f93b3593))
+
 ## [0.45.11](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.10...v0.45.11) (2026-05-31)
 
 
