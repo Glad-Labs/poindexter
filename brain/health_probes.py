@@ -473,6 +473,36 @@ async def probe_gpu_temperature(pool) -> dict:
                 "ok": True,
                 "detail": "no gpu_metrics rows yet — exporter not wired or no GPU",
             }
+        # Freshness gate (#536): a live exporter that stopped WRITING leaves a
+        # stale row with a normal temperature, so the threshold check below
+        # would falsely report healthy. Distinguish "process alive" from
+        # "writing fresh data" — a frozen feed means GPU monitoring is blind.
+        stale_row = await pool.fetchrow(
+            "SELECT value FROM app_settings "
+            "WHERE key = 'gpu_metrics_staleness_threshold_minutes'"
+        )
+        try:
+            stale_minutes = int(stale_row["value"]) if stale_row else 15
+        except (TypeError, ValueError):
+            stale_minutes = 15
+        ts = row["timestamp"]
+        if ts is not None and stale_minutes > 0:
+            from datetime import datetime, timezone
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age_min = (datetime.now(timezone.utc) - ts).total_seconds() / 60.0
+            if age_min > stale_minutes:
+                return {
+                    "ok": False,
+                    "detail": (
+                        f"GPU metrics STALE: newest gpu_metrics row is "
+                        f"{age_min:.0f}min old (> {stale_minutes}min threshold). "
+                        f"Exporter is likely alive but not writing — GPU "
+                        f"monitoring is blind. Check the nvidia metrics exporter."
+                    ),
+                    "stale_minutes": round(age_min),
+                    "threshold_minutes": stale_minutes,
+                }
         threshold_row = await pool.fetchrow(
             "SELECT value FROM app_settings "
             "WHERE key = 'gpu_temperature_high_threshold_c'"

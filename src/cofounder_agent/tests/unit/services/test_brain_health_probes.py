@@ -353,6 +353,52 @@ class TestConditionalSuppressionAndCrash:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestGpuTemperatureProbe:
+    """#536 — the probe must distinguish 'exporter alive' from 'writing fresh
+    data'. A stale newest row (frozen feed) with a normal temp must fail."""
+
+    @staticmethod
+    def _row(temp, age_min):
+        from datetime import datetime, timezone, timedelta
+        return {
+            "temperature": temp,
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=age_min),
+        }
+
+    async def test_stale_feed_fails_even_with_normal_temp(self):
+        p = _make_pool()
+        # 1) newest gpu row: cool temp but 60min old; 2) staleness setting=15
+        p.fetchrow = AsyncMock(side_effect=[self._row(45, 60), {"value": "15"}])
+        r = await hp.probe_gpu_temperature(p)
+        assert r["ok"] is False
+        assert "STALE" in r["detail"]
+        assert r["stale_minutes"] >= 15
+
+    async def test_fresh_normal_temp_is_ok(self):
+        p = _make_pool()
+        # fresh row + staleness setting + threshold setting
+        p.fetchrow = AsyncMock(side_effect=[self._row(45, 1), {"value": "15"}, {"value": "85"}])
+        r = await hp.probe_gpu_temperature(p)
+        assert r["ok"] is True
+        assert r["temperature_c"] == 45
+
+    async def test_fresh_hot_temp_fails_on_threshold(self):
+        p = _make_pool()
+        p.fetchrow = AsyncMock(side_effect=[self._row(92, 1), {"value": "15"}, {"value": "85"}])
+        r = await hp.probe_gpu_temperature(p)
+        assert r["ok"] is False
+        assert "exceeds threshold" in r["detail"]
+
+    async def test_no_rows_is_ok(self):
+        p = _make_pool()
+        p.fetchrow = AsyncMock(side_effect=[None])
+        r = await hp.probe_gpu_temperature(p)
+        assert r["ok"] is True
+        assert "no gpu_metrics" in r["detail"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestProbeTopicQuality:
     """probe_topic_quality attributes rejections to actual drivers.
 
