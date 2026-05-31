@@ -14,8 +14,9 @@ Covers:
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncpg
 import pytest
 
 from services.jwt_blocklist_service import JWTBlocklistService, jwt_blocklist
@@ -181,6 +182,79 @@ class TestCleanup:
 
         result = await svc.cleanup()
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Missing table = structural defect must be LOUD (#305), not silent fail-open
+# ---------------------------------------------------------------------------
+
+
+def _undefined_table_error():
+    return asyncpg.exceptions.UndefinedTableError(
+        'relation "jwt_blocklist" does not exist'
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestMissingTableIsLoud:
+    """A missing table is a permanent defect (revocation dead), distinct from
+    a transient DB blip. Runtime stays fail-open, but a critical finding must
+    be emitted so it surfaces in the alert pipeline."""
+
+    async def test_is_blocked_emits_critical_finding_on_missing_table(self):
+        pool, conn = _make_mock_pool()
+        conn.fetchval.side_effect = _undefined_table_error()
+        svc = JWTBlocklistService()
+        await svc.initialize(pool)
+
+        with patch("utils.findings.emit_finding") as emit:
+            result = await svc.is_blocked("jti-x")
+
+        assert result is False  # still fail-open
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["severity"] == "critical"
+        assert emit.call_args.kwargs["kind"] == "missing_table"
+        assert emit.call_args.kwargs["dedup_key"] == "jwt-blocklist:missing-table"
+
+    async def test_add_token_emits_critical_finding_on_missing_table(self):
+        pool, conn = _make_mock_pool()
+        conn.execute.side_effect = _undefined_table_error()
+        svc = JWTBlocklistService()
+        await svc.initialize(pool)
+
+        with patch("utils.findings.emit_finding") as emit:
+            await svc.add_token("jti-x", "user-1", _future_dt())  # must not raise
+
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["severity"] == "critical"
+
+    async def test_cleanup_emits_critical_finding_on_missing_table(self):
+        pool, conn = _make_mock_pool()
+        conn.execute.side_effect = _undefined_table_error()
+        svc = JWTBlocklistService()
+        await svc.initialize(pool)
+
+        with patch("utils.findings.emit_finding") as emit:
+            result = await svc.cleanup()
+
+        assert result == 0
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["severity"] == "critical"
+
+    async def test_transient_db_error_does_NOT_emit_finding(self):
+        """A generic (transient) error stays quiet fail-open — only the
+        structural missing-table case escalates."""
+        pool, conn = _make_mock_pool()
+        conn.fetchval.side_effect = Exception("connection reset")
+        svc = JWTBlocklistService()
+        await svc.initialize(pool)
+
+        with patch("utils.findings.emit_finding") as emit:
+            result = await svc.is_blocked("jti-x")
+
+        assert result is False
+        emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
