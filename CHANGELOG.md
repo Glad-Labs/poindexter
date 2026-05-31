@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.43.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.2...v0.43.0) (2026-05-31)
+
+
+### Features
+
+* **doctor:** add `poindexter doctor` health check-graph v1 ([#527](https://github.com/Glad-Labs/glad-labs-stack/issues/527)) ([7d7b82b](https://github.com/Glad-Labs/glad-labs-stack/commit/7d7b82b5edaa4a42a3cd0c9fe0c90dbe6e791b3d))
+
 ## [0.42.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.1...v0.42.2) (2026-05-31)
 
 
