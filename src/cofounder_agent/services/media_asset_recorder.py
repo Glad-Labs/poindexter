@@ -96,7 +96,7 @@ async def record_media_asset(
             ``post_id`` is also supplied — so the row remains linkable
             after the post is renamed/regenerated. Pre-2026-05-20 rows
             have ``task_id=NULL`` for this column and are orphans
-            (see Glad-Labs/glad-labs-stack#193).
+            (see Glad-Labs/poindexter#193).
         asset_type: One of ``video_long``, ``video_short``, ``podcast``,
             ``featured_image``, ``inline_image``. Stored verbatim in
             ``media_assets.type``.
