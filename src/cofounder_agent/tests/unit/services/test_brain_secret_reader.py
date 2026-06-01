@@ -123,13 +123,19 @@ class TestReadAppSetting:
     async def test_encrypted_row_without_key_env_returns_default(
         self, monkeypatch, caplog,
     ):
-        """No POINDEXTER_SECRET_KEY → can't decrypt → default + warning.
+        """No POINDEXTER_SECRET_KEY anywhere → can't decrypt → default + warning.
 
         This is the operator-misconfig case: the brain container shipped
         without the master key in env. We log loudly so it shows up in
         the brain log instead of a silent fallback.
+
+        Stub the bootstrap.toml fallback to "" so this pins the original
+        "key available nowhere" contract — otherwise the fallback (added
+        for the #243 self-heal) would recover the operator's real key
+        from ~/.poindexter/bootstrap.toml on a dev host and decrypt.
         """
         monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        monkeypatch.setattr(sr, "_bootstrap_secret_key", lambda: "", raising=False)
         pool = _pool(fetchrow_return=_row("enc:v1:ABC=", True))
         with caplog.at_level("WARNING"):
             result = await sr.read_app_setting(
@@ -178,6 +184,61 @@ class TestReadAppSetting:
         )
         result = await sr.read_app_setting(pool, "k", default="def")
         assert result == "def"
+
+    async def test_encrypted_row_uses_bootstrap_key_when_env_unset(
+        self, monkeypatch,
+    ):
+        """Self-heal path (Glad-Labs/poindexter#243): env var missing but
+        bootstrap.toml has the key → decrypt proceeds using that key.
+
+        Reproduces the original failure — a long-lived brain/MCP process
+        launched before ``POINDEXTER_SECRET_KEY`` was exported. Instead of
+        bricking every encrypted read until restart, the daemon recovers
+        the key from ~/.poindexter/bootstrap.toml.
+        """
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        monkeypatch.setattr(
+            sr, "_bootstrap_secret_key", lambda: "boot-master-key",
+            raising=False,
+        )
+        pool = _pool(
+            fetchrow_return=_row("enc:v1:ZmFrZQ==", True),
+            fetchval_return="decrypted-via-bootstrap",
+        )
+        result = await sr.read_app_setting(pool, "telegram_bot_token")
+        assert result == "decrypted-via-bootstrap"
+        # The bootstrap key — not the (unset) env var — was handed to
+        # pgp_sym_decrypt.
+        assert pool.fetchval.await_count == 1
+        _sql, *args = pool.fetchval.await_args.args
+        assert args[0] == "ZmFrZQ=="
+        assert args[1] == "boot-master-key"
+
+    async def test_bootstrap_secret_key_reads_value_from_toml(
+        self, monkeypatch, tmp_path,
+    ):
+        """``_bootstrap_secret_key`` reads ``poindexter_secret_key`` from
+        bootstrap.toml via the shared ``brain.bootstrap`` reader (no second
+        TOML parser — #342 spirit)."""
+        from brain import bootstrap as bs
+
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        boot = tmp_path / "bootstrap.toml"
+        boot.write_text(
+            'poindexter_secret_key = "boot-master-key"\n', encoding="utf-8",
+        )
+        monkeypatch.setattr(bs, "BOOTSTRAP_FILE", boot)
+        assert sr._bootstrap_secret_key() == "boot-master-key"  # noqa: SLF001
+
+    async def test_bootstrap_secret_key_absent_file_returns_empty(
+        self, monkeypatch, tmp_path,
+    ):
+        """No bootstrap.toml → "" (caller keeps its default degradation)."""
+        from brain import bootstrap as bs
+
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        monkeypatch.setattr(bs, "BOOTSTRAP_FILE", tmp_path / "absent.toml")
+        assert sr._bootstrap_secret_key() == ""  # noqa: SLF001
 
 
 @pytest.mark.unit

@@ -115,7 +115,14 @@ async def _get_oauth() -> GladlabsMcpOAuthClient:
     Subsequent calls return the cached client.
     """
     global _oauth
-    if _oauth is None:
+    # Rebuild when there's no client yet OR the cached one came up without
+    # usable credentials — mirrors the public MCP server's guard. A first
+    # call landing before ``POINDEXTER_SECRET_KEY`` is in this process's env
+    # would otherwise pin a creds-less client for the whole process lifetime;
+    # rebuilding lets a later call self-heal once creds/env are good
+    # (Glad-Labs/poindexter#244, #243 follow-up). ``using_oauth`` is True
+    # only when both creds are non-empty.
+    if _oauth is None or not _oauth.using_oauth:
         pool = await _get_pool()
         _oauth = await oauth_client_from_pool(
             pool,

@@ -545,6 +545,54 @@ Restart Claude Desktop after editing.
 
 ---
 
+## `check_health` shows `API: McpOAuthClient: client_id/client_secret are required` + a FALSE `Worker: offline`
+
+**Symptom.** `mcp__poindexter__check_health` reports
+`API: McpOAuthClient: client_id/client_secret are required` (or
+`oauth init failed: ...`) and `Worker: offline`, but the worker container
+is up and the OAuth client _is_ provisioned — `app_settings.mcp_oauth_client_id`
+/ `mcp_oauth_client_secret` exist, encrypted (`enc:v1:`), and decrypt +
+mint a valid JWT when you test them by hand.
+
+**Root cause.** Not missing creds — a **timing race**. The MCP/brain
+processes decrypt those secret rows with `POINDEXTER_SECRET_KEY`. If the
+process made its first worker-API call _before_ its env had a usable
+`POINDEXTER_SECRET_KEY`, the credential read decrypted to `""`, and the
+OAuth client was built — and cached — with empty creds. The cache was
+keyed on `if _oauth is None`, so that creds-less client was pinned for the
+whole process lifetime; every later call failed with
+`client_id/client_secret are required` even after the key was available.
+A restart fixed it, which made it look like a stale-cache / down-worker
+problem (see also the `reference_mcp_oauth_stale_cache` operator note).
+
+**Fix (self-healing as of Glad-Labs/poindexter#243 follow-up).** Two
+defense-in-depth changes make this recover on its own — no restart:
+
+1. `mcp-server/server.py` + `mcp-server-gladlabs/server.py` rebuild the
+   OAuth client when the cached one isn't usable
+   (`if _oauth is None or not _oauth.using_oauth`), so a transiently
+   creds-less client self-heals on a later call once the env/creds are good.
+2. The secret readers (`mcp-server/oauth_client.py`,
+   `mcp-server-gladlabs/oauth_client.py`, `brain/secret_reader.py`) fall
+   back to reading `poindexter_secret_key` from `~/.poindexter/bootstrap.toml`
+   (plaintext, where `poindexter setup` writes it) when
+   `POINDEXTER_SECRET_KEY` is absent from the launch env — the same
+   fallback the CLI already uses.
+
+`check_health` also now reports `Worker: unknown (auth: ...)` instead of a
+flat `Worker: offline` when the probe fails for an auth reason, so a
+transient credential issue no longer masquerades as a downed worker.
+
+If it recurs without self-healing, confirm the key is present and plaintext:
+
+```bash
+python -c "import tomllib,os;d=tomllib.load(open(os.path.expanduser('~/.poindexter/bootstrap.toml'),'rb'));print('present' if d.get('poindexter_secret_key') else 'MISSING')"
+```
+
+then restart the affected MCP/brain process to force a clean rebuild.
+
+---
+
 ## OpenClaw watchdog can't restart the gateway — "port 18789 is still busy before restart" (false positive)
 
 **Symptom.** `scripts/openclaw-watchdog.ps1` (Scheduled Task, every 2 min) keeps firing but never restores the gateway. `~/.openclaw/logs/watchdog.log` fills with `Gateway recovery FAILED after 3 attempts`. Running `openclaw gateway start` (or `restart`) by hand prints:

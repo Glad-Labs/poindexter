@@ -24,6 +24,7 @@ import base64
 import json
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -71,12 +72,41 @@ class _CachedToken:
     refresh_at: float
 
 
+def _bootstrap_secret_key() -> str:
+    """Recover ``POINDEXTER_SECRET_KEY`` from ~/.poindexter/bootstrap.toml.
+
+    Identical to the public mirror's helper (mcp-server/oauth_client.py) —
+    a long-lived MCP process launched before its env has the secret key
+    exported recovers it from bootstrap.toml instead of bricking every
+    encrypted read until restart (Glad-Labs/poindexter#243). Vendored
+    here because this mirror runs in its own ``uv`` venv. Stdlib-only,
+    never raises: returns "" when the file or key is absent/unparseable.
+    """
+    try:
+        if sys.version_info >= (3, 11):
+            import tomllib as _toml
+        else:  # pragma: no cover — tomli only on 3.10
+            import tomli as _toml  # type: ignore[import-not-found]
+    except Exception:  # noqa: BLE001
+        return ""
+    path = os.path.expanduser("~/.poindexter/bootstrap.toml")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            data = _toml.load(f)
+    except Exception:  # noqa: BLE001
+        return ""
+    return str(data.get("poindexter_secret_key") or "").strip()
+
+
 async def read_app_setting(pool, key: str, default: str = "") -> str:
     """Fetch one app_settings value, decrypting ``is_secret=true`` rows.
 
     Same shape as the brain / public-MCP helper: pgcrypto's
-    ``pgp_sym_decrypt`` against ``POINDEXTER_SECRET_KEY``. Returns
-    ``default`` on missing row, blank value, or decryption failure.
+    ``pgp_sym_decrypt`` against ``POINDEXTER_SECRET_KEY`` (env var, with a
+    ~/.poindexter/bootstrap.toml fallback — see ``_bootstrap_secret_key``).
+    Returns ``default`` on missing row, blank value, or decryption failure.
     """
     row = await pool.fetchrow(
         "SELECT value, is_secret FROM app_settings WHERE key = $1", key,
@@ -88,10 +118,11 @@ async def read_app_setting(pool, key: str, default: str = "") -> str:
         return default
     if not row["is_secret"] or not val.startswith("enc:v1:"):
         return val
-    pkey = os.getenv("POINDEXTER_SECRET_KEY")
+    pkey = os.getenv("POINDEXTER_SECRET_KEY") or _bootstrap_secret_key()
     if not pkey:
         logger.warning(
-            "[MCP.GLADLABS.OAUTH] POINDEXTER_SECRET_KEY unset — cannot decrypt %s",
+            "[MCP.GLADLABS.OAUTH] POINDEXTER_SECRET_KEY unset (env + "
+            "bootstrap.toml) — cannot decrypt %s",
             key,
         )
         return default

@@ -105,6 +105,73 @@ def _import_gladlabs_oauth():
     return module
 
 
+def _import_server(server_dir, mod_name):
+    """Import an MCP ``server.py`` fresh for the ``_get_oauth`` rebuild tests.
+
+    The MCP servers normally run in their own ``uv`` venvs; importing
+    ``server.py`` here pulls in FastMCP + (for the public server) the
+    worker ``services`` boot block. Both are available in the main poetry
+    env, but if that ever stops being true in some CI shape we ``skip``
+    rather than hard-fail — the same posture the gladlabs ``skipif`` takes.
+
+    ``server.py`` does a plain ``from oauth_client import ...`` against the
+    sibling mirror, so we drop any stale ``oauth_client`` from sys.modules
+    and put ``server_dir`` first on the path to guarantee the right mirror
+    resolves (the two mirrors are both literally ``oauth_client.py``).
+    """
+    import importlib.util
+
+    if mod_name in sys.modules:
+        return sys.modules[mod_name]
+    sys.modules.pop("oauth_client", None)
+    sys.path.insert(0, str(server_dir))
+    spec = importlib.util.spec_from_file_location(
+        mod_name, server_dir / "server.py",
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # pragma: no cover — env-dependent
+        sys.modules.pop(mod_name, None)
+        pytest.skip(f"{server_dir.name}/server.py not importable here: {exc!r}")
+    finally:
+        # server.py bound ``oauth_client_from_pool`` etc. into its own
+        # namespace at import, so the transient bare ``oauth_client`` entry
+        # is no longer needed — drop it so it can't leak the wrong mirror
+        # into another test in the same process.
+        sys.modules.pop("oauth_client", None)
+    return module
+
+
+def _write_bootstrap_home(monkeypatch, tmp_path, secret_key):
+    """Point ``~`` at ``tmp_path`` and seed ~/.poindexter/bootstrap.toml.
+
+    The vendored ``_bootstrap_secret_key`` in each MCP mirror resolves the
+    file via ``os.path.expanduser("~/...")``. Overriding both ``HOME`` and
+    ``USERPROFILE`` covers posix (CI) and Windows (Matt's host) — ntpath's
+    expanduser prefers ``USERPROFILE``. Pass ``secret_key=None`` to create
+    an empty home (no bootstrap.toml at all).
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    if secret_key is not None:
+        pdx = tmp_path / ".poindexter"
+        pdx.mkdir(parents=True, exist_ok=True)
+        (pdx / "bootstrap.toml").write_text(
+            f'poindexter_secret_key = "{secret_key}"\n', encoding="utf-8",
+        )
+
+
+class _FakeOAuth:
+    """Minimal stand-in carrying just the ``using_oauth`` flag that the
+    server's ``_get_oauth`` rebuild guard checks."""
+
+    def __init__(self, using_oauth):
+        self.using_oauth = using_oauth
+
+
 # ---------------------------------------------------------------------------
 # mcp-server (public) helper
 # ---------------------------------------------------------------------------
@@ -263,6 +330,146 @@ class TestMcpPoolConstructor:
         await client.aclose()
 
 
+class TestMcpReadAppSetting:
+    """``read_app_setting`` secret-key resolution (Glad-Labs/poindexter#243
+    self-heal): env var first, then ~/.poindexter/bootstrap.toml."""
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_fallback_decrypts_when_env_unset(
+        self, monkeypatch, tmp_path,
+    ):
+        """Env var missing but bootstrap.toml has the key → decrypt using it.
+
+        Reproduces the original brick: the MCP process was launched before
+        ``POINDEXTER_SECRET_KEY`` was in its env, so the encrypted creds
+        read returned "" and the server cached a creds-less OAuth client.
+        """
+        oac = _import_mcp_oauth()
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        _write_bootstrap_home(monkeypatch, tmp_path, "boot-key")
+
+        rows = {"mcp_oauth_client_secret": {"value": "enc:v1:ZmFrZQ==", "is_secret": True}}
+
+        async def _fetchrow(_sql, key):
+            return rows.get(key)
+
+        async def _fetchval(*_a, **_k):
+            return "decrypted-secret"
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        pool.fetchval = AsyncMock(side_effect=_fetchval)
+
+        result = await oac.read_app_setting(pool, "mcp_oauth_client_secret")
+        assert result == "decrypted-secret"
+        # The bootstrap key — not the (unset) env var — drove the decrypt.
+        _sql, *args = pool.fetchval.await_args.args
+        assert args[0] == "ZmFrZQ=="
+        assert args[1] == "boot-key"
+
+    @pytest.mark.asyncio
+    async def test_no_key_anywhere_returns_default_no_decrypt(
+        self, monkeypatch, tmp_path,
+    ):
+        """Env unset AND no bootstrap.toml → default, no decrypt attempt."""
+        oac = _import_mcp_oauth()
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        _write_bootstrap_home(monkeypatch, tmp_path, None)
+
+        async def _fetchrow(_sql, key):
+            return {"value": "enc:v1:ABC=", "is_secret": True}
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        pool.fetchval = AsyncMock()
+
+        result = await oac.read_app_setting(
+            pool, "mcp_oauth_client_secret", default="fallback",
+        )
+        assert result == "fallback"
+        pool.fetchval.assert_not_awaited()
+
+
+class TestMcpGetOauthRebuild:
+    """``server._get_oauth`` must not pin a creds-less client for the
+    process lifetime (Glad-Labs/poindexter#243 follow-up). A transiently
+    unusable client is rebuilt on the next call so it self-heals once the
+    env/creds are good — no manual restart."""
+
+    @pytest.mark.asyncio
+    async def test_unusable_cached_client_is_rebuilt(self, monkeypatch):
+        srv = _import_server(_MCP_DIR, "mcp_server_under_test")
+        rebuilt = _FakeOAuth(using_oauth=True)
+        calls = {"n": 0}
+
+        async def _fake_from_pool(*_a, **_k):
+            calls["n"] += 1
+            return rebuilt
+
+        async def _fake_pool():
+            return MagicMock()
+
+        monkeypatch.setattr(srv, "oauth_client_from_pool", _fake_from_pool)
+        monkeypatch.setattr(srv, "_get_pool", _fake_pool)
+        # Cache holds a client that came up without usable creds earlier.
+        monkeypatch.setattr(srv, "_oauth", _FakeOAuth(using_oauth=False))
+
+        got = await srv._get_oauth()  # noqa: SLF001
+        assert got is rebuilt
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_usable_cached_client_is_reused(self, monkeypatch):
+        srv = _import_server(_MCP_DIR, "mcp_server_under_test")
+
+        async def _boom(*_a, **_k):
+            raise AssertionError("should not rebuild a usable cached client")
+
+        monkeypatch.setattr(srv, "oauth_client_from_pool", _boom)
+        cached = _FakeOAuth(using_oauth=True)
+        monkeypatch.setattr(srv, "_oauth", cached)
+
+        got = await srv._get_oauth()  # noqa: SLF001
+        assert got is cached
+
+
+class TestClassifyWorkerHealth:
+    """check_health must not report a FALSE ``Worker: offline`` when the
+    authenticated probe fails for an auth reason (Glad-Labs/poindexter#243)
+    — a credential/401 error means "couldn't ask", not "worker is down"."""
+
+    def test_oauth_error_is_unknown_auth_not_offline(self):
+        srv = _import_server(_MCP_DIR, "mcp_server_under_test")
+        line = srv._classify_worker_health(  # noqa: SLF001
+            {"error": "oauth init failed: RuntimeError: client_id/client_secret are required"},
+        )
+        assert "unknown (auth" in line
+        assert "offline" not in line
+
+    def test_http_401_is_unknown_auth(self):
+        srv = _import_server(_MCP_DIR, "mcp_server_under_test")
+        line = srv._classify_worker_health(  # noqa: SLF001
+            {"error": "HTTP 401", "detail": "invalid token"},
+        )
+        assert "unknown (auth" in line
+
+    def test_connection_error_is_offline(self):
+        srv = _import_server(_MCP_DIR, "mcp_server_under_test")
+        line = srv._classify_worker_health(  # noqa: SLF001
+            {"error": "All connection attempts failed"},
+        )
+        assert line.startswith("offline")
+        assert "unknown" not in line
+
+    def test_healthy_reports_running_and_processed(self):
+        srv = _import_server(_MCP_DIR, "mcp_server_under_test")
+        line = srv._classify_worker_health(  # noqa: SLF001
+            {"components": {"task_executor": {"running": True, "total_processed": 42}}},
+        )
+        assert "running=True" in line
+        assert "processed=42" in line
+
+
 # ---------------------------------------------------------------------------
 # mcp-server-gladlabs (operator-only) helper
 #
@@ -419,6 +626,106 @@ class TestGladlabsPoolConstructor:
         with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await client.get_token()
         await client.aclose()
+
+
+@pytestmark_gladlabs
+class TestGladlabsReadAppSetting:
+    """Same #243 self-heal bootstrap fallback as the public mirror — the
+    two ``read_app_setting`` copies must stay behaviourally identical."""
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_fallback_decrypts_when_env_unset(
+        self, monkeypatch, tmp_path,
+    ):
+        oac = _import_gladlabs_oauth()
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        _write_bootstrap_home(monkeypatch, tmp_path, "boot-key")
+
+        rows = {
+            "mcp_gladlabs_oauth_client_secret": {
+                "value": "enc:v1:ZmFrZQ==", "is_secret": True,
+            },
+        }
+
+        async def _fetchrow(_sql, key):
+            return rows.get(key)
+
+        async def _fetchval(*_a, **_k):
+            return "decrypted-secret"
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        pool.fetchval = AsyncMock(side_effect=_fetchval)
+
+        result = await oac.read_app_setting(
+            pool, "mcp_gladlabs_oauth_client_secret",
+        )
+        assert result == "decrypted-secret"
+        _sql, *args = pool.fetchval.await_args.args
+        assert args[0] == "ZmFrZQ=="
+        assert args[1] == "boot-key"
+
+    @pytest.mark.asyncio
+    async def test_no_key_anywhere_returns_default_no_decrypt(
+        self, monkeypatch, tmp_path,
+    ):
+        oac = _import_gladlabs_oauth()
+        monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        _write_bootstrap_home(monkeypatch, tmp_path, None)
+
+        async def _fetchrow(_sql, key):
+            return {"value": "enc:v1:ABC=", "is_secret": True}
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        pool.fetchval = AsyncMock()
+
+        result = await oac.read_app_setting(
+            pool, "mcp_gladlabs_oauth_client_secret", default="fallback",
+        )
+        assert result == "fallback"
+        pool.fetchval.assert_not_awaited()
+
+
+@pytestmark_gladlabs
+class TestGladlabsGetOauthRebuild:
+    """``server._get_oauth`` rebuild guard — mirror of the public server
+    test. A creds-less cached client self-heals on the next call."""
+
+    @pytest.mark.asyncio
+    async def test_unusable_cached_client_is_rebuilt(self, monkeypatch):
+        srv = _import_server(_MCP_GLADLABS_DIR, "gladlabs_server_under_test")
+        rebuilt = _FakeOAuth(using_oauth=True)
+        calls = {"n": 0}
+
+        async def _fake_from_pool(*_a, **_k):
+            calls["n"] += 1
+            return rebuilt
+
+        async def _fake_pool():
+            return MagicMock()
+
+        monkeypatch.setattr(srv, "oauth_client_from_pool", _fake_from_pool)
+        monkeypatch.setattr(srv, "_get_pool", _fake_pool)
+        monkeypatch.setattr(srv, "_oauth", _FakeOAuth(using_oauth=False))
+
+        got = await srv._get_oauth()  # noqa: SLF001
+        assert got is rebuilt
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_usable_cached_client_is_reused(self, monkeypatch):
+        srv = _import_server(_MCP_GLADLABS_DIR, "gladlabs_server_under_test")
+
+        async def _boom(*_a, **_k):
+            raise AssertionError("should not rebuild a usable cached client")
+
+        monkeypatch.setattr(srv, "oauth_client_from_pool", _boom)
+        cached = _FakeOAuth(using_oauth=True)
+        monkeypatch.setattr(srv, "_oauth", cached)
+
+        got = await srv._get_oauth()  # noqa: SLF001
+        assert got is cached
 
 
 # ---------------------------------------------------------------------------

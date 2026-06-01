@@ -54,6 +54,35 @@ logger = logging.getLogger("brain.secrets")
 _ENC_PREFIX = "enc:v1:"
 
 
+def _bootstrap_secret_key() -> str:
+    """Recover ``POINDEXTER_SECRET_KEY`` from ~/.poindexter/bootstrap.toml.
+
+    The brain daemon normally gets the key exported into its container
+    env, but a process that comes up before that export (or a bind-mounted
+    dev run) starts without it — which silently breaks every encrypted
+    read until restart and surfaced as the false ``Worker: offline`` in
+    Glad-Labs/poindexter#243. bootstrap.toml stores the key in plaintext
+    (where ``poindexter setup`` writes it), so we recover it from there.
+
+    Delegates to ``brain.bootstrap.get_bootstrap_value`` rather than
+    re-implementing a TOML reader — the brain already ships that
+    stdlib-only module, and a second copy is exactly the duplication this
+    module was created to eliminate (#342). Package-qualified import is
+    tried first so tests that monkeypatch ``brain.bootstrap.BOOTSTRAP_FILE``
+    hit the same module object; the flat ``bootstrap`` import is the
+    container-runtime fallback (brain/ on sys.path). Never raises —
+    returns "" on any failure so the caller keeps its default degradation.
+    """
+    try:
+        try:
+            from brain.bootstrap import get_bootstrap_value
+        except ImportError:  # pragma: no cover — flat import (container runtime)
+            from bootstrap import get_bootstrap_value
+        return get_bootstrap_value("poindexter_secret_key", "")
+    except Exception:  # noqa: BLE001 — best-effort, never raise
+        return ""
+
+
 async def read_app_setting(pool, key: str, default: str = "") -> str:
     """Fetch one ``app_settings`` value, decrypting if it's marked secret.
 
@@ -64,7 +93,8 @@ async def read_app_setting(pool, key: str, default: str = "") -> str:
         key: The ``app_settings.key`` to look up.
         default: Returned when the row is missing, the value is empty,
             decryption fails, or ``POINDEXTER_SECRET_KEY`` is unset for
-            an encrypted row.
+            an encrypted row (env var, falling back to
+            ~/.poindexter/bootstrap.toml — see ``_bootstrap_secret_key``).
 
     Returns:
         The decrypted plaintext value (for ``is_secret=true``,
@@ -96,10 +126,11 @@ async def read_app_setting(pool, key: str, default: str = "") -> str:
     if not row["is_secret"] or not val.startswith(_ENC_PREFIX):
         return val
 
-    pkey = os.getenv("POINDEXTER_SECRET_KEY")
+    pkey = os.getenv("POINDEXTER_SECRET_KEY") or _bootstrap_secret_key()
     if not pkey:
         logger.warning(
-            "[BRAIN.SECRETS] POINDEXTER_SECRET_KEY unset — cannot decrypt %s",
+            "[BRAIN.SECRETS] POINDEXTER_SECRET_KEY unset (env + bootstrap.toml) "
+            "— cannot decrypt %s",
             key,
         )
         return default

@@ -216,7 +216,17 @@ async def _get_oauth() -> McpOAuthClient:
     credential read is one extra DB round-trip on first call.
     """
     global _oauth
-    if _oauth is None:
+    # Rebuild when there's no client yet OR the cached one came up without
+    # usable credentials. The first ``_get_oauth`` call can land before this
+    # process's env has a usable ``POINDEXTER_SECRET_KEY`` (e.g. the MCP
+    # process was launched before bootstrap exported it), so the credential
+    # read decrypts to "" and we'd otherwise cache a creds-less client for
+    # the whole process lifetime — every worker-API call then fails with
+    # "client_id/client_secret are required" and check_health shows a FALSE
+    # "Worker: offline" until a manual restart (Glad-Labs/poindexter#243
+    # follow-up). Rebuilding lets a later call self-heal once creds/env are
+    # good. ``using_oauth`` is True only when both creds are non-empty.
+    if _oauth is None or not _oauth.using_oauth:
         pool = await _get_pool()
         _oauth = await oauth_client_from_pool(
             pool,
@@ -430,6 +440,37 @@ async def get_post_count() -> str:
 # MONITORING TOOLS
 # ============================================================================
 
+def _classify_worker_health(result: dict) -> str:
+    """Render the ``Worker:`` status fragment for :func:`check_health`.
+
+    A failed *authenticated* probe must NOT masquerade as a downed worker.
+    Before this, any ``{"error": ...}`` from ``_api`` (including an OAuth
+    credential/401 error — exactly what happens when the MCP process came
+    up before ``POINDEXTER_SECRET_KEY`` was usable) printed a flat
+    ``Worker: offline``, which read as "the worker is down" when the real
+    story was "we couldn't authenticate to ask" (Glad-Labs/poindexter#243).
+
+    Now we distinguish:
+      - auth / credential errors → ``unknown (auth: ...)`` (don't ask is not down)
+      - any other error          → ``offline (...)``
+      - success                  → ``running=..., processed=...``
+    """
+    if "error" in result:
+        err = str(result.get("error", ""))
+        low = err.lower()
+        auth_markers = (
+            "oauth", "client_id", "client_secret", "http 401", "http 403",
+            "unauthorized", "forbidden", "token",
+        )
+        if any(m in low for m in auth_markers):
+            return f"unknown (auth: {err[:120]})"
+        return f"offline ({err[:120]})"
+    te = result.get("components", {}).get("task_executor", {})
+    return (
+        f"running={te.get('running')}, processed={te.get('total_processed')}"
+    )
+
+
 @mcp.tool()
 async def check_health() -> str:
     """Check the health of all Poindexter systems (site, API, worker, OpenClaw)."""
@@ -458,14 +499,7 @@ async def check_health() -> str:
     # /api/health does require a valid bearer (or, today, the legacy
     # static one), so going through _api keeps that consistent.
     worker_health = await _api("GET", "/api/health")
-    if "error" in worker_health:
-        checks.append("Worker: offline")
-    else:
-        te = worker_health.get("components", {}).get("task_executor", {})
-        checks.append(
-            f"Worker: running={te.get('running')}, "
-            f"processed={te.get('total_processed')}"
-        )
+    checks.append("Worker: " + _classify_worker_health(worker_health))
 
     # OpenClaw
     try:
