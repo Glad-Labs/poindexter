@@ -416,6 +416,15 @@ class CostAggregationService:
             days_in_month = 30
             days_remaining = max(0, days_in_month - days_elapsed)
 
+            # Warm-up window before the linear projection is trustworthy
+            # enough to *alert* on. In the first day or two of a month,
+            # month-to-date spend divided by 1-2 elapsed days wildly
+            # over-extrapolates (a single batch job looks like a $300/mo
+            # trend), which would fire a false-positive budget alert every
+            # month-start. Must stay below the smallest days_elapsed any
+            # legitimate projection alert needs to fire at.
+            projection_warmup_days = 3
+
             # Calculate burn rate
             daily_burn_rate = amount_spent / days_elapsed if days_elapsed > 0 else 0
 
@@ -462,8 +471,11 @@ class CostAggregationService:
             else:
                 status = "healthy"
 
-            # Add projection alert if trending high
-            if projected_final_cost > monthly_budget * 1.1:
+            # Add projection alert if trending high — but only once enough
+            # of the month has elapsed for the extrapolation to be meaningful
+            # (see projection_warmup_days above). This suppresses the
+            # divide-by-few-days false positive at month-start.
+            if days_elapsed >= projection_warmup_days and projected_final_cost > monthly_budget * 1.1:
                 alerts.append(
                     {
                         "level": "warning",

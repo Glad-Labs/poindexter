@@ -625,13 +625,63 @@ class TestGetBudgetStatusProjection:
 
     @pytest.mark.asyncio
     async def test_projection_below_110_no_alert(self):
-        """Normal burn rate = no projection alert."""
+        """Normal burn rate = no projection alert.
+
+        "now" is pinned to mid-month so this exercises the genuine
+        below-110% path (a stable, sub-budget burn rate) rather than
+        depending on the real calendar. With "now" left floating this
+        test fired a false projection alert on the 1st of the month,
+        where month-to-date spend divided by a single elapsed day
+        over-extrapolates (the 2026-06-01 CI flake).
+        """
+        from unittest.mock import patch
         conn = MagicMock()
         conn.fetchval = AsyncMock(return_value=10.0)
         db = _make_db(conn)
         svc = _make_service(db)
 
-        result = await svc.get_budget_status(monthly_budget=200.0)
+        with patch("services.cost_aggregation_service.datetime") as mock_dt:
+            from datetime import datetime, timezone
+            fixed_now = datetime(2026, 4, 15, 12, 0, 0, tzinfo=timezone.utc)
+            mock_dt.now = MagicMock(return_value=fixed_now)
+            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+            mock_dt.timezone = timezone
+            # $10 over 15 elapsed days = ~$0.67/day * 30 = ~$20 projected,
+            # far below 110% of the $200 budget ($220) -> no alert.
+            result = await svc.get_budget_status(monthly_budget=200.0)
+
+        projection_alerts = [
+            a for a in result["alerts"]
+            if "projected" in a.get("message", "").lower()
+        ]
+        assert len(projection_alerts) == 0
+
+    @pytest.mark.asyncio
+    async def test_projection_first_days_of_month_no_false_alert(self):
+        """No projection alert in the first days of a month.
+
+        Early in a month, dividing month-to-date spend by 1-2 elapsed
+        days wildly over-projects a 30-day total (a single batch job
+        looks like a runaway monthly trend). The projection alert must
+        stay quiet during this warm-up window so it doesn't fire a
+        false positive every month-start. This pins the service-side
+        guard and reproduces the 2026-06-01 incident with a fixed clock.
+        """
+        from unittest.mock import patch
+        conn = MagicMock()
+        # $10 spent on day 1 -> naive extrapolation is $300/mo, which would
+        # trip 110% of the $200 budget ($220) WITHOUT the warm-up guard.
+        conn.fetchval = AsyncMock(return_value=10.0)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        with patch("services.cost_aggregation_service.datetime") as mock_dt:
+            from datetime import datetime, timezone
+            fixed_now = datetime(2026, 6, 1, 2, 0, 0, tzinfo=timezone.utc)
+            mock_dt.now = MagicMock(return_value=fixed_now)
+            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+            mock_dt.timezone = timezone
+            result = await svc.get_budget_status(monthly_budget=200.0)
 
         projection_alerts = [
             a for a in result["alerts"]
