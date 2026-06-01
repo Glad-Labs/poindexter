@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.48.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.4...v0.48.5) (2026-06-01)
+
+
+### Bug Fixes
+
+* **validator:** orphaned-attribution + internal-path-leak rules (closes Glad-Labs/poindexter[#532](https://github.com/Glad-Labs/glad-labs-stack/issues/532)) ([#851](https://github.com/Glad-Labs/glad-labs-stack/issues/851)) ([926f297](https://github.com/Glad-Labs/glad-labs-stack/commit/926f29749ac2e77b027cffaceab6f67db8981158))
+
 ## [0.48.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.3...v0.48.4) (2026-06-01)
 
 
