@@ -76,7 +76,17 @@ def _fake_asyncpg(
 
 
 def _row(pid: str, title: str = "t") -> dict:
-    return {"id": pid, "title": title, "content": "body"}
+    # ``excerpt`` + ``seo_keywords`` mirror the SELECT in backfill_podcasts.py
+    # (Glad-Labs/poindexter#539) so the generate_episode call's SEO parity
+    # args (seo_description=row["excerpt"], seo_keywords=row["seo_keywords"])
+    # resolve against the fixture.
+    return {
+        "id": pid,
+        "title": title,
+        "content": "body",
+        "excerpt": "An SEO meta description.",
+        "seo_keywords": "ai, automation",
+    }
 
 
 def _mk_podcast_svc(existing: set[str], gen_result=None):

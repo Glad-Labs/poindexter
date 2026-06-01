@@ -245,6 +245,11 @@ class BackfillVideosJob:
                     title=post["title"],
                     content=post["content"] or "",
                     site_config=sc,
+                    # SEO parity (#539) — reused from the posts row (already
+                    # fetched for the YouTube payload), stamped into the
+                    # video's media_assets row. No LLM regeneration.
+                    seo_description=post["excerpt"] or "",
+                    seo_keywords=post["seo_keywords"] or "",
                 )
                 if result.success:
                     generated += 1
