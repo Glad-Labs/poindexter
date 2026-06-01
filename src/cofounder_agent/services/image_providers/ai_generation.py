@@ -141,8 +141,19 @@ def _scrub_human_terms(prompt: str) -> tuple[str, bool]:
 async def _build_sdxl_prompt(
     topic: str, model: str, *, site_config: Any = None,
 ) -> str:
-    """Ask Ollama to write a tailored SDXL prompt. Fall back to a
-    generic photorealistic template when Ollama is unreachable.
+    """Ask the configured LLM to write a tailored SDXL prompt. Fall back
+    to a generic photorealistic template when the model is unreachable.
+
+    Routes through :func:`services.llm_providers.dispatcher.dispatch_complete`
+    when an asyncpg pool is reachable via the ``site_config._pool`` DI seam
+    (production / worker path — picks up the provider configured by
+    ``plugin.llm_provider.primary.<tier>`` and lands the call in cost
+    accounting + Langfuse). Falls back to a direct ``httpx`` POST to local
+    Ollama's ``/api/generate`` when no pool is wired (unit tests / bootstrap).
+    This retires the last direct-httpx Ollama caller in the image-provider
+    path (Glad-Labs/poindexter#535) — the same dispatcher-or-httpx shape
+    already used by ``topic_ranking._ollama_chat_json`` and
+    ``llm_text.ollama_chat_text``.
 
     Shared shape with services/jobs/regenerate_stock_images.py — kept in
     sync so both the Job and the Provider produce similar output.
@@ -158,37 +169,65 @@ async def _build_sdxl_prompt(
         f"photorealistic scene related to {topic[:50]}, cinematic lighting, "
         f"4k, detailed, objects and environment only, unpopulated"
     )
+    instruction = (
+        f"Write a Stable Diffusion XL prompt for a blog featured "
+        f"image about: {topic[:80]}\n"
+        f"Requirements: photorealistic scene, cinematic lighting. "
+        f"Depict objects, technology, landscapes, or abstract concepts "
+        f"ONLY — absolutely no people, no humans, no faces, no hands. "
+        f"1 sentence only. Output ONLY the prompt."
+    )
+
+    # Auto-discover the pool via the SiteConfig DI seam (``site_config._pool``)
+    # — the same seam ``ai_content_generator`` / ``topic_ranking`` use. Lets
+    # the production path pick up dispatcher routing for free; tests +
+    # bootstrap paths that don't wire ``_pool`` keep the httpx fallback.
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+
     try:
-        import httpx
-        ollama = (
-            site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-            if site_config is not None
-            else "http://host.docker.internal:11434"
-        )
-        _body = {
-            "model": model,
-            "prompt": (
-                f"Write a Stable Diffusion XL prompt for a blog featured "
-                f"image about: {topic[:80]}\n"
-                f"Requirements: photorealistic scene, cinematic lighting. "
-                f"Depict objects, technology, landscapes, or abstract concepts "
-                f"ONLY — absolutely no people, no humans, no faces, no hands. "
-                f"1 sentence only. Output ONLY the prompt."
-            ),
-            "stream": False,
-            "options": {"num_predict": 100, "temperature": 0.7},
-        }
-        if http_client is not None:
-            resp = await http_client.post(
-                f"{ollama}/api/generate", json=_body, timeout=30,
+        if pool is not None:
+            # Production path — dispatch through the configured LLM provider
+            # so provider-swappability, cost tracking, retries, and Langfuse
+            # tracing apply uniformly (poindexter#535).
+            from services.llm_providers.dispatcher import dispatch_complete
+
+            completion = await dispatch_complete(
+                pool=pool,
+                messages=[{"role": "user", "content": instruction}],
+                model=model,
+                tier="standard",
+                phase="ai_generation.sdxl_prompt",
+                timeout_s=30,
+                temperature=0.7,
+                max_tokens=100,
             )
+            generated = (getattr(completion, "text", "") or "").strip().strip('"')
         else:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{ollama}/api/generate", json=_body,
+            # Test / bootstrap fallback — direct httpx → local Ollama. Same
+            # wire shape as before the dispatcher cutover.
+            import httpx
+            ollama = (
+                site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+                if site_config is not None
+                else "http://host.docker.internal:11434"
+            )
+            _body = {
+                "model": model,
+                "prompt": instruction,
+                "stream": False,
+                "options": {"num_predict": 100, "temperature": 0.7},
+            }
+            if http_client is not None:
+                resp = await http_client.post(
+                    f"{ollama}/api/generate", json=_body, timeout=30,
                 )
-        resp.raise_for_status()
-        generated = resp.json().get("response", "").strip().strip('"')
+            else:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.post(
+                        f"{ollama}/api/generate", json=_body,
+                    )
+            resp.raise_for_status()
+            generated = resp.json().get("response", "").strip().strip('"')
         if len(generated) > 20:
             cleaned, had_humans = _scrub_human_terms(generated)
             if had_humans:

@@ -194,3 +194,48 @@ class TestBuildSDXLPrompt:
         with patch("httpx.AsyncClient", return_value=ctx):
             result = await _build_sdxl_prompt("My blog post", "llama3:latest")
         assert "photorealistic scene" in result  # fell back
+
+    async def test_dispatches_when_pool_available(self):
+        # poindexter#535: when site_config exposes a pool, the call routes
+        # through dispatch_complete (provider-swappability + cost tracking)
+        # rather than a direct httpx POST to /api/generate.
+        completion = MagicMock()
+        completion.text = '"an isometric data-center scene, cinematic lighting, 4k"'
+
+        site_config = MagicMock()
+        site_config._pool = MagicMock()  # truthy pool → dispatcher path
+
+        dispatch = AsyncMock(return_value=completion)
+        # No httpx client is wired; if the code took the fallback path it would
+        # try httpx.AsyncClient and trip the AssertionError below.
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete", new=dispatch
+        ), patch("httpx.AsyncClient", side_effect=AssertionError("must not hit httpx")):
+            result = await _build_sdxl_prompt(
+                "Data centers", "llama3:latest", site_config=site_config,
+            )
+
+        dispatch.assert_awaited_once()
+        await_args = dispatch.await_args
+        assert await_args is not None
+        kwargs = await_args.kwargs
+        assert kwargs["pool"] is site_config._pool
+        assert kwargs["model"] == "llama3:latest"
+        assert kwargs["messages"][0]["role"] == "user"
+        # Surrounding quotes stripped; scrub leaves the object/scene prompt.
+        assert "isometric data-center scene" in result
+
+    async def test_dispatch_failure_falls_back(self):
+        # A dispatcher exception must degrade to the generic fallback prompt,
+        # never propagate out of the image-provider path.
+        site_config = MagicMock()
+        site_config._pool = MagicMock()
+
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=AsyncMock(side_effect=RuntimeError("provider down")),
+        ):
+            result = await _build_sdxl_prompt(
+                "GPU benchmarks", "llama3:latest", site_config=site_config,
+            )
+        assert "photorealistic scene related to GPU benchmarks" in result
