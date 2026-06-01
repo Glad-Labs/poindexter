@@ -225,6 +225,100 @@ class TestUnresolvedPlaceholders:
         assert all(i.severity == "critical" for i in ph_issues)
 
 
+class TestOrphanedAttribution:
+    """poindexter#532 — orphaned attribution fragments (the writer dropped the
+    subject of an attribution clause, leaving a sentence that opens with a
+    lowercase 'points out that…' verb). Distinct from the numeric/parenthetical
+    `citation_artifact` rule (TestCitationArtifactsAndPathLeaks); this rule was
+    renamed to `orphaned_attribution` on merge to avoid colliding with the
+    `citation_artifact` rule main already shipped for #532."""
+
+    def test_catches_dangling_points_out_that(self):
+        # The reported case: the named source was dropped, so a sentence
+        # begins lowercase with "points out that".
+        content = (
+            "The tooling is barely enough. points out that this 'AI-enabled' "
+            "approach often misses the mark for real teams."
+        )
+        result = validate_content("AI Tooling", content, "ai", site_config=_SC)
+        assert any(i.category == "orphaned_attribution" for i in result.issues)
+
+    def test_catches_dangling_argues_that(self):
+        content = (
+            "Latency was the real bottleneck. argues that caching alone never "
+            "closed the gap on cold starts."
+        )
+        result = validate_content("Performance", content, "tech", site_config=_SC)
+        assert any(i.category == "orphaned_attribution" for i in result.issues)
+
+    def test_catches_orphan_at_line_start(self):
+        # The orphan can also land at the start of a line when the prior
+        # sentence ended the previous paragraph.
+        content = (
+            "The migration is finally complete.\n"
+            "notes that the rollback path was never exercised under load."
+        )
+        result = validate_content("Migration", content, "tech", site_config=_SC)
+        assert any(i.category == "orphaned_attribution" for i in result.issues)
+
+    def test_no_false_positive_on_well_formed_attribution(self):
+        # A complete sentence with a subject must NOT fire.
+        content = (
+            "Andrej Karpathy points out that prompt engineering is still "
+            "an empirical craft. The author notes that this will change."
+        )
+        result = validate_content("LLMs", content, "ai", site_config=_SC)
+        assert not any(i.category == "orphaned_attribution" for i in result.issues)
+
+    def test_no_false_positive_on_decimal_then_verb(self):
+        # "3.5 points" should not look like a sentence boundary + verb.
+        content = "The model scored 3.5 points out of five on the eval suite."
+        result = validate_content("Eval", content, "ai", site_config=_SC)
+        assert not any(i.category == "orphaned_attribution" for i in result.issues)
+
+    def test_orphaned_attribution_is_warning(self):
+        content = (
+            "The result was solid. explains that the cache hit rate climbed "
+            "to ninety percent after the change."
+        )
+        result = validate_content("Caching", content, "tech", site_config=_SC)
+        oa = [i for i in result.issues if i.category == "orphaned_attribution"]
+        assert oa, "expected at least one orphaned_attribution issue"
+        assert all(i.severity == "warning" for i in oa)
+
+
+class TestInternalPathLeak:
+    """poindexter#532 — internal reference tokens like [memory/...] bleeding
+    into reader-facing prose."""
+
+    def test_catches_memory_path_token(self):
+        content = "As we decided earlier [memory/feedback_no_paid_apis] this stays local."
+        result = validate_content("Decisions", content, "tech", site_config=_SC)
+        assert any(i.category == "internal_path_leak" for i in result.issues)
+
+    def test_catches_brain_path_token(self):
+        content = "The watchdog logic [brain/bootstrap] handles restarts."
+        result = validate_content("Self-healing", content, "tech", site_config=_SC)
+        assert any(i.category == "internal_path_leak" for i in result.issues)
+
+    def test_no_false_positive_on_resolved_markdown_link(self):
+        content = "See [memory/notes](/notes) for the full write-up."
+        result = validate_content("Notes", content, "tech", site_config=_SC)
+        assert not any(i.category == "internal_path_leak" for i in result.issues)
+
+    def test_no_false_positive_on_prose_brackets(self):
+        content = "The system [logs everything] to a file for audit purposes."
+        result = validate_content("Audit", content, "tech", site_config=_SC)
+        assert not any(i.category == "internal_path_leak" for i in result.issues)
+
+    def test_internal_path_leak_is_warning(self):
+        content = "Context lives in [memory/decision_log] if you want the why."
+        result = validate_content("Context", content, "tech", site_config=_SC)
+        leaks = [i for i in result.issues if i.category == "internal_path_leak"]
+        assert leaks, "expected at least one internal_path_leak issue"
+        assert all(i.severity == "warning" for i in leaks)
+
+
 class TestLeakedImagePrompts:
     """Detect leaked image generation prompts in content."""
 

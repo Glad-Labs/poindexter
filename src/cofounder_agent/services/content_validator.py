@@ -394,6 +394,46 @@ PLACEHOLDER_MARKER_PATTERNS = [
     r"\[POSTS?[_\s\-]?ID[:\-=]\s*[^\]]{1,80}\]",
 ]
 
+# Orphaned attribution fragments (poindexter#532). The writer occasionally
+# drops the SUBJECT of an attribution clause, leaving a sentence that opens
+# with a bare third-person attribution verb — e.g. a paragraph that reads
+# "... is enough. points out that this 'AI-enabled' approach misses the
+# mark." (the "<Name>" before "points out that" was orphaned away). A
+# grammatically complete sentence never opens with a *lowercase* verb, so
+# a lowercase attribution verb sitting right on a sentence boundary is the
+# tell. Case-sensitive via ``(?-i:...)`` because ``_check_patterns`` forces
+# IGNORECASE — without the scoped flag "He Points Out That" prose would
+# match too. Requiring a trailing "that" keeps the false-positive rate low
+# (the orphaned fragment is always "<verb> that …"). Warning-level first
+# per the issue; the GH-91 per-category threshold promotes to critical once
+# several fire in one post.
+_CITATION_VERB_ALT = (
+    r"points\s+out|argues|notes|explains|adds|writes|claims|states"
+    r"|observes|contends|maintains|recalls|continues|concludes|reports"
+)
+ORPHANED_ATTRIBUTION_PATTERNS = [
+    # Orphan mid-paragraph: sentence terminator + space, then a lowercase
+    # attribution verb. Fixed-width lookbehind (``[.!?]\s``) as Python's re
+    # requires.
+    r"(?<=[.!?]\s)(?-i:(?:" + _CITATION_VERB_ALT + r"))\s+that\b",
+    # Orphan at the very start of a line (prior sentence ended the previous
+    # paragraph). ``_check_patterns`` scans each line independently, so ``^``
+    # anchors to the line start.
+    r"^\s*(?-i:(?:" + _CITATION_VERB_ALT + r"))\s+that\b",
+]
+
+# Leaked internal path tokens (poindexter#532). Internal reference tokens
+# like ``[memory/...]`` (the auto-memory store) or ``[brain/...]`` sometimes
+# bleed into reader-facing prose. Sibling rule to PLACEHOLDER_MARKER_PATTERNS
+# (which owns ``[posts/...]``). Anchored on a known set of internal-store
+# namespaces inside square brackets followed by a slash so genuine prose
+# brackets ("[logs everything]") don't fire. The negative lookahead
+# ``(?!\()`` skips legitimate Markdown links of the shape ``[memory/x](url)``.
+# Warning-level first per the issue.
+INTERNAL_PATH_LEAK_PATTERNS = [
+    r"\[(?:memory|brain|brain_knowledge|audit_log|app_settings|pipeline_versions|pipeline_tasks)/[^\]]{1,120}\](?!\()",
+]
+
 # Stock-LLM transition words used at sentence start (poindexter#232).
 # Local LLMs (gemma3, glm, qwen) over-use these as paragraph openers,
 # which both reads as AI-generated and chews into EEAT trust signals.
@@ -1431,6 +1471,29 @@ def validate_content(
         issues.extend(_check_patterns(
             full_text, LEAKED_PATH_TOKEN_PATTERNS, "warning", "leaked_path_token",
             "Leaked internal path/identifier token in content: '{matched}'"
+        ))
+
+    # 7b-quinquies. Orphaned attribution fragments (poindexter#532) — the
+    # writer dropped the named source, leaving a sentence that opens with a
+    # lowercase "points out that…" verb. Distinct from `citation_artifact`
+    # above (numeric / parenthetical academic refs); renamed from the PR's
+    # original `citation_artifact` to avoid colliding with the rule main
+    # already shipped for #532. Warning-level; the GH-91 per-category
+    # threshold promotes to critical once several fire in one post.
+    if _enabled("orphaned_attribution"):
+        issues.extend(_check_patterns(
+            full_text, ORPHANED_ATTRIBUTION_PATTERNS, "warning", "orphaned_attribution",
+            "Orphaned attribution fragment (dropped source subject): '{matched}'"
+        ))
+
+    # 7b-sexies. Leaked internal store tokens (poindexter#532) — bracketed
+    # internal reference tokens like [memory/...] / [brain/...] bleeding into
+    # reader-facing prose. Sibling of `unresolved_placeholder` (which owns
+    # [posts/...]); distinct from `leaked_path_token` above (bare repo paths).
+    if _enabled("internal_path_leak"):
+        issues.extend(_check_patterns(
+            full_text, INTERNAL_PATH_LEAK_PATTERNS, "warning", "internal_path_leak",
+            "Leaked internal path token in content: '{matched}'"
         ))
 
     # 7c. Known-wrong facts -- loaded from DB (fact_overrides table).
