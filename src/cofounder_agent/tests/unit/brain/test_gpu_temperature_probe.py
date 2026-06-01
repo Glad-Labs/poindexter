@@ -15,11 +15,22 @@ import pytest
 from brain.health_probes import probe_gpu_temperature
 
 
-def _make_pool(*, gpu_row, threshold_row):
-    """asyncpg pool stub. ``fetchrow`` is sequenced — the probe calls
-    it for gpu_metrics first, threshold second."""
+def _make_pool(*, gpu_row, threshold_row, staleness_row=None):
+    """asyncpg pool stub. ``fetchrow`` is sequenced to match the probe's
+    call order: the gpu_metrics row, then the staleness-threshold setting
+    (freshness gate #536), then the temperature-threshold setting.
+
+    The gpu row's ``timestamp`` is forced to a fresh UTC datetime so the
+    freshness gate treats the row as live — production hands the probe a
+    real ``timestamptz`` from asyncpg, not a string. Tests that exercise
+    staleness pass an explicit ``datetime`` in ``gpu_row``; it is preserved.
+    """
+    from datetime import datetime, timezone
+    row = dict(gpu_row)
+    if not isinstance(row.get("timestamp"), datetime):
+        row["timestamp"] = datetime.now(timezone.utc)
     pool = MagicMock()
-    pool.fetchrow = AsyncMock(side_effect=[gpu_row, threshold_row])
+    pool.fetchrow = AsyncMock(side_effect=[row, staleness_row, threshold_row])
     return pool
 
 
@@ -154,3 +165,24 @@ async def test_db_failure_returns_ok_false_with_detail():
     assert result["ok"] is False
     assert "gpu_temperature probe failed" in result["detail"]
     assert "pool exhausted" in result["detail"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_stale_gpu_metrics_row_alerts():
+    """Freshness gate (#536): a live exporter that stopped WRITING leaves a
+    stale row with a normal temperature, so a plain threshold check would
+    falsely report healthy. A row older than the staleness window means GPU
+    monitoring is blind — the probe must alert rather than trust stale data."""
+    from datetime import datetime, timedelta, timezone
+
+    stale_ts = datetime.now(timezone.utc) - timedelta(minutes=60)
+    pool = _make_pool(
+        gpu_row={"temperature": 50, "timestamp": stale_ts},
+        threshold_row={"value": "85"},
+        staleness_row={"value": "15"},
+    )
+    result = await probe_gpu_temperature(pool)
+    assert result["ok"] is False
+    assert "STALE" in result["detail"]
+    assert result["threshold_minutes"] == 15
