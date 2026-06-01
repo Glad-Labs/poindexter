@@ -40,10 +40,15 @@ _VALID_STATUSES = (
     "pending",
     "in_progress",
     "awaiting_approval",
+    "approved",
     "published",
     "rejected",
+    "rejected_retry",
+    "rejected_final",
     "failed",
     "cancelled",
+    "superseded",
+    "dry_run",
     "all",
 )
 
@@ -61,9 +66,11 @@ _VALID_STATUSES = (
 def tasks_list(status: str, limit: int, json_output: bool) -> None:
     """List recent tasks, optionally filtered by status.
 
-    Note: the legacy statuses 'completed' and 'approved' were removed from
-    the pipeline in 2026-04 — use 'published' for what the site has live
-    and 'awaiting_approval' for the human-review queue.
+    Status lifecycle: 'awaiting_approval' is the human-review queue;
+    'approved' is the post-review, pre-publish state (the publish pipeline
+    picks these up — `tasks approve` lands them here); 'published' is what
+    the site has live. The terminal rejection states are 'rejected_retry'
+    (sent back for regen), 'rejected_final', and 'superseded'.
     """
     params: dict[str, str | int] = {"limit": limit}
     if status and status != "all":
@@ -106,8 +113,11 @@ def _print_task_one_line(t: dict) -> None:
         "pending": "white",
         "in_progress": "yellow",
         "awaiting_approval": "cyan",
+        "approved": "bright_green",
         "published": "green",
         "rejected": "red",
+        "rejected_retry": "yellow",
+        "rejected_final": "red",
         "failed": "red",
         "cancelled": "white",
     }.get(status, "white")
