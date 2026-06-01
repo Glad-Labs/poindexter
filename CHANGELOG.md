@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.48.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.1...v0.48.2) (2026-06-01)
+
+
+### Bug Fixes
+
+* **brain:** repair gpu_temperature probe tests for freshness gate ([#536](https://github.com/Glad-Labs/glad-labs-stack/issues/536)) ([4d79179](https://github.com/Glad-Labs/glad-labs-stack/commit/4d791793cdfd8e6394d302e801670d86fe485564))
+
 ## [0.48.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.0...v0.48.1) (2026-06-01)
 
 
