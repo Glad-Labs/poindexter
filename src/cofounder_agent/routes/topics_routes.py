@@ -19,6 +19,7 @@ from middleware.api_token_auth import verify_api_token
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from services.topic_discovery import pick_target_length
 from services.url_scraper import URLScrapeError, URLScraper
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -113,7 +114,14 @@ async def from_url(
         "category": category,
         "style": request.style or "narrative",
         "tone": request.tone or "professional",
-        "target_length": request.target_length or 1500,
+        # Vary length when the caller didn't specify one (#542) via the
+        # shared DB-configurable weighted picker; an explicit request value
+        # always wins.
+        "target_length": (
+            request.target_length
+            if request.target_length is not None
+            else pick_target_length(site_config)
+        ),
         "metadata": metadata,
     })
     logger.info(
@@ -210,7 +218,10 @@ async def from_urls(
             "category": request.category or _guess_category(data),
             "style": "narrative",
             "tone": "professional",
-            "target_length": 1500,
+            # No per-URL length param on the batch endpoint — vary length
+            # via the shared DB-configurable weighted picker (#542) so a
+            # batch seed doesn't queue N identical-length posts.
+            "target_length": pick_target_length(site_config),
             "metadata": metadata,
         })
         task_ids.append({

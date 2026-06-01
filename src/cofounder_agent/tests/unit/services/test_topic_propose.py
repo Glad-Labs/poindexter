@@ -235,6 +235,78 @@ class TestGateEnabled:
 
 
 # ---------------------------------------------------------------------------
+# Target-length variation (#542) — None gets a varied length from the
+# shared picker; an explicit caller value always wins.
+# ---------------------------------------------------------------------------
+
+
+class TestTargetLengthVariation:
+    @pytest.mark.asyncio
+    async def test_explicit_length_wins(self):
+        site_cfg = _make_site_config({})
+        pool = _make_pool()
+        with patch(
+            "services.topic_proposal_service.pause_at_gate",
+            AsyncMock(),
+        ):
+            await propose_topic(
+                topic="Explicit length topic",
+                target_length=2750,
+                site_config=site_cfg,
+                pool=pool,
+                notify=False,
+            )
+        # target_length is the 5th positional arg ($5) to the INSERT.
+        insert_call = pool._conn.execute.await_args_list[0]
+        assert insert_call.args[5] == 2750
+
+    @pytest.mark.asyncio
+    async def test_none_length_is_filled_from_picker(self):
+        site_cfg = _make_site_config({})
+        pool = _make_pool()
+        with patch(
+            "services.topic_proposal_service.pause_at_gate",
+            AsyncMock(),
+        ):
+            # Force the shared picker to a deterministic value so the test
+            # asserts the wiring, not the RNG.
+            with patch(
+                "services.topic_discovery.pick_target_length",
+                return_value=637,
+            ):
+                await propose_topic(
+                    topic="No explicit length topic",
+                    site_config=site_cfg,
+                    pool=pool,
+                    notify=False,
+                )
+        insert_call = pool._conn.execute.await_args_list[0]
+        assert insert_call.args[5] == 637
+
+    @pytest.mark.asyncio
+    async def test_none_length_lands_in_a_default_bucket(self):
+        from services.topic_discovery import DEFAULT_LENGTH_WEIGHTS
+
+        site_cfg = _make_site_config({})
+        pool = _make_pool()
+        with patch(
+            "services.topic_proposal_service.pause_at_gate",
+            AsyncMock(),
+        ):
+            await propose_topic(
+                topic="Bucketed length topic",
+                site_config=site_cfg,
+                pool=pool,
+                notify=False,
+            )
+        insert_call = pool._conn.execute.await_args_list[0]
+        picked = insert_call.args[5]
+        assert any(
+            lo <= picked <= hi for lo, hi, _w in DEFAULT_LENGTH_WEIGHTS
+        )
+
+
+# ---------------------------------------------------------------------------
 # Queue cap — refuses to propose past the cap when the gate is enabled
 # ---------------------------------------------------------------------------
 

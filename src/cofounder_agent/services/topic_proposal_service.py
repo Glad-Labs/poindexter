@@ -166,7 +166,7 @@ async def propose_topic(
     tags: Optional[list[str]] = None,
     category: Optional[str] = None,
     source: str = "manual",
-    target_length: int = 1500,
+    target_length: Optional[int] = None,
     style: str = "technical",
     tone: str = "professional",
     site_config: Any,
@@ -191,7 +191,14 @@ async def propose_topic(
         source: Where the topic came from. Defaults to "manual" so
             operators can tell hand-typed proposals apart from
             anticipation_engine output in the queue.
-        target_length, style, tone: Pipeline parameters consumed by
+        target_length: Pipeline target word count consumed by
+            ``content_router_service`` once the gate is approved. When
+            ``None`` (no explicit caller value), it is filled in by the
+            shared DB-configurable weighted picker
+            (``topic_discovery.pick_target_length``) so manual / URL-seed
+            proposals vary length the same way the auto-discovery path
+            does (#542). An explicit caller-supplied value always wins.
+        style, tone: Pipeline parameters consumed by
             ``content_router_service`` once the gate is approved.
         site_config: SiteConfig instance (DI seam).
         pool: asyncpg pool (DI seam).
@@ -213,6 +220,14 @@ async def propose_topic(
 
     if pool is None:
         raise RuntimeError("propose_topic: asyncpg pool is required")
+
+    # Vary length when no explicit value was supplied (#542). An explicit
+    # caller-provided target_length always wins; only fill the gap when it
+    # is None so the manual / URL-seed paths stop flattening to a single
+    # length. The picker is DB-configurable via app_settings.
+    if target_length is None:
+        from services.topic_discovery import pick_target_length
+        target_length = pick_target_length(site_config)
 
     topic_clean = topic.strip()
     tags_clean = [str(t).strip() for t in (tags or []) if str(t).strip()]
