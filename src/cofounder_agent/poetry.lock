@@ -9016,14 +9016,14 @@ files = [
 
 [[package]]
 name = "uvicorn"
-version = "0.43.0"
+version = "0.48.0"
 description = "The lightning-fast ASGI server."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "uvicorn-0.43.0-py3-none-any.whl", hash = "sha256:46fac64f487fd968cd999e5e49efbbe64bd231b5bd8b4a0b482a23ebce499620"},
-    {file = "uvicorn-0.43.0.tar.gz", hash = "sha256:ab1652d2fb23abf124f36ccc399828558880def222c3cb3d98d24021520dc6e8"},
+    {file = "uvicorn-0.48.0-py3-none-any.whl", hash = "sha256:48097851328b87ec36117d3d575234519eb58c2b22d79666e9bbc6c49a761dad"},
+    {file = "uvicorn-0.48.0.tar.gz", hash = "sha256:a5504207195d08c2511bf9125ede5ac4a4b71725d519e758d01dcf0bc2d31c37"},
 ]
 
 [package.dependencies]
@@ -10028,4 +10028,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "0128d161962f98d418982631d85a48b49fa9dc7c5af1bc53dcc1a97c8b670554"
+content-hash = "d61834a131ebdb42ad59e031d9930a55ae4956f21923be86c6455ce150aabc56"
