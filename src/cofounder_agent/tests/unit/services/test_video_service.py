@@ -795,6 +795,9 @@ class TestGenerateVideoEpisode:
         mock_gen.assert_awaited_once_with(
             "post1", "Title", "Content",
             pre_generated_scenes=None, site_config=_TEST_SC,
+            # #539 — SEO fields forwarded (default empty when caller
+            # omits them); pinned so the contract stays explicit.
+            seo_description="", seo_keywords="",
         )
 
     @pytest.mark.asyncio

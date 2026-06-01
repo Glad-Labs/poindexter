@@ -1241,6 +1241,17 @@ async def publish_post_from_task(
         try:
             from services.podcast_service import generate_podcast_episode
 
+            # #539 — comma-join the SEO keyword list once for the media
+            # hooks so the podcast / video media_assets rows carry the
+            # same SEO fields the post already generated (reused, no LLM
+            # regeneration). ``seo_keywords`` is a list at this point;
+            # ``posts.seo_keywords`` is persisted comma-joined (line ~907).
+            _seo_keywords_str = (
+                ", ".join(seo_keywords)
+                if isinstance(seo_keywords, list)
+                else (seo_keywords or "")
+            )
+
             async def _gen_podcast_with_gate(pid, ptitle, pcontent, script):
                 """Run generation, then record the approval-gate row on success.
 
@@ -1255,6 +1266,8 @@ async def publish_post_from_task(
                         pid, ptitle, pcontent,
                         pre_generated_script=script,
                         site_config=_sc,
+                        seo_description=seo_description,
+                        seo_keywords=_seo_keywords_str,
                     )
                 except Exception as gen_err:
                     logger.warning(
@@ -1322,12 +1335,16 @@ async def publish_post_from_task(
                     generate_video_episode, post_id, post_title, post_content,
                     pre_generated_scenes=_video_scenes,
                     site_config=_sc,
+                    seo_description=seo_description,
+                    seo_keywords=_seo_keywords_str,
                 )
             else:
                 _spawn_background(
                     generate_video_episode(post_id, post_title, post_content,
                                           pre_generated_scenes=_video_scenes,
-                                          site_config=_sc),
+                                          site_config=_sc,
+                                          seo_description=seo_description,
+                                          seo_keywords=_seo_keywords_str),
                     name=f"video_episode({post_id})",
                 )
             logger.info("[VIDEO] Queued video generation for post %s", post_id)
@@ -1728,6 +1745,14 @@ async def fire_post_distribution_hooks(
         logger.warning("[SEO] Failed in re-trigger (non-fatal): %s", e)
 
     # 4. Per-medium generation — only fire for media in media_to_generate.
+    # #539 — comma-join the SEO keyword list once so the podcast / video
+    # media_assets rows carry the same SEO fields the post already
+    # generated (reused from the posts row, no LLM regeneration).
+    _seo_keywords_str = (
+        ", ".join(seo_keywords)
+        if isinstance(seo_keywords, list)
+        else (seo_keywords or "")
+    )
     if _should_run_post_publish_hooks():
         if "podcast" in media:
             try:
@@ -1735,6 +1760,8 @@ async def fire_post_distribution_hooks(
                 _spawn_background(
                     generate_podcast_episode(
                         post_id, post_title, post_content, site_config=_sc,
+                        seo_description=seo_description,
+                        seo_keywords=_seo_keywords_str,
                     ),
                     name=f"podcast_episode({post_id})",
                 )
@@ -1746,7 +1773,9 @@ async def fire_post_distribution_hooks(
                 from services.video_service import generate_video_episode
                 _spawn_background(
                     generate_video_episode(post_id, post_title, post_content,
-                                          site_config=_sc),
+                                          site_config=_sc,
+                                          seo_description=seo_description,
+                                          seo_keywords=_seo_keywords_str),
                     name=f"video_episode({post_id})",
                 )
                 fired["hooks"].append("video")

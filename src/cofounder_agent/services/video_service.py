@@ -573,6 +573,8 @@ async def generate_video_for_post(
     pre_generated_scenes: list[str] | None = None,
     *,
     site_config: SiteConfig,
+    seo_description: str = "",
+    seo_keywords: str = "",
     **provider_kwargs: Any,
 ) -> VideoResult:
     """Generate a video for a published post.
@@ -588,6 +590,16 @@ async def generate_video_for_post(
         site_config: Injected SiteConfig (required — #272 Phase-2e). Used for
             every config read and threaded into every internal helper this
             function calls.
+        seo_description: The post's already-generated SEO meta description
+            (``posts.excerpt``). Stamped into the ``media_assets`` row so
+            the persisted video item carries the SAME SEO fields the blog
+            post generated — reused, NOT regenerated
+            (Glad-Labs/poindexter#539). The YouTube upload payload built
+            in ``jobs/backfill_videos.py`` already threads this; this
+            brings the media row to parity. Empty string when unknown.
+        seo_keywords: The post's already-generated SEO keywords,
+            comma-separated (``posts.seo_keywords``). Same reuse contract
+            as ``seo_description``.
         **provider_kwargs: Swallows any other extra kwargs passed by the
             ``KenBurnsSlideshowProvider`` wrapper. ``site_config`` is now
             an explicit keyword-only param above; remaining unknown
@@ -787,6 +799,8 @@ async def generate_video_for_post(
                     images_used=len(image_paths),
                     title=title,
                     site_config=_sc,
+                    seo_description=seo_description,
+                    seo_keywords=seo_keywords,
                 )
                 return VideoResult(
                     success=True,
@@ -818,6 +832,8 @@ async def _record_video_asset(
     images_used: int,
     title: str,
     site_config: SiteConfig,
+    seo_description: str = "",
+    seo_keywords: str = "",
 ) -> None:
     """Best-effort ``media_assets`` insert for a legacy-pipeline video.
 
@@ -828,6 +844,14 @@ async def _record_video_asset(
     Reads the asyncpg pool from the injected ``site_config`` (set by
     ``site_config.load(pool)`` during app startup). Pool is best-effort:
     ``record_media_asset`` itself no-ops cleanly when the pool is None.
+
+    SEO metadata (Glad-Labs/poindexter#539): ``seo_description`` (from
+    ``posts.excerpt``) and ``seo_keywords`` (comma-separated, from
+    ``posts.seo_keywords``) are stamped into the ``metadata`` JSON so the
+    persisted video item carries the SAME SEO fields the blog post
+    generated — reused from the stored post columns, NOT regenerated.
+    Mirrors the podcast media row (``podcast_service._record_episode_asset``)
+    and the YouTube upload payload (``jobs/backfill_videos.py``).
     """
     try:
         from services import media_asset_recorder
@@ -853,6 +877,10 @@ async def _record_video_asset(
             metadata={
                 "title": title,
                 "images_used": images_used,
+                # SEO parity with the blog post (#539) — reused from
+                # posts.excerpt / posts.seo_keywords, never regenerated.
+                "seo_description": seo_description or "",
+                "seo_keywords": seo_keywords or "",
             },
         )
     except Exception as exc:
@@ -1106,17 +1134,25 @@ async def generate_video_episode(
     *,
     pre_generated_scenes: list[str] | None = None,
     site_config: SiteConfig,
+    seo_description: str = "",
+    seo_keywords: str = "",
 ) -> None:
     """Fire-and-forget full-length video generation. Logs errors but never raises.
 
     ``site_config`` is a required injected SiteConfig (#272 Phase-2e),
     forwarded to ``generate_video_for_post``.
+
+    ``seo_description`` / ``seo_keywords`` (Glad-Labs/poindexter#539) are
+    the post's already-generated SEO fields, forwarded so the video's
+    ``media_assets`` row carries them — reused, never regenerated.
     """
     try:
         result = await generate_video_for_post(
             post_id, title, content,
             pre_generated_scenes=pre_generated_scenes,
             site_config=site_config,
+            seo_description=seo_description,
+            seo_keywords=seo_keywords,
         )
         if not result.success:
             logger.warning("[VIDEO] Failed for post %s: %s", post_id, result.error)

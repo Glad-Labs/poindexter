@@ -614,6 +614,8 @@ class PodcastService:
         *,
         force: bool = False,
         pre_generated_script: str | None = None,
+        seo_description: str = "",
+        seo_keywords: str = "",
     ) -> EpisodeResult:
         """Generate a podcast episode MP3 from blog post content.
 
@@ -623,6 +625,15 @@ class PodcastService:
             content: Full post content (markdown — will be stripped).
             force: Regenerate even if the episode already exists.
             pre_generated_script: If provided, skip LLM script generation and use this script directly.
+            seo_description: The post's already-generated SEO meta
+                description (``posts.excerpt``). Threaded into the
+                ``media_assets`` row so a published episode carries the
+                same SEO description as the blog post — reused, NOT
+                regenerated (Glad-Labs/poindexter#539). Empty string
+                when unknown.
+            seo_keywords: The post's already-generated SEO keywords,
+                comma-separated (``posts.seo_keywords``). Same reuse
+                contract as ``seo_description``.
 
         Returns:
             EpisodeResult with file path and duration info.
@@ -692,6 +703,8 @@ class PodcastService:
                         result=result,
                         voice=voice,
                         title=title,
+                        seo_description=seo_description,
+                        seo_keywords=seo_keywords,
                     )
                     # Glad-Labs/glad-labs-stack#649 PR 2 — produce the
                     # video-narration sibling MP3 alongside the main
@@ -808,6 +821,8 @@ class PodcastService:
         result: "EpisodeResult",
         voice: str,
         title: str,
+        seo_description: str = "",
+        seo_keywords: str = "",
     ) -> None:
         """Best-effort ``media_assets`` insert for the rendered podcast.
 
@@ -820,6 +835,19 @@ class PodcastService:
         (set by ``site_config.load(pool)`` during app startup, threaded
         into the ctor per #272 Phase-2f). Pool is best-effort:
         ``record_media_asset`` itself no-ops cleanly when the pool is None.
+
+        SEO metadata (Glad-Labs/poindexter#539): ``seo_description``
+        (from ``posts.excerpt``) and ``seo_keywords`` (comma-separated,
+        from ``posts.seo_keywords``) are stamped into the ``metadata``
+        JSON so the persisted media item carries the SAME SEO fields the
+        blog post already generated. These are REUSED from the stored
+        post columns — no LLM regeneration. They mirror what the podcast
+        RSS feed (``routes/podcast_routes.py``) surfaces as
+        ``<description>`` / ``itunes:keywords`` per episode, and bring the
+        podcast media row to parity with the YouTube video payload built
+        in ``jobs/backfill_videos.py``. Empty strings are stored
+        verbatim (they're the "unset" sentinel, consistent with
+        ``posts.excerpt`` being ``''`` when null).
         """
         try:
             from services import media_asset_recorder
@@ -851,6 +879,10 @@ class PodcastService:
                     "voice": voice,
                     "title": title,
                     "engine": engine,
+                    # SEO parity with the blog post (#539) — reused from
+                    # posts.excerpt / posts.seo_keywords, never regenerated.
+                    "seo_description": seo_description or "",
+                    "seo_keywords": seo_keywords or "",
                 },
             )
         except Exception as exc:
@@ -909,13 +941,22 @@ async def generate_podcast_episode(
     *,
     pre_generated_script: str | None = None,
     site_config: SiteConfig,
+    seo_description: str = "",
+    seo_keywords: str = "",
 ) -> None:
-    """Fire-and-forget podcast generation. Logs errors but never raises."""
+    """Fire-and-forget podcast generation. Logs errors but never raises.
+
+    ``seo_description`` / ``seo_keywords`` (Glad-Labs/poindexter#539) are
+    the post's already-generated SEO fields, forwarded so the episode's
+    ``media_assets`` row carries them — reused, never regenerated.
+    """
     try:
         svc = PodcastService(site_config=site_config)
         result = await svc.generate_episode(
             post_id, title, content,
             pre_generated_script=pre_generated_script,
+            seo_description=seo_description,
+            seo_keywords=seo_keywords,
         )
         if not result.success:
             logger.warning("[PODCAST] Failed for post %s: %s", post_id, result.error)

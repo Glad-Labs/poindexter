@@ -94,6 +94,76 @@ class TestPodcastServiceRecordsAsset:
         assert kwargs["duration_ms"] == 300_000
         assert kwargs["file_size_bytes"] > 0
 
+    async def test_seo_metadata_threaded_into_podcast_asset(
+        self, tmp_path: Path,
+    ):
+        """#539 — the post's stored SEO description + keywords land in the
+        podcast media_assets row, reused (not regenerated)."""
+        pool = MagicMock()
+        sc = _fake_site_config(pool=pool)
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+
+        async def _gen_with_voice(script: str, voice: str, output_path: Path):
+            output_path.write_bytes(b"fake-mp3" * 1000)
+            return EpisodeResult(
+                success=True,
+                file_path=str(output_path),
+                duration_seconds=300,
+                file_size_bytes=output_path.stat().st_size,
+            )
+
+        recorder = AsyncMock(return_value="asset-uuid")
+        with patch.object(svc, "_generate_with_voice", _gen_with_voice), \
+             patch(
+                 "services.media_asset_recorder.record_media_asset", recorder,
+             ):
+            await svc.generate_episode(
+                post_id="post-1",
+                title="Test Title",
+                content="Body.",
+                pre_generated_script="A long enough script. " * 30,
+                seo_description="A crisp SEO meta description.",
+                seo_keywords="local llm, ollama, gpu",
+            )
+
+        kwargs = recorder.await_args.kwargs
+        meta = kwargs["metadata"]
+        assert meta["seo_description"] == "A crisp SEO meta description."
+        assert meta["seo_keywords"] == "local llm, ollama, gpu"
+
+    async def test_seo_metadata_defaults_to_empty_strings(
+        self, tmp_path: Path,
+    ):
+        """#539 — omitting SEO args stores empty-string sentinels (the
+        '' = unset convention), never None / a missing key."""
+        sc = _fake_site_config(pool=MagicMock())
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+
+        async def _gen_with_voice(script: str, voice: str, output_path: Path):
+            output_path.write_bytes(b"fake-mp3" * 1000)
+            return EpisodeResult(
+                success=True,
+                file_path=str(output_path),
+                duration_seconds=120,
+                file_size_bytes=output_path.stat().st_size,
+            )
+
+        recorder = AsyncMock(return_value="asset-uuid")
+        with patch.object(svc, "_generate_with_voice", _gen_with_voice), \
+             patch(
+                 "services.media_asset_recorder.record_media_asset", recorder,
+             ):
+            await svc.generate_episode(
+                post_id="post-1",
+                title="Test Title",
+                content="Body.",
+                pre_generated_script="A long enough script. " * 30,
+            )
+
+        meta = recorder.await_args.kwargs["metadata"]
+        assert meta["seo_description"] == ""
+        assert meta["seo_keywords"] == ""
+
     async def test_failure_does_not_record(self, tmp_path: Path):
         sc = _fake_site_config(pool=MagicMock())
         # #272 Phase-2f: PodcastService requires an injected site_config.
@@ -237,3 +307,71 @@ class TestVideoServiceRecordsAsset:
         assert kwargs["provider_plugin"] == "video.ken_burns_slideshow"
         assert kwargs["duration_ms"] == 60_000
         assert kwargs["file_size_bytes"] > 0
+
+    async def test_seo_metadata_threaded_into_video_asset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """#539 — the post's stored SEO description + keywords land in the
+        video media_assets row (parity with the podcast row + the YouTube
+        payload). Reused, not regenerated."""
+        from services import video_service as vs
+        monkeypatch.setenv("POINDEXTER_DATA_ROOT", str(tmp_path))
+        monkeypatch.setattr(vs, "VIDEO_DIR", tmp_path / "video")
+        (tmp_path / "video").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "podcast").mkdir(parents=True, exist_ok=True)
+
+        podcast_path = tmp_path / "podcast" / "post-1.mp3"
+        podcast_path.write_bytes(b"fake-podcast")
+
+        fake_img = tmp_path / "img.jpg"
+        fake_img.write_bytes(b"img-bytes")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {
+            "content-type": "video/mp4",
+            "X-Duration-Seconds": "60",
+            "X-Elapsed-Seconds": "30",
+        }
+        mock_resp.content = b"fake-mp4-bytes" * 100
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_ctx = MagicMock()
+        mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        sc = _fake_site_config(pool=MagicMock(), host_home="/host")
+        recorder = AsyncMock(return_value="asset-uuid")
+
+        with patch(
+            "services.video_service._extract_images_from_content",
+            AsyncMock(return_value=[str(fake_img)]),
+        ), patch(
+            "services.video_service._generate_images_for_video",
+            AsyncMock(return_value=[]),
+        ), patch(
+            "services.video_service._generate_images_from_scenes",
+            AsyncMock(return_value=[]),
+        ), patch(
+            "services.video_service._video_server_url",
+            return_value="http://localhost:9837",
+        ), patch(
+            "httpx.AsyncClient", return_value=mock_client_ctx,
+        ), patch(
+            "services.media_asset_recorder.record_media_asset", recorder,
+        ):
+            result = await vs.generate_video_for_post(
+                post_id="post-1",
+                title="Test Video",
+                content="Body content",
+                podcast_path=str(podcast_path),
+                site_config=sc,
+                seo_description="Video SEO description.",
+                seo_keywords="ai, ml, gpu",
+            )
+
+        assert result.success is True
+        meta = recorder.await_args.kwargs["metadata"]
+        assert meta["seo_description"] == "Video SEO description."
+        assert meta["seo_keywords"] == "ai, ml, gpu"
