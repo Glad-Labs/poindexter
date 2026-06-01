@@ -212,7 +212,7 @@ class FinalizeTaskStage:
             "podcast_script": context.get("podcast_script", ""),
             "video_scenes": context.get("video_scenes", []),
             "short_summary_script": context.get("short_summary_script", ""),
-            # Glad-Labs/glad-labs-stack#649 PR 2 — propagate the director's
+            # Glad-Labs/poindexter#649 PR 2 — propagate the director's
             # shot list through to publish_service so it lands on
             # posts.video_shot_list. Absent when the director stage
             # skipped (no pool / no podcast script / etc.) — downstream
