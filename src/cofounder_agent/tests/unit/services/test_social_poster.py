@@ -177,6 +177,30 @@ class TestGenerateSocialText:
         assert result.endswith("...")
 
     @pytest.mark.asyncio
+    async def test_disables_thinking_for_social_copy(self):
+        """Social copy is short — a reasoning model would burn its whole
+        token budget thinking and never emit the post, then OllamaClient
+        salvages the thinking trace (analysis that reads like QA results)
+        as the 'draft'. Generation must request think=False so the model
+        emits the post directly."""
+        ollama = _make_ollama_mock("Punchy tweet! #AI")
+        await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
+        assert ollama.generate.await_count == 1
+        assert ollama.generate.call_args.kwargs.get("think") is False
+
+    @pytest.mark.asyncio
+    async def test_strips_residual_think_block(self):
+        """Defense in depth: if a model still emits an inline
+        <think>...</think> reasoning block despite think=False, it must be
+        stripped so the social draft never shows the model's analysis."""
+        ollama = _make_ollama_mock(
+            "<think>1. Analyze the request. 2. Draft ideas...</think>Clean tweet about AI #ML"
+        )
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
+        assert result == "Clean tweet about AI #ML"
+        assert "<think>" not in result and "Analyze the request" not in result
+
+    @pytest.mark.asyncio
     async def test_returns_empty_on_llm_error(self):
         ollama = AsyncMock()
         ollama.generate.side_effect = Exception("Ollama is down")

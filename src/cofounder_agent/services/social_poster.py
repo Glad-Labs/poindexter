@@ -19,6 +19,7 @@ Usage from task_executor or any post-publish hook:
     )
 """
 
+import re
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -308,8 +309,20 @@ async def _generate_social_text(
             model=model,
             temperature=0.8,
             max_tokens=_sc.get_int("social_poster_max_tokens", 300),
+            # Social copy is short — disable the model's reasoning phase. A
+            # thinking model (e.g. the 'standard' tier glm-4.7) otherwise
+            # spends the whole token budget thinking, never emits the post,
+            # and OllamaClient salvages the raw thinking trace (analysis that
+            # reads like QA results) as the "draft". think=False makes the
+            # model emit the post directly.
+            think=False,
         )
         text = result.get("text", "").strip()
+
+        # Defense in depth: strip any residual <think>...</think> reasoning
+        # block in case a model emits one inline despite think=False — the
+        # social draft must never surface the model's analysis.
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
         # Strip wrapping quotes if the LLM added them
         if text.startswith('"') and text.endswith('"'):

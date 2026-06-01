@@ -180,6 +180,32 @@ class TestOllamaGenerate:
         assert call_kwargs["json"]["options"]["num_predict"] == 500
 
     @pytest.mark.asyncio
+    async def test_think_false_forwarded_to_payload(self, client):
+        """think=False must reach the /api/chat payload so reasoning models
+        skip their thinking phase (short-copy callers like social_poster
+        otherwise burn the whole token budget thinking and never emit an
+        answer — Glad-Labs/poindexter social-draft bug)."""
+        mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
+        client.client.post = AsyncMock(return_value=mock_resp)
+
+        await client.generate("Test", think=False)
+
+        call_kwargs = client.client.post.call_args[1]
+        assert call_kwargs["json"]["think"] is False
+
+    @pytest.mark.asyncio
+    async def test_think_omitted_by_default(self, client):
+        """When think is not passed, the payload must NOT carry the key —
+        preserves default model behavior for every existing caller."""
+        mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
+        client.client.post = AsyncMock(return_value=mock_resp)
+
+        await client.generate("Test")
+
+        call_kwargs = client.client.post.call_args[1]
+        assert "think" not in call_kwargs["json"]
+
+    @pytest.mark.asyncio
     async def test_http_error_raised(self, client):
         client.client.post = AsyncMock(side_effect=httpx.HTTPError("404 model not found"))
 

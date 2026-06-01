@@ -518,6 +518,7 @@ class OllamaClient:
         max_tokens: int | None = None,
         stream: bool = False,
         timeout: int | None = None,
+        think: bool | None = None,
     ) -> dict[str, Any]:
         """Generate completion from Ollama model.
 
@@ -552,6 +553,16 @@ class OllamaClient:
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
+
+        # Reasoning/thinking models: ``think=False`` makes the model skip its
+        # reasoning phase and emit the answer directly. Short-copy callers
+        # (e.g. social_poster) MUST disable thinking — otherwise the model
+        # spends its whole ``num_predict`` budget thinking, never emits a
+        # final answer, and the salvage-from-thinking-trace fallback below
+        # surfaces the raw analysis as the "answer". Omitted when None
+        # (default) so every other caller keeps the model's native behavior.
+        if think is not None:
+            payload["think"] = think
 
         # Stamp model + input on the Langfuse generation span before the
         # call so the trace records the request even if Ollama errors.
