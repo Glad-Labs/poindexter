@@ -90,6 +90,21 @@ _DOWNSTREAM_DECISIVE_STATES: frozenset[str] = frozenset(
 )
 
 
+def media_gate_sequence(media_to_generate: list[str]) -> list[str]:
+    """Map a post's ``media_to_generate`` to the ordered gate names.
+
+    Medium gates appear in canonical (:data:`MEDIUM_GATE_NAMES`) order
+    regardless of input order; unknown media are dropped; ``final`` is
+    always appended so every post has an explicit publish checkpoint
+    (a text-only post — ``media_to_generate=[]`` — still gets a lone
+    ``final`` gate that the driver auto-advances; see D2).
+    """
+    wanted = {m for m in (media_to_generate or [])}
+    gates = [m for m in MEDIUM_GATE_NAMES if m in wanted]
+    gates.append("final")
+    return gates
+
+
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------

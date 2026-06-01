@@ -20,7 +20,12 @@ from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from services.gates.post_approval_gates import (
+    create_gates_for_post,
+    media_gate_sequence,
+)
 from services.logger_config import get_logger
+from services.media_policy import resolve_media_to_generate
 from services.site_config import SiteConfig
 from utils.text_utils import extract_title_from_content
 
@@ -865,24 +870,18 @@ async def publish_post_from_task(
     # 2026-05-19).
     niche_slug = task.get("niche_slug") or ""
     media_to_generate: list[str] = []
-    if niche_slug:
-        try:
-            pool = getattr(db_service, "pool", None)
-            if pool is not None:
-                async with pool.acquire() as _conn:
-                    row = await _conn.fetchrow(
-                        "SELECT default_media_to_generate "
-                        "FROM niches WHERE slug = $1",
-                        niche_slug,
-                    )
-                    if row and row["default_media_to_generate"]:
-                        media_to_generate = list(row["default_media_to_generate"])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[publish_service] niche media policy lookup failed for "
-                "niche=%r (defaulting to empty): %s",
-                niche_slug, exc,
+    try:
+        _media_pool = getattr(db_service, "pool", None)
+        if _media_pool is not None:
+            media_to_generate = await resolve_media_to_generate(
+                _media_pool, niche_slug
             )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[publish_service] niche media policy lookup failed for "
+            "niche=%r (defaulting to empty): %s",
+            niche_slug, exc,
+        )
 
     # Glad-Labs/glad-labs-stack#649 PR 2 — propagate the director's
     # shot list from task_metadata to posts.video_shot_list so the
@@ -962,6 +961,36 @@ async def publish_post_from_task(
             "[publish_service] media_assets back-stamp failed for task_id=%s post_id=%s: %s",
             task_id, post_id, exc,
         )
+
+    # ---------------------------------------------------------------
+    # 5b. Create the per-medium approval gate sequence (poindexter#24)
+    # ---------------------------------------------------------------
+    # When the post parks at status='approved' (the approve/stage path),
+    # create the gate sequence the driver walks: one gate per medium in
+    # ``media_to_generate`` (canonical order) + a final publish checkpoint.
+    # The driver (services/jobs/drive_media_gates.py) generates media per
+    # medium, the operator reviews, then publish fires on the final gate.
+    #
+    # Scoped to status='approved' so the autonomous/direct-publish path
+    # (status='published') and draft previews stay gate-less — back-compat:
+    # ``_post_has_pending_gates`` returns False for them, exactly as today.
+    # Best-effort: a gate-create failure logs loudly but must not strand the
+    # already-created post + un-acked task (the idempotency guard would
+    # re-stage as a no-op on retry, never re-creating gates). A gate-less
+    # post simply degrades to the legacy publish-immediately behaviour.
+    if post_data.get("status") == "approved":
+        _gate_pool = getattr(db_service, "pool", None)
+        if _gate_pool is not None:
+            try:
+                await create_gates_for_post(
+                    _gate_pool, post_id, media_gate_sequence(media_to_generate),
+                )
+            except Exception as gate_exc:  # noqa: BLE001 — never strand the post
+                logger.error(
+                    "[publish_service] failed to create media gate sequence "
+                    "for post %s (media=%s): %s",
+                    post_id, media_to_generate, gate_exc, exc_info=True,
+                )
 
     # ---------------------------------------------------------------
     # 6. Update task result with post info
@@ -1211,180 +1240,17 @@ async def publish_post_from_task(
         )
 
     # ---------------------------------------------------------------
-    # 11b/c/d. Generate derived media (podcast / video / short).
+    # 11b/c/d. Derived media (podcast / video / short) — REMOVED.
     # ---------------------------------------------------------------
-    # Per-type gating on ``media_to_generate`` so a post whose niche
-    # policy excludes a media type (e.g. dev_diary with ``[]``) doesn't
-    # silently spawn unwanted media on initial publish. The gate-clearing
-    # path (``fire_post_distribution_hooks`` below) already gates on this
-    # array; the initial publish path was missing the same check —
-    # captured 2026-05-20 (finding #196) on post ``dcd86ea6...`` whose
-    # ``media_to_generate=[]`` still triggered podcast + video generation
-    # at publish time. Matches the spawn-conditions in
-    # ``fire_post_distribution_hooks`` so the two paths stay aligned.
-    _pre_script = merged.get("podcast_script") or ""
-    _video_scenes = merged.get("video_scenes") or []
-    _short_summary = merged.get("short_summary_script") or ""
-    _wants_podcast = "podcast" in (media_to_generate or [])
-    _wants_video = any(
-        v in (media_to_generate or [])
-        for v in ("video", "video_long")
-    )
-    _wants_short = "video_short" in (media_to_generate or [])
-
-    # 11b. Podcast episode.
-    if (
-        _should_run_post_publish_hooks()
-        and not _gates_block_distribution
-        and _wants_podcast
-    ):
-        try:
-            from services.podcast_service import generate_podcast_episode
-
-            # #539 — comma-join the SEO keyword list once for the media
-            # hooks so the podcast / video media_assets rows carry the
-            # same SEO fields the post already generated (reused, no LLM
-            # regeneration). ``seo_keywords`` is a list at this point;
-            # ``posts.seo_keywords`` is persisted comma-joined (line ~907).
-            _seo_keywords_str = (
-                ", ".join(seo_keywords)
-                if isinstance(seo_keywords, list)
-                else (seo_keywords or "")
-            )
-
-            async def _gen_podcast_with_gate(pid, ptitle, pcontent, script):
-                """Run generation, then record the approval-gate row on success.
-
-                Wrapper keeps ``record_pending`` from firing on the
-                fire-and-forget side BEFORE the file actually exists.
-                A failed generation leaves no row, which is the
-                correct state — backfill_podcasts.py will retry the
-                generation later and insert the row at that point.
-                """
-                try:
-                    result = await generate_podcast_episode(
-                        pid, ptitle, pcontent,
-                        pre_generated_script=script,
-                        site_config=_sc,
-                        seo_description=seo_description,
-                        seo_keywords=_seo_keywords_str,
-                    )
-                except Exception as gen_err:
-                    logger.warning(
-                        "[PODCAST] Generation failed for post %s "
-                        "(no gate row written; backfill will retry): %s",
-                        pid, gen_err,
-                    )
-                    return
-                if not (result and getattr(result, "success", False)):
-                    logger.warning(
-                        "[PODCAST] Generation returned non-success for %s; "
-                        "no gate row written", pid,
-                    )
-                    return
-                try:
-                    from services import media_approval_service
-                    _pool = (
-                        getattr(db_service, "cloud_pool", None)
-                        or db_service.pool
-                    )
-                    if _pool is None:
-                        logger.warning(
-                            "[PODCAST] no db pool to record approval gate "
-                            "for post %s — operator must insert manually",
-                            pid,
-                        )
-                        return
-                    async with _pool.acquire() as _conn:
-                        await media_approval_service.record_pending(
-                            _conn, pid, "podcast",
-                        )
-                except Exception as gate_err:
-                    logger.warning(
-                        "[PODCAST] gate insert failed for %s "
-                        "(file exists, no gate row): %s",
-                        pid, gate_err,
-                    )
-
-            if background_tasks:
-                background_tasks.add_task(
-                    _gen_podcast_with_gate, post_id, post_title, post_content,
-                    _pre_script,
-                )
-            else:
-                _spawn_background(
-                    _gen_podcast_with_gate(post_id, post_title, post_content,
-                                          _pre_script),
-                    name=f"podcast_episode({post_id})",
-                )
-            logger.info("[PODCAST] Queued episode generation for post %s", post_id)
-        except Exception as e:
-            logger.warning("[PODCAST] Failed to queue episode (non-fatal): %s", e)
-
-    # 11c. Long-form video episode.
-    if (
-        _should_run_post_publish_hooks()
-        and not _gates_block_distribution
-        and _wants_video
-    ):
-        try:
-            from services.video_service import generate_video_episode
-
-            if background_tasks:
-                background_tasks.add_task(
-                    generate_video_episode, post_id, post_title, post_content,
-                    pre_generated_scenes=_video_scenes,
-                    site_config=_sc,
-                    seo_description=seo_description,
-                    seo_keywords=_seo_keywords_str,
-                )
-            else:
-                _spawn_background(
-                    generate_video_episode(post_id, post_title, post_content,
-                                          pre_generated_scenes=_video_scenes,
-                                          site_config=_sc,
-                                          seo_description=seo_description,
-                                          seo_keywords=_seo_keywords_str),
-                    name=f"video_episode({post_id})",
-                )
-            logger.info("[VIDEO] Queued video generation for post %s", post_id)
-        except Exception as e:
-            logger.warning("[VIDEO] Failed to queue video (non-fatal): %s", e)
-
-    # 11d. Short-form video.
-    if (
-        _should_run_post_publish_hooks()
-        and not _gates_block_distribution
-        and _wants_short
-    ):
-        try:
-            from services.video_service import generate_short_video_for_post
-
-            async def _gen_short(pid, ptitle, pcontent, scenes, short_script):
-                """Wait for podcast, then generate short video."""
-                import asyncio as _aio
-
-                _delay = int(_sc.get("short_video_post_publish_delay_seconds", "180"))
-                await _aio.sleep(_delay)
-                try:
-                    result = await generate_short_video_for_post(
-                        pid, ptitle, pcontent,
-                        pre_generated_scenes=scenes,
-                        pre_generated_summary=short_script,
-                        site_config=_sc,
-                    )
-                    if not result.success:
-                        logger.warning("[SHORT] Failed for post %s: %s", pid, result.error)
-                except Exception as e:
-                    logger.warning("[SHORT] Unexpected error for post %s: %s", pid, e)
-
-            _spawn_background(
-                _gen_short(post_id, post_title, post_content, _video_scenes, _short_summary),
-                name=f"short_video({post_id})",
-            )
-            logger.info("[SHORT] Queued short video generation for post %s", post_id)
-        except Exception as e:
-            logger.warning("[SHORT] Failed to queue short video (non-fatal): %s", e)
+    # Media generation no longer fires from the publish path
+    # (Glad-Labs/poindexter#24). It is now the gate driver's job
+    # (services/jobs/drive_media_gates.py): the driver generates each
+    # medium PRE-publish, the operator reviews the per-medium gate, and
+    # publish fires only once the final gate clears — so by the time a
+    # post publishes its media already exists. Legacy gate-less posts
+    # still pick up media via the 4h backfill_* jobs. The 11e R2-upload
+    # hook below remains (it uploads whatever media files exist; a no-op
+    # when none are present).
 
     # ---------------------------------------------------------------
     # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
@@ -1620,11 +1486,11 @@ async def fire_post_distribution_hooks(
 
     post_title = post_row["title"]
     slug = post_row["slug"]
-    post_content = post_row["content"] or ""
     seo_description = post_row["excerpt"] or ""
     seo_keywords_str = post_row["seo_keywords"] or ""
     seo_keywords = [k.strip() for k in seo_keywords_str.split(",") if k.strip()]
-    media = list(post_row["media_to_generate"] or [])
+    # ``post_content`` / ``media_to_generate`` are no longer read here —
+    # media generation moved to the gate driver (poindexter#24).
 
     fired: dict[str, Any] = {"fired": True, "post_id": post_id, "hooks": []}
 
@@ -1744,57 +1610,173 @@ async def fire_post_distribution_hooks(
     except Exception as e:
         logger.warning("[SEO] Failed in re-trigger (non-fatal): %s", e)
 
-    # 4. Per-medium generation — only fire for media in media_to_generate.
-    # #539 — comma-join the SEO keyword list once so the podcast / video
-    # media_assets rows carry the same SEO fields the post already
-    # generated (reused from the posts row, no LLM regeneration).
-    _seo_keywords_str = (
-        ", ".join(seo_keywords)
-        if isinstance(seo_keywords, list)
-        else (seo_keywords or "")
-    )
-    if _should_run_post_publish_hooks():
-        if "podcast" in media:
-            try:
-                from services.podcast_service import generate_podcast_episode
-                _spawn_background(
-                    generate_podcast_episode(
-                        post_id, post_title, post_content, site_config=_sc,
-                        seo_description=seo_description,
-                        seo_keywords=_seo_keywords_str,
-                    ),
-                    name=f"podcast_episode({post_id})",
-                )
-                fired["hooks"].append("podcast")
-            except Exception as e:
-                logger.warning("[PODCAST] Failed in re-trigger (non-fatal): %s", e)
-        if "video" in media:
-            try:
-                from services.video_service import generate_video_episode
-                _spawn_background(
-                    generate_video_episode(post_id, post_title, post_content,
-                                          site_config=_sc,
-                                          seo_description=seo_description,
-                                          seo_keywords=_seo_keywords_str),
-                    name=f"video_episode({post_id})",
-                )
-                fired["hooks"].append("video")
-            except Exception as e:
-                logger.warning("[VIDEO] Failed in re-trigger (non-fatal): %s", e)
-        if "short" in media:
-            try:
-                from services.video_service import generate_short_video_for_post
-                _spawn_background(
-                    generate_short_video_for_post(post_id, post_title, post_content,
-                                                 site_config=_sc),
-                    name=f"short_video({post_id})",
-                )
-                fired["hooks"].append("short")
-            except Exception as e:
-                logger.warning("[SHORT] Failed in re-trigger (non-fatal): %s", e)
+    # 4. Per-medium generation — REMOVED (Glad-Labs/poindexter#24).
+    # Media generation is now the gate driver's job, fired PRE-publish per
+    # medium gate (services/jobs/drive_media_gates.py), so a post's media
+    # already exists by the time its gates clear and this re-fire runs.
+    # This path now only re-fires distribution (social/devto/static/RSS).
 
     logger.info(
         "[publish_service] Re-fired %d distribution hook(s) for post %s: %s",
+        len(fired["hooks"]), post_id, fired["hooks"],
+    )
+    return fired
+
+
+async def publish_now(
+    pool: Any,
+    post_id: str,
+    *,
+    site_config: SiteConfig | None = None,
+) -> dict[str, Any]:
+    """Publish a gates-cleared ``approved`` post + fire distribution.
+
+    The explicit publish+distribute entrypoint the media-gate driver
+    (services/jobs/drive_media_gates.py) and the ``tasks publish`` path use.
+    Flips ``status`` ``approved``/``awaiting_gates`` → ``published`` (+
+    ``published_at`` / ``distributed_at`` / ``pipeline_tasks`` status sync,
+    one transaction), then re-fires distribution (static export / ISR /
+    social / dev.to / search-engine ping).
+
+    Does NOT generate media — by the time gates clear the driver has already
+    produced + gate-reviewed the media pre-publish (Glad-Labs/poindexter#24).
+
+    Refuses (idempotent no-op) when any approval gate is still ``pending``,
+    or when the post isn't in a publishable state (already published / wrong
+    status). ``site_config`` is resolved from the process container when not
+    injected, so the driver can call ``publish_now(pool, post_id)`` without
+    threading one through.
+    """
+    if site_config is None:
+        try:
+            from services.container_registry import get_container
+            site_config = get_container().site_config
+        except Exception:
+            site_config = SiteConfig()
+    _sc = site_config
+
+    fired: dict[str, Any] = {"published": False, "post_id": post_id, "hooks": []}
+
+    # Defensive: never publish past a pending gate (mirrors
+    # fire_post_distribution_hooks — a concurrent revise must win).
+    if await _post_has_pending_gates(pool, post_id):
+        logger.info(
+            "[publish_service] publish_now: post %s still has pending gates "
+            "— refusing to publish", post_id,
+        )
+        fired["reason"] = "pending_gates"
+        return fired
+
+    async with pool.acquire() as conn:
+        post_row = await conn.fetchrow(
+            """
+            SELECT id::text AS id, title, slug, excerpt, seo_keywords
+              FROM posts
+             WHERE id::text = $1
+            """,
+            str(post_id),
+        )
+    if post_row is None:
+        fired["reason"] = "post_not_found"
+        return fired
+
+    post_title = post_row["title"]
+    slug = post_row["slug"]
+    seo_description = post_row["excerpt"] or ""
+    seo_keywords = [k.strip() for k in (post_row["seo_keywords"] or "").split(",") if k.strip()]
+
+    # Flip approved/awaiting_gates → published + sync the linked task, in one
+    # transaction. The seam (metadata->>'pipeline_task_id') keeps
+    # pipeline_tasks.status in lockstep (same pattern as the promote path).
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            update_result = await conn.execute(
+                """
+                UPDATE posts
+                   SET status = 'published',
+                       published_at = COALESCE(published_at, NOW()),
+                       distributed_at = COALESCE(distributed_at, NOW()),
+                       updated_at = NOW()
+                 WHERE id::text = $1
+                   AND status IN ('approved', 'awaiting_gates')
+                """,
+                str(post_id),
+            )
+            await conn.execute(
+                """
+                UPDATE pipeline_tasks pt
+                   SET status = 'published', updated_at = NOW()
+                  FROM posts p
+                 WHERE p.id::text = $1
+                   AND p.metadata ->> 'pipeline_task_id' = pt.task_id
+                   AND pt.status IN ('approved', 'scheduled')
+                """,
+                str(post_id),
+            )
+    if not update_result.startswith("UPDATE 1"):
+        # Already published or not in a publishable state — idempotent no-op.
+        logger.info(
+            "[publish_service] publish_now: post %s not in approved/"
+            "awaiting_gates (%s) — no status flip", post_id, update_result,
+        )
+        fired["reason"] = "not_publishable"
+        return fired
+
+    fired["published"] = True
+    logger.info("[publish_service] publish_now: post %s → published", post_id)
+
+    # ---- Distribution (best-effort; media-gen intentionally excluded) ----
+    try:
+        from services.static_export_service import export_post
+        if await export_post(pool, slug, site_config=_sc):
+            fired["hooks"].append("static_export")
+    except Exception as e:
+        logger.warning("[publish_service] publish_now static_export failed (non-fatal): %s", e)
+
+    try:
+        from services.revalidation_service import trigger_isr_revalidate
+        if await trigger_isr_revalidate(slug, site_config=_sc):
+            fired["hooks"].append("isr_revalidate")
+    except Exception as e:
+        logger.warning("[publish_service] publish_now ISR revalidate failed (non-fatal): %s", e)
+
+    try:
+        from services.social_poster import generate_and_distribute_social_posts
+        _spawn_background(
+            generate_and_distribute_social_posts(
+                title=post_title, slug=slug,
+                excerpt=seo_description, keywords=seo_keywords,
+                site_config=_sc,
+            ),
+            name=f"social_posts({slug})",
+        )
+        fired["hooks"].append("social")
+    except Exception as e:
+        logger.warning("[SOCIAL] publish_now social failed (non-fatal): %s", e)
+
+    try:
+        from services.devto_service import DevToCrossPostService
+        devto_svc = DevToCrossPostService(pool, site_config=_sc)
+        _spawn_background(
+            devto_svc.cross_post_by_post_id(post_id),
+            name=f"devto_crosspost({post_id})",
+        )
+        fired["hooks"].append("devto")
+    except Exception as e:
+        logger.warning("[DEVTO] publish_now devto failed (non-fatal): %s", e)
+
+    try:
+        site_url = _sc.require("site_url")
+        _spawn_background(
+            _ping_search_engines(site_url, f"{site_url}/posts/{slug}", site_config=_sc),
+            name=f"ping_search_engines({slug})",
+        )
+        fired["hooks"].append("search_engines")
+    except Exception as e:
+        logger.warning("[SEO] publish_now search ping failed (non-fatal): %s", e)
+
+    logger.info(
+        "[publish_service] publish_now fired %d distribution hook(s) for post %s: %s",
         len(fired["hooks"]), post_id, fired["hooks"],
     )
     return fired

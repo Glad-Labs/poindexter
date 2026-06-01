@@ -1427,12 +1427,13 @@ class TestFirePostDistributionHooks:
 
     @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
-    async def test_fires_podcast_video_short_only_when_in_media_list(self, _hooks):
-        """Per-medium hooks only fire for media that is in media_to_generate."""
+    async def test_does_not_fire_media_generation_on_gate_clear(self, _hooks):
+        """Media generation is the gate driver's job now (poindexter#24) —
+        the gate-clear re-fire must NOT (re)generate podcast/video/short,
+        only re-fire distribution (social/devto/static)."""
         from services.publish_service import fire_post_distribution_hooks
 
-        # Only podcast + short — NOT video
-        post_row = _make_post_row(media=["podcast", "short"])
+        post_row = _make_post_row(media=["podcast", "video", "short"])
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
         db = MagicMock()
         db.pool = pool
@@ -1444,23 +1445,20 @@ class TestFirePostDistributionHooks:
         devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
             cross_post_by_post_id=AsyncMock(),
         ))
-        podcast_mod = MagicMock()
-        podcast_mod.generate_podcast_episode = AsyncMock()
-        video_mod = MagicMock()
-        video_mod.generate_video_episode = AsyncMock()
-        video_mod.generate_short_video_for_post = AsyncMock()
 
         with patch.dict(sys.modules, {
             "services.social_poster": social_mod,
             "services.devto_service": devto_mod,
-            "services.podcast_service": podcast_mod,
-            "services.video_service": video_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
-        assert "podcast" in result["hooks"]
-        assert "short" in result["hooks"]
+        # No media regeneration on publish.
+        assert "podcast" not in result["hooks"]
         assert "video" not in result["hooks"]
+        assert "short" not in result["hooks"]
+        # Distribution still fires (only media-gen was removed).
+        assert "social" in result["hooks"]
+        assert "devto" in result["hooks"]
 
     @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
@@ -1565,17 +1563,15 @@ class TestPingSearchEnginesEmptyConfig:
 
 @pytest.mark.unit
 class TestMediaSpawnRespectsPolicy:
-    """Pins the contract that closes finding #196.
+    """Media generation is no longer a publish-path hook (poindexter#24).
 
-    Pre-fix: ``publish_post_from_task`` sections 11b/c/d (podcast,
-    video, short) spawned background tasks for every non-gated,
-    non-draft publish — regardless of the post's
-    ``media_to_generate`` array. dev_diary posts (policy: ``[]``)
-    still got podcasts + videos kicked off, wasting GPU + creating
-    drift the reconciliation job then complained about.
-
-    Post-fix: each section checks the per-type policy. A post whose
-    array doesn't opt in to a media type doesn't spawn it.
+    Historically ``publish_post_from_task`` sections 11b/c/d spawned
+    podcast/video/short generation at publish time (gated on the post's
+    ``media_to_generate`` policy — finding #196). That responsibility now
+    belongs to the gate driver (services/jobs/drive_media_gates.py), which
+    generates each medium PRE-publish per approval gate. These tests pin
+    the new contract: publish resolves the media policy ONTO the post (so
+    the gate sequence + driver know what to generate) but spawns NO media.
     """
 
     @pytest.mark.asyncio
@@ -1652,11 +1648,12 @@ class TestMediaSpawnRespectsPolicy:
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     @patch("services.publish_service._spawn_background")
-    async def test_glad_labs_post_spawns_all_three_media(
+    async def test_glad_labs_post_resolves_media_but_spawns_none(
         self, mock_spawn, mock_sched, mock_ping, mock_hooks, mock_export, mock_gates,
     ):
-        """Glad-labs niche policy is ``{podcast,video,video_short}`` —
-        all three sections must fire."""
+        """Glad-labs niche policy is ``{podcast,video,video_short}`` — the
+        media policy is resolved ONTO the post (the driver reads it to know
+        what to gate + generate) but publish spawns NO media generation."""
         db = _make_db()
         task = _make_task(
             topic="AI Revolution",
@@ -1687,19 +1684,20 @@ class TestMediaSpawnRespectsPolicy:
 
         assert result.success is True
         post_data = db.create_post.call_args[0][0]
+        # Policy still lands on the post — the driver gates + generates from it.
         assert set(post_data["media_to_generate"]) == {
             "podcast", "video", "video_short",
         }
 
-        # All three spawn paths fired.
+        # ...but NO media generation is spawned at publish (driver's job now).
         spawn_names = [
             c.kwargs.get("name", "")
             for c in mock_spawn.call_args_list
         ]
         joined = " ".join(spawn_names)
-        assert "podcast_episode" in joined
-        assert "video_episode" in joined
-        assert "short_video" in joined
+        assert "podcast_episode" not in joined
+        assert "video_episode" not in joined
+        assert "short_video" not in joined
 
 
 class TestStorageDelayKeyName:
