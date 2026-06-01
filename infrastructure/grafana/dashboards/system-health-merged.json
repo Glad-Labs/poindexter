@@ -4410,6 +4410,132 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 78,
+      "type": "stat",
+      "title": "Approved q",
+      "description": "Count of pipeline_tasks in 'approved' status — posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) — these will not publish themselves. See the 'Approved — awaiting publish' table below for the per-task detail.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 110
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Approved\" FROM pipeline_tasks WHERE status = 'approved';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "type": "table",
+      "title": "Approved — awaiting publish",
+      "description": "Tasks the operator has approved (pipeline_tasks.status='approved') that have not yet been published. The post-approval, pre-publish queue — distinct from the awaiting_approval review queue surfaced elsewhere. Empty when nothing is waiting. Each row stays here until published (`poindexter publish <task>` / go-live), after which media generation runs via the 4h backfill jobs. Ordered most-recently-approved first.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 125
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT left(task_id, 8) AS \"Task\", topic AS \"Topic\", updated_at AS \"Approved at (UTC)\" FROM pipeline_tasks WHERE status = 'approved' ORDER BY updated_at DESC LIMIT 25;",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -4426,7 +4552,7 @@
   "timezone": "browser",
   "title": "System Health",
   "uid": "system-health-merged",
-  "version": 2,
+  "version": 3,
   "weekStart": "",
   "description": "Merged system-health + infrastructure-data. Top section gives core service status + pipeline-level signals; bottom section is the full infrastructure detail (DB tables, hardware metrics, audit log, raw data explorer, system settings)."
 }
