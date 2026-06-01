@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.49.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.5...v0.49.0) (2026-06-01)
+
+
+### Features
+
+* media-gated publish — wire the dormant per-medium gate engine ([#893](https://github.com/Glad-Labs/glad-labs-stack/issues/893)) ([ce92f53](https://github.com/Glad-Labs/glad-labs-stack/commit/ce92f5326d25486da689bef007ea90cbd821d7dc))
+
 ## [0.48.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.4...v0.48.5) (2026-06-01)
 
 
