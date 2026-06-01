@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-30.**  
+> **Auto-generated from live `app_settings` table on 2026-05-31.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 649 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 659 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -31,7 +31,7 @@ The worker re-reads on every poll; no restart needed.
 - [api_keys](#api-keys) (1 key)
 - [backup](#backup) (14 keys)
 - [brain](#brain) (13 keys)
-- [brain-probes](#brain-probes) (6 keys)
+- [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
 - [cloudflare](#cloudflare) (3 keys)
 - [content](#content) (20 keys)
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (10 keys)
-- [general](#general) (254 keys)
+- [general](#general) (262 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -64,7 +64,7 @@ The worker re-reads on every poll; no restart needed.
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (33 keys)
-- [plugins](#plugins) (7 keys)
+- [plugins](#plugins) (8 keys)
 - [plugin_telemetry](#plugin-telemetry) (50 keys)
 - [prometheus](#prometheus) (4 keys)
 - [publishing](#publishing) (4 keys)
@@ -143,10 +143,11 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `prefect_api_base_url` | `http://prefect-server:4200/api` |  | Where the brain probes hit the Prefect REST API. Defaults to the in-stack compose hostname; docker_utils.localize_url... |
-| `prefect_stuck_flow_auto_crash` | `false` |  | When true, the probe force-CRASHED stuck flow runs via Prefect's /set_state API so subsequent scheduled dispatches re... |
+| `prefect_stuck_flow_auto_crash` | `true` |  | When true, the probe force-CRASHED stuck flow runs via Prefect's /set_state API so subsequent scheduled dispatches re... |
 | `prefect_stuck_flow_flow_names` | `content_generation` |  | Comma-separated list of Prefect flow names the stuck-flow probe should watch. Add additional flow names if you spawn ... |
 | `prefect_stuck_flow_pending_threshold_minutes` | `5` |  | A flow run that has been PENDING/Submitting longer than this is considered stranded. Captured 2026-05-25: a PENDING r... |
 | `prefect_stuck_flow_probe_enabled` | `true` |  | Master kill switch for brain/prefect_stuck_flow_probe. Set to false to disable detection of stuck Prefect flow runs (... |
+| `prefect_stuck_flow_queue_depth_threshold` | `3` |  | Brain prefect_stuck_flow_probe: page with a distinct probe.prefect_queue_backlog_detected signal when MORE than this ... |
 | `prefect_stuck_flow_threshold_minutes` | `30` |  | A content_generation flow run RUNNING longer than this is considered stuck. Default 30m is ~5-6x the typical 5-min du... |
 
 ## cli
@@ -266,6 +267,10 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `anomaly_baseline_days` | `7` |  |  |
+| `anomaly_min_samples` | `5` |  |  |
+| `anomaly_probe_enabled` | `true` |  |  |
+| `anomaly_sigma_threshold` | `3.0` |  |  |
 | `api_url` | `http://localhost:8002` |  | Backend API base URL (legacy alias for api_base_url) |
 | `approval_gate_topic_decision_reject_status` | `dismissed` |  | Status set on pipeline_tasks when a topic-decision gate rejects the topic (vs. the global default 'rejected'). Distin... |
 | `app_version` | `3.0.1` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -273,6 +278,10 @@ The worker re-reads on every poll; no restart needed.
 | `brain_anomaly_baseline_window_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brain_anomaly_current_window_hours` | `24` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brand_keywords` | `` |  | Comma-separated brand-relevance keywords used by topic_discovery to filter discovered topics to the site's niche. Emp... |
+| `cadence_slo_enabled` | `true` |  |  |
+| `cadence_slo_expected_posts_per_day` | `1` |  |  |
+| `cadence_slo_shortfall_ratio` | `0.5` |  |  |
+| `cadence_slo_window_hours` | `24` |  |  |
 | `cloudflare_account_id` | `` |  |  |
 | `content_router_contradiction_review_max_tokens` | `1500` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_revise_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -809,6 +818,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
 | `plugin.job.render_prometheus_rules` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderPrometheusRulesJob |
 | `plugin.llm_provider.primary.budget` | `litellm` |  | Default LLMProvider for the 'budget' cost tier. Resolved by services/llm_providers/dispatcher.get_provider at call ti... |
 | `plugin.llm_provider.primary.flagship` | `litellm` |  | Default LLMProvider for the 'flagship' cost tier. Resolved by services/llm_providers/dispatcher.get_provider at call ... |
