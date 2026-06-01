@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.48.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.3...v0.48.4) (2026-06-01)
+
+
+### Bug Fixes
+
+* **cli:** let `tasks list --status` filter on approved + other live statuses ([dfa3b3f](https://github.com/Glad-Labs/glad-labs-stack/commit/dfa3b3f3fe5d1014b6b9f6a7ad5223cb41d2e9d9))
+
 ## [0.48.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.2...v0.48.3) (2026-06-01)
 
 
