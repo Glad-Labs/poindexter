@@ -100,13 +100,9 @@ class BackfillPodcastsJob:
                     # This niche's policy doesn't opt into podcasts at all.
                     continue
 
-                # excerpt (SEO meta description) + seo_keywords ride along
-                # so the episode's media_assets row carries the SAME SEO the
-                # blog post already generated — reused, never regenerated
-                # (Glad-Labs/poindexter#539).
                 niche_posts = await cloud.fetch(
                     """
-                    SELECT id::text, title, content, excerpt, seo_keywords
+                    SELECT id::text, title, content
                     FROM posts
                     WHERE status = 'published'
                       AND 'podcast' = ANY(media_to_generate)
@@ -169,10 +165,6 @@ class BackfillPodcastsJob:
                     post_id=post["id"],
                     title=post["title"],
                     content=post["content"] or "",
-                    # SEO parity with the blog post (#539) — reused from the
-                    # posts row, no LLM regeneration.
-                    seo_description=post["excerpt"] or "",
-                    seo_keywords=post["seo_keywords"] or "",
                 )
                 if result.success:
                     generated += 1
