@@ -1503,14 +1503,14 @@ files = [
 
 [[package]]
 name = "deepeval"
-version = "4.0.0"
+version = "4.0.5"
 description = "The LLM Evaluation Framework"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "deepeval-4.0.0-py3-none-any.whl", hash = "sha256:0ff2361a8b0fa87c018893c12f8c68088d70294ed0d1d31793d668fce4294c5f"},
-    {file = "deepeval-4.0.0.tar.gz", hash = "sha256:fde44eff6d5b346fdcb80ca6de3258abece62341517724f89d5be2c3470c681e"},
+    {file = "deepeval-4.0.5-py3-none-any.whl", hash = "sha256:65ea2dd2b24691193e1f70c6450669a4f0df4b538502e5eb7243f252cba6620b"},
+    {file = "deepeval-4.0.5.tar.gz", hash = "sha256:e8f8a7821c67c539fa69fb58d99b51ed3f29698a32d89f6a84a7ecdcc9b7debf"},
 ]
 
 [package.dependencies]
@@ -1542,6 +1542,9 @@ tenacity = ">=8.0.0,<=10.0.0"
 tqdm = ">=4.66.1,<5.0.0"
 typer = ">=0.9,<1.0.0"
 wheel = "*"
+
+[package.extras]
+inspect = ["pyperclip (>=1.8,<2.0)", "textual (>=0.80,<2.0)"]
 
 [[package]]
 name = "deprecated"
