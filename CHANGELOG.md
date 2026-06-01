@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.48.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.2...v0.48.3) (2026-06-01)
+
+
+### Bug Fixes
+
+* **mcp:** self-heal MCP/brain OAuth when POINDEXTER_SECRET_KEY is late/missing ([e7c147e](https://github.com/Glad-Labs/glad-labs-stack/commit/e7c147ef8cb2c16ce8412e6cbb3c7c101e890794))
+
 ## [0.48.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.1...v0.48.2) (2026-06-01)
 
 
