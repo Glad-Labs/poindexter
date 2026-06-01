@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.48.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.47.0...v0.48.0) (2026-06-01)
+
+
+### Features
+
+* **media:** thread SEO into niche-aware backfill generate calls ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539)) ([2af92f7](https://github.com/Glad-Labs/glad-labs-stack/commit/2af92f742cff9bfe66e8b8553200b2fed241b85f))
+
 ## [0.47.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.46.0...v0.47.0) (2026-06-01)
 
 
