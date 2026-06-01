@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.46.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.19...v0.46.0) (2026-06-01)
+
+
+### Features
+
+* **jobs:** per-niche enable/disable for backfill scheduler jobs ([2fc2374](https://github.com/Glad-Labs/glad-labs-stack/commit/2fc2374401f8de2be1c850241e1e863a6ee9dd06))
+* **media:** thread post SEO metadata into video+podcast publish path ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539) core) ([f067ca5](https://github.com/Glad-Labs/glad-labs-stack/commit/f067ca5c7c33189d5fe9dfbec2205ca745ad20d2))
+
 ## [0.45.19](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.18...v0.45.19) (2026-05-31)
 
 
