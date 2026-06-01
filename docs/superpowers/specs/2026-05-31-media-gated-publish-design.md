@@ -33,6 +33,21 @@ topic → draft → podcast → video → short → final
 
 So **the engine + the distribution-gating consumer exist; the missing half is the producer/driver** that creates the gate sequence on approval and advances it (media-gen per medium → final).
 
+## Two gate systems — and the bridge (verified 2026-05-31)
+
+There are **two** gate mechanisms; the design uses both, complementarily:
+
+1. **Pipeline gates** — `pipeline_tasks.awaiting_gate` + `pipeline_gate_history`, cleared by `services/approval_service.py::approve` (what `tasks approve` hits). The **live** system; pauses the _task_ mid-pipeline (topic / preview / final-publish gates, driven by the LangGraph `approval_gate` atom). Handles **text** approval.
+2. **Post per-medium gates** — `services/gates/post_approval_gates.py` on `posts.id`. The **dormant** engine, purpose-built for per-medium media review. API: `create_gates_for_post(pool, post_id, gates)`, `approve_gate`/`reject_gate`/`revise_gate(pool, post_id, gate_name, approver, …)`, `get_next_pending_gate`, and `advance_workflow(pool, post_id) -> WorkflowAdvance(next_gate | ready_to_distribute | finished)`.
+
+**The bridge (verified by reading `finalize_task.py`):** `finalize_task` does NOT create the post — it writes the task to `awaiting_approval` (+ the draft to `pipeline_versions`). The **post is created on approval** (`POST /api/tasks/{id}/approve` → `publish_service.publish_post_from_task`), landing in `approved` (not `published`, since auto-publish is off). So an **`approved → published` two-step already exists**. The media gates slot in there:
+
+- At **post-creation** (status `approved`), resolve `media_to_generate` and call `create_gates_for_post(pool, post_id, [<media gates...>, "final"])`.
+- A **driver** walks `advance_workflow(pool, post_id)`: for each `next_gate` that is a medium, fire that medium's generation; when the artifact lands, the gate is `pending` for operator review.
+- The `approved → published` transition is gated on `advance_workflow` returning `ready_to_distribute=True` (all gates decided, none rejected) — only then does the publish + distribution path run.
+
+`advance_workflow` already returns exactly the `ready_to_distribute` signal the publish path needs. So the post-gate engine is the correct media-gate home, the bridge is post-creation in the approve path, and the pipeline gates stay as-is for text. No new status is needed — the existing `approved` state is the "media in progress / under review" parking spot.
+
 ## Design
 
 Wire the producer/driver and split media-generation from publish.
