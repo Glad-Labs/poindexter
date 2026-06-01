@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.49.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.49.0...v0.49.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* **social:** disable model thinking so drafts aren't QA traces ([#907](https://github.com/Glad-Labs/glad-labs-stack/issues/907)) ([f4b270b](https://github.com/Glad-Labs/glad-labs-stack/commit/f4b270b7e4f31940b95762d101e61601623dc841))
+
 ## [0.49.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.5...v0.49.0) (2026-06-01)
 
 
