@@ -1334,6 +1334,7 @@ async def generate_with_context(
     *, topic: str, angle: str, snippets: list[dict],
     extra_instructions: str | None = None,
     site_config: SiteConfig,
+    pool: Any = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1347,7 +1348,7 @@ async def generate_with_context(
     ``site_config`` is REQUIRED (#272 Phase-2c) — the ``two_pass_writer``
     atom threads its run-bound instance.
     """
-    from services.topic_ranking import _ollama_chat_json
+    from services.llm_text import ollama_chat_text
 
     _sc = site_config
     snippet_max_chars = _sc.get_int(
@@ -1366,9 +1367,23 @@ async def generate_with_context(
         instructions=instructions,
         snippet_block=snippet_block,
     )
-    # #272 Phase-2b: topic_ranking._ollama_chat_json no longer carries a
-    # lifespan-bound module global — pass the run-bound site_config.
-    return await _ollama_chat_json(prompt, model=model, site_config=_sc)
+    # 2026-06-02 (poindexter#572): switched from ``_ollama_chat_json``
+    # (which forces ``format=json`` on Ollama) to the plain-text
+    # ``ollama_chat_text`` helper — mirrors the same fix already applied
+    # to ``_revise_node`` on 2026-05-16. Thinking models (glm-4.7-5090,
+    # qwen3) under ``response_format=json_object`` spend their whole token
+    # budget in the reasoning channel and return EMPTY ``content`` — which
+    # surfaced as canonical_blog "no content produced" on every task.
+    # ``ollama_chat_text`` routes through ``dispatch_complete`` when a pool
+    # is available and runs ``maybe_unwrap_json`` as belt-and-braces if a
+    # model still emits a JSON envelope unprompted.
+    return await ollama_chat_text(
+        prompt,
+        model=model,
+        site_config=_sc,
+        pool=pool,
+        timeout_setting="niche_ollama_chat_timeout_seconds",
+    )
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ def _fake_pool_with_no_snippets():
 
 async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
-    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None):
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "A clean first draft with no markers."
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
@@ -87,7 +87,7 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
         "First draft with [EXTERNAL_NEEDED: a fact] inside.",
         "Revised draft with the actual fact inside.",
     ])
-    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None):
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_revise(prompt, **kwargs):
@@ -112,7 +112,7 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
 async def test_loop_caps_at_max_revisions(monkeypatch):
     """Pathological: every revision adds new markers. Loop must terminate at _MAX_REVISION_LOOPS=3."""
     counter = {"n": 0}
-    async def always_needs_more(topic, angle, snippets, extra_instructions=None, site_config=None):
+    async def always_needs_more(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         counter["n"] += 1
         return f"Draft with [EXTERNAL_NEEDED: thing {counter['n']}] inside."
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", always_needs_more, raising=False)
@@ -160,7 +160,7 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
         "First draft with [EXTERNAL_NEEDED: a fact] inside.",
         "Revised draft — clean prose, no JSON wrapper.",
     ])
-    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None):
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
     monkeypatch.setattr(
         "services.ai_content_generator.generate_with_context",
@@ -188,3 +188,52 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
     # trailing brace.
     assert result["draft"] == "Revised draft — clean prose, no JSON wrapper."
     assert not result["draft"].rstrip().endswith("}")
+
+
+async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
+    """Pins poindexter#572: the first-draft path (``generate_with_context``)
+    must NOT route through ``services.topic_ranking._ollama_chat_json``
+    (which forces ``format=json`` on Ollama). Thinking models
+    (glm-4.7-5090, qwen3) under ``response_format=json_object`` spend their
+    whole token budget in the reasoning channel and return EMPTY
+    ``content`` — which surfaced as canonical_blog "Content generation
+    failed: no content produced" on every task post-#355. Mirrors
+    ``test_revise_uses_plain_text_helper_not_json_helper`` for the draft.
+    """
+    import services.ai_content_generator as acg
+
+    async def forbidden_json_helper(prompt, **kwargs):
+        raise AssertionError(
+            "generate_with_context regressed back to "
+            "topic_ranking._ollama_chat_json — the draft path must use "
+            "services.llm_text.ollama_chat_text (plain text) so thinking "
+            "models don't return empty content. See #572."
+        )
+    monkeypatch.setattr(
+        "services.topic_ranking._ollama_chat_json", forbidden_json_helper,
+    )
+
+    called = {}
+    async def fake_text(prompt, **kwargs):
+        called["text"] = True
+        return "# A clean draft\n\nProse body, no JSON envelope."
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+
+    async def fake_resolve(*, site_config=None):
+        return "glm-4.7-5090:latest"
+    monkeypatch.setattr(
+        "services.ai_content_generator._resolve_rag_writer_model", fake_resolve,
+    )
+    monkeypatch.setattr(
+        "services.ai_content_generator.get_prompt_manager",
+        lambda: MagicMock(get_prompt=MagicMock(return_value="PROMPT")),
+    )
+
+    out = await acg.generate_with_context(
+        topic="t", angle="a", snippets=[],
+        extra_instructions="write it", site_config=_fake_site_config(),
+        pool=_fake_pool_with_no_snippets(),
+    )
+    assert called.get("text") is True
+    assert out == "# A clean draft\n\nProse body, no JSON envelope."
+    assert not out.rstrip().endswith("}")
