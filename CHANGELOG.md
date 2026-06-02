@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.56.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.55.0...v0.56.0) (2026-06-02)
+
+
+### Features
+
+* **qa:** make rail-atom advisory DB-driven via qa_gates.required_to_pass ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355), refs poindexter[#454](https://github.com/Glad-Labs/glad-labs-stack/issues/454)) ([#923](https://github.com/Glad-Labs/glad-labs-stack/issues/923)) ([16b52fb](https://github.com/Glad-Labs/glad-labs-stack/commit/16b52fb03448bb765ad135e08ff9e513afba0923))
+
 ## [0.55.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.54.0...v0.55.0) (2026-06-02)
 
 
