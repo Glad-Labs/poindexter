@@ -195,7 +195,7 @@ const Footer = () => {
             className="gl-mono gl-mono--upper opacity-50"
             style={{ fontSize: '0.6875rem' }}
           >
-            // ONE PERSON · LOCAL AI · UNLIMITED SCALE
+            {'// ONE PERSON · LOCAL AI · UNLIMITED SCALE'}
           </p>
         </div>
       </div>

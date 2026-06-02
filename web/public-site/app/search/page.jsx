@@ -28,7 +28,7 @@ function SearchContent() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         setAllPosts(data.items || data.posts || data);
-      } catch (err) {
+      } catch (_err) {
         setError('Failed to load articles.');
       }
     };
