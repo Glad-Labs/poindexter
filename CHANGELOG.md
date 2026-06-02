@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.63.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.62.0...v0.63.0) (2026-06-02)
+
+
+### Features
+
+* **atom_runs:** wire capture into runner + approval path ([#552](https://github.com/Glad-Labs/glad-labs-stack/issues/552)) ([#965](https://github.com/Glad-Labs/glad-labs-stack/issues/965)) ([9fdafe3](https://github.com/Glad-Labs/glad-labs-stack/commit/9fdafe3d0672f6834f5fe33f26d4597637051874))
+
 ## [0.62.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.61.1...v0.62.0) (2026-06-02)
 
 
