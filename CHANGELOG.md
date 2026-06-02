@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.51.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.50.0...v0.51.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** atom-cutover 2/5 — atom_runs run+outcome capture ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#912](https://github.com/Glad-Labs/glad-labs-stack/issues/912)) ([a133e08](https://github.com/Glad-Labs/glad-labs-stack/commit/a133e0834ef106058e44087b94c3cef78fee498c))
+
 ## [0.50.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.49.1...v0.50.0) (2026-06-02)
 
 
