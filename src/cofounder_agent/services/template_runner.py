@@ -53,6 +53,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from prometheus_client import Histogram
 from services.site_config import SiteConfig
 
 # SiteConfig is now injected exclusively via constructor DI (#272
@@ -65,6 +66,24 @@ from services.site_config import SiteConfig
 # ``self._site_config``.
 
 logger = logging.getLogger(__name__)
+
+
+# Per-node execution latency (audit gap close — 2026-06-02). Every
+# make_stage_node terminal branch already computed ``elapsed`` (ms) and
+# shipped it ONLY to the operator-notify / Discord progress feed via
+# ``_emit_progress`` — so per-stage timing was computed every run and then
+# discarded, never queryable. This Histogram persists it on the default
+# Prometheus registry that ``/metrics`` scrapes, making "which stage is
+# slow" answerable on the Pipeline dashboard via histogram_quantile().
+# Labeled by node name + terminal outcome (ok / halted / timeout / error).
+# Module-level so it registers once at import. Buckets span sub-second
+# guard stages up to the multi-minute LLM writer.
+NODE_DURATION_SECONDS = Histogram(
+    "poindexter_pipeline_node_duration_seconds",
+    "Per-node (stage/atom) execution latency in the LangGraph template runner",
+    ["node", "outcome"],
+    buckets=(0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +523,7 @@ def make_stage_node(
             )
         except asyncio.TimeoutError:
             elapsed = int((time.time() - t0) * 1000)
+            NODE_DURATION_SECONDS.labels(node=name, outcome="timeout").observe(elapsed / 1000.0)
             logger.exception("template_runner: stage %r timed out after %ds", name, timeout)
             if record_sink is not None:
                 record_sink.append(
@@ -531,6 +551,7 @@ def make_stage_node(
             return {}
         except Exception as exc:
             elapsed = int((time.time() - t0) * 1000)
+            NODE_DURATION_SECONDS.labels(node=name, outcome="error").observe(elapsed / 1000.0)
             logger.exception("template_runner: stage %r raised: %s", name, exc)
             if record_sink is not None:
                 record_sink.append(
@@ -570,6 +591,10 @@ def make_stage_node(
         if halted:
             updates["_halt"] = True
             updates["_halt_reason"] = result.detail or "stage requested halt"
+
+        NODE_DURATION_SECONDS.labels(
+            node=name, outcome="halted" if halted else "ok"
+        ).observe(elapsed / 1000.0)
 
         if record_sink is not None:
             record_sink.append(

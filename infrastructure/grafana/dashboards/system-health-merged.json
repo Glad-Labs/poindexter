@@ -4536,6 +4536,257 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "Exporter Signals — LLM Engine · Embeddings · Schema · Brain · Prometheus",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 186 },
+      "panels": [],
+      "id": 199
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "description": "poindexter_ollama_reachable — 1 if Ollama /api/tags returned 200 on the last scrape. Ollama is the local LLM engine the whole pipeline runs on, yet it had no health tile anywhere until now.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "color": "red", "text": "✗ DOWN" },
+                "1": { "color": "green", "text": "✓ up" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "noValue": "no scrape",
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 187 },
+      "id": 200,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "poindexter_ollama_reachable",
+          "legendFormat": "ollama",
+          "refId": "A"
+        }
+      ],
+      "title": "Ollama reachable",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "description": "poindexter_ollama_model_count — number of models Ollama reports. 0 while reachable=1 is the 'up but no models pulled' failure the plain up-check misses — every generation would fail with that state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "noValue": "no scrape",
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 187 },
+      "id": 201,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "poindexter_ollama_model_count",
+          "legendFormat": "models",
+          "refId": "A"
+        }
+      ],
+      "title": "Ollama models loaded",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "description": "poindexter_embeddings_missing_posts — published posts with no embeddings row. Catches 'new posts stopped getting embedded' even when overall embedding throughput looks fine. 0 is healthy; any positive value means RAG/search coverage is silently degrading.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "color": "green", "text": "✓ 0" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 187 },
+      "id": 202,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "poindexter_embeddings_missing_posts",
+          "legendFormat": "missing",
+          "refId": "A"
+        }
+      ],
+      "title": "Posts missing embeddings",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "description": "poindexter_unapplied_migrations_count — migration .py files on disk not yet recorded in schema_migrations. >0 means the running worker is on a stale schema (container updated, process not restarted). Surfaced by /api/health but never on a dashboard until now.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "color": "green", "text": "✓ current" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 15, "y": 187 },
+      "id": 203,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "poindexter_unapplied_migrations_count",
+          "legendFormat": "unapplied",
+          "refId": "A"
+        }
+      ],
+      "title": "Unapplied migrations",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "description": "Age of the most recent brain.cycle_heartbeat (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds). The brain writes one heartbeat per ~5-min cycle; this is the delivery-plane dead-man's switch. 'No data' or red (>15m) means the brain has stopped — the same condition the BrainDeliveryDeadMansSwitch alert fires on, now visible on the dashboard.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 900 }
+            ]
+          },
+          "noValue": "stale / absent",
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 187 },
+      "id": 204,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "time() - poindexter_brain_cycle_heartbeat_timestamp_seconds",
+          "legendFormat": "heartbeat age",
+          "refId": "A"
+        }
+      ],
+      "title": "Brain heartbeat age",
+      "type": "stat"
     }
   ],
   "refresh": "30s",

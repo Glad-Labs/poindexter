@@ -29,6 +29,7 @@ MACRO_DOCS: dict[str, str] = {
     "$__timeFrom()": "(EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)::bigint",
     "$__timeTo()": "(EXTRACT(EPOCH FROM NOW()) * 1000)::bigint",
     "$__interval": "'1 minute'",
+    "$__rate_interval": "5m",
 }
 
 # Hard-fail SQLSTATE codes — the bugs we exist to catch.
@@ -81,6 +82,11 @@ def substitute(sql: str) -> str:
         "$__timeTo()",
         "(EXTRACT(EPOCH FROM NOW()) * 1000)::bigint",
     )
+    # Prometheus-only rate window macro. Must be substituted BEFORE the
+    # generic $__ guard below; unlike $__interval (a SQL duration), this
+    # resolves to a bare PromQL duration literal so rate()/histogram_quantile
+    # queries stay parseable.
+    out = out.replace("$__rate_interval", "5m")
     out = out.replace("$__interval", "'1 minute'")
     if "$__" in out:
         raise ValueError(

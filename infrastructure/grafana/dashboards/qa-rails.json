@@ -684,9 +684,9 @@
     },
     {
       "type": "row",
-      "title": "Ragas Eval (pending instrumentation)",
+      "title": "Ragas Eval — RAG Retrieval Quality",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
-      "collapsed": true,
+      "collapsed": false,
       "panels": [],
       "id": 13
     },
@@ -755,7 +755,7 @@
           "rawQuery": true,
           "rawSql": "SELECT timestamp AS time,\n       'ragas_score' AS metric,\n       (details->>'score')::float AS value\nFROM audit_log\nWHERE event_type = 'ragas_score'\n  AND $__timeFilter(timestamp)\nORDER BY timestamp;",
           "refId": "A",
-          "hide": true
+          "hide": false
         }
       ],
       "title": "Ragas Score Over Time",
@@ -811,7 +811,7 @@
           "rawQuery": true,
           "rawSql": "SELECT (details->>'score')::float AS \"Latest Ragas Score\"\nFROM audit_log\nWHERE event_type = 'ragas_score'\nORDER BY timestamp DESC\nLIMIT 1;",
           "refId": "A",
-          "hide": true
+          "hide": false
         }
       ],
       "title": "Latest Ragas Score",
@@ -863,7 +863,7 @@
           "rawQuery": true,
           "rawSql": "SELECT COUNT(*) AS \"Ragas Evals\"\nFROM audit_log\nWHERE event_type = 'ragas_score'\n  AND $__timeFilter(timestamp);",
           "refId": "A",
-          "hide": true
+          "hide": false
         }
       ],
       "title": "Ragas Evals (window)",
@@ -966,7 +966,7 @@
           "rawQuery": true,
           "rawSql": "SELECT timestamp AS \"Time\",\n       task_id AS \"Task ID\",\n       (details->>'score')::float AS \"Score\",\n       (details->>'faithfulness')::float AS \"Faithfulness\",\n       (details->>'answer_relevancy')::float AS \"Answer Relevancy\",\n       (details->>'context_precision')::float AS \"Context Precision\",\n       details->>'topic' AS \"Topic\"\nFROM audit_log\nWHERE event_type = 'ragas_score'\nORDER BY timestamp DESC\nLIMIT 10;",
           "refId": "A",
-          "hide": true
+          "hide": false
         }
       ],
       "title": "Last 10 Ragas Evaluations",

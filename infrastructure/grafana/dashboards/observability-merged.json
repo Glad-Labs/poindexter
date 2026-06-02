@@ -1256,6 +1256,30 @@
         "skipUrlSync": false,
         "multi": false,
         "includeAll": false
+      },
+      {
+        "name": "container",
+        "label": "Log container",
+        "description": "Loki container filter for the 'Error + warning feed' and 'Raw log stream' panels. Defaults to All (.+) so both panels show every container until you narrow it.",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "local-loki" },
+        "definition": "label_values(container)",
+        "query": {
+          "label": "container",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "",
+          "type": 1
+        },
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": false,
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
       }
     ]
   },

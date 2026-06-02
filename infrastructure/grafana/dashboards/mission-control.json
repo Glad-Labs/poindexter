@@ -1491,7 +1491,7 @@
       "id": 24,
       "title": "Director: shot list produced",
       "type": "stat",
-      "description": "audit_log rows where event_type='video_director.shot_list_produced' in the dashboard time window. Event emit ships in a sibling PR — until then this reads zero.",
+      "description": "audit_log rows where event_type='video_director.shot_list_produced' in the dashboard time window. Emitted by services/stages/generate_video_shot_list.py once the video-shot-list stage runs.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1999,7 +1999,7 @@
       "id": 32,
       "title": "Image style mix (window)",
       "type": "bargauge",
-      "description": "Featured image style mix grouped by audit_log details->>'style'. NOTE: event_type='image_style_picked' is not yet emitted (verified 2026-05-28 — zero rows match). A sibling PR will add the emit hook in the featured-image stage; until then this reads zero.",
+      "description": "Featured image style mix grouped by audit_log details->>'style'. Emitted as event_type='image_style_picked' by services/stages/source_featured_image.py when a featured image is sourced.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
