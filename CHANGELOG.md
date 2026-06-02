@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.64.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.2...v0.64.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* **voice:** gate /voice/join on tailnet (Serve), not machine OAuth ([#985](https://github.com/Glad-Labs/glad-labs-stack/issues/985)) ([15dbb03](https://github.com/Glad-Labs/glad-labs-stack/commit/15dbb03f9f9db72491f8d10b7dfc6fe077e35cbe))
+
 ## [0.64.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.1...v0.64.2) (2026-06-02)
 
 
