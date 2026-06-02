@@ -57,89 +57,6 @@ def _registered_stages() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# canonical_blog — identical behavior to legacy StageRunner default order
-# ---------------------------------------------------------------------------
-
-
-_CANONICAL_BLOG_ORDER: tuple[str, ...] = (
-    "verify_task",
-    "generate_content",
-    "writer_self_review",
-    # Resolve ``[posts/<slug>]`` placeholders that the writer emits.
-    # Must run BEFORE quality_evaluation / cross_model_qa whose
-    # programmatic_validator critical-flags any unresolved placeholder
-    # (see migration 20260512_213806_seed_unresolved_placeholder_validator_rule.py).
-    # Captured 2026-05-15: ~95% canonical_blog rejection rate traced
-    # to leaked placeholders. New stage shipped same day.
-    "resolve_internal_link_placeholders",
-    "quality_evaluation",
-    "url_validation",
-    "replace_inline_images",
-    "source_featured_image",
-    "cross_model_qa",
-    "generate_seo_metadata",
-    "generate_media_scripts",
-    # Director — produces shot list for the post's video. Runs after
-    # generate_media_scripts so the podcast_script is available (the
-    # shot list aligns its narration_offset_s to it). Non-critical
-    # (halts_on_failure=False); a director failure leaves
-    # context["video_shot_list"] absent and the legacy renderer path
-    # keeps running. Lands the shot list in audit_log for operator
-    # review (PR 1 of #649 sequenced plan; PR 2 wires the renderer).
-    "generate_video_shot_list",
-    "capture_training_data",
-    "finalize_task",
-)
-
-
-def canonical_blog(
-    *, pool: Any, record_sink: list[TemplateRunRecord] | None = None,
-) -> StateGraph:
-    """The canonical 13-stage blog pipeline as a LangGraph.
-
-    Each stage runs as a wrapped node; conditional edges between them
-    short-circuit to END when a node sets ``state['_halt']`` (mirroring
-    StageRunner's halt-on-failure / continue_workflow=False semantics).
-
-    Behaviour is intended to be identical to ``StageRunner.run_all`` with
-    the canonical order — this is the regression baseline for the v1
-    lift. Any divergence from StageRunner is a v1 bug.
-    """
-    stages_by_name = _registered_stages()
-    g: StateGraph = StateGraph(PipelineState)
-
-    # Build node list, skipping any stage not registered (mirrors
-    # StageRunner's "in order but not registered" log + skip behaviour).
-    present_stages: list[str] = []
-    for name in _CANONICAL_BLOG_ORDER:
-        stage = stages_by_name.get(name)
-        if stage is None:
-            logger.info(
-                "[canonical_blog] %r in order but not registered — skipping",
-                name,
-            )
-            continue
-        g.add_node(name, make_stage_node(stage, pool, record_sink=record_sink))
-        present_stages.append(name)
-
-    if not present_stages:
-        # Nothing registered — graph has no nodes. Add a no-op END so
-        # compile() doesn't fail; runner returns immediately.
-        return g
-
-    g.set_entry_point(present_stages[0])
-    # Wire halt-aware edges between every consecutive pair.
-    for src, dst in zip(present_stages, present_stages[1:]):
-        g.add_conditional_edges(src, halt_or_continue(dst), {dst: dst, END: END})
-    # Last stage → END (with halt check so a halt on the last stage is
-    # still recorded properly via the conditional router).
-    g.add_conditional_edges(
-        present_stages[-1], halt_or_continue(END), {END: END},
-    )
-    return g
-
-
-# ---------------------------------------------------------------------------
 # dev_diary — minimal narrative post (v1)
 # ---------------------------------------------------------------------------
 
@@ -406,6 +323,5 @@ async def load_active_graph_def(pool: Any, slug: str) -> dict[str, Any] | None:
 
 
 TEMPLATES: dict[str, Callable[..., StateGraph]] = {
-    "canonical_blog": canonical_blog,
     "dev_diary": dev_diary,
 }

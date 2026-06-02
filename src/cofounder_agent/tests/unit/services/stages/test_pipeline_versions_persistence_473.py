@@ -320,108 +320,6 @@ class TestFinalizeTaskPersistsToPipelineVersions:
 
 
 # ---------------------------------------------------------------------------
-# cross_model_qa — rejection path
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestCrossModelQaPersistsRejectedDraft:
-    """Operator review of a vetoed post needs the prose, not just the
-    veto reason — otherwise "why did the gate reject this?" has no
-    counterfactual to point at.
-
-    Closes Glad-Labs/poindexter#473 for the rejection branch.
-    """
-
-    @pytest.mark.asyncio
-    async def test_rejected_draft_lands_on_pipeline_versions(self):
-        """The rejected post's full prose + score + reviewer feedback
-        all make it to pipeline_versions before the stage returns."""
-        # Set up just enough of the cross_model_qa state to reach the
-        # rejection branch deterministically. The full qa pipeline is
-        # heavy; we mock at the boundary so the test stays unit-grade.
-        from services.stages import cross_model_qa as cmq
-
-        db = _make_database_service()
-        # Avoid pipeline_gate_history insert hitting a real DB.
-        db.pool.execute = AsyncMock()
-
-        captured_upsert: dict = {}
-
-        async def fake_upsert_version(task_id, data):
-            captured_upsert["task_id"] = task_id
-            captured_upsert["data"] = data
-
-        fake_pipeline_db = MagicMock()
-        fake_pipeline_db.upsert_version = AsyncMock(side_effect=fake_upsert_version)
-
-        # Minimal MultiModelResult-shaped double — only the fields the
-        # rejection branch reads.
-        qa_result = SimpleNamespace(
-            approved=False,
-            final_score=52.0,
-            summary="ollama_critic vetoed: significant repetition + shallow",
-            reviews=[
-                SimpleNamespace(
-                    reviewer="ollama_critic",
-                    score=52,
-                    approved=False,
-                    feedback="significant repetition and lack of depth",
-                ),
-            ],
-            format_feedback_text=lambda: (
-                "ollama_critic 52/65 — significant repetition and lack of depth"
-            ),
-        )
-
-        task_id = "task-473-rejected"
-        context = {
-            "task_id": task_id,
-            "topic": "NVMe Gen5 thermal throttling",
-            "content": "# NVMe Thermal\n\nBody prose that got rejected...",
-            "title": "NVMe Gen5 Thermal Throttling",
-            "models_used_by_phase": {"writer": "glm-4.7-5090"},
-        }
-
-        # Pin the rejection-path write contract by exercising the
-        # production code's exact call shape (the inline block in
-        # cross_model_qa.py — see the diff for poindexter#473). We don't
-        # re-run the whole stage because the QA orchestration is heavy;
-        # what we're pinning is the upsert payload shape, not the QA
-        # decision logic.
-        with patch(
-            "services.pipeline_db.PipelineDB", return_value=fake_pipeline_db,
-        ):
-            reason = cmq._build_rejection_reason(qa_result)
-            await db.update_task(task_id, {
-                "status": "rejected",
-                "error_message": reason,
-                "quality_score": float(qa_result.final_score),
-            })
-            from services.pipeline_db import PipelineDB
-            await PipelineDB(db.pool).upsert_version(
-                task_id,
-                {
-                    "title": context.get("title") or context.get("topic", ""),
-                    "content": context.get("content", ""),
-                    "quality_score": int(round(float(qa_result.final_score))),
-                    "qa_feedback": qa_result.format_feedback_text(),
-                    "models_used_by_phase": context.get(
-                        "models_used_by_phase", {},
-                    ),
-                },
-            )
-
-        fake_pipeline_db.upsert_version.assert_awaited_once()
-        data = captured_upsert["data"]
-        assert data["title"] == "NVMe Gen5 Thermal Throttling"
-        assert "# NVMe Thermal" in data["content"]
-        assert data["quality_score"] == 52
-        assert "ollama_critic" in data["qa_feedback"]
-        assert data["models_used_by_phase"] == {"writer": "glm-4.7-5090"}
-
-
-# ---------------------------------------------------------------------------
 # Sanity: upsert_version still has a production caller after this fix
 # ---------------------------------------------------------------------------
 
@@ -453,15 +351,20 @@ class TestUpsertVersionHasProductionCallers:
             "Glad-Labs/poindexter#473."
         )
 
-    def test_cross_model_qa_imports_pipeline_db_on_rejection(self):
-        """The rejection branch must also persist."""
+    def test_qa_persist_imports_pipeline_db_on_rejection(self):
+        """The rejection branch must also persist (now via qa.aggregate + _qa_persist).
+
+        cross_model_qa.py was deleted (atom-cutover Plan 5, #355). The DB
+        writes migrated to services/atoms/_qa_persist.py.
+        """
         import inspect
 
-        from services.stages import cross_model_qa
+        from services.atoms import _qa_persist
 
-        source = inspect.getsource(cross_model_qa)
+        source = inspect.getsource(_qa_persist)
         assert "PipelineDB" in source, (
-            "cross_model_qa.py must persist rejected drafts via "
-            "PipelineDB.upsert_version — see Glad-Labs/poindexter#473."
+            "services/atoms/_qa_persist.py must call PipelineDB.upsert_version to "
+            "persist rejected drafts to pipeline_versions — see "
+            "Glad-Labs/poindexter#473 and atom-cutover Plan 5 #355."
         )
         assert "upsert_version" in source
