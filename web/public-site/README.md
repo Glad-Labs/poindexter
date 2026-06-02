@@ -1,9 +1,9 @@
 # Glad Labs Public Site
 
-Public content website built with Next.js 15 and Tailwind CSS.
+Public content website built with Next.js 16 and Tailwind CSS.
 
 **Version:** 0.1.0
-**Stack:** Next.js 15 (App Router) + React 18 + Tailwind CSS
+**Stack:** Next.js 16 (App Router) + React 19 + Tailwind CSS
 **Port:** 3000
 
 ## Quick Start
@@ -25,7 +25,7 @@ This is a **headless content consumer** — all content is fetched from the Fast
 
 ```
 web/public-site/
-├── app/                         # Next.js 15 App Router
+├── app/                         # Next.js 16 App Router
 │   ├── layout.js                # Root layout
 │   ├── page.js                  # Homepage
 │   ├── error.tsx                # Error boundary
