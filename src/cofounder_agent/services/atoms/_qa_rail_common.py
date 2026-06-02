@@ -101,4 +101,15 @@ def aggregate_rail_reviews(
     }
 
 
-__all__ = ["aggregate_rail_reviews", "reviewer_to_dict"]
+async def resolve_gate_states(qa: Any) -> dict[str, Any]:
+    """Best-effort ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates`` via
+    the MultiModelQA instance. Empty dict on any failure — advisory marking
+    then leaves reviews as seeded (qa_gates is baseline-seeded in prod, so ``{}``
+    only happens in no-DB environments)."""
+    try:
+        return await qa._load_gate_states()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+__all__ = ["aggregate_rail_reviews", "resolve_gate_states", "reviewer_to_dict"]

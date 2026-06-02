@@ -3,9 +3,10 @@
 Atom-cutover Plan 3 (#355). Wraps MultiModelQA's three DeepEval rail
 methods (brand-fabrication, g-eval, faithfulness) by delegating to a
 MultiModelQA instance — zero rail logic is reimplemented. Each rail
-self-gates (returns None when disabled or inapplicable). Results are
-marked advisory=True (the OSS rails are advisory in prod) and appended to
-the qa_rail_reviews channel. parallelizable=True.
+self-gates (returns None when disabled or inapplicable). Advisory status
+is DB-driven via ``qa_gates.<rail>.required_to_pass`` (False → advisory;
+True → required hard gate). Baseline seeds deepeval rails as advisory.
+Results are appended to the qa_rail_reviews channel. parallelizable=True.
 """
 
 from __future__ import annotations
@@ -13,13 +14,13 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
-from services.atoms._qa_rail_common import reviewer_to_dict
+from services.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 
 ATOM_META = AtomMeta(
     name="qa.deepeval",
     type="atom",
     version="1.0.0",
-    description="DeepEval rails (brand-fabrication + g-eval + faithfulness), advisory.",
+    description="DeepEval rails (brand-fabrication + g-eval + faithfulness); advisory is DB-driven via qa_gates.<rail>.required_to_pass.",
     inputs=(FieldSpec(name="content", type="str", description="draft to review"),),
     outputs=(FieldSpec(name="qa_rail_reviews", type="list[dict]", description="advisory reviews"),),
     requires=("content",),
@@ -47,6 +48,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from services.multi_model_qa import MultiModelQA
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
+    gate_states = await resolve_gate_states(qa)
     brand = qa._check_deepeval_brand(content, topic)           # sync
     g_eval = await qa._check_deepeval_g_eval(content, topic)
     faith = await qa._check_deepeval_faithfulness(content, research)
@@ -54,7 +56,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     reviews: list[dict[str, Any]] = []
     for r in (brand, g_eval, faith):
         if r is not None:
-            r.advisory = True
+            MultiModelQA._mark_advisory_if_configured(r, gate_states, r.reviewer)
             reviews.append(reviewer_to_dict(r))
     return {"qa_rail_reviews": reviews} if reviews else {}
 

@@ -1,8 +1,11 @@
 """qa.ragas — the Ragas rail as one composable atom.
 
 Atom-cutover Plan 3 (#355). Wraps MultiModelQA._check_ragas_eval by
-delegation; advisory; appends to qa_rail_reviews. Yields nothing when
-research context is absent (the rail needs retrieved contexts).
+delegation. Advisory status is DB-driven via
+``qa_gates.ragas_eval.required_to_pass`` (False → advisory; True →
+required hard gate). Baseline seeds ragas_eval as advisory. Yields
+nothing when research context is absent (the rail needs retrieved
+contexts). Appends to qa_rail_reviews.
 """
 
 from __future__ import annotations
@@ -10,13 +13,13 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
-from services.atoms._qa_rail_common import reviewer_to_dict
+from services.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 
 ATOM_META = AtomMeta(
     name="qa.ragas",
     type="atom",
     version="1.0.0",
-    description="Ragas faithfulness/relevancy/precision rail, advisory.",
+    description="Ragas faithfulness/relevancy/precision rail; advisory is DB-driven via qa_gates.ragas_eval.required_to_pass.",
     inputs=(FieldSpec(name="content", type="str", description="draft to review"),),
     outputs=(FieldSpec(name="qa_rail_reviews", type="list[dict]", description="advisory reviews"),),
     requires=("content",),
@@ -43,10 +46,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from services.multi_model_qa import MultiModelQA
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
+    gate_states = await resolve_gate_states(qa)
     ragas = await qa._check_ragas_eval(content, topic, research)
     if ragas is None:
         return {}
-    ragas.advisory = True
+    MultiModelQA._mark_advisory_if_configured(ragas, gate_states, ragas.reviewer)
     return {"qa_rail_reviews": [reviewer_to_dict(ragas)]}
 
 
