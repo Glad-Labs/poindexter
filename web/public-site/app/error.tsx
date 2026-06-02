@@ -37,7 +37,7 @@ export default function Error({ error, reset }: ErrorProps) {
 
   return (
     <div className="gl-atmosphere min-h-screen flex flex-col">
-      <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 flex items-center justify-center">
+      <div className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 flex items-center justify-center">
         <div className="max-w-2xl w-full">
           <Eyebrow>GLAD LABS · ERROR</Eyebrow>
           <h1
@@ -88,10 +88,10 @@ export default function Error({ error, reset }: ErrorProps) {
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3 mt-8">
             <Button variant="primary" onClick={() => reset()}>
-              ↻ Try again
+              <span aria-hidden>↻</span> Try again
             </Button>
             <Button as={Link} href="/" variant="secondary">
-              ← Back to home
+              <span aria-hidden>←</span> Back to home
             </Button>
           </div>
 
@@ -130,14 +130,14 @@ export default function Error({ error, reset }: ErrorProps) {
             </a>
           </div>
         </div>
-      </main>
+      </div>
 
-      {/* Footer */}
-      <footer
+      {/* Page-level note — the global <Footer> already provides contentinfo */}
+      <div
         className="container mx-auto px-4 sm:px-6 lg:px-8 py-6"
         style={{ borderTop: '1px solid var(--gl-hairline)' }}
       >
-        <p className="gl-mono gl-mono--upper opacity-60 text-xs text-center">
+        <p className="gl-mono gl-mono--upper text-[color:var(--gl-text-muted)] text-xs text-center">
           If this persists,{' '}
           <a
             href={`mailto:${SUPPORT_EMAIL}?subject=Website%20Error`}
@@ -147,7 +147,7 @@ export default function Error({ error, reset }: ErrorProps) {
           </a>
           .
         </p>
-      </footer>
+      </div>
     </div>
   );
 }

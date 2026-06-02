@@ -41,7 +41,9 @@ async function getTagPosts(tag: string): Promise<Post[]> {
 export async function generateStaticParams() {
   try {
     const response = await fetch(`${STATIC_URL}/sitemap.json`, {
-      next: { revalidate: 300 },
+      // Tag-based cache — sitemap.json is regenerated alongside the post
+      // index on publish, so it shares the 'posts' tag (#967).
+      next: { tags: ['posts', 'post-index'] },
     });
     if (!response.ok) return [];
     const data = await response.json();
@@ -146,7 +148,11 @@ export default async function TagPage({
               </div>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <>
+              {/* Section heading for the card grid — visually hidden, keeps the
+                  card <h3> titles from skipping h1 -> h3 (#974). */}
+              <h2 className="sr-only">Articles tagged {tag}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map((post) => {
                 const imageUrl = postFeaturedImage(post);
                 const publishDate = post.published_at || post.created_at;
@@ -212,7 +218,8 @@ export default async function TagPage({
                   </Card>
                 );
               })}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </section>

@@ -75,7 +75,9 @@ function SearchContent() {
   }, [query, allPosts]);
 
   return (
-    <main className="gl-atmosphere min-h-screen">
+    // Plain <div>, not a nested <main> — the global layout already renders the
+    // single <main id="main-content"> landmark (#972).
+    <div className="gl-atmosphere min-h-screen">
       {/* Header */}
       <section className="relative pt-20 pb-12 md:pt-32 md:pb-16 px-4 sm:px-6 lg:px-8">
         <div className="container mx-auto max-w-5xl">
@@ -105,9 +107,20 @@ function SearchContent() {
         </div>
       </section>
 
-      {/* Results */}
-      <section className="px-4 sm:px-6 lg:px-8 pb-20">
-        <div className="container mx-auto max-w-6xl">
+      {/* Results — announced to screen readers as the query/results change
+          (#975). The visually-hidden <h2> gives the results grid a section
+          heading so the card <h3> titles don't skip a level (#974). */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-20" aria-label="Search results">
+        <h2 className="sr-only">
+          {query
+            ? `Search results for ${query}`
+            : 'Search results'}
+        </h2>
+        <div
+          className="container mx-auto max-w-6xl"
+          role="status"
+          aria-live="polite"
+        >
           {isLoading ? (
             <Card accent="cyan" className="text-center py-12">
               <Card.Meta>SEARCHING</Card.Meta>
@@ -204,7 +217,7 @@ function SearchContent() {
           ) : null}
         </div>
       </section>
-    </main>
+    </div>
   );
 }
 

@@ -81,7 +81,14 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         <TopNavigation />
-        <main id="main-content" className="flex-grow">
+        {/* Skip-link target — tabIndex={-1} lets the skip link move focus here
+            programmatically; scroll-margin-top clears the fixed TopNav so the
+            heading isn't hidden under it after the jump (#978c). */}
+        <main
+          id="main-content"
+          className="flex-grow scroll-mt-24"
+          tabIndex={-1}
+        >
           {children}
         </main>
         <Footer />

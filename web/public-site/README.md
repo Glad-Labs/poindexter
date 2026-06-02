@@ -47,8 +47,7 @@ web/public-site/
 │   ├── StructuredData.tsx       # JSON-LD structured data
 │   └── WebVitals.tsx            # Core Web Vitals → Sentry
 ├── lib/                         # Utilities
-│   ├── api-fastapi.js           # Backend API client (primary)
-│   ├── posts.ts                 # Post types/interfaces
+│   ├── posts.ts                 # Static R2 post client + types (primary)
 │   ├── url.js                   # URL helpers
 │   ├── seo.js                   # Metadata generation
 │   ├── structured-data.js       # JSON-LD generators
@@ -63,14 +62,14 @@ web/public-site/
 
 ## Content Source
 
-All content comes from the FastAPI backend via `lib/api-fastapi.js`:
+All content comes from static JSON on R2/CDN via `lib/posts.ts` — the content
+pipeline pushes updated JSON on every publish and fires `revalidateTag('posts')`:
 
 ```
-GET /api/posts           → {posts: [...], total, offset, limit}
-GET /api/posts/{slug}    → Single post with HTML content
-GET /api/categories      → {data: [...]}
-GET /api/tags            → {data: [...]}
-GET /api/posts/search    → Search results
+GET {STATIC_URL}/posts/index.json   → {posts: [...]}
+GET {STATIC_URL}/posts/{slug}.json  → Single post with HTML content
+GET {STATIC_URL}/categories.json    → {categories: [...]}
+GET {STATIC_URL}/sitemap.json       → {urls: [...]}
 ```
 
 Data flow:

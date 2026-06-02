@@ -21,7 +21,10 @@ export async function GET(
     const response = await fetch(
       `${STATIC_URL}/posts/${encodeURIComponent(slug)}.json`,
       {
-        next: { revalidate: 300 },
+        // Tag-based cache — invalidated by revalidateTag('posts') or the
+        // slug-specific revalidateTag('post:<slug>') on publish, matching
+        // getPostBySlug() in lib/posts.ts (#967).
+        next: { tags: ['posts', `post:${slug}`] },
       }
     );
 

@@ -65,6 +65,10 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
   const [message, setMessage] = useState<Message>({ type: '', text: '' });
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // The element that had focus when the modal opened (the "Get updates"
+  // trigger in the footer) — focus is returned here on close (issue #978a),
+  // mirroring CookieConsentBanner.
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -74,11 +78,31 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
     };
   }, []);
 
-  // Focus trap, initial focus, and Escape close (issue #762)
+  // Focus trap, initial focus, Escape close (issue #762), plus background
+  // inert-ing and focus restoration on close (issue #978a).
   useEffect(() => {
     if (!isOpen || !dialogRef.current) return;
 
     const dialog = dialogRef.current;
+
+    // Remember the trigger so focus returns to it when the modal closes.
+    triggerRef.current = document.activeElement as HTMLElement | null;
+
+    // Mark everything outside the modal inert + hidden from the a11y tree so
+    // screen readers and Tab can't reach background content while it's open.
+    const siblings = Array.from(document.body.children).filter(
+      (el) => !el.contains(dialog)
+    ) as HTMLElement[];
+    const restore = siblings.map((el) => ({
+      el,
+      ariaHidden: el.getAttribute('aria-hidden'),
+      inert: el.hasAttribute('inert'),
+    }));
+    siblings.forEach((el) => {
+      el.setAttribute('aria-hidden', 'true');
+      el.setAttribute('inert', '');
+    });
+
     const focusable = dialog.querySelectorAll<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
@@ -110,6 +134,14 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
     dialog.addEventListener('keydown', handleKeyDown);
     return () => {
       dialog.removeEventListener('keydown', handleKeyDown);
+      // Un-inert the background.
+      restore.forEach(({ el, ariaHidden, inert }) => {
+        if (ariaHidden === null) el.removeAttribute('aria-hidden');
+        else el.setAttribute('aria-hidden', ariaHidden);
+        if (!inert) el.removeAttribute('inert');
+      });
+      // Return focus to whatever opened the modal.
+      triggerRef.current?.focus();
     };
   }, [isOpen, onClose]);
 
@@ -430,10 +462,13 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                 </Button>
               </div>
 
-              <p className="gl-mono gl-mono--upper text-center opacity-50 mt-3" style={{ fontSize: '0.6875rem' }}>
+              {/* No opacity dimming on this small print — at full --gl-text /
+                  --gl-text-muted it clears 4.5:1, but opacity-50/60 dropped it
+                  below the AA threshold (#976). */}
+              <p className="gl-mono gl-mono--upper text-center mt-3" style={{ fontSize: '0.6875rem' }}>
                 We respect your privacy · Unsubscribe any time
               </p>
-              <p className="gl-body gl-body--sm text-center opacity-60 mt-1" style={{ fontSize: '0.6875rem' }}>
+              <p className="gl-body gl-body--sm text-center mt-1" style={{ fontSize: '0.6875rem' }}>
                 Your IP address and user-agent are collected with your
                 subscription for security and fraud prevention purposes.
               </p>

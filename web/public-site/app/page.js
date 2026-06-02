@@ -40,7 +40,10 @@ const STATIC_URL =
 async function getPosts() {
   try {
     const response = await fetch(`${STATIC_URL}/posts/index.json`, {
-      next: { revalidate: 300 },
+      // Tag-based cache — invalidated by revalidateTag('posts') on publish.
+      // No TTL: a stale index would otherwise persist for 300s after a new
+      // post goes live (#967).
+      next: { tags: ['posts', 'post-index'] },
     });
 
     if (!response.ok) {
@@ -102,7 +105,7 @@ export default async function HomePage() {
             </p>
             <div className="flex gap-3 mt-8">
               <Button as={Link} href="/archive" variant="primary">
-                ▶ Browse the archive
+                <span aria-hidden>▶</span> Browse the archive
               </Button>
               <Button as={Link} href="/about" variant="secondary">
                 About Glad Labs
@@ -213,7 +216,7 @@ export default async function HomePage() {
                         href={`/posts/${currentPost?.slug}`}
                         variant="primary"
                       >
-                        Read article →
+                        Read article <span aria-hidden>→</span>
                       </Button>
                     </div>
                   </div>
@@ -315,7 +318,7 @@ export default async function HomePage() {
             </p>
             <div className="mt-8 flex justify-center">
               <Button as={Link} href="/archive/1" variant="primary">
-                View all articles →
+                View all articles <span aria-hidden>→</span>
               </Button>
             </div>
           </div>

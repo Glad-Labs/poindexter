@@ -51,7 +51,7 @@ const Footer = () => {
               AI, hardware, and the edges where they meet. Locally-published,
               human-reviewed, free to read.
             </p>
-            <p className="gl-mono gl-mono--upper opacity-60" style={{ fontSize: '0.6875rem' }}>
+            <p className="gl-mono gl-mono--upper" style={{ fontSize: '0.6875rem' }}>
               Built for innovation · Powered by AI
             </p>
           </div>
@@ -186,13 +186,15 @@ const Footer = () => {
           style={{ background: 'var(--gl-hairline)' }}
         />
 
-        {/* Bottom row */}
+        {/* Bottom row — no opacity dimming on this small mono text: at full
+            --gl-text-muted it clears 4.5:1 on the footer background, but
+            opacity-50/60/80 dropped it to ~2.2-3.9:1 (#976). */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-3 pt-6">
-          <p className="gl-mono gl-mono--upper text-xs opacity-80">
+          <p className="gl-mono gl-mono--upper text-xs">
             © {currentYear} {SITE_NAME} · All rights reserved
           </p>
           <p
-            className="gl-mono gl-mono--upper opacity-50"
+            className="gl-mono gl-mono--upper"
             style={{ fontSize: '0.6875rem' }}
           >
             {'// ONE PERSON · LOCAL AI · UNLIMITED SCALE'}

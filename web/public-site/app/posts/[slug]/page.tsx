@@ -4,10 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Button, Card, Eyebrow } from '@glad-labs/brand';
-import {
-  BlogPostingSchema,
-  BreadcrumbSchema,
-} from '../../../components/StructuredData';
+import { BreadcrumbSchema } from '../../../components/StructuredData';
 import { generateBlogPostingSchema } from '../../../lib/structured-data';
 import { GiscusWrapper } from '../../../components/GiscusWrapper';
 import AdUnit from '../../../components/AdUnit';
@@ -167,8 +164,26 @@ export default async function PostPage({
       );
   }
 
+  // The page renders the post title as the single document <h1>. Demote any
+  // <h1> the writer emitted inside the body to <h2> so the heading outline has
+  // exactly one h1 (WCAG 1.3.1 / 2.4.6, #978b). Done before TOC extraction so
+  // demoted headings still pick up anchor ids.
+  const contentDemotedHeadings = post.content.replace(
+    /<(\/?)h1(\s[^>]*)?>/gi,
+    (_m: string, slash: string, attrs: string) => `<${slash}h2${attrs || ''}>`
+  );
+
+  // Inject alt="" on raw <img> tags that ship without one, so screen readers
+  // skip them as decorative instead of announcing the bare src/filename
+  // (WCAG 1.1.1, #978b). Images that already carry an alt are left untouched.
+  const contentWithAlts = contentDemotedHeadings.replace(
+    /<img\b([^>]*)>/gi,
+    (match: string, attrs: string) =>
+      /\balt\s*=/i.test(attrs) ? match : `<img${attrs} alt="">`
+  );
+
   const tocEntries: { level: number; text: string; id: string }[] = [];
-  const contentWithIds = post.content.replace(
+  const contentWithIds = contentWithAlts.replace(
     /<h([23])([^>]*)>(.*?)<\/h\1>/gi,
     (_m: string, level: string, attrs: string, text: string) => {
       const plainText = decodeEntities(text.replace(/<[^>]+>/g, '')).trim();
@@ -197,14 +212,10 @@ export default async function PostPage({
     <>
       {/* Own-analytics beacon — fires once on mount, writes to page_views */}
       <ViewTracker slug={post.slug} />
-      {/* Schema */}
-      <BlogPostingSchema
-        headline={post.seo_title || post.title}
-        description={post.seo_description || post.excerpt || ''}
-        image={imageUrl || '/og-image.jpg'}
-        datePublished={publishDate}
-        dateModified={publishDate}
-      />
+      {/* Schema — single BlogPosting node from generateBlogPostingSchema()
+          below (the richer one). The hand-rendered <BlogPostingSchema>
+          duplicate was removed to avoid emitting two BlogPosting JSON-LD
+          blocks on the same page (#970). */}
       <BreadcrumbSchema items={breadcrumbs} />
 
       {structuredData && (

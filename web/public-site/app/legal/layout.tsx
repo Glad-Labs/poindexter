@@ -18,18 +18,23 @@ export default function LegalLayout({
 }) {
   return (
     <div className="gl-atmosphere min-h-screen flex flex-col">
-      {/* Top bar — back-to-home */}
-      <header className="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-6">
+      {/* Top bar — back-to-home (the global TopNav already provides the banner
+          landmark, so this is a plain <div> not a second <header>). */}
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-6">
         <Button as={Link} href="/" variant="ghost">
-          ← Back to home
+          <span aria-hidden>←</span> Back to home
         </Button>
-      </header>
+      </div>
 
-      {/* Page content — each page controls its own width + prose */}
-      <main className="flex-1 pb-12">{children}</main>
+      {/* Page content — each page controls its own width + prose. The global
+          layout already renders the single <main id="main-content"> landmark,
+          so this is a <section> not a nested second <main>. */}
+      <section className="flex-1 pb-12">{children}</section>
 
-      {/* Footer — mono cross-links */}
-      <footer
+      {/* Legal cross-links — the global <Footer> owns the contentinfo
+          landmark, so this is a plain <nav> not a second <footer>. */}
+      <nav
+        aria-label="Legal documents"
         className="container mx-auto px-4 sm:px-6 lg:px-8 py-8"
         style={{ borderTop: '1px solid var(--gl-hairline)' }}
       >
@@ -56,7 +61,7 @@ export default function LegalLayout({
             Data Requests
           </Link>
         </div>
-      </footer>
+      </nav>
     </div>
   );
 }

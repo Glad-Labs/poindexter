@@ -38,15 +38,18 @@ const STATIC_URL =
 async function fetchPublishedContent() {
   try {
     // Fetch posts, categories, and sitemap data in parallel
+    // Tag-based cache — all three JSON blobs are regenerated on publish, so
+    // they share the 'posts' tag and get killed by revalidateTag('posts')
+    // instead of waiting out a 300s TTL (#967).
     const [postsRes, categoriesRes, sitemapRes] = await Promise.all([
       fetch(`${STATIC_URL}/posts/index.json`, {
-        next: { revalidate: 300 },
+        next: { tags: ['posts', 'post-index'] },
       }),
       fetch(`${STATIC_URL}/categories.json`, {
-        next: { revalidate: 300 },
+        next: { tags: ['posts', 'post-index'] },
       }),
       fetch(`${STATIC_URL}/sitemap.json`, {
-        next: { revalidate: 300 },
+        next: { tags: ['posts', 'post-index'] },
       }),
     ]);
 
