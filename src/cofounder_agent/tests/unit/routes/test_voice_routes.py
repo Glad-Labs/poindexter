@@ -1,19 +1,23 @@
-"""Unit tests for ``routes/voice_routes.py`` (Glad-Labs/poindexter#647).
+"""Unit tests for ``routes/voice_routes.py``.
 
 ``GET /voice/join`` mints a 7-day LiveKit JWT and serves a self-
-contained HTML client. Behavioral coverage:
+contained HTML client. As of 2026-06-02 the route is **tailnet-only**:
+it is gated on the ``Tailscale-User-Login`` header that Tailscale Serve
+injects for authenticated tailnet devices (``require_tailnet``), NOT the
+machine-OAuth bearer it briefly used after the 2026-05-12 audit. Public
+Funnel traffic carries no such header (Tailscale strips client-supplied
+``Tailscale-*`` headers at ingress). Behavioral coverage:
 
-- auth gate: unauthenticated request 401s (2026-05-12 security audit —
-  the route was public over the Tailscale Funnel and any visitor could
-  mint a room-join token)
-- fail-loud: refuses (503) when ``LIVEKIT_API_SECRET`` /
-  ``LIVEKIT_API_KEY`` are unset OR still the dev placeholder — minting
-  forgeable tokens is worse than a 503
-- happy path: with both env vars set, returns 200 HTML embedding a
+- auth gate: a request with no (or empty) ``Tailscale-User-Login``
+  header (public / Funnel) is refused 403
+- fail-loud: with the tailnet header present, refuses (503) when
+  ``LIVEKIT_API_SECRET`` / ``LIVEKIT_API_KEY`` are unset OR still the dev
+  placeholder — minting forgeable tokens is worse than a 503
+- happy path: tailnet header + both env vars set → 200 HTML embedding a
   minted token + the wss URL
 
-The ``_mint_livekit_token`` helper is also unit-tested directly for
-its JWT shape (3 dot-delimited segments, no padding).
+The ``_mint_livekit_token`` helper is also unit-tested directly for its
+JWT shape (3 dot-delimited segments, no padding).
 """
 
 from __future__ import annotations
@@ -25,15 +29,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from middleware.api_token_auth import verify_api_token
 from routes.voice_routes import _DEV_PLACEHOLDER_SECRET, _mint_livekit_token, router
 
+# Tailscale Serve injects this header for authenticated tailnet devices;
+# public Funnel traffic never carries it. Presence == tailnet caller.
+_TAILNET = {"Tailscale-User-Login": "matt@gladlabs.io"}
 
-def _build_app(*, authed=True):
+
+def _build_app():
     app = FastAPI()
     app.include_router(router)
-    if authed:
-        app.dependency_overrides[verify_api_token] = lambda: "test-principal"
     return app
 
 
@@ -49,22 +54,31 @@ def _set_livekit_env(monkeypatch, *, key="lk_api_key", secret="real-secret-value
 
 
 # ---------------------------------------------------------------------------
-# Auth gate
+# Auth gate — tailnet-only
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestVoiceJoinAuth:
-    def test_unauthenticated_returns_401(self, monkeypatch):
-        # Even with valid config, no auth → 401 (the audit fix).
+    def test_no_tailnet_header_returns_403(self, monkeypatch):
+        # Even with valid config, a public/Funnel caller (no
+        # Tailscale-User-Login header) is refused.
         _set_livekit_env(monkeypatch)
-        client = TestClient(_build_app(authed=False), raise_server_exceptions=False)
+        client = TestClient(_build_app(), raise_server_exceptions=False)
         resp = client.get("/voice/join")
-        assert resp.status_code == 401
+        assert resp.status_code == 403
+        assert "tailnet" in resp.text.lower()
+
+    def test_empty_tailnet_header_returns_403(self, monkeypatch):
+        # Presence alone isn't enough — a blank identity is rejected.
+        _set_livekit_env(monkeypatch)
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        resp = client.get("/voice/join", headers={"Tailscale-User-Login": "   "})
+        assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
-# Fail-loud config gate
+# Fail-loud config gate (tailnet header present so we reach the config check)
 # ---------------------------------------------------------------------------
 
 
@@ -73,24 +87,26 @@ class TestVoiceJoinFailLoud:
     def test_missing_secret_returns_503(self, monkeypatch):
         _set_livekit_env(monkeypatch, key="lk_api_key", secret=None)
         client = TestClient(_build_app(), raise_server_exceptions=False)
-        resp = client.get("/voice/join")
+        resp = client.get("/voice/join", headers=_TAILNET)
         assert resp.status_code == 503
         assert "LIVEKIT" in resp.json()["detail"]
 
     def test_missing_key_returns_503(self, monkeypatch):
         _set_livekit_env(monkeypatch, key=None, secret="real-secret-value")
         client = TestClient(_build_app(), raise_server_exceptions=False)
-        resp = client.get("/voice/join")
+        resp = client.get("/voice/join", headers=_TAILNET)
         assert resp.status_code == 503
 
     def test_dev_placeholder_secret_returns_503(self, monkeypatch):
         """Refuse to mint against the well-known dev placeholder — those
         tokens are forgeable by anyone who knows the placeholder."""
         _set_livekit_env(
-            monkeypatch, key="lk_api_key", secret=_DEV_PLACEHOLDER_SECRET,
+            monkeypatch,
+            key="lk_api_key",
+            secret=_DEV_PLACEHOLDER_SECRET,
         )
         client = TestClient(_build_app(), raise_server_exceptions=False)
-        resp = client.get("/voice/join")
+        resp = client.get("/voice/join", headers=_TAILNET)
         assert resp.status_code == 503
 
 
@@ -106,7 +122,7 @@ class TestVoiceJoinHappyPath:
         monkeypatch.setenv("LIVEKIT_ROOM", "poindexter")
         monkeypatch.setenv("LIVEKIT_DEFAULT_IDENTITY", "operator")
         client = TestClient(_build_app())
-        resp = client.get("/voice/join")
+        resp = client.get("/voice/join", headers=_TAILNET)
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/html")
         body = resp.text
@@ -119,10 +135,11 @@ class TestVoiceJoinHappyPath:
     def test_respects_public_wss_url_override(self, monkeypatch):
         _set_livekit_env(monkeypatch, key="lk_api_key", secret="real-secret-value")
         monkeypatch.setenv(
-            "LIVEKIT_PUBLIC_WSS_URL", "wss://voice.example.ts.net/livekit",
+            "LIVEKIT_PUBLIC_WSS_URL",
+            "wss://voice.example.ts.net/livekit",
         )
         client = TestClient(_build_app())
-        resp = client.get("/voice/join")
+        resp = client.get("/voice/join", headers=_TAILNET)
         assert resp.status_code == 200
         assert "wss://voice.example.ts.net/livekit" in resp.text
 

@@ -19,18 +19,23 @@ Why a static HTML page instead of a React app? The page is ~80 lines.
 Building a React app would be more code than the actual logic, plus
 add a build step. The LiveKit JS SDK is the only "framework" needed.
 
-Auth: gated behind ``Depends(verify_api_token)`` since 2026-05-12.
-
-Pre-2026-05-12 this route was unauthenticated on the assumption that
-the worker was Tailscale-only. Operators exposing the worker over a
-Tailscale **Funnel** (or any public hostname) discovered that any
-internet visitor could mint a 7-day LiveKit JWT with room-join +
-publish + subscribe + publish-data permissions for the operator's
-voice room. Security audit caught it; this route now requires a
-valid OAuth JWT before
-minting the LiveKit token, AND refuses to mint when
+Auth: **tailnet-only** as of 2026-06-02 — served via Tailscale
+**Serve** (not Funnel) and gated on the ``Tailscale-User-Login`` header
+through ``require_tailnet``. It also refuses to mint when
 ``LIVEKIT_API_SECRET`` is unset or equal to the dev placeholder
 (fail-loud per the no-silent-defaults rule).
+
+History: pre-2026-05-12 the route was unauthenticated on the assumption
+that the worker was Tailscale-only. Operators exposing it over a
+Tailscale **Funnel** (public internet) found that any visitor could
+mint a 7-day LiveKit JWT (room-join + publish + subscribe) for the
+operator's voice room. The 2026-05-12 audit bolted on machine OAuth —
+which closed that hole but locked out the operator's *phone* (a browser
+has no client-credentials bearer). The real fix (2026-06-02) addresses
+the actual mistake: move ``/voice`` off the public Funnel onto Serve
+(tailnet-only) and gate on the Serve-set ``Tailscale-User-Login``
+header, which a phone on the tailnet carries and the public internet
+never can.
 """
 
 from __future__ import annotations
@@ -43,12 +48,43 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from middleware.api_token_auth import verify_api_token
-
 router = APIRouter(prefix="/voice", tags=["voice"])
+
+
+def require_tailnet(request: Request) -> str:
+    """Allow only Tailscale-tailnet callers (Serve), reject public ones.
+
+    ``tailscale serve`` injects a ``Tailscale-User-Login`` header
+    identifying the authenticated tailnet device on every proxied
+    request. Public **Funnel** traffic never carries it, and Tailscale
+    strips any client-supplied ``Tailscale-*`` headers at ingress, so a
+    public visitor cannot forge it.
+
+    This replaced the OAuth gate on ``/voice/join`` (2026-06-02). The
+    route mints a 7-day LiveKit room token; the 2026-05-12 audit gated
+    it behind machine OAuth because it was exposed over a public Funnel,
+    but that locked out the operator's phone (a browser has no bearer).
+    The route is now served tailnet-only (Serve, not Funnel), and this
+    header — set by Serve for authenticated tailnet devices — is the
+    auth boundary. A phone on the tailnet gets in with no bearer; the
+    public internet can't reach the route at all (and is denied here
+    even if a topology mistake re-exposes it). See
+    ``feedback_no_silent_defaults`` — fail closed when the signal is
+    absent.
+    """
+    identity = request.headers.get("Tailscale-User-Login", "").strip()
+    if not identity:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Voice is tailnet-only. Open this page over Tailscale "
+                "(Serve), not the public internet."
+            ),
+        )
+    return identity
 
 
 # 2026-05-12 security audit: refuse to mint LiveKit tokens with the dev
@@ -106,7 +142,7 @@ def _mint_livekit_token(
 
 @router.get("/join", response_class=HTMLResponse)
 async def voice_join(
-    _principal: str = Depends(verify_api_token),
+    _tailnet_user: str = Depends(require_tailnet),
 ) -> HTMLResponse:
     """Render the LiveKit web client with a freshly-minted JWT.
 
@@ -115,11 +151,11 @@ async def voice_join(
     at the Tailscale-funneled wss endpoint; default assumes the
     standard /livekit-signal/ path on this funnel hostname.
 
-    Requires a valid OAuth JWT (verified by ``verify_api_token``).
-    The 2026-05-12 security audit caught this route shipping unauth
-    over the Tailscale **Funnel** (public internet) — any visitor
-    could mint a 7-day room-join token with publish + subscribe
-    privileges for Matt's voice room. The gate closed that window.
+    Requires a tailnet caller — the ``Tailscale-User-Login`` header set
+    by Tailscale Serve, verified by ``require_tailnet`` (NOT an OAuth
+    bearer, so the operator's phone browser works). Public Funnel
+    traffic never carries that header, so the voice room stays protected
+    even if the route is accidentally re-exposed over a Funnel.
     """
     api_key = os.environ.get("LIVEKIT_API_KEY", "")
     api_secret = os.environ.get("LIVEKIT_API_SECRET", "")
