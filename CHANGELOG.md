@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.60.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.1...v0.60.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **writer:** draft path must use plain-text helper, not JSON-forcing _ollama_chat_json ([#572](https://github.com/Glad-Labs/glad-labs-stack/issues/572)) ([#950](https://github.com/Glad-Labs/glad-labs-stack/issues/950)) ([e85ffb0](https://github.com/Glad-Labs/glad-labs-stack/commit/e85ffb0633cc2fd61b14d7fefa86cbd0e5470cda))
+
 ## [0.60.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.0...v0.60.1) (2026-06-02)
 
 
