@@ -263,7 +263,7 @@ export default function AboutPage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8">
               <Button as={Link} href="/posts" variant="primary">
-                ▶ Read the blog
+                <span aria-hidden>▶</span> Read the blog
               </Button>
               <Button
                 as="a"
@@ -272,7 +272,7 @@ export default function AboutPage() {
                 rel="noopener noreferrer"
                 variant="secondary"
               >
-                🎧 Listen on Spotify
+                <span aria-hidden>🎧</span> Listen on Spotify
               </Button>
               <Button
                 as="a"

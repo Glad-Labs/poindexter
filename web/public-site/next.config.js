@@ -363,7 +363,12 @@ const nextConfig = {
 
   // Experimental: Optimize package imports
   experimental: {
-    // optimizePackageImports: ['components', 'lib'],
+    // Barrel-optimize the design-system package so importing { Button, Card }
+    // from '@glad-labs/brand' only pulls those modules, not the whole barrel
+    // (#979). Safe because the package is effectively side-effect-free — its
+    // package.json "sideEffects" only lists the token CSS, and src/index.js is
+    // pure named re-exports.
+    optimizePackageImports: ['@glad-labs/brand'],
   },
 
   // Compression configuration

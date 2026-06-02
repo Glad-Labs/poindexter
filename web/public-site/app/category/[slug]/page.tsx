@@ -35,7 +35,9 @@ interface Category {
 async function getCategories(): Promise<Category[]> {
   try {
     const response = await fetch(`${STATIC_URL}/categories.json`, {
-      next: { revalidate: 300 },
+      // Tag-based cache — categories.json is regenerated alongside the post
+      // index on publish, so it shares the 'posts' tag (#967).
+      next: { tags: ['posts', 'post-index'] },
     });
     if (!response.ok) return [];
     const data = await response.json();

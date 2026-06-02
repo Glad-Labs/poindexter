@@ -106,7 +106,9 @@ export default async function PreviewPage({
         </span>
       </div>
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16 max-w-4xl">
+      {/* Plain <div>, not <main> — the global layout already renders the single
+          <main id="main-content"> landmark this page nests inside (#972). */}
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16 max-w-4xl">
         {/* Featured image */}
         {(post.featured_image_url || post.cover_image_url) && (
           <div className="relative w-full aspect-video mb-8 overflow-hidden bg-slate-800">
@@ -238,7 +240,7 @@ export default async function PreviewPage({
             prose-hr:border-[color:var(--gl-hairline-strong)]"
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
-      </main>
+      </div>
     </div>
   );
 }

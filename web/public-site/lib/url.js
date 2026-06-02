@@ -83,3 +83,20 @@ export function getAbsoluteURL(path = '') {
 export function getAPIBaseURL() {
   return FASTAPI_URL;
 }
+
+/**
+ * Resolve an image path to an absolute URL.
+ *
+ * Absolute URLs (http/https) are returned untouched; relative paths are
+ * prefixed with the API base URL. Returns null for falsy input so callers can
+ * fall back to a placeholder. Inlined from the deleted lib/api-fastapi.js, whose
+ * only remaining consumer was lib/structured-data.js (#971).
+ *
+ * @param {string} path - Relative or absolute image path
+ * @returns {string|null} - Absolute URL, or null when no path is given
+ */
+export function getImageURL(path) {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return `${FASTAPI_URL}${path}`;
+}

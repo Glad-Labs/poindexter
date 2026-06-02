@@ -21,8 +21,9 @@ jest.mock('../logger', () => ({
   info: jest.fn(),
 }));
 
-// Mock api-fastapi to avoid real URL construction depending on env
-jest.mock('../api-fastapi', () => ({
+// Mock lib/url to avoid real URL construction depending on env (getImageURL
+// was inlined here from the deleted lib/api-fastapi.js — #971).
+jest.mock('../url', () => ({
   getImageURL: jest.fn((path) =>
     path ? `https://api.www.gladlabs.io${path}` : null
   ),
