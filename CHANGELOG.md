@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.60.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.0...v0.60.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **pipeline:** retry RAG embedding + DDG research under concurrent load ([#876](https://github.com/Glad-Labs/glad-labs-stack/issues/876), [#877](https://github.com/Glad-Labs/glad-labs-stack/issues/877)) ([#935](https://github.com/Glad-Labs/glad-labs-stack/issues/935)) ([07cfc10](https://github.com/Glad-Labs/glad-labs-stack/commit/07cfc105174776e12a8aca0d7157a7391610675b))
+
 ## [0.60.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.59.0...v0.60.0) (2026-06-02)
 
 
