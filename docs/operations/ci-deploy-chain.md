@@ -131,6 +131,31 @@ permanently stale. Public-side CI (test-backend, migrations-smoke,
 Mintlify Deployment, link-rot) still has to pass on the resulting
 commit.
 
+## Deploying the local worker (bringing prod up to `main`)
+
+The worker / brain / pipeline-bot / prefect-worker containers **bind-mount
+this checkout** (`src/cofounder_agent` → `/app`, `brain` →
+`/opt/poindexter/brain`), so the running pipeline executes whatever branch the
+checkout is sitting on. A merge to `main` does **not** reach the worker until
+the checkout is updated and the containers restart. Leaving the checkout on a
+feature branch is how production silently drifts behind `main`.
+
+The canonical one-command deploy:
+
+```powershell
+pwsh ./scripts/deploy-worker.ps1
+```
+
+It refuses on a dirty tree, tag-backs-up any unpushed commits on the current
+branch, checks out `main`, fast-forwards to `origin/main`, restarts the
+pipeline containers, then waits for the worker healthcheck and
+`poindexter_worker_up=1`. There is **no image rebuild** — app code is
+bind-mounted, so a restart is the deploy (dependency / base-image changes
+still need `docker compose build`).
+
+A complementary brain canary alerts when the checkout falls behind
+`origin/main`, so the drift can't hide between deploys.
+
 ## If you're self-hosting Poindexter
 
 You don't need any of this. Your deployment is:
