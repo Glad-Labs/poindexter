@@ -58,6 +58,7 @@ def _make_row(
     summary: str = "Service openclaw is down -- no container mapping",
     description: str = "",
     status: str = "firing",
+    force_channel: str = "",
 ) -> dict:
     """Match the asyncpg row shape ``alert_events`` returns."""
     labels = {
@@ -65,6 +66,8 @@ def _make_row(
         "severity": severity,
         "category": category,
     }
+    if force_channel:
+        labels["force_channel"] = force_channel
     annotations = {"summary": summary}
     if description:
         annotations["description"] = description
@@ -445,6 +448,42 @@ class TestForceTelegramOverride:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestForceChannelRouting:
+    """Per-row ``labels.force_channel`` (set by findings_alert_router from
+    the per-kind ``findings.<kind>.delivery`` policy) flows through
+    poll_and_dispatch -> _dispatch_one -> _routed_notify -> _channels_for."""
+
+    async def test_force_channel_telegram_pages_warning(self):
+        """A warn finding pinned to telegram dispatches with critical=True
+        (Telegram + Discord) even though severity alone is Discord-only."""
+        rows = [[_make_row(
+            row_id=1, severity="warning",
+            alertname="anomaly_detector:anomaly", category="finding",
+            force_channel="telegram",
+        )]]
+        pool = _StatePool(rows_to_serve=rows)
+        notify = AsyncMock(return_value=None)
+        await ad.poll_and_dispatch(pool, notify_fn=notify)
+
+        assert notify.await_count == 1
+        assert notify.await_args.kwargs.get("critical") is True
+
+    async def test_force_channel_discord_keeps_warning_discord_only(self):
+        rows = [[_make_row(
+            row_id=2, severity="warning",
+            alertname="linkcheck:broken_link", category="finding",
+            force_channel="discord",
+        )]]
+        pool = _StatePool(rows_to_serve=rows)
+        notify = AsyncMock(return_value=None)
+        await ad.poll_and_dispatch(pool, notify_fn=notify)
+
+        assert notify.await_count == 1
+        assert notify.await_args.kwargs.get("critical") is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestMixedSeverityNoCollision:
     """Warning + critical with same alertname/message produce DIFFERENT
     fingerprints because severity is part of the key.
@@ -561,6 +600,58 @@ class TestChannelsFor:
             alertname="something",
             category="business_critical",
             force_telegram_set=frozenset({"business_critical"}),
+        )
+        assert tg is True
+
+    # ---- per-row force_channel (findings.<kind>.delivery, #461) ----------
+    # The findings router stamps labels.force_channel from the per-kind
+    # delivery policy; _channels_for honors it so a warn-level finding can
+    # be pinned to Telegram (or kept Discord-only) regardless of severity.
+
+    def test_force_channel_telegram_pages_warning(self):
+        """delivery=telegram forces Telegram on for a warn finding that the
+        severity matrix would otherwise keep Discord-only."""
+        tg, dc = ad._channels_for(
+            "warning", alertname="anomaly_detector:anomaly", category="finding",
+            force_telegram_set=frozenset(), force_channel="telegram",
+        )
+        assert tg is True
+        assert dc is True  # Discord is always the log channel
+
+    def test_force_channel_discord_keeps_warning_discord_only(self):
+        """delivery=discord on a warn finding stays Discord-only (the default,
+        made explicit)."""
+        tg, dc = ad._channels_for(
+            "warning", alertname="linkcheck:broken_link", category="finding",
+            force_telegram_set=frozenset(), force_channel="discord",
+        )
+        assert tg is False
+        assert dc is True
+
+    def test_force_channel_discord_does_not_suppress_critical(self):
+        """Safety floor: a critical finding still pages Telegram even when
+        the per-kind policy says discord — consistent with the system-wide
+        critical=Telegram invariant (feedback_telegram_vs_discord)."""
+        tg, dc = ad._channels_for(
+            "critical", alertname="x:y", category="finding",
+            force_telegram_set=frozenset(), force_channel="discord",
+        )
+        assert tg is True
+        assert dc is True
+
+    def test_force_channel_empty_is_noop(self):
+        """No force_channel -> unchanged severity-matrix behavior."""
+        tg, dc = ad._channels_for(
+            "warning", alertname="x", category="y",
+            force_telegram_set=frozenset(), force_channel="",
+        )
+        assert tg is False
+        assert dc is True
+
+    def test_force_channel_telegram_case_insensitive(self):
+        tg, _ = ad._channels_for(
+            "warning", alertname="x", category="y",
+            force_telegram_set=frozenset(), force_channel="Telegram",
         )
         assert tg is True
 

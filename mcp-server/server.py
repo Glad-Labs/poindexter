@@ -1014,6 +1014,156 @@ async def get_audit_summary(hours: int = 24) -> str:
         return _format_tool_error("Audit summary", e)
 
 
+# Severities the findings_alert_router actually forwards to delivery
+# channels. ``info`` stays in audit_log only (queryable, never paged), so it
+# never counts as "pending delivery".
+_FINDINGS_ROUTABLE_SEVERITIES = ("warn", "warning", "critical")
+
+
+@mcp.tool()
+async def findings_list(
+    kind: str = "",
+    severity: str = "",
+    hours: int = 168,
+    pending_only: bool = False,
+    limit: int = 30,
+) -> str:
+    """List quality-probe findings (audit_log event_type='finding') with each
+    finding's resolved per-kind delivery policy and routed-vs-pending status.
+
+    Findings are emitted by the brain's quality probes / jobs via
+    ``utils.findings.emit_finding`` and routed to delivery channels by the
+    ``findings_alert_router`` worker job, keyed on the
+    ``findings.<kind>.delivery`` app_settings policy (auto_fix / github_issue /
+    telegram / discord / log_only). This is the operator-triage surface for
+    Glad-Labs/poindexter#461 — answers "what fired, how was it routed, and
+    what's still waiting?".
+
+    Status legend:
+      routed   — already forwarded by the router (id <= route watermark)
+      PENDING  — routable severity, not yet forwarded (awaiting delivery)
+      log-only — info severity (never paged) or kind policy = log_only
+
+    Args:
+        kind: Filter by finding kind (e.g. "broken_external_link", "media_drift").
+        severity: Filter by severity. "warn" and "warning" both match.
+        hours: Look-back window in hours (default 168 = 7 days, max 720).
+        pending_only: Only routable findings above the route watermark
+            (i.e. still awaiting delivery).
+        limit: Max rows to return (default 30, max 100).
+    """
+    try:
+        pool = await _get_pool()
+        hours = max(1, min(hours, 720))
+        limit = max(1, min(limit, 100))
+
+        # Route watermark: highest audit_log.id the router has forwarded.
+        wm_row = await pool.fetchrow(
+            "SELECT NULLIF(value, '')::bigint AS wm FROM app_settings "
+            "WHERE key = 'findings_alert_route_watermark'"
+        )
+        watermark = int(wm_row["wm"]) if wm_row and wm_row["wm"] is not None else 0
+
+        # Per-kind delivery policies (findings.<kind>.delivery). The router
+        # ignores findings.default and routes unconfigured kinds loud, so we
+        # mirror that: a kind absent here displays as "route".
+        pol_rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key LIKE 'findings.%.delivery'"
+        )
+        delivery_by_kind: dict[str, str] = {}
+        for r in pol_rows:
+            parts = r["key"].split(".")
+            if len(parts) == 3 and parts[1] not in ("", "default"):
+                delivery_by_kind[parts[1]] = r["value"]
+
+        conditions = ["event_type = 'finding'"]
+        params: list[Any] = []
+        idx = 1
+
+        conditions.append(f"timestamp > NOW() - ${idx} * INTERVAL '1 hour'")
+        params.append(hours)
+        idx += 1
+
+        if kind:
+            conditions.append(f"details->>'kind' = ${idx}")
+            params.append(kind)
+            idx += 1
+        if severity:
+            sev = severity.strip().lower()
+            if sev in ("warn", "warning"):
+                conditions.append(f"LOWER(severity) = ANY(${idx}::text[])")
+                params.append(["warn", "warning"])
+            else:
+                conditions.append(f"LOWER(severity) = ${idx}")
+                params.append(sev)
+            idx += 1
+        if pending_only:
+            conditions.append(f"id > ${idx}")
+            params.append(watermark)
+            idx += 1
+            conditions.append(f"severity = ANY(${idx}::text[])")
+            params.append(list(_FINDINGS_ROUTABLE_SEVERITIES))
+            idx += 1
+
+        where = " AND ".join(conditions)
+        params.append(limit)
+
+        rows = await pool.fetch(
+            f"""
+            SELECT id, timestamp, source, severity, details
+            FROM audit_log
+            WHERE {where}
+            ORDER BY id DESC
+            LIMIT ${idx}
+            """,
+            *params,
+        )
+
+        if not rows:
+            scope = "pending " if pending_only else ""
+            return f"No {scope}findings in the last {hours}h."
+
+        header = (
+            f"Findings ({len(rows)}, last {hours}h"
+            + (", pending only" if pending_only else "")
+            + f"; route watermark id={watermark}):\n"
+        )
+        lines = [header]
+        for row in rows:
+            details = (
+                json.loads(row["details"])
+                if isinstance(row["details"], str)
+                else (row["details"] or {})
+            )
+            fkind = details.get("kind") or "?"
+            title = (details.get("title") or "").strip()
+            ts = row["timestamp"].strftime("%m-%d %H:%M") if row["timestamp"] else "?"
+            sev = (row["severity"] or "info").lower()
+            routable = sev in _FINDINGS_ROUTABLE_SEVERITIES
+
+            delivery = delivery_by_kind.get(fkind, "route")
+            # The router refuses to suppress a critical finding even when its
+            # kind is log_only — reflect that so the operator isn't misled.
+            if delivery == "log_only" and sev == "critical":
+                delivery = "route (critical override)"
+
+            if not routable:
+                status = "log-only"
+            elif row["id"] <= watermark:
+                status = "routed"
+            else:
+                status = "PENDING"
+
+            lines.append(
+                f"  [{ts}] {sev:8s} {fkind:26s} → {delivery:12s} [{status}] "
+                f"id={row['id']} src={row['source'] or '?'}"
+                + (f"\n           {title[:100]}" if title else "")
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return _format_tool_error("Findings list", e)
+
+
 # ============================================================================
 # STATIC EXPORT TOOLS
 # ============================================================================

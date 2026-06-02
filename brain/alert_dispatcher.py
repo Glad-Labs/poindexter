@@ -272,6 +272,7 @@ def _channels_for(
     alertname: str,
     category: str,
     force_telegram_set: frozenset[str],
+    force_channel: str = "",
 ) -> tuple[bool, bool]:
     """Resolve (telegram, discord) booleans for a given severity + event.
 
@@ -284,6 +285,17 @@ def _channels_for(
       against ``alertname``, ``category``, AND any ``event_type`` label
       the route layer may have copied through. Discord still fires
       because warnings still belong on Discord.
+    * ``force_channel`` (per-row directive — the findings router stamps
+      ``labels.force_channel`` from the per-kind ``findings.<kind>.delivery``
+      policy, Glad-Labs/poindexter#461):
+        - ``telegram`` -> force Telegram ON (Discord stays on as the log).
+          This is the substantive new capability: page a warn-severity
+          finding that the severity matrix would otherwise keep on Discord.
+        - ``discord`` -> Discord-only; suppress Telegram UNLESS the severity
+          is critical/error. The critical floor is deliberate: a per-kind
+          policy must never silence a critical page — the same invariant
+          that stops a critical finding resolving to ``log_only`` upstream.
+      Grafana alerts never set this label, so their routing is unchanged.
     """
     sev = (severity or "").strip().lower()
     telegram = sev in _TELEGRAM_SEVERITIES
@@ -300,6 +312,15 @@ def _channels_for(
         candidates.discard("")
         if candidates & force_telegram_set:
             telegram = True
+
+    # Per-row channel directive (findings per-kind delivery policy). Applied
+    # last so it's the most specific signal — but it can only ADD Telegram,
+    # or remove it for non-critical; it never silences a critical page.
+    fc = (force_channel or "").strip().lower()
+    if fc == "telegram":
+        telegram = True
+    elif fc == "discord" and sev not in _TELEGRAM_SEVERITIES:
+        telegram = False
 
     return telegram, discord
 
@@ -822,6 +843,10 @@ async def _dispatch_one(
         severity = (labels.get("severity") or "").strip()
         alertname = (labels.get("alertname") or row.get("alertname") or "").strip()
         category = (labels.get("category") or row.get("category") or "").strip()
+        # Per-row channel directive set by findings_alert_router from the
+        # per-kind findings.<kind>.delivery policy (Glad-Labs/poindexter#461).
+        # Empty for every non-findings alert, so their routing is unchanged.
+        force_channel = (labels.get("force_channel") or "").strip()
         message = _format_alert_message(alert)
 
         if dedup_config is not None:
@@ -862,6 +887,7 @@ async def _dispatch_one(
                     notify_fn_injected=dedup_config.get(
                         "notify_fn_injected", False
                     ),
+                    force_channel=force_channel,
                 )
                 await pool.execute(_MARK_SENT_SQL, row_id)
                 await _mark_summary_dispatched(
@@ -894,6 +920,7 @@ async def _dispatch_one(
                 notify_fn_injected=dedup_config.get(
                     "notify_fn_injected", False
                 ),
+                force_channel=force_channel,
             )
         else:
             critical = severity.lower() == "critical"
@@ -1134,6 +1161,7 @@ async def _routed_notify(
     category: str,
     force_telegram_set: frozenset[str],
     notify_fn_injected: bool = False,
+    force_channel: str = "",
 ) -> dict[str, Any] | None:
     """Dispatch ``message`` honouring the severity routing matrix.
 
@@ -1162,6 +1190,7 @@ async def _routed_notify(
         alertname=alertname,
         category=category,
         force_telegram_set=force_telegram_set,
+        force_channel=force_channel,
     )
 
     # ``critical=`` reflects the routing decision, NOT the raw severity.

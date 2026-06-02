@@ -624,3 +624,105 @@ async def test_run_github_issue_counts_filed(monkeypatch):
     result = await FindingsAlertRouterJob().run(pool, {})
     assert "filed 1" in result.detail
     assert result.changes_made == 1
+
+
+# ---- #461: per-kind delivery=telegram/discord channel forcing ---------------
+# The router carries the per-kind delivery channel into alert_events.labels as
+# `force_channel`; brain/alert_dispatcher honors it. Without this, a warn-level
+# finding with delivery=telegram would only ever reach Discord (severity matrix).
+
+
+def _labels_of(insert_call) -> dict:
+    """Decode the labels JSONB arg ($3 -> args[3]) of an alert_events insert."""
+    return json.loads(insert_call.args[3])
+
+
+async def test_insert_alert_event_sets_force_channel_when_given():
+    pool, conn = _pool_with(execute=None)
+    finding = {"id": 1, "source": "anomaly_detector", "severity": "warn",
+               "details": json.dumps({"kind": "anomaly", "title": "spike"})}
+    await router_mod._insert_alert_event(pool, finding, force_channel="telegram")
+    labels = _labels_of(conn.execute.await_args_list[0])
+    assert labels["force_channel"] == "telegram"
+
+
+async def test_insert_alert_event_omits_force_channel_by_default():
+    pool, conn = _pool_with(execute=None)
+    finding = {"id": 1, "source": "s", "severity": "warn",
+               "details": json.dumps({"kind": "k", "title": "t"})}
+    await router_mod._insert_alert_event(pool, finding)
+    labels = _labels_of(conn.execute.await_args_list[0])
+    assert "force_channel" not in labels
+
+
+async def test_run_telegram_delivery_carries_force_channel_label():
+    """A warn finding whose policy delivery=telegram routes to alert_events
+    with labels.force_channel='telegram' so the dispatcher pages Telegram."""
+    rows = [{"id": 400, "source": "anomaly_detector", "severity": "warn",
+             "details": json.dumps({"kind": "anomaly", "title": "spike"})}]
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=rows,
+        policy_rows=[
+            {"key": "findings.anomaly.delivery", "value": "telegram"},
+            {"key": "findings.anomaly.min_severity", "value": "warn"},
+        ],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.changes_made == 1
+    labels = _labels_of(conn.execute.await_args_list[0])
+    assert labels["force_channel"] == "telegram"
+
+
+async def test_run_discord_delivery_carries_force_channel_label():
+    rows = [{"id": 401, "source": "linkcheck", "severity": "warn",
+             "details": json.dumps({"kind": "broken_link", "title": "404"})}]
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=rows,
+        policy_rows=[
+            {"key": "findings.broken_link.delivery", "value": "discord"},
+            {"key": "findings.broken_link.min_severity", "value": "warn"},
+        ],
+    )
+    await FindingsAlertRouterJob().run(pool, {})
+    labels = _labels_of(conn.execute.await_args_list[0])
+    assert labels["force_channel"] == "discord"
+
+
+async def test_run_route_delivery_has_no_force_channel():
+    """An unconfigured kind routes plainly — no force_channel, dispatcher
+    decides the channel by severity (the unchanged default)."""
+    rows = [{"id": 402, "source": "scheduler.job", "severity": "warn",
+             "details": json.dumps({"kind": "job_failure", "title": "boom"})}]
+    pool, conn = _pool_with(fetchrow={"value": "0"}, fetch=rows, policy_rows=[])
+    await FindingsAlertRouterJob().run(pool, {})
+    labels = _labels_of(conn.execute.await_args_list[0])
+    assert "force_channel" not in labels
+
+
+async def test_deliver_fallback_telegram_carries_force_channel(monkeypatch):
+    """When auto_fix fails and fallback=telegram, the routed alert_events
+    row must still force Telegram."""
+    class _FailFixJob:
+        async def run(self, pool, config):
+            return JobResult(ok=False, detail="nope", changes_made=0)
+
+    monkeypatch.setattr(
+        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        {"broken_external_link": _FailFixJob},
+    )
+    rows = [{"id": 403, "source": "lc", "severity": "warn",
+             "details": json.dumps({"kind": "broken_external_link"})}]
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=rows,
+        policy_rows=[
+            {"key": "findings.broken_external_link.delivery", "value": "auto_fix"},
+            {"key": "findings.broken_external_link.fallback", "value": "telegram"},
+        ],
+    )
+    await FindingsAlertRouterJob().run(pool, {})
+    # First execute is the fallback alert_events insert.
+    labels = _labels_of(conn.execute.await_args_list[0])
+    assert labels["force_channel"] == "telegram"

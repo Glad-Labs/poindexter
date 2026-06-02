@@ -1,0 +1,517 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Findings dispatcher epic (#461)",
+      "tooltip": "audit_log findings → findings_alert_router → alert_dispatcher",
+      "type": "link",
+      "url": "https://github.com/Glad-Labs/poindexter/issues/461"
+    }
+  ],
+  "tags": ["findings", "issue-461", "monitoring"],
+  "timezone": "browser",
+  "title": "Findings — Probe Routing",
+  "uid": "findings",
+  "version": 1,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Findings Overview",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": [],
+      "id": 1
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Total findings emitted in the selected time window. Findings are written to audit_log by the brain's quality probes / jobs via utils.findings.emit_finding.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "orange", "value": 500 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Findings\" FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ],
+      "title": "Findings (window)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Routable findings (warn/critical) above the route watermark — i.e. emitted but NOT yet forwarded to a delivery channel by findings_alert_router. This is the 'unprocessed findings' backlog from #461. Steady-state should be ~0 (the router runs every 60s); a non-zero value that persists means the router is stalled. Not time-windowed — it's a live backlog count.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "color": "blue", "text": "✓ 0" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "orange", "value": 25 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Pending Delivery\" FROM audit_log WHERE event_type = 'finding' AND severity IN ('warn', 'warning', 'critical') AND id > COALESCE((SELECT NULLIF(value, '')::bigint FROM app_settings WHERE key = 'findings_alert_route_watermark'), 0);",
+          "refId": "A"
+        }
+      ],
+      "title": "Pending delivery",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Critical findings in the window. Critical always pages Telegram (the per-kind delivery policy can never suppress a critical via log_only — the router/dispatcher refuse).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "color": "blue", "text": "✓ 0" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Critical\" FROM audit_log WHERE event_type = 'finding' AND severity = 'critical' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ],
+      "title": "Critical (window)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Distinct finding kinds emitted in the window. A sudden jump usually means a new probe started firing — check the By Kind table below.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(DISTINCT details->>'kind') AS \"Distinct Kinds\" FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ],
+      "title": "Distinct kinds",
+      "type": "stat"
+    },
+    {
+      "type": "row",
+      "title": "By Kind & Severity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "panels": [],
+      "id": 6
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Findings per hour, stacked by severity. Spot bursts (a probe firing in a loop) and severity mix at a glance.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 7 },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, severity AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Findings per Hour (by severity)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Finding volume by kind in the window, with the most recent timestamp. The noisiest kinds are the candidates for a log_only or higher-cooldown policy.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 50 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Count" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 7 },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT details->>'kind' AS \"Kind\", COUNT(*)::int AS \"Count\", MAX(timestamp) AS \"Last\" FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY \"Count\" DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Findings by Kind (window)",
+      "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Routing & Triage",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "panels": [],
+      "id": 9
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "What each emitted kind routes to, joining the live findings.<kind>.delivery app_settings policy. Kinds with no explicit policy show 'route (unconfigured)' — the router deliberately keeps them loud rather than applying findings.default. Edit a policy live with: poindexter (or MCP set_setting) findings.<kind>.delivery = log_only|discord|telegram|auto_fix|github_issue.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 17 },
+      "id": 10,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT f.kind AS \"Kind\", f.cnt AS \"Count\", COALESCE(p.value, 'route (unconfigured)') AS \"Delivery Policy\" FROM (SELECT details->>'kind' AS kind, COUNT(*)::int AS cnt FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp) GROUP BY 1) f LEFT JOIN app_settings p ON p.key = 'findings.' || f.kind || '.delivery' ORDER BY f.cnt DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Kind → Delivery Policy (window)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "The 25 most recent findings with severity, kind, title and source. Findings above the route watermark are still pending delivery (see the Pending stat above).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Severity" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-text", "mode": "basic" }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": { "color": "red", "text": "critical" },
+                      "warn": { "color": "orange", "text": "warn" },
+                      "warning": { "color": "orange", "text": "warning" },
+                      "info": { "color": "blue", "text": "info" }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 17 },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS \"Time\", severity AS \"Severity\", details->>'kind' AS \"Kind\", details->>'title' AS \"Title\", source AS \"Source\", id AS \"ID\" FROM audit_log WHERE event_type = 'finding' ORDER BY id DESC LIMIT 25;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest 25 Findings",
+      "type": "table"
+    }
+  ]
+}

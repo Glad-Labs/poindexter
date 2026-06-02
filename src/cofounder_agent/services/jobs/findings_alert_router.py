@@ -289,7 +289,8 @@ async def _deliver_fallback(
             "for audit_log.id=%s", kind, finding.get("id"),
         )
         return False
-    await _insert_alert_event(pool, finding)
+    force_channel = fallback if fallback in ("telegram", "discord") else None
+    await _insert_alert_event(pool, finding, force_channel=force_channel)
     return True
 
 
@@ -399,10 +400,20 @@ def _finding_kind(finding: dict[str, Any]) -> str:
     return details_raw.get("kind") or "unknown"
 
 
-async def _insert_alert_event(pool: Any, finding: dict[str, Any]) -> None:
+async def _insert_alert_event(
+    pool: Any, finding: dict[str, Any], force_channel: str | None = None
+) -> None:
     """Insert one ``alert_events`` row mirroring the existing probe
     patterns in ``brain/mcp_http_probe.py`` and friends. Dispatcher takes
-    over from here — picks channel by severity, dedup by fingerprint."""
+    over from here — picks channel by severity, dedup by fingerprint.
+
+    ``force_channel`` (the per-kind ``findings.<kind>.delivery`` value when
+    it names a channel — ``telegram`` / ``discord``) is stamped into the
+    ``labels`` JSON so ``brain/alert_dispatcher._channels_for`` can honor
+    the per-kind delivery policy instead of routing purely by severity.
+    ``None`` (the 'route' / auto_fix-fallback default) leaves the label
+    out, so the dispatcher's severity matrix decides — unchanged behavior
+    for every kind that doesn't pin a channel."""
     details_raw = finding.get("details") or {}
     if isinstance(details_raw, str):
         try:
@@ -417,11 +428,14 @@ async def _insert_alert_event(pool: Any, finding: dict[str, Any]) -> None:
     severity = _normalize_severity(finding.get("severity") or "info")
     fingerprint = _build_fingerprint(source, details_raw)
 
-    labels = json.dumps({
+    labels_dict: dict[str, Any] = {
         "source": source,
         "kind": details_raw.get("kind") or "finding",
         "audit_log_id": finding["id"],
-    })
+    }
+    if force_channel:
+        labels_dict["force_channel"] = force_channel
+    labels = json.dumps(labels_dict)
     annotations = json.dumps({
         "summary": details_raw.get("title") or alertname,
         "description": (details_raw.get("body") or "")[:4000],
@@ -491,8 +505,14 @@ class FindingsAlertRouterJob:
                         routed += 1
                     else:
                         suppressed += 1
-                else:  # 'route' (also 'telegram'/'discord' — dispatcher picks channel)
-                    await _insert_alert_event(pool, r)
+                else:  # 'route' / 'telegram' / 'discord'
+                    # telegram/discord pin the channel via a force_channel
+                    # label honored by brain/alert_dispatcher; 'route' leaves
+                    # it None so the dispatcher's severity matrix decides.
+                    force_channel = (
+                        delivery if delivery in ("telegram", "discord") else None
+                    )
+                    await _insert_alert_event(pool, r, force_channel=force_channel)
                     routed += 1
             except Exception as exc:
                 errors += 1
