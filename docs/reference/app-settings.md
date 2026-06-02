@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-31.**  
+> **Auto-generated from live `app_settings` table on 2026-06-02.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 659 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 711 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (10 keys)
-- [general](#general) (262 keys)
+- [general](#general) (314 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -267,13 +267,11 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `anomaly_baseline_days` | `7` |  |  |
-| `anomaly_min_samples` | `5` |  |  |
-| `anomaly_probe_enabled` | `true` |  |  |
-| `anomaly_sigma_threshold` | `3.0` |  |  |
+| `alertmanager_url` | `http://alertmanager:9093` |  |  |
 | `api_url` | `http://localhost:8002` |  | Backend API base URL (legacy alias for api_base_url) |
 | `approval_gate_topic_decision_reject_status` | `dismissed` |  | Status set on pipeline_tasks when a topic-decision gate rejects the topic (vs. the global default 'rejected'). Distin... |
 | `app_version` | `3.0.1` |  | Auto-seeded by services.settings_defaults (#379) |
+| `atom_runs_capture_enabled` | `true` |  |  |
 | `audio_gen_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brain_anomaly_baseline_window_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brain_anomaly_current_window_hours` | `24` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -315,13 +313,66 @@ The worker re-reads on every poll; no restart needed.
 | `enable_sdxl_warmup` | `false` |  | Warm up SDXL models on startup |
 | `enable_writer_self_review` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `environment` | `development` |  | Auto-seeded by services.settings_defaults (#379) |
+| `findings.anomaly.cooldown_minutes` | `60` |  |  |
+| `findings.anomaly.delivery` | `telegram` |  |  |
+| `findings.anomaly.fallback` | `discord` |  |  |
+| `findings.anomaly.min_severity` | `critical` |  |  |
+| `findings.broken_external_link_autofixed.delivery` | `log_only` |  |  |
+| `findings.broken_external_link.cooldown_minutes` | `60` |  |  |
+| `findings.broken_external_link.delivery` | `auto_fix` |  |  |
+| `findings.broken_external_link.fallback` | `discord` |  |  |
+| `findings.broken_external_link.min_severity` | `warn` |  |  |
+| `findings.broken_internal_link_autofixed.delivery` | `log_only` |  |  |
+| `findings.broken_internal_link.cooldown_minutes` | `60` |  |  |
+| `findings.broken_internal_link.delivery` | `auto_fix` |  |  |
+| `findings.broken_internal_link.fallback` | `discord` |  |  |
+| `findings.broken_internal_link.min_severity` | `warn` |  |  |
+| `findings.broken_link.cooldown_minutes` | `360` |  |  |
+| `findings.broken_link.delivery` | `discord` |  |  |
+| `findings.broken_link.fallback` | `log_only` |  |  |
+| `findings.broken_link.min_severity` | `warn` |  |  |
+| `findings.cloud_sync_returned_false.cooldown_minutes` | `360` |  |  |
+| `findings.cloud_sync_returned_false.delivery` | `discord` |  |  |
+| `findings.cloud_sync_returned_false.fallback` | `log_only` |  |  |
+| `findings.cloud_sync_returned_false.min_severity` | `warn` |  |  |
+| `findings.default.cooldown_minutes` | `1440` |  |  |
+| `findings.default.delivery` | `log_only` |  |  |
+| `findings.default.fallback` | `log_only` |  |  |
+| `findings.default.min_severity` | `warn` |  |  |
+| `findings.duplicate_post.delivery` | `log_only` |  |  |
+| `findings.media_drift.delivery` | `log_only` |  |  |
+| `findings.missing_seo.cooldown_minutes` | `1440` |  |  |
+| `findings.missing_seo.delivery` | `auto_fix` |  |  |
+| `findings.missing_seo.fallback` | `github_issue` |  |  |
+| `findings.missing_seo.min_severity` | `warn` |  |  |
+| `findings.post_verification_failure.cooldown_minutes` | `360` |  |  |
+| `findings.post_verification_failure.delivery` | `discord` |  |  |
+| `findings.post_verification_failure.fallback` | `log_only` |  |  |
+| `findings.post_verification_failure.min_severity` | `warn` |  |  |
+| `findings.quality_regression.cooldown_minutes` | `1440` |  |  |
+| `findings.quality_regression.delivery` | `github_issue` |  |  |
+| `findings.quality_regression.fallback` | `discord` |  |  |
+| `findings.quality_regression.min_severity` | `warn` |  |  |
+| `findings.r2_static_drift.cooldown_minutes` | `360` |  |  |
+| `findings.r2_static_drift.delivery` | `discord` |  |  |
+| `findings.r2_static_drift.fallback` | `log_only` |  |  |
+| `findings.r2_static_drift.min_severity` | `warn` |  |  |
+| `findings.stock_image_regenerated.delivery` | `log_only` |  |  |
+| `findings.topic_gap.cooldown_minutes` | `1440` |  |  |
+| `findings.topic_gap.delivery` | `discord` |  |  |
+| `findings.topic_gap.fallback` | `log_only` |  |  |
+| `findings.topic_gap.min_severity` | `info` |  |  |
+| `findings.uncategorized_post_autofixed.delivery` | `log_only` |  |  |
 | `flux_schnell_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `gate_pending_summary_discord_per_cycle` | `false` |  |  |
+| `glitchtip_triage_alert_freshness_hours` | `24` |  |  |
+| `glitchtip_triage_default_resolve_max_count` | `50` |  |  |
 | `google_sitemap_ping_url` | `https://www.google.com/ping` |  | Auto-seeded by services.settings_defaults (#379) |
 | `gpu_busy_threshold_percent` | `30` |  | GPU utilization % above which gaming is detected |
 | `gpu_gaming_check_interval` | `15` |  | Seconds between gaming detection checks |
 | `gpu_gaming_clear_checks` | `3` |  | Consecutive low-util checks to resume pipeline |
 | `gpu_gaming_confirm_checks` | `2` |  | Consecutive high-util checks to confirm gaming |
+| `gpu_metrics_staleness_threshold_minutes` | `15` |  |  |
 | `gpu_name` | `` |  | GPU model name (auto-detected by detect-hardware.py) |
 | `gpu_vram_gb` | `0` |  | GPU VRAM in GB (auto-detected by detect-hardware.py) |
 | `grafana_user` | `admin` |  | Grafana admin username |
@@ -378,6 +429,7 @@ The worker re-reads on every poll; no restart needed.
 | `pexels_api_base` | `https://api.pexels.com/v1` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_dry_run_mode` | `false` |  |  |
 | `pipeline_gate_final_publish_approval` | `off` |  | HITL approval gate 'final_publish_approval': on/off (auto-managed by approval_service) |
+| `pipeline_use_graph_def` | `true` |  |  |
 | `pipeline_writer_model` | `ollama/glm-4.7-5090:latest` |  |  |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.default_duration_s` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.output_format` | `` |  | Auto-seeded by services.settings_defaults (#379) |
