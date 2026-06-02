@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.57.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.56.0...v0.57.0) (2026-06-02)
+
+
+### Features
+
+* **triage:** auto-triage issues across both repos (cite-or-surface) ([#925](https://github.com/Glad-Labs/glad-labs-stack/issues/925)) ([963a9fe](https://github.com/Glad-Labs/glad-labs-stack/commit/963a9febe649a522d1d8140ca91da10da7cd6b4e))
+
 ## [0.56.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.55.0...v0.56.0) (2026-06-02)
 
 
