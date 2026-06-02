@@ -413,6 +413,31 @@ async def record_post_approve_metrics(
             task_id, char_diff, line_diff, niche_slug,
             model_used, prompt_template_key, prompt_template_version,
         )
+
+        # Atom-runs outcome backfill (#355 Plan 2 / #552). This function is
+        # only called on the approve/publish path, so the decision is
+        # "approved" and char_diff IS the operator edit distance — the same
+        # (composition -> outcome) signal capability_outcomes wants, joined
+        # back to every atom_runs row for this task. Best-effort + COALESCE-
+        # composing (record_atom_run_outcome keeps any field a later partial
+        # update writes), so this never overwrites and never fails publish.
+        # post_id is left to compose later: published_post_edit_metrics.post_id
+        # is a legacy bigint while atom_runs.post_id is the posts uuid, so the
+        # int passed here is not the uuid join key.
+        try:
+            from services.atom_runs import record_atom_run_outcome
+            await record_atom_run_outcome(
+                pool,
+                task_id=str(task_id),
+                decision="approved",
+                edit_distance=char_diff,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "[auto_publish_gate] atom_runs outcome backfill failed: %s",
+                exc,
+            )
+
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning(

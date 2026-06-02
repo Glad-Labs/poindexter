@@ -879,6 +879,33 @@ class TemplateRunner:
         except Exception as exc:  # noqa: BLE001
             logger.debug("[template_runner] outcome write failed: %s", exc)
 
+        # Atom-runs capture (#355 Plan 2 / #552) — write one atom_runs row
+        # per node record so the (composition -> outcome) substrate
+        # populates. Complementary to capability_outcomes above:
+        # capability_outcomes scores (atom, tier, model) for the router;
+        # atom_runs adds the per-invocation run_id + composition-shape
+        # digests + the outcome join (backfilled at approval time by
+        # record_atom_run_outcome). run_id == thread_id (the per-run
+        # identity LangGraph already threads; defaults to task_id). Gated
+        # by atom_runs_capture_enabled via the run-bound SiteConfig and
+        # best-effort internally — this outer guard mirrors the
+        # capability_outcomes posture so capture never fails the pipeline.
+        try:
+            from services.atom_runs import persist_atom_runs
+            n_atom_runs = await persist_atom_runs(
+                self._pool,
+                run_id=thread_id,
+                task_id=str(initial_state.get("task_id") or "") or None,
+                template_slug=template_slug,
+                records=records,
+                site_config=self._site_config,
+            )
+            logger.debug(
+                "[template_runner] atom_runs wrote %d row(s)", n_atom_runs,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[template_runner] atom_runs capture failed: %s", exc)
+
         return TemplateRunSummary(
             ok=ok,
             template_slug=template_slug,
