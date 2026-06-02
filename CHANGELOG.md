@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.59.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.58.0...v0.59.0) (2026-06-02)
+
+
+### Features
+
+* **seo:** decompose generate_seo_metadata into LLM atoms ([#362](https://github.com/Glad-Labs/glad-labs-stack/issues/362)) ([#928](https://github.com/Glad-Labs/glad-labs-stack/issues/928)) ([94aeb71](https://github.com/Glad-Labs/glad-labs-stack/commit/94aeb7148b0dd460f80ccfc0806f64e8ddad86bf))
+
 ## [0.58.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.57.0...v0.58.0) (2026-06-02)
 
 
