@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.52.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.51.0...v0.52.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** atom-cutover 3/5 — qa.* rail atoms ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#915](https://github.com/Glad-Labs/glad-labs-stack/issues/915)) ([b2bde47](https://github.com/Glad-Labs/glad-labs-stack/commit/b2bde4780d8aece1e05a2d718a39539dd68f6210))
+
 ## [0.51.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.50.0...v0.51.0) (2026-06-02)
 
 
