@@ -10,18 +10,26 @@ only past successfully-routed rows.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import services.jobs.findings_alert_router as router_mod
+from plugins.job import JobResult
 from services.jobs.findings_alert_router import (
+    _AUTOFIX_JOBS,
+    _SEV_RANK,
     FindingsAlertRouterJob,
     _build_alertname,
     _build_fingerprint,
+    _delivery_for,
     _normalize_severity,
-    _should_route,
 )
+from services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob as _FBEL
+from services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob as _FBIL
+from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob as _FUP
 
 pytestmark = pytest.mark.asyncio
 
@@ -39,19 +47,18 @@ class _FakePoolCtx:
 
 def _pool_with(*, fetchrow=None, fetch=None, execute=None, policy_rows=None):
     """Build a MagicMock asyncpg-style pool. ``fetchrow`` is for watermark
-    read; ``fetch`` is for unrouted-findings select; ``execute`` is for
-    all the inserts/upserts. ``policy_rows`` is what the per-kind log_only
-    policy query (``... value = 'log_only'``) returns — routed by SQL so it
-    doesn't collide with the findings fetch."""
+    read; ``fetch`` returns findings for the audit_log select and the
+    per-kind policy rows for the app_settings select. ``policy_rows`` are
+    {"key": "findings.<kind>.<field>", "value": "..."} dicts."""
     conn = MagicMock()
     conn.fetchrow = AsyncMock(return_value=fetchrow)
     findings_rows = fetch or []
     pol_rows = policy_rows or []
 
     async def _fetch(sql, *args):
-        if "log_only" in sql:  # the _load_log_only_kinds policy query
+        if "app_settings" in sql:  # the _load_policies query
             return pol_rows
-        return findings_rows
+        return findings_rows  # the audit_log unrouted-findings select
 
     conn.fetch = AsyncMock(side_effect=_fetch)
     conn.execute = AsyncMock(return_value=execute)
@@ -271,21 +278,6 @@ async def test_watermark_unparseable_resets_to_zero():
 # ---- #300: per-kind log_only suppression -----------------------------------
 
 
-def test_should_route_suppresses_log_only_warn():
-    assert _should_route("media_drift", "warn", {"media_drift"}) is False
-
-
-def test_should_route_never_suppresses_critical_even_if_log_only():
-    # A critical finding marked log_only is a misconfig we refuse to honour.
-    assert _should_route("media_drift", "critical", {"media_drift"}) is True
-
-
-def test_should_route_routes_unconfigured_kind():
-    # No policy for this kind -> route (stay loud); do NOT fall back to
-    # findings.default=log_only, which would silence new critical kinds.
-    assert _should_route("job_failure", "warn", {"media_drift"}) is True
-
-
 async def test_run_suppresses_log_only_warn_finding_but_advances_watermark():
     """A warn finding of a log_only kind is recorded (audit_log) but NOT
     bridged to alert_events — and the watermark still advances so it isn't
@@ -299,7 +291,7 @@ async def test_run_suppresses_log_only_warn_finding_but_advances_watermark():
     pool, conn = _pool_with(
         fetchrow={"value": "100"},
         fetch=rows,
-        policy_rows=[{"key": "findings.media_drift.delivery"}],
+        policy_rows=[{"key": "findings.media_drift.delivery", "value": "log_only"}],
     )
 
     result = await FindingsAlertRouterJob().run(pool, {})
@@ -325,7 +317,7 @@ async def test_run_still_routes_log_only_kind_when_critical():
     pool, conn = _pool_with(
         fetchrow={"value": "100"},
         fetch=rows,
-        policy_rows=[{"key": "findings.media_drift.delivery"}],
+        policy_rows=[{"key": "findings.media_drift.delivery", "value": "log_only"}],
     )
 
     result = await FindingsAlertRouterJob().run(pool, {})
@@ -348,10 +340,244 @@ async def test_run_routes_unconfigured_kind_normally():
     pool, conn = _pool_with(
         fetchrow={"value": "100"},
         fetch=rows,
-        policy_rows=[{"key": "findings.media_drift.delivery"}],  # unrelated
+        # unrelated log_only policy for a different kind
+        policy_rows=[{"key": "findings.media_drift.delivery", "value": "log_only"}],
     )
 
     result = await FindingsAlertRouterJob().run(pool, {})
 
     assert result.changes_made == 1           # routed
     assert conn.execute.await_count == 2
+
+
+# ---- #461: per-kind policy loader + min_severity gating --------------------
+
+# policies dict shape mirrors what _load_policies returns:
+# {kind: {field: value}}. Absence of a kind => route (stay loud).
+_POL = {
+    "media_drift": {"delivery": "log_only"},
+    "anomaly": {"delivery": "telegram", "min_severity": "critical"},
+    "broken_external_link": {"delivery": "auto_fix", "fallback": "discord", "min_severity": "warn"},
+    "quality_regression": {"delivery": "github_issue", "min_severity": "warn"},
+}
+
+
+def test_unconfigured_kind_routes_even_when_default_is_log_only():
+    assert _delivery_for("brand_new_kind", "warning", _POL) == "route"
+
+
+def test_log_only_kind_is_suppressed():
+    assert _delivery_for("media_drift", "warning", _POL) == "log_only"
+
+
+def test_critical_log_only_is_refused_and_routes():
+    assert _delivery_for("media_drift", "critical", _POL) == "route"
+
+
+def test_min_severity_gates_below_threshold():
+    assert _delivery_for("anomaly", "warning", _POL) == "log_only"
+
+
+def test_min_severity_passes_at_threshold():
+    assert _delivery_for("anomaly", "critical", _POL) == "telegram"
+
+
+def test_auto_fix_delivery_passthrough():
+    assert _delivery_for("broken_external_link", "warning", _POL) == "auto_fix"
+
+
+def test_github_issue_delivery_passthrough():
+    assert _delivery_for("quality_regression", "warning", _POL) == "github_issue"
+
+
+def test_sev_rank_orders_severities():
+    assert _SEV_RANK["info"] < _SEV_RANK["warn"] == _SEV_RANK["warning"] < _SEV_RANK["critical"]
+
+
+def test_min_severity_normalization_applies_to_both_sides():
+    # 'warn' (incoming) normalizes to 'warning'; policy min_severity 'warn'
+    # also normalizes to 'warning' -> equal ranks -> passes the gate.
+    assert _delivery_for("broken_external_link", "warn", _POL) == "auto_fix"
+
+
+# ---- #461: auto_fix delivery triggers the matching fix job ------------------
+
+
+def test_autofix_map_covers_seeded_auto_fix_kinds():
+    assert _AUTOFIX_JOBS["broken_external_link"] is _FBEL
+    assert _AUTOFIX_JOBS["broken_internal_link"] is _FBIL
+    assert _AUTOFIX_JOBS["uncategorized_post"] is _FUP
+
+
+async def test_run_auto_fix_triggers_mapped_job(monkeypatch):
+    ran = {"called": False}
+
+    class _FakeFixJob:
+        async def run(self, pool, config):
+            ran["called"] = True
+            return JobResult(ok=True, detail="fixed 2", changes_made=2)
+
+    monkeypatch.setattr(
+        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        {"broken_external_link": _FakeFixJob},
+    )
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=[{"id": 5, "source": "linkcheck", "severity": "warn",
+                "details": json.dumps({"kind": "broken_external_link"})}],
+        policy_rows=[
+            {"key": "findings.broken_external_link.delivery", "value": "auto_fix"},
+            {"key": "findings.broken_external_link.min_severity", "value": "warn"},
+        ],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {"_site_config": object()})
+    assert ran["called"] is True
+    assert result.ok is True
+    assert "auto-fixed 1" in result.detail
+    assert result.changes_made == 1
+
+
+async def test_run_auto_fix_fallback_routes_when_job_returns_not_ok(monkeypatch):
+    class _FailFixJob:
+        async def run(self, pool, config):
+            return JobResult(ok=False, detail="nothing to fix", changes_made=0)
+
+    monkeypatch.setattr(
+        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        {"broken_external_link": _FailFixJob},
+    )
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=[{"id": 7, "source": "lc", "severity": "warn",
+                "details": json.dumps({"kind": "broken_external_link"})}],
+        policy_rows=[
+            {"key": "findings.broken_external_link.delivery", "value": "auto_fix"},
+            {"key": "findings.broken_external_link.fallback", "value": "route"},
+        ],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    # fallback 'route' -> _insert_alert_event + _write_watermark = 2 executes
+    assert conn.execute.await_count == 2
+    assert "routed 1" in result.detail
+
+
+async def test_run_auto_fix_log_only_fallback_suppresses_when_job_not_ok(monkeypatch):
+    class _FailFixJob:
+        async def run(self, pool, config):
+            return JobResult(ok=False, detail="nothing", changes_made=0)
+
+    monkeypatch.setattr(
+        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        {"broken_external_link": _FailFixJob},
+    )
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=[{"id": 8, "source": "lc", "severity": "warn",
+                "details": json.dumps({"kind": "broken_external_link"})}],
+        policy_rows=[
+            {"key": "findings.broken_external_link.delivery", "value": "auto_fix"},
+            {"key": "findings.broken_external_link.fallback", "value": "log_only"},
+        ],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    # fallback 'log_only' -> no alert_events insert; only the watermark upsert
+    assert conn.execute.await_count == 1
+    assert "suppressed 1" in result.detail
+
+
+# ---- #461: github_issue delivery via gh CLI ---------------------------------
+
+
+class _FakeProc:
+    def __init__(self, returncode, stdout=b"", stderr=b""):
+        self.returncode = returncode
+        self._out = stdout
+        self._err = stderr
+
+    async def communicate(self):
+        return self._out, self._err
+
+    def kill(self):
+        pass
+
+
+async def test_github_issue_skips_when_duplicate_open_issue_exists(monkeypatch):
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        if "list" in args:  # dedup `gh issue list` -> one match
+            return _FakeProc(0, stdout=b'[{"title":"quality regression: foo"}]')
+        return _FakeProc(0)
+
+    monkeypatch.setattr(router_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(router_mod.asyncio, "create_subprocess_exec", fake_exec)
+    finding = {"id": 1, "source": "audit_published_quality",
+               "details": {"kind": "quality_regression",
+                           "title": "quality regression: foo", "body": "b"}}
+    ok = await router_mod._dispatch_github_issue(finding, "quality_regression")
+    assert ok is True
+    assert not any("create" in c for c in calls)  # never created a dup
+
+
+async def test_github_issue_creates_when_no_duplicate(monkeypatch):
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        if "list" in args:
+            return _FakeProc(0, stdout=b"[]")  # no existing match
+        return _FakeProc(0)  # create succeeds
+
+    monkeypatch.setattr(router_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(router_mod.asyncio, "create_subprocess_exec", fake_exec)
+    finding = {"id": 2, "source": "audit_published_quality",
+               "details": {"kind": "quality_regression",
+                           "title": "qr: bar", "body": "b"}}
+    ok = await router_mod._dispatch_github_issue(finding, "quality_regression")
+    assert ok is True
+    assert any("create" in c for c in calls)  # created the issue
+
+
+async def test_github_issue_returns_false_when_gh_missing(monkeypatch):
+    monkeypatch.setattr(router_mod.shutil, "which", lambda _: None)
+    finding = {"id": 3, "source": "x",
+               "details": {"kind": "quality_regression", "title": "t", "body": "b"}}
+    ok = await router_mod._dispatch_github_issue(finding, "quality_regression")
+    assert ok is False
+
+
+async def test_github_issue_returns_false_on_gh_timeout(monkeypatch):
+    async def fake_exec(*a, **k):
+        return _FakeProc(0)
+
+    async def boom(*a, **k):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(router_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(router_mod.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(router_mod.asyncio, "wait_for", boom)
+    finding = {"id": 4, "source": "x",
+               "details": {"kind": "quality_regression", "title": "t", "body": "b"}}
+    ok = await router_mod._dispatch_github_issue(finding, "quality_regression")
+    assert ok is False
+
+
+async def test_run_github_issue_counts_filed(monkeypatch):
+    monkeypatch.setattr(
+        "services.jobs.findings_alert_router._dispatch_github_issue",
+        AsyncMock(return_value=True),
+    )
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=[{"id": 9, "source": "audit_published_quality", "severity": "warn",
+                "details": json.dumps({"kind": "quality_regression",
+                                       "title": "qr", "body": "b"})}],
+        policy_rows=[
+            {"key": "findings.quality_regression.delivery", "value": "github_issue"},
+            {"key": "findings.quality_regression.min_severity", "value": "warn"},
+        ],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert "filed 1" in result.detail
+    assert result.changes_made == 1
