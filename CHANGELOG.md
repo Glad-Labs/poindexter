@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.61.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.2...v0.61.0) (2026-06-02)
+
+
+### Features
+
+* **ops:** guarded one-command worker deploy script ([#937](https://github.com/Glad-Labs/glad-labs-stack/issues/937)) ([#952](https://github.com/Glad-Labs/glad-labs-stack/issues/952)) ([c15645a](https://github.com/Glad-Labs/glad-labs-stack/commit/c15645a00f96f69f27fb4eff571a417b1a44c57e))
+
 ## [0.60.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.1...v0.60.2) (2026-06-02)
 
 
