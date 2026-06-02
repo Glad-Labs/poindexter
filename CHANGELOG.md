@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.58.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.57.0...v0.58.0) (2026-06-02)
+
+
+### Features
+
+* **findings:** honor per-kind telegram/discord delivery + Phase 4 triage surfaces ([#461](https://github.com/Glad-Labs/glad-labs-stack/issues/461)) ([#927](https://github.com/Glad-Labs/glad-labs-stack/issues/927)) ([5156abe](https://github.com/Glad-Labs/glad-labs-stack/commit/5156abe67741f87dea0b2f03ade8b7cbd4668695))
+
 ## [0.57.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.56.0...v0.57.0) (2026-06-02)
 
 
