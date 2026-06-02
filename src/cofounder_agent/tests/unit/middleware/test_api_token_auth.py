@@ -6,8 +6,7 @@ The middleware now accepts OAuth JWTs only (with the dev-token bypass
 left intact for local testing).
 """
 
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -15,18 +14,28 @@ from fastapi import HTTPException
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 
 
-def _request(dev_mode: bool = False) -> MagicMock:
+def _request(dev_mode: bool = False, environment: str = "development") -> MagicMock:
     """Build a fake FastAPI Request with site_config on app.state.
 
     Replaces the legacy ``patch("middleware.api_token_auth.site_config")``
     pattern after the middleware migrated to the DI seam
     (glad-labs-stack#330).
+
+    ``environment`` controls the DB ``environment`` app_setting the
+    middleware reads to decide whether the dev-token bypass is allowed
+    (Glad-Labs/poindexter#606). Defaults to ``"development"`` so existing
+    dev-token tests keep passing; pass ``"production"`` / ``""`` / etc. to
+    exercise the fail-closed block.
     """
     sc = MagicMock()
     sc.get.side_effect = lambda k, d="": (
-        "true" if (k == "development_mode" and dev_mode)
-        else "true" if (k == "disable_auth_for_dev" and dev_mode)
-        else d
+        "true"
+        if (k == "development_mode" and dev_mode)
+        else (
+            "true"
+            if (k == "disable_auth_for_dev" and dev_mode)
+            else environment if k == "environment" else d
+        )
     )
     app = MagicMock()
     app.state.site_config = sc
@@ -68,6 +77,93 @@ def _make_credentials(token: str):
     cred = MagicMock()
     cred.credentials = token
     return cred
+
+
+# ---------------------------------------------------------------------------
+# _is_dev_token_blocked — DB-environment fail-closed (Glad-Labs/poindexter#606)
+# ---------------------------------------------------------------------------
+
+
+class TestIsDevTokenBlocked:
+    """The dev-token bypass must fail CLOSED.
+
+    Pre-#606 the block only fired when the ``ENVIRONMENT`` env var was
+    literally ``"production"``. Because config is DB-first (app_settings),
+    ``ENVIRONMENT`` is usually unset on the worker — so a stray
+    ``development_mode=true`` row would have re-enabled ``dev-token`` as
+    full auth on the Tailscale-Funnel-exposed routes. The fix derives the
+    production check from the DB ``environment`` setting too and BLOCKS
+    unless the environment is positively a development one.
+    """
+
+    def _sc(self, *, dev_mode: bool, environment: str) -> MagicMock:
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": (
+            ("true" if dev_mode else "false")
+            if k == "development_mode"
+            else environment if k == "environment" else d
+        )
+        return sc
+
+    def test_blocked_when_db_environment_production_and_env_unset(self, monkeypatch):
+        """DB says production, ENVIRONMENT unset → dev-token BLOCKED."""
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        sc = self._sc(dev_mode=True, environment="production")
+        assert _is_dev_token_blocked(sc) is True
+
+    def test_blocked_when_environment_indeterminate(self, monkeypatch):
+        """Empty DB environment + unset env var → indeterminate → BLOCKED."""
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        sc = self._sc(dev_mode=True, environment="")
+        assert _is_dev_token_blocked(sc) is True
+
+    def test_blocked_when_environment_is_staging(self, monkeypatch):
+        """Staging is not a genuine dev environment → BLOCKED."""
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        sc = self._sc(dev_mode=True, environment="staging")
+        assert _is_dev_token_blocked(sc) is True
+
+    def test_blocked_when_env_var_production_overrides_dev_db(self, monkeypatch):
+        """ENVIRONMENT=production blocks even if DB says development.
+
+        The two sources are OR-combined for the production verdict — a
+        positive production signal from EITHER source blocks the bypass.
+        """
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        sc = self._sc(dev_mode=True, environment="development")
+        assert _is_dev_token_blocked(sc) is True
+
+    def test_allowed_only_when_environment_is_development(self, monkeypatch):
+        """Genuine development environment → dev-token NOT blocked."""
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        sc = self._sc(dev_mode=True, environment="development")
+        assert _is_dev_token_blocked(sc) is False
+
+    @pytest.mark.parametrize("env_value", ["development", "dev", "local"])
+    def test_allowed_for_dev_synonyms(self, monkeypatch, env_value):
+        """Accept the established dev synonyms (matches connection_health)."""
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        sc = self._sc(dev_mode=True, environment=env_value)
+        assert _is_dev_token_blocked(sc) is False
+
+    def test_blocked_when_site_config_missing(self, monkeypatch):
+        """No SiteConfig at all → can't assert dev → BLOCKED (fail-closed)."""
+        from middleware.api_token_auth import _is_dev_token_blocked
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        assert _is_dev_token_blocked(None) is True
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +252,35 @@ class TestVerifyApiToken:
         # returns False and the dev-token is accepted.
         cred = _make_credentials("dev-token")
         result = await verify_api_token(
-            request=_request(dev_mode=True), credentials=cred,
+            request=_request(dev_mode=True),
+            credentials=cred,
         )
         assert result == "dev-token"
+
+    @pytest.mark.asyncio
+    async def test_dev_token_blocked_when_db_environment_production(self, monkeypatch):
+        """#606: dev-token refused when DB environment=production, ENV unset."""
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        cred = _make_credentials("dev-token")
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_api_token(
+                request=_request(dev_mode=True, environment="production"),
+                credentials=cred,
+            )
+        assert exc_info.value.status_code == 401
+        assert "production" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_dev_token_blocked_when_environment_indeterminate(self, monkeypatch):
+        """#606: fail-closed — empty DB environment + unset ENV → refused."""
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        cred = _make_credentials("dev-token")
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_api_token(
+                request=_request(dev_mode=True, environment=""),
+                credentials=cred,
+            )
+        assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
     @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})
@@ -230,9 +352,32 @@ class TestVerifyApiTokenOptional:
         # Same DI-seam pattern as the non-optional variant above.
         cred = _make_credentials("dev-token")
         result = await verify_api_token_optional(
-            request=_request(dev_mode=True), credentials=cred,
+            request=_request(dev_mode=True),
+            credentials=cred,
         )
         assert result == "dev-token"
+
+    @pytest.mark.asyncio
+    async def test_dev_token_blocked_when_db_environment_production(self, monkeypatch):
+        """#606: optional path returns None instead of trusting dev-token."""
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        cred = _make_credentials("dev-token")
+        result = await verify_api_token_optional(
+            request=_request(dev_mode=True, environment="production"),
+            credentials=cred,
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_dev_token_blocked_when_environment_indeterminate(self, monkeypatch):
+        """#606: fail-closed — empty DB environment + unset ENV → None."""
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        cred = _make_credentials("dev-token")
+        result = await verify_api_token_optional(
+            request=_request(dev_mode=True, environment=""),
+            credentials=cred,
+        )
+        assert result is None
 
     @pytest.mark.asyncio
     @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})

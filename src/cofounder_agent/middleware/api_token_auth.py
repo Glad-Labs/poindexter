@@ -11,11 +11,16 @@ request is logged with the resolved client_id and scope set so the audit
 trail captures who made the call.
 
 A narrow ``dev-token`` bypass remains behind ``app_settings.development_mode``
-for local-only smoke tests (see ``_dev_token_blocked`` — refused outright
-when ``ENVIRONMENT=production``). It is not a fallback for missing OAuth
-credentials; production deployments must mint JWTs through ``/token``.
+for local-only smoke tests (see ``_is_dev_token_blocked``). It FAILS CLOSED:
+the bypass is refused unless the runtime is positively a development
+environment — derived from the DB ``environment`` setting OR-combined with
+the ``ENVIRONMENT`` env var (Glad-Labs/poindexter#606), because config is
+DB-first and ``ENVIRONMENT`` is usually unset on the worker. It is not a
+fallback for missing OAuth credentials; production deployments must mint
+JWTs through ``/token``.
 """
 
+import hmac
 import os
 from typing import Any
 
@@ -66,7 +71,8 @@ def _verify_oauth_jwt(token: str) -> str:
         ) from e
     logger.debug(
         "auth=oauth client_id=%s scopes=%s",
-        claims.client_id, sorted(claims.scopes),
+        claims.client_id,
+        sorted(claims.scopes),
     )
     return token
 
@@ -85,26 +91,69 @@ def _request_site_config(request: Request) -> Any:
     return getattr(request.app.state, "site_config", None)
 
 
-def _is_dev_token_blocked(sc: Any) -> bool:
-    """Refuse dev-token bypass when DEVELOPMENT_MODE is on in a production env.
+# Environment values that positively assert a genuine local/dev deployment
+# where the dev-token bypass is acceptable. Mirrors the dev-detection used
+# elsewhere (utils/connection_health.py, services/database_service.py).
+_DEV_ENVIRONMENTS = frozenset({"development", "dev", "local"})
 
-    Previously a module-level constant — but that read the singleton at
-    import time (before main.py's lifespan shim), so it was always False
-    and the safety check never fired. Now evaluated per-request against
-    the live config.
+
+def _is_dev_environment(sc: Any) -> bool:
+    """Positively assert the runtime is a genuine development environment.
+
+    Config is DB-first (app_settings, not env vars — see CLAUDE.md
+    "Config in DB, not code"), so the worker often runs with ``ENVIRONMENT``
+    unset. We therefore read the DB ``environment`` setting (the value the
+    rest of the app uses via ``site_config.get("environment")`` /
+    ``get_config().environment``) AND the env var, and require BOTH to point
+    at a dev environment — if either source says production (or is unknown),
+    the runtime is not positively a dev box.
+
+    Fail-closed: returns ``False`` whenever the environment cannot be
+    positively determined to be development (no SiteConfig, blank/unset
+    value, ``staging``, ``production``, a typo, etc.).
     """
     if sc is None:
         return False
-    dev_mode = sc.get("development_mode", "").lower() == "true"
-    environment = os.getenv("ENVIRONMENT", "").lower()
-    if dev_mode and environment == "production":
-        # Log once per request that hits the bypass — operator visibility.
-        logger.critical(
-            "DEVELOPMENT_MODE is enabled in a PRODUCTION environment! "
-            "Dev-token bypass REFUSED. Unset DEVELOPMENT_MODE or fix ENVIRONMENT.",
-        )
-        return True
-    return False
+    db_env = (sc.get("environment", "") or "").strip().lower()
+    env_var = os.getenv("ENVIRONMENT", "").strip().lower()
+    # The DB setting is the source of truth (always populated — baseline
+    # seeds it to "development"). The env var, when set, must agree; an
+    # unset env var is treated as "no opinion" rather than a veto so a
+    # DB-only dev box still works.
+    if db_env not in _DEV_ENVIRONMENTS:
+        return False
+    if env_var and env_var not in _DEV_ENVIRONMENTS:
+        return False
+    return True
+
+
+def _is_dev_token_blocked(sc: Any) -> bool:
+    """Refuse the dev-token bypass unless the runtime is genuinely a dev box.
+
+    Previously this only fired when ``DEVELOPMENT_MODE`` was on AND the
+    ``ENVIRONMENT`` env var equalled ``"production"``. But config is
+    DB-first, so ``ENVIRONMENT`` is usually unset on the worker — a stray
+    ``development_mode=true`` row would then re-enable ``dev-token`` as full
+    auth on the Tailscale-Funnel-exposed MCP/voice routes
+    (Glad-Labs/poindexter#606).
+
+    Now FAIL-CLOSED: the bypass is blocked whenever we cannot positively
+    assert a development environment (via the DB ``environment`` setting
+    OR-combined with the ``ENVIRONMENT`` env var). Evaluated per-request
+    against the live config.
+    """
+    if _is_dev_environment(sc):
+        return False
+    # Not positively a dev environment → refuse the bypass. Log for operator
+    # visibility (this only runs when a caller actually presented dev-token).
+    logger.critical(
+        "Dev-token bypass REFUSED: environment is not positively a development "
+        "environment (DB environment=%r, ENVIRONMENT=%r). Mint an OAuth JWT via "
+        "/token, or set environment=development for a genuine local box.",
+        (sc.get("environment", "") if sc is not None else None),
+        os.getenv("ENVIRONMENT", ""),
+    )
+    return True
 
 
 async def verify_api_token(
@@ -114,7 +163,8 @@ async def verify_api_token(
     """Verify the Bearer token as an OAuth JWT.
 
     Also allows the existing dev-token bypass when ``DEVELOPMENT_MODE=true``
-    (refused if ``ENVIRONMENT=production``).
+    AND the runtime is positively a development environment — refused
+    (fail-closed) otherwise (Glad-Labs/poindexter#606).
 
     Returns:
         The verified token string.
@@ -127,8 +177,8 @@ async def verify_api_token(
 
     token = credentials.credentials
 
-    # Dev mode bypass: only accept the explicit dev-token
-    if dev_mode and token == "dev-token":
+    # Dev mode bypass: only accept the explicit dev-token (timing-safe match).
+    if dev_mode and hmac.compare_digest(token, "dev-token"):
         if _is_dev_token_blocked(sc):
             raise HTTPException(
                 status_code=401,
@@ -161,10 +211,10 @@ def _operator_id(sc: Any) -> str:
     that read the singleton before lifespan startup populated it)."""
     if sc is None:
         return OPERATOR_ID
-    return sc.get("operator_id", OPERATOR_ID)
+    return str(sc.get("operator_id", OPERATOR_ID))
 
 
-def get_operator_identity(request: Request | None = None) -> dict:
+def get_operator_identity(request: Request | None = None) -> dict[str, Any]:
     """Return a fixed operator identity dict for solo-operator mode."""
     sc = _request_site_config(request) if request is not None else None
     return {
@@ -193,7 +243,7 @@ async def verify_api_token_optional(
 
     token = credentials.credentials
 
-    if dev_mode and token == "dev-token":
+    if dev_mode and hmac.compare_digest(token, "dev-token"):
         if _is_dev_token_blocked(sc):
             return None
         logger.warning(
