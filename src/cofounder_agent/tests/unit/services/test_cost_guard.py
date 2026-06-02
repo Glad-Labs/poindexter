@@ -157,6 +157,25 @@ class TestCostGuardPreflight:
             ))
         assert excinfo.value.scope == "monthly"
 
+    @pytest.mark.asyncio
+    async def test_unreadable_spend_fails_closed(self) -> None:
+        """#611 — if cost_logs can't be read on the enforcement path,
+        preflight raises CostGuardExhausted(scope='unknown') rather than
+        admitting the call on a silent $0 read (the fail-open bug)."""
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda key, default=None: {
+            "daily_spend_limit_usd": 2.0,
+            "monthly_spend_limit_usd": 100.0,
+        }.get(key, default))
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=RuntimeError("cost_logs down"))
+        guard = CostGuard(site_config=sc, pool=pool)
+        with pytest.raises(CostGuardExhausted) as excinfo:
+            await guard.preflight(CostEstimate(
+                estimated_usd=0.10, is_local=False, model="x", provider="x",
+            ))
+        assert excinfo.value.scope == "unknown"
+
 
 # ---------------------------------------------------------------------------
 # CostGuard.record
@@ -277,6 +296,18 @@ class TestSpendLookups:
         pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
         guard = CostGuard(pool=pool)
         assert await guard.get_daily_spend() == 0.0
+
+    @pytest.mark.asyncio
+    async def test_db_error_raises_when_strict(self) -> None:
+        """#611 — the enforcement path reads strict=True, so a cost_logs
+        failure raises (fail closed) instead of silently reading $0 (fail open)."""
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
+        guard = CostGuard(pool=pool)
+        with pytest.raises(RuntimeError):
+            await guard.get_daily_spend(strict=True)
+        with pytest.raises(RuntimeError):
+            await guard.get_monthly_spend(strict=True)
 
     @pytest.mark.asyncio
     async def test_db_returns_none_row(self) -> None:

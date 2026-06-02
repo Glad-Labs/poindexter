@@ -59,7 +59,6 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import suppress
 from typing import Any
 
 from .webhook_delivery_service import emit_webhook_event
@@ -274,7 +273,7 @@ async def _auto_curate(
         )
 
     # pipeline_gate_history row — operator-visible audit trail.
-    with suppress(Exception):
+    try:
         pool = getattr(database_service, "pool", None)
         if pool is not None:
             await pool.execute(
@@ -297,15 +296,25 @@ async def _auto_curate(
                     default=str,
                 ),
             )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[POST_PIPELINE] auto-curator gate-history insert failed for "
+            "%s: %s — rejection left with no audit-trail row", task_id, exc,
+        )
 
     # model_performance.human_approved flip — feedback loop signal.
-    with suppress(Exception):
+    try:
         await database_service.mark_model_performance_outcome(
             task_id, human_approved=False,
         )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[POST_PIPELINE] auto-curator model_performance flip failed "
+            "for %s: %s", task_id, exc,
+        )
 
     # task.auto_rejected webhook — best-effort.
-    with suppress(Exception):
+    try:
         _pool = (
             getattr(database_service, "cloud_pool", None)
             or getattr(database_service, "pool", None)
@@ -319,6 +328,11 @@ async def _auto_curate(
                 "quality_score": quality_score,
                 "reason": f"score {quality_score:.0f} < {min_score:.0f}",
             },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[POST_PIPELINE] auto-curator auto_rejected webhook failed "
+            "for %s: %s", task_id, exc,
         )
     return True
 

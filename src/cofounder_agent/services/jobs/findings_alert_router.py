@@ -480,6 +480,7 @@ class FindingsAlertRouterJob:
         policies = await _load_policies(pool)
         routed = autofixed = filed = suppressed = errors = 0
         max_id = watermark
+        first_failed_id: int | None = None
 
         for r in rows:
             kind = _finding_kind(r)
@@ -516,12 +517,22 @@ class FindingsAlertRouterJob:
                     routed += 1
             except Exception as exc:
                 errors += 1
+                if first_failed_id is None:
+                    first_failed_id = int(r["id"])
                 logger.warning(
                     "[findings_alert_router] delivery=%s failed for "
                     "audit_log.id=%s: %s", delivery, r.get("id"), exc,
                 )
-                continue  # do NOT advance watermark — retry next cycle
+                continue  # do NOT advance the watermark past this row
             max_id = max(max_id, int(r["id"]))
+
+        # Never advance the watermark past the FIRST failed row, even if
+        # later rows succeeded — otherwise that finding (possibly critical)
+        # is skipped forever. The cost is re-delivering the already-succeeded
+        # rows after it next cycle, which is acceptable (alerts/issues dedupe)
+        # versus silently dropping a finding.
+        if first_failed_id is not None:
+            max_id = min(max_id, first_failed_id - 1)
 
         if max_id > watermark:
             await _write_watermark(pool, max_id)

@@ -30,7 +30,6 @@ Infrastructure:
   can fire via ``absent()`` — the one metric whose absence is alertable.
 
 Content pipeline:
-- ``poindexter_tasks_total`` — counter by ``status``
 - ``poindexter_embeddings_total`` — gauge by ``source_table``
 - ``poindexter_embeddings_missing_posts`` — gauge, published posts
   without a corresponding ``embeddings`` row (Gitea #238 — catches
@@ -199,11 +198,6 @@ UNAPPLIED_MIGRATIONS_COUNT = Gauge(
     "poindexter_unapplied_migrations_count",
     "Number of migration .py files in services/migrations/ not yet present in "
     "schema_migrations table. >0 means worker is on stale schema.",
-)
-
-TASKS_CREATED = Counter(
-    "poindexter_tasks_created_total",
-    "Tasks created (lifetime counter — scrape-only, resets on restart)",
 )
 
 # GH-90: surface stale-sweeper cancellations so operators notice when the

@@ -123,6 +123,7 @@ class DetectAnomaliesJob:
         issue_threshold = int(config.get("issue_threshold", 2))
 
         anomalies: list[dict[str, Any]] = []
+        failed_metrics: list[str] = []
 
         for name, recent_q, hist_q in _metric_queries(current_h, baseline_d):
             try:
@@ -149,9 +150,23 @@ class DetectAnomaliesJob:
                         "direction": "spike" if z_score > 0 else "drop",
                     })
             except Exception as e:
-                logger.debug("[ANOMALY] check failed for %s: %s", name, e)
+                # A failed metric query means the detector is BLIND for
+                # this metric — surface it (WARNING, not DEBUG) and mark
+                # the run degraded so "all normal" can't mask lost coverage.
+                failed_metrics.append(name)
+                logger.warning("[ANOMALY] check failed for %s: %s", name, e)
 
         if not anomalies:
+            if failed_metrics:
+                return JobResult(
+                    ok=False,
+                    detail=(
+                        f"no anomalies detected, but {len(failed_metrics)} "
+                        f"metric check(s) failed (detector blind): "
+                        f"{', '.join(failed_metrics)}"
+                    ),
+                    changes_made=0,
+                )
             return JobResult(ok=True, detail="all metrics within normal range", changes_made=0)
 
         # Persist to audit_log.
