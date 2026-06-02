@@ -64,12 +64,38 @@ async def test_interval_next_run_none_for_cron_trigger():
     assert await scheduler._interval_next_run("x", trigger) is None
 
 
-async def test_interval_next_run_none_when_no_persisted_run():
-    """Fresh install (no last-run row) keeps APScheduler's boot+interval
-    default — avoids a thundering-herd fire on first ever boot."""
+async def test_interval_next_run_seeds_short_delay_when_no_persisted_run():
+    """poindexter#561: a never-run interval job must get an explicit first-fire
+    shortly after boot. Returning None let APScheduler re-anchor to
+    boot+interval every restart, so a >restart-cadence interval (e.g. 7d
+    collapse_old_embeddings) never fired."""
+    from plugins.scheduler import _FIRST_FIRE_BASE_DELAY_S, _FIRST_FIRE_STAGGER_S
+
     scheduler = PluginScheduler(_pool_with_fetchval(None))
-    trigger = IntervalTrigger(hours=24)
-    assert await scheduler._interval_next_run("x", trigger) is None
+    trigger = IntervalTrigger(days=7)
+    before = datetime.now(timezone.utc)
+    nxt = await scheduler._interval_next_run("collapse_old_embeddings", trigger)
+    assert nxt is not None
+    delay = (nxt - before).total_seconds()
+    # Fires within the base delay + stagger window, NOT 7 days out.
+    assert _FIRST_FIRE_BASE_DELAY_S - 2 <= delay <= (
+        _FIRST_FIRE_BASE_DELAY_S + _FIRST_FIRE_STAGGER_S + 2
+    )
+
+
+async def test_interval_next_run_first_fire_is_deterministic_and_staggered():
+    """The first-fire offset is a stable per-name hash (not the salted builtin),
+    so it reproduces across calls and de-correlates across jobs."""
+    scheduler = PluginScheduler(_pool_with_fetchval(None))
+    trigger = IntervalTrigger(days=7)
+    a1 = await scheduler._interval_next_run("job_a", trigger)
+    a2 = await scheduler._interval_next_run("job_a", trigger)
+    b1 = await scheduler._interval_next_run("job_b", trigger)
+    assert a1 is not None and a2 is not None and b1 is not None
+    # Same job → same offset on repeat (deterministic).
+    assert abs((a1 - a2).total_seconds()) < 2
+    # Different jobs → different offsets (staggered, not a thundering herd).
+    assert abs((a1 - b1).total_seconds()) >= 1
 
 
 async def test_interval_next_run_fires_now_when_overdue():

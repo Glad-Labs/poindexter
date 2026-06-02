@@ -25,9 +25,10 @@ Design:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -55,6 +56,27 @@ _CIRCULAR_SAFE_JOBS: frozenset[str] = frozenset(
 # Cooldown for the direct-notify path only (it bypasses alert_dispatcher dedup).
 # The emit_finding path is deduped downstream so it needs no cooldown here.
 _FAILURE_NOTIFY_COOLDOWN_S = 1800  # 30 min
+
+# First-fire seeding for never-run interval jobs (poindexter#561). A brand-new
+# interval job has no persisted ``plugin_job_last_run_*`` row, so we seed an
+# explicit ``next_run_time`` shortly after boot instead of letting APScheduler
+# re-anchor it to ``boot + interval`` every restart (which strands any interval
+# longer than the restart cadence — it never reaches its first fire). The base
+# delay keeps boot itself unblocked; the name-derived stagger spreads first-fires
+# across a window so a fresh install with many never-run jobs doesn't stampede.
+_FIRST_FIRE_BASE_DELAY_S = 60  # fire ~1 min after boot, not at boot
+_FIRST_FIRE_STAGGER_S = 300  # spread first-fires over a 5-min window
+
+
+def _stable_stagger_seconds(job_name: str) -> int:
+    """Deterministic per-job offset in ``[0, _FIRST_FIRE_STAGGER_S)``.
+
+    Uses sha256 (not the salted builtin ``hash``) so the spread is stable and
+    testable; the goal is only to de-correlate first-fires across jobs, not to
+    be cryptographic.
+    """
+    digest = hashlib.sha256(job_name.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % _FIRST_FIRE_STAGGER_S
 
 
 def _parse_schedule(schedule: str):
@@ -253,10 +275,15 @@ class PluginScheduler:
         last run, so the cadence survives worker restarts.
 
         Returns:
-            - ``None`` for non-interval (cron) triggers or when there's no
-              persisted last run (fresh install → keep APScheduler's default
-              ``boot + interval``, avoiding a thundering-herd fire on first
-              ever boot).
+            - ``None`` for non-interval (cron) triggers — they compute their
+              own next fire and we don't override them.
+            - ``now + short staggered delay`` (UTC) when there's no persisted
+              last run (never-run job). Returning ``None`` here would let
+              APScheduler re-anchor first-fire to ``boot + interval`` on every
+              boot, so any interval longer than the restart cadence never fires
+              (poindexter#561). The seeded delay fires it once shortly after
+              boot; ``_record_last_run`` then persists an anchor so subsequent
+              boots take the not-due / overdue branches below.
             - ``now`` (UTC) when the job is overdue (``last_run + interval``
               already passed) → fires on the next tick.
             - ``last_run + interval`` when not yet due → anchors the cadence
@@ -266,7 +293,8 @@ class PluginScheduler:
             return None
         last_epoch = await self._persisted_last_run_epoch(job_name)
         if last_epoch is None:
-            return None
+            delay = _FIRST_FIRE_BASE_DELAY_S + _stable_stagger_seconds(job_name)
+            return datetime.now(timezone.utc) + timedelta(seconds=delay)
         interval_s = trigger.interval.total_seconds()
         now = datetime.now(timezone.utc)
         due = datetime.fromtimestamp(last_epoch + interval_s, tz=timezone.utc)
