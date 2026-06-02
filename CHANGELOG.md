@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.50.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.49.1...v0.50.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** atom-cutover 1/5 — requires/produces build-time validation ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#909](https://github.com/Glad-Labs/glad-labs-stack/issues/909)) ([0131392](https://github.com/Glad-Labs/glad-labs-stack/commit/01313921d97879ea28b4dc4eefca8c54f7e9de12))
+
 ## [0.49.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.49.0...v0.49.1) (2026-06-01)
 
 
