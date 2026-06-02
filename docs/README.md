@@ -5,7 +5,7 @@ runbooks, architecture references, integration handbooks, and the
 auto-generated config catalog.
 
 If you're reading on the Mintlify docs site, the rendered version with
-search and navigation lives at the [welcome page](welcome.md). If
+search and navigation lives at the [welcome page](welcome.mdx). If
 you're on GitHub, this index is the table of contents.
 
 The engine is Apache 2.0 and free. A Pro add-on (tuned prompts,
@@ -14,7 +14,7 @@ extra dashboards, the full book) lives at
 
 ## Start here
 
-- [welcome.md](welcome.md) — overview + curated reading path
+- [welcome.mdx](welcome.mdx) — overview + curated reading path
 - [architecture/overview.md](architecture/overview.md) — system end-to-end (regions,
   data flow, technology choices)
 - [../README.md](../README.md) — project README (quick-start, status)
@@ -127,7 +127,7 @@ is in [reference/services.md](reference/services.md).
 Surface-by-surface integration handbooks — outbound delivery, taps,
 publishing adapters, webhooks, retention.
 
-- [integrations/README.md](integrations/README.md) — integrations
+- [integrations/index.mdx](integrations/index.mdx) — integrations
   framework overview (handler registry + declarative tables)
 - [integrations/outbound_discord_post.md](integrations/outbound_discord_post.md)
 - [integrations/outbound_telegram_post.md](integrations/outbound_telegram_post.md)

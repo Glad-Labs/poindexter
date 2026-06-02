@@ -524,7 +524,7 @@ The roadmap is tracked via GitHub milestones at
 - **Dev-token bypass** blocked in production (`DEVELOPMENT_MODE` check)
 - **Secrets in DB** (`is_secret=true` keys fetched via `site_config.get_secret()`, filtered from in-memory cache)
 - **No cloud keys in env** — LLM API keys set via settings API, not env vars
-- See [SECURITY.md](../SECURITY) for the full model.
+- See [SECURITY.md](../../SECURITY.md) for the full model.
 
 ---
 

@@ -255,7 +255,7 @@ If "sleep at night" is the bar, this is the surgical list:
 ## What I changed this session
 
 - Cleared 2 stale restic locks on `F:\poindexter-backup`. Hourly DR prune will now succeed.
-- Generated [`docs/reference/settings.md`](../../docs/reference/settings.md) — 701 active settings across 30 categories, secrets redacted. Re-runnable via the SQL block in this doc.
+- Generated [`docs/reference/app-settings.md`](../../docs/reference/app-settings.md) — 701 active settings across 30 categories, secrets redacted. Re-runnable via the SQL block in this doc.
 - Created [`docs/architecture/poindexter-as-engine.md`](../../docs/architecture/poindexter-as-engine.md) — the "employees" framing made into a real architectural doc.
 
 I did NOT make compose changes (brain backup_watcher mount, voice-bot removal) without your sign-off. Those are queued for a separate commit.

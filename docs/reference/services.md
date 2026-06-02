@@ -150,7 +150,7 @@ Each implements the `Stage` protocol (`name`, `run(context)`).
 | 6       | `capture_training_data.py`  | Write draft + score into `quality_evaluations` + training tables.                              |
 | 7       | `finalize_task.py`          | Persist `content_tasks` row; sets `status=awaiting_approval`. Publishing is a separate stage.  |
 
-See [`architecture/langgraph-cutover.md`](../architecture/langgraph-cutover) for
+See [`architecture/services/template_runner.md`](../architecture/services/template_runner) for
 the full pipeline narrative and [`architecture/plugin-architecture.md`](../architecture/plugin-architecture)
 for the `Stage` protocol itself.
 

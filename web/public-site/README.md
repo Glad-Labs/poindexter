@@ -126,6 +126,6 @@ Security headers (HSTS, CSP, XSS protection) configured in `next.config.js`.
 
 ## Resources
 
-- [System Architecture](../../docs/02-Architecture/System-Design.md)
-- [Development Workflow](../../docs/04-Development/Development-Workflow.md)
-- [Operations Guide](../../docs/05-Operations/Operations-Maintenance.md)
+- [System Architecture](../../docs/architecture/overview.md)
+- [Development Workflow](../../docs/operations/local-development-setup.md)
+- [Operations Guide](../../docs/operations/index.mdx)

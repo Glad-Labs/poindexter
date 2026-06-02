@@ -724,7 +724,7 @@ If you see all three, your Module is live.
   shipped status, deferred phases
 - [Services reference](../reference/services) — catalog of every
   service in the worker
-- [LangGraph cutover](../architecture/langgraph-cutover) — how the
+- [Template Runner](../architecture/services/template_runner) — how the
   Stage chain fits together as the `canonical_blog` template
 - [App settings reference](../reference/app-settings) — every
   DB-backed config key

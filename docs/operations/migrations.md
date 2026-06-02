@@ -319,8 +319,8 @@ it being dropped, what replaces it.
   of the full chain on a clean slate.
 - [`docs/operations/extending-poindexter.md`](extending-poindexter.md)
   — broader plugin / extension guide.
-- [`docs/operations/migrations-audit-2026-04-27.md`](migrations-audit-2026-04-27.md)
-  — historical audit (pre-#378). Some recommendations there are
-  superseded by this doc.
+- `docs/operations/migrations-audit-2026-04-27.md` — historical audit
+  (pre-#378), since removed. Some recommendations there were superseded
+  by this doc.
 - [Glad-Labs/poindexter#378](https://github.com/Glad-Labs/poindexter/issues/378)
   — the source RFC for this convention.

@@ -16,10 +16,11 @@ locked in Phase J added an `LLMProvider` family that pluralizes
 inference backends. All current and future pipeline work is documented
 in:
 
-- **[LangGraph cutover](./langgraph-cutover)** — the authoritative
-  description of the 13-node `canonical_blog` template (and the 4-node
-  `dev_diary` template) that runs every content task today. Covers
-  node-by-node behavior, halt semantics, and the rewrite loop.
+- **[Template Runner](./services/template_runner)** — the authoritative
+  description of the LangGraph orchestrator that drives the 13-node
+  `canonical_blog` template (and the 4-node `dev_diary` template) that
+  runs every content task today. Covers node behavior, halt semantics,
+  and the rewrite loop.
 - **[Plugin architecture](./plugin-architecture)** — the evolution
   plan from god-files to plugin Protocols (Tap, Probe, Job, Stage,
   Pack, LLMProvider). Umbrella issue [GH-64](https://github.com/Glad-Labs/poindexter/issues/64).

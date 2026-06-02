@@ -92,6 +92,29 @@
             "pages": ["docs/reference/app-settings", "docs/reference/services"]
           },
           {
+            "group": "Service deep dives",
+            "pages": [
+              "docs/architecture/services/content_router_service",
+              "docs/architecture/services/content_validator",
+              "docs/architecture/services/template_runner",
+              "docs/architecture/services/multi_model_qa",
+              "docs/architecture/services/quality_service",
+              "docs/architecture/services/qa_gates_db",
+              "docs/architecture/services/publish_service",
+              "docs/architecture/services/internal_link_coherence",
+              "docs/architecture/services/research-and-web-research",
+              "docs/architecture/services/prompt_manager",
+              "docs/architecture/services/settings_service",
+              "docs/architecture/services/site_config",
+              "docs/architecture/services/cost_guard",
+              "docs/architecture/services/litellm_provider",
+              "docs/architecture/services/model_router",
+              "docs/architecture/services/social_poster",
+              "docs/architecture/services/newsletter_service",
+              "docs/architecture/services/topic_batch_service"
+            ]
+          },
+          {
             "group": "API",
             "pages": ["docs/api/index"]
           }
