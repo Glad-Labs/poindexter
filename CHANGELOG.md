@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.55.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.54.0...v0.55.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** atom-cutover 5/5 — big-bang cutover + parity ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#921](https://github.com/Glad-Labs/glad-labs-stack/issues/921)) ([0855d2e](https://github.com/Glad-Labs/glad-labs-stack/commit/0855d2e7f848197b6e677650c3e4035ce4b89f2d))
+
 ## [0.54.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.53.0...v0.54.0) (2026-06-02)
 
 
