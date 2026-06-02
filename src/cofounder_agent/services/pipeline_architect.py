@@ -354,7 +354,9 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
     return spec, []
 
 
-def _validate_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
+def _validate_spec(
+    spec: dict[str, Any], *, seed_keys: set[str] | None = None
+) -> tuple[bool, list[str]]:
     """Verify the architect's spec is well-formed AND every atom exists.
 
     Returns (ok, errors). Per ``feedback_design_for_llm_consumers``:
@@ -485,6 +487,56 @@ def _validate_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
                 "the pipeline forward; remove edges that loop back to "
                 "an earlier node. Pipelines must be DAGs."
             )
+
+    # I/O contract check (#355): every node's atom.requires must be
+    # satisfiable from an upstream node's produces, the node's own config,
+    # or the initial-state contract (declared PipelineState fields). Catches
+    # a mis-wired composition at build/seed time instead of a runtime
+    # KeyError mid-pipeline.
+    if not errors:
+        if seed_keys is None:
+            # Lazy import dodges the template_runner <-> pipeline_architect cycle.
+            from services.template_runner import PipelineState
+            seed_keys = set(PipelineState.__annotations__)
+
+        indeg = {nid: 0 for nid in seen_ids}
+        adj2: dict[str, list[str]] = {nid: [] for nid in seen_ids}
+        for e in edges:
+            if e.get("to") != "END" and e.get("from") in seen_ids and e.get("to") in seen_ids:
+                adj2[e["from"]].append(e["to"])
+                indeg[e["to"]] += 1
+        ready = [nid for nid in seen_ids if indeg[nid] == 0]
+        order: list[str] = []
+        while ready:
+            cur = ready.pop(0)
+            order.append(cur)
+            for nxt in adj2[cur]:
+                indeg[nxt] -= 1
+                if indeg[nxt] == 0:
+                    ready.append(nxt)
+
+        node_by_id = {
+            n["id"]: n for n in nodes
+            if isinstance(n, dict) and isinstance(n.get("id"), str)
+        }
+        available: set[str] = set(seed_keys)
+        for nid in order:
+            n = node_by_id.get(nid)
+            if n is None:
+                continue
+            meta = get_atom_meta(n.get("atom", ""))
+            cfg_keys = set((n.get("config") or {}).keys())
+            req = set(meta.requires) if meta else set()
+            missing = req - available - cfg_keys
+            if missing:
+                errors.append(
+                    f"FIX node {nid!r}: requires {sorted(missing)} but no "
+                    "upstream node produces them, they're not in the node's "
+                    "config, and they're not initial-state fields. Reorder so "
+                    "a producer runs first, or seed them via config."
+                )
+            if meta:
+                available |= set(meta.produces)
 
     return (not errors), errors
 
