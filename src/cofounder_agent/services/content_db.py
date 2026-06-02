@@ -172,98 +172,109 @@ class ContentDatabase(DatabaseServiceMixin):
                     except (TypeError, ValueError):
                         video_shot_list = None
 
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO posts (
-                        id,
-                        title,
-                        slug,
-                        content,
-                        excerpt,
-                        featured_image_url,
-                        featured_image_data,
-                        cover_image_url,
-                        author_id,
-                        category_id,
-                        status,
-                        published_at,
-                        seo_title,
-                        seo_description,
+                # Wrap the post INSERT and the post_tags junction INSERT in
+                # a single transaction (#629). Before this, both writes ran
+                # on the same connection with NO transaction, so a failure on
+                # the post_tags insert (e.g. the finding #197 uuid/text cast
+                # bug) committed a tag-less post while the tag write rolled
+                # back — leaving the post row orphaned from its tags. The
+                # transaction makes both writes atomic: either the post AND
+                # its tags land, or neither does.
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO posts (
+                            id,
+                            title,
+                            slug,
+                            content,
+                            excerpt,
+                            featured_image_url,
+                            featured_image_data,
+                            cover_image_url,
+                            author_id,
+                            category_id,
+                            status,
+                            published_at,
+                            seo_title,
+                            seo_description,
+                            seo_keywords,
+                            media_to_generate,
+                            word_count,
+                            reading_time,
+                            metadata,
+                            video_shot_list,
+                            created_by,
+                            updated_by,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, NOW(), NOW())
+                        RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
+                                  author_id, category_id, status, published_at, created_at, updated_at
+                        """,
+                        post_id,
+                        post_data.get("title"),
+                        post_data.get("slug"),
+                        post_data.get("content"),
+                        post_data.get("excerpt"),
+                        post_data.get("featured_image_url"),
+                        json.dumps(featured_image_data),
+                        post_data.get("cover_image_url"),
+                        post_data.get("author_id"),
+                        post_data.get("category_id"),
+                        post_data.get("status", "draft"),
+                        # published_at: use explicit value if provided, else NOW() for published
+                        explicit_published_at or (datetime.now(timezone.utc) if is_published else None),
+                        post_data.get("seo_title"),
+                        post_data.get("seo_description"),
                         seo_keywords,
                         media_to_generate,
                         word_count,
                         reading_time,
-                        metadata,
-                        video_shot_list,
-                        created_by,
-                        updated_by,
-                        created_at,
-                        updated_at
+                        json.dumps(metadata),
+                        json.dumps(video_shot_list) if video_shot_list is not None else None,
+                        post_data.get("created_by"),
+                        post_data.get("updated_by"),
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22, NOW(), NOW())
-                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
-                              author_id, category_id, status, published_at, created_at, updated_at
-                    """,
-                    post_id,
-                    post_data.get("title"),
-                    post_data.get("slug"),
-                    post_data.get("content"),
-                    post_data.get("excerpt"),
-                    post_data.get("featured_image_url"),
-                    json.dumps(featured_image_data),
-                    post_data.get("cover_image_url"),
-                    post_data.get("author_id"),
-                    post_data.get("category_id"),
-                    post_data.get("status", "draft"),
-                    # published_at: use explicit value if provided, else NOW() for published
-                    explicit_published_at or (datetime.now(timezone.utc) if is_published else None),
-                    post_data.get("seo_title"),
-                    post_data.get("seo_description"),
-                    seo_keywords,
-                    media_to_generate,
-                    word_count,
-                    reading_time,
-                    json.dumps(metadata),
-                    json.dumps(video_shot_list) if video_shot_list is not None else None,
-                    post_data.get("created_by"),
-                    post_data.get("updated_by"),
-                )
-                if not row:
-                    raise DatabaseError("Insert query returned no row - post creation failed")
+                    if not row:
+                        raise DatabaseError("Insert query returned no row - post creation failed")
 
-                # Also write to the post_tags junction table (authoritative source per migration 014).
-                # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
-                # Single INSERT with unnest() replaces N per-tag round-trips (issue #703).
-                # ``post_tags.tag_id`` is a uuid column — cast unnest to
-                # ``uuid[]`` so postgres coerces the str list. ``::text[]``
-                # was a leftover from when tag_ids lived in a text[]
-                # column on posts (pre-#703); after the post_tags split
-                # the cast stopped matching and every approve-with-tags
-                # publish raised ``column "tag_id" is of type uuid but
-                # expression is of type text``, partial-committing the
-                # post insert (the post row landed, but the post_tags
-                # insert + the media_to_generate stamp downstream of it
-                # both rolled back). Captured 2026-05-20 (finding #197)
-                # via the dcd86ea6 post whose media_to_generate landed
-                # as ``{}`` despite niche=glad-labs's
-                # ``{podcast,video,video_short}`` default.
-                if tag_ids:
-                    clean_ids = [str(tid) for tid in tag_ids if tid]
-                    if clean_ids:
-                        await conn.execute(
-                            """
-                            INSERT INTO post_tags (post_id, tag_id)
-                            SELECT $1, unnest($2::uuid[])
-                            ON CONFLICT (post_id, tag_id) DO NOTHING
-                            """,
-                            post_id,
-                            clean_ids,
-                        )
-                        logger.debug(
-                            "Inserted tags into post_tags",
-                            count=len(clean_ids),
-                            post_id=post_id,
-                        )
+                    # Also write to the post_tags junction table (authoritative source per migration 014).
+                    # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
+                    # Single INSERT with unnest() replaces N per-tag round-trips (issue #703).
+                    # ``post_tags.tag_id`` is a uuid column — cast unnest to
+                    # ``uuid[]`` so postgres coerces the str list. ``::text[]``
+                    # was a leftover from when tag_ids lived in a text[]
+                    # column on posts (pre-#703); after the post_tags split
+                    # the cast stopped matching and every approve-with-tags
+                    # publish raised ``column "tag_id" is of type uuid but
+                    # expression is of type text``, partial-committing the
+                    # post insert (the post row landed, but the post_tags
+                    # insert + the media_to_generate stamp downstream of it
+                    # both rolled back). Captured 2026-05-20 (finding #197)
+                    # via the dcd86ea6 post whose media_to_generate landed
+                    # as ``{}`` despite niche=glad-labs's
+                    # ``{podcast,video,video_short}`` default. The enclosing
+                    # transaction (#629) now makes that failure mode roll
+                    # back the post insert too, instead of orphaning it.
+                    if tag_ids:
+                        clean_ids = [str(tid) for tid in tag_ids if tid]
+                        if clean_ids:
+                            await conn.execute(
+                                """
+                                INSERT INTO post_tags (post_id, tag_id)
+                                SELECT $1, unnest($2::uuid[])
+                                ON CONFLICT (post_id, tag_id) DO NOTHING
+                                """,
+                                post_id,
+                                clean_ids,
+                            )
+                            logger.debug(
+                                "Inserted tags into post_tags",
+                                count=len(clean_ids),
+                                post_id=post_id,
+                            )
 
                 logger.info(
                     "Post created successfully",

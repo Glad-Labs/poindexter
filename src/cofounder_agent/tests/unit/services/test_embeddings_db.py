@@ -71,6 +71,68 @@ class TestStoreEmbedding:
         assert result is None
 
 
+class TestStoreEmbeddingChunkIndex:
+    """#625 — chunk_index must reach the INSERT so distinct chunks coexist.
+
+    The natural key is ``(source_table, source_id, chunk_index,
+    embedding_model)``. Before the fix the INSERT omitted ``chunk_index``,
+    so it always defaulted to 0 and chunk 1 clobbered chunk 0 on conflict.
+    """
+
+    @pytest.mark.asyncio
+    async def test_chunk_index_defaults_to_zero(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [0.1])
+        args = conn.fetchrow.call_args[0]
+        # chunk_index is the 11th positional value ($11) — last param.
+        assert args[11] == 0
+
+    @pytest.mark.asyncio
+    async def test_chunk_index_passed_through(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [0.1], chunk_index=3)
+        args = conn.fetchrow.call_args[0]
+        assert args[11] == 3
+
+    @pytest.mark.asyncio
+    async def test_insert_lists_chunk_index_column(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [0.1])
+        sql = conn.fetchrow.call_args[0][0]
+        assert "chunk_index" in sql, (
+            "INSERT must list chunk_index so chunk 1 doesn't clobber chunk 0"
+        )
+
+    @pytest.mark.asyncio
+    async def test_two_chunks_both_stored_distinctly(self, db, mock_pool):
+        """Two chunks of the same source send DISTINCT chunk_index values.
+
+        With a real DB + the natural-key UNIQUE constraint, distinct
+        chunk_index values mean BOTH rows persist (no ON CONFLICT
+        clobber). Here we assert the two INSERTs carry the two distinct
+        chunk_index values — the fix that makes coexistence possible.
+        """
+        _, conn = mock_pool
+        conn.fetchrow.side_effect = [{"id": "chunk-0"}, {"id": "chunk-1"}]
+
+        id0 = await db.store_embedding("post", "p1", "h0", [0.1], chunk_index=0)
+        chunk0_args = conn.fetchrow.call_args[0]
+        id1 = await db.store_embedding("post", "p1", "h1", [0.2], chunk_index=1)
+        chunk1_args = conn.fetchrow.call_args[0]
+
+        assert id0 == "chunk-0"
+        assert id1 == "chunk-1"
+        # The two INSERTs carry distinct chunk_index values ($11), so the
+        # natural-key UNIQUE constraint keeps both rows instead of one
+        # overwriting the other.
+        assert chunk0_args[11] == 0
+        assert chunk1_args[11] == 1
+        assert chunk0_args[11] != chunk1_args[11]
+
+
 class TestSearchSimilar:
     @pytest.mark.asyncio
     async def test_search_returns_results(self, db, mock_pool):
@@ -142,6 +204,41 @@ class TestGetEmbedding:
         conn.fetchrow.side_effect = RuntimeError("db error")
         result = await db.get_embedding("post", "p1")
         assert result is None
+
+
+class TestGetEmbeddingDeterminism:
+    """#626 — fetch must be deterministic when multiple chunks/models exist."""
+
+    @pytest.mark.asyncio
+    async def test_query_orders_for_determinism(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.get_embedding("post", "p1")
+        query = conn.fetchrow.call_args[0][0]
+        assert "ORDER BY chunk_index, embedding_model" in query
+        assert "LIMIT 1" in query
+
+    @pytest.mark.asyncio
+    async def test_no_model_filter_uses_two_params(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.get_embedding("post", "p1")
+        args = conn.fetchrow.call_args[0]
+        # SQL + source_table + source_id, no embedding_model param.
+        assert args[1] == "post"
+        assert args[2] == "p1"
+        assert len(args) == 3
+        assert "embedding_model = $3" not in args[0]
+
+    @pytest.mark.asyncio
+    async def test_model_filter_adds_param_and_clause(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.get_embedding("post", "p1", embedding_model="nomic-embed-text")
+        args = conn.fetchrow.call_args[0]
+        assert "embedding_model = $3" in args[0]
+        assert args[3] == "nomic-embed-text"
+        assert "ORDER BY chunk_index, embedding_model" in args[0]
 
 
 class TestDeleteEmbeddings:
@@ -377,6 +474,27 @@ class TestNeedsReembeddingParameters:
         await db.needs_reembedding("post", "p1", "h")
         query = conn.fetchrow.call_args[0][0]
         assert "SELECT content_hash" in query
+
+    @pytest.mark.asyncio
+    async def test_query_orders_for_determinism(self, db, mock_pool):
+        """#626 — needs_reembedding must compare a deterministic row."""
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.needs_reembedding("post", "p1", "h")
+        query = conn.fetchrow.call_args[0][0]
+        assert "ORDER BY chunk_index, embedding_model" in query
+        assert "LIMIT 1" in query
+
+    @pytest.mark.asyncio
+    async def test_model_filter_adds_param_and_clause(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.needs_reembedding(
+            "post", "p1", "h", embedding_model="nomic-embed-text"
+        )
+        args = conn.fetchrow.call_args[0]
+        assert "embedding_model = $3" in args[0]
+        assert args[3] == "nomic-embed-text"
 
 
 class TestStoreEmbeddingDimensionsLogged:
