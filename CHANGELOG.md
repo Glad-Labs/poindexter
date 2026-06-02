@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.60.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.59.0...v0.60.0) (2026-06-02)
+
+
+### Features
+
+* **grafana:** dashboard audit — close gaps, surface unused metrics, add Revenue dashboard ([#933](https://github.com/Glad-Labs/glad-labs-stack/issues/933)) ([b000ec6](https://github.com/Glad-Labs/glad-labs-stack/commit/b000ec60e2a75045911d4947c6fd1c68514142f5))
+
+
+### Bug Fixes
+
+* **metrics:** register social-adapter counters at import (poindexter[#455](https://github.com/Glad-Labs/glad-labs-stack/issues/455)) ([#932](https://github.com/Glad-Labs/glad-labs-stack/issues/932)) ([4fe424d](https://github.com/Glad-Labs/glad-labs-stack/commit/4fe424d237f283bb5df337fab3896b39887c26a0))
+
 ## [0.59.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.58.0...v0.59.0) (2026-06-02)
 
 
