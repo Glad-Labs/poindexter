@@ -15,11 +15,11 @@
 */
 
 /*
-  Google Fonts — imported once at the tokens root. Next.js / Vite sites can
-  also use their local font loader and inject via the same CSS variables;
-  see @glad-labs/brand README.
+  Google Fonts are imported at the top of tokens/index.css — the @import must
+  precede all other rules in the concatenated output, so it can't live here
+  (after colors.css's :root). Next.js / Vite sites can also use their local
+  font loader and inject via the same CSS variables; see @glad-labs/brand README.
 */
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   --gl-font-display: 'Space Grotesk', system-ui, sans-serif;
