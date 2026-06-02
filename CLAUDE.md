@@ -349,12 +349,28 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 - **GlitchTip (self-hosted Sentry):** http://localhost:8080 — runtime exceptions from worker / brain / voice. Org `glad-labs`, project `poindexter`. Sentry SDK auto-initialised in `main.py` when `app_settings.sentry_dsn` is set (provisioned 2026-05-09).
 - **Langfuse:** http://localhost:3010 — every reviewer LLM call (DeepEval g-eval / faithfulness, Ragas, the legacy critic) traces here. Use it to drill into a specific qa_pass_completed event and read the judge model's reasoning.
 
-## Cron Jobs (re-create on new sessions)
+## Scheduled agents (Windows Task Scheduler)
 
-```
-Self-healing agent: hourly at :13 — health check + auto-fix
-Code quality agent: every 4h at :37 — security/dead code/error handling scans
-```
+Eight autonomous Claude Code sessions run on Matt's PC via Windows Task
+Scheduler, defined in `scripts/claude-sessions.ps1` (register/list/remove with
+`.\claude-sessions.ps1 -Install | -List | -Uninstall`). Each runs in an
+isolated git worktree off the latest `origin/main`, makes changes on a branch,
+and opens a **code** PR against `Glad-Labs/glad-labs-stack` (the source of truth;
+poindexter is a force-rebuilt mirror that can't take code) and never `main`
+directly. Issues, by contrast, are content-routed to either repo (OSS →
+poindexter, business/internal → glad-labs-stack). Per-session model is set in the
+`Model` field (defaults to `claude-sonnet-4-6`).
+
+| Session             | When (local) | Model      | Does                                                 |
+| ------------------- | ------------ | ---------- | ---------------------------------------------------- |
+| `alert-triage`      | daily 01:00  | sonnet-4-6 | files probe-bug issues from `alert_events`           |
+| `codebase-audit`    | Wed 02:00    | sonnet-4-6 | `ruff` F401 fixes + `bandit` security issues         |
+| `test-health`       | daily 03:00  | sonnet-4-6 | fixes simple unit-test failures                      |
+| `test-expansion`    | daily 04:00  | sonnet-4-6 | adds tests to low-coverage files                     |
+| `issue-resolver`    | daily 05:00  | opus-4-8   | fixes one scoped open issue                          |
+| `dependency-review` | daily 06:30  | sonnet-4-6 | auto-merges green patch-bump dependabot PRs          |
+| `doc-sync`          | Fri 05:00    | sonnet-4-6 | verifies CLAUDE.md file references resolve           |
+| `triage-sweep`      | Mon 07:00    | sonnet-4-6 | applies derivable labels + surfaces triage proposals |
 
 ## Database migrations
 

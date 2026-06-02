@@ -446,6 +446,14 @@ DEFAULTS: dict[str, str] = {
     'findings.cloud_sync_returned_false.cooldown_minutes': '360',
     'findings.cloud_sync_returned_false.min_severity': 'warn',
 
+    # ----- Findings issue labels (content-derived from kind; cite-or-surface) -----
+    # Comma-separated labels stamped on the GitHub issue a github_issue-delivery
+    # finding opens. Derived from the finding KIND (its content), not a default.
+    # Priority/milestone are deliberately omitted — those are the weekly sweep's
+    # surfaced judgment axes, never auto-stamped here.
+    'findings.quality_regression.labels': 'bug,pipeline',
+    'findings.missing_seo.labels': 'bug,pipeline',
+
     # ----- Prefect stuck-flow queue-backlog detection (#526) -----
     # Distinct from the stuck-run thresholds (seeded in 0000_baseline):
     # page with probe.prefect_queue_backlog_detected when more than this

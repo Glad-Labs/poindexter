@@ -1,0 +1,62 @@
+# Deterministic, zero-LLM triage: stamp the `type` label implied by a new
+# issue's conventional-commit title prefix. Cite-or-surface — applies ONLY
+# what the prefix justifies and leaves every other axis bare for the weekly
+# reasoning sweep. Runs in BOTH repos (rides the sync filter into poindexter).
+name: triage-on-open
+
+on:
+  issues:
+    types: [opened]
+
+# Only the permission needed to add a label. No PR is opened, so no App token.
+permissions:
+  issues: write
+
+concurrency:
+  group: triage-on-open-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  label-type:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Derive type label from title
+        id: derive
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+          LABEL="$(python src/cofounder_agent/services/triage/derive_labels.py --title "$ISSUE_TITLE")"
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+          if [[ -z "$LABEL" ]]; then
+            echo "No CC prefix in title — leaving type bare for the weekly sweep."
+          else
+            echo "Derived type: $LABEL"
+          fi
+
+      - name: Apply label (tolerate already-present / missing label)
+        if: steps.derive.outputs.label != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.issue.number }}
+          LABEL: ${{ steps.derive.outputs.label }}
+        run: |
+          # Skip if the issue already carries a type-ish label decision — never
+          # override a human's call. Only add when the type axis is empty.
+          EXISTING="$(gh issue view "$NUM" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")')"
+          case ",$EXISTING," in
+            *,bug,*|*,feature,*|*,enhancement,*|*,improvement,*|*,chore,*|*,tech-debt,*|*,documentation,*|*,testing,*|*,security,*|*,question,*)
+              echo "Type axis already set ($EXISTING) — leaving as-is."; exit 0;;
+          esac
+          if ! gh issue edit "$NUM" --repo "$REPO" --add-label "$LABEL"; then
+            echo "::warning::label '$LABEL' not present in $REPO; skipped (surfaced, not failed)."
+          fi

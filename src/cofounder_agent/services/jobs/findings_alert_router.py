@@ -97,6 +97,15 @@ async def _load_policies(pool: Any) -> dict[str, dict[str, str]]:
     return policies
 
 
+def _issue_labels_for(kind: str, policies: dict[str, dict[str, str]]) -> list[str]:
+    """Per-kind issue labels from findings.<kind>.labels, split + stripped.
+
+    Returns [] when unset — the caller still stamps the `finding` marker.
+    Content-derived (the kind), never a default priority/milestone."""
+    raw = (policies.get(kind) or {}).get("labels", "")
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
 def _delivery_for(kind: str, severity: str, policies: dict[str, dict[str, str]]) -> str:
     """Resolve the delivery action for one finding.
 
@@ -183,7 +192,9 @@ async def _dispatch_auto_fix(
 _FINDINGS_ISSUE_REPO = "Glad-Labs/glad-labs-stack"  # private — operator findings
 
 
-async def _dispatch_github_issue(finding: dict[str, Any], kind: str) -> bool:
+async def _dispatch_github_issue(
+    finding: dict[str, Any], kind: str, labels: list[str] | None = None
+) -> bool:
     """File a GitHub issue for a finding via the `gh` CLI.
 
     Returns True if the issue was created OR a same-title open issue
@@ -231,9 +242,18 @@ async def _dispatch_github_issue(finding: dict[str, Any], kind: str) -> bool:
         except json.JSONDecodeError:
             pass  # fall through to create
 
+    # Always include the `finding` marker; add any kind-derived labels.
+    # gh fails the whole create on an unknown label, so the labels MUST exist
+    # in _FINDINGS_ISSUE_REPO (see the findings.<kind>.labels seeds + the
+    # `finding` label provisioned in glad-labs-stack).
+    label_args: list[str] = []
+    for lbl in ["finding", *(labels or [])]:
+        if lbl and lbl not in (label_args[1::2] if label_args else []):
+            label_args += ["--label", lbl]
+
     create_proc = await asyncio.create_subprocess_exec(
         "gh", "issue", "create", "--repo", _FINDINGS_ISSUE_REPO,
-        "--title", title, "--body", body, "--label", "finding",
+        "--title", title, "--body", body, *label_args,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
     try:
@@ -464,7 +484,8 @@ class FindingsAlertRouterJob:
                     else:
                         suppressed += 1
                 elif delivery == "github_issue":
-                    if await _dispatch_github_issue(r, kind):
+                    labels = _issue_labels_for(kind, policies)
+                    if await _dispatch_github_issue(r, kind, labels):
                         filed += 1
                     elif await _deliver_fallback(pool, r, kind, fallback):
                         routed += 1

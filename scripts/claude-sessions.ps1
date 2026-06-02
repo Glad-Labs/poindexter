@@ -46,12 +46,12 @@ $LogDir   = "$env:USERPROFILE\.poindexter\logs\claude-sessions"
 $Claude   = "$env:USERPROFILE\.local\bin\claude.exe"
 $TaskPrefix = "Claude Session"
 $WorktreeRoot = "$env:USERPROFILE\.poindexter\worktrees"
-$RepoPreamble = "Two GitHub repos: Glad-Labs/glad-labs-stack (private, full tree, source of truth, push here for daily work) and Glad-Labs/poindexter (public mirror, auto-synced one-way from glad-labs-stack via GitHub Action). AUTOMATION ROUTING RULE: every issue you create, every PR you open, every comment you write goes to Glad-Labs/glad-labs-stack. Do NOT file issues or PRs against Glad-Labs/poindexter - it is a read-only mirror; anything filed there gets disconnected from the source of truth. You MAY read from Glad-Labs/poindexter (e.g. to dedup against community-filed issues) but you MAY NOT write to it. Humans still file public-flavored bug reports in Glad-Labs/poindexter; automation does not. Use the gh CLI for all GitHub operations (gh pr create, gh issue list, etc.) and pass --repo Glad-Labs/glad-labs-stack explicitly on every write. Gitea was decommissioned 2026-04-30 - do NOT use forgejo MCP tools or any localhost:3001 URLs. "
+$RepoPreamble = "Two GitHub repos: Glad-Labs/glad-labs-stack (private, full tree, SOURCE OF TRUTH for all code) and Glad-Labs/poindexter (public OSS mirror, auto-synced one-way from glad-labs-stack and force-rebuilt on every sync). ROUTING RULE: (1) ISSUES are content-routed to EITHER repo - OSS/product issues belong in Glad-Labs/poindexter, business-ops/internal issues in Glad-Labs/glad-labs-stack; you may create, label, and comment on issues in BOTH (but security-vulnerability issues stay in the private glad-labs-stack - never disclose vulns in the public repo). (2) CODE and PULL REQUESTS go to Glad-Labs/glad-labs-stack ONLY - never push code or open a PR against poindexter; it is force-rebuilt from glad-labs-stack on every sync, so any code change there is destroyed. Always pass --repo explicitly. Gitea was decommissioned 2026-04-30 - do NOT use forgejo MCP tools or any localhost:3001 URLs. "
 
 # Session definitions: name, prompt, schedule, max duration
 $Sessions = @{
     "test-health" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Run the full Python test suite: cd src/cofounder_agent ; poetry run pytest tests/unit/ -q --tb=short -p no:cacheprovider. (PowerShell 5.1 does not support && - use ; or run as a single bash -c pipeline). If tests pass, exit with no changes. If tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones only. For complex failures, add a # FIXME comment. Create branch auto/test-fixes-{date}, commit, git push -u origin, then gh pr create --repo Glad-Labs/glad-labs-stack --base main with a clear title. Do NOT modify production code (only files in tests/). Do NOT push to main directly. Do NOT merge the PR yourself - Matt reviews. Keep output minimal."
+        Prompt = "You are running autonomously in a dedicated worktree. Run the unit suite: cd src/cofounder_agent ; poetry run pytest tests/unit/ -q --tb=short -p no:cacheprovider --continue-on-collection-errors (PowerShell 5.1 has no '&&'; use ';'). IGNORE collection errors (E) - they are known host/container path-depth quirks (~21, tracked separately), NOT your job. Act ONLY on real test FAILURES (F). If there are none, exit with no changes. Fix only SIMPLE failures (wrong mocks, stale assertions, missing imports) and ONLY in files under tests/ - never production code. For complex failures add a '# FIXME:' note in the test instead. Commit on the current branch, push via git push -u origin HEAD, then gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main, do NOT merge. Keep output minimal."
         Cron = "0 3 * * *"
         TimeHH = "03"
         TimeMM = "00"
@@ -59,7 +59,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "test-expansion" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Pick ONE existing service test file with low test count: ls src/cofounder_agent/tests/unit/services/test_*.py | ForEach-Object { [PSCustomObject]@{ File = `$_.Name; Count = (Select-String -Path `$_ -Pattern '^\s*def test_').Count } } | Sort-Object Count | Select-Object -First 5. Read that service's source and the existing tests. Add 5-10 NEW test cases covering edge cases and error paths that are not already covered. Do NOT duplicate existing tests. Run the new tests to verify they pass. Commit to branch auto/test-expand-{date}, push via git push -u origin, create a GitHub PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
+        Prompt = "You are running autonomously in a dedicated worktree. Find the lowest-covered test files across the WHOLE unit tree (not just top-level services): cd src/cofounder_agent ; Get-ChildItem -Recurse tests/unit -Filter 'test_*.py' | ForEach-Object { [PSCustomObject]@{ File = `$_.FullName; Count = (Select-String -Path `$_.FullName -Pattern '^\s*(async )?def test_').Count } } | Sort-Object Count | Select-Object -First 5. Pick ONE, read the service it covers and its existing tests, then add 5-10 NEW cases for uncovered edge/error paths (do NOT duplicate existing tests). Run the new tests to confirm they pass. Commit on the current branch, push via git push -u origin HEAD, open a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
         Cron = "0 4 * * *"
         TimeHH = "04"
         TimeMM = "00"
@@ -67,15 +67,16 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "issue-resolver" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. List open issues from BOTH repos and merge them: gh issue list --repo Glad-Labs/glad-labs-stack --state open --limit 20 --json number,title,labels,url AND gh issue list --repo Glad-Labs/poindexter --state open --limit 20 --json number,title,labels,url. Pick ONE issue that is clearly scoped, not labeled 'feature' or 'epic', and fixable without architectural decisions. Skip anything involving Lemon Squeezy, DNS, secret rotation, or 'Matt decides' clauses. Read the code, understand the bug, make a targeted fix. ALL WRITES GO TO Glad-Labs/glad-labs-stack (source of truth). Commit to branch auto/fix-{repo}-{number}, push via git push -u origin, create a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main referencing the source issue (title format: 'fix: <description> (closes Glad-Labs/<repo>#NNN)' - if the issue was in poindexter, the cross-repo close reference still works from a stack PR). Do NOT close the issue manually. Do NOT push to main. Do NOT open any PR or comment against Glad-Labs/poindexter - it is a read-only public mirror. If no suitable issue exists, add an analysis comment to ONE stack issue via gh issue comment --repo Glad-Labs/glad-labs-stack explaining what you found. Keep output minimal."
+        Prompt = "You are running autonomously in a dedicated worktree. List open issues from BOTH repos: gh issue list --repo Glad-Labs/glad-labs-stack --state open --limit 30 --json number,title,labels,url ; gh issue list --repo Glad-Labs/poindexter --state open --limit 30 --json number,title,labels,url. Pick ONE clearly-scoped, fixable issue. SKIP anything labeled feature, epic, blocked, or needs-human, and skip Lemon Squeezy / DNS / secret-rotation / 'Matt decides' topics. Read the code and make a targeted fix. The CODE PR ALWAYS goes to Glad-Labs/glad-labs-stack (the code source of truth; poindexter is force-rebuilt and cannot take code) - commit on the current branch, push via git push -u origin HEAD, open a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main with title 'fix: <desc> (closes Glad-Labs/<repo>#NNN)' (a cross-repo close reference works when the source issue is in poindexter). Do NOT push to main, do NOT merge. If no suitable issue exists, add ONE analysis comment on the source issue (either repo) and exit. Keep output minimal."
         Cron = "0 5 * * *"
         TimeHH = "05"
         TimeMM = "00"
         Days = "daily"
         MaxMinutes = 30
+        Model = "claude-opus-4-8"
     }
     "codebase-audit" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Run a code quality audit: 1) Unused imports: cd src/cofounder_agent ; poetry run ruff check --select F401 services/ routes/. 2) Security: poetry run bandit -r services/ routes/ -q -ll. 3) Fix only the unused-import issues (safe mechanical fix). For security findings with severity MEDIUM or HIGH, file GitHub issues via gh issue create --repo Glad-Labs/glad-labs-stack --label security describing the finding (NOT poindexter - that is a read-only public mirror; issues filed there are disconnected from the source of truth). Commit unused-import fixes to branch auto/audit-{date}, push via git push -u origin, create a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
+        Prompt = "You are running autonomously in a dedicated worktree. Run: cd src/cofounder_agent ; poetry run ruff check --select F401 services/ routes/ ; poetry run bandit -r services/ routes/ -q -ll. Fix ONLY the unused-import (F401) findings - the safe mechanical fix. For bandit MEDIUM/HIGH findings, file a GitHub issue via gh issue create --repo Glad-Labs/glad-labs-stack --label security (security findings stay in the PRIVATE repo - never disclose vulns in the public poindexter). Commit the import fixes on the current branch (code PRs go to glad-labs-stack), push via git push -u origin HEAD, open a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
         Cron = "0 2 * * 3"
         TimeHH = "02"
         TimeMM = "00"
@@ -83,7 +84,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "doc-sync" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Check CLAUDE.md for stale numbers: count tests (cd src/cofounder_agent ; poetry run pytest tests/unit/ --co -q 2>&1 | Select-Object -Last 1), count services (Get-ChildItem src/cofounder_agent/services/*.py | Measure-Object | Select Count), count Grafana dashboards (Get-ChildItem infrastructure/grafana/dashboards/*.json | Measure-Object | Select Count). If any CLAUDE.md number is off by more than 10 percent, update it. Also verify any referenced file paths in CLAUDE.md still exist. Commit fixes to auto/doc-sync-{date}, push via git push -u origin, create a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
+        Prompt = "You are running autonomously in a dedicated worktree. Verify that file paths REFERENCED in CLAUDE.md still exist - do NOT recompute stat counts (the sync-claude-md.yml GitHub Action owns counts; recomputing them here double-counts subdirectories and corrupts the doc). Extract path-like references from CLAUDE.md (src/..., docs/..., infrastructure/..., scripts/..., brain/...) and check each exists on disk. For any reference that no longer resolves, fix it to the correct current path or remove the stale line. If every reference resolves, exit with no changes. Commit fixes on the current branch, push via git push -u origin HEAD, open a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT touch numeric stat counts. Keep output minimal."
         Cron = "0 5 * * 5"
         TimeHH = "05"
         TimeMM = "00"
@@ -91,7 +92,7 @@ $Sessions = @{
         MaxMinutes = 20
     }
     "alert-triage" = @{
-        Prompt = $RepoPreamble + "Sweep last 24h of alert_events. Connect via DATABASE_URL or LOCAL_DATABASE_URL env. Query: SELECT alertname, severity, COUNT(*) FROM alert_events WHERE received_at > NOW() - INTERVAL '24 hours' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20. For each alertname firing more than 5 times, look at the most recent dispatch_result + the underlying probe (brain/<name>_probe.py if it exists). If the pattern is clearly a probe bug (false positive, same fingerprint repeating because dedup is broken, etc.), open a SHORT issue at Glad-Labs/glad-labs-stack (NOT poindexter - that mirror is read-only for automation) with reproduction + suspect file via gh issue create --repo Glad-Labs/glad-labs-stack. If the pattern is a real failure (service genuinely down, GPU overheating, cost overrun) leave alone - the operator will see it on the morning brief. Do NOT dispatch fix agents from inside this session - just file issues. One PR per real bug, branch auto/alert-triage-{date}. Keep output minimal."
+        Prompt = "Sweep the last 24h of alert_events. Connect via the DATABASE_URL or LOCAL_DATABASE_URL env. Query: SELECT alertname, severity, COUNT(*) FROM alert_events WHERE received_at > NOW() - INTERVAL '24 hours' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20. For each alertname firing more than 5 times, inspect the most recent dispatch_result and the underlying probe (brain/<name>_probe.py if it exists). If it is clearly a probe bug (false positive, or broken dedup repeating one fingerprint), open a SHORT issue at Glad-Labs/glad-labs-stack with reproduction + suspect file via gh issue create --repo Glad-Labs/glad-labs-stack. If it is a real failure (service down, GPU overheating, cost overrun), leave it - the operator sees it on the morning brief. Do NOT dispatch fix agents; just file issues. One issue per real probe bug. Keep output minimal."
         Cron = "0 1 * * *"
         TimeHH = "01"
         TimeMM = "00"
@@ -99,12 +100,20 @@ $Sessions = @{
         MaxMinutes = 25
     }
     "dependency-review" = @{
-        Prompt = $RepoPreamble + "Scan for ready-to-merge dependabot/renovate PRs. Run: gh pr list --repo Glad-Labs/glad-labs-stack --search 'is:pr is:open author:app/dependabot status:success' --json number,title,headRefName,createdAt --limit 30. For each PR: only act if (a) the title is a patch-level bump (regex: 'bump .* from \d+\.\d+\.\d+ to \d+\.\d+\.[1-9]\d*' i.e. third number changed, or 'bump .* from \d+\.X\.Y to \d+\.X\.Z' with same major/minor), (b) all checks are green, (c) PR is more than 6 hours old (so any flaky CI has stabilised). For matching PRs run: gh pr review --approve, then gh pr merge --squash --delete-branch --auto. Major-version bumps and minor-version bumps go untouched - those are operator review. Print a summary of merged + skipped + reasons. Keep output minimal."
+        Prompt = "Scan for ready-to-merge dependabot PRs: gh pr list --repo Glad-Labs/glad-labs-stack --search 'is:pr is:open author:app/dependabot status:success' --json number,title,headRefName,createdAt --limit 30. Act ONLY when (a) the title is a PATCH bump (third version number changed, same major.minor), (b) all checks are green, and (c) the PR is older than 6 hours (so flaky CI has settled). For matches: gh pr review --approve, then gh pr merge --squash --delete-branch --auto. Leave minor and major bumps for operator review. Print a summary of merged + skipped + reasons. Keep output minimal."
         Cron = "30 6 * * *"
         TimeHH = "06"
         TimeMM = "30"
         Days = "daily"
         MaxMinutes = 15
+    }
+    "triage-sweep" = @{
+        Prompt = "This is a read-and-triage session that makes NO code changes and opens NO pull request - ignore any instruction above to create a branch, commit, or open a PR. Your only writes are GitHub issue-label edits (in EITHER repo) plus one Discord message. Steps: (1) From the worktree run: cd src/cofounder_agent ; poetry run python ../../scripts/triage/run_weekly_sweep.py  (PowerShell 5.1 has no '&&'; use ';'). It applies content-derived 'type' labels in BOTH repos and prints a JSON report: per-repo gaps + each repo's milestones. (2) For each gap missing 'area': apply the single best area label via gh issue edit --repo <that gap's repo> --add-label <area> ONLY when the body clearly cites one subsystem (backend, frontend, testing, infra, monitoring, pipeline, monetization); if it is cross-cutting, leave it bare. (3) Never apply priority or milestone - compose a one-line proposal per gap instead (priority from blocking/impact signals in the body; milestone from that repo's milestones list). (4) Post ONE Discord digest via the gladlabs discord_post MCP tool, title 'Weekly triage: N proposals', listing each issue, its repo, the proposed labels, and a one-line rationale. Cite-or-surface: never invent a value you cannot cite from the issue body; a bare axis is correct when there is no basis. Keep output minimal."
+        Cron = "0 7 * * 1"
+        TimeHH = "07"
+        TimeMM = "00"
+        Days = "MON"
+        MaxMinutes = 30
     }
 }
 
@@ -175,9 +184,12 @@ function Run-Session {
     # Safe because sessions are sandboxed to their worktree and changes go
     # to branches/PRs, never main.
     $timeout = $session.MaxMinutes * 60
+    # Per-session model (default sonnet-4-6 for routine hygiene; opus for the
+    # judgment-heavy bug-fixer). Unset Model falls back to the sonnet default.
+    $model = if ($session.Model) { $session.Model } else { "claude-sonnet-4-6" }
     try {
         $proc = Start-Process -FilePath $Claude `
-            -ArgumentList "-p", "`"$prompt`"", "--output-format", "text", "--dangerously-skip-permissions" `
+            -ArgumentList "-p", "`"$prompt`"", "--model", $model, "--output-format", "text", "--dangerously-skip-permissions" `
             -WorkingDirectory $StartDir `
             -RedirectStandardOutput $logFile `
             -RedirectStandardError "$logFile.err" `
@@ -255,7 +267,8 @@ function List-Sessions {
     Write-Host "`nSession definitions:`n"
     foreach ($name in ($Sessions.Keys | Sort-Object)) {
         $s = $Sessions[$name]
-        Write-Host "  $name - $($s.Days) at $($s.TimeHH):$($s.TimeMM) (max $($s.MaxMinutes)min)"
+        $m = if ($s.Model) { $s.Model } else { "claude-sonnet-4-6" }
+        Write-Host "  $name - $($s.Days) at $($s.TimeHH):$($s.TimeMM) (max $($s.MaxMinutes)min, $m)"
     }
 }
 

@@ -563,6 +563,49 @@ async def test_github_issue_returns_false_on_gh_timeout(monkeypatch):
     assert ok is False
 
 
+async def test_github_issue_passes_kind_labels_to_create(monkeypatch):
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        if "list" in args:
+            return _FakeProc(0, stdout=b"[]")  # no dup -> proceed to create
+        return _FakeProc(0)
+
+    monkeypatch.setattr(router_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(router_mod.asyncio, "create_subprocess_exec", fake_exec)
+    finding = {"id": 9, "source": "audit_published_quality",
+               "details": {"kind": "quality_regression", "title": "qr: z", "body": "b"}}
+    ok = await router_mod._dispatch_github_issue(
+        finding, "quality_regression", labels=["finding", "bug", "pipeline"]
+    )
+    assert ok is True
+    create = next(c for c in calls if "create" in c)
+    # every label is passed as its own --label arg
+    for lbl in ("finding", "bug", "pipeline"):
+        assert lbl in create
+    assert create.count("--label") == 3
+
+
+async def test_github_issue_defaults_to_finding_label_only(monkeypatch):
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        if "list" in args:
+            return _FakeProc(0, stdout=b"[]")
+        return _FakeProc(0)
+
+    monkeypatch.setattr(router_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(router_mod.asyncio, "create_subprocess_exec", fake_exec)
+    finding = {"id": 10, "source": "x",
+               "details": {"kind": "topic_gap", "title": "t", "body": "b"}}
+    ok = await router_mod._dispatch_github_issue(finding, "topic_gap", labels=None)
+    assert ok is True
+    create = next(c for c in calls if "create" in c)
+    assert "finding" in create and create.count("--label") == 1
+
+
 async def test_run_github_issue_counts_filed(monkeypatch):
     monkeypatch.setattr(
         "services.jobs.findings_alert_router._dispatch_github_issue",
