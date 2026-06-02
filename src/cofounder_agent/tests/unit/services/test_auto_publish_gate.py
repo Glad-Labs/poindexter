@@ -383,3 +383,84 @@ async def test_dry_run_true_marks_decision_dry_run_even_when_would_fire() -> Non
     assert decision.would_fire is True
     assert decision.dry_run is True
     assert decision.gate_state == "pass"
+
+
+# ---------------------------------------------------------------------------
+# History-query shape — the niche-OR-category filter (#647)
+# ---------------------------------------------------------------------------
+
+
+def _make_capturing_pool(rows: list[dict[str, Any]] | None = None):
+    """asyncpg pool double that captures the SQL + bound args of the
+    history ``conn.fetch`` so the query shape can be asserted."""
+    captured: dict[str, Any] = {}
+
+    async def _fetch(sql, *args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return rows or []
+
+    conn = MagicMock()
+    conn.fetch = AsyncMock(side_effect=_fetch)
+
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    return pool, captured
+
+
+@pytest.mark.asyncio
+async def test_history_query_filters_on_niche_OR_category() -> None:
+    """Pin the trailing-clean-run history query (lines ~187-197).
+
+    The ``WHERE COALESCE(niche_slug,'')=$1 OR COALESCE(category,'')=$2``
+    filter is an OR — so a row matching EITHER the niche OR the category
+    is counted. That OR-bleed is intentional (a niche with no history of
+    its own can borrow its category's track record), but it MUST stay
+    visible: a category shared across niches means one niche's edit
+    history can influence another's gate. This test makes the OR
+    explicit so a refactor to AND (or a hardcoded niche) is caught, and
+    confirms BOTH niche_slug ($1) and category ($2) are bound."""
+    from services.auto_publish_gate import evaluate
+
+    site_config = _make_site_config({
+        "dev_diary_auto_publish_threshold": "70",
+        "dev_diary_auto_publish_dry_run": "false",
+        "dev_diary_auto_publish_min_clean_runs": "3",
+        "dev_diary_auto_publish_max_edit_distance": "50",
+    })
+
+    pool, captured = _make_capturing_pool([
+        {"char_diff_count": 5},
+        {"char_diff_count": 10},
+        {"char_diff_count": 15},
+    ])
+
+    await evaluate(
+        pool,
+        task_id="t1",
+        niche_slug="dev_diary",
+        category="engineering",
+        quality_score=92.0,
+        site_config=site_config,
+    )
+
+    sql = " ".join(captured["sql"].split())  # collapse whitespace
+    assert "published_post_edit_metrics" in sql
+    # The OR-bleed: niche_slug OR category. Guard both halves + the OR.
+    assert "niche_slug" in sql
+    assert "category" in sql
+    assert " OR " in sql, (
+        "history query must keep the niche-OR-category filter — "
+        f"got: {sql}"
+    )
+    # Both filter values are bound: $1=niche_slug, $2=category, $3=limit.
+    args = captured["args"]
+    assert args[0] == "dev_diary"
+    assert args[1] == "engineering"
+    # LIMIT is max(min_clean, 1) = 3.
+    assert args[2] == 3

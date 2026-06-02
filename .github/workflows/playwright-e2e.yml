@@ -1,0 +1,173 @@
+# Playwright E2E gate (glad-labs-stack#977 / poindexter#977).
+#
+# Before this workflow there was NO Playwright run in CI — the public
+# site's e2e/ suite only ran on someone's machine, so a layout/route
+# regression on www.gladlabs.io could merge green. (The Jest unit run +
+# JS lint are hook-only; Vercel ignores them. See the "ESLint hook broken"
+# / "JS lint is hook-only" notes.)
+#
+# Scope (intentional): this job runs the FRONTEND-ONLY specs — the ones
+# that exercise statically-served Next.js pages and need no FastAPI
+# backend. The root playwright.config.ts auto-starts `npm run dev:public`
+# (Next.js on :3000) via its `webServer` block; its globalSetup pings the
+# backend health endpoint but TOLERATES it being down (warns + continues),
+# so a backend-less run is safe for these specs.
+#
+# Frontend-only specs (verified: zero localhost:8000/8002 or /api/ calls):
+#   - web/public-site/e2e/about.spec.ts
+#   - web/public-site/e2e/legal.spec.ts
+#   - web/public-site/e2e/post-detail.spec.ts
+#
+# The backend-dependent specs (auth / author / task-workflow /
+# manual-publish-pipeline / workflow-capability / integration-tests /
+# fixtures-validation / tag) are STAGED behind a separate, manually-
+# dispatched job that sets SKIP_SERVER_START=true and expects an
+# operator-provided backend — they can't run in stock GitHub-hosted CI
+# because they need a live worker + Postgres. Until that harness exists,
+# the default push/PR path runs only the frontend-only block.
+#
+# Third-party actions are pinned by SHA (repo convention — see
+# unit-tests.yml / migrations-smoke.yml).
+name: playwright-e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-e2e:
+    name: Frontend-only Playwright specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      CI: "true"
+      # Only install + drive Chromium to keep the run lean — the
+      # frontend-only specs don't need the full browser matrix in CI.
+      PLAYWRIGHT_BROWSERS: chromium
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.3.1 as of 2026-05-12
+
+      - name: Setup Node
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install workspace dependencies
+        # `npm ci` at the repo root installs every workspace (including
+        # web/public-site) from the committed package-lock.json. Playwright
+        # (@playwright/test ^1.60) is a root devDependency.
+        run: npm ci
+
+      - name: Install Playwright browsers (chromium)
+        # --with-deps pulls the OS libraries chromium needs on ubuntu.
+        run: npx playwright install --with-deps chromium
+
+      - name: Build public site
+        # Build once so the Next.js dev server the config boots serves the
+        # real production-shaped routes the specs assert against.
+        run: npm run build --workspace=web/public-site
+
+      - name: Run frontend-only Playwright specs (chromium)
+        # The root playwright.config.ts starts `npm run dev:public`
+        # (Next.js :3000) via its webServer block, then runs the named
+        # specs. globalSetup tolerates a missing backend, so no FastAPI
+        # worker is required for these static-page specs.
+        run: >
+          npx playwright test
+          --project=chromium
+          web/public-site/e2e/about.spec.ts
+          web/public-site/e2e/legal.spec.ts
+          web/public-site/e2e/post-detail.spec.ts
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2 as of 2026-05-12
+        with:
+          name: playwright-report
+          path: |
+            test-results/playwright/html-report
+            test-results/playwright/results.json
+            test-results/playwright/junit.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Backend-dependent specs — staged, manual-dispatch only.
+  #
+  # These specs (auth/author/task-workflow/manual-publish-pipeline/
+  # workflow-capability/integration-tests/fixtures-validation/tag) drive the
+  # full content pipeline and need a live FastAPI worker + Postgres, which
+  # stock GitHub-hosted runners don't provide. SKIP_SERVER_START=true tells
+  # the config NOT to boot its own Next.js webServer — the operator running
+  # this dispatch is expected to point PLAYWRIGHT_TEST_BASE_URL /
+  # PLAYWRIGHT_API_URL at a reachable stack (e.g. a self-hosted runner on the
+  # Tailnet). Left as workflow_dispatch-only until that harness is wired so it
+  # never gates push/PR on infra we can't provision in CI.
+  # ---------------------------------------------------------------------------
+  backend-e2e:
+    name: Backend-dependent Playwright specs (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      CI: "true"
+      # Don't boot a Next.js server — the operator points the base URLs at
+      # an already-running stack.
+      SKIP_SERVER_START: "true"
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.3.1 as of 2026-05-12
+
+      - name: Setup Node
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run backend-dependent Playwright specs (chromium)
+        # Base URLs default to localhost:3000 / :8000; override via the
+        # PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL env vars when
+        # pointing at a remote stack.
+        run: >
+          npx playwright test
+          --project=chromium
+          web/public-site/e2e/auth.spec.ts
+          web/public-site/e2e/author.spec.ts
+          web/public-site/e2e/task-workflow.spec.ts
+          web/public-site/e2e/manual-publish-pipeline.spec.ts
+          web/public-site/e2e/workflow-capability.spec.ts
+          web/public-site/e2e/integration-tests.spec.ts
+          web/public-site/e2e/fixtures-validation.spec.ts
+          web/public-site/e2e/tag.spec.ts
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2 as of 2026-05-12
+        with:
+          name: playwright-report-backend
+          path: |
+            test-results/playwright/html-report
+            test-results/playwright/results.json
+            test-results/playwright/junit.xml
+          retention-days: 7
+          if-no-files-found: ignore
