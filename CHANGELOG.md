@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.62.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.61.1...v0.62.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** run dev_diary through the atom graph_def — both templates on atoms now ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#960](https://github.com/Glad-Labs/glad-labs-stack/issues/960)) ([587665a](https://github.com/Glad-Labs/glad-labs-stack/commit/587665a2c7f7c9f513ace0a00ccb44280ed9a81e))
+
 ## [0.61.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.61.0...v0.61.1) (2026-06-02)
 
 
