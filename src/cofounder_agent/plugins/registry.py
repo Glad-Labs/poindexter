@@ -398,7 +398,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "modules.finance.jobs.poll_mercury", "PollMercuryJob"),
         ("taps", "plugins.samples.hello_tap", "HelloTap"),
         ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
-        ("jobs", "plugins.samples.noop_job", "NoopJob"),
+        # NoopJob sample registration removed 2026-06-02 (#936 cleanup) — it
+        # was occupying a prod scheduler slot with an hourly no-op. The sample
+        # file plugins/samples/noop_job.py is retained as a reference.
         # Core Taps — same imperative load path as samples. Keeps them
         # discoverable in-container without relying on a `pip install .`
         # of poindexter-backend itself (tracked as packaging follow-up).
@@ -418,7 +420,10 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("taps", "services.taps.openclaw_sqlite", "OpenClawSQLiteTap"),
         # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
         # loads until the poetry packaging issue is resolved.
-        ("jobs", "services.jobs.sync_page_views", "SyncPageViewsJob"),
+        # sync_page_views removed 2026-06-02 (#936 cleanup) — legacy cloud->local
+        # copy from the retired two-DB era (poindexter_brain IS prod now), so it
+        # could only ever no-op. sync_cloudflare_analytics is the go-forward
+        # page_views ingest.
         # CF Analytics Engine → page_views ingest. Closes the 50-day silent
         # gap (page_views beacon broken since 2026-04-09 because the Vercel
         # proxy couldn't reach the local worker). Now: Worker beacon at

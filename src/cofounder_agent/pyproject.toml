@@ -291,8 +291,8 @@ openclaw_sqlite = "cofounder_agent.services.taps.openclaw_sqlite:OpenClawSQLiteT
 database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
 
 [tool.poetry.plugins."poindexter.jobs"]
-noop = "cofounder_agent.plugins.samples.noop_job:NoopJob"
-sync_page_views = "cofounder_agent.services.jobs.sync_page_views:SyncPageViewsJob"
+# noop + sync_page_views removed 2026-06-02 (#936) — dead no-op jobs; kept in
+# sync with plugins.registry._SAMPLES (test_registry_completeness enforces it).
 expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
 db_backup = "cofounder_agent.services.jobs.db_backup:DbBackupJob"
 render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"

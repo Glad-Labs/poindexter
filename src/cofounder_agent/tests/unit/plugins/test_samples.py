@@ -105,10 +105,13 @@ class TestCoreSamplesDiscovery:
         probe_names = {p.name for p in samples["probes"]}
         job_names = {j.name for j in samples["jobs"]}
 
-        # Samples ship in every boot — their absence means registry is broken.
+        # Sample tap + probe ship in every boot — their absence means registry
+        # is broken. The noop sample JOB was deregistered 2026-06-02 (#936) to
+        # stop it occupying a prod scheduler slot; the noop_job.py file is kept
+        # and exercised directly by TestNoopJob above.
         assert "hello" in tap_names
         assert "database" in probe_names
-        assert "noop" in job_names
+        assert "noop" not in job_names
 
     def test_unmigrated_plugin_types_empty(self):
         samples = get_core_samples()
