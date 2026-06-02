@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.61.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.61.0...v0.61.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **scheduler:** seed first-fire for never-run interval jobs (closes Glad-Labs/poindexter[#561](https://github.com/Glad-Labs/glad-labs-stack/issues/561)) ([#948](https://github.com/Glad-Labs/glad-labs-stack/issues/948)) ([7340af3](https://github.com/Glad-Labs/glad-labs-stack/commit/7340af32d64ef3d76123187bd158279d1b2c095c))
+
 ## [0.61.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.2...v0.61.0) (2026-06-02)
 
 
