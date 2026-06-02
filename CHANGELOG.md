@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.64.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.0...v0.64.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **brand:** hoist Google Fonts [@import](https://github.com/import) to tokens/index.css top (glad-labs-stack[#977](https://github.com/Glad-Labs/glad-labs-stack/issues/977) CI) ([bd5c922](https://github.com/Glad-Labs/glad-labs-stack/commit/bd5c922e8c76a83b60bae72fdf543b44b7833f88))
+* **ci:** restore poetry.lock consistency + resilient Playwright install ([70df2e5](https://github.com/Glad-Labs/glad-labs-stack/commit/70df2e515348c28ac25bfd9ae4193c962e81ac44))
+* **ci:** set NEXT_PUBLIC_API_BASE_URL for the Playwright build (glad-labs-stack[#977](https://github.com/Glad-Labs/glad-labs-stack/issues/977)) ([d4eb8bb](https://github.com/Glad-Labs/glad-labs-stack/commit/d4eb8bb2a4abd9d4ad4607fddad44101801eda9c))
+* **db:** embeddings chunk_index + deterministic fetch + create_post txn + index hygiene (audit batch 2) ([b2e8eb2](https://github.com/Glad-Labs/glad-labs-stack/commit/b2e8eb298f7ff013d87747d2aa456e10be641f1a))
+* **observability:** fail loud instead of silently degrading (audit batch 4) ([7d50955](https://github.com/Glad-Labs/glad-labs-stack/commit/7d50955607151cacc7b0f418fa0a55e4fe9eb27f))
+* **web:** cache-tag invalidation + dead FastAPI client removal + a11y landmarks/contrast/headings (audit batch 7+8) ([f427d25](https://github.com/Glad-Labs/glad-labs-stack/commit/f427d25b1efb9622d9006fe0d0d0144b55c8bca8))
+
 ## [0.64.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.63.0...v0.64.0) (2026-06-02)
 
 
