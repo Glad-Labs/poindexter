@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.53.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.52.0...v0.53.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** atom-cutover 4/5 — graph_def cutover seam ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#917](https://github.com/Glad-Labs/glad-labs-stack/issues/917)) ([1191f84](https://github.com/Glad-Labs/glad-labs-stack/commit/1191f84f077cc8166e487b1458d468dc974678f9))
+
 ## [0.52.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.51.0...v0.52.0) (2026-06-02)
 
 
