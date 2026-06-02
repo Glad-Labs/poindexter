@@ -94,7 +94,6 @@ Each call site in the codebase that selects a model now uses the resolve-tier-mo
 | `multi_model_qa._review_with_ollama` (cross-model QA critic) | `standard` | `qa_fallback_critic_model`                               |
 | `multi_model_qa._run_gate_prompt` (gate critics)             | `standard` | `qa_fallback_critic_model`                               |
 | `multi_model_qa._review_with_cloud_model` (fallback)         | `standard` | `qa_fallback_critic_model`                               |
-| `stages/cross_model_qa._rewrite_draft` (writer rewrite)      | `standard` | `pipeline_writer_model` / `qa_fallback_writer_model`     |
 | `self_review.self_review_and_revise`                         | `standard` | `writer_self_review_model`                               |
 | `title_generation`                                           | `standard` | `pipeline_writer_model`                                  |
 | `podcast_service` (script generation)                        | `standard` | `pipeline_writer_model` (3-stage waterfall)              |

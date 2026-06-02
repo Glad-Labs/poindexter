@@ -10,17 +10,17 @@ hierarchy) that no longer matches the shipped code.
 
 The Phase E refactor replaced the agent-centric model with a stage
 plugin chain, which Lane C (2026-05-10..16) further evolved into a
-LangGraph-based template (`canonical_blog`, currently 13 nodes; the
-4-node `dev_diary` template lives alongside it). The plugin roadmap
+LangGraph-based template (`canonical_blog`, currently 18 nodes — a
+DB-stored `graph_def` as of atom-cutover #355; the 4-node `dev_diary`
+template lives alongside it). The plugin roadmap
 locked in Phase J added an `LLMProvider` family that pluralizes
 inference backends. All current and future pipeline work is documented
 in:
 
 - **[Template Runner](./services/template_runner)** — the authoritative
-  description of the LangGraph orchestrator that drives the 13-node
-  `canonical_blog` template (and the 4-node `dev_diary` template) that
-  runs every content task today. Covers node behavior, halt semantics,
-  and the rewrite loop.
+  description of the LangGraph orchestrator that drives the 18-node
+  `canonical_blog` graph_def (and the 4-node `dev_diary` template) that
+  runs every content task today. Covers node behavior and halt semantics.
 - **[Plugin architecture](./plugin-architecture)** — the evolution
   plan from god-files to plugin Protocols (Tap, Probe, Job, Stage,
   Pack, LLMProvider). Umbrella issue [GH-64](https://github.com/Glad-Labs/poindexter/issues/64).

@@ -85,7 +85,7 @@ content with human oversight**, not "AI content factory" and not
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
-│  │       13 nodes; dev_diary template, 4 nodes)               │ │
+│  │       18 nodes; dev_diary template, 4 nodes)               │ │
 │  │  LiteLLM router (primary on prod for all 5 cost tiers;     │ │
 │  │     Ollama default, cloud providers behind cost_guard +    │ │
 │  │     allow_paid_base_url opt-in per feedback_no_paid_apis)  │ │
@@ -146,7 +146,7 @@ execution and multi-agent orchestration.
    ↓
 7. Provider Protocol invokes the configured LLM (Ollama by default)
    ↓
-8. cross_model_qa aggregates reviewer scores; rewrite loop if below threshold
+8. the qa.* rail atoms (qa.critic → qa.deepeval → qa.guardrails → qa.ragas) run each reviewer; qa.aggregate combines the scores into the gate decision and halts the graph on reject
    ↓
 9. finalize_task writes content_tasks (status=awaiting_approval)
    ↓
@@ -182,7 +182,7 @@ execution and multi-agent orchestration.
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` template (13 nodes) registered in `services/pipeline_templates/__init__.py`, dispatched by Prefect via `services/flows/content_generation.py`.
+- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (18 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
 - LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
@@ -340,9 +340,9 @@ GET  /api/tags                     # List tags
 
 **How a pipeline is defined:**
 
-A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. Templates are registered in `services/pipeline_templates/__init__.py`. Today two ship in-tree:
+A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. As of atom-cutover #355 (2026-06-02) `canonical_blog` ships as a static `graph_def` row in the `pipeline_templates` table (authored in `services/canonical_blog_spec.py`, compiled by `services/pipeline_architect.py::build_graph_from_spec`), preferred by `TemplateRunner.run` when `pipeline_use_graph_def=true` (the prod default). `dev_diary` still ships in-tree as a Python factory in `services/pipeline_templates/__init__.py` — the only entry left in `TEMPLATES` after the hand-coded `canonical_blog` factory was deleted:
 
-- `canonical_blog` — the 13-node default for blog posts (verify_task → generate_content → writer_self_review → resolve_internal_link_placeholders → quality_evaluation → url_validation → replace_inline_images → source_featured_image → cross_model_qa → generate_seo_metadata → generate_media_scripts → capture_training_data → finalize_task)
+- `canonical_blog` — the 18-node default for blog posts (verify_task → generate_content → writer_self_review → resolve_internal_link_placeholders → quality_evaluation → url_validation → replace_inline_images → source_featured_image → **qa.critic → qa.deepeval → qa.guardrails → qa.ragas → qa.aggregate** — the qa.\* rail block that replaced the deleted `cross_model_qa` stage → generate_seo_metadata → generate_media_scripts → generate_video_shot_list → capture_training_data → finalize_task)
 - `dev_diary` — 4-node subset for the build-in-public stream (verify_task → narrate_bundle → source_featured_image → finalize_task)
 
 Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL value fails loud per `feedback_no_silent_defaults`.
@@ -385,9 +385,9 @@ See [`services/template_runner.md`](services/template_runner) for the runner's i
 #### Pipeline Templates + Stages (`services/pipeline_templates/__init__.py` + `services/stages/*`)
 
 - `Stage` protocol: `name: str`, `async def run(context) -> context` — implemented per-stage in `services/stages/`
-- `TemplateRunner` (LangGraph) orchestrates stages via the `canonical_blog` / `dev_diary` template definitions in `services/pipeline_templates/__init__.py`. Halts naturally when a node returns a terminal state (e.g. `cross_model_qa` rejecting beyond retry budget). The legacy `DEFAULT_STAGE_ORDER` list + `plugins/stage_runner.py` were deleted 2026-05-16 (Lane C Stage 4)
+- `TemplateRunner` (LangGraph) orchestrates the pipeline — `canonical_blog` from the DB `graph_def` (compiled by `pipeline_architect.build_graph_from_spec`) when `pipeline_use_graph_def=true` (the prod default since #355), `dev_diary` from its in-tree `TEMPLATES` factory. Halts naturally when a node returns a terminal state (e.g. `qa.aggregate` rejecting). The legacy `DEFAULT_STAGE_ORDER` list + `plugins/stage_runner.py` were deleted 2026-05-16 (Lane C Stage 4)
 - Context dict threads through every stage — the pipeline's shared memory. Live service handles ride in `RunnableConfig.configurable["__services__"]` so they don't serialize into checkpoints (poindexter#382)
-- Adding a new stage = drop a file in `services/stages/`, then register it as a node on the relevant template's `StateGraph` in `services/pipeline_templates/__init__.py`. No other code changes
+- Adding a new stage = drop a file in `services/stages/`, register it in `plugins/registry.py`, then add it as a node: for `canonical_blog` edit the `graph_def` spec (`services/canonical_blog_spec.py`, re-seeded into `pipeline_templates.graph_def`); for `dev_diary` add it to the `StateGraph` factory in `services/pipeline_templates/__init__.py`
 
 #### Semantic Memory (`services/embedding_service.py` + pgvector)
 

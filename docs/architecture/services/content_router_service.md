@@ -92,9 +92,11 @@ Every other tunable lives on the individual stages — see
   halt. Same pattern. The partially-generated content, image,
   and SEO metadata are preserved in `task_metadata` so an operator can
   still review what was produced.
-- **Cross-model QA rejection** — `cross_model_qa` sets
-  `result["status"] = "rejected"` and `continue_workflow=False`. Router
-  early-returns the `result` dict cleanly; not raised as an error.
+- **Cross-model QA rejection** — on the graph_def path `qa.aggregate`
+  (the qa.\* rail block that replaced the deleted `cross_model_qa` stage,
+  #355) sets `status="rejected"`, persists the reject via
+  `services/atoms/_qa_persist.py`, and halts the graph; not raised as an
+  error.
 - **Silent writer fallback** — primary model timed out or 500'd, writer
   chain succeeded with the next model. Detected by comparing
   `pipeline_writer_model` to `result["model_used"]` after
@@ -127,8 +129,8 @@ Every other tunable lives on the individual stages — see
   breakdown with the prompts and gates each stage owns.
 - `docs/architecture/anti-hallucination.md` — how the validator + QA
   stages slot into the run order.
-- `docs/architecture/services/multi_model_qa.md` — the
-  `cross_model_qa` stage's review engine.
+- `docs/architecture/services/multi_model_qa.md` — the `MultiModelQA`
+  rail library that the `qa.*` atoms delegate to.
 - `~/.claude/projects/C--Users-mattm/memory/feedback_writer_model_canary.md`
   — operator playbook for diagnosing pipeline-wide approval-rate drops
   via the writer-fallback event.

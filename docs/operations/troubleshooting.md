@@ -377,7 +377,7 @@ The log marker to confirm the guard is active:
 
 **Tunables.** Both via `app_settings`:
 
-- `pipeline_explicit_writer_unload_before_sdxl` (bool, default `true`) — flip to `false` on 80+ GB hardware where the ~3-5 s writer-reload tax (when `cross_model_qa` later needs the LLM back) isn't worth the safety margin.
+- `pipeline_explicit_writer_unload_before_sdxl` (bool, default `true`) — flip to `false` on 80+ GB hardware where the ~3-5 s writer-reload tax (when the `qa.critic` rail later needs the LLM back) isn't worth the safety margin.
 - `pipeline_writer_unload_grace_seconds` (int, default `2`) — bump on slower hardware if `nvidia-smi` shows VRAM still occupied after the unload returns.
 
 **Prevention.** Don't disable the gate unless you've confirmed your card has enough headroom for writer (~20 GB) + SDXL (~12 GB) + OS overhead in parallel. The default-on path costs one model reload (~3-5 s) per task; the OOM costs the whole task plus a restart.

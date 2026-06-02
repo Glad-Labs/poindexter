@@ -105,8 +105,9 @@ Gates (mostly opt-in):
   - `services.cost_lookup` + `cost_tier` API (`resolve_tier_model(pool, "<tier>")` in `services/llm_providers/dispatcher.py`) — replaced the deleted `services.model_router.get_model_router` after the 2026-05-08 Phase 2 cleanup. See [`../cost-tier-routing.md`](../cost-tier-routing.md).
 - **Writes to:**
   - `audit_log` via `audit_log_bg` for `critic_fallback` events.
-  - Cost rows return through the caller (`cross_model_qa` stage) which
-    persists them to `cost_logs`.
+  - Cost rows return through the caller (the `qa.*` rail atoms that
+    replaced the `cross_model_qa` stage in #355) which persists them to
+    `cost_logs`.
 - **External APIs:**
   - Local Ollama HTTP (critic, gates, vision, web-factcheck post-processing).
   - Outbound HTTP HEAD/GET for citation + URL verification + image download.

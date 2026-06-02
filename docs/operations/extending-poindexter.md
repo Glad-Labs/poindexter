@@ -44,10 +44,11 @@ Each column below describes the full "how" per extension type.
 ## 1. Adding a Stage
 
 A **Stage** is a pipeline step that runs on a single content task.
-Stages are wired into LangGraph templates in
+Stages are wired into LangGraph pipelines — the `canonical_blog`
+graph_def (`services/canonical_blog_spec.py`, 18 nodes, seeded into the
+`pipeline_templates` table) and the `dev_diary` factory in
 `services/pipeline_templates/__init__.py`; `TemplateRunner` orchestrates
-them via the template's edge list (the `canonical_blog` template lists
-its 13 nodes in `_CANONICAL_BLOG_ORDER`).
+them via the spec's edge list.
 
 ### 1a. Minimum viable Stage
 
@@ -93,25 +94,30 @@ are invisible to TemplateRunner.
 
 ### 1c. Slot it into the pipeline order
 
-```sql
--- Insert after cross_model_qa, before finalize_task
-UPDATE app_settings
-SET value = '["verify_task", "generate_content", "writer_self_review",
-              "quality_evaluation", "url_validation", "replace_inline_images",
-              "source_featured_image", "cross_model_qa", "my_stage",
-              "generate_seo_metadata", "generate_media_scripts",
-              "capture_training_data", "finalize_task"]'
-WHERE key = 'pipeline.stages.order';
+As of atom-cutover #355, `canonical_blog` runs as a static `graph_def`
+stored in the `pipeline_templates` table and authored in
+`services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF`. Add your
+node to the `nodes` list and wire its `edges` — e.g. insert `my_stage`
+after the `qa.*` rail block, before `finalize_task`:
+
+```python
+# services/canonical_blog_spec.py — add to nodes + edges
+{"id": "my_stage", "atom": "stage.my_stage"},
+# ...
+{"from": "qa_aggregate", "to": "my_stage"},
+{"from": "my_stage", "to": "generate_seo_metadata"},
 ```
 
-Or use the CLI:
+Then re-seed the active row via a new migration that bumps the
+`pipeline_templates.version` for slug `canonical_blog` (model it on
+`20260602_023250_seed_canonical_blog_graph_def.py`). `TemplateRunner`
+picks up the new spec on the next run when `pipeline_use_graph_def=true`
+(the prod default); `build_graph_from_spec` validates `requires`/`produces`
+reachability at seed time, so a node whose inputs no upstream node
+produces fails loud.
 
-```bash
-poindexter settings set pipeline.stages.order '["verify_task", ...]'
-```
-
-No worker restart needed — the orchestrator reloads the stage order
-each task.
+(`dev_diary` is still a Python factory — add the node to its `StateGraph`
+in `services/pipeline_templates/__init__.py` instead.)
 
 ### 1d. Stage-specific config
 
@@ -146,8 +152,9 @@ and `timeout_seconds` are honored under the failure paths you care about.
 ## 2. Adding a Reviewer
 
 A **Reviewer** produces a score (0-100) and a pass/fail judgment on a
-draft. Reviewers run inside the `cross_model_qa` stage and contribute to
-the weighted final score.
+draft. Reviewers run as the `qa.*` rail atoms (each wraps a `MultiModelQA`
+rail method) and contribute to the weighted final score that `qa.aggregate`
+computes.
 
 ```python
 from plugins.stage import ReviewerResult

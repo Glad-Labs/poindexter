@@ -10,17 +10,31 @@ extend the behavior.
 
 ## Pipeline ordering
 
-CLAUDE.md's "Content pipeline stages" lists these as separate steps:
+The programmatic validator and the cross-model review were historically
+one step: the `cross_model_qa` stage called `MultiModelQA.review()`,
+which ran the programmatic validator first internally, then fanned out
+to the LLM and HTTP reviewers.
 
-> 3.5. Programmatic validator → 3.7. Cross-model review
+**Atom-cutover #355 (live 2026-06-02) split that apart.** The
+`cross_model_qa` stage is deleted; on the live `canonical_blog`
+`graph_def` path the cross-model review runs as five composable atoms in
+`src/cofounder_agent/services/atoms/` — `qa.critic` → `qa.deepeval` →
+`qa.guardrails` → `qa.ragas` → `qa.aggregate`. Each rail atom delegates
+to the matching `MultiModelQA` rail methods (the `_review_with_cloud_model`
+critic plus the per-rail DeepEval, guardrails, and Ragas checks) and
+appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
+`qa.aggregate` combines them into the gate decision and halts the graph
+on reject. `multi_model_qa.py` stays as the rail library the atoms
+delegate to.
 
-In code, both happen inside the single `cross_model_qa` stage
-(`src/cofounder_agent/services/stages/cross_model_qa.py`). That stage
-calls `MultiModelQA.review()`
-(`src/cofounder_agent/services/multi_model_qa.py:276`), which runs the
-programmatic validator first internally, then fans out to the LLM and
-HTTP reviewers. The two stage numbers are kept separate in CLAUDE.md
-for narrative clarity, but they share one orchestrator entry point.
+The rails call the individual per-rail check methods, **not** the full
+`MultiModelQA.review()` — so the programmatic validator that `review()`
+ran as its first step (Layer 2, below) is no longer co-located in the QA
+block. The validator code still exists (`MultiModelQA.review()` and the
+`atoms.run_validators` atom both wrap `content_validator.validate_content`),
+but it is not currently wired as a `canonical_blog` graph_def node; the
+pattern-based `quality_evaluation` stage (node 5) is the only
+programmatic scorer on the live graph_def path.
 
 ## Layer 1 — Prompt-level guards
 
@@ -232,7 +246,14 @@ unavailability and are dropped from `scored_reviews`. Combined with the
 the validator running still produces a coherent score, instead of
 artificially passing because all the critics returned 0.
 
-### Rewrite loop
+### Rewrite loop (legacy — removed in atom-cutover #355)
+
+> **Not on the live path.** The rewrite loop described below was owned by
+> the `cross_model_qa` stage, which #355 deleted. On the live
+> `canonical_blog` graph_def path there is **no** automatic rewrite —
+> `qa.aggregate` halts the graph on reject (`qa_rewrite_attempts=0`,
+> `status="rejected"`) and the post lands rejected for operator review.
+> The description below is retained for historical context.
 
 Owned by the stage, not the orchestrator:
 `src/cofounder_agent/services/stages/cross_model_qa.py`. When

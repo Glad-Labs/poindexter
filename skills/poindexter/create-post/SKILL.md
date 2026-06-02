@@ -6,29 +6,32 @@ description: Create a new blog post or content task about a given topic. Use whe
 # Create Post
 
 Creates a new content task via `POST /api/tasks`. Pending tasks are dispatched by
-**Prefect** (`services/flows/content_generation.py`) and run through the 13-stage
-`canonical_blog` LangGraph template registered in
-`services/pipeline_templates/__init__.py`:
+**Prefect** (`services/flows/content_generation.py`) and run through the
+`canonical_blog` pipeline — an 18-node `graph_def` stored in the
+`pipeline_templates` table (authored in `services/canonical_blog_spec.py`,
+compiled by `services/pipeline_architect.py`):
 
 1. `verify_task` — task record exists and is processable
 2. `generate_content` — writer model drafts the post (may use a RAG mode)
 3. `writer_self_review` — writer re-reads and tightens its own draft
 4. `resolve_internal_link_placeholders` — closes leaked `[posts/<slug>]` markers
-5. `quality_evaluation` — early pattern-QA gate (regex validator + scoring)
+5. `quality_evaluation` — early pattern-QA gate (scoring + truncation detection)
 6. `url_validation` — live-check external URLs cited in the draft
 7. `replace_inline_images` — generates each inline image via the SDXL host server
 8. `source_featured_image` — sources the featured image (falls back to Pexels)
-9. `cross_model_qa` — multi-model QA with DeepEval + guardrails-ai + Ragas rails (advisory)
+9. **qa.\* rail block** — `qa.critic` → `qa.deepeval` → `qa.guardrails` → `qa.ragas` → `qa.aggregate`: multi-model QA (adversarial critic + DeepEval + guardrails-ai + Ragas rails); `qa.aggregate` makes the gate decision. Replaced the deleted `cross_model_qa` stage (#355)
 10. `generate_seo_metadata` — title, description, slug, keywords
 11. `generate_media_scripts` — podcast script + video scene breakdown
-12. `capture_training_data` — snapshot for the feedback loop
-13. `finalize_task` — mark `awaiting_approval` (or auto-publish if score ≥ threshold)
+12. `generate_video_shot_list` — per-scene video shot list
+13. `capture_training_data` — snapshot for the feedback loop
+14. `finalize_task` — mark `awaiting_approval` (or auto-publish if score ≥ threshold)
 
 The writer model is **DB-configurable** via cost tiers
 (`cost_tier.{free,budget,standard,premium}.model` in `app_settings`), not hardcoded.
 
-Tasks that fail QA get up to `qa_max_rewrites` (default 2) automatic rewrite attempts
-before being rejected with a loud reason on the `/pipeline` dashboard.
+Tasks that fail QA are rejected — `qa.aggregate` halts the graph on reject (no
+automatic rewrite loop as of #355) and the post lands with a loud reason on the
+`/pipeline` dashboard.
 
 ## Usage
 
