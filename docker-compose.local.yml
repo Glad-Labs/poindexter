@@ -3,7 +3,6 @@
 #
 # Start all:  docker compose -f docker-compose.local.yml up -d
 # Start core: docker compose -f docker-compose.local.yml up -d postgres-local grafana
-# Start git:  docker compose -f docker-compose.local.yml up -d gitea gitea-runner
 
 services:
   postgres-local:
@@ -215,21 +214,6 @@ services:
         condition: service_healthy
 
   # ===========================================
-  # Gitea — DECOMMISSIONED 2026-04-30
-  # ===========================================
-  # Self-hosted git was the source of truth from 2025-09 to 2026-04. Replaced
-  # by GitHub on 2026-04-30 — origin = Glad-Labs/glad-labs-stack (private,
-  # full tree), github = Glad-Labs/poindexter (public OSS subset, refreshed
-  # via scripts/sync-to-github.sh). All issues migrated, all branches deleted.
-  #
-  # Containers + named volumes (gitea-data, gitea-runner-data) preserved for
-  # ~1 week in case of recovery need; safe to `docker volume rm` after
-  # 2026-05-07.
-  #
-  # Service definitions removed; restore from git history if needed:
-  #   git log -- docker-compose.local.yml | grep gitea
-
-  # ===========================================
   # Brain Daemon — standalone monitor, self-healer, knowledge graph
   # ===========================================
   brain-daemon:
@@ -404,8 +388,8 @@ services:
       # phone-tap-to-join HTML page (poindexter#389). Same key/secret as
       # the livekit + voice-agent-livekit containers; LIVEKIT_PUBLIC_WSS_URL
       # is the user-facing wss endpoint (Tailscale-funneled).
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret_change_me_change_me_change_me}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:?Run 'poindexter setup' — value generated in bootstrap.toml}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:?Run 'poindexter setup' — value generated in bootstrap.toml}"
       LIVEKIT_ROOM: "${LIVEKIT_ROOM:-poindexter}"
       LIVEKIT_DEFAULT_IDENTITY: "${LIVEKIT_DEFAULT_IDENTITY:-matt}"
       LIVEKIT_PUBLIC_WSS_URL: "${LIVEKIT_PUBLIC_WSS_URL:-wss://nightrider.taild4f626.ts.net/livekit-signal/}"
@@ -496,8 +480,16 @@ services:
       # not service_healthy to avoid a startup deadlock if Prefect is down.
       prefect-server:
         condition: service_started
+    # Liveness probe (poindexter#630). The previous test parsed
+    # components.task_executor and only exited non-zero when
+    # success_count==0 AND error_count>5 — both LIFETIME counters. A
+    # worker that processed a few tasks then wedged kept a non-zero
+    # success_count forever and reported "healthy" while doing nothing.
+    # Probe /api/health for a live HTTP 200 instead: curl -f exits
+    # non-zero on any non-2xx (or a hung/refused connection), so a
+    # wedged event loop or a crashed app surfaces as unhealthy.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,json; r=json.loads(urllib.request.urlopen('http://localhost:8002/api/health').read()); e=r.get('components',{}).get('task_executor',{}); exit(1 if isinstance(e,dict) and e.get('success_count',0)==0 and e.get('error_count',0)>5 else 0)"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8002/api/health"]
       interval: 60s
       timeout: 10s
       retries: 3
@@ -1004,10 +996,15 @@ services:
       - pgadmin-data:/var/lib/pgadmin
       - ./infrastructure/pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./infrastructure/pgadmin/pgpass:/tmp/pgpass_src:ro
+    # Guard the pgpass copy (glad-labs-stack#979). ./infrastructure/pgadmin/pgpass
+    # is optional and absent on fresh checkouts; when it's missing the bind
+    # mounts an empty dir (or nothing), so an unconditional `cp` aborted the
+    # entrypoint and pgAdmin never started. Only copy + chmod when the source
+    # file is actually present; otherwise fall through to the normal entrypoint
+    # and let the operator add servers/passwords in the UI.
     entrypoint: >
       /bin/sh -c "
-      cp /tmp/pgpass_src /tmp/pgpass &&
-      chmod 0600 /tmp/pgpass &&
+      if [ -f /tmp/pgpass_src ]; then cp /tmp/pgpass_src /tmp/pgpass && chmod 0600 /tmp/pgpass; fi &&
       /entrypoint.sh
       "
     healthcheck:
@@ -1234,7 +1231,7 @@ services:
     ports:
       - "8080:8000"
     environment:
-      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@glitchtip-db:5432/glitchtip"
+      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?Run 'poindexter setup' — GLITCHTIP_DB_PASSWORD is generated in bootstrap.toml}@glitchtip-db:5432/glitchtip"
       REDIS_URL: "redis://glitchtip-redis:6379/0"
       SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?Run 'poindexter setup' — GLITCHTIP_SECRET_KEY is generated in bootstrap.toml}
       PORT: "8000"
@@ -1262,9 +1259,9 @@ services:
     restart: unless-stopped
     command: ./bin/run-celery-with-beat.sh
     environment:
-      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@glitchtip-db:5432/glitchtip"
+      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?Run 'poindexter setup' — GLITCHTIP_DB_PASSWORD is generated in bootstrap.toml}@glitchtip-db:5432/glitchtip"
       REDIS_URL: "redis://glitchtip-redis:6379/0"
-      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?}
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?Run 'poindexter setup' — GLITCHTIP_SECRET_KEY is generated in bootstrap.toml}
       EMAIL_URL: "consolemail://"
       DEFAULT_FROM_EMAIL: "glitchtip@localhost"
       CELERY_WORKER_AUTOSCALE: "1,3"
@@ -1363,8 +1360,8 @@ services:
       # LiveKit credentials. Match the pair on the `livekit` service so
       # the bot can mint a valid room-join JWT. Override both halves
       # together when rotating away from the dev defaults.
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret_change_me_change_me_change_me}"
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:?Run 'poindexter setup' — value generated in bootstrap.toml}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:?Run 'poindexter setup' — value generated in bootstrap.toml}"
       # Bot's POV of the LiveKit server is in-network (compose service
       # name); the human-facing URL goes to the SFU's exposed host port.
       LIVEKIT_URL: "ws://livekit:7880"
@@ -1581,7 +1578,7 @@ services:
                            # solo-operator small rooms; expand to a 50000-60000
                            # range later if we run >5 simultaneous peers)
     environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret_change_me_change_me_change_me}"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Run 'poindexter setup' — value generated in bootstrap.toml}: ${LIVEKIT_API_SECRET:?Run 'poindexter setup' — value generated in bootstrap.toml}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -1610,13 +1607,6 @@ volumes:
     name: gladlabs-postgres-local-data
   grafana-data:
     name: gladlabs-grafana-data
-  # Gitea volumes — service decommissioned 2026-04-30; volumes kept for
-  # ~1-week recovery window. Safe to remove after 2026-05-07:
-  #   docker volume rm gladlabs-gitea-data gladlabs-gitea-runner-data
-  gitea-data:
-    name: gladlabs-gitea-data
-  gitea-runner-data:
-    name: gladlabs-gitea-runner-data
   prometheus-data:
     name: gladlabs-prometheus-data
   prometheus-rules:

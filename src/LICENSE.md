@@ -59,6 +59,10 @@ or compatible with Apache 2.0):
 - **Prefect**: Apache 2.0
 - **Ragas / DeepEval / guardrails-ai**: Apache 2.0
 - **Langfuse / LangChain / LiteLLM / BERTopic**: MIT License
+- **text-unidecode**: Artistic License 1.0 / GPL (dual-licensed). Pulled
+  in transitively via prefect → python-slugify. Glad Labs LLC elects to
+  use this component under the **Artistic License**, which is permissive
+  and compatible with Apache-2.0 redistribution.
 - See individual component repositories for complete license information
 
 ---
