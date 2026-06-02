@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.54.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.53.0...v0.54.0) (2026-06-02)
+
+
+### Features
+
+* **findings:** wire per-kind policies into findings_alert_router — auto_fix + github_issue + min_severity ([#919](https://github.com/Glad-Labs/glad-labs-stack/issues/919)) ([ba8abe6](https://github.com/Glad-Labs/glad-labs-stack/commit/ba8abe6d6b481984adb501f090494ee8cab2885e))
+
 ## [0.53.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.52.0...v0.53.0) (2026-06-02)
 
 
