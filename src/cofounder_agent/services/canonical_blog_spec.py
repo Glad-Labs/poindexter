@@ -6,15 +6,22 @@ spec; the Plan-4 migration seeds ``json.dumps(CANONICAL_BLOG_GRAPH_DEF)`` into
 ``pipeline_templates.graph_def`` and ``TemplateRunner`` compiles it via
 ``build_graph_from_spec`` when ``pipeline_use_graph_def`` is on.
 
-Structure: the 13 coarse stages that survive the granularity refactor are
-``stage.<name>`` nodes (resolved through the surfaced-stage registry);
-the monolithic ``cross_model_qa`` stage is replaced by the Plan-3 qa.* rail
-atoms wired as a LINEAR chain (qa.critic → qa.deepeval → qa.guardrails →
-qa.ragas → qa.aggregate). Each rail appends to the operator.add-reduced
-``qa_rail_reviews`` channel; qa.aggregate combines them into the gate
-decision (and halts the graph on reject). Sequential (not parallel fan-out)
-for cutover robustness — the rails are parallelizable, so a future spec can
-fan them out once the graph_def path is proven.
+Structure: the coarse stages still awaiting granularity decomposition are
+``stage.<name>`` nodes (resolved through the surfaced-stage registry). Two
+stages have already been decomposed into atom chains (#362):
+
+- ``cross_model_qa`` → the Plan-3 qa.* rail atoms wired as a LINEAR chain
+  (qa.critic → qa.deepeval → qa.guardrails → qa.ragas → qa.aggregate). Each
+  rail appends to the operator.add-reduced ``qa_rail_reviews`` channel;
+  qa.aggregate combines them into the gate decision (and halts on reject).
+- ``generate_seo_metadata`` → the seo.* atom chain (seo.generate_title →
+  seo.generate_description → seo.extract_keywords). Linear so description +
+  keywords read the freshly-generated ``seo_title``; each is LLM-driven with
+  a programmatic fallback on failure.
+
+Both chains are sequential (not parallel fan-out) for cutover robustness —
+the rails are parallelizable, so a future spec can fan them out once the
+graph_def path is proven.
 """
 
 from __future__ import annotations
@@ -24,8 +31,9 @@ from typing import Any
 CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
     "name": "canonical_blog",
     "description": (
-        "Canonical blog pipeline (atom-composed): 13 coarse stages + the "
-        "qa.* rail block replacing cross_model_qa."
+        "Canonical blog pipeline (atom-composed): coarse stages + the qa.* "
+        "rail block (replacing cross_model_qa) + the seo.* atom chain "
+        "(replacing generate_seo_metadata)."
     ),
     "entry": "verify_task",
     "nodes": [
@@ -43,7 +51,11 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_guardrails", "atom": "qa.guardrails"},
         {"id": "qa_ragas", "atom": "qa.ragas"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
-        {"id": "generate_seo_metadata", "atom": "stage.generate_seo_metadata"},
+        # seo.* atom chain (replaces the generate_seo_metadata stage, #362) —
+        # linear so description + keywords read the freshly-generated seo_title.
+        {"id": "seo_title", "atom": "seo.generate_title"},
+        {"id": "seo_description", "atom": "seo.generate_description"},
+        {"id": "seo_keywords", "atom": "seo.extract_keywords"},
         {"id": "generate_media_scripts", "atom": "stage.generate_media_scripts"},
         {"id": "generate_video_shot_list", "atom": "stage.generate_video_shot_list"},
         {"id": "capture_training_data", "atom": "stage.capture_training_data"},
@@ -62,8 +74,10 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_deepeval", "to": "qa_guardrails"},
         {"from": "qa_guardrails", "to": "qa_ragas"},
         {"from": "qa_ragas", "to": "qa_aggregate"},
-        {"from": "qa_aggregate", "to": "generate_seo_metadata"},
-        {"from": "generate_seo_metadata", "to": "generate_media_scripts"},
+        {"from": "qa_aggregate", "to": "seo_title"},
+        {"from": "seo_title", "to": "seo_description"},
+        {"from": "seo_description", "to": "seo_keywords"},
+        {"from": "seo_keywords", "to": "generate_media_scripts"},
         {"from": "generate_media_scripts", "to": "generate_video_shot_list"},
         {"from": "generate_video_shot_list", "to": "capture_training_data"},
         {"from": "capture_training_data", "to": "finalize_task"},

@@ -21,6 +21,18 @@ metadata:
       category: utility
       output_format: json
       description: 'System prompt for pipeline_architect.compose() — composes a LangGraph pipeline JSON spec from a high-level intent + the live atom catalog. Operator brand is templated via {site_name}.'
+    - key: atoms.seo.generate_title
+      category: seo_metadata
+      output_format: text
+      description: 'SEO title generator for atoms.seo.generate_title — rewrites the draft into a <=60 char search-optimized title leading with {primary_keyword}.'
+    - key: atoms.seo.generate_description
+      category: seo_metadata
+      output_format: text
+      description: 'Meta description generator for atoms.seo.generate_description — 150-160 char description coherent with {seo_title}.'
+    - key: atoms.seo.extract_keywords
+      category: seo_metadata
+      output_format: text
+      description: 'SEO keyword generator for atoms.seo.extract_keywords — 5-10 comma-separated search-intent keywords grounded in the article.'
 ---
 
 # Atoms skill
@@ -271,4 +283,55 @@ If the spec validator returns errors on a previous attempt, every
 error message starts with "FIX:" followed by exactly what to change.
 On retry, apply each FIX literally — keep the rest of the prior
 spec intact.
+```
+
+## atoms.seo.generate_title
+
+```text
+You are an SEO editor. Write ONE blog post title, 60 characters or fewer,
+for the article below.
+
+- Lead with the primary keyword "{primary_keyword}" when it reads naturally.
+- Be specific and compelling; promise the article's actual value.
+- No clickbait, no quotes, no markdown, no trailing punctuation.
+- Output the title only — no preamble, no alternatives.
+
+TOPIC: {topic}
+
+ARTICLE:
+{content}
+```
+
+## atoms.seo.generate_description
+
+```text
+You are an SEO editor. Write ONE meta description for an article titled
+"{seo_title}".
+
+- 150 to 160 characters.
+- Summarize the concrete value a reader gets; weave in the topic naturally.
+- Active voice; end on a complete sentence (no ellipsis, no truncation).
+- No quotes, no markdown. Output the description only.
+
+TOPIC: {topic}
+
+ARTICLE:
+{content}
+```
+
+## atoms.seo.extract_keywords
+
+```text
+You are an SEO strategist. List the search keywords and phrases a person
+would type into Google to find the article titled "{seo_title}".
+
+- 5 to 10 keywords/phrases, most important first.
+- Lowercase, comma-separated, on a single line.
+- Only terms actually supported by the article text — do not invent topics.
+- Output the comma-separated list only — no numbering, no preamble.
+
+TOPIC: {topic}
+
+ARTICLE:
+{content}
 ```

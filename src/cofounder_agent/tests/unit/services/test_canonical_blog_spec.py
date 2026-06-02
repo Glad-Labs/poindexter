@@ -18,14 +18,17 @@ class TestCanonicalBlogSpec:
         node_atoms = {n["atom"] for n in spec["nodes"]}
         # The five qa.* atoms replace cross_model_qa.
         assert {"qa.critic", "qa.deepeval", "qa.guardrails", "qa.ragas", "qa.aggregate"} <= node_atoms
-        # No legacy monolithic QA stage node.
+        # The three seo.* atoms replace generate_seo_metadata (#362).
+        assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
+        # No legacy monolithic QA / SEO stage nodes.
         assert "stage.cross_model_qa" not in node_atoms
-        # The 13 surviving coarse stages are present as stage.* nodes.
+        assert "stage.generate_seo_metadata" not in node_atoms
+        # The surviving coarse stages are present as stage.* nodes.
         for s in (
             "verify_task", "generate_content", "writer_self_review",
             "resolve_internal_link_placeholders", "quality_evaluation",
             "url_validation", "replace_inline_images", "source_featured_image",
-            "generate_seo_metadata", "generate_media_scripts",
+            "generate_media_scripts",
             "generate_video_shot_list", "capture_training_data", "finalize_task",
         ):
             assert f"stage.{s}" in node_atoms, s

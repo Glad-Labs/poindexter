@@ -270,6 +270,11 @@ class PipelineState(TypedDict, total=False):
     seo_title: str
     seo_description: str
     seo_keywords: list[str]
+    # seo_keywords_list (#362): declared so the seo.extract_keywords atom's
+    # structured list survives. Previously undeclared → LangGraph dropped it on
+    # the graph_def path and finalize_task read []; posts landed with empty
+    # keywords. Declaring it as a last-value channel repairs that.
+    seo_keywords_list: list[str]
     featured_image_url: str
     featured_image_data: dict
     style: str
