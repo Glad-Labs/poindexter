@@ -292,6 +292,12 @@ class PipelineState(TypedDict, total=False):
     # them. The aggregator atom reads the merged list as a normal
     # state value.
     qa_reviews: Annotated[list, operator.add]
+    # qa_rail_reviews (#355 Plan 3): the per-rail ReviewerResult dicts
+    # emitted by the qa.* rail atoms (qa.deepeval / qa.guardrails /
+    # qa.ragas / qa.critic). operator.add so a parallel fan-out of rails
+    # (Plan 4's graph_def) can each append concurrently without
+    # InvalidUpdateError. qa.aggregate reads the merged list.
+    qa_rail_reviews: Annotated[list, operator.add]
     qa_rewrite_attempts: int
     stages: dict
     generate_metrics: dict
