@@ -38,8 +38,31 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      # Mint a "Glad Labs Release Bot" App token — same rationale as
+      # regen-app-settings-doc.yml: a PR whose head commit is pushed with
+      # the default GITHUB_TOKEN never triggers the required `test-backend`
+      # / `migrations-smoke` checks (GitHub's recursion guard suppresses
+      # workflow triggers from GITHUB_TOKEN), so it stays BLOCKED forever.
+      # Pushing as the App (a real principal) makes those checks fire and
+      # the PR becomes mergeable normally. See release-please.yml.
+      - name: Mint App token
+        id: app_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - name: Resolve App bot user id (for commit authorship)
+        id: app_user
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+        run: |
+          echo "user_id=$(gh api "/users/${{ steps.app_token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
         with:
+          # Push the drift branch as the App so the PR triggers required CI.
+          token: ${{ steps.app_token.outputs.token }}
           fetch-depth: 0  # need history to push a drift branch
 
       - name: Set up Python
@@ -65,14 +88,16 @@ jobs:
       - name: Open / update PR
         if: steps.drift.outputs.drift == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
         run: |
           set -euo pipefail
           DATE=$(date -u +%Y-%m-%d)
           BRANCH="auto/claude-md-sync-${DATE}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Commit + push as the App bot so the PR's head commit is the
+          # App's (a real principal) and the required checks actually fire.
+          git config user.name "${{ steps.app_token.outputs.app-slug }}[bot]"
+          git config user.email "${{ steps.app_user.outputs.user_id }}+${{ steps.app_token.outputs.app-slug }}[bot]@users.noreply.github.com"
 
           # Stable branch per day — re-running on the same day amends the
           # existing PR instead of opening a duplicate.
