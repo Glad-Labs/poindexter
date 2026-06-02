@@ -222,7 +222,7 @@ class CostGuard:
     # Spend lookups
     # ------------------------------------------------------------------
 
-    async def _sum_cost(self, window_sql: str) -> float:
+    async def _sum_cost(self, window_sql: str, *, strict: bool = False) -> float:
         """Sum ``cost_usd`` from cost_logs over the given SQL window.
 
         ``window_sql`` is a fragment such as ``"date_trunc('day', NOW())"``
@@ -244,14 +244,21 @@ class CostGuard:
             )
             return float(row["total"]) if row else 0.0
         except Exception as e:
-            logger.warning("[COST_GUARD] cost_logs query failed: %s", e)
+            # A transient cost_logs read MUST NOT silently read as $0 —
+            # that fails OPEN and disables the spend cap. Log loud (so
+            # GlitchTip pages) and, on the enforcement path, fail CLOSED.
+            logger.error(
+                "[COST_GUARD] cost_logs query failed: %s", e, exc_info=True,
+            )
+            if strict:
+                raise
             return 0.0
 
-    async def get_daily_spend(self) -> float:
-        return await self._sum_cost("date_trunc('day', NOW())")
+    async def get_daily_spend(self, *, strict: bool = False) -> float:
+        return await self._sum_cost("date_trunc('day', NOW())", strict=strict)
 
-    async def get_monthly_spend(self) -> float:
-        return await self._sum_cost("date_trunc('month', NOW())")
+    async def get_monthly_spend(self, *, strict: bool = False) -> float:
+        return await self._sum_cost("date_trunc('month', NOW())", strict=strict)
 
     # ------------------------------------------------------------------
     # Estimation
@@ -316,8 +323,22 @@ class CostGuard:
         daily_limit = self._limit("daily_spend_limit_usd", 2.0)
         monthly_limit = self._limit("monthly_spend_limit_usd", 100.0)
 
-        daily = await self.get_daily_spend()
-        monthly = await self.get_monthly_spend()
+        # Enforcement path: read STRICT so a cost_logs query failure
+        # fails closed (raises) instead of silently reading $0 and
+        # admitting unbounded cloud spend (the fail-open bug).
+        try:
+            daily = await self.get_daily_spend(strict=True)
+            monthly = await self.get_monthly_spend(strict=True)
+        except CostGuardExhausted:
+            raise
+        except Exception as e:
+            raise CostGuardExhausted(
+                f"Cost-guard spend read failed; failing closed "
+                f"(budget unverifiable): {e}",
+                scope="unknown",
+                spent_usd=0.0,
+                limit_usd=0.0,
+            ) from e
 
         if monthly + estimate.estimated_usd > monthly_limit:
             raise CostGuardExhausted(

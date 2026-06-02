@@ -215,6 +215,38 @@ async def test_run_keeps_watermark_if_all_rows_fail():
     assert conn.execute.await_count == 1
 
 
+async def test_run_does_not_advance_watermark_past_first_failed_row(monkeypatch):
+    """#613 — if a MIDDLE row's delivery fails but later rows succeed, the
+    watermark must NOT leap past the failed row (which could be critical).
+    It caps at first_failed_id - 1 so the failure is retried next cycle,
+    rather than being silently skipped forever."""
+    rows = [
+        {"id": 201, "source": "src", "severity": "warn", "details": json.dumps({"kind": "k"})},
+        {"id": 202, "source": "src", "severity": "critical", "details": json.dumps({"kind": "k"})},
+        {"id": 203, "source": "src", "severity": "warn", "details": json.dumps({"kind": "k"})},
+    ]
+    pool, conn = _pool_with(fetchrow={"value": "150"}, fetch=rows)
+
+    async def _fake_insert(_pool, r, **_kwargs):
+        if r["id"] == 202:
+            raise RuntimeError("delivery failed for 202")
+
+    monkeypatch.setattr(
+        router_mod, "_insert_alert_event", AsyncMock(side_effect=_fake_insert),
+    )
+
+    result = await FindingsAlertRouterJob().run(pool, {})
+
+    assert result.ok is False
+    # 201 and 203 routed; 202 failed.
+    assert result.changes_made == 2
+    # The watermark UPSERT must cap at 201 (202 - 1), NOT 203 — otherwise
+    # the critical finding 202 is skipped forever.
+    upsert_call = conn.execute.await_args_list[-1]
+    assert upsert_call.args[1] == "findings_alert_route_watermark"
+    assert upsert_call.args[2] == "201"
+
+
 async def test_run_normalizes_warn_to_warning_in_alert_events():
     """End-to-end check that emit_finding's 'warn' becomes 'warning' in
     the alert_events row, so the dispatcher's severity matrix routes

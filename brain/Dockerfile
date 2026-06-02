@@ -9,14 +9,33 @@ WORKDIR /app
 # main CLI; without the plugin, ``docker compose ...`` falls through to
 # the root parser with a cryptic ``unknown shorthand flag: 'f' in -f``
 # (caught 2026-05-27 by Matt's compose_drift_probe auto-recover failure).
+# SHA256-pinned downloads (poindexter#631). Both artifacts are fetched
+# over TLS then verified against the official published checksums BEFORE
+# they are extracted / made executable — a MITM or a tampered mirror that
+# swaps the bytes will fail `sha256sum -c` and abort the build instead of
+# baking a poisoned docker/compose binary into the brain image.
+#   - docker-27.5.1.tgz: sha256sum of the official static tarball at
+#     https://download.docker.com/linux/static/stable/x86_64/ (also cross-
+#     verified — this digest appears in multiple public pinned Dockerfiles).
+#   - docker-compose-linux-x86_64: from the v2.33.1 release checksums.txt
+#     (github.com/docker/compose/releases/download/v2.33.1/checksums.txt).
+# When bumping either version, refresh the matching SHA below or the build
+# fails loud.
+ARG DOCKER_VERSION=27.5.1
+ARG DOCKER_SHA256=4f798b3ee1e0140eab5bf30b0edc4e84f4cdb53255a429dc3bbae9524845d640
 ARG DOCKER_COMPOSE_VERSION=v2.33.1
+ARG DOCKER_COMPOSE_SHA256=3efda1ad6caed49dedd5644cadbf7e0c9cc3d74d8844ca5237b6a43ac1ef1a46
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates && \
-    curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz | \
-    tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" \
+        -o /tmp/docker.tgz && \
+    echo "${DOCKER_SHA256}  /tmp/docker.tgz" | sha256sum -c - && \
+    tar xz --strip-components=1 -C /usr/local/bin docker/docker < /tmp/docker.tgz && \
+    rm -f /tmp/docker.tgz && \
     mkdir -p /usr/local/lib/docker/cli-plugins && \
     curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" \
         -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    echo "${DOCKER_COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c - && \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
     docker compose version && \
     apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*

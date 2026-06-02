@@ -217,3 +217,46 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/brain/ -q --tb=short -p no:cacheprovider
+
+      # #641: the matrix previously ran only 7 of the 12 backend test
+      # subdirs (middleware/routes/plugins/cli/services/utils/brain). The
+      # five below — plus the root-level tests/unit/test_*.py files — were
+      # never run in CI, so regressions in Module v1, the poindexter CLI
+      # package, prompt YAML loading, pydantic schemas, and the scripts/
+      # helpers could merge green. Each path mirrors a real directory that
+      # ships its own tests; see the `ls tests/unit/` enumeration in #641.
+      - name: Unit tests — modules
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/modules/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — poindexter
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/poindexter/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — prompts
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/prompts/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — schemas
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/schemas/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — scripts
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/scripts/ -q --tb=short -p no:cacheprovider
+
+      # Root-level tests/unit/test_*.py (test_main / test_app_container_wireup
+      # / test_bootstrap / approval-service suites). These exercise the
+      # app-container + lifespan wiring, so they share the ServiceContainer /
+      # site_config singletons — run them --forked for the same isolation
+      # reason the services dir uses. The `tests/unit/test_*.py` glob is
+      # intentionally non-recursive so it doesn't re-collect the subdirs above.
+      - name: Unit tests — root-level
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/test_*.py -q --tb=short --forked -p no:cacheprovider

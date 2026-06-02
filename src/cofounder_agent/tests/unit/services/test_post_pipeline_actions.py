@@ -637,6 +637,232 @@ class TestFailureIsolation:
 
 
 # ---------------------------------------------------------------------------
+# Per-template auto_publish_gate bypass (Glad-Labs/poindexter#616)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAutoPublishGateBypass:
+    """The per-template ``auto_publish_gate`` opt-in bypasses the global
+    ``require_human_approval`` flag.
+
+    #616: ``_maybe_auto_publish`` honours an explicit gate decision the
+    caller threads on the ``result`` dict
+    (``auto_publish_gate={"would_fire": True, "dry_run": False}``). When
+    that gate fires, the post ships even though
+    ``require_human_approval=true`` — that's the whole point of the
+    per-niche opt-in (e.g. ``dev_diary_auto_publish_threshold>0`` +
+    ``dev_diary_auto_publish_dry_run=false``). Before the bypass the
+    niche-specific thresholds were dead code (the global flag forced
+    every post to manual approval). The branch was untested.
+    """
+
+    @staticmethod
+    def _result_with_gate(*, would_fire, dry_run, score=88):
+        return {
+            "quality_score": score,
+            "status": "awaiting_approval",
+            "auto_publish_gate": {
+                "would_fire": would_fire,
+                "dry_run": dry_run,
+                "gate_state": "pass" if would_fire else "block_threshold",
+                "reason": "test gate decision",
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_gate_would_fire_bypasses_human_approval_required(self):
+        """(a) ``would_fire=True, dry_run=False`` AND
+        ``require_human_approval=true`` ⇒ auto_publish_task IS awaited.
+
+        The per-template opt-in is honoured: the niche has been audited
+        and explicitly trusted to ship without a review pass, so the
+        global require_human_approval flag is bypassed. The gate-bypass
+        path also short-circuits the global ``auto_publish_threshold``
+        check — ``get_auto_publish_threshold`` is NOT consulted."""
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchval_return=None)
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(
+            values={
+                "min_curation_score": "70",
+                # Global flag REQUIRES approval — the gate must override it.
+                "require_human_approval": "true",
+            },
+        )
+
+        auto_pub_mock = AsyncMock(return_value=True)
+        notify_mock = AsyncMock()
+        threshold_mock = AsyncMock(return_value=80.0)
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "services.auto_publish.get_auto_publish_threshold",
+            threshold_mock,
+        ), patch(
+            "services.auto_publish.auto_publish_task",
+            auto_pub_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-gate-bypass",
+                topic="Trusted niche opt-in post",
+                result=self._result_with_gate(would_fire=True, dry_run=False),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        # The per-template gate fired → the post ships despite
+        # require_human_approval=true.
+        auto_pub_mock.assert_awaited_once_with(
+            database_service=db, task_id="t-gate-bypass", quality_score=88.0,
+            site_config=site,
+        )
+        # The global-threshold check is skipped on the bypass path.
+        threshold_mock.assert_not_awaited()
+        # publish_service sends its own published message — no
+        # awaiting-approval ping.
+        notify_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_gate_dry_run_true_does_not_publish_even_when_optional(self):
+        """(b) ``would_fire=True, dry_run=True`` ⇒ NOT published, even
+        when human approval is OPTIONAL.
+
+        dry_run=True is observe-only: the gate would fire but the
+        operator hasn't flipped the niche out of log-only mode. The
+        ``gate_bypass`` flag requires ``dry_run is False``, so a dry-run
+        gate is no bypass at all. With require_human_approval=false the
+        global auto_publish_threshold path still governs — and with the
+        threshold above the score it stays in awaiting_approval."""
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchval_return=None)
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(
+            values={
+                "min_curation_score": "70",
+                # Approval OPTIONAL — only the global threshold can gate now.
+                "require_human_approval": "false",
+            },
+        )
+
+        auto_pub_mock = AsyncMock(return_value=True)
+        notify_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "services.auto_publish.get_auto_publish_threshold",
+            # Threshold above the score → the global path also declines.
+            AsyncMock(return_value=95.0),
+        ), patch(
+            "services.auto_publish.auto_publish_task",
+            auto_pub_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-gate-dryrun",
+                topic="Dry-run gate post",
+                result=self._result_with_gate(
+                    would_fire=True, dry_run=True, score=88,
+                ),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        # dry_run=True is NOT a bypass — the post is not auto-published.
+        auto_pub_mock.assert_not_awaited()
+        # Operator still gets the awaiting-approval ping.
+        notify_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_inline_evaluate_fallback_computes_gate_when_result_omits_it(self):
+        """(c) When the caller does NOT pre-compute the gate (no
+        ``auto_publish_gate`` on the result dict), ``_maybe_auto_publish``
+        falls back to evaluating the gate inline via
+        ``services.auto_publish_gate.evaluate``.
+
+        This covers the inline-evaluate branch (lines ~371-402): it
+        reads niche_slug + category off pipeline_tasks, calls the gate,
+        and — when the gate returns would_fire=True/dry_run=False — uses
+        that decision to bypass require_human_approval. The result dict
+        here carries NO gate key, so the inline path is the only way the
+        bypass can engage."""
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        # fetchrow returns the (niche_slug, category) row the inline
+        # branch reads; _make_pool's fetchrow isn't wired by default, so
+        # set it on the pool explicitly.
+        pool, _ = _make_pool(fetchval_return=None)
+        pool.fetchrow = AsyncMock(
+            return_value={"niche_slug": "dev_diary", "category": "engineering"}
+        )
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(
+            values={
+                "min_curation_score": "70",
+                "require_human_approval": "true",
+            },
+        )
+
+        # Fake gate decision returned by the inline evaluate() call.
+        class _Decision:
+            would_fire = True
+            dry_run = False
+            gate_state = "pass"
+            reason = "inline-evaluated pass"
+
+        gate_eval_mock = AsyncMock(return_value=_Decision())
+        auto_pub_mock = AsyncMock(return_value=True)
+        notify_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "services.auto_publish_gate.evaluate", gate_eval_mock,
+        ), patch(
+            "services.auto_publish.auto_publish_task", auto_pub_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-inline-gate",
+                topic="Inline-evaluated gate post",
+                # NOTE: no auto_publish_gate key — forces the inline path.
+                result=_result(score=88),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        # The inline evaluate() was consulted with the row's niche/category.
+        gate_eval_mock.assert_awaited_once()
+        kwargs = gate_eval_mock.await_args.kwargs
+        assert kwargs["task_id"] == "t-inline-gate"
+        assert kwargs["niche_slug"] == "dev_diary"
+        assert kwargs["category"] == "engineering"
+        # The inline gate fired → bypass require_human_approval and ship.
+        auto_pub_mock.assert_awaited_once_with(
+            database_service=db, task_id="t-inline-gate", quality_score=88.0,
+            site_config=site,
+        )
+        notify_mock.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
 # Source-level guards — both orchestrators delegate to the helper
 # ---------------------------------------------------------------------------
 

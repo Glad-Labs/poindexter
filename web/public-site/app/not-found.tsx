@@ -1,46 +1,23 @@
-'use client';
-
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import * as Sentry from '@sentry/nextjs';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
-import { getPaginatedPosts } from '../lib/api-fastapi';
+import { getPosts } from '../lib/posts';
 import { SITE_NAME, SUPPORT_EMAIL } from '@/lib/site.config';
-
-interface Post {
-  id: string | number;
-  slug: string;
-  title: string;
-  excerpt?: string;
-}
 
 /**
  * 404 Not Found Page
- * Displays when a page doesn't exist. Suggests related posts.
+ * Server component — reads suggested posts from the static R2 index via
+ * lib/posts.ts (the same tag-cached source the rest of the site uses).
+ * Previously a 'use client' component that fetched lib/api-fastapi.js in a
+ * useEffect and Sentry-reported on failure, firing on every prod 404 against
+ * a backend that isn't reachable in production (#969).
  */
-export default function NotFound() {
-  const [suggestedPosts, setSuggestedPosts] = useState<Post[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchSuggestedPosts = async () => {
-      try {
-        const data = await getPaginatedPosts(1, 3);
-        const posts = data?.data || [];
-        setSuggestedPosts(posts.slice(0, 3));
-      } catch (error) {
-        Sentry.captureException(error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSuggestedPosts();
-  }, []);
+export default async function NotFound() {
+  const { posts } = await getPosts(1);
+  const suggestedPosts = posts.slice(0, 3);
 
   return (
     <div className="gl-atmosphere min-h-screen flex flex-col">
-      <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
+      <div className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
         <div className="max-w-3xl mx-auto text-center">
           <Eyebrow>GLAD LABS · 404</Eyebrow>
           <Display xl>
@@ -54,7 +31,7 @@ export default function NotFound() {
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8">
             <Button as={Link} href="/" variant="primary">
-              ← Back to home
+              <span aria-hidden>←</span> Back to home
             </Button>
             <Button as={Link} href="/archive/1" variant="secondary">
               Browse all posts
@@ -63,7 +40,7 @@ export default function NotFound() {
         </div>
 
         {/* Suggested posts */}
-        {!isLoading && suggestedPosts.length > 0 && (
+        {suggestedPosts.length > 0 && (
           <div className="max-w-5xl mx-auto mt-20">
             <Eyebrow>GLAD LABS · TRY THESE</Eyebrow>
             <h2 className="gl-h2 mt-1 mb-6">You might enjoy these instead.</h2>
@@ -108,7 +85,7 @@ export default function NotFound() {
 
         {/* Helpful links */}
         <div className="max-w-3xl mx-auto mt-16 text-center">
-          <p className="gl-mono gl-mono--upper opacity-70 text-xs mb-4">
+          <p className="gl-mono gl-mono--upper text-[color:var(--gl-text-muted)] text-xs mb-4">
             Other places to explore
           </p>
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
@@ -134,20 +111,20 @@ export default function NotFound() {
             </Link>
           </div>
         </div>
-      </main>
+      </div>
 
-      <footer
+      <div
         className="container mx-auto px-4 sm:px-6 lg:px-8 py-6"
         style={{ borderTop: '1px solid var(--gl-hairline)' }}
       >
-        <p className="gl-mono gl-mono--upper opacity-60 text-xs text-center">
+        <p className="gl-mono gl-mono--upper text-[color:var(--gl-text-muted)] text-xs text-center">
           If you believe this is an error,{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`} className="gl-mono--accent">
             contact us
           </a>
           .
         </p>
-      </footer>
+      </div>
     </div>
   );
 }

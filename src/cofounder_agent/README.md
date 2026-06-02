@@ -33,7 +33,7 @@ Requires `~/.poindexter/bootstrap.toml` with `database_url` (created by `poindex
 src/cofounder_agent/
 ├── main.py                    # FastAPI app entry point
 ├── config/                    # Configuration loading
-├── routes/                    # 31 REST endpoint modules
+├── routes/                    # 20 REST endpoint modules
 ├── services/                  # ~298 substantive service modules
 │   ├── database_service.py    # Coordinates 5 DB domain modules
 │   ├── llm_providers/         # LLMProvider plugins (LiteLLM primary, OpenAI-compat, Ollama-native)
@@ -43,17 +43,13 @@ src/cofounder_agent/
 │   ├── template_runner.py     # LangGraph-backed pipeline orchestrator (PRIMARY path)
 │   ├── pipeline_templates/    # canonical_blog + dev_diary template definitions
 │   ├── flows/                 # Prefect flows — content_generation.py is the sole dispatcher
-│   ├── stages/                # Stage Protocol implementations (12 nodes in canonical_blog)
-│   ├── modules/               # Module v1 business modules (content, finance)
+│   ├── stages/                # stage.* atom implementations (13 of canonical_blog's 21 nodes)
+│   ├── atoms/                 # qa.* + seo.* + narrate atom implementations (graph_def nodes)
 │   ├── capability_registry.py # Intent-based task routing
 │   └── migrations/            # Python migration modules (raw SQL inside)
-├── agents/                    # AI agent implementations
-│   ├── content_agent/         # Research + sub-agents called by stages
-│   ├── financial_agent/       # Cost tracking + analysis
-│   ├── market_insight_agent/  # Market research
-│   └── compliance_agent/      # Compliance checks
+├── modules/                   # Module v1 business modules (content, finance)
 ├── schemas/                   # Pydantic model files
-├── middleware/                 # 5 middleware modules (auth, validation, etc.)
+├── middleware/                # 5 middleware modules (auth, validation, etc.)
 ├── utils/                     # 20 utility modules
 └── tests/                     # pytest suite
     └── unit/                  # 8,400+ unit tests
@@ -67,17 +63,17 @@ src/cofounder_agent/
 
 **Database** (`services/database_service.py`): asyncpg connection pool with 5 domain modules (Users, Tasks, Content, Admin, WritingStyle). All queries are raw SQL. Migrations in `services/migrations/`.
 
-**Content Pipeline**: The `canonical_blog` LangGraph template (12 nodes) orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`.
+**Content Pipeline**: The `canonical_blog` graph (21 nodes — 13 `stage.*` + 5 `qa.*` + 3 `seo.*`) is stored as a DB `graph_def` (`services/canonical_blog_spec.py`), compiled by `services/pipeline_architect.py::build_graph_from_spec`, and orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`.
 
 **Gate History** (`pipeline_gate_history` table): Typed history of HITL gate approvals + regen retries (poindexter#366 phase 1 — replaces the dropped `pipeline_events` event-bus table). Approval service writes; `atoms.approval_gate` + `rejection_handlers` read.
 
 ## API
 
-30 route modules at `/api/*`. OpenAPI docs at `/api/openapi.json` when running.
+20 route modules at `/api/*`. OpenAPI docs at `/api/openapi.json` when running.
 
-Key endpoint groups: `/api/tasks`, `/api/posts`, `/api/workflows`, `/api/agents`, `/api/metrics`, `/api/analytics`, `/api/social`, `/api/settings`.
+Key endpoint groups: `/api/tasks`, `/api/posts`, `/api/analytics`, `/api/metrics`, `/api/settings`, `/api/topics`, `/api/video`, `/api/podcast`, `/api/newsletter`, `/api/webhooks`.
 
-Most endpoints require JWT auth. Public endpoints: `/api/health`, `/api/auth/*`, `/api/docs`, `/api/openapi.json`.
+Most endpoints require a JWT minted via OAuth 2.1 client-credentials (`POST /token`). Public endpoints: `/api/health`, `/api/docs`, `/api/openapi.json`.
 
 ## Testing
 
@@ -94,5 +90,5 @@ Markers: `unit`, `integration`, `api`, `e2e`, `performance`, `slow`, `voice`, `w
 Bootstrap config loaded from `~/.poindexter/bootstrap.toml` (created by `poindexter setup`). Runtime config from `app_settings` DB table (200+ keys).
 
 - `database_url` — in bootstrap.toml (the only disk-based config)
-- `api_token` — in bootstrap.toml (auto-generated)
+- **Auth: OAuth 2.1 client-credentials only** (Phase 3 #249). The static-Bearer `api_token` fallback was removed. `bootstrap.toml` holds the OAuth signing key; each consumer registers an `oauth_clients` row (`poindexter setup` provisions the initial CLI client; others via `poindexter auth migrate-*`) and mints a JWT through `POST /token`.
 - Everything else — in app_settings via the settings API

@@ -82,6 +82,16 @@ def _make_pool(
     conn.execute = AsyncMock(return_value=None)
     conn.executemany = AsyncMock(return_value=None)
 
+    # conn.transaction() must be a real async context manager — create_post
+    # now wraps its writes in ``async with conn.transaction():`` (#629). A
+    # plain MagicMock would break ``async with``. This CM doesn't suppress
+    # exceptions, mirroring asyncpg's rollback-on-error behaviour.
+    @asynccontextmanager
+    async def _transaction():
+        yield
+
+    conn.transaction = _transaction
+
     pool = MagicMock()
 
     @asynccontextmanager
@@ -753,6 +763,103 @@ class TestCacheHelpers:
 
 
 @pytest.mark.unit
+class TestCreatePostTransaction:
+    """#629 — the post INSERT and post_tags INSERT must be one transaction.
+
+    Before the fix both writes ran on the same connection with NO
+    transaction, so a failure on the post_tags insert committed a
+    tag-less post while the tag write rolled back. The fix wraps both in
+    ``async with conn.transaction():`` so they're atomic.
+    """
+
+    @staticmethod
+    def _make_txn_pool(*, fetchrow_result, execute_side_effect=None):
+        """Pool whose conn has a real async-cm transaction() that tracks state.
+
+        The returned ``conn`` records whether the transaction was entered,
+        committed (clean exit), or rolled back (exit with exception).
+        """
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=fetchrow_result)
+        conn.fetchval = AsyncMock(return_value=0)
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock(side_effect=execute_side_effect)
+
+        # State the test inspects after the call.
+        conn.txn_entered = False
+        conn.txn_exit_exc = "UNSET"  # set to the exc passed to __aexit__
+
+        class _Txn:
+            async def __aenter__(self_inner):
+                conn.txn_entered = True
+                return self_inner
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                conn.txn_exit_exc = exc
+                return False  # never suppress — let the exception propagate
+
+        conn.transaction = lambda: _Txn()
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+
+        pool.acquire = _acquire
+        return pool, conn
+
+    @pytest.mark.asyncio
+    async def test_post_insert_runs_inside_transaction(self):
+        """Happy path: the post insert happens after the txn is entered."""
+        pool, conn = self._make_txn_pool(fetchrow_result=object())
+        db = _make_db(pool)
+
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=object()):
+            await db.create_post({"slug": "x", "title": "T"})
+
+        assert conn.txn_entered is True
+        conn.fetchrow.assert_awaited()  # post insert ran
+        # Clean exit — no exception passed to __aexit__ → would COMMIT.
+        assert conn.txn_exit_exc is None
+
+    @pytest.mark.asyncio
+    async def test_tag_insert_failure_rolls_back_post_insert(self):
+        """A post_tags insert failure must roll back the post insert.
+
+        We make the post_tags ``execute`` raise. Because both writes live
+        inside ``async with conn.transaction():``, the exception unwinds
+        through the transaction CM (``__aexit__`` receives the exception →
+        a real DB rolls back). create_post re-raises as DatabaseError.
+        """
+        pool, conn = self._make_txn_pool(
+            fetchrow_result=object(),
+            execute_side_effect=RuntimeError(
+                'column "tag_id" is of type uuid but expression is of type text'
+            ),
+        )
+        db = _make_db(pool)
+
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=object()):
+            with pytest.raises(DatabaseError):
+                await db.create_post(
+                    {
+                        "slug": "x",
+                        "title": "T",
+                        "tag_ids": ["a1b2c3d4-e5f6-7890-abcd-ef0123456789"],
+                    }
+                )
+
+        # The transaction WAS entered (post insert ran inside it)...
+        assert conn.txn_entered is True
+        conn.fetchrow.assert_awaited()  # post insert ran
+        conn.execute.assert_awaited()  # post_tags insert attempted + raised
+        # ...and __aexit__ received the failure, so a real DB rolls back the
+        # post insert instead of leaving a tag-less post committed.
+        assert isinstance(conn.txn_exit_exc, RuntimeError)
+
+
+@pytest.mark.unit
 class TestPostTagsInsertCast:
     """Pins the contract that closes finding #197.
 
@@ -799,6 +906,14 @@ class TestPostTagsInsertCast:
         _conn.execute = AsyncMock(side_effect=_execute)
 
         from contextlib import asynccontextmanager as _acm
+
+        # create_post wraps its writes in ``async with conn.transaction():``
+        # (#629), so the conn must expose a real async-cm transaction().
+        @_acm
+        async def _transaction():
+            yield
+
+        _conn.transaction = _transaction
 
         @_acm
         async def _acquire():

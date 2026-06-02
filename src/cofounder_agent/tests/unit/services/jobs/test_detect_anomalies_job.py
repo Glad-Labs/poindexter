@@ -51,6 +51,19 @@ class TestDetectAnomaliesJobRun:
         assert result.changes_made == 0
         assert "normal range" in result.detail
 
+    async def test_failed_metric_query_marks_run_degraded(self):
+        """#612 — a failed metric query must NOT be swallowed at DEBUG and
+        reported as 'all metrics within normal range'. The detector is BLIND
+        for that metric, so the run is marked degraded (ok=False)."""
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("metric query broke"))
+        pool.fetchrow = AsyncMock(return_value={"mean": 1.0, "stddev": 0.5})
+        pool.execute = AsyncMock(return_value="INSERT 0 1")
+        result = await DetectAnomaliesJob().run(pool, {})
+        assert result.ok is False
+        assert "blind" in result.detail
+        assert result.changes_made == 0
+
     async def test_single_spike_does_not_file_issue(self):
         """One metric spiking shouldn't fire a Gitea issue — too noisy."""
         pool = _make_pool(

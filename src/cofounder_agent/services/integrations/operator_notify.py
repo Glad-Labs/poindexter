@@ -42,12 +42,13 @@ but now lives next to the framework path that wraps it.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -210,11 +211,19 @@ async def notify_operator(
                 # outbound Telegram outage doesn't drop the page entirely.
                 if not critical:
                     return
+    except (ImportError, ModuleNotFoundError) as e:
+        # Expected during bootstrap / many unit tests — the framework isn't
+        # importable yet. Keep this quiet.
+        logger.debug(
+            "[notify_operator] framework path unavailable (bootstrap): %s", e,
+        )
     except Exception as e:
-        # Framework not importable / shared_context missing. Don't
-        # spam the warning log — this is the expected path during
-        # bootstrap and in many unit tests.
-        logger.debug("[notify_operator] framework path unavailable: %s", e)
+        # A real wiring failure in the operator's last-mile alert path —
+        # surface it loud instead of hiding it at DEBUG.
+        logger.warning(
+            "[notify_operator] framework path failed unexpectedly: %s",
+            e, exc_info=True,
+        )
 
     # Phase 2: legacy Discord webhook fallback. Always best-effort.
     # The helper used to live in ``services.task_executor`` — that

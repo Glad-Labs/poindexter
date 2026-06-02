@@ -1,7 +1,7 @@
 import logger from './logger';
 import { formatDateISO } from './content-utils';
 // Image URL utilities for structured data
-import { getImageURL } from './api-fastapi';
+import { getImageURL } from './url';
 import { SITE_NAME, SITE_URL, SUPPORT_EMAIL } from './site.config';
 
 /**

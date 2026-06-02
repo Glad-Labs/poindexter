@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10');
 
     const response = await fetch(`${STATIC_URL}/posts/index.json`, {
-      next: { revalidate: 300 },
+      // Tag-based cache — invalidated by revalidateTag('posts') on publish (#967).
+      next: { tags: ['posts', 'post-index'] },
     });
 
     if (!response.ok) {

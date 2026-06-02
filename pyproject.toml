@@ -74,9 +74,13 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.13"
+# SPDX license expression — the repo is Apache-2.0 (see LICENSE and
+# src/LICENSE.md; relicensed from AGPL on 2026-04-29). The prior MIT
+# classifier was wrong (poindexter#645).
+license = "Apache-2.0"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 
