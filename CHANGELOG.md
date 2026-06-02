@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.64.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.63.0...v0.64.0) (2026-06-02)
+
+
+### Features
+
+* **scripts:** add seo-audit crawler as a permanent verification tool ([#980](https://github.com/Glad-Labs/glad-labs-stack/issues/980)) ([5eb0cf7](https://github.com/Glad-Labs/glad-labs-stack/commit/5eb0cf70e63717d8dbc6bf8abd3bedda7e7686cc))
+
 ## [0.63.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.62.0...v0.63.0) (2026-06-02)
 
 
