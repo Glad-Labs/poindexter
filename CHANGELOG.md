@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.64.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.1...v0.64.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **security:** block dev-token via DB environment, not just ENVIRONMENT env ([#986](https://github.com/Glad-Labs/glad-labs-stack/issues/986)) ([f98c556](https://github.com/Glad-Labs/glad-labs-stack/commit/f98c556d7822533d73846240a1053b71b3f772ec))
+
 ## [0.64.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.0...v0.64.1) (2026-06-02)
 
 
