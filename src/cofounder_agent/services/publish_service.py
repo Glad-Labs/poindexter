@@ -43,6 +43,32 @@ from utils.text_utils import extract_title_from_content
 logger = get_logger(__name__)
 
 
+# Test-harness topic suffixes (``(2026-05-11 17:48 batch C #5)``,
+# ``(... overnight B #1)``) leaked into live ``posts.title`` — audit
+# 2026-06-02 found 2 such 112-117 char titles on gladlabs.io (issue #4).
+# Strip them at publish time so a harness suffix can never reach a live
+# title (or the slug derived from it) again. Conservative: only a trailing
+# parenthetical that starts with a date OR contains a ``batch <letter>`` /
+# ``overnight`` marker is stripped — legit parentheticals like
+# "(A Practical Guide)" are preserved.
+_TITLE_SUFFIX_RE = re.compile(
+    r"\s*\((?:\d{4}-\d{2}-\d{2}[^)]*"
+    r"|[^)]*\bbatch\s+[A-Za-z]\b[^)]*"
+    r"|[^)]*\bovernight\b[^)]*)\)\s*$",
+    re.IGNORECASE,
+)
+
+
+def sanitize_published_title(title: str | None) -> str:
+    """Strip test-harness batch/debug suffixes from a title before publish.
+
+    See ``_TITLE_SUFFIX_RE``. Returns ``""`` for ``None``/empty input.
+    """
+    if not title:
+        return title or ""
+    return _TITLE_SUFFIX_RE.sub("", title).strip()
+
+
 # Strong references to fire-and-forget background tasks. Without this,
 # asyncio may garbage-collect pending tasks before they run. See RUF006
 # and https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
@@ -734,6 +760,9 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     extracted_title, cleaned_content = extract_title_from_content(draft_content)
     post_title = extracted_title or merged.get("title") or topic
+    # Strip leaked test-harness batch/debug suffixes BEFORE the slug is
+    # derived (issue #4) so neither the title nor the slug carries them.
+    post_title = sanitize_published_title(post_title)
     post_content = cleaned_content
 
     logger.info("[publish_service] Post title: %s", post_title)

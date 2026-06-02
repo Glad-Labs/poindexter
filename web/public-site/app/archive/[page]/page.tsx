@@ -36,6 +36,9 @@ export async function generateMetadata({
       title: `Article Archive — Page ${pageNum} | ${SITE_NAME}`,
       description: `Browse our collection of in-depth articles and insights. Page ${pageNum}.`,
       type: 'website',
+      // Next.js does not inherit the root layout's og:image when a page sets
+      // its own openGraph, so include the site default explicitly (audit #7).
+      images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME }],
     },
   };
 }

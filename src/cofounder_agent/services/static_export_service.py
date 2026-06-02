@@ -102,6 +102,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
                    p.author_id, p.category_id, p.status, p.seo_title, p.seo_description,
                    p.seo_keywords, p.published_at, p.created_at, p.updated_at,
                    p.distributed_at,
+                   p.metadata->>'featured_image_alt' AS featured_image_alt,
                    COALESCE(
                        ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
                        ARRAY[]::text[]
@@ -125,6 +126,7 @@ async def _fetch_post_by_slug(pool, slug: str) -> dict | None:
             SELECT p.id, p.title, p.slug, p.content, p.excerpt, p.featured_image_url,
                    p.cover_image_url, p.author_id, p.category_id, p.status,
                    p.seo_title, p.seo_description, p.seo_keywords,
+                   p.metadata->>'featured_image_alt' AS featured_image_alt,
                    p.published_at, p.created_at, p.updated_at,
                    COALESCE(
                        ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
@@ -164,6 +166,9 @@ def _post_summary(post: dict) -> dict:
         "excerpt": post.get("excerpt"),
         "featured_image_url": post.get("featured_image_url") or post.get("cover_image_url"),
         "cover_image_url": post.get("cover_image_url"),
+        # Vision-generated alt for the featured image (posts.metadata) — the
+        # frontend uses it for og:image:alt, falling back to the post title.
+        "featured_image_alt": post.get("featured_image_alt"),
         "author_id": str(post["author_id"]) if post.get("author_id") else None,
         "category_id": str(post["category_id"]) if post.get("category_id") else None,
         "status": post.get("status", "published"),

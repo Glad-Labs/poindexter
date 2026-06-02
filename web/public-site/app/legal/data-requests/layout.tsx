@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
-import { SITE_NAME } from '@/lib/site.config';
+import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
 export const metadata: Metadata = {
   title: `Data Access Requests - ${SITE_NAME}`,
   description: 'Submit your GDPR data access, deletion, or portability request',
+  alternates: { canonical: `${SITE_URL}/legal/data-requests` },
 };
 
 export default function DataRequestsLayout({

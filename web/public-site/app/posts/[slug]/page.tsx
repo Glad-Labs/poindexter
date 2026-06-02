@@ -94,7 +94,9 @@ export async function generateMetadata({
           url: imageUrl,
           width: 1200,
           height: 630,
-          alt: post.title,
+          // Prefer the vision-generated alt (describes the actual image);
+          // fall back to the title when absent.
+          alt: post.featured_image_alt || post.title,
         },
       ],
       publishedTime: publishDate,

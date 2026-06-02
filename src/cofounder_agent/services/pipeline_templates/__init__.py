@@ -82,12 +82,17 @@ def dev_diary(
     3. ``finalize_task`` (existing stage) — persists the post at
        awaiting_approval with full task metadata.
 
+    generate_seo_metadata runs after narrate_bundle (re-added 2026-06-02):
+    these "what we shipped" posts are indexed + in the sitemap, and were
+    shipping with an empty <meta description> (audit issue #2). It's purely
+    additive — sets seo_title/seo_description/seo_keywords, doesn't touch the
+    prose.
+
     Skipped vs canonical_blog: writer_self_review, quality_evaluation,
     url_validation, replace_inline_images, cross_model_qa,
-    generate_seo_metadata, generate_media_scripts, capture_training_data.
-    None of these fit a status-report artifact — either they're
-    irrelevant (SEO for build-in-public) or they actively harm the
-    output (cross_model_qa rewriting clean prose into hallucinated
+    generate_media_scripts, capture_training_data. None of these fit a
+    status-report artifact — either they're irrelevant or they actively harm
+    the output (cross_model_qa rewriting clean prose into hallucinated
     tutorials, see 2026-05-04 saga).
 
     source_featured_image runs between narrate_bundle and finalize_task
@@ -236,6 +241,25 @@ def dev_diary(
     # 2. narrate_bundle (atom)
     g.add_node("narrate_bundle", narrate_node)
     nodes_added.append("narrate_bundle")
+
+    # 2b. generate_seo_metadata — runs over the narrated prose so the post
+    #     gets a real <meta description>. Originally skipped on the premise
+    #     that SEO is "irrelevant for build-in-public", but the 27 "what we
+    #     shipped on <date>" posts ARE indexed + in the sitemap, so they were
+    #     shipping with an empty SERP snippet (audit 2026-06-02, issue #2).
+    #     Additive: writes seo_title/seo_description/seo_keywords; doesn't
+    #     touch the prose.
+    seo_stage = stages_by_name.get("generate_seo_metadata")
+    if seo_stage is None:
+        logger.warning(
+            "[dev_diary] generate_seo_metadata not registered — posts "
+            "will publish without a meta description"
+        )
+    else:
+        g.add_node("generate_seo_metadata", make_stage_node(
+            seo_stage, pool, record_sink=record_sink,
+        ))
+        nodes_added.append("generate_seo_metadata")
 
     # 3. source_featured_image — additive only (writes featured_image_url
     #    + featured_image_data, never modifies prose). Reads

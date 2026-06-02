@@ -12,6 +12,7 @@ import {
 export const metadata: Metadata = {
   title: `Cookie Policy - ${SITE_NAME}`,
   description: `Cookie Policy for ${SITE_NAME}`,
+  alternates: { canonical: `${SITE_URL}/legal/cookie-policy` },
 };
 
 export default function CookiePolicy() {

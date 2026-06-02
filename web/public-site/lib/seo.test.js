@@ -26,24 +26,23 @@ describe('SEO Utility (lib/seo.js)', () => {
   };
 
   describe('buildSEOTitle', () => {
-    it('should build title with site name', () => {
+    it('appends the brand suffix when the result stays <= 60 chars', () => {
       const title = buildSEOTitle('Short Title', 'Glad Labs');
-      expect(title).toContain('Short Title');
-      expect(title).toContain('Glad Labs');
+      expect(title).toBe('Short Title | Glad Labs');
     });
 
-    it('should truncate long titles', () => {
+    it('drops the brand suffix when the title alone is long (no truncation)', () => {
       const longTitle =
         'This Is An Extremely Long Blog Post Title That Will Exceed Sixty Characters Easily';
       const title = buildSEOTitle(longTitle, 'Glad Labs');
-      expect(title.length).toBeLessThanOrEqual(
-        longTitle.length + ' | Blog '.length + 'Glad Labs'.length
-      );
+      // Returns the bare title — never the old " | Blog" overflow.
+      expect(title).toBe(longTitle);
+      expect(title).not.toContain('| Blog');
     });
 
-    it('should handle missing site name', () => {
+    it('returns the bare title when site name is empty', () => {
       const title = buildSEOTitle('Post Title', '');
-      expect(title).toContain('Post Title');
+      expect(title).toBe('Post Title');
     });
   });
 

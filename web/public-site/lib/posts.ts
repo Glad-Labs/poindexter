@@ -17,6 +17,7 @@ export interface Post {
   excerpt?: string;
   content: string;
   featured_image_url?: string;
+  featured_image_alt?: string;
   cover_image_url?: string;
   author_id?: string;
   category_id?: string;

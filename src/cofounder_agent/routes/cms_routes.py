@@ -1003,6 +1003,40 @@ async def rebuild_static_export(
         from services.static_export_service import export_full_rebuild
         # #272 Phase-2d: export_full_rebuild requires an explicit site_config.
         result = await export_full_rebuild(pool, site_config=site_config_dep)
+
+        # A full rebuild re-uploads every JSON file to R2, but the Next.js
+        # data cache has NO TTL — it serves the old JSON until a tag
+        # invalidation fires (see web/public-site/lib/posts.ts). Without
+        # this, an operator rebuild silently leaves the live site stale:
+        # the export path was decoupled from revalidation, so only the
+        # publish path ever busted the cache. Revalidate the canonical post
+        # tags — per-slug pages are tagged 'posts' too, so one revalidate
+        # refreshes the index AND every post page. Non-fatal: a revalidation
+        # failure must not fail the rebuild (the R2 write already landed).
+        revalidation_success = False
+        if result.get("success"):
+            try:
+                from services.revalidation_service import (
+                    trigger_nextjs_revalidation,
+                )
+
+                revalidation_success = await trigger_nextjs_revalidation(
+                    paths=["/", "/archive", "/posts", "/sitemap.xml", "/feed.xml"],
+                    tags=["posts", "post-index"],
+                    site_config=site_config_dep,
+                )
+                if not revalidation_success:
+                    logger.warning(
+                        "[STATIC_EXPORT] rebuild succeeded but ISR "
+                        "revalidation returned failure — live site may "
+                        "serve stale cached JSON until the next publish"
+                    )
+            except Exception as reval_err:  # noqa: BLE001 — non-fatal
+                logger.warning(
+                    "[STATIC_EXPORT] rebuild revalidation error (non-fatal): %s",
+                    reval_err,
+                )
+        result["revalidation_success"] = revalidation_success
         status_code = 200 if result.get("success") else 207
         return JSONResponse(content=result, status_code=status_code)
     except Exception as e:

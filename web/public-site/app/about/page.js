@@ -25,6 +25,9 @@ export const metadata = {
     title: `About ${SITE_NAME}`,
     description: `One person + AI = unlimited scale. ${SITE_NAME} is building the future of autonomous content operations.`,
     type: 'website',
+    // Next.js does not inherit the root layout's og:image when a page sets
+    // its own openGraph, so include the site default explicitly (audit #7).
+    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME }],
   },
 };
 

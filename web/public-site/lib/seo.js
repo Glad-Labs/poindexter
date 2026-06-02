@@ -20,23 +20,18 @@ export function buildMetaDescription(excerpt, fallback = '') {
 }
 
 /**
- * Build SEO title (keep under 60 characters for optimal display)
+ * Build SEO title (keep under 60 characters for optimal display).
+ *
+ * Appends the brand suffix (" | <siteName>") ONLY when the result still
+ * fits in 60 chars; otherwise returns the bare title so keyword-rich titles
+ * aren't truncated in the SERP. Drops the previous low-value " | Blog"
+ * suffix — "Blog" isn't the brand and it pushed ~17 otherwise-fine titles
+ * past the 60-char limit (audit 2026-06-02, issue #5).
  */
-export function buildSEOTitle(
-  title,
-  siteName = SITE_NAME,
-  suffix = '| Blog'
-) {
-  const separator = siteName ? ` ${suffix} ` : '';
-
-  // Target 50-60 characters
-  const fullTitle = siteName ? `${title}${separator}${siteName}` : title;
-
-  if (fullTitle.length > 60) {
-    return `${title} ${suffix}`;
-  }
-
-  return fullTitle;
+export function buildSEOTitle(title, siteName = SITE_NAME) {
+  if (!siteName) return title;
+  const candidate = `${title} | ${siteName}`;
+  return candidate.length <= 60 ? candidate : title;
 }
 
 /**

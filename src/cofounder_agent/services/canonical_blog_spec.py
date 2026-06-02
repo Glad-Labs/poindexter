@@ -45,6 +45,9 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "url_validation", "atom": "stage.url_validation"},
         {"id": "replace_inline_images", "atom": "stage.replace_inline_images"},
         {"id": "source_featured_image", "atom": "stage.source_featured_image"},
+        # Re-caption inline + featured images with vision (qwen3-vl) so alt
+        # text describes the ACTUAL rendered pixels, not the generation prompt.
+        {"id": "caption_images", "atom": "stage.caption_images"},
         # qa.* rail block (replaces the cross_model_qa stage) — linear chain.
         {"id": "qa_critic", "atom": "qa.critic"},
         {"id": "qa_deepeval", "atom": "qa.deepeval"},
@@ -69,7 +72,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "quality_evaluation", "to": "url_validation"},
         {"from": "url_validation", "to": "replace_inline_images"},
         {"from": "replace_inline_images", "to": "source_featured_image"},
-        {"from": "source_featured_image", "to": "qa_critic"},
+        {"from": "source_featured_image", "to": "caption_images"},
+        {"from": "caption_images", "to": "qa_critic"},
         {"from": "qa_critic", "to": "qa_deepeval"},
         {"from": "qa_deepeval", "to": "qa_guardrails"},
         {"from": "qa_guardrails", "to": "qa_ragas"},

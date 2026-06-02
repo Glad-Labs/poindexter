@@ -4,6 +4,7 @@ import { FAQSchema } from '../../../components/StructuredData';
 import LegalProse from '../_components/LegalProse';
 import {
   SITE_NAME,
+  SITE_URL,
   COMPANY_NAME,
   SUPPORT_EMAIL,
   PRIVACY_EMAIL,
@@ -12,6 +13,7 @@ import {
 export const metadata: Metadata = {
   title: `Privacy Policy - ${SITE_NAME}`,
   description: `Privacy Policy for ${SITE_NAME}`,
+  alternates: { canonical: `${SITE_URL}/legal/privacy` },
 };
 
 export default function PrivacyPolicy() {
