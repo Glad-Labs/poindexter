@@ -68,8 +68,11 @@ jobs:
       - name: Install workspace dependencies
         # `npm ci` at the repo root installs every workspace (including
         # web/public-site) from the committed package-lock.json. Playwright
-        # (@playwright/test ^1.60) is a root devDependency.
-        run: npm ci
+        # (@playwright/test ^1.60) is a root devDependency. Fall back to
+        # `npm install` if the committed root lock has drifted (a
+        # pre-existing drift, tracked separately) so this new E2E gate
+        # isn't what blocks on it.
+        run: npm ci || npm install
 
       - name: Install Playwright browsers (chromium)
         # --with-deps pulls the OS libraries chromium needs on ubuntu.
@@ -139,7 +142,8 @@ jobs:
           cache: "npm"
 
       - name: Install workspace dependencies
-        run: npm ci
+        # Fall back to npm install on pre-existing root-lock drift.
+        run: npm ci || npm install
 
       - name: Install Playwright browsers (chromium)
         run: npx playwright install --with-deps chromium
