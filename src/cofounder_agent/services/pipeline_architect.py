@@ -616,7 +616,7 @@ def build_graph_from_spec(
             run_fn = get_atom_callable(atom_name)
             if run_fn is None:
                 raise KeyError(f"atom {atom_name!r} has no callable")
-            g.add_node(nid, _wrap_atom(run_fn, atom_name, record_sink))
+            g.add_node(nid, _wrap_atom(run_fn, atom_name, nid, record_sink))
         node_ids.append(nid)
 
     # Wire entry + edges.
@@ -692,6 +692,7 @@ def build_graph_from_spec(
 def _wrap_atom(
     run_fn: Callable[..., Any],
     atom_name: str,
+    node_id: str,
     record_sink: list | None,
 ) -> Callable[..., Any]:
     """Wrap a pure atom into the LangGraph node signature with
@@ -703,9 +704,13 @@ def _wrap_atom(
     atom's input dict so atoms that read ``state.get("database_service")``
     keep working unchanged. ``config`` MUST be annotated as bare
     ``RunnableConfig`` — see the matching note in ``make_stage_node``.
+
+    Stamps ``node_id`` + input/output state-key lists + digests onto the
+    record so ``atom_runs`` captures the composition shape (#355 Plan 2).
     """
 
     from langchain_core.runnables import RunnableConfig
+    from services.atom_runs import digest_keys
     from services.template_runner import TemplateRunRecord, _services_from_config
 
     async def node(
@@ -717,18 +722,28 @@ def _wrap_atom(
         atom_input: dict[str, Any] = dict(state)
         for svc_key, svc_value in _services_from_config(config).items():
             atom_input.setdefault(svc_key, svc_value)
+        input_keys = sorted(str(k) for k in atom_input.keys())
         try:
             result = await run_fn(atom_input)
             elapsed_ms = int((_time.time() - t0) * 1000)
+            out = result if isinstance(result, dict) else {}
+            output_keys = sorted(str(k) for k in out.keys())
             if record_sink is not None:
                 record_sink.append(
                     TemplateRunRecord(
                         name=atom_name, ok=True,
-                        detail=f"{len(str(result.get('content','') or ''))} chars",
+                        detail=f"{len(str(out.get('content','') or ''))} chars",
                         elapsed_ms=elapsed_ms,
+                        node_id=node_id,
+                        metrics={
+                            "input_keys": input_keys,
+                            "output_keys": output_keys,
+                            "input_digest": digest_keys(input_keys),
+                            "output_digest": digest_keys(output_keys),
+                        },
                     )
                 )
-            return result if isinstance(result, dict) else {}
+            return out
         except Exception as exc:
             elapsed_ms = int((_time.time() - t0) * 1000)
             logger.exception("[architect] atom %s raised: %s", atom_name, exc)
@@ -738,6 +753,13 @@ def _wrap_atom(
                         name=atom_name, ok=False,
                         detail=f"raised {type(exc).__name__}: {exc}",
                         halted=True, elapsed_ms=elapsed_ms,
+                        node_id=node_id,
+                        metrics={
+                            "input_keys": input_keys,
+                            "output_keys": [],
+                            "input_digest": digest_keys(input_keys),
+                            "output_digest": digest_keys([]),
+                        },
                     )
                 )
             return {"_halt": True, "_halt_reason": f"{atom_name}: {exc}"}

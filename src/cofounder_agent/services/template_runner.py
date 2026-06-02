@@ -336,6 +336,9 @@ class TemplateRunRecord:
     skipped: bool = False
     elapsed_ms: int = 0
     metrics: dict[str, Any] = field(default_factory=dict)
+    # Graph node id (architect/graph_def composition). None for legacy
+    # stage nodes that don't carry a distinct id (atom-cutover #355).
+    node_id: str | None = None
 
 
 @dataclass
@@ -362,6 +365,7 @@ class TemplateRunSummary:
                     "skipped": r.skipped,
                     "elapsed_ms": r.elapsed_ms,
                     "metrics": r.metrics,
+                    "node_id": r.node_id,
                 }
                 for r in self.records
             ],
