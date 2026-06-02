@@ -110,7 +110,7 @@ class TestRecordMediaAsset:
         source_featured_image → ... → finalize → publish). They get
         post_id=None but DO have task_id in scope. Persisting task_id
         is what lets publish_post_from_task close the FK afterward
-        (Glad-Labs/glad-labs-stack#193).
+        (Glad-Labs/poindexter#193).
         """
         pool, conn = _fake_pool()
         await record_media_asset(
