@@ -41,11 +41,17 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         embedding_model: str | None = None,
         text_preview: str | None = None,
         writer: str | None = None,
+        chunk_index: int = 0,
     ) -> str:
         """
         Store an embedding vector in the database.
 
-        Upserts on (source_type, source_id) so re-embedding replaces the old vector.
+        Upserts on the natural key
+        ``(source_table, source_id, chunk_index, embedding_model)`` so
+        re-embedding the SAME chunk replaces the old vector while distinct
+        chunks of one source coexist. Before #625 the INSERT omitted
+        ``chunk_index`` (defaulting it to 0), so chunk 1 silently overwrote
+        chunk 0 — every multi-chunk source collapsed to a single row.
 
         Args:
             source_type: Type of content (e.g. 'posts', 'brain_knowledge').
@@ -57,6 +63,9 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                 the DB schema — falls back to the title from `metadata` if
                 omitted, then to the source_id.
             writer: Origin label (worker, auto-embed, claude-code, etc).
+            chunk_index: Zero-based ordinal of this chunk within the source.
+                Part of the natural key, so distinct chunks of one source
+                must pass distinct values to avoid clobbering each other.
 
         Returns:
             The embedding row ID (string).
@@ -89,8 +98,8 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                     INSERT INTO embeddings (source_table, source_id, content_hash,
                                             embedding, embedding_model, metadata,
                                             text_preview, writer,
-                                            created_at, updated_at)
-                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8, $9, $10)
+                                            created_at, updated_at, chunk_index)
+                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8, $9, $10, $11)
                     ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
                     DO UPDATE SET content_hash = EXCLUDED.content_hash,
                                   embedding   = EXCLUDED.embedding,
@@ -110,6 +119,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                     writer,
                     now,
                     now,
+                    chunk_index,
                 )
             embedding_id = str(row["id"]) if row else None
             logger.info(
@@ -197,30 +207,61 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             return []
 
     async def get_embedding(
-        self, source_type: str, source_id: str
+        self,
+        source_type: str,
+        source_id: str,
+        embedding_model: str | None = None,
     ) -> dict[str, Any] | None:
         """
         Get a specific embedding by source type and ID.
 
+        The natural key is
+        ``(source_table, source_id, chunk_index, embedding_model)``, so a
+        bare ``(source_table, source_id)`` filter can match multiple rows
+        (one per chunk / model). Before #626 the bare ``fetchrow`` returned
+        a non-deterministic row in that case. We now ``ORDER BY chunk_index,
+        embedding_model LIMIT 1`` for a stable result (the first chunk of
+        the earliest model), and accept an optional ``embedding_model``
+        filter to pin a specific model.
+
         Args:
             source_type: Type of content.
             source_id: Source content identifier.
+            embedding_model: Optional model filter. ``None`` = any model.
 
         Returns:
             Dict with embedding data, or None if not found.
         """
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT id, source_table, source_id, content_hash, metadata,
-                           created_at, updated_at
-                    FROM embeddings
-                    WHERE source_table = $1 AND source_id = $2
-                    """,
-                    source_type,
-                    source_id,
-                )
+                if embedding_model is not None:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT id, source_table, source_id, content_hash, metadata,
+                               created_at, updated_at
+                        FROM embeddings
+                        WHERE source_table = $1 AND source_id = $2
+                          AND embedding_model = $3
+                        ORDER BY chunk_index, embedding_model
+                        LIMIT 1
+                        """,
+                        source_type,
+                        source_id,
+                        embedding_model,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT id, source_table, source_id, content_hash, metadata,
+                               created_at, updated_at
+                        FROM embeddings
+                        WHERE source_table = $1 AND source_id = $2
+                        ORDER BY chunk_index, embedding_model
+                        LIMIT 1
+                        """,
+                        source_type,
+                        source_id,
+                    )
             if row:
                 return self._convert_row_to_dict(row)
             return None
@@ -279,29 +320,57 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             return 0
 
     async def needs_reembedding(
-        self, source_type: str, source_id: str, content_hash: str
+        self,
+        source_type: str,
+        source_id: str,
+        content_hash: str,
+        embedding_model: str | None = None,
     ) -> bool:
         """
         Check if content needs re-embedding by comparing content hashes.
+
+        The natural key includes ``chunk_index`` + ``embedding_model``, so a
+        bare ``(source_table, source_id)`` lookup can match several rows.
+        Before #626 the bare ``fetchrow`` compared against a
+        non-deterministic row's hash. We now ``ORDER BY chunk_index,
+        embedding_model LIMIT 1`` for a stable comparison and accept an
+        optional ``embedding_model`` filter.
 
         Args:
             source_type: Type of content.
             source_id: Source content identifier.
             content_hash: SHA-256 hash of the current content.
+            embedding_model: Optional model filter. ``None`` = any model.
 
         Returns:
             True if content needs re-embedding (no existing embedding or hash differs).
         """
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT content_hash FROM embeddings
-                    WHERE source_table = $1 AND source_id = $2
-                    """,
-                    source_type,
-                    source_id,
-                )
+                if embedding_model is not None:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT content_hash FROM embeddings
+                        WHERE source_table = $1 AND source_id = $2
+                          AND embedding_model = $3
+                        ORDER BY chunk_index, embedding_model
+                        LIMIT 1
+                        """,
+                        source_type,
+                        source_id,
+                        embedding_model,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT content_hash FROM embeddings
+                        WHERE source_table = $1 AND source_id = $2
+                        ORDER BY chunk_index, embedding_model
+                        LIMIT 1
+                        """,
+                        source_type,
+                        source_id,
+                    )
             if row is None:
                 return True
             return row["content_hash"] != content_hash
