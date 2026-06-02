@@ -569,13 +569,67 @@ async def _safe_call_adapter(platform: str, coro_factory) -> dict:
         return {"success": False, "post_id": None, "error": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# Prometheus counters (module-level singletons — GH-36 / poindexter#455)
+# ---------------------------------------------------------------------------
+#
+# Built at IMPORT time, not lazily on the first ``_bump_metric`` call. Because
+# prometheus_client only exposes a metric on the default REGISTRY once its
+# Counter object is constructed, lazy construction left these series ABSENT
+# from ``/metrics`` after every worker restart until the first social post —
+# so any ``rate()`` / ``increase()`` panel or alert on them showed a gap across
+# each restart boundary (poindexter#455). Constructing here mirrors the
+# module-level-singleton pattern ``metrics_exporter.py`` uses for every metric;
+# ``metrics_exporter`` imports these names so the series register on the first
+# ``/metrics`` scrape after boot rather than only after a post is attempted.
+#
+# Wrapped in a try/except noop shim (mirrors ``content_validator.py``) so envs
+# without prometheus_client — minimal test / bootstrap paths — still import the
+# module cleanly. Metrics stay strictly best-effort: nothing here ever raises.
+
+try:
+    from prometheus_client import Counter as _Counter  # type: ignore[import-not-found]
+
+    SOCIAL_ADAPTER_POSTS_TOTAL = _Counter(
+        "poindexter_social_adapter_posts_total",
+        "Social adapter posting attempts (GH-36)",
+        ["platform", "outcome"],
+    )
+    SOCIAL_ADAPTER_ERRORS_TOTAL = _Counter(
+        "poindexter_social_adapter_errors_total",
+        "Social adapter unexpected exceptions (GH-36)",
+        ["platform"],
+    )
+except Exception:  # pragma: no cover — exercised only when prometheus_client is absent
+    class _NoopCounter:
+        def labels(self, **_kwargs):  # noqa: D401 — trivial shim
+            return self
+
+        def inc(self, _amount: float = 1.0) -> None:
+            return None
+
+    SOCIAL_ADAPTER_POSTS_TOTAL = _NoopCounter()  # type: ignore[assignment]
+    SOCIAL_ADAPTER_ERRORS_TOTAL = _NoopCounter()  # type: ignore[assignment]
+
+
+# Map the short metric names used at the call sites to their Counter
+# singletons. Typed ``Any`` so static checkers don't trip on the
+# real-Counter / noop-shim union; the only surface used below
+# (``.labels(...).inc()`` / ``.inc()``) is common to both.
+_COUNTERS: dict[str, Any] = {
+    "social_adapter_posts_total": SOCIAL_ADAPTER_POSTS_TOTAL,
+    "social_adapter_errors_total": SOCIAL_ADAPTER_ERRORS_TOTAL,
+}
+
+
 def _bump_metric(name: str, **labels: str) -> None:
     """Fire-and-forget Prometheus counter increment. Never raises.
 
-    Uses ``prometheus_client`` registry directly so the metric is picked
-    up by ``metrics_exporter`` on the next ``/metrics`` scrape. Metrics
-    are strictly best-effort — if prometheus_client isn't available or
-    the counter definition fails, posting still proceeds.
+    Resolves ``name`` to one of the module-level Counter singletons
+    (constructed at import — see ``SOCIAL_ADAPTER_POSTS_TOTAL`` /
+    ``SOCIAL_ADAPTER_ERRORS_TOTAL``) and increments it. Metrics are strictly
+    best-effort: an unknown name is a silent no-op, and the shim Counters make
+    increments harmless when prometheus_client is unavailable.
 
     Counters used:
 
@@ -586,27 +640,9 @@ def _bump_metric(name: str, **labels: str) -> None:
       only when an adapter raises an unexpected exception.
     """
     try:
-        from prometheus_client import Counter
-
-        # Map our two metric names to singleton Counters (lazy).
         counter = _COUNTERS.get(name)
         if counter is None:
-            if name == "social_adapter_posts_total":
-                counter = Counter(
-                    "poindexter_social_adapter_posts_total",
-                    "Social adapter posting attempts (GH-36)",
-                    ["platform", "outcome"],
-                )
-            elif name == "social_adapter_errors_total":
-                counter = Counter(
-                    "poindexter_social_adapter_errors_total",
-                    "Social adapter unexpected exceptions (GH-36)",
-                    ["platform"],
-                )
-            else:
-                return
-            _COUNTERS[name] = counter
-
+            return
         if labels:
             counter.labels(**labels).inc()
         else:
@@ -614,20 +650,13 @@ def _bump_metric(name: str, **labels: str) -> None:
     except Exception as exc:
         # poindexter#455 — used to be silent. metrics are best-effort
         # (we never want broken metrics to break posting) but a debug
-        # log surfaces "prometheus_client missing" or "Counter labels
-        # mismatch" without it being a visible-only-by-grep symptom.
+        # log surfaces "Counter labels mismatch" without it being a
+        # visible-only-by-grep symptom.
         logger.debug(
             "[social_poster] metric increment failed for %s (%s: %s) — "
             "post outcome already logged, observability degrades only",
             name, type(exc).__name__, exc,
         )
-
-
-# Counter singletons — prometheus_client refuses duplicate registration.
-# Typed Any so static checkers don't mistake the lazy lookup for `object`;
-# the only surface we use (.labels().inc() / .inc()) is part of the prometheus
-# Counter contract.
-_COUNTERS: dict[str, Any] = {}
 
 
 async def _distribute_to_adapters(

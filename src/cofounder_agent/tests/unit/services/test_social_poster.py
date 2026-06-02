@@ -794,3 +794,34 @@ class TestBumpMetricNeverRaises:
 
         _bump_metric("social_adapter_posts_total", platform="bluesky", outcome="success")
         _bump_metric("social_adapter_errors_total", platform="bluesky")
+
+
+class TestCountersRegisteredAtImport:
+    """poindexter#455 follow-up — the adapter counters must be constructed at
+    module import time (module-level singletons), so their series are exposed
+    on ``/metrics`` from the first scrape after a worker restart, not only once
+    the first social post is attempted.
+
+    Before this fix the Counters were built lazily on the first ``_bump_metric``
+    call, so ``poindexter_social_adapter_*_total`` was absent from the default
+    registry across every restart boundary — any ``rate()`` / ``increase()``
+    panel or alert on them showed a gap until a post happened. These tests pin
+    the construction at import.
+    """
+
+    def test_counter_singletons_exist_as_module_attributes(self):
+        """Constructed at import — not lazily inside ``_bump_metric``."""
+        import services.social_poster as sp
+
+        assert hasattr(sp, "SOCIAL_ADAPTER_POSTS_TOTAL")
+        assert hasattr(sp, "SOCIAL_ADAPTER_ERRORS_TOTAL")
+
+    def test_series_present_in_exposition_without_bumping(self):
+        """Both metric families appear in ``generate_latest()`` purely from
+        importing the module — this test never calls ``_bump_metric``."""
+        prom = pytest.importorskip("prometheus_client")
+        import services.social_poster  # noqa: F401 — the import IS the trigger
+
+        exposition = prom.generate_latest().decode()
+        assert "poindexter_social_adapter_posts_total" in exposition
+        assert "poindexter_social_adapter_errors_total" in exposition
