@@ -894,7 +894,7 @@ async def publish_post_from_task(
     # by migration 20260519_134736). Falls back to an empty array when
     # the niche row is missing or has no policy set — safer to skip
     # media generation than to silently default to "spawn everything"
-    # for an unknown niche. Closes Glad-Labs/glad-labs-stack#480 and
+    # for an unknown niche. Closes Glad-Labs/poindexter#480 and
     # the post-mortem from #481 (slug-pattern filter Matt rejected
     # 2026-05-19).
     niche_slug = task.get("niche_slug") or ""
@@ -912,7 +912,7 @@ async def publish_post_from_task(
             niche_slug, exc,
         )
 
-    # Glad-Labs/glad-labs-stack#649 PR 2 — propagate the director's
+    # Glad-Labs/poindexter#649 PR 2 — propagate the director's
     # shot list from task_metadata to posts.video_shot_list so the
     # shot-list renderer can find it when ``generate_video_for_post``
     # runs for this post. Absent when the director stage skipped (no
@@ -966,7 +966,7 @@ async def publish_post_from_task(
     # (e.g. source_featured_image) before this post existed. Those rows
     # are persisted with ``post_id=NULL`` but carry the producing
     # ``task_id`` — closing the FK here turns them into proper child
-    # rows of the post. Glad-Labs/glad-labs-stack#193.
+    # rows of the post. Glad-Labs/poindexter#193.
     try:
         pool = getattr(db_service, "pool", None)
         if pool is not None and task_id and post_id:
