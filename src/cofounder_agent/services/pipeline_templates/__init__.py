@@ -26,6 +26,7 @@ Implements: Glad-Labs/poindexter#358.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Callable
 
@@ -357,6 +358,46 @@ def dev_diary(
         nodes_added[-1], halt_or_continue(END), {END: END},
     )
     return g
+
+
+# ---------------------------------------------------------------------------
+# DB reader: load_active_graph_def
+# ---------------------------------------------------------------------------
+
+
+async def load_active_graph_def(pool: Any, slug: str) -> dict[str, Any] | None:
+    """Return the active ``graph_def`` for ``slug`` from ``pipeline_templates``,
+    or ``None`` when there's no active row, the row is unreadable, or the
+    spec is empty/node-less (the column default ``'{}'``).
+
+    Best-effort: a DB error degrades to ``None`` (the runner falls back to the
+    legacy Python factory) rather than failing the run.
+    """
+    if pool is None or not slug:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT graph_def FROM pipeline_templates "
+                "WHERE slug = $1 AND active = true "
+                "ORDER BY version DESC LIMIT 1",
+                slug,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[pipeline_templates] load_active_graph_def(%r) failed: %s", slug, exc)
+        return None
+    if not row:
+        return None
+    raw = row["graph_def"]
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("[pipeline_templates] graph_def for %r is not valid JSON", slug)
+            return None
+    if not isinstance(raw, dict) or not raw.get("nodes"):
+        return None
+    return raw
 
 
 # ---------------------------------------------------------------------------

@@ -709,17 +709,38 @@ class TemplateRunner:
         # Lazy import to avoid module-load cycle: pipeline_templates.__init__
         # imports adapters from here, here imports from there → cycle if
         # done at top level.
-        from services.pipeline_templates import TEMPLATES
-
-        factory = TEMPLATES.get(template_slug)
-        if factory is None:
-            raise KeyError(
-                f"unknown template_slug={template_slug!r}; "
-                f"registered={sorted(TEMPLATES)}"
-            )
+        from services.pipeline_templates import TEMPLATES, load_active_graph_def
 
         records: list[TemplateRunRecord] = []
-        graph: StateGraph = factory(pool=self._pool, record_sink=records)
+
+        # Cutover seam (#355 Plan 4): prefer the DB-stored graph_def
+        # (compiled by build_graph_from_spec) when the operator has enabled
+        # it AND an active graph_def row exists for this slug; otherwise fall
+        # back to the legacy Python TEMPLATES factory. Flag default False →
+        # dormant until an operator flips pipeline_use_graph_def. Everything
+        # downstream (partition / checkpointer / compile / ainvoke / outcome)
+        # is identical for both paths.
+        graph: StateGraph | None = None
+        if self._site_config.get_bool("pipeline_use_graph_def", False):
+            graph_def = await load_active_graph_def(self._pool, template_slug)
+            if graph_def:
+                from services.pipeline_architect import build_graph_from_spec
+                logger.info(
+                    "[template_runner] graph_def path for slug=%r "
+                    "(pipeline_use_graph_def on)", template_slug,
+                )
+                graph = build_graph_from_spec(
+                    graph_def, pool=self._pool, record_sink=records,
+                )
+
+        if graph is None:
+            factory = TEMPLATES.get(template_slug)
+            if factory is None:
+                raise KeyError(
+                    f"unknown template_slug={template_slug!r}; "
+                    f"registered={sorted(TEMPLATES)}"
+                )
+            graph = factory(pool=self._pool, record_sink=records)
 
         thread_id = (
             thread_id
