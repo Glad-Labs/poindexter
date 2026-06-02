@@ -27,6 +27,7 @@ lifespan-bound SiteConfig (caller-bridge pattern,
 """
 
 import asyncio
+import random
 
 import httpx
 from bs4 import BeautifulSoup
@@ -99,33 +100,61 @@ class WebResearcher:
         return await self._ddg_search(query, num_results)
 
     async def _ddg_search(self, query: str, num_results: int) -> list[dict[str, str]]:
-        """Search DuckDuckGo (free, no API key needed)."""
+        """Search DuckDuckGo (free, no API key needed).
+
+        Under concurrent pipeline load DDG rate-limits/throttles and the
+        client raises (often surfacing as ``No results found``), which used
+        to zero out web fact-check grounding on the first failure
+        (glad-labs-stack#877). Bounded exponential backoff + jitter spreads
+        simultaneous bursts so a transient throttle no longer kills research.
+        A hard per-attempt timeout still caps each try, and we still degrade
+        to ``[]`` after the retry budget.
+        """
         try:
+            from ddgs import DDGS
+        except ImportError:
             try:
-                from ddgs import DDGS
-            except ImportError:
                 from duckduckgo_search import DDGS  # legacy fallback
+            except Exception as e:  # both client libs unavailable
+                logger.warning("[RESEARCH] DuckDuckGo client unavailable: %s", e)
+                return []
 
-            # Run in thread to avoid blocking (ddgs is sync)
-            def _search():
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=num_results))
-                return results
+        # Run in thread to avoid blocking (ddgs is sync)
+        def _search():
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=num_results))
 
-            loop = asyncio.get_running_loop()
-            # Hard cap: DDG sometimes hangs or rate-limits silently.
-            # asyncio.wait_for guarantees the pipeline won't stall on search.
-            _search_timeout = self._web_research_int("search_timeout_seconds", 20)
+        loop = asyncio.get_running_loop()
+        # Hard cap per attempt: DDG sometimes hangs or rate-limits silently.
+        # asyncio.wait_for guarantees the pipeline won't stall on search.
+        _search_timeout = self._web_research_int("search_timeout_seconds", 20)
+        attempts = max(1, self._web_research_int("ddg_retry_attempts", 3))
+        base_delay = self._web_research_int("ddg_retry_base_delay_ms", 500) / 1000.0
+
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
             try:
                 raw = await asyncio.wait_for(
                     loop.run_in_executor(None, _search), timeout=_search_timeout
                 )
             except asyncio.TimeoutError:
+                # A hung search shouldn't burn the rest of the retry budget.
                 logger.warning(
                     "[RESEARCH] DuckDuckGo search timed out after %ds for: %s",
                     _search_timeout, query[:50],
                 )
                 return []
+            except Exception as e:  # noqa: BLE001 — DDG throttle/ratelimit
+                last_exc = e
+                if attempt + 1 >= attempts:
+                    break
+                delay = base_delay * (2 ** attempt) + random.uniform(0.0, base_delay)
+                logger.debug(
+                    "[RESEARCH] DuckDuckGo attempt %d/%d failed (%s); retrying in %.2fs",
+                    attempt + 1, attempts, e, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
 
             return [
                 {
@@ -137,9 +166,12 @@ class WebResearcher:
                 for r in raw
                 if r.get("href") or r.get("link")
             ]
-        except Exception as e:
-            logger.warning("[RESEARCH] DuckDuckGo search failed: %s", e)
-            return []
+
+        logger.warning(
+            "[RESEARCH] DuckDuckGo search failed after %d attempt(s): %s",
+            attempts, last_exc,
+        )
+        return []
 
     async def _extract_content(self, url: str) -> str:
         """Fetch a URL and extract clean text content."""

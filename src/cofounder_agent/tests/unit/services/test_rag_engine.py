@@ -190,9 +190,36 @@ class TestRetrieverQuery:
 
         pool = MagicMock()
         retriever = await get_rag_retriever(pool=pool)
-        with patch("services.rag_engine._get_embed_model", return_value=embed):
+        # Patch sleep so the retry budget (glad-labs-stack#876) doesn't add
+        # real backoff delay to the test.
+        with patch("services.rag_engine._get_embed_model", return_value=embed), \
+                patch("asyncio.sleep", new_callable=AsyncMock):
             results = await retriever._aretrieve(QueryBundle(query_str="x"))
         assert results == []
+        # Degrades to [] only after exhausting the default retry budget (3).
+        assert embed.aget_query_embedding.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_embedding_transient_failure_is_retried(self):
+        """A transient connection refusal is retried, not swallowed (#876)."""
+        from llama_index.core.schema import QueryBundle
+
+        embed = MagicMock()
+        embed.aget_query_embedding = AsyncMock(
+            side_effect=[Exception("Failed to connect to Ollama"), [0.1] * 768]
+        )
+
+        pool = MagicMock()
+        pool.fetch = AsyncMock(return_value=[
+            _row("posts", "abc-123", "FastAPI is great.", 0.9),
+        ])
+        retriever = await get_rag_retriever(pool=pool)
+        with patch("services.rag_engine._get_embed_model", return_value=embed), \
+                patch("asyncio.sleep", new_callable=AsyncMock):
+            results = await retriever._aretrieve(QueryBundle(query_str="x"))
+
+        assert len(results) == 1
+        assert embed.aget_query_embedding.await_count == 2
 
     @pytest.mark.asyncio
     async def test_db_failure_returns_empty(self):

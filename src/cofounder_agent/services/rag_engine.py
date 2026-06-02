@@ -37,11 +37,19 @@ Each ``NodeWithScore`` has ``node.text`` (preview / chunk),
 
 from __future__ import annotations
 
+import asyncio
+import random
 from typing import Any, Iterable
 
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+# Embedding-call resilience under concurrent load (glad-labs-stack#876).
+# Defaults only — tunable via app_settings ``rag_embed_retry_attempts`` /
+# ``rag_embed_retry_base_delay_seconds`` (registered in settings_defaults).
+_DEFAULT_EMBED_RETRY_ATTEMPTS = 3
+_DEFAULT_EMBED_RETRY_BASE_DELAY = 0.25  # seconds
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +95,47 @@ def _get_embed_model(
     )
     _EMBED_MODEL_CACHE[cache_key] = embed
     return embed
+
+
+async def _aembed_query_with_retry(
+    embed: Any,
+    text: str,
+    *,
+    attempts: int = _DEFAULT_EMBED_RETRY_ATTEMPTS,
+    base_delay: float = _DEFAULT_EMBED_RETRY_BASE_DELAY,
+) -> list[float]:
+    """Embed ``text`` with bounded exponential backoff + jitter.
+
+    Under concurrent pipeline load the Ollama *embedding* endpoint
+    intermittently refuses connections (``Failed to connect to Ollama``)
+    even while the *chat* endpoint stays healthy — see
+    glad-labs-stack#876. A single transient failure used to drop the
+    writer's RAG grounding to zero context, dragging quality scores into
+    refine loops. Retrying transient failures keeps grounding intact.
+
+    The final failure is re-raised (the caller still degrades to ``[]``
+    since RAG is advisory) so the failure is surfaced, not silently
+    swallowed — only now after a real retry budget. ``CancelledError`` is
+    a ``BaseException`` and is never caught here, so cooperative
+    cancellation still propagates immediately.
+    """
+    attempts = max(1, int(attempts))
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return await embed.aget_query_embedding(text)
+        except Exception as exc:  # noqa: BLE001 — transient Ollama refusals
+            last_exc = exc
+            if attempt + 1 >= attempts:
+                break
+            delay = base_delay * (2 ** attempt) + random.uniform(0.0, base_delay)
+            logger.debug(
+                "[rag] embedding attempt %d/%d failed (%s); retrying in %.2fs",
+                attempt + 1, attempts, exc, delay,
+            )
+            await asyncio.sleep(delay)
+    assert last_exc is not None  # loop ran ≥1 time and never returned
+    raise last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +184,8 @@ def _build_retriever_class():
             source_filter: list[str] | None = None,
             model_name: str = "nomic-embed-text",
             base_url: str = "http://localhost:11434",
+            retry_attempts: int = _DEFAULT_EMBED_RETRY_ATTEMPTS,
+            retry_base_delay: float = _DEFAULT_EMBED_RETRY_BASE_DELAY,
         ) -> None:
             super().__init__()
             self._pool = pool
@@ -143,6 +194,8 @@ def _build_retriever_class():
             self._source_filter = source_filter
             self._model_name = model_name
             self._base_url = base_url
+            self._retry_attempts = retry_attempts
+            self._retry_base_delay = retry_base_delay
 
         async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
             text = query_bundle.query_str
@@ -151,9 +204,17 @@ def _build_retriever_class():
 
             embed = _get_embed_model(self._model_name, self._base_url)
             try:
-                vec = await embed.aget_query_embedding(text)
+                vec = await _aembed_query_with_retry(
+                    embed,
+                    text,
+                    attempts=self._retry_attempts,
+                    base_delay=self._retry_base_delay,
+                )
             except Exception as e:
-                logger.warning("[rag] embedding query failed: %s", e)
+                logger.warning(
+                    "[rag] embedding query failed after %d attempt(s): %s",
+                    self._retry_attempts, e,
+                )
                 return []
 
             vec_str = "[" + ",".join(str(v) for v in vec) + "]"
@@ -277,6 +338,14 @@ async def get_rag_retriever(
         base_url = (
             site_config.get("local_llm_api_url", "") or "http://localhost:11434"
         )
+        retry_attempts = int(
+            site_config.get_int("rag_embed_retry_attempts", _DEFAULT_EMBED_RETRY_ATTEMPTS)
+        )
+        retry_base_delay = float(
+            site_config.get_float(
+                "rag_embed_retry_base_delay_seconds", _DEFAULT_EMBED_RETRY_BASE_DELAY
+            )
+        )
         if hybrid is None:
             hybrid = bool(site_config.get_bool("rag_hybrid_enabled", False))
         if rerank is None:
@@ -293,6 +362,8 @@ async def get_rag_retriever(
         min_similarity = min_similarity if min_similarity is not None else 0.3
         model_name = "nomic-embed-text"
         base_url = "http://localhost:11434"
+        retry_attempts = _DEFAULT_EMBED_RETRY_ATTEMPTS
+        retry_base_delay = _DEFAULT_EMBED_RETRY_BASE_DELAY
         if hybrid is None:
             hybrid = False
         if rerank is None:
@@ -306,6 +377,8 @@ async def get_rag_retriever(
         source_filter=source_filter,
         model_name=model_name,
         base_url=base_url,
+        retry_attempts=retry_attempts,
+        retry_base_delay=retry_base_delay,
     )
 
     retriever = base

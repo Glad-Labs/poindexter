@@ -144,6 +144,8 @@ DEFAULTS: dict[str, str] = {
     'niche_internal_rag_per_kind_limit': '5',
     'niche_internal_rag_snippet_max_chars': '600',
     'rag_default_top_k': '5',
+    'rag_embed_retry_attempts': '3',
+    'rag_embed_retry_base_delay_seconds': '0.25',
     'rag_hybrid_enabled': 'false',
     'rag_min_similarity': '0.3',
     'rag_rerank_enabled': 'false',

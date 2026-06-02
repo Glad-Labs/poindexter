@@ -335,3 +335,77 @@ class TestAppContainerWiring:
         sc = SiteConfig(initial_config={"web_research_max_concurrent": "7"})
         researcher = WebResearcher(site_config=sc)
         assert researcher._web_research_int("max_concurrent", 3) == 7
+
+
+def _fake_ddgs_module(text_side_effect):
+    """Build a ``MagicMock`` standing in for the ddgs/duckduckgo_search module.
+
+    ``text_side_effect`` is passed straight to the mocked ``DDGS().text``
+    (a value to return, or a callable/list of side effects to raise/return).
+    """
+    instance = MagicMock()
+    instance.text.side_effect = text_side_effect
+    ddgs_cls = MagicMock()
+    ddgs_cls.return_value.__enter__ = MagicMock(return_value=instance)
+    ddgs_cls.return_value.__exit__ = MagicMock(return_value=False)
+    return MagicMock(DDGS=ddgs_cls), instance
+
+
+class TestDDGRetry:
+    """DDG throttles under concurrent pipeline load (glad-labs-stack#877).
+
+    A single transient failure used to zero out web-research grounding;
+    ``_ddg_search`` now retries with bounded backoff + jitter before giving up.
+    """
+
+    @pytest.mark.asyncio
+    async def test_transient_failure_is_retried_then_succeeds(self):
+        calls = {"n": 0}
+
+        def _flaky(query, max_results):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("No results found.")
+            return iter([{"title": "T", "href": "https://t.example", "body": "b"}])
+
+        module, instance = _fake_ddgs_module(_flaky)
+        researcher = WebResearcher(site_config=SiteConfig(initial_config={
+            "web_research_ddg_retry_attempts": "3",
+            "web_research_ddg_retry_base_delay_ms": "1",
+        }))
+        with patch.dict("sys.modules", {"ddgs": module, "duckduckgo_search": module}), \
+             patch("asyncio.sleep", new_callable=AsyncMock) as sleep_mock:
+            results = await researcher._ddg_search("q", 3)
+
+        assert instance.text.call_count == 2  # failed once, retried, succeeded
+        assert len(results) == 1
+        assert results[0]["url"] == "https://t.example"
+        sleep_mock.assert_awaited()  # backed off between attempts
+
+    @pytest.mark.asyncio
+    async def test_exhausts_retries_returns_empty(self):
+        module, instance = _fake_ddgs_module(RuntimeError("Ratelimit"))
+        researcher = WebResearcher(site_config=SiteConfig(initial_config={
+            "web_research_ddg_retry_attempts": "2",
+            "web_research_ddg_retry_base_delay_ms": "1",
+        }))
+        with patch.dict("sys.modules", {"ddgs": module, "duckduckgo_search": module}), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            results = await researcher._ddg_search("q", 3)
+
+        assert results == []
+        assert instance.text.call_count == 2  # attempted twice, then gave up
+
+    @pytest.mark.asyncio
+    async def test_single_attempt_does_not_retry(self):
+        module, instance = _fake_ddgs_module(RuntimeError("Ratelimit"))
+        researcher = WebResearcher(site_config=SiteConfig(initial_config={
+            "web_research_ddg_retry_attempts": "1",
+        }))
+        with patch.dict("sys.modules", {"ddgs": module, "duckduckgo_search": module}), \
+             patch("asyncio.sleep", new_callable=AsyncMock) as sleep_mock:
+            results = await researcher._ddg_search("q", 3)
+
+        assert results == []
+        assert instance.text.call_count == 1
+        sleep_mock.assert_not_awaited()
