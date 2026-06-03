@@ -377,6 +377,23 @@ This shapes four hard constraints on the harness:
    "writer atom errors out." Variant model-override that fails to dispatch falls back
    to the niche default rather than failing the task.
 
+   **Override fallback (poindexter#574, implemented 2026-06-03).** A variant's
+   `writer_model` override that points at an unavailable/misconfigured model can fail
+   in two shapes: the revise call **raises** (Ollama 404 "model not found" surfaces as
+   a dispatch error) or it **returns empty content** (a reasoning model under some
+   configs spends its whole token budget in the thinking channel and returns `""`).
+   Before the fix, neither shape had a fallback, so a single bad variant produced
+   **zero content for every task it was assigned to** — a single experiment variant
+   could silently zero production. `atoms.two_pass_writer._revise_node` now catches
+   both shapes, falls back to the configured default writer
+   (`pipeline_writer_model` → `cost_tier.standard.model`), and emits a **loud canary**:
+   a `WARNING` log line plus a typed `finding` row
+   (`kind='variant_writer_model_fallback'`, `severity='warn'` → Discord) so the
+   writer-model flip stays visible per `feedback_writer_model_canary` and the fallback
+   is never silent (`feedback_no_silent_defaults`). If the **default** writer also
+   fails, that surfaces loudly — it is a real production outage, not an experiment bug.
+   The no-override production path is byte-identical: one call, no fallback machinery.
+
 2. **Cost guards.** The cost-axis safety: if a variant's
    `avg_cost_per_approved_post` exceeds the niche's baseline by some factor (e.g.,
    3×), an alert fires (no auto-pause yet — Phase 2). The operator sees runaway

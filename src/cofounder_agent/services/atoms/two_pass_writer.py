@@ -55,8 +55,8 @@ import re
 from typing import Any, TypedDict
 from uuid import UUID
 
-from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
 
 from services.logger_config import get_logger
 
@@ -425,6 +425,70 @@ async def _research_each(state: _State) -> _State:
     return {**state, "research_results": results, "external_lookups": cumulative}
 
 
+def _emit_variant_fallback_finding(
+    *,
+    bad_model: str,
+    default_model: str,
+    reason: str,
+) -> None:
+    """Loud warning + persistent finding when a variant override is
+    abandoned for the configured default writer.
+
+    The writer-model flip is an approval canary (memory:
+    ``feedback_writer_model_canary``) — when QA starts rejecting
+    everything, the first thing to check is which model the writer
+    actually ran. Silently swapping a broken variant model for the
+    default would hide exactly that signal, so we (1) log at WARNING and
+    (2) emit a typed ``finding`` row (``event_type='finding'``) that
+    surfaces on the Findings dashboard and routes through the brain
+    findings-dispatcher. ``severity='warn'`` → Discord per the dispatcher
+    policy (a degraded-but-recovered experiment, not a page-worthy
+    outage).
+
+    Per ``feedback_no_silent_defaults``: the fallback is NOT silent. It
+    keeps the pipeline producing content (a bad variant must never zero
+    production) while making the override failure impossible to miss.
+    """
+    logger.warning(
+        "[two_pass_writer] variant writer_model=%r failed (%s) — "
+        "falling back to the configured default writer %r so the "
+        "pipeline is not zeroed. Check the active experiment's variant "
+        "model availability.",
+        bad_model, reason, default_model,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001 — emit path optional; never block fallback
+        return
+    try:
+        emit_finding(
+            source="atoms.two_pass_writer",
+            kind="variant_writer_model_fallback",
+            title=(
+                f"Variant writer_model {bad_model!r} failed — fell back "
+                f"to default writer {default_model!r}"
+            ),
+            body=(
+                f"A lab-harness experiment variant assigned writer_model="
+                f"{bad_model!r}, but the revise pass {reason}. The writer "
+                f"fell back to the configured default ({default_model!r}) "
+                f"so the content pipeline still produced output. Verify the "
+                f"variant model is installed/configured before re-activating "
+                f"the experiment; an unavailable override would otherwise "
+                f"zero every task it is assigned to. Refs poindexter#574."
+            ),
+            severity="warn",
+            dedup_key=f"variant_writer_model_fallback:{bad_model}",
+            extra={
+                "bad_model": bad_model,
+                "default_model": default_model,
+                "reason": reason,
+            },
+        )
+    except Exception:  # noqa: BLE001 — finding emission must never raise here
+        pass
+
+
 async def _revise_node(state: _State) -> _State:
     # 2026-05-16: switched from ``_ollama_chat_json`` (which forces
     # ``format=json`` on Ollama and returns a JSON-wrapped string) to
@@ -448,6 +512,12 @@ async def _revise_node(state: _State) -> _State:
     # it after stripping the ``ollama/`` prefix — no app_settings hit on
     # the variant path.
     model_override = _MODEL_OVERRIDE_REGISTRY.get(state["pool_thread"])
+    # The default writer model — what the pipeline uses when no experiment
+    # is running. Resolved with ``model=None`` so it chains through
+    # ``pipeline_writer_model`` → ``cost_tier.standard.model``. This is the
+    # fallback target when a variant override is unavailable: a single bad
+    # variant model must NEVER zero the whole pipeline (poindexter#574).
+    default_model = resolve_local_model(model=None, site_config=site_config)
     model = resolve_local_model(model=model_override, site_config=site_config)
     aug_block = "\n\n".join(
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
@@ -468,13 +538,50 @@ async def _revise_node(state: _State) -> _State:
             draft=state["draft"], aug_block=aug_block,
         )
     )
-    new_draft = await ollama_chat_text(
-        revise_prompt,
-        model=model,
-        site_config=site_config,
-        pool=pool,
-        timeout_setting="niche_ollama_chat_timeout_seconds",
-    )
+
+    async def _call(call_model: str) -> str:
+        return await ollama_chat_text(
+            revise_prompt,
+            model=call_model,
+            site_config=site_config,
+            pool=pool,
+            timeout_setting="niche_ollama_chat_timeout_seconds",
+        )
+
+    # poindexter#574 — variant-override fallback. When a variant assigned
+    # a writer model and that model is unavailable/misconfigured, the
+    # revise call either RAISES (Ollama 404 "model not found" surfaces as
+    # a dispatch error) or returns EMPTY content (e.g. a reasoning model
+    # that spends its whole budget in the thinking channel). Either way,
+    # without a fallback a single bad experiment variant zeros every task
+    # it is assigned to. Catch both shapes, fall back to the configured
+    # default writer, and emit a loud canary (warning + finding). The
+    # no-override path is byte-identical to before: only one call, no
+    # fallback machinery.
+    using_override = bool(model_override) and model != default_model
+    if not using_override:
+        new_draft = await _call(model)
+    else:
+        try:
+            new_draft = await _call(model)
+            failure_reason = (
+                "returned empty content" if not (new_draft or "").strip() else None
+            )
+        except Exception as exc:  # noqa: BLE001 — any override failure → fallback
+            new_draft = ""
+            failure_reason = f"raised {type(exc).__name__}: {str(exc)[:200]}"
+        if failure_reason is not None:
+            _emit_variant_fallback_finding(
+                bad_model=model,
+                default_model=default_model,
+                reason=failure_reason,
+            )
+            # Retry once with the configured default. This call is NOT
+            # wrapped — if the DEFAULT writer also fails, that is a real
+            # production outage (not an experiment bug) and must surface
+            # loudly per ``feedback_no_silent_defaults``.
+            new_draft = await _call(default_model)
+
     return {
         **state,
         "draft": new_draft,
@@ -551,6 +658,12 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
       instead of resolving from app_settings. Routed via
       ``_MODEL_OVERRIDE_REGISTRY`` (same per-thread pattern as the
       pool / site_config). None / unset = production default.
+      **Fallback (poindexter#574):** if the overridden model is
+      unavailable — the revise call raises or returns empty content —
+      ``_revise_node`` falls back to the configured default writer
+      (``pipeline_writer_model`` → ``cost_tier.standard.model``) and
+      emits a loud warning + a ``finding`` row. A single bad experiment
+      variant can never zero the whole pipeline.
 
     Defense in depth: every returned ``draft`` runs through the private-
     repo URL scrub before returning, mirroring the post-LLM scrub layer

@@ -17,8 +17,9 @@ Deviations from plan:
   established pool-mocking pattern elsewhere in this codebase.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from services.atoms import two_pass_writer as two_pass
 
@@ -237,3 +238,191 @@ async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
     assert called.get("text") is True
     assert out == "# A clean draft\n\nProse body, no JSON envelope."
     assert not out.rstrip().endswith("}")
+
+
+# ---------------------------------------------------------------------------
+# poindexter#574 — variant writer_model override fallback.
+#
+# A lab-harness experiment can assign a per-task ``writer_model`` override.
+# If that model is unavailable/misconfigured, the revise call either RAISES
+# (Ollama 404) or returns EMPTY content (reasoning model under some configs).
+# Without a fallback, a single bad variant zeros every task it touches. The
+# fix: fall back to the configured default writer + emit a loud canary, so
+# a variant can never zero the pipeline (memory:
+# feedback_writer_model_canary + feedback_no_silent_defaults).
+# ---------------------------------------------------------------------------
+
+
+def _wire_one_revise(monkeypatch):
+    """Wire the embed + research + first-draft path so exactly one
+    ``[EXTERNAL_NEEDED]`` marker fires a single revise pass, then the
+    revised draft is clean (no further markers) so the loop terminates.
+
+    Returns nothing — callers monkeypatch ``ollama_chat_text`` themselves
+    to control the revise behavior under test.
+    """
+    drafts = iter([
+        "First draft with [EXTERNAL_NEEDED: a fact] inside.",
+    ])
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return next(drafts)
+
+    monkeypatch.setattr(
+        "services.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_research(query, max_sources=2, *, site_config=None):
+        return f"External research result for: {query}"
+
+    monkeypatch.setattr(
+        "services.research_service.research_topic", fake_research, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+
+async def test_bad_variant_override_raises_falls_back_to_default(monkeypatch):
+    """A variant override whose model RAISES on the revise call must fall
+    back to the configured default writer (not crash, not zero the
+    pipeline) AND emit a finding canary. Pins poindexter#574."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        if model == "bad-model:1b":
+            raise RuntimeError("model 'bad-model:1b' not found, try pulling it")
+        return "Revised draft via the default writer."
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+
+    def fake_emit(**kwargs):
+        findings.append(kwargs)
+
+    monkeypatch.setattr("utils.findings.emit_finding", fake_emit)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+        writer_model_override="bad-model:1b",
+    )
+
+    # The bad override was tried first, then the default writer.
+    assert calls == ["bad-model:1b", "glm-4.7-5090:latest"]
+    # Pipeline produced content from the default writer — NOT zeroed.
+    assert result["draft"] == "Revised draft via the default writer."
+    # Loud canary emitted with the right kind + the recovered/abandoned models.
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["kind"] == "variant_writer_model_fallback"
+    assert f["severity"] == "warn"
+    assert f["extra"]["bad_model"] == "bad-model:1b"
+    assert f["extra"]["default_model"] == "glm-4.7-5090:latest"
+
+
+async def test_bad_variant_override_empty_falls_back_to_default(monkeypatch):
+    """A variant override whose model returns EMPTY content must also
+    fall back to the default writer + emit the canary — the empty-output
+    failure mode the issue describes (reasoning model burns its budget in
+    the thinking channel and returns ''). Pins poindexter#574."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        if model == "bad-model:1b":
+            return ""  # empty content — the silent-zero failure mode
+        return "Revised draft via the default writer."
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+        writer_model_override="bad-model:1b",
+    )
+
+    assert calls == ["bad-model:1b", "glm-4.7-5090:latest"]
+    assert result["draft"] == "Revised draft via the default writer."
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "variant_writer_model_fallback"
+    assert "returned empty" in findings[0]["extra"]["reason"]
+
+
+async def test_good_variant_override_used_as_is(monkeypatch):
+    """A variant override whose model produces content is used as-is —
+    NO fallback, NO finding. The happy A/B path must stay byte-equivalent
+    so experiments actually exercise the variant model. Pins #574."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        return "Revised draft via the variant model."
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+        writer_model_override="good-model:7b",
+    )
+
+    # Only the variant model was called — no fallback retry.
+    assert calls == ["good-model:7b"]
+    assert result["draft"] == "Revised draft via the variant model."
+    # No canary — the variant worked, so nothing to flag.
+    assert findings == []
+
+
+async def test_no_override_single_call_no_fallback_machinery(monkeypatch):
+    """The no-override production path is byte-identical to before #574:
+    exactly one revise call against the resolved default, no finding."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        return "Revised draft, default path."
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+        # No writer_model_override.
+    )
+
+    assert calls == ["glm-4.7-5090:latest"]
+    assert result["draft"] == "Revised draft, default path."
+    assert findings == []
