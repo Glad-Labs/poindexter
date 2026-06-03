@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.4...v0.70.5) (2026-06-03)
+
+
+### Bug Fixes
+
+* **qa:** thread preview_url to a qa.vision rail on the graph_def path (poindexter[#563](https://github.com/Glad-Labs/glad-labs-stack/issues/563)) ([#1049](https://github.com/Glad-Labs/glad-labs-stack/issues/1049)) ([74dcb57](https://github.com/Glad-Labs/glad-labs-stack/commit/74dcb57558e98d14bb564a69a4256d4c20ea4b83))
+
 ## [0.70.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.3...v0.70.4) (2026-06-03)
 
 
