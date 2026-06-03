@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.64.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.3...v0.64.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **voice:** refresh LiveKit JWT so the always-on bot survives past its token TTL ([#989](https://github.com/Glad-Labs/glad-labs-stack/issues/989)) ([27c29cd](https://github.com/Glad-Labs/glad-labs-stack/commit/27c29cd1ae18bea6d8fbd4721e93018d5484b910))
+
 ## [0.64.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.2...v0.64.3) (2026-06-02)
 
 
