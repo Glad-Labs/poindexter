@@ -7,6 +7,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# torch (pulled in transitively on hosts where the image service's ML deps are
+# installed) raises "function '_has_torch_function' already has a docstring" if
+# re-imported in-process. Import it once at collection so the job-run path reuses
+# the cached module. No-op in CI / minimal images where torch isn't installed
+# (the image service is mocked in these tests anyway).
+try:  # pragma: no cover - environment-dependent
+    import torch  # noqa: F401
+except Exception:  # pragma: no cover
+    pass
+
 from services.jobs.regenerate_stock_images import RegenerateStockImagesJob, _build_sdxl_prompt
 
 
@@ -122,6 +132,54 @@ class TestRegenerateStockImagesJobRun:
         update_sql = cloud.execute.await_args.args[0]
         assert "featured_image_url = $1" in update_sql
         assert "cover_image_url = $1" in update_sql
+
+    async def test_falsy_generate_image_warns_and_skips(self, tmp_path, caplog):
+        # #562: generate_image returns falsy WITHOUT raising — the job must
+        # log a WARNING + skip (not pass in silence) and write nothing to the DB.
+        import logging
+
+        job = RegenerateStockImagesJob()
+        rows = [{"id": "p1", "title": "Docker changed everything", "category": "tech"}]
+        fake_asyncpg, cloud = _fake_asyncpg(pexels_rows=rows)
+        pool = _pool()
+
+        output_file = tmp_path / "out.png"
+        output_file.write_bytes(b"fake image")
+
+        svc = MagicMock()
+        svc.generate_image = AsyncMock(return_value=False)  # falsy, no raise
+
+        fake_cloudinary = MagicMock()
+        fake_cloudinary.config = MagicMock()
+        fake_cloudinary.uploader = MagicMock()
+
+        with patch.dict("sys.modules", {
+                 "asyncpg": fake_asyncpg,
+                 "cloudinary": fake_cloudinary,
+                 "cloudinary.uploader": fake_cloudinary.uploader,
+             }), \
+             patch("services.image_service.get_image_service", return_value=svc), \
+             patch("tempfile.NamedTemporaryFile") as mock_tmp, \
+             patch("os.path.exists", return_value=True), \
+             patch("os.remove"), \
+             patch("services.jobs.regenerate_stock_images._build_sdxl_prompt",
+                   new=AsyncMock(return_value="a cinematic scene")):
+            tmp_obj = MagicMock()
+            tmp_obj.name = str(output_file)
+            mock_tmp.return_value.__enter__ = MagicMock(return_value=tmp_obj)
+            mock_tmp.return_value.__exit__ = MagicMock(return_value=False)
+            with caplog.at_level(
+                logging.WARNING,
+                logger="services.jobs.regenerate_stock_images",
+            ):
+                result = await job.run(pool, {"_site_config": _sc("postgres://cloud")})
+
+        assert result.ok is True
+        assert result.changes_made == 0           # nothing regenerated
+        cloud.execute.assert_not_awaited()        # no DB write on the falsy path
+        assert any(
+            "No image produced" in r.getMessage() for r in caplog.records
+        ), "the silent-stall path must emit a WARNING (#562)"
 
     async def test_generation_failure_moves_to_next_post(self):
         job = RegenerateStockImagesJob()

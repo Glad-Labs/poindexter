@@ -13,7 +13,8 @@ For each post with a Pexels URL in ``featured_image_url``:
 3. Upload the result to Cloudinary.
 4. Overwrite the post's ``featured_image_url`` with the Cloudinary URL.
 
-When the cycle regenerates 1+ images, file a Gitea issue as an audit trail.
+Each regenerated post is logged; a falsy/empty image result is logged at
+WARNING (was a silent skip — #562) rather than passing in silence.
 
 Config (``plugin.job.regenerate_stock_images``):
 - ``enabled`` (default ``true``)
@@ -148,6 +149,18 @@ class RegenerateStockImagesJob:
                             logger.info(
                                 "[REGEN_IMG] Regenerated for: %s", post["title"][:40],
                             )
+                        with suppress(OSError):
+                            os.remove(output_path)
+                    else:
+                        # generate_image returned falsy without raising — the
+                        # image backend produced nothing. Surface it (was a
+                        # silent stall, #562) instead of skipping in silence,
+                        # and clean up the empty temp file.
+                        logger.warning(
+                            "[REGEN_IMG] No image produced for %s "
+                            "(generate_image returned %r) — skipping",
+                            post["title"][:40], success,
+                        )
                         with suppress(OSError):
                             os.remove(output_path)
                 except Exception as e:
