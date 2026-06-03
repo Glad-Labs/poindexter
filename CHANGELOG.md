@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.65.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.4...v0.65.0) (2026-06-03)
+
+
+### Features
+
+* **brain:** restore-test probe - verify backups actually restore (poindexter[#441](https://github.com/Glad-Labs/glad-labs-stack/issues/441)) ([#987](https://github.com/Glad-Labs/glad-labs-stack/issues/987)) ([26b00a3](https://github.com/Glad-Labs/glad-labs-stack/commit/26b00a326bc6374806c47e32e3ff3d73fde9fbc7))
+
 ## [0.64.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.3...v0.64.4) (2026-06-03)
 
 
