@@ -1105,8 +1105,14 @@ def _queue_social_distribution(
     seo_keywords: Any,
     post_title: str,
     site_config: SiteConfig,
+    pool=None,
 ) -> None:
-    """Phase 9 — queue social-media post generation + distribution (best-effort)."""
+    """Phase 9 — queue social-media post generation + distribution (best-effort).
+
+    ``pool`` is threaded through to ``generate_and_distribute_social_posts`` so
+    the row-driven ``publishing_adapters`` dispatch actually runs (#556 — every
+    call site previously dropped it, leaving the dispatch loop permanently inert).
+    """
     try:
         from services.social_poster import generate_and_distribute_social_posts
 
@@ -1121,6 +1127,7 @@ def _queue_social_distribution(
                     title=_title, slug=slug,
                     excerpt=seo_description, keywords=_seo_kw,
                     site_config=site_config,
+                    pool=pool,
                 )
             else:
                 _spawn_background(
@@ -1128,6 +1135,7 @@ def _queue_social_distribution(
                         title=_title, slug=slug,
                         excerpt=seo_description, keywords=_seo_kw,
                         site_config=site_config,
+                        pool=pool,
                     ),
                     name=f"social_posts({slug})",
                 )
@@ -1547,6 +1555,7 @@ async def publish_post_from_task(
             seo_keywords=seo_keywords,
             post_title=post_title,
             site_config=_sc,
+            pool=getattr(db_service, "pool", None),
         )
 
     # ---------------------------------------------------------------
@@ -1807,6 +1816,7 @@ async def fire_post_distribution_hooks(
                 title=post_title, slug=slug,
                 excerpt=seo_description, keywords=seo_keywords,
                 site_config=_sc,
+                pool=pool,
             ),
             name=f"social_posts({slug})",
         )
@@ -1974,6 +1984,7 @@ async def publish_now(
                 title=post_title, slug=slug,
                 excerpt=seo_description, keywords=seo_keywords,
                 site_config=_sc,
+                pool=pool,
             ),
             name=f"social_posts({slug})",
         )
