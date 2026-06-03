@@ -271,6 +271,16 @@ services:
       # to compare against `docker inspect` for each service. Read-only —
       # the brain only inspects, it never edits the spec.
       - ./docker-compose.local.yml:/app/docker-compose.local.yml:ro
+      # glad-labs-stack#942 — read-only host .git so brain/branch_drift_probe.py
+      # can read the running checkout's HEAD SHA (the one fact nothing else in a
+      # container can supply) and detect when prod has fallen behind origin/main.
+      # Top-level mount — NOT the forbidden ./.git:/app/.git:ro WORKER mount
+      # (that one broke under the worker's :ro /app via overlayfs child-mount
+      # rejection, #348). The brain's /app is the image filesystem, not a :ro
+      # bind, and the brain runs as root, so a read-only .git mount here is safe.
+      # Read-only on purpose: the probe never fetches/writes; it reads local HEAD
+      # and gets origin/main from the GitHub API.
+      - ./.git:/host-git:ro
       # Brain writes Prometheus scrape secrets here (uptime_kuma_api_key
       # etc.) — see brain/prometheus_secret_writer.py. Same host dir is
       # mounted into the prometheus container at /etc/prometheus/secrets/

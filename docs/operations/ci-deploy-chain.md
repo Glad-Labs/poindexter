@@ -153,8 +153,22 @@ pipeline containers, then waits for the worker healthcheck and
 bind-mounted, so a restart is the deploy (dependency / base-image changes
 still need `docker compose build`).
 
-A complementary brain canary alerts when the checkout falls behind
-`origin/main`, so the drift can't hide between deploys.
+**Deploy-drift canary (glad-labs-stack#942).** Because the worker / brain
+bind-mount the host checkout, "merged on main" does not mean "running in prod"
+until you run the deploy above. The brain's `branch_drift_probe` closes that
+loop: every ~15 min it reads the running checkout's HEAD from a read-only
+`.git` mount (`./.git:/host-git:ro` on the brain-daemon container), compares it
+to `origin/main` via the GitHub API (`gh_token`), and pages the operator
+(Telegram / Discord) when prod is behind — the signal the on-disk
+`unapplied_migrations` gauge is structurally blind to (it globs the
+bind-mounted checkout, so a migration that only exists on `origin/main` isn't
+even on disk to be counted). It is **alert-only**; the remedy it points at is
+`pwsh ./scripts/deploy-worker.ps1`. Tunables (in `app_settings`):
+`branch_drift_probe_enabled`, `branch_drift_poll_interval_minutes`,
+`branch_drift_repo`, `branch_drift_dedup_hours`, `branch_drift_git_dir`.
+Deploying the canary itself requires a brain image rebuild
+(`docker compose build brain-daemon && up -d brain-daemon`), since the
+`.git` mount + the `git` binary are new.
 
 ## If you're self-hosting Poindexter
 

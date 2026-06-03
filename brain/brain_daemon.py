@@ -290,6 +290,19 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_PR_STALENESS_PROBE = False
 
 try:
+    # glad-labs-stack#942 — branch-drift deploy canary. Detects when the
+    # bind-mounted prod checkout has fallen behind origin/main (the blind
+    # spot the on-disk migration gauges can't see). Internal cadence gate.
+    from branch_drift_probe import run_branch_drift_probe
+    _HAS_BRANCH_DRIFT_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified for tests
+    try:
+        from brain.branch_drift_probe import run_branch_drift_probe
+        _HAS_BRANCH_DRIFT_PROBE = True
+    except ImportError:
+        _HAS_BRANCH_DRIFT_PROBE = False
+
+try:
     # poindexter#435 — Discord bot reachability probe. Pings
     # https://discord.com/api/v10/users/@me with the bot token every
     # configured interval (default 5 min). Pages the operator on 401/403
@@ -375,6 +388,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Discord bot uptime monitor offline"),
     ("_HAS_MCP_HTTP_PROBE", "brain/mcp_http_probe.py",
      "MCP HTTP server reachability monitor offline"),
+    ("_HAS_BRANCH_DRIFT_PROBE", "brain/branch_drift_probe.py",
+     "Branch-drift deploy canary offline — prod checkout falling behind origin/main goes undetected (#942)"),
 )
 
 
@@ -2378,6 +2393,20 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] pr_staleness probe failed: %s", e)
+
+    # Branch-drift canary (glad-labs-stack#942). Dispatched every cycle;
+    # the probe's internal cadence gate keeps the GitHub round-trip to
+    # ~every 15 min. Alert-only — never auto-deploys.
+    if _HAS_BRANCH_DRIFT_PROBE:
+        try:
+            bd_summary = await run_branch_drift_probe(pool)
+            probe_results["branch_drift"] = {
+                "ok": bool(bd_summary.get("ok", False)),
+                "detail": bd_summary.get("detail", ""),
+                "summary": bd_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] branch_drift probe failed: %s", e)
 
     # Discord bot reachability probe (poindexter#435). Pings
     # https://discord.com/api/v10/users/@me with the bot token every
