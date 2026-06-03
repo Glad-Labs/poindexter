@@ -176,6 +176,11 @@ class TestInitializeDatabase:
             _run(mgr._initialize_database())
 
         assert mgr.database_service is mock_db
+        # A truthy pool starts the ConnectionPoolHealth monitor (an infinite
+        # ``auto_health_check`` loop). Cancel it so it doesn't leak past the
+        # event loop as "Task was destroyed but it is pending!"
+        # (Glad-Labs/glad-labs-stack#997).
+        _run(mgr._cancel_background_tasks())
 
     def test_failure_raises_system_exit(self):
         mgr = _make_manager()
@@ -513,6 +518,36 @@ class TestShutdown:
     def test_shutdown_no_services_no_crash(self):
         mgr = _make_manager()
         _run(mgr.shutdown())  # Must not raise when nothing is set
+
+    def test_shutdown_cancels_background_tasks(self):
+        """The pool-health monitor (and any other long-running background
+        task) must be cancelled on shutdown — a pending ``auto_health_check``
+        loop that outlives the event loop is the leak fixed in
+        Glad-Labs/glad-labs-stack#997.
+        """
+
+        async def _scenario():
+            mgr = _make_manager()
+
+            # Stand in for the ConnectionPoolHealth monitor: an infinite loop
+            # registered exactly the way ``_initialize_database`` registers it.
+            async def _never_ending():
+                while True:
+                    await asyncio.sleep(3600)
+
+            task = asyncio.create_task(_never_ending())
+            mgr._background_tasks.add(task)
+            task.add_done_callback(mgr._background_tasks.discard)
+
+            # Let the task actually start its loop before we tear down.
+            await asyncio.sleep(0)
+
+            await mgr.shutdown()
+
+            assert task.cancelled()
+            assert len(mgr._background_tasks) == 0
+
+        _run(_scenario())
 
 
 # ---------------------------------------------------------------------------

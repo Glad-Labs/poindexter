@@ -1,10 +1,13 @@
 """Tests for services/atoms/_seo_common.py — the shared SEO atom helper."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from services.atoms import _seo_common as sc
 
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
+# already auto-marks coroutine tests. An explicit mark wrongly tagged the
+# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 def _state(**over):

@@ -17,14 +17,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from services.llm_providers.litellm_provider import (
     LiteLLMProvider,
     _recover_reasoning_text,
 )
 
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
+# already auto-marks coroutine tests. An explicit mark wrongly tagged the
+# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 # ---------------------------------------------------------------------------

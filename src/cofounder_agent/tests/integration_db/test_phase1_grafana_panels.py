@@ -38,10 +38,13 @@ from uuid import uuid4
 
 import pytest
 
-pytestmark = [
-    pytest.mark.integration_db,
-    pytest.mark.asyncio(loop_scope="session"),
-]
+# The session-scoped asyncio mark moved off the module level and onto the
+# three async DB tests below: applied module-wide it wrongly tagged the four
+# sync panel-structure tests, emitting a PytestWarning
+# (Glad-Labs/glad-labs-stack#997). ``asyncio_mode = "auto"`` still auto-marks
+# the coroutine tests; the explicit per-test mark only sets the loop scope so
+# they share the session-scoped ``test_txn`` fixture loop.
+pytestmark = pytest.mark.integration_db
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +169,7 @@ def test_approval_rate_timeseries_panel_present():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio(loop_scope="session")
 async def test_active_experiments_panel_sql_runs(test_txn) -> None:
     """The stat-panel query returns a single COUNT row for active experiments."""
     panels = _load_panels()
@@ -192,6 +196,7 @@ async def test_active_experiments_panel_sql_runs(test_txn) -> None:
     assert val >= 1, f"expected at least 1 active experiment, got {val}"
 
 
+@pytest.mark.asyncio(loop_scope="session")
 async def test_scorecard_table_panel_sql_runs(test_txn) -> None:
     """The table-panel query joins scorecard + lab_outcomes_v1 and returns
     one row per variant for the most-recently-activated experiment."""
@@ -258,6 +263,7 @@ async def test_scorecard_table_panel_sql_runs(test_txn) -> None:
         assert r["Mean Wall-Clock (s)"] == pytest.approx(1.5, rel=0.01)
 
 
+@pytest.mark.asyncio(loop_scope="session")
 async def test_approval_rate_timeseries_panel_sql_runs(test_txn) -> None:
     """The time-series panel query returns at least one (time, metric,
     value) row per variant per day with tagged outcomes."""

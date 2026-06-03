@@ -17,6 +17,7 @@ Task dispatch lives in the Prefect server at ``http://localhost:4200``
 
 import asyncio
 import os
+from contextlib import suppress
 from typing import Any
 
 from services.logger_config import get_logger
@@ -577,6 +578,15 @@ class StartupManager:
         try:
             logger.info("[STOP] Shutting down Poindexter application...")
 
+            # Cancel long-running background tasks (e.g. the connection-pool
+            # health monitor started in ``_initialize_database``) BEFORE we
+            # close the pool — otherwise an in-flight ``check_pool_health``
+            # acquire would race the pool teardown. A task that is never
+            # cancelled here is a real prod leak (``auto_health_check`` is an
+            # infinite ``while True`` loop) and shows up in test runs as
+            # "Task was destroyed but it is pending!" (Glad-Labs/glad-labs-stack#997).
+            await self._cancel_background_tasks()
+
             # Close Redis connection
             if self.redis_cache:
                 try:
@@ -603,3 +613,25 @@ class StartupManager:
 
         except Exception as e:
             logger.error(f" Error during shutdown: {e}", exc_info=True)
+
+    async def _cancel_background_tasks(self) -> None:
+        """Cancel and await every long-running background task.
+
+        ``_background_tasks`` holds strong refs to tasks like the
+        ConnectionPoolHealth monitor (``auto_health_check``) so asyncio's
+        weakref tracking doesn't GC them mid-loop (ruff RUF006). They are
+        infinite loops, so they must be explicitly cancelled at shutdown or
+        they leak past the event loop's lifetime. Each task's
+        ``add_done_callback(self._background_tasks.discard)`` mutates the set
+        as it completes, so we snapshot it first.
+        """
+        if not self._background_tasks:
+            return
+
+        tasks = list(self._background_tasks)
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
+        logger.info("  Cancelled %d background task(s)", len(tasks))

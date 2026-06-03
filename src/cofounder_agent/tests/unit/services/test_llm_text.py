@@ -32,7 +32,9 @@ from services.llm_text import (
     resolve_structured_model,
 )
 
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
+# already auto-marks coroutine tests. An explicit mark wrongly tagged the
+# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 # ---------------------------------------------------------------------------

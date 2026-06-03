@@ -1,19 +1,21 @@
 """Tests for the ragas_score audit_log emission path (Grafana QA-rails
 Ragas panel input).
 
-Separate from ``test_ragas_eval.py`` because that suite is
-``pytest.skip(allow_module_level=True)`` on Windows due to the pyarrow
-access-violation when ``from datasets import Dataset`` runs at import
-time. ``_emit_ragas_score_audit`` doesn't touch datasets/pyarrow at all
-— it only formats a dict and hands it to ``audit_log_bg`` — so this
-file can run on every platform and exercises the contract the Grafana
-panel queries depend on (``event_type='ragas_score'``,
-``details->>'score'`` as float, three component keys).
+Split out from ``test_ragas_eval.py`` so the audit-emission contract is
+covered by a file that never imports datasets/pyarrow:
+``_emit_ragas_score_audit`` only formats a dict and hands it to
+``audit_log_bg``. (``test_ragas_eval.py`` used to carry a Windows-only
+``pytest.skip(allow_module_level=True)`` for a Python-3.12 pyarrow native-init
+access violation; that skip was removed in Glad-Labs/glad-labs-stack#997 once
+the repo moved to Python 3.13, where pyarrow imports cleanly.) This file
+exercises the contract the Grafana panel queries depend on
+(``event_type='ragas_score'``, ``details->>'score'`` as float, three
+component keys).
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

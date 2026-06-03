@@ -31,18 +31,14 @@ from uuid import uuid4
 
 import pytest
 
-# FIXME: Importing memory_system pulls sentence_transformers -> datasets ->
-# pyarrow. On Windows + Python 3.12, pyarrow's native init segfaults with a
-# fatal access violation, which crashes the whole pytest worker (not just this
-# file). Linux CI is unaffected. Skip at module level until the pyarrow / wheel
-# combination is resolved -- tracked in glad-labs-stack as an env issue, not a
-# test bug. Re-enable by removing this skip once pyarrow imports cleanly here.
-pytest.skip(
-    "FIXME: Windows pyarrow access violation during sentence_transformers import "
-    "— see file header comment.",
-    allow_module_level=True,
-)
-
+# NOTE (Glad-Labs/glad-labs-stack#997): this module previously carried an
+# UNCONDITIONAL ``pytest.skip(..., allow_module_level=True)`` for a Windows +
+# Python 3.12 pyarrow native-init access violation (sentence_transformers ->
+# datasets -> pyarrow). Because the skip wasn't platform-guarded it also
+# skipped Linux CI, so these tests never ran anywhere. The repo has since
+# moved to Python 3.13 (pyproject ``>=3.13,<3.14``), where pyarrow 24.x imports
+# cleanly on Windows too — verified the full import chain no longer segfaults —
+# so the skip is stale on both counts and has been removed.
 from memory_system import (
     AIMemorySystem,
     ImportanceLevel,

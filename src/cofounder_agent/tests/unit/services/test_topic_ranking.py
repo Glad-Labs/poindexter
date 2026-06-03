@@ -1,15 +1,20 @@
 """Tests for topic_ranking — goal vectors + weighted cosine scoring."""
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from services.topic_ranking import (
-    GOAL_DESCRIPTIONS, goal_vector_for, weighted_cosine_score,
-)
+
 from services.niche_service import NicheGoal
 from services.site_config import SiteConfig
+from services.topic_ranking import (
+    GOAL_DESCRIPTIONS,
+    goal_vector_for,
+    weighted_cosine_score,
+)
 
-
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
+# already auto-marks coroutine tests. An explicit mark wrongly tagged the
+# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 # #272 Phase-2b: topic_ranking's public helpers take a keyword-required
@@ -51,7 +56,7 @@ async def test_weighted_cosine_score_combines_per_goal_signals():
 
 
 async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
-    from services.topic_ranking import llm_final_score, ScoredCandidate
+    from services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # Simulated JSON response from glm-4.7-5090
@@ -178,7 +183,7 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
     """When the LLM scorer's JSON skips a candidate (truncated output,
     hallucinated keys), we must NOT drop it — it gets backfilled with
     embedding_score * 100. Verifies the warn-and-recover branch."""
-    from services.topic_ranking import llm_final_score, ScoredCandidate
+    from services.topic_ranking import ScoredCandidate, llm_final_score
 
     async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
         # 'present' is scored; 'missing' is omitted entirely.
@@ -215,7 +220,7 @@ async def test_llm_final_score_raises_value_error_when_no_model_configured(monke
     masked misconfiguration as an opaque "model not found" at LLM
     call time. Now it raises ``ValueError`` at resolution time.
     """
-    from services.topic_ranking import llm_final_score, ScoredCandidate
+    from services.topic_ranking import ScoredCandidate, llm_final_score
 
     # Clean SiteConfig with no model setting and no cost_tier fallback —
     # mirrors a misconfigured fork. The resolver must NOT silently

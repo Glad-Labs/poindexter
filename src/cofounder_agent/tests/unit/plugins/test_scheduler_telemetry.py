@@ -13,13 +13,14 @@ import time
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from plugins.scheduler import PluginScheduler
 
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
+# already auto-marks coroutine tests. An explicit mark wrongly tagged the
+# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 class _FakePoolCtx:

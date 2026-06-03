@@ -17,15 +17,12 @@ exercise the read + dispatch logic without spinning up Postgres.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from services.content_validator import ValidationResult
-from services.multi_model_qa import MultiModelQA, ReviewerResult
+from services.multi_model_qa import MultiModelQA
 from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 from services.site_config import SiteConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -307,7 +304,9 @@ class TestLegacyFallback:
         assert chain == []
 
 
-# Make pytest treat all top-level coroutines as async tests under the
-# project's ``asyncio_mode = auto`` setting (already enabled in
-# pyproject.toml). This module needs no extra marks.
-pytestmark = pytest.mark.asyncio
+# NOTE (Glad-Labs/glad-labs-stack#997): a module-level
+# ``pytestmark = pytest.mark.asyncio`` used to live here. It was redundant —
+# the project runs ``asyncio_mode = "auto"`` (pyproject.toml), which already
+# auto-marks every coroutine test — and it wrongly tagged the two *sync*
+# ``TestQAGateSpec`` tests, emitting a PytestWarning. Removed; auto mode
+# handles the async tests in this module without any explicit mark.

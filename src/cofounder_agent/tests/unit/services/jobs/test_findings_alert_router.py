@@ -14,8 +14,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 import services.jobs.findings_alert_router as router_mod
 from plugins.job import JobResult
 from services.jobs.findings_alert_router import (
@@ -31,7 +29,10 @@ from services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob as
 from services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob as _FBIL
 from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob as _FUP
 
-pytestmark = pytest.mark.asyncio
+# No module-level ``pytestmark = pytest.mark.asyncio``: the project runs
+# ``asyncio_mode = "auto"`` (pyproject.toml), so coroutine tests are
+# auto-marked. An explicit mark here wrongly tagged the sync tests in this
+# module, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 class _FakePoolCtx:

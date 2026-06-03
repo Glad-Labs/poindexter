@@ -1,11 +1,12 @@
 """Tests for services/atoms/seo_generate_title.py."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from services.atoms import seo_generate_title as atom
 from services.atoms import _seo_common as sc
+from services.atoms import seo_generate_title as atom
 
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
+# already auto-marks coroutine tests. An explicit mark wrongly tagged the
+# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
 def _state(**over):

@@ -15,18 +15,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# FIXME: Calling evaluate_sample() executes ``from datasets import Dataset``
-# at runtime, which loads pyarrow's native init. On Windows + Python 3.12 that
-# init segfaults with a fatal access violation, crashing the whole pytest
-# worker (not just this file). Same root cause as the skip in
-# test_memory_system.py. Linux CI is unaffected. Skip at module level until
-# the pyarrow / wheel combination is resolved on Windows.
-pytest.skip(
-    "FIXME: Windows pyarrow access violation during `from datasets import Dataset` "
-    "inside services.ragas_eval.evaluate_sample — see file header comment.",
-    allow_module_level=True,
-)
-
+# NOTE (Glad-Labs/glad-labs-stack#997): this module previously carried an
+# UNCONDITIONAL ``pytest.skip(..., allow_module_level=True)`` for a Windows +
+# Python 3.12 pyarrow native-init access violation (``from datasets import
+# Dataset`` inside evaluate_sample). Because the skip wasn't platform-guarded
+# it also skipped Linux CI, so these tests never ran anywhere. The repo has
+# since moved to Python 3.13 (pyproject ``>=3.13,<3.14``), where pyarrow 24.x
+# imports cleanly on Windows too — verified the import chain no longer
+# segfaults — so the skip is stale on both counts and has been removed. The
+# happy-path test still guards on Ragas being installed via ``requires_ragas``.
 from services.ragas_eval import evaluate_sample, is_enabled
 
 requires_ragas = pytest.mark.skipif(

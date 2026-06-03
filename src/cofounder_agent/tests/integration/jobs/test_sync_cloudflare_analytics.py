@@ -18,7 +18,10 @@ from plugins import Job
 from services.jobs.sync_cloudflare_analytics import SyncCloudflareAnalyticsJob
 from tests.integration.conftest import requires_real_services
 
-pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]
+# asyncio mark dropped — ``asyncio_mode = "auto"`` (pyproject.toml) auto-marks
+# coroutine tests, and the explicit mark wrongly tagged sync tests in this
+# module (Glad-Labs/glad-labs-stack#997). The integration marks stay.
+pytestmark = [pytest.mark.integration, requires_real_services]
 
 
 def _sc(
