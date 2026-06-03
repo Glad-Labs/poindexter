@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.69.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.3...v0.69.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **metrics:** unambiguous published-post gauge — dashboard read archived (23) not published (91) (poindexter[#576](https://github.com/Glad-Labs/glad-labs-stack/issues/576)) ([#1033](https://github.com/Glad-Labs/glad-labs-stack/issues/1033)) ([2df1b5d](https://github.com/Glad-Labs/glad-labs-stack/commit/2df1b5d4b9b22afee626e80c7d34cf779e838e84))
+
 ## [0.69.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.2...v0.69.3) (2026-06-03)
 
 
