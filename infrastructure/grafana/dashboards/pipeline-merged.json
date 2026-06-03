@@ -3908,7 +3908,7 @@
     },
     {
       "type": "row",
-      "title": "Per-Stage Latency · Prometheus (requires worker rebuild)",
+      "title": "Per-Stage Latency · Prometheus (populates during active pipeline runs)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
