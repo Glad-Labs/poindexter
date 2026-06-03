@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.5...v0.70.6) (2026-06-03)
+
+
+### Bug Fixes
+
+* raise MCP export read timeout to stop false-failure on slow rebuild (closes Glad-Labs/poindexter[#657](https://github.com/Glad-Labs/glad-labs-stack/issues/657)) ([#1061](https://github.com/Glad-Labs/glad-labs-stack/issues/1061)) ([f222c64](https://github.com/Glad-Labs/glad-labs-stack/commit/f222c641e0c5a9de25dc07d32bfed1fceb64191c))
+
 ## [0.70.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.4...v0.70.5) (2026-06-03)
 
 
