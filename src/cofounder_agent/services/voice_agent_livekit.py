@@ -1045,6 +1045,24 @@ def _ensure_brain_on_path() -> None:
 _VALID_BRAIN_MODES = ("ollama", "claude-code")
 
 
+def _coerce_int(raw: Any, default: int) -> int:
+    """Coerce an app_settings string to int, falling back to ``default``.
+
+    Guards the auto-reset tunables (#1006): a blank or malformed
+    ``voice_agent_claude_code_session_{token_budget,max_age_seconds}`` value
+    must not take the surface offline — it logs and uses the documented
+    default instead.
+    """
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        log.warning(
+            "voice-agent: invalid int setting %r — using default %s (#1006)",
+            raw, default,
+        )
+        return default
+
+
 def _resolve_brain_mode(site_config: Any, override: str | None) -> str:
     """Resolve the voice-agent brain mode for the next pipeline build.
 
@@ -1200,17 +1218,75 @@ async def run_bot(
             log.warning("Pyroscope setup failed (livekit): %s", e)
 
         if resolved_brain == "claude-code":
+            import uuid as _uuid
+
+            from services.admin_db import AdminDatabase
             from services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
 
             extra = os.environ.get("CLAUDE_BOT_EXTRA_ARGS", "").split()
-            sess = os.environ.get("CLAUDE_BOT_SESSION_ID", "").strip() or None
+
+            # Resolve the pinned session id (#1006). Precedence:
+            #   env CLAUDE_BOT_SESSION_ID (operator override, kept working)
+            #   > app_settings.voice_agent_claude_code_session_id (persisted
+            #     across restarts; '' counts as unset)
+            #   > a fresh uuid4.
+            # When the id did NOT come from a non-empty app_settings value we
+            # persist the resolved id back so the next container boot reuses
+            # the same on-disk claude session and keeps its context.
+            env_sess = os.environ.get("CLAUDE_BOT_SESSION_ID", "").strip()
+            stored_sess = (site_config.get("voice_agent_claude_code_session_id", "") or "").strip()
+            admin_db = AdminDatabase(pool)
+
+            async def _persist_session_id(new_id: str) -> None:
+                await admin_db.set_setting(
+                    "voice_agent_claude_code_session_id",
+                    new_id,
+                    category="voice",
+                    description=(
+                        "Pinned claude -p voice session for the always-on "
+                        "claude-code room (#1006)"
+                    ),
+                )
+
+            if env_sess:
+                sess = env_sess
+                persist_resolved = True  # env override — persist so it pins
+            elif stored_sess:
+                sess = stored_sess
+                persist_resolved = False  # already the stored value
+            else:
+                sess = str(_uuid.uuid4())
+                persist_resolved = True  # fresh id — persist it
+
+            if persist_resolved:
+                await _persist_session_id(sess)
+
+            # Auto-reset config (#1006) — token budget + max age, DB-driven
+            # with sane defaults and a guard against malformed values.
+            token_budget = _coerce_int(
+                site_config.get("voice_agent_claude_code_session_token_budget", "200000"),
+                200000,
+            )
+            max_age_seconds = _coerce_int(
+                site_config.get("voice_agent_claude_code_session_max_age_seconds", "14400"),
+                14400,
+            )
+
             llm_service = ClaudeCodeBridgeLLMService(
                 cwd=project_dir or os.getcwd(),
                 extra_args=extra or None,
                 session_id=sess,
+                token_budget=token_budget,
+                max_age_seconds=max_age_seconds,
+                persist_session_id=_persist_session_id,
             )
-            if sess:
-                log.info("Resuming Claude session_id=%s (preserves prior turns)", sess)
+            log.info(
+                "Pinned Claude session_id=%s (source=%s, token_budget=%s, "
+                "max_age_seconds=%s) — preserves prior turns + auto-resets",
+                sess,
+                "env" if env_sess else ("app_settings" if stored_sess else "generated"),
+                token_budget, max_age_seconds,
+            )
             # The Claude bridge ignores Pipecat-side tools (it has its
             # own MCP harness); we also override the system prompt so
             # we don't double-prompt Claude with Emma's local-LLM

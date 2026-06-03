@@ -55,8 +55,9 @@ import json
 import logging
 import os
 import re
+import time
 import uuid as _uuid
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,17 @@ _TURN_TIMEOUT_SECONDS = 90.0
 _SESSION_ALREADY_IN_USE = re.compile(r"already in use", re.IGNORECASE)
 
 
+# Manual session-rotation phrases the operator can speak to start a fresh
+# claude -p session mid-call (#1006). Matched against the user turn at the
+# top of the turn handler so the rest of that same turn lands in the new
+# session. Kept liberal: "start fresh", "new session", and
+# "reset (the) session/conversation".
+_MANUAL_RESET_PHRASE = re.compile(
+    r"^\s*(start fresh|new session|reset (the )?(session|conversation))\b",
+    re.IGNORECASE,
+)
+
+
 class ClaudeCodeBridgeLLMService(LLMService):
     """Replaces the model-API LLM stage with a subprocess to the Claude CLI.
 
@@ -149,6 +161,10 @@ class ClaudeCodeBridgeLLMService(LLMService):
         session_id: str | None = None,
         permission_mode: str = "dontAsk",
         extra_args: list[str] | None = None,
+        token_budget: int | None = None,
+        max_age_seconds: int | None = None,
+        persist_session_id: "Callable[[str], Any] | None" = None,
+        monotonic: "Callable[[], float]" = time.monotonic,
         **kwargs,
     ):
         """
@@ -165,6 +181,19 @@ class ClaudeCodeBridgeLLMService(LLMService):
                 prompting the operator (who isn't watching a terminal).
             extra_args: Additional CLI flags appended to every invocation.
                 Example: ``["--allowed-tools", "Read,Bash,Edit"]``.
+            token_budget: Rotate the pinned session once cumulative
+                input+output tokens exceed this. ``None`` disables the
+                token-based rotation (#1006).
+            max_age_seconds: Rotate the pinned session once it's older
+                than this many seconds. ``None`` disables the age-based
+                rotation (#1006).
+            persist_session_id: Async callable invoked with the freshly
+                minted UUID whenever the session rotates, so the new
+                pinned id survives a container restart. ``None`` = don't
+                persist (e.g. tests, ad-hoc invocations). (#1006)
+            monotonic: Injectable monotonic clock. Defaults to
+                :func:`time.monotonic`; tests pass a fake for
+                deterministic age-trip assertions (#1006).
         """
         super().__init__(**kwargs)
         self._cwd = cwd or os.getcwd()
@@ -184,9 +213,20 @@ class ClaudeCodeBridgeLLMService(LLMService):
             self._resumed = False
         self._permission_mode = permission_mode
         self._extra_args = list(extra_args or [])
+        # Auto-reset config (#1006). The session rotates when it ages out,
+        # burns through its token budget, or the operator says a manual
+        # phrase — see _maybe_reset.
+        self._token_budget = token_budget
+        self._max_age_seconds = max_age_seconds
+        self._persist_session_id = persist_session_id
+        self._monotonic = monotonic
+        self._session_started = monotonic()
+        self._cumulative_tokens = 0
         logger.info(
-            "ClaudeCodeBridgeLLMService init session_id=%s resumed=%s cwd=%s permission=%s",
+            "ClaudeCodeBridgeLLMService init session_id=%s resumed=%s cwd=%s "
+            "permission=%s token_budget=%s max_age_seconds=%s",
             self._session_id, self._resumed, self._cwd, self._permission_mode,
+            self._token_budget, self._max_age_seconds,
         )
 
     # ------------------------------------------------------------------
@@ -212,6 +252,12 @@ class ClaudeCodeBridgeLLMService(LLMService):
             logger.debug("Empty user turn — nothing to send to Claude")
             return
 
+        # Rotate the pinned session BEFORE the send if it aged out, blew its
+        # token budget, or the user spoke a manual-reset phrase (#1006). Done
+        # at the top of the turn so a manual "start fresh" lands this very
+        # turn in the new session.
+        await self._maybe_reset(user_text)
+
         await self.push_frame(LLMFullResponseStartFrame())
         try:
             reply = await self._run_claude(user_text)
@@ -236,6 +282,60 @@ class ClaudeCodeBridgeLLMService(LLMService):
         await self.push_frame(LLMFullResponseEndFrame())
 
     # ------------------------------------------------------------------
+    # Auto-reset (#1006)
+    # ------------------------------------------------------------------
+
+    async def _maybe_reset(self, user_text: str) -> None:
+        """Rotate the pinned ``claude -p`` session when it should roll over.
+
+        Mints a fresh UUID, flips back to first-turn CREATE state, resets the
+        age/token counters, logs the reason, and (if configured) awaits the
+        persist callback so the new id survives a container restart. Rotates
+        when ANY of:
+
+        * the session is older than ``max_age_seconds`` (measured by the
+          injected ``monotonic`` clock);
+        * cumulative input+output tokens have exceeded ``token_budget``;
+        * the user text matches a manual-reset phrase.
+        """
+        reason: str | None = None
+        if (
+            self._max_age_seconds is not None
+            and self._monotonic() - self._session_started >= self._max_age_seconds
+        ):
+            reason = (
+                f"age {self._monotonic() - self._session_started:.0f}s "
+                f">= max_age_seconds {self._max_age_seconds}"
+            )
+        elif (
+            self._token_budget is not None
+            and self._cumulative_tokens > self._token_budget
+        ):
+            reason = (
+                f"cumulative_tokens {self._cumulative_tokens} "
+                f"> token_budget {self._token_budget}"
+            )
+        elif _MANUAL_RESET_PHRASE.match(user_text or ""):
+            reason = "manual reset phrase"
+
+        if reason is None:
+            return
+
+        old_id = self._session_id
+        new_id = str(_uuid.uuid4())
+        self._session_id = new_id
+        self._first_turn = True
+        self._resumed = False
+        self._session_started = self._monotonic()
+        self._cumulative_tokens = 0
+        logger.info(
+            "voice-agent: rotating claude session %s -> %s (reason: %s) (#1006)",
+            old_id, new_id, reason,
+        )
+        if self._persist_session_id is not None:
+            await self._persist_session_id(new_id)
+
+    # ------------------------------------------------------------------
     # Subprocess driver
     # ------------------------------------------------------------------
 
@@ -258,6 +358,9 @@ class ClaudeCodeBridgeLLMService(LLMService):
         # First turn establishes the session — every subsequent turn
         # must use --resume.
         self._first_turn = False
+        # Accumulate this turn's token spend so _maybe_reset can roll the
+        # session over once it crosses the budget (#1006).
+        self._cumulative_tokens += self._extract_usage(stdout_bytes)
         return self._extract_text(stdout_bytes)
 
     async def _spawn_claude(self, user_text: str) -> bytes:
@@ -365,6 +468,50 @@ class ClaudeCodeBridgeLLMService(LLMService):
                 return hit
 
         return text
+
+    @staticmethod
+    def _extract_usage(stdout_bytes: bytes) -> int:
+        """Pull ``input_tokens + output_tokens`` from the result event's
+        ``usage`` block, for cumulative token accounting (#1006).
+
+        The ``--output-format json`` result element looks like
+        ``{"type":"result","result":"...","usage":{"input_tokens":N,
+        "output_tokens":N,...}}``. Returns 0 when the payload is
+        unparseable or carries no usage block — never raises, so a turn
+        with a weird payload doesn't crash the audio path.
+        """
+        text = stdout_bytes.decode("utf-8", errors="replace").strip()
+        if not text:
+            return 0
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return 0
+
+        def _usage_tokens(obj: Any) -> int | None:
+            if not isinstance(obj, dict):
+                return None
+            usage = obj.get("usage")
+            if not isinstance(usage, dict):
+                return None
+            in_tok = usage.get("input_tokens", 0) or 0
+            out_tok = usage.get("output_tokens", 0) or 0
+            try:
+                return int(in_tok) + int(out_tok)
+            except (TypeError, ValueError):
+                return None
+
+        candidates: list[dict[str, Any]] = []
+        if isinstance(parsed, list):
+            candidates = [e for e in reversed(parsed) if isinstance(e, dict)]
+        elif isinstance(parsed, dict):
+            candidates = [parsed]
+
+        for event in candidates:
+            tokens = _usage_tokens(event)
+            if tokens is not None:
+                return tokens
+        return 0
 
     @staticmethod
     def _latest_user_text(context: LLMContext) -> str:  # noqa: D401
