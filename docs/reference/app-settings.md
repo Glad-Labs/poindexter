@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-02.**  
+> **Auto-generated from live `app_settings` table on 2026-06-03.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 711 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 722 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -33,7 +33,7 @@ The worker re-reads on every poll; no restart needed.
 - [brain](#brain) (13 keys)
 - [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
-- [cloudflare](#cloudflare) (3 keys)
+- [cloudflare](#cloudflare) (2 keys)
 - [content](#content) (20 keys)
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (10 keys)
-- [general](#general) (314 keys)
+- [general](#general) (326 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -55,7 +55,7 @@ The worker re-reads on every poll; no restart needed.
 - [memory_compression](#memory-compression) (6 keys)
 - [model_roles](#model-roles) (10 keys)
 - [models](#models) (6 keys)
-- [monitoring](#monitoring) (43 keys)
+- [monitoring](#monitoring) (48 keys)
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
 - [notifications](#notifications) (4 keys)
@@ -63,9 +63,9 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (33 keys)
+- [pipeline](#pipeline) (32 keys)
 - [plugins](#plugins) (8 keys)
-- [plugin_telemetry](#plugin-telemetry) (50 keys)
+- [plugin_telemetry](#plugin-telemetry) (46 keys)
 - [prometheus](#prometheus) (4 keys)
 - [publishing](#publishing) (4 keys)
 - [qa](#qa) (5 keys)
@@ -166,7 +166,6 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `cloudflare_analytics_api_token` | `*(encrypted)*` | encrypted | Cloudflare API token scoped to Account → Account Analytics → Read. Consumed by the sync_cloudflare_analytics job to p... |
 | `cloudflare_analytics_last_sync` | `1970-01-01T00:00:00Z` |  | High-water mark (ISO-8601 UTC) for the sync_cloudflare_analytics job. Advanced atomically after each successful batch... |
-| `cloudflare_beacon_url` | `` |  | Public URL of the deployed page-views-beacon Cloudflare Worker (e.g. https://beacon.example.com or https://page-views... |
 
 ## content
 
@@ -281,6 +280,7 @@ The worker re-reads on every poll; no restart needed.
 | `cadence_slo_shortfall_ratio` | `0.5` |  |  |
 | `cadence_slo_window_hours` | `24` |  |  |
 | `cloudflare_account_id` | `` |  |  |
+| `content_flow_max_concurrency` | `3` |  |  |
 | `content_router_contradiction_review_max_tokens` | `1500` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_revise_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_timeout_seconds` | `120` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -376,7 +376,7 @@ The worker re-reads on every poll; no restart needed.
 | `gpu_name` | `` |  | GPU model name (auto-detected by detect-hardware.py) |
 | `gpu_vram_gb` | `0` |  | GPU VRAM in GB (auto-detected by detect-hardware.py) |
 | `grafana_user` | `admin` |  | Grafana admin username |
-| `guardrails_enabled` | `true` |  |  |
+| `guardrails_enabled` | `false` |  |  |
 | `hardware_cost_total` | `*(per-operator)*` | per-operator | Total PC build cost for depreciation calculation. Set per-operator via `poindexter set hardware_cost_total <amount>`;... |
 | `hn_min_score` | `50` |  |  |
 | `hn_top_stories` | `20` |  |  |
@@ -400,7 +400,6 @@ The worker re-reads on every poll; no restart needed.
 | `idle_last_run_publish_verify` | `1776713267.676449` |  |  |
 | `idle_last_run_quality_audit` | `1776708464.8465457` |  |  |
 | `idle_last_run_sync_newsletter_subscribers` | `1776717741.527152` |  |  |
-| `idle_last_run_sync_page_views` | `1776717746.5694222` |  |  |
 | `idle_last_run_threshold_tune` | `1776706157.2429378` |  |  |
 | `idle_last_run_topic_discovery` | `1778293818.8411338` |  |  |
 | `idle_last_run_topic_gaps` | `1776662209.1690526` |  |  |
@@ -442,6 +441,7 @@ The worker re-reads on every poll; no restart needed.
 | `podcast_description` | `AI-development audio essays from Glad...` |  | Podcast RSS description |
 | `podcast_name` | `Glad Labs Podcast` |  | Podcast title for RSS feeds |
 | `podcast_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `prefect_content_flow_concurrency` | `3` |  |  |
 | `preferred_ollama_model` | `gemma3:27b` |  |  |
 | `publish_quiet_hours` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_accuracy_bad_link_max_penalty` | `2.0` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -518,7 +518,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_title_similarity_threshold` | `0.6` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_topic_dedup_hours` | `48` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_vision_check_enabled` | `true` |  |  |
-| `ragas_enabled` | `true` |  |  |
+| `ragas_enabled` | `false` |  |  |
 | `ragas_judge_model` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_default_top_k` | `5` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_hybrid_enabled` | `true` |  |  |
@@ -527,6 +527,17 @@ The worker re-reads on every poll; no restart needed.
 | `rag_rerank_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_source_filter` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `restore_test_backup_dir` | `/host-backups/auto` |  |  |
+| `restore_test_critical_tables` | `posts,app_settings,audit_log` |  |  |
+| `restore_test_enabled` | `true` |  |  |
+| `restore_test_interval_hours` | `24` |  |  |
+| `restore_test_min_row_count` | `1` |  |  |
+| `restore_test_pg_ready_timeout_seconds` | `60` |  |  |
+| `restore_test_postgres_image` | `pgvector/pgvector:pg16` |  |  |
+| `restore_test_restore_timeout_seconds` | `300` |  |  |
+| `restore_test_run_migrations_smoke` | `true` |  |  |
+| `restore_test_smoke_timeout_seconds` | `180` |  |  |
+| `restore_test_tier` | `daily` |  |  |
 | `scheduled_publisher_poll_seconds` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `sdxl_enabled` | `true` |  | Master toggle for the SDXL featured/inline image pipeline. When false, source_featured_image skips the SDXL HTTP serv... |
 | `sdxl_server_url` | `http://host.docker.internal:9836` |  | SDXL image generation server |
@@ -564,6 +575,9 @@ The worker re-reads on every poll; no restart needed.
 | `video_negative_prompt` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_server_url` | `http://host.docker.internal:9837` |  | Slideshow video generation server (Ken Burns assembly via ffmpeg, exposes port 9837). The wan-server (Wan2.1 T2V mode... |
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `vision_alt_enabled` | `true` |  |  |
+| `vision_alt_max_tokens` | `2048` |  |  |
+| `vision_alt_model` | `qwen3-vl:30b` |  |  |
 | `voice_agent_brain` | `ollama` |  | LLM stage the always-on voice agent uses. 'ollama' (default) wires the local glm-4.7-5090 + three read-only Poindexte... |
 | `voice_agent_brain_mode` | `claude-code` |  |  |
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
@@ -577,9 +591,6 @@ The worker re-reads on every poll; no restart needed.
 | `voice_agent_tts_speed` | `1.0` |  | Kokoro playback speed multiplier. 1.0 = natural; 0.95 = slightly slower (helpful for technical content); 1.1 = brisker. |
 | `voice_agent_tts_voice` | `bf_emma` |  | Kokoro voice id. bf_emma is the top-graded British female in the Kokoro-82M catalog (B-). Other UK female options: bf... |
 | `voice_agent_vad_stop_secs` | `0.2` |  | Silero VAD end-of-speech silence window in seconds. Lower = snappier turn-taking but more risk of cutting the user of... |
-| `voice_agent_webrtc_enabled` | `true` |  | Toggle for the always-on voice-agent-webrtc container. 'true' (default) serves the SmallWebRTC prebuilt UI on voice_a... |
-| `voice_agent_webrtc_host` | `0.0.0.0` |  | Bind host for the voice WebRTC service. 0.0.0.0 makes the agent reachable from any Tailscale device on the tailnet. U... |
-| `voice_agent_webrtc_port` | `8003` |  | Bind port for the voice WebRTC service. Sits above worker API (8002) and below typical dev tools. |
 | `wan_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 
 ## gpu
@@ -720,6 +731,11 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `branch_drift_dedup_hours` | `6` |  | Re-page interval (hours) for an unchanged branch-drift state. Dedup is keyed on (repo, local HEAD, origin/main SHA); ... |
+| `branch_drift_git_dir` | `/host-git` |  | git --git-dir path inside the brain container for reading the running checkout's HEAD. Matches the read-only ./.git:/... |
+| `branch_drift_poll_interval_minutes` | `15` |  | Internal cadence gate (minutes) for the branch-drift canary's GitHub round-trip. The probe is dispatched every brain ... |
+| `branch_drift_probe_enabled` | `true` |  | Master switch for the brain branch-drift deploy canary (#942). When true, the brain pages the operator if the bind-mo... |
+| `branch_drift_repo` | `Glad-Labs/glad-labs-stack` |  | owner/name of the source-of-truth repo the branch-drift canary compares against. Paired with the gh_token secret for ... |
 | `compose_drift_auto_recover_enabled` | `false` |  | Brain compose-drift probe auto-recover toggle (#213). When 'false' (default, safe), the probe only notifies the opera... |
 | `compose_drift_skip_services` | `` |  | Comma-separated list of compose service names the brain drift probe (#213) should skip. Useful for services with inte... |
 | `compose_spec_path` | `/app/docker-compose.local.yml` |  | Path to the docker-compose.yml the brain compose-drift probe (#213) reads. The brain container bind-mounts the host's... |
@@ -851,7 +867,6 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_factcheck_model` | `programmatic` |  | Model for fact-checking -- programmatic or LLM provider |
 | `pipeline_refinement_model` | `ollama/glm-4.7-5090:latest` |  | Model for content refinement (stage 5) |
 | `pipeline_research_model` | `ollama/glm-4.7-5090:latest` |  | Model for research stage (stage 1) |
-| `pipeline.stages.order` | `["verify_task", "generate_content", "...` |  | Ordered list of Stage names the content pipeline runs |
 | `publish_spacing_hours` | `4` |  | Minimum hours between published posts |
 | `require_human_approval` | `true` |  | When true, all content requires human approval before publishing |
 | `seed_url_fetch_timeout_seconds` | `10` |  | URL-based topic seeding: total HTTP timeout (seconds) for the seed_url fetch on POST /api/tasks. Short by design — if... |
@@ -896,7 +911,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_run_fix_uncategorized_posts` | `0` |  | Unix epoch of last fire for plugin job 'fix_uncategorized_posts' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_flag_missing_seo` | `0` |  | Unix epoch of last fire for plugin job 'flag_missing_seo' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_morning_brief` | `0` |  | Unix epoch of last fire for plugin job 'morning_brief' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_noop` | `0` |  | Unix epoch of last fire for plugin job 'noop' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_postgres_vacuum` | `0` |  | Unix epoch of last fire for plugin job 'postgres_vacuum' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_reload_site_config` | `0` |  | Unix epoch of last fire for plugin job 'reload_site_config' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_render_prometheus_rules` | `0` |  | Unix epoch of last fire for plugin job 'render_prometheus_rules' (auto-written by PluginScheduler) |
@@ -904,7 +918,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_run_run_dev_diary_post` | `0` |  | Unix epoch of last fire for plugin job 'run_dev_diary_post' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_run_niche_topic_sweep` | `0` |  | Unix epoch of last fire for plugin job 'run_niche_topic_sweep' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_sync_newsletter_subscribers` | `0` |  | Unix epoch of last fire for plugin job 'sync_newsletter_subscribers' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_sync_page_views` | `0` |  | Unix epoch of last fire for plugin job 'sync_page_views' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_tune_publish_threshold` | `0` |  | Unix epoch of last fire for plugin job 'tune_publish_threshold' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_update_utility_rates` | `0` |  | Unix epoch of last fire for plugin job 'update_utility_rates' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_verify_published_posts` | `0` |  | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler) |
@@ -921,7 +934,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_status_fix_uncategorized_posts` | `ok` |  | Outcome of last fire for plugin job 'fix_uncategorized_posts': 'ok' or 'err' |
 | `plugin_job_last_status_flag_missing_seo` | `ok` |  | Outcome of last fire for plugin job 'flag_missing_seo': 'ok' or 'err' |
 | `plugin_job_last_status_morning_brief` | `ok` |  | Outcome of last fire for plugin job 'morning_brief': 'ok' or 'err' |
-| `plugin_job_last_status_noop` | `ok` |  | Outcome of last fire for plugin job 'noop': 'ok' or 'err' |
 | `plugin_job_last_status_postgres_vacuum` | `ok` |  | Outcome of last fire for plugin job 'postgres_vacuum': 'ok' or 'err' |
 | `plugin_job_last_status_reload_site_config` | `ok` |  | Outcome of last fire for plugin job 'reload_site_config': 'ok' or 'err' |
 | `plugin_job_last_status_render_prometheus_rules` | `ok` |  | Outcome of last fire for plugin job 'render_prometheus_rules': 'ok' or 'err' |
@@ -929,7 +941,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_status_run_dev_diary_post` | `ok` |  | Outcome of last fire for plugin job 'run_dev_diary_post': 'ok' or 'err' |
 | `plugin_job_last_status_run_niche_topic_sweep` | `ok` |  | Outcome of last fire for plugin job 'run_niche_topic_sweep': 'ok' or 'err' |
 | `plugin_job_last_status_sync_newsletter_subscribers` | `ok` |  | Outcome of last fire for plugin job 'sync_newsletter_subscribers': 'ok' or 'err' |
-| `plugin_job_last_status_sync_page_views` | `ok` |  | Outcome of last fire for plugin job 'sync_page_views': 'ok' or 'err' |
 | `plugin_job_last_status_tune_publish_threshold` | `ok` |  | Outcome of last fire for plugin job 'tune_publish_threshold': 'ok' or 'err' |
 | `plugin_job_last_status_update_utility_rates` | `ok` |  | Outcome of last fire for plugin job 'update_utility_rates': 'ok' or 'err' |
 | `plugin_job_last_status_verify_published_posts` | `ok` |  | Outcome of last fire for plugin job 'verify_published_posts': 'ok' or 'err' |
