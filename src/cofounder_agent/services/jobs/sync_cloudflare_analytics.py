@@ -35,6 +35,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -105,15 +106,57 @@ class SyncCloudflareAnalyticsJob:
                 "failed: %s",
                 e,
             )
+            emit_finding(
+                source="sync_cloudflare_analytics",
+                kind="analytics_ingest_degraded",
+                severity="warn",
+                title="page_views ingest degraded — CF Analytics token read failed",
+                body=(
+                    "Reading the secret `cloudflare_analytics_api_token` "
+                    f"raised: {e}. The CF Analytics Engine → page_views "
+                    "ingest cannot run until the secret is readable; "
+                    "first-party page-view data is not being collected."
+                ),
+                dedup_key="cf_ae:get_secret_failed",
+            )
+            # FAIL LOUD (poindexter#555): a secret-read failure used to
+            # return ok=True, masking a dead ingest as green. Surface it
+            # as degraded so the job-health signal goes red.
             return JobResult(
-                ok=True,
+                ok=False,
                 detail=f"get_secret failed: {e}",
                 changes_made=0,
             )
         if not api_token:
+            # Reached only AFTER cloudflare_account_id is confirmed set
+            # (see the early-return above), so this is a HALF-CONFIGURED
+            # state — the operator wired CF AE but the read token is
+            # missing — not a benign "CF not set up" fresh install. Fail
+            # loud + emit a finding so it stops masking the outage green
+            # (poindexter#555: page_views was silently dead for ~54 days).
+            emit_finding(
+                source="sync_cloudflare_analytics",
+                kind="analytics_ingest_degraded",
+                severity="warn",
+                title="page_views ingest degraded — CF Analytics token unset",
+                body=(
+                    "`cloudflare_account_id` is configured but "
+                    "`cloudflare_analytics_api_token` is empty, so the "
+                    "Cloudflare Analytics Engine → page_views ingest "
+                    "cannot run. First-party page-view data is NOT being "
+                    "collected. Set the read token (scope "
+                    "`Account → Account Analytics → Read`): "
+                    "`poindexter set cloudflare_analytics_api_token <token>`."
+                ),
+                dedup_key="cf_ae:token_unset",
+            )
             return JobResult(
-                ok=True,
-                detail="cloudflare_analytics_api_token unset — skipping",
+                ok=False,
+                detail=(
+                    "cloudflare_analytics_api_token unset while "
+                    "cloudflare_account_id is set — first-party ingest "
+                    "DEGRADED (was masking green; poindexter#555)"
+                ),
                 changes_made=0,
             )
 

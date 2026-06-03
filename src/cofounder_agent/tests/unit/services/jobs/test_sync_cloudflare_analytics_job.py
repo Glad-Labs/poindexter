@@ -9,7 +9,7 @@ fake ``httpx`` module, fake asyncpg pool.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -147,15 +147,25 @@ class TestSyncCloudflareAnalyticsSkips:
         assert result.changes_made == 0
         assert "cloudflare_account_id" in result.detail
 
-    async def test_skips_when_api_token_missing(self):
+    async def test_token_missing_while_account_set_is_degraded(self):
+        # poindexter#555: account_id is configured but the token is empty
+        # = a half-configured ingest. It must surface as DEGRADED (ok=False)
+        # + emit a finding, NOT mask the dead ingest green (the bug that
+        # hid a ~54-day page_views outage).
         pool, _ = _make_pool()
         sc = _sc(api_token="")
-        result = await SyncCloudflareAnalyticsJob().run(
-            pool, {"_site_config": sc}
-        )
-        assert result.ok is True
+        with patch(
+            "services.jobs.sync_cloudflare_analytics.emit_finding"
+        ) as mock_finding:
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": sc}
+            )
+        assert result.ok is False
         assert result.changes_made == 0
         assert "cloudflare_analytics_api_token" in result.detail
+        assert "DEGRADED" in result.detail
+        mock_finding.assert_called_once()
+        assert mock_finding.call_args.kwargs["severity"] == "warn"
 
     async def test_skips_when_httpx_unavailable(self):
         pool, _ = _make_pool()
@@ -308,17 +318,23 @@ class TestSyncCloudflareAnalyticsFailures:
         assert result.ok is False
         assert "db precheck" in result.detail.lower()
 
-    async def test_secret_lookup_failure_returns_soft_skip(self):
-        """A failure reading the api token from get_secret is logged but
-        the job still returns ok=True (treat as misconfigured, not crashed)."""
+    async def test_secret_lookup_failure_is_degraded(self):
+        """A failure reading the api token surfaces as DEGRADED (ok=False)
+        + a finding. poindexter#555: it used to return ok=True and mask
+        the dead ingest as green."""
         pool, _ = _make_pool()
         sc = _sc()
         sc.get_secret = AsyncMock(side_effect=RuntimeError("decrypt fail"))
-        result = await SyncCloudflareAnalyticsJob().run(
-            pool, {"_site_config": sc}
-        )
-        assert result.ok is True
+        with patch(
+            "services.jobs.sync_cloudflare_analytics.emit_finding"
+        ) as mock_finding:
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": sc}
+            )
+        assert result.ok is False
         assert "get_secret failed" in result.detail
+        mock_finding.assert_called_once()
+        assert mock_finding.call_args.kwargs["severity"] == "warn"
 
 
 # ---------------------------------------------------------------------------

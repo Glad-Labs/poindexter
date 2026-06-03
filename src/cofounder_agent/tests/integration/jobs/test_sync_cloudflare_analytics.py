@@ -69,16 +69,22 @@ class TestSyncCloudflareAnalyticsJob:
         assert job.schedule == "every 5 minutes"
         assert job.idempotent is True
 
-    async def test_skips_cleanly_when_token_missing(
+    async def test_token_missing_while_account_set_is_degraded(
         self, migrations_applied, clean_test_tables: asyncpg.Pool
     ):
-        """Missing api_token → soft skip, no exceptions, no rows inserted."""
+        """poindexter#555: account configured but token empty → DEGRADED
+        (ok=False) + a finding, no rows inserted. Used to mask the dead
+        ingest green for ~54 days."""
         sc = _sc(api_token="")
-        result = await SyncCloudflareAnalyticsJob().run(
-            clean_test_tables, {"_site_config": sc}
-        )
-        assert result.ok is True
+        with patch(
+            "services.jobs.sync_cloudflare_analytics.emit_finding"
+        ) as mock_finding:
+            result = await SyncCloudflareAnalyticsJob().run(
+                clean_test_tables, {"_site_config": sc}
+            )
+        assert result.ok is False
         assert result.changes_made == 0
+        mock_finding.assert_called_once()
         async with clean_test_tables.acquire() as conn:
             count = await conn.fetchval("SELECT COUNT(*) FROM page_views")
         assert count == 0
