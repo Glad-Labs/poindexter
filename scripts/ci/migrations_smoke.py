@@ -30,15 +30,17 @@ from pathlib import Path
 import asyncpg
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BACKEND_ROOT = REPO_ROOT / "src" / "cofounder_agent"
+# poindexter#441: the brain's restore-test probe runs this script inside the
+# worker container, where the backend is mounted at /app (not under a repo-root
+# tree). Honor an explicit override so the split-mount layout resolves; CI
+# leaves the env unset and keeps the repo-root default.
+_BACKEND_ROOT_ENV = os.environ.get("POINDEXTER_BACKEND_ROOT")
+BACKEND_ROOT = (
+    Path(_BACKEND_ROOT_ENV).resolve()
+    if _BACKEND_ROOT_ENV
+    else REPO_ROOT / "src" / "cofounder_agent"
+)
 MIGRATIONS_DIR = BACKEND_ROOT / "services" / "migrations"
-
-# The migration runner imports ``from services.logger_config import get_logger``
-# (relative to the backend package root), so make that importable before the
-# import of the runner itself.
-sys.path.insert(0, str(BACKEND_ROOT))
-
-from services.migrations import run_migrations  # noqa: E402
 
 
 class _PoolHolder:
@@ -57,6 +59,14 @@ async def _run() -> int:
     if not database_url:
         print("ERROR: DATABASE_URL must be set", file=sys.stderr)
         return 2
+
+    # The migration runner imports ``from services.logger_config import
+    # get_logger`` (relative to the backend package root), so make that
+    # importable before importing the runner. Done lazily here (not at module
+    # load) so importing this script stays light — keeps the migrations-smoke
+    # CI env minimal and lets unit tests import it under a fake BACKEND_ROOT.
+    sys.path.insert(0, str(BACKEND_ROOT))
+    from services.migrations import run_migrations
 
     files = _migration_files()
     expected = len(files)

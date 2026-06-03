@@ -206,6 +206,20 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_SMART_MONITOR = False
 
 try:
+    # poindexter#441 — restore-test probe. Daily: pg_restore the latest
+    # dump into a throwaway pgvector container, re-run the migration
+    # runner against it, assert critical tables survived. Pages on real
+    # corruption (error), not transient docker hiccups (warning).
+    from restore_test_probe import run_restore_test_probe
+    _HAS_RESTORE_TEST_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.restore_test_probe import run_restore_test_probe
+        _HAS_RESTORE_TEST_PROBE = True
+    except ImportError:
+        _HAS_RESTORE_TEST_PROBE = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -347,6 +361,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Backup-staleness alerts go dark — 33h stale dumps go unnoticed (#388 redux)"),
     ("_HAS_SMART_MONITOR", "brain/smart_monitor.py",
      "SMART drive-health monitoring offline — failing drives detected only by total loss"),
+    ("_HAS_RESTORE_TEST_PROBE", "brain/restore_test_probe.py",
+     "Backup RESTORE verification offline — a corrupt dump goes unnoticed (#441)"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_GATE_AUTO_EXPIRE_PROBE", "brain/gate_auto_expire_probe.py",
@@ -2244,6 +2260,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] smart_monitor probe failed: %s", e)
+
+    # Restore-test probe (#441). Daily-gated: ~99.7% of cycles are a no-op
+    # timestamp check; once/day it pg_restores the latest dump into a
+    # throwaway pgvector container, re-runs the migration runner, and
+    # asserts critical tables survived. The heavy run adds ~1-3 min to that
+    # one cycle — within tolerance (backup_watcher's retries cost more).
+    if _HAS_RESTORE_TEST_PROBE:
+        try:
+            rt_summary = await run_restore_test_probe(pool)
+            probe_results["restore_test"] = {
+                "ok": bool(rt_summary.get("ok", False)),
+                "detail": rt_summary.get("detail", ""),
+                "summary": rt_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] restore_test probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

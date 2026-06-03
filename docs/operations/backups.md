@@ -126,6 +126,39 @@ The bind mount `~/.poindexter/logs:/host-backup-logs:ro` in
 exposes the sentinel directory inside the container. If you change
 `backup_watcher_sentinel_dir`, change the mount target to match.
 
+### Restore test (does the dump actually restore?)
+
+`brain/restore_test_probe.py` (Glad-Labs/poindexter#441) is the layer that
+proves a dump _restores_, not just that it's _fresh_. Once per
+`restore_test_interval_hours` (default 24h) the brain picks the newest dump
+under `/host-backups/auto/daily/`, spins a throwaway `pgvector/pgvector:pg16`
+container, `pg_restore`s the dump, re-runs the production migration runner
+against it (`migrations_smoke.py`, via `docker exec` into the worker), asserts
+the critical tables (`posts`, `app_settings`, `audit_log`) survived with rows
+and `schema_migrations` is populated, then tears the throwaway down.
+
+A **verification** failure (corrupt dump, empty table, smoke failure) pages at
+`error` — "your latest backup may be corrupt". An **infra** failure (docker
+unreachable, no dump found) is `warning` — Discord only, so a transient hiccup
+that merely prevented the test doesn't train you to ignore Telegram. State
+(last-run time) lives in `audit_log`, so a brain restart doesn't re-trigger the
+heavy run. No new compose mounts — it reuses the docker socket and the
+read-only `/host-backups` mount already wired for the backup-watcher.
+
+| Setting                                 | Default                        | Notes                                      |
+| --------------------------------------- | ------------------------------ | ------------------------------------------ |
+| `restore_test_enabled`                  | `true`                         | Master switch                              |
+| `restore_test_interval_hours`           | `24`                           | Daily cadence                              |
+| `restore_test_backup_dir`               | `/host-backups/auto`           | Brain's read-only mount                    |
+| `restore_test_tier`                     | `daily`                        | Subdir to read dumps from                  |
+| `restore_test_postgres_image`           | `pgvector/pgvector:pg16`       | Must match prod (pgvector extension)       |
+| `restore_test_run_migrations_smoke`     | `true`                         | Disable the cross-container smoke if flaky |
+| `restore_test_critical_tables`          | `posts,app_settings,audit_log` | Comma-separated; name-validated            |
+| `restore_test_min_row_count`            | `1`                            | Per-table floor                            |
+| `restore_test_pg_ready_timeout_seconds` | `60`                           | Throwaway readiness wait                   |
+| `restore_test_restore_timeout_seconds`  | `300`                          | `pg_restore` cap                           |
+| `restore_test_smoke_timeout_seconds`    | `180`                          | migrations_smoke cap                       |
+
 ## Operational hygiene
 
 - Disk: 24h × 128 MB ≈ 3 GB hourly + 7d × 128 MB ≈ 900 MB daily.
