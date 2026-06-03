@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.69.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.68.0...v0.69.0) (2026-06-03)
+
+
+### Features
+
+* **deps:** add atproto so Bluesky can post (poindexter[#557](https://github.com/Glad-Labs/glad-labs-stack/issues/557)) ([#1021](https://github.com/Glad-Labs/glad-labs-stack/issues/1021)) ([608be26](https://github.com/Glad-Labs/glad-labs-stack/commit/608be263e239b443692cc1a6151f61a37f236c3e))
+
 ## [0.68.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.67.0...v0.68.0) (2026-06-03)
 
 
