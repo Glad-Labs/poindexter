@@ -44,7 +44,15 @@ import pytest
 # (Glad-Labs/glad-labs-stack#997). ``asyncio_mode = "auto"`` still auto-marks
 # the coroutine tests; the explicit per-test mark only sets the loop scope so
 # they share the session-scoped ``test_txn`` fixture loop.
-pytestmark = pytest.mark.integration_db
+pytestmark = [
+    pytest.mark.integration_db,
+    # Quarantined 2026-06-03 (#1078): all panels below were relocated off
+    # pipeline-merged.json by the #654 dashboard restructure (folded into the
+    # Experiments & Dry-Run board), so the hard-coded panel ids now resolve to
+    # unrelated panels. Re-pointing at the new board + re-enabling is tracked
+    # in #1082. Skipped (not deleted) so the guard is restored, not lost.
+    pytest.mark.skip(reason="panels relocated by #654 restructure; re-point tracked in #1082"),
+]
 
 
 # ---------------------------------------------------------------------------

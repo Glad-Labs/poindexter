@@ -1,0 +1,125 @@
+# Real-Postgres integration tier. Runs tests/integration_db/ against an
+# ephemeral pgvector Postgres so the DB-backed integration tests (migration
+# round-trips, settings seeding, lab/experiment views, claim-pending-task,
+# module migrations, baseline-flatten parity) actually execute in CI.
+#
+# Background (#994 / #1078): before this workflow, the only Python tests any
+# CI ran were tests/unit/ (the test-backend job) plus the #572 service-light
+# integration slice. The entire tests/integration_db/ tier — which needs a
+# live Postgres — ran in NO workflow, so it silently rotted: the first CI run
+# found 8 stale failures (a seed-count threshold that the growing migration
+# set outgrew, fixed here; and 7 Grafana-panel tests that the #654 dashboard
+# restructure relocated, quarantined + tracked in #1082). This gate stops the
+# rot from recurring.
+#
+# The integration_db conftest gates purely on DSN reachability: it reads
+# DATABASE_URL via brain.bootstrap.resolve_database_url(), creates a disposable
+# poindexter_test_<hex> DB on that server, replays the baseline schema + every
+# migration, seeds representative rows, and rolls back per-test. It never
+# touches a real database — only the throwaway one it creates here.
+#
+# Not (yet) a required status check — it provides signal on every backend PR.
+# Promote it in branch protection once it has a stable green track record.
+name: integration-db
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    # Only the backend tree can affect these tests, so skip docs-only PRs.
+    # Safe to path-filter because this is not a required check (a required
+    # check that never fires would block the PR forever — see unit-tests.yml).
+    paths:
+      - "src/cofounder_agent/**"
+      - ".github/workflows/integration-db.yml"
+  workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — read-only checkout is all this needs.
+permissions:
+  contents: read
+
+jobs:
+  integration-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # pgvector image — the schema's embeddings column needs the `vector`
+        # extension (CREATE EXTENSION IF NOT EXISTS vector in the harness).
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # The harness connects to the maintenance DB to CREATE the disposable
+          # test DB, so expose `postgres` (not a pre-made app DB) here.
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # resolve_database_url() resolution order is bootstrap.toml -> DATABASE_URL
+      # -> ... . A fresh runner has no ~/.poindexter/bootstrap.toml, so this wins
+      # and points the integration_db conftest at the service container.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+
+      # The full backend env is multi-GB — sentence-transformers pulls torch,
+      # plus litellm / langgraph / llamaindex / deepeval / ragas. On top of the
+      # postgres service image that overran the runner's ~14GB free disk
+      # ("No space left on device" during install). Drop preinstalled SDKs we
+      # don't use to reclaim ~20GB. Shell-only (no 3rd-party action, so no
+      # Actions-allowlist change). Runs before Setup Python so the toolcache
+      # python it installs is untouched.
+      - name: Free disk space for the full poetry env
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet
+          df -h /
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Poetry
+        run: pip install "poetry==2.2.1"
+
+      - name: Install dependencies
+        working-directory: src/cofounder_agent
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-root --no-interaction
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres > /dev/null 2>&1; then
+              echo "postgres ready"
+              exit 0
+            fi
+            echo "waiting for postgres... ($i)"
+            sleep 1
+          done
+          echo "postgres never became ready" >&2
+          exit 1
+
+      - name: Integration tests — real Postgres (tests/integration_db/)
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/integration_db/ -q --tb=short -p no:cacheprovider

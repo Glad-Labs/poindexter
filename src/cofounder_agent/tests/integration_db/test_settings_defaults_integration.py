@@ -50,17 +50,29 @@ async def test_fresh_db_seeds_expected_row_count(test_pool) -> None:
         f"row count went {before}→{after}"
     )
 
-    # We should have inserted at least 100 new keys (migrations seed
-    # plenty already on this fixture-loaded DB but not all 218).
-    assert inserted >= 50, (
-        f"Seeder only inserted {inserted} new keys — expected at least 50; "
-        "did the registry shrink, or do migrations now seed everything?"
+    # The seeder's real contract is "every DEFAULTS key exists after
+    # seeding" — NOT a fixed insert count. The migration set grew over
+    # time and now pre-seeds most of DEFAULTS, so the standalone seeder
+    # only fills the residual gap (~12 keys as of 2026-06). Asserting a
+    # magic threshold (was `inserted >= 50`) silently rotted once
+    # migrations seeded the bulk; assert the contract directly instead (#1078).
+    async with test_pool.acquire() as conn:
+        present = {r["key"] for r in await conn.fetch("SELECT key FROM app_settings")}
+    missing = sorted(k for k in DEFAULTS if k not in present)
+    assert not missing, (
+        f"Seeder left {len(missing)} DEFAULTS keys unseeded after running: {missing[:10]}"
     )
 
-    # Total app_settings size should be in the CLAUDE.md range.
-    assert 200 <= int(after) <= 700, (
-        f"app_settings has {after} rows after seed — outside expected range. "
-        f"DEFAULTS has {len(DEFAULTS)} keys; check for unintended duplicates."
+    # Coarse sanity on the total row count. Lower bound is self-adjusting
+    # (every DEFAULTS key is present, asserted above, so after >= len(DEFAULTS));
+    # the upper bound is a generous runaway-duplication guard with headroom for
+    # ongoing growth (migrations keep adding settings — 736 as of 2026-06, prod
+    # ~888). A hard 700 cap rotted the moment the seed set grew (#1078). The
+    # exact-accounting assertion above (after - before == inserted) is what
+    # actually catches a dup-explosion bug.
+    assert len(DEFAULTS) <= int(after) <= 2000, (
+        f"app_settings has {after} rows after seed — outside the sane range "
+        f"[{len(DEFAULTS)}, 2000]; check for unintended duplicate inserts."
     )
 
 
