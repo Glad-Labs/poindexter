@@ -1579,27 +1579,21 @@ class MultiModelQA:
     async def _check_guardrails_brand(
         self, content: str,
     ) -> ReviewerResult | None:
-        """Run the guardrails-ai brand-fabrication validator.
+        """Run the native brand-fabrication rail.
 
         Parallel signal to ``_check_deepeval_brand`` — same patterns
-        but routed through guardrails-ai instead of DeepEval. The two
-        agreeing/disagreeing on a draft is itself a learnable signal
-        (correlation drift = one of the framework wrappers has a bug).
+        but a separate, dependency-free reimplementation (the
+        ``guardrails-ai`` framework was dropped after CVE-2026-45758;
+        ``services/guardrails_rails`` now owns the logic natively). The
+        two agreeing/disagreeing on a draft is itself a learnable signal
+        (correlation drift = one of the rail wrappers has a bug).
 
         Returns ``None`` when the rail is globally disabled via
         ``app_settings.guardrails_enabled=false``. Pure-CPU regex
         matching, so we wrap in ``asyncio.to_thread`` only as a
         defensive measure — the call typically returns in <1ms.
         """
-        try:
-            from services import guardrails_rails
-        except ImportError as exc:
-            _surface_reviewer_skip(
-                "guardrails_brand",
-                "services.guardrails_rails import failed — module missing",
-                {"exception_type": type(exc).__name__},
-            )
-            return None
+        from services import guardrails_rails
         try:
             if not guardrails_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(
@@ -1740,7 +1734,7 @@ class MultiModelQA:
     async def _check_guardrails_competitor(
         self, content: str,
     ) -> ReviewerResult | None:
-        """Run the guardrails-ai competitor-mention validator.
+        """Run the native competitor-mention rail.
 
         Reads the competitor list from
         ``app_settings.guardrails_competitor_list`` (CSV). Empty list →
@@ -1749,17 +1743,11 @@ class MultiModelQA:
         This is a real brand-protection gap that DeepEval's content
         rails don't cover — accidental mentions of named competitors
         in branded posts. Operator seeds the list once; every post
-        thereafter gets the check for free.
+        thereafter gets the check for free. Dependency-free word-boundary
+        regex (the ``guardrails-ai`` wrapper was dropped after
+        CVE-2026-45758; ``services/guardrails_rails`` owns it natively).
         """
-        try:
-            from services import guardrails_rails
-        except ImportError as exc:
-            _surface_reviewer_skip(
-                "guardrails_competitor",
-                "services.guardrails_rails import failed — module missing",
-                {"exception_type": type(exc).__name__},
-            )
-            return None
+        from services import guardrails_rails
         try:
             if not guardrails_rails.is_enabled(self._site_config):
                 _surface_reviewer_skip(

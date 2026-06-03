@@ -1,11 +1,14 @@
-"""Tests for services/guardrails_rails.py — guardrails-ai integration
-as a parallel content rail (#198 / #329 sub-issue 3).
+"""Tests for services/guardrails_rails.py — native brand-fabrication +
+competitor-mention QA rails (#198 / #329 sub-issue 3; reimplemented
+dep-free for #996).
 
-Skipped at collection time when the guardrails-ai package isn't
-importable. The dep was dropped from pyproject.toml on 2026-05-12 after
-PyPI quarantined the package; this test file stays in the tree so the
-moment we re-add the dep the contract is back under coverage, but it
-must not block CI in the dep-less interim.
+These rails were originally a thin wrapper over ``guardrails-ai``. That
+dependency was dropped on 2026-05-12 (PyPI quarantine after the
+CVE-2026-45758 supply-chain compromise) and the rails were reimplemented
+natively — the brand rail runs ``content_validator``'s fabrication
+patterns directly and the competitor rail is a ``re`` word-boundary
+regex. So these tests exercise the real implementation with no
+``importorskip`` and no third-party dependency.
 """
 
 from __future__ import annotations
@@ -14,20 +17,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip(
-    "guardrails",
-    reason=(
-        "guardrails-ai package not installed (dropped from pyproject.toml "
-        "on 2026-05-12 after PyPI quarantine)"
-    ),
-)
-
-from services.guardrails_rails import (  # noqa: E402
+from services.guardrails_rails import (
     _resolve_competitors,
     is_enabled,
     run_brand_guard,
     run_competitor_guard,
 )
+
+# ---------------------------------------------------------------------------
+# No-dependency guarantee — the module must import without guardrails-ai
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestNoThirdPartyDep:
+    def test_module_has_no_guardrails_ai_import(self):
+        import services.guardrails_rails as gr
+
+        source = __import__("inspect").getsource(gr)
+        assert "from guardrails" not in source
+        assert "import guardrails" not in source
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +73,15 @@ class TestIsEnabled:
         sc.get.return_value = "false"
         assert is_enabled(sc) is False
 
+    def test_both_paths_raise_returns_false(self):
+        sc = MagicMock()
+        sc.get_bool.side_effect = RuntimeError("boom")
+        sc.get.side_effect = RuntimeError("boom")
+        assert is_enabled(sc) is False
+
 
 # ---------------------------------------------------------------------------
-# run_brand_guard — happy path
+# run_brand_guard — clean content passes
 # ---------------------------------------------------------------------------
 
 
@@ -85,58 +100,72 @@ class TestRunBrandGuardClean:
         assert ok is True
         assert reason is None
 
+    def test_whitespace_only_passes(self):
+        ok, reason = run_brand_guard("   \n\t  ")
+        assert ok is True
+        assert reason is None
+
     def test_non_string_passes(self):
         ok, reason = run_brand_guard(None)  # type: ignore[arg-type]
         assert ok is True
+        assert reason is None
 
 
 # ---------------------------------------------------------------------------
-# run_brand_guard — fabrication-detection (uses real content_validator
-# patterns, so we just confirm the wiring catches obvious matches)
+# run_brand_guard — flags fabrication patterns
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunBrandGuardFabrication:
-    def test_fake_quote_pattern_caught(self):
-        # FAKE_QUOTE_PATTERNS catches "Bill Gates said" / "Elon Musk
-        # tweeted" style attribution to public figures we'd never quote.
-        bad = (
-            'In a recent interview, Bill Gates said "AI will replace 90% of '
-            'developers within the year." That insight changed the industry forever.'
+    def test_brand_contradiction_caught(self):
+        # BRAND_CONTRADICTION_PATTERNS flags promotion of paid cloud APIs
+        # (we're Ollama-only). This pattern is company-name-independent,
+        # so it fires deterministically regardless of test DB config.
+        ok, reason = run_brand_guard(
+            "Just check your OpenAI API bill at the end of the month."
         )
-        ok, reason = run_brand_guard(bad)
-        # The wiring is what matters — guard executes the validator
-        # against real patterns. Either fail (if a pattern caught it)
-        # or pass (if our specific synthetic text didn't match).
-        # Don't assert specific outcome since FAKE_QUOTE_PATTERNS is
-        # tuning-sensitive; just confirm the guard ran without raising.
-        assert isinstance(ok, bool)
+        assert ok is False
+        assert reason is not None
+        assert "rail flagged" in reason
+        assert "brand_contradiction" in reason
 
     def test_glad_labs_impossible_caught(self):
-        # GLAD_LABS_IMPOSSIBLE patterns catch unsupportable claims
-        # about the company (e.g. years of operation, scale, etc).
-        bad = "Glad Labs has 50 years of experience helping Fortune 500 companies."
-        ok, reason = run_brand_guard(bad)
+        # GLAD_LABS_IMPOSSIBLE flags unsupportable company claims. The
+        # ``our revenue/profit/...`` branch is company-name-independent.
+        ok, reason = run_brand_guard(
+            "Our revenue grew steadily as the platform matured over time."
+        )
+        assert ok is False
+        assert reason is not None
+        assert "glad_labs_claim" in reason
+
+    def test_returns_bool_for_synthetic_quote(self):
+        # FAKE_QUOTE_PATTERNS is tuning-sensitive; just confirm the rail
+        # executes the real patterns without raising and returns a clean
+        # tuple shape.
+        ok, reason = run_brand_guard(
+            'In a recent interview, Bill Gates said "AI will replace 90% of '
+            'developers within the year."'
+        )
         assert isinstance(ok, bool)
+        assert reason is None or isinstance(reason, str)
 
+    def test_never_raises_on_validator_error(self, monkeypatch):
+        # If content_validator blows up, the rail must fail-open to a
+        # clean pass rather than propagate the exception.
+        import services.guardrails_rails as gr
 
-# ---------------------------------------------------------------------------
-# Guard caching — same instance reused across calls
-# ---------------------------------------------------------------------------
+        def boom(*args, **kwargs):
+            raise RuntimeError("validator exploded")
 
+        # Patch the symbol the rail looks up at call time.
+        import services.content_validator as cv
 
-@pytest.mark.unit
-class TestGuardCaching:
-    def test_repeated_calls_reuse_guard(self):
-        from services import guardrails_rails
-
-        guardrails_rails._GUARD_CACHE.clear()
-        run_brand_guard("First clean content.")
-        guard1 = guardrails_rails._GUARD_CACHE.get("brand")
-        run_brand_guard("Second clean content.")
-        guard2 = guardrails_rails._GUARD_CACHE.get("brand")
-        assert guard1 is guard2  # cache hit, no re-register
+        monkeypatch.setattr(cv, "_check_patterns", boom)
+        ok, reason = gr.run_brand_guard("some content with enough words")
+        assert ok is True
+        assert reason is None
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +198,22 @@ class TestResolveCompetitors:
         sc = MagicMock()
         sc.get.return_value = "  Acme  ,   Foo "
         assert _resolve_competitors(sc) == ["Acme", "Foo"]
+
+    def test_read_failure_fails_loud_and_returns_empty(self, monkeypatch):
+        # A SiteConfig.get raise must log + emit a finding (fail loud)
+        # but still return [] so the rail degrades open rather than
+        # crashing the pipeline.
+        emitted = {}
+
+        def fake_emit(**kwargs):
+            emitted.update(kwargs)
+
+        monkeypatch.setattr("utils.findings.emit_finding", fake_emit)
+
+        sc = MagicMock()
+        sc.get.side_effect = RuntimeError("site_config broken")
+        assert _resolve_competitors(sc) == []
+        assert emitted.get("kind") == "guardrails_competitor_list_read_failed"
 
 
 # ---------------------------------------------------------------------------
@@ -210,9 +255,26 @@ class TestRunCompetitorGuard:
         )
         assert ok is True
 
+    def test_multiword_competitor_matches(self):
+        # Multi-word names match across the space; the trailing \b
+        # anchors on the final word char, so end the name on a word char.
+        ok, reason = run_competitor_guard(
+            "Bar Industries shipped a competing feature.",
+            competitors=["Bar Industries"],
+        )
+        assert ok is False
+        assert "Bar Industries" in (reason or "")
+
     def test_empty_competitor_list_skips(self):
         ok, reason = run_competitor_guard(
             "Anything goes.", competitors=[],
+        )
+        assert ok is True
+        assert reason is None
+
+    def test_whitespace_only_competitors_skip(self):
+        ok, reason = run_competitor_guard(
+            "Anything goes.", competitors=["  ", ""],
         )
         assert ok is True
         assert reason is None
@@ -231,39 +293,12 @@ class TestRunCompetitorGuard:
         assert "Acme" in (reason or "")
         assert "Foo" in (reason or "")
 
-
-# ---------------------------------------------------------------------------
-# Competitor guard caching — different lists get different Guards
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestCompetitorGuardCaching:
-    def test_same_list_reuses_guard(self):
-        from services import guardrails_rails
-
-        guardrails_rails._GUARD_CACHE.clear()
-        run_competitor_guard("text", ["Acme"])
-        run_competitor_guard("other text", ["Acme"])
-        # One competitor cache entry shared between the two calls.
-        keys = [k for k in guardrails_rails._GUARD_CACHE if k.startswith("competitor:")]
-        assert len(keys) == 1
-
-    def test_different_lists_get_different_guards(self):
-        from services import guardrails_rails
-
-        guardrails_rails._GUARD_CACHE.clear()
-        run_competitor_guard("text", ["Acme"])
-        run_competitor_guard("text", ["Foo"])
-        keys = [k for k in guardrails_rails._GUARD_CACHE if k.startswith("competitor:")]
-        assert len(keys) == 2
-
-    def test_order_irrelevant_for_cache_key(self):
-        from services import guardrails_rails
-
-        guardrails_rails._GUARD_CACHE.clear()
-        run_competitor_guard("text", ["Acme", "Foo"])
-        run_competitor_guard("text", ["Foo", "Acme"])
-        # Sorted-tuple cache key collapses the two orderings.
-        keys = [k for k in guardrails_rails._GUARD_CACHE if k.startswith("competitor:")]
-        assert len(keys) == 1
+    def test_regex_metachars_in_name_are_escaped(self):
+        # A competitor name with regex metacharacters must be matched
+        # literally (re.escape), not interpreted as a pattern.
+        ok, reason = run_competitor_guard(
+            "We evaluated C++ Builder last quarter.",
+            competitors=["C++ Builder"],
+        )
+        assert ok is False
+        assert "C++ Builder" in (reason or "")
