@@ -255,7 +255,20 @@ jobs:
       - name: Unit tests — modules
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/modules/ -q --tb=short -p no:cacheprovider $COV
+        # pytest exit 5 = "no tests collected". On the public mirror (poindexter)
+        # the only modules tests (tests/unit/modules/finance/) are stripped by the
+        # sync filter, leaving this dir empty -> exit 5 -> the step fails there
+        # (it was reddening poindexter's unit-tests once the narrate fix unmasked
+        # it). Treat 5 as success; genuine failures (exit 1) still fail. On the
+        # source repo the dir has tests, so this is a no-op here. (Public-mirror
+        # CI fix — only modules/ goes empty; every other tier keeps its tests.)
+        run: |
+          python -m pytest tests/unit/modules/ -q --tb=short -p no:cacheprovider $COV || code=$?
+          if [ "${code:-0}" -eq 5 ]; then
+            echo "::notice::no module tests collected (expected on the filtered public mirror) — treating as pass"
+            exit 0
+          fi
+          exit "${code:-0}"
 
       - name: Unit tests — poindexter
         if: steps.changes.outputs.needs_tests == 'true'
