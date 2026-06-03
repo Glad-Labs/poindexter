@@ -1,6 +1,6 @@
 # How Poindexter itself is tested and deployed
 
-**Last Updated:** 2026-05-27
+**Last Updated:** 2026-06-03
 
 > **What this doc is.** A transparency record of how Poindexter (the
 > project, not your self-host) is tested and shipped to gladlabs.io.
@@ -17,10 +17,13 @@
 ```
 Glad-Labs/glad-labs-stack (private GitHub, source of truth)
     │
-    ├─→ GitHub Actions (.github/workflows/ci.yml)
-    │       runs backend pytest + frontend tests + lint
-    │       + migrations smoke + link-rot CI
-    │       on every push to main
+    ├─→ GitHub Actions (several workflows — there is no single ci.yml)
+    │       required checks: unit-tests.yml (job test-backend,
+    │       backend pytest) + migrations-smoke.yml, on every PR +
+    │       push to main (expensive steps short-circuit on docs-only
+    │       changes — see "CI minutes / cost discipline" below)
+    │       non-required, paths-gated: playwright-e2e.yml (frontend
+    │       E2E), security.yml, grafana-panels-lint.yml
     │
     ├─→ Vercel (auto-deploy on push to main)
     │       └─→ www.gladlabs.io
@@ -96,8 +99,22 @@ decorators in `test_database_service.py` and
 
 ## Key files
 
-- `.github/workflows/ci.yml` — GitHub Actions pipeline, runs backend
-  pytest + frontend Jest on every push. No deploy step.
+- `.github/workflows/unit-tests.yml` — backend pytest, exposed as the
+  `test-backend` status check. One of the **two** branch-protection
+  required checks; a `detect-changes` step short-circuits the
+  expensive pytest steps on docs-only changes while still reporting
+  green (a required check must always report — see "CI minutes / cost
+  discipline" below). No deploy step.
+- `.github/workflows/migrations-smoke.yml` — applies every migration
+  against a clean Postgres + pgvector. The **other** branch-protection
+  required check; fires on every PR + push to main.
+- `.github/workflows/playwright-e2e.yml` — frontend E2E (Playwright),
+  `paths:`-gated to `web/public-site/**`. Non-required. The frontend
+  Jest unit run + JS lint are **hook-only**, not run in CI (see the
+  workflow header).
+- `.github/workflows/security.yml` / `grafana-panels-lint.yml` —
+  non-required scans: gitleaks / trivy / sbom + path-specific lints,
+  and the paths-gated Grafana panel lint, respectively.
 - `.github/workflows/sync-to-public-poindexter.yml` — auto-mirror
   from glad-labs-stack to poindexter on every push to main.
 - `scripts/sync-to-github.sh` — filter that runs inside the sync
@@ -118,8 +135,8 @@ decorators in `test_database_service.py` and
   `chore/regen-app-settings-doc` when the file drifts; the branch
   is force-pushed every run so the PR always reflects the latest
   regen. Per [poindexter#439](https://github.com/Glad-Labs/poindexter/issues/439).
-- `src/cofounder_agent/tests/` — Python unit tests (pytest), 8,400+
-  cases across 382 test files.
+- `src/cofounder_agent/tests/` — Python unit tests (pytest), 8,748
+  cases across ~516 test files.
 - `web/public-site/next.config.js` — has a `validateEnv` check that
   rejects localhost URLs in production. `SKIP_ENV_VALIDATION=true`
   bypasses for local dev.
