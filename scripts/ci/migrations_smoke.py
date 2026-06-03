@@ -22,6 +22,7 @@ project's own migration runner. Run it from the repo root:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
@@ -54,7 +55,63 @@ def _migration_files() -> list[Path]:
     return sorted(p for p in MIGRATIONS_DIR.glob("*.py") if p.name != "__init__.py")
 
 
-async def _run() -> int:
+def _evaluate(
+    *,
+    runner_ok: bool,
+    applied_names: set[str],
+    file_names: set[str],
+    allow_historical: bool,
+) -> tuple[bool, list[str]]:
+    """Decide pass/fail from the runner result and the applied-vs-files sets.
+
+    Returns ``(failed, messages)``. In the default (CI / fresh-DB) mode every
+    discrepancy is fatal. With ``allow_historical=True`` — a restored
+    *production* backup, whose ``schema_migrations`` legitimately carries rows
+    for migrations whose files were later squashed into ``0000_baseline.py`` or
+    renamed — EXTRA rows and the exact-count check are tolerated. Only a runner
+    failure or a MISSING current migration (one that should apply but didn't)
+    stays fatal there: that is the real "this backup isn't restorable /
+    migratable" signal. (poindexter#441 — see brain/restore_test_probe.py.)
+    """
+    missing = sorted(file_names - applied_names)
+    extra = sorted(applied_names - file_names)
+    messages: list[str] = []
+    failed = False
+
+    if not runner_ok:
+        messages.append("FAIL: run_migrations() reported one or more failures")
+        failed = True
+    if missing:
+        messages.append(
+            "FAIL: migrations did not record a schema_migrations row:\n  - "
+            + "\n  - ".join(missing)
+        )
+        failed = True
+
+    if allow_historical:
+        if extra:
+            messages.append(
+                f"NOTE: tolerating {len(extra)} historical schema_migrations "
+                "row(s) with no matching file (restored-backup mode)"
+            )
+    else:
+        if extra:
+            messages.append(
+                "FAIL: schema_migrations contains rows with no matching file:\n  - "
+                + "\n  - ".join(extra)
+            )
+            failed = True
+        if len(applied_names) != len(file_names):
+            messages.append(
+                f"FAIL: expected {len(file_names)} schema_migrations rows, "
+                f"got {len(applied_names)}"
+            )
+            failed = True
+
+    return failed, messages
+
+
+async def _run(allow_historical: bool = False) -> int:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         print("ERROR: DATABASE_URL must be set", file=sys.stderr)
@@ -86,46 +143,44 @@ async def _run() -> int:
 
     applied_names = {row["name"] for row in applied_rows}
     file_names = {f.name for f in files}
-    missing = sorted(file_names - applied_names)
-    extra = sorted(applied_names - file_names)
 
     print(f"[smoke] runner returned ok={runner_ok}")
     print(f"[smoke] schema_migrations rows: {len(applied_names)} / files: {expected}")
 
-    failed = False
-    if not runner_ok:
-        print("FAIL: run_migrations() reported one or more failures", file=sys.stderr)
-        failed = True
-    if missing:
-        print(
-            "FAIL: migrations did not record a schema_migrations row:\n  - "
-            + "\n  - ".join(missing),
-            file=sys.stderr,
-        )
-        failed = True
-    if extra:
-        print(
-            "FAIL: schema_migrations contains rows with no matching file:\n  - "
-            + "\n  - ".join(extra),
-            file=sys.stderr,
-        )
-        failed = True
-    if len(applied_names) != expected:
-        print(
-            f"FAIL: expected {expected} schema_migrations rows, got {len(applied_names)}",
-            file=sys.stderr,
-        )
-        failed = True
+    failed, messages = _evaluate(
+        runner_ok=runner_ok,
+        applied_names=applied_names,
+        file_names=file_names,
+        allow_historical=allow_historical,
+    )
+    for msg in messages:
+        # FAIL lines go to stderr (CI greps them); NOTE lines are informational.
+        print(msg, file=sys.stderr if msg.startswith("FAIL") else sys.stdout)
 
     if failed:
         return 1
 
-    print(f"[smoke] OK — all {expected} migrations applied cleanly")
+    mode = " (restored-backup mode)" if allow_historical else ""
+    print(f"[smoke] OK — all {expected} migrations applied cleanly{mode}")
     return 0
 
 
 def main() -> int:
-    return asyncio.run(_run())
+    parser = argparse.ArgumentParser(description="Apply every migration to a DB and verify.")
+    parser.add_argument(
+        "--restored-backup",
+        action="store_true",
+        help=(
+            "Tolerate historical schema_migrations rows that have no matching "
+            "file, and skip the exact-count check. Use when running against a "
+            "restored PRODUCTION backup (brain restore-test probe, "
+            "poindexter#441): its DB carries the full migration history while "
+            "the repo only ships the post-squash files. Default (CI / fresh DB) "
+            "keeps the strict 1-row-per-file check."
+        ),
+    )
+    args = parser.parse_args()
+    return asyncio.run(_run(allow_historical=args.restored_backup))
 
 
 if __name__ == "__main__":

@@ -352,3 +352,36 @@ async def test_smoke_skipped_when_network_undiscoverable():
     out = await rt.run_restore_test_probe(pool, **seams)
     assert out["ok"] is True  # restore + row counts still pass
     smoke.assert_not_called()  # smoke skipped without a network
+
+
+# ---------------------------------------------------------------------------
+# Regression: gate column + smoke restored-backup flag (poindexter#441)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_gate_query_uses_audit_log_timestamp_column():
+    # The gate threw "column created_at does not exist" against the real
+    # audit_log (whose time column is "timestamp"), returned None, and the
+    # probe ran every brain cycle. The pool mock masked it — so assert on the
+    # query text itself, which is what a revert would actually change.
+    pool = _make_pool(seconds_since_last_run=42.0)
+    await rt._seconds_since_last_run(pool)
+    query = pool.fetchval.call_args.args[0]
+    assert "created_at" not in query
+    assert '"timestamp"' in query
+
+
+def test_run_smoke_passes_restored_backup_flag(monkeypatch):
+    # Without --restored-backup the smoke fails on a prod backup's historical
+    # schema_migrations rows. The probe must always pass it.
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_cmd(cmd, timeout):
+        captured["cmd"] = cmd
+        return (0, "[smoke] OK", "")
+
+    monkeypatch.setattr(rt, "_run_cmd", fake_run_cmd)
+    ok, _ = rt._run_smoke("throwaway", "poindexter", "pw", 60)
+    assert ok is True
+    assert "--restored-backup" in captured["cmd"]
+    # appended after the script path so argparse on the worker side sees it
+    assert captured["cmd"][-1] == "--restored-backup"

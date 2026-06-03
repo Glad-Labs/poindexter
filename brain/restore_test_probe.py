@@ -220,8 +220,12 @@ async def _seconds_since_last_run(pool: Any) -> Optional[float]:
     """
     try:
         return await pool.fetchval(
+            # audit_log's time column is "timestamp" (quoted — it's a SQL
+            # keyword), NOT created_at. The old created_at reference threw
+            # "column does not exist", the gate returned None, and the probe
+            # ran every brain cycle instead of daily (poindexter#441).
             """
-            SELECT EXTRACT(EPOCH FROM (NOW() - created_at))
+            SELECT EXTRACT(EPOCH FROM (NOW() - "timestamp"))
               FROM audit_log
              WHERE event_type IN (
                  'probe.restore_test_completed', 'probe.restore_test_failed')
@@ -339,13 +343,21 @@ def _table_count(name: str, db: str, table: str) -> Optional[int]:
 
 
 def _run_smoke(throwaway: str, db: str, password: str, timeout: int) -> tuple[bool, str]:
-    """Run migrations_smoke.py inside the worker against the throwaway DB."""
+    """Run migrations_smoke.py inside the worker against the throwaway DB.
+
+    Passes ``--restored-backup`` so the smoke tolerates historical
+    ``schema_migrations`` rows whose files were squashed/removed. A restored
+    prod backup carries the full migration history (266 rows) while the repo
+    ships only the post-squash files (31) — without the flag the smoke's
+    exact-count / no-extra-row check always fails on a perfectly good backup
+    (poindexter#441).
+    """
     dsn = f"postgresql://postgres:{password}@{throwaway}:5432/{db}"
     rc, out, err = _run_cmd(
         ["docker", "exec",
          "-e", f"DATABASE_URL={dsn}",
          "-e", f"POINDEXTER_BACKEND_ROOT={WORKER_BACKEND_ROOT}",
-         WORKER_CONTAINER, "python", SMOKE_SCRIPT_PATH],
+         WORKER_CONTAINER, "python", SMOKE_SCRIPT_PATH, "--restored-backup"],
         timeout)
     tail = (err or out).strip()[-300:]
     return (rc == 0), tail
