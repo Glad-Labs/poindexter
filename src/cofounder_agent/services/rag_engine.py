@@ -38,6 +38,7 @@ Each ``NodeWithScore`` has ``node.text`` (preview / chunk),
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 from typing import Any, Iterable
 
@@ -50,6 +51,29 @@ logger = get_logger(__name__)
 # ``rag_embed_retry_base_delay_seconds`` (registered in settings_defaults).
 _DEFAULT_EMBED_RETRY_ATTEMPTS = 3
 _DEFAULT_EMBED_RETRY_BASE_DELAY = 0.25  # seconds
+
+
+def _coerce_metadata(raw: Any) -> dict:
+    """Normalize an ``embeddings.metadata`` value to a plain dict.
+
+    asyncpg returns a JSONB column as either a decoded dict (when a type
+    codec is registered) or the raw JSON string (the default). Calling
+    ``dict()`` on the string form iterates its characters and raises
+    ``ValueError: dictionary update sequence element #0 has length 1; 2 is
+    required`` — the bug that silently forced every rag_engine query onto
+    the legacy pgvector fallback (#554). Coerce both forms (and any
+    unexpected type) to a fresh dict so retrieval never crashes here.
+    """
+    if isinstance(raw, str):
+        if not raw.strip():
+            return {}
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -253,20 +277,10 @@ def _build_retriever_class():
 
             results: list[NodeWithScore] = []
             for row in rows:
-                # asyncpg returns JSONB as either a decoded dict (when
-                # the type codec is registered) or as the raw string
-                # (default). MemoryClient.search handles both — match
-                # that here so the rag_engine path doesn't crash with
-                # ``ValueError: dictionary update sequence element #0
-                # has length 1; 2 is required`` on string-returned rows.
-                raw_meta = row.get("metadata")
-                if isinstance(raw_meta, str):
-                    try:
-                        import json as _json
-                        raw_meta = _json.loads(raw_meta)
-                    except (ValueError, TypeError):
-                        raw_meta = {}
-                metadata = dict(raw_meta or {})
+                # JSONB metadata may arrive as a dict or a raw JSON string
+                # depending on whether asyncpg has a codec registered;
+                # _coerce_metadata handles both (see #554).
+                metadata = _coerce_metadata(row.get("metadata"))
                 metadata.update({
                     "source_table": row["source_table"],
                     "source_id": row["source_id"],
@@ -516,7 +530,7 @@ def _build_hybrid_retriever_class():
                     logger.warning("[rag/hybrid] lexical rehydrate failed: %s", e)
                 for row in src_rows:
                     nid = f"{row['source_table']}:{row['source_id']}"
-                    metadata = dict(row.get("metadata") or {})
+                    metadata = _coerce_metadata(row.get("metadata"))
                     metadata.update({
                         "source_table": row["source_table"],
                         "source_id": row["source_id"],
