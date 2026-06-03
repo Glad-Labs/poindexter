@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.66.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.0...v0.66.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **brain:** restore-test probe false-positives + every-cycle runs (poindexter[#441](https://github.com/Glad-Labs/glad-labs-stack/issues/441)) ([#1003](https://github.com/Glad-Labs/glad-labs-stack/issues/1003)) ([d728fa1](https://github.com/Glad-Labs/glad-labs-stack/commit/d728fa1816324b9014b3697945c2a65d2c9e55d8))
+
 ## [0.66.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.65.0...v0.66.0) (2026-06-03)
 
 
