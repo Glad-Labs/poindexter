@@ -17,9 +17,10 @@ class TestCanonicalBlogSpec:
         assert spec["entry"] == "verify_task"
         node_atoms = {n["atom"] for n in spec["nodes"]}
         # The qa.* atoms replace cross_model_qa. qa.programmatic restores the
-        # programmatic anti-hallucination gate dropped at the #355 cutover.
+        # programmatic anti-hallucination gate dropped at the #355 cutover;
+        # qa.vision restores the image-relevance + rendered-preview gates (#563).
         assert {"qa.programmatic", "qa.critic", "qa.deepeval", "qa.guardrails",
-                "qa.ragas", "qa.aggregate"} <= node_atoms
+                "qa.ragas", "qa.vision", "qa.aggregate"} <= node_atoms
         # The three seo.* atoms replace generate_seo_metadata (#362).
         assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
         # No legacy monolithic QA / SEO stage nodes.
@@ -43,6 +44,16 @@ class TestCanonicalBlogSpec:
         assert ("qa_programmatic", "qa_critic") in edges
         # The old caption_images → qa_critic edge must be gone (re-routed).
         assert ("caption_images", "qa_critic") not in edges
+
+    def test_vision_gate_wired_between_ragas_and_aggregate(self):
+        """qa.vision (#563) sits last in the rail block, after qa.ragas and
+        before qa.aggregate, so its image-relevance + rendered-preview reviews
+        feed the aggregate decision. Restores the gates the #355 cutover dropped."""
+        edges = {(e["from"], e["to"]) for e in CANONICAL_BLOG_GRAPH_DEF["edges"]}
+        assert ("qa_ragas", "qa_vision") in edges
+        assert ("qa_vision", "qa_aggregate") in edges
+        # The old direct qa_ragas → qa_aggregate edge must be gone (re-routed).
+        assert ("qa_ragas", "qa_aggregate") not in edges
 
     def test_passes_plan1_validator(self):
         discover()  # surfaces stage.* + registers qa.* atoms (idempotent)

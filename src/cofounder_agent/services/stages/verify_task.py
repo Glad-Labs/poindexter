@@ -13,6 +13,11 @@ Context reads:
 Context writes:
 - ``stages["1_content_task_created"]`` (bool)
 - ``content_task_id`` (str, echoed)
+- ``preview_token`` / ``preview_url`` (str) — minted here so the rendered-
+  preview QA rail (``qa.vision``) has a URL to screenshot. The qa.* block runs
+  BEFORE ``finalize_task``, which is where the token used to be minted, so
+  generating it at the top of the pipeline is what lets the gate run at all
+  (Glad-Labs/poindexter#563). ``finalize_task`` reuses this token.
 
 Phase E migration notes:
 - Replaces ``_stage_verify_task`` in services/content_router_service.py
@@ -22,11 +27,38 @@ Phase E migration notes:
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Any
 
 from plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_PREVIEW_BASE_URL = "http://localhost:8002"
+
+
+def _mint_preview(context: dict[str, Any]) -> dict[str, Any]:
+    """Mint a preview token + URL early so the qa.vision rail can screenshot
+    the rendered page. Returns the two channels for ``context_updates``.
+
+    Reuses an existing ``preview_token`` if a caller already seeded one (so a
+    retry / replay keeps a stable URL). The base URL comes from the wired
+    SiteConfig (``preview_base_url``) so the screenshot hits an address
+    reachable from inside the worker container.
+    """
+    token = (context.get("preview_token") or "").strip() or secrets.token_hex(16)
+
+    base = _DEFAULT_PREVIEW_BASE_URL
+    site_config = context.get("site_config")
+    if site_config is not None:
+        try:
+            base = site_config.get("preview_base_url", _DEFAULT_PREVIEW_BASE_URL)
+        except Exception:  # noqa: BLE001
+            base = _DEFAULT_PREVIEW_BASE_URL
+    return {
+        "preview_token": token,
+        "preview_url": f"{str(base).rstrip('/')}/preview/{token}",
+    }
 
 
 class VerifyTaskStage:
@@ -75,13 +107,22 @@ class VerifyTaskStage:
         if existing:
             logger.info("Task verified in database: %s", task_id)
             stages["1_content_task_created"] = True
+            updates: dict[str, Any] = {
+                "content_task_id": task_id,
+                "stages": stages,
+            }
+            # Mint the preview token/URL early so the qa.vision rendered-preview
+            # rail (which runs before finalize_task) has a URL to screenshot
+            # (Glad-Labs/poindexter#563). Best-effort: a failure here must not
+            # halt the pipeline, so the screenshot gate just stays skipped.
+            try:
+                updates.update(_mint_preview(context))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not mint preview token early: %s", exc)
             return StageResult(
                 ok=True,
                 detail="task verified",
-                context_updates={
-                    "content_task_id": task_id,
-                    "stages": stages,
-                },
+                context_updates=updates,
             )
 
         logger.warning("Task %s not found - this should not happen", task_id)

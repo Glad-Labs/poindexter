@@ -17,11 +17,12 @@ to the LLM and HTTP reviewers.
 
 **Atom-cutover #355 (live 2026-06-02) split that apart.** The
 `cross_model_qa` stage is deleted; on the live `canonical_blog`
-`graph_def` path the cross-model review runs as five composable atoms in
-`src/cofounder_agent/services/atoms/` — `qa.critic` → `qa.deepeval` →
-`qa.guardrails` → `qa.ragas` → `qa.aggregate`. Each rail atom delegates
+`graph_def` path the cross-model review runs as composable atoms in
+`src/cofounder_agent/services/atoms/` — `qa.programmatic` → `qa.critic` →
+`qa.deepeval` → `qa.guardrails` → `qa.ragas` → `qa.vision` →
+`qa.aggregate`. Each rail atom delegates
 to the matching `MultiModelQA` rail methods (the `_review_with_cloud_model`
-critic plus the per-rail DeepEval, guardrails, and Ragas checks) and
+critic plus the per-rail DeepEval, guardrails, Ragas, and vision checks) and
 appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the atoms
@@ -61,6 +62,41 @@ corpus"). The fix returns `research_context` in `context_updates`; the
 contract so this can't silently regress. (This is the same channel-dropping
 failure mode the `seo_keywords_list` channel hit — see the PipelineState
 comment in `template_runner.py`.)
+
+#### The vision/preview gate: `preview_url` must reach `qa.vision`
+
+The `qa.vision` rail runs two vision-model checks the deleted
+`MultiModelQA.review()` ran inline:
+
+- **Image relevance** (`_check_image_relevance` → reviewer `image_relevance`,
+  aliased to the `vision_gate` qa_gates row) — does each inline image match
+  the content next to it? Opt-in via `qa_vision_check_enabled`. Needs no URL.
+- **Rendered-preview screenshot** (`_check_rendered_preview` → reviewer
+  `rendered_preview`) — screenshots the post's `/preview/{token}` page via
+  headless chromium and feeds the PNG to a vision model to catch layout
+  breaks, missing CSS, overflowing tables, broken images. Opt-in via
+  `qa_preview_screenshot_enabled`. **Needs a `preview_url`.**
+
+Both checks went cold after the #355 cutover (Glad-Labs/poindexter#563): they
+only ever lived inside `review()`, which the live path stopped calling, and
+the rendered-preview gate had a `if preview_url:` guard that was never reached
+on the pipeline because `review()` was never called with a `preview_url`. The
+fix wires a `qa.vision` rail (between `qa.ragas` and `qa.aggregate`) that runs
+both checks and appends their `vision_gate`-provider reviews to
+`qa_rail_reviews`.
+
+The screenshot leg needs a URL **during** the QA block, which runs BEFORE
+`finalize_task` — and `finalize_task` is where the `preview_token` used to be
+minted. So `stage.verify_task` now mints the token at the top of the pipeline
+and surfaces `preview_token` + `preview_url` in its `context_updates` (the
+same ride-`context_updates` requirement as `research_context` above);
+`finalize_task` reuses that token rather than minting a second one, keeping the
+dashboard link and the QA screenshot pointed at the same URL. `qa.vision`
+reads `preview_url` softly from state and, if `qa_preview_screenshot_enabled`
+is true but no `preview_url` arrives, **pages the operator** instead of
+silently skipping (`feedback_no_silent_defaults` — the silent skip is exactly
+how the gate stayed cold for ~3 weeks). `test_qa_vision_atom.py` +
+`test_verify_task_preview.py` pin the threading.
 
 ## Layer 1 — Prompt-level guards
 

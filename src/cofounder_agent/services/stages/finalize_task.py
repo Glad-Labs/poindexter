@@ -174,8 +174,15 @@ class FinalizeTaskStage:
         # tasks landed with no preview_token + clickable titles broke
         # in the dashboard. Doing it here in the terminal stage means
         # both legacy and Prefect orchestrators surface the token.
+        #
+        # #563: stage.verify_task now mints the token at the TOP of the
+        # pipeline so the qa.vision rendered-preview rail (which runs before
+        # this terminal stage) has a URL to screenshot. Reuse that token when
+        # present so the dashboard link and the QA screenshot point at the same
+        # /preview/{token} URL; only mint a fresh one if an upstream stage
+        # didn't (legacy callers, dev_diary's 4-node template).
         import secrets as _secrets
-        preview_token = _secrets.token_hex(16)
+        preview_token = (context.get("preview_token") or "").strip() or _secrets.token_hex(16)
 
         task_metadata = {
             "preview_token": preview_token,

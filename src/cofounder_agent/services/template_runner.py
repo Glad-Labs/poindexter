@@ -330,6 +330,17 @@ class PipelineState(TypedDict, total=False):
     # InvalidUpdateError. qa.aggregate reads the merged list.
     qa_rail_reviews: Annotated[list, operator.add]
     qa_rewrite_attempts: int
+    # preview_token / preview_url (#563): the rendered-preview QA rail
+    # (qa.vision) screenshots the post's /preview/{token} page, so it needs a
+    # preview_url DURING the qa.* block — which runs BEFORE finalize_task. The
+    # token is minted early by stage.verify_task and surfaced as both channels
+    # here so they survive the graph_def adapter (make_stage_node merges only
+    # context_updates — same last-value-channel lesson as seo_keywords_list /
+    # research_context). finalize_task reuses an existing preview_token rather
+    # than minting a second one, keeping the dashboard link + the QA screenshot
+    # pointed at the same URL.
+    preview_token: str
+    preview_url: str
     stages: dict
     generate_metrics: dict
     cost_log: dict

@@ -12,11 +12,13 @@ stages have already been decomposed into atom chains (#362):
 
 - ``cross_model_qa`` → the Plan-3 qa.* rail atoms wired as a LINEAR chain
   (qa.programmatic → qa.critic → qa.deepeval → qa.guardrails → qa.ragas →
-  qa.aggregate). Each rail appends to the operator.add-reduced
+  qa.vision → qa.aggregate). Each rail appends to the operator.add-reduced
   ``qa_rail_reviews`` channel; qa.aggregate combines them into the gate
   decision (and halts on reject). qa.programmatic is the cheap deterministic
   anti-hallucination net (regex/heuristics, NO LLM); it restores the
-  ``programmatic_validator`` gate the cutover originally dropped.
+  ``programmatic_validator`` gate the cutover originally dropped. qa.vision
+  (Glad-Labs/poindexter#563) restores the two vision gates the cutover
+  dropped — image-relevance + rendered-preview screenshot — both opt-in.
 - ``generate_seo_metadata`` → the seo.* atom chain (seo.generate_title →
   seo.generate_description → seo.extract_keywords). Linear so description +
   keywords read the freshly-generated ``seo_title``; each is LLM-driven with
@@ -61,6 +63,13 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_deepeval", "atom": "qa.deepeval"},
         {"id": "qa_guardrails", "atom": "qa.guardrails"},
         {"id": "qa_ragas", "atom": "qa.ragas"},
+        # qa.vision (#563): image-relevance + rendered-preview screenshot
+        # checks. Restores the two vision gates the #355 cutover dropped from
+        # the live path (they only lived inside the deleted review() monolith).
+        # Reads preview_url, minted early by stage.verify_task. Both opt-in
+        # (qa_vision_check_enabled / qa_preview_screenshot_enabled) — a no-op
+        # when off, so it's safe in the default chain.
+        {"id": "qa_vision", "atom": "qa.vision"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
         # seo.* atom chain (replaces the generate_seo_metadata stage, #362) —
         # linear so description + keywords read the freshly-generated seo_title.
@@ -86,7 +95,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_critic", "to": "qa_deepeval"},
         {"from": "qa_deepeval", "to": "qa_guardrails"},
         {"from": "qa_guardrails", "to": "qa_ragas"},
-        {"from": "qa_ragas", "to": "qa_aggregate"},
+        {"from": "qa_ragas", "to": "qa_vision"},
+        {"from": "qa_vision", "to": "qa_aggregate"},
         {"from": "qa_aggregate", "to": "seo_title"},
         {"from": "seo_title", "to": "seo_description"},
         {"from": "seo_description", "to": "seo_keywords"},
