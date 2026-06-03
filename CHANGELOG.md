@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.2...v0.70.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **lab:** variant writer_model override falls back to default writer (poindexter[#574](https://github.com/Glad-Labs/glad-labs-stack/issues/574)) ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046)) ([ff99cb5](https://github.com/Glad-Labs/glad-labs-stack/commit/ff99cb5fc3703f079510f3481e37c13eb7435986))
+
 ## [0.70.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.1...v0.70.2) (2026-06-03)
 
 
