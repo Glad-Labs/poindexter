@@ -356,6 +356,13 @@ class TestSyncCloudflareAnalyticsWatermark:
         client.post.assert_awaited()
         sent_sql = client.post.await_args.kwargs.get("content") or ""
         assert "analytics_events" in sent_sql
+        # poindexter#555 regression guard: ORDER BY must reference the SELECT
+        # alias (created_at), never the raw `timestamp` column — CF Analytics
+        # Engine rejects the aliased-column-by-original-name form with
+        # "unable to find type of column: timestamp", which silently killed
+        # the entire ingest.
+        assert "ORDER BY created_at" in sent_sql
+        assert "ORDER BY timestamp" not in sent_sql
 
     async def test_subsequent_run_uses_stored_watermark(self):
         """Watermark row present → query bounds by that timestamp."""

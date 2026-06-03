@@ -56,7 +56,13 @@ _QUERY_TEMPLATE = (
     "timestamp AS created_at "
     "FROM analytics_events "
     "WHERE timestamp > toDateTime('{since}', 'UTC') "
-    "ORDER BY timestamp ASC "
+    # ORDER BY must reference the SELECT alias (created_at), NOT the raw
+    # `timestamp` column. CF Analytics Engine's SQL rejects an aliased column
+    # referenced by its original name in ORDER BY with the misleading error
+    # "unable to find type of column: timestamp" — which silently broke the
+    # whole ingest (poindexter#555). WHERE/SELECT on `timestamp` are fine; only
+    # ORDER BY needs the alias.
+    "ORDER BY created_at ASC "
     "LIMIT {limit} "
     "FORMAT JSON"
 )
