@@ -1355,18 +1355,6 @@ CREATE TABLE IF NOT EXISTS public.internal_topic_candidates (
 --
 --
 
-CREATE TABLE IF NOT EXISTS public.logs (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    agent_name character varying(255) NOT NULL,
-    level character varying(20) NOT NULL,
-    message text NOT NULL,
-    context jsonb,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
-);
-
---
---
-
 CREATE TABLE IF NOT EXISTS public.media_approvals (
     post_id uuid NOT NULL,
     medium text NOT NULL,
@@ -2806,12 +2794,6 @@ ALTER TABLE ONLY public.internal_topic_candidates
 --
 --
 
-ALTER TABLE ONLY public.logs
-    ADD CONSTRAINT logs_pkey PRIMARY KEY (id);
-
---
---
-
 ALTER TABLE ONLY public.media_approvals
     ADD CONSTRAINT media_approvals_pkey PRIMARY KEY (post_id, medium);
 
@@ -3544,21 +3526,6 @@ CREATE INDEX IF NOT EXISTS idx_gpu_sessions_started ON public.gpu_task_sessions 
 --
 
 CREATE INDEX IF NOT EXISTS idx_gpu_sessions_task ON public.gpu_task_sessions USING btree (task_id);
-
---
---
-
-CREATE INDEX IF NOT EXISTS idx_logs_agent_name ON public.logs USING btree (agent_name);
-
---
---
-
-CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.logs USING btree (created_at);
-
---
---
-
-CREATE INDEX IF NOT EXISTS idx_logs_level ON public.logs USING btree (level);
 
 --
 --

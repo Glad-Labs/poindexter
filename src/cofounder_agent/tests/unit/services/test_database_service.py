@@ -448,16 +448,6 @@ class TestContentDelegation:
 
 class TestAdminDelegation:
     @pytest.mark.asyncio
-    async def test_add_log_entry_delegates(self):
-        svc = make_service()
-        mocks = _attach_mock_modules(svc)
-        mocks["admin"].add_log_entry = AsyncMock(return_value={"id": 1})
-        await svc.add_log_entry("agent-1", "INFO", "Task started", {"task_id": "t1"})
-        mocks["admin"].add_log_entry.assert_awaited_once_with(
-            "agent-1", "INFO", "Task started", {"task_id": "t1"}
-        )
-
-    @pytest.mark.asyncio
     async def test_health_check_delegates(self):
         svc = make_service()
         mocks = _attach_mock_modules(svc)

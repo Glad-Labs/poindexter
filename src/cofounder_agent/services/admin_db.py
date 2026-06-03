@@ -13,7 +13,6 @@ import json
 import time
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
 from asyncpg import Pool
 
@@ -627,66 +626,6 @@ class AdminDatabase(DatabaseServiceMixin):
                 exc_info=True,
             )
             return False
-
-    # ================================================================
-    # Logging Operations (delegated from DatabaseService)
-    # ================================================================
-
-    @log_query_performance(operation="add_log_entry", category="log_write")
-    async def add_log_entry(
-        self, agent_name: str, level: str, message: str, context: dict | None = None
-    ) -> dict[str, Any]:
-        """Add a log entry to the logs table."""
-        sql = """
-            INSERT INTO logs (id, agent_name, level, message, context, created_at)
-            VALUES ($1, $2, $3, $4, $5, NOW())
-            RETURNING id, agent_name, level, message, context, created_at
-        """
-        try:
-            log_id = str(uuid4())
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    sql,
-                    log_id,
-                    agent_name,
-                    level,
-                    message,
-                    json.dumps(context) if context else None,
-                )
-                return dict(row) if row else {"id": log_id}
-        except Exception:
-            logger.error("[add_log_entry] Failed to add log entry", exc_info=True)
-            return {"id": str(uuid4()), "error": "Failed to save log entry"}
-
-    @log_query_performance(operation="get_logs", category="log_retrieval")
-    async def get_logs(
-        self, agent_name: str | None = None, level: str | None = None, limit: int = 100
-    ) -> list[dict[str, Any]]:
-        """Retrieve log entries with optional filters."""
-        conditions = []
-        params: list = []
-        idx = 1
-
-        if agent_name:
-            conditions.append(f"agent_name = ${idx}")
-            params.append(agent_name)
-            idx += 1
-        if level:
-            conditions.append(f"level = ${idx}")
-            params.append(level)
-            idx += 1
-
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        sql = f"SELECT * FROM logs {where_clause} ORDER BY created_at DESC LIMIT ${idx}"  # nosec B608  # conditions built from local literals; agent_name/level/limit values use $N params
-        params.append(limit)
-
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, *params)
-                return [dict(r) for r in rows]
-        except Exception:
-            logger.error("[get_logs] Failed to retrieve logs", exc_info=True)
-            return []
 
     # ================================================================
     # Financial Operations (delegated from DatabaseService)

@@ -25,6 +25,7 @@ import asyncpg
 from config import get_config
 from schemas.typed_records import PaginatedTasksResult, TaskRecord
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 from .admin_db import AdminDatabase
 from .audit_log import AuditLogger, init_global_audit_logger
@@ -33,7 +34,6 @@ from .embeddings_db import EmbeddingsDatabase
 from .tasks_db import TasksDatabase
 from .users_db import UsersDatabase
 from .writing_style_db import WritingStyleDatabase
-from services.site_config import SiteConfig
 
 # #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
 # setter are DELETED. injection is now mandatory — ``__init__`` takes a
@@ -451,18 +451,6 @@ class DatabaseService:
         return await self.content.create_orchestrator_training_data(train_data)
 
     # ADMIN OPERATIONS
-    async def add_log_entry(
-        self, agent_name: str, level: str, message: str, context: dict | None = None
-    ) -> dict:
-        """Delegate to admin module."""
-        return await self.admin.add_log_entry(agent_name, level, message, context)
-
-    async def get_logs(
-        self, agent_name: str | None = None, level: str | None = None, limit: int = 100
-    ) -> list[dict]:
-        """Delegate to admin module."""
-        return await self.admin.get_logs(agent_name, level, limit)
-
     async def add_financial_entry(self, entry_data: dict) -> dict:
         """Delegate to admin module."""
         return await self.admin.add_financial_entry(entry_data)
