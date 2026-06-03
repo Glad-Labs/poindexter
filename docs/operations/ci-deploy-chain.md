@@ -176,6 +176,37 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
   (PR + weekly schedule, `paths-ignore` for docs/infra) to drop its
   per-push-to-main scan — tracked as the fast-follow to this sweep.
 
+### Coverage (#995)
+
+Coverage is folded into the **existing** `test-backend` run — we do
+**not** add a second test job or a separate coverage workflow (that
+would undo the minutes sweep above). Each per-directory pytest step in
+`unit-tests.yml` carries `--cov=cofounder_agent --cov-append
+--cov-report=`, accumulating into one combined `.coverage` data file
+across the split (an `Initialize coverage data` step runs `coverage
+erase` once before the first step; `--forked` stays where it already
+is). A final `Coverage report` step prints the total %, writes
+`coverage.xml`, and uploads it as the `coverage-xml` artifact so the
+number is visible per run.
+
+**Coverage is ADVISORY right now — it never fails the build.** There is
+deliberately **no `--cov-fail-under`** yet:
+
+- `test-backend` is a **required** branch-protection check. A blind
+  `--cov-fail-under` would block every PR before we even know the
+  current percentage.
+- The plan is a **ratchet, not a target**: read the baseline % from the
+  first few CI runs (the `Coverage report` step log / the `coverage-xml`
+  artifact), then set `--cov-fail-under=<baseline>` and bump it upward
+  over time as coverage improves. The number only ever goes up — a PR
+  that drops below the current floor fails; one that holds or improves
+  passes. This avoids gating on the long tail while still catching
+  regressions once a floor is set.
+
+Until the floor is set, the signal is the printed total % and the
+uploaded `coverage.xml` — "N tests pass" plus "X% of `cofounder_agent`
+is exercised", instead of just the test count.
+
 ## The public release repo is separate
 
 `github.com/Glad-Labs/poindexter` is the open-source release repo.
