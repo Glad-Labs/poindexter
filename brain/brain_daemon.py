@@ -2442,7 +2442,7 @@ async def run_cycle(pool):
 
     all_issues = issues + ext_issues
 
-    # 2026-05-27 fix (Glad-Labs/glad-labs-stack#225): write a per-cycle
+    # 2026-05-27 fix (Glad-Labs/poindexter#225): write a per-cycle
     # heartbeat audit_log row so operators can detect dead probes via
     # "no recent heartbeat in N minutes" rather than waiting for the
     # absence-of-noise to be noticed. Pre-fix, the silent probes
