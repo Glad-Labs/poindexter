@@ -21,7 +21,6 @@ Usage::
 
 import os
 from pathlib import Path
-from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
