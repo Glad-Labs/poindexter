@@ -15,8 +15,16 @@ Tunables (all read from ``app_settings`` at deploy time):
 - ``prefect_content_flow_work_pool`` — work pool name (default
   ``content-pool``)
 - ``prefect_content_flow_concurrency`` — work-pool concurrency
-  (default ``1`` — single-flow-per-cycle to mirror today's TaskExecutor
-  serialization; bump after observing GPU contention is OK)
+  (default ``3``). This is the native Prefect cap on how many
+  ``content_generation_flow`` runs execute simultaneously. Each run
+  loads an LLM + SDXL onto the single 5090, so the value is a direct
+  VRAM lever (Glad-Labs/poindexter#578 stress test: 3 concurrent sits
+  at a stable ~60% VRAM; 5 pins the GPU at ~98% and risks OOM).
+- ``content_flow_max_concurrency`` — hard safety ceiling for this GPU
+  (default ``3``). The deploy **fails loud** if the requested
+  concurrency exceeds this ceiling, so a fat-fingered value can't
+  silently exhaust VRAM (``feedback_no_silent_defaults``). Operators
+  who upgrade the GPU raise this ceiling to unlock higher concurrency.
 
 The deployment can be re-applied at any time without disrupting
 in-flight runs — Prefect updates the deployment metadata in place.
@@ -55,7 +63,54 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CRON = "*/2 * * * *"  # every 2 minutes
 DEFAULT_WORK_POOL = "content-pool"
-DEFAULT_CONCURRENCY = 1
+# Safe default for the single 5090 (Glad-Labs/poindexter#578 stress test):
+# 3 concurrent content flows sit at a stable ~60% VRAM with healthy
+# headroom; 5 pin the GPU at ~98% and risk OOM. The work-pool default
+# was historically 1 (TaskExecutor-serialization parity); 3 is the
+# documented safe production value.
+DEFAULT_CONCURRENCY = 3
+# Hard safety ceiling for this GPU. ``resolve_safe_concurrency`` fails
+# loud rather than clamping silently when the requested concurrency
+# exceeds this — a misconfigured deploy aborts instead of pinning VRAM.
+DEFAULT_MAX_CONCURRENCY = 3
+
+
+def resolve_safe_concurrency(*, requested: int, ceiling: int) -> int:
+    """Validate the requested work-pool concurrency against the safety ceiling.
+
+    Both values come from ``app_settings`` (``prefect_content_flow_concurrency``
+    and ``content_flow_max_concurrency``) — DB-configurable, never hardcoded.
+
+    Fails loud (``ValueError``) when:
+
+    - either value is not a positive integer, or
+    - ``requested`` exceeds ``ceiling`` — the Glad-Labs/poindexter#578 guard.
+      Five concurrent content flows pin the single 5090 at ~98% VRAM; the
+      ceiling stops a fat-fingered value from silently exhausting it. An
+      operator who upgrades the GPU raises ``content_flow_max_concurrency``
+      to unlock higher concurrency, keeping the cap DB-tunable.
+
+    Returns the requested value unchanged when it is within the ceiling.
+    """
+    if requested <= 0:
+        raise ValueError(
+            "prefect_content_flow_concurrency must be a positive integer, "
+            f"got {requested!r}"
+        )
+    if ceiling <= 0:
+        raise ValueError(
+            "content_flow_max_concurrency must be a positive integer, "
+            f"got {ceiling!r}"
+        )
+    if requested > ceiling:
+        raise ValueError(
+            f"prefect_content_flow_concurrency={requested} exceeds the safety "
+            f"ceiling content_flow_max_concurrency={ceiling}. On the single "
+            "5090, >3 concurrent content flows risk ~98% VRAM / OOM "
+            "(Glad-Labs/poindexter#578). Lower the requested concurrency, or "
+            "raise content_flow_max_concurrency if your GPU has the headroom."
+        )
+    return requested
 
 
 async def _resolve_setting(key: str, default: str) -> str:
@@ -143,13 +198,28 @@ async def main() -> None:
         "prefect_content_flow_work_pool", DEFAULT_WORK_POOL,
     )
     try:
-        concurrency = int(
+        requested_concurrency = int(
             await _resolve_setting(
                 "prefect_content_flow_concurrency", str(DEFAULT_CONCURRENCY),
             )
         )
     except ValueError:
-        concurrency = DEFAULT_CONCURRENCY
+        requested_concurrency = DEFAULT_CONCURRENCY
+    try:
+        max_concurrency = int(
+            await _resolve_setting(
+                "content_flow_max_concurrency", str(DEFAULT_MAX_CONCURRENCY),
+            )
+        )
+    except ValueError:
+        max_concurrency = DEFAULT_MAX_CONCURRENCY
+
+    # Fail loud if the requested concurrency exceeds the safety ceiling —
+    # a misconfigured deploy aborts here rather than pinning the 5090 at
+    # ~98% VRAM (Glad-Labs/poindexter#578). No silent clamp.
+    concurrency = resolve_safe_concurrency(
+        requested=requested_concurrency, ceiling=max_concurrency,
+    )
 
     await _ensure_work_pool(work_pool, concurrency)
 

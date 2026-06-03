@@ -384,6 +384,43 @@ The log marker to confirm the guard is active:
 
 ---
 
+## Too many content flows run at once and pin the GPU at ~98% VRAM
+
+**Symptom.** Multiple `content_generation_flow` runs execute simultaneously, each loading an LLM + SDXL onto the single 5090. VRAM climbs toward ~98% (32.0/32.6 GB) and the GPU VRAM alert fires. (The section above covers the _intra-task_ writer↔SDXL collision; this is the _inter-task_ version — N whole pipelines stacked.)
+
+**Root cause.** The number of simultaneous content flows is the Prefect work-pool `concurrency_limit` on `content-pool`. Per the 2026-05-31 stress test (Glad-Labs/poindexter#578): **3 concurrent** flows sit at a stable ~60% VRAM with healthy headroom; **5 concurrent** pin the GPU at ~98% — no OOM yet (Ollama self-gates model residency and serializes), but one model-load from the edge. Throughput barely improves past ~3 anyway, since each `canonical_blog` task is 6-7 min and the extra flows mostly deepen the Ollama queue rather than run in true parallel.
+
+**Fix (current).** The cap is the native Prefect work-pool concurrency limit, set at deploy time from two DB-configurable settings and enforced fail-loud:
+
+- `prefect_content_flow_concurrency` (int, default `3`) — the work-pool concurrency actually applied. This is the safe production value for the 5090.
+- `content_flow_max_concurrency` (int, default `3`) — the hard safety ceiling. `scripts/deploy_content_flow.py` calls `resolve_safe_concurrency()`, which **aborts the deploy with a `ValueError`** if the requested concurrency exceeds this ceiling — so a fat-fingered `5` fails loud instead of silently exhausting VRAM (`feedback_no_silent_defaults`).
+
+```sql
+-- Inspect the current cap
+SELECT key, value FROM app_settings
+WHERE key IN ('prefect_content_flow_concurrency', 'content_flow_max_concurrency');
+
+-- Lower the applied concurrency (then re-run the deploy to apply)
+UPDATE app_settings SET value = '2', updated_at = NOW()
+WHERE key = 'prefect_content_flow_concurrency';
+```
+
+```bash
+# Re-apply the deployment so the work pool picks up the new limit:
+cd src/cofounder_agent && poetry run python -m scripts.deploy_content_flow
+```
+
+**Raising the cap on bigger hardware.** On a GPU with more VRAM, raise the ceiling first, then the requested value — both DB-tunable, neither hardcoded:
+
+```sql
+UPDATE app_settings SET value = '6' WHERE key = 'content_flow_max_concurrency';
+UPDATE app_settings SET value = '5' WHERE key = 'prefect_content_flow_concurrency';
+```
+
+**Prevention.** Leave the defaults at `3/3` on a 5090. The pool default before #578 was `1` (TaskExecutor-serialization parity); `3` is the validated safe production value. Don't raise `prefect_content_flow_concurrency` above `content_flow_max_concurrency` — the deploy will refuse it by design.
+
+---
+
 ## Wan-server enters DEGRADED state — `/generate` returns 503 forever
 
 **Symptom.** `curl http://localhost:9840/health` returns:

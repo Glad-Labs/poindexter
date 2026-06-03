@@ -463,6 +463,18 @@ DEFAULTS: dict[str, str] = {
     # backlog symptom of a held concurrency=1 slot.
     'prefect_stuck_flow_queue_depth_threshold': '3',
 
+    # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
+    # The native Prefect work-pool concurrency limit caps how many
+    # content_generation_flow runs execute simultaneously. Each run loads
+    # an LLM + SDXL onto the single 5090, so this is a direct VRAM lever:
+    # the 2026-05-31 stress test found 3 concurrent flows sit at a stable
+    # ~60% VRAM (healthy headroom) while 5 pin the GPU at ~98% and risk
+    # OOM. ``scripts/deploy_content_flow.py`` reads ``concurrency`` and
+    # fails loud if it exceeds the ``max`` ceiling (no silent VRAM
+    # exhaustion); raise the ceiling only on a bigger GPU.
+    'prefect_content_flow_concurrency': '3',
+    'content_flow_max_concurrency': '3',
+
     # ----- Title originality / SEO -----
     'google_sitemap_ping_url': 'https://www.google.com/ping',
     'indexnow_key': '',
