@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.66.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.65.0...v0.66.0) (2026-06-03)
+
+
+### Features
+
+* **brain:** branch-drift deploy canary (glad-labs-stack[#942](https://github.com/Glad-Labs/glad-labs-stack/issues/942)) ([#999](https://github.com/Glad-Labs/glad-labs-stack/issues/999)) ([24c37fe](https://github.com/Glad-Labs/glad-labs-stack/commit/24c37fe0fe506233210ea08695b1992ed856adbd))
+* **docs:** hybrid CLAUDE.md drift automation — DB-count sync + migration narrative (closes [#988](https://github.com/Glad-Labs/glad-labs-stack/issues/988)) ([#1001](https://github.com/Glad-Labs/glad-labs-stack/issues/1001)) ([8138544](https://github.com/Glad-Labs/glad-labs-stack/commit/8138544edaa6bd88f4e1cf203e796c3e5cf10c3b))
+
 ## [0.65.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.4...v0.65.0) (2026-06-03)
 
 
