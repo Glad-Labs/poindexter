@@ -353,6 +353,17 @@ class GenerateContentStage:
             "model_selection_log": metrics.get("model_selection_log", {}),
             "generate_metrics": metrics,
             "stages": stages,
+            # Surface the research corpus on the StageResult so it survives
+            # the graph_def path. The bare ``context["research_context"] = ...``
+            # mutation above is only visible to in-process callers that share
+            # the same context dict; on the LangGraph graph_def path (atom-
+            # cutover #355) ``make_stage_node`` merges ONLY
+            # ``StageResult.context_updates`` back into the shared state, so a
+            # mutation that isn't echoed here is dropped. Without this, the
+            # qa.ragas / qa.deepeval grounding rails read an absent
+            # ``research_context`` and skipped 100% of the time
+            # (Glad-Labs/poindexter#553). Keep the two writes in lockstep.
+            "research_context": research_context,
         }
         logger.info("Content generated (%d chars) using %s", len(content_text), model_used)
 

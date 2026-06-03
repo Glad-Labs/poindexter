@@ -231,6 +231,16 @@ class TestGenerateContentStageExecute:
         assert "caller-supplied" in ctx["research_context"]
         assert "auto research" in ctx["research_context"]
         assert "rag context" in ctx["research_context"]
+        # Regression guard (Glad-Labs/poindexter#553): research_context MUST be
+        # returned in context_updates, not only mutated onto the local context
+        # dict. On the graph_def path (atom-cutover #355) make_stage_node merges
+        # ONLY StageResult.context_updates back into the LangGraph state — a
+        # bare context mutation is dropped, which starved the qa.ragas /
+        # qa.deepeval grounding rails (they read state["research_context"] and
+        # skipped 100% of the time). The two must stay in lockstep.
+        assert "research_context" in result.context_updates
+        assert result.context_updates["research_context"] == ctx["research_context"]
+        assert "caller-supplied" in result.context_updates["research_context"]
         # DB got an update + a cost log
         assert len(db.updates) == 1
         assert db.updates[0]["status"] == "in_progress"

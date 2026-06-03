@@ -302,7 +302,14 @@ class PipelineState(TypedDict, total=False):
     target_audience: str
     primary_keyword: str
     tags: list[str]
-    research_context: dict
+    # research_context is the grounding corpus the writer consulted, threaded
+    # to the qa.ragas / qa.deepeval faithfulness rails so they can score
+    # against the same sources. Produced by stage.generate_content
+    # (_collect_research_context returns a str) and read as a string by the
+    # rails (research_sources.strip()). Was previously annotated ``dict``,
+    # which was wrong — a last-value str channel is what actually flows
+    # (Glad-Labs/poindexter#553).
+    research_context: str
     research_results: list
     quality_result: object  # services.quality_service.QualityResult
     quality_passing: bool

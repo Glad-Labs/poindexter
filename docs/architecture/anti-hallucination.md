@@ -36,6 +36,32 @@ but it is not currently wired as a `canonical_blog` graph_def node; the
 pattern-based `quality_evaluation` stage (node 5) is the only
 programmatic scorer on the live graph_def path.
 
+#### Grounding the rails: `research_context` must ride `context_updates`
+
+The two grounding rails — `ragas_eval` and `deepeval_faithfulness` — score
+content against the **retrieved research corpus** the writer consulted.
+On the graph_def path that corpus reaches them through the
+`research_context` PipelineState channel: `stage.generate_content` builds
+it (`_collect_research_context` — caller-attached context + `ResearchService`
+
+- pgvector RAG) and the `qa.ragas` / `qa.deepeval` atoms read
+  `state.get("research_context")`, forwarding it to `_check_ragas_eval` /
+  `_check_deepeval_faithfulness`.
+
+The thread only survives if the producer returns `research_context` in its
+**`StageResult.context_updates`**. `make_stage_node`
+(`services/template_runner.py`) merges _only_ `context_updates` back into the
+shared LangGraph state — a bare `context["research_context"] = ...` mutation
+of the stage's local dict is discarded. Glad-Labs/poindexter#553 was exactly
+this: `generate_content` mutated the local context but didn't echo the value
+into `context_updates`, so after the #355 graph_def flip every grounding rail
+read `None` and skipped 100% of the time ("research_sources empty — needs a
+corpus"). The fix returns `research_context` in `context_updates`; the
+`test_research_context_threading.py` suite pins the producer→adapter→state
+contract so this can't silently regress. (This is the same channel-dropping
+failure mode the `seo_keywords_list` channel hit — see the PipelineState
+comment in `template_runner.py`.)
+
 ## Layer 1 — Prompt-level guards
 
 Files:
