@@ -307,7 +307,7 @@ class BridgeConfig:
     tts_voice: str = "af_bella"
     # Turn-detection cadence (operator-tunable via app_settings). Defaults
     # raised from the bring-up's 0.2/0.8 — that chopped sentences at every
-    # pause. See Glad-Labs/glad-labs-stack#1010 (voice hardening).
+    # pause. See Glad-Labs/poindexter#1010 (voice hardening).
     vad_stop_secs: float = 0.5
     user_speech_timeout: float = 1.5
 
