@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.69.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.1...v0.69.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **reliability:** close silent-failure & bypassed-safety gaps from alerting audit (13 findings) ([#1014](https://github.com/Glad-Labs/glad-labs-stack/issues/1014)) ([fd890d4](https://github.com/Glad-Labs/glad-labs-stack/commit/fd890d48c9a2b26af44f8e1e240a5952594d6606))
+
 ## [0.69.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.0...v0.69.1) (2026-06-03)
 
 
