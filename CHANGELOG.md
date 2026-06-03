@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.67.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.4...v0.67.0) (2026-06-03)
+
+
+### Features
+
+* **voice-bridge:** DB-configurable turn-detection; raise defaults to stop sentence-chopping ([#1013](https://github.com/Glad-Labs/glad-labs-stack/issues/1013)) ([177594a](https://github.com/Glad-Labs/glad-labs-stack/commit/177594ab5a6f7e762aa7fa2e6f4f6f426de7fa3d))
+
 ## [0.66.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.3...v0.66.4) (2026-06-03)
 
 
