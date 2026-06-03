@@ -46,7 +46,7 @@ Telegram silent but you SEE a problem?
 
 ## Alert index — alert name to runbook section
 
-These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (14 rules as of 2026-06-03). Brain daemon also fires a few synthetic alerts directly to Telegram.
+These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (14 rules as of 2026-06-03). Brain daemon also fires a few synthetic alerts directly to Telegram, and host-infrastructure alerts (e.g. disk space) are sourced from Prometheus (`infrastructure/prometheus/alerts/`).
 
 **No-data posture (Glad-Labs/poindexter#581).** 13 of the 14 rules use `noDataState: Alerting`: every page-worthy rule returns a row in the healthy state (a `count(*)` / `SUM` / `AVG` always does; `GPU Temperature High` reads the latest `gpu_metrics` row), so "no data" can only mean the underlying table/view was renamed or dropped, or the datasource is down — i.e. the rule went blind. Those surface loudly rather than silently resolving green (fail-loud, no silent fallbacks). Query _errors_ (renamed column, dropped table) surface independently via `execErrState`, which is `Error` (or `Alerting`) on every rule — never `OK`. The single exception is **DB Size Warning**, intentionally kept on `noDataState: OK`: it is a non-page-worthy capacity warning whose only no-data condition (datasource unreachable) is already paged by the two critical rules on the same datasource (Worker Offline, Brain Daemon Stale). The posture is pinned by `src/cofounder_agent/tests/unit/infrastructure/test_grafana_alert_no_data_state.py`.
 
@@ -66,7 +66,7 @@ These are the active Grafana alert rules in `infrastructure/grafana/provisioning
 | Ollama Unresponsive            | warning  | [§ Ollama Unresponsive](#ollama-unresponsive)                       |
 | Zero Published Posts This Week | warning  | [§ Zero Published Posts This Week](#zero-published-posts-this-week) |
 | GPU Metrics Stale              | warning  | [§ GPU Metrics Stale](#gpu-metrics-stale)                           |
-| Disk Space Low                 | warning  | [§ Disk Space Low](#disk-space-low)                                 |
+| Disk Space Low (Prometheus)    | warning  | [§ Disk Space Low](#disk-space-low)                                 |
 | Site DOWN (brain)              | critical | [§ Site DOWN](#site-down)                                           |
 | Wan Server DEGRADED            | warning  | [§ Wan Server DEGRADED](#wan-server-degraded)                       |
 | (Unknown alert)                | varies   | [§ Unknown alert — generic triage](#unknown-alert--generic-triage)  |
@@ -469,24 +469,33 @@ docker ps | grep gpu-scraper   # if containerized
 
 ## Disk Space Low
 
-**Means.** Free disk space is below 50 GB. (The current alert SQL actually checks `pg_database_size` — this rule is mislabeled and should be fixed; treat as DB size.)
+**Means.** A host volume is running low on free disk space. This is now a **Prometheus** alert, defined in `infrastructure/prometheus/alerts/infrastructure.yml`. (It used to be a Grafana SQL rule, but that rule was mislabeled — it actually queried `pg_database_size`, duplicating [§ DB Size Warning](#db-size-warning) — so it was removed 2026-06-03 and replaced with real host-disk monitoring.) Two thresholds fire:
 
-**Triage + fix.**
+- **`PoindexterDiskSpaceLow`** (warning) — a drive-letter volume has under 20 GB free for 10 minutes.
+- **`PoindexterDiskSpaceCritical`** (critical) — under 10 GB free for 5 minutes; Postgres writes, Docker pulls, and image generation will start failing.
+
+Both are sourced from windows_exporter's `windows_logical_disk_free_bytes` (the `windows` scrape job on `host.docker.internal:9182`), filtered to drive-letter volumes (`[A-Z]:`). The `{{ $labels.volume }}` label in the alert names the affected drive.
+
+**Triage.**
 
 ```powershell
-# Disk usage (Windows)
-Get-PSDrive C | Select-Object Used,Free
+# Free space per drive (Windows host)
+Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free
 docker system df
 ```
 
-```bash
-# Free up Docker space
-docker system prune -af --volumes  # WARNING: drops unused volumes
-# Or the gentler:
-powershell -File scripts/docker-prune.ps1
+**Fix.** Free up headroom on the named volume:
+
+```powershell
+powershell scripts/docker-prune.ps1   # gentle: prunes dangling images + build cache
 ```
 
-For DB size growth, see [§ DB Size Warning](#db-size-warning).
+```bash
+# Heavier hammer (also drops unused volumes — read the warning):
+docker system prune -af --volumes
+```
+
+Other space to reclaim: clear old local model files, or archive high-churn tables (`cost_logs` / `page_views`). For Postgres-specific growth, see [§ DB Size Warning](#db-size-warning).
 
 ---
 
