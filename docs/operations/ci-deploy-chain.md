@@ -178,16 +178,21 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
 
 ### Coverage (#995)
 
-Coverage is folded into the **existing** `test-backend` run — we do
-**not** add a second test job or a separate coverage workflow (that
-would undo the minutes sweep above). Each per-directory pytest step in
-`unit-tests.yml` carries `--cov=cofounder_agent --cov-append
---cov-report=`, accumulating into one combined `.coverage` data file
-across the split (an `Initialize coverage data` step runs `coverage
-erase` once before the first step; `--forked` stays where it already
-is). A final `Coverage report` step prints the total %, writes
-`coverage.xml`, and uploads it as the `coverage-xml` artifact so the
-number is visible per run.
+Coverage reuses the **existing** `test-backend` matrix in
+`unit-tests.yml` — we do **not** add a second test job or a parallel
+coverage workflow (that would duplicate the per-dir/`--forked` split and
+drift as test dirs are added). But it is **gated to the nightly schedule
+(`cron: 0 9 * * *`) + manual `workflow_dispatch` only** — NOT every PR.
+A job-level `COV` env var holds `--cov=cofounder_agent --cov-append
+--cov-report=` on those events and is **empty on push/PR**, so every
+pytest step appends `$COV`: on a PR that expands to nothing (lean ~8m
+run), on the nightly run it turns on coverage. The `Initialize coverage
+data` / `Coverage report` / `Upload coverage.xml artifact` steps are
+likewise gated to schedule/dispatch. **Why gated, not per-PR:**
+coverage instrumentation across the `--forked` split roughly _doubled_
+`test-backend` (8m → 17m). Your nightly agents open several backend PRs
+a day, so paying that on every PR would erode the CI-minutes win — a
+once-a-day trend line gives the signal without the per-PR tax.
 
 **Coverage is ADVISORY right now — it never fails the build.** There is
 deliberately **no `--cov-fail-under`** yet:

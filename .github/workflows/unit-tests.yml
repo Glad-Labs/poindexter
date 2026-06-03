@@ -30,6 +30,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Nightly full run that ALSO measures coverage (#995). Coverage is gated to
+  # this scheduled run (+ manual dispatch) via the `COV` env var below, so PRs
+  # stay lean (~8m) instead of paying the ~2x coverage-instrumentation cost.
+  # CI-minutes sweep — coverage as a daily trend line, not a per-PR tax.
+  schedule:
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 # Cancel older in-progress runs of the same ref/PR — saves Actions minutes
@@ -47,6 +53,13 @@ jobs:
   test-backend:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+
+    # Coverage args applied to every pytest step — ONLY on the nightly schedule
+    # + manual dispatch. Empty on push/PR so day-to-day runs don't pay the ~2x
+    # coverage-instrumentation cost (#995 coverage moved off the per-PR path to
+    # protect the CI-minutes win). Advisory either way (no --cov-fail-under).
+    env:
+      COV: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '--cov=cofounder_agent --cov-append --cov-report=' || '' }}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
@@ -76,8 +89,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            echo "Manual dispatch — running full suite."
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "schedule" ]; then
+            echo "Manual dispatch or nightly schedule — running full suite (+ coverage)."
             echo "needs_tests=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -168,40 +181,39 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
 
-      # #995: turn "N tests pass" into a coverage SIGNAL without adding a
-      # second test run (we just cut CI minutes). Every pytest step below
-      # appends to ONE combined `.coverage` data file via
-      # `--cov=cofounder_agent --cov-append --cov-report=` (empty report =
-      # collect-only, no per-step output). This step erases any stale data
-      # so the first `--cov-append` starts clean; the final "Coverage report"
-      # step prints the total and writes coverage.xml. Coverage is ADVISORY
-      # — no `--cov-fail-under` yet (we don't know the baseline, and
-      # test-backend is a required check, so a blind gate would block every
-      # PR). The ratchet plan lives in docs/operations/ci-deploy-chain.md.
+      # #995: turn "N tests pass" into a coverage SIGNAL — gated to the nightly
+      # schedule + manual dispatch only. The `COV` env var (job level, above) is
+      # EMPTY on push/PR, so day-to-day runs don't pay the ~2x instrumentation
+      # cost; the trend line is captured once a day instead. When COV is set,
+      # every pytest step appends to ONE combined `.coverage` file (collect-only,
+      # no per-step report); this step erases stale data first and the final
+      # "Coverage report" step prints the total + writes coverage.xml. ADVISORY —
+      # no `--cov-fail-under` yet (test-backend is a required check; a blind gate
+      # would block every PR). Ratchet plan: docs/operations/ci-deploy-chain.md "Coverage".
       - name: Initialize coverage data
-        if: steps.changes.outputs.needs_tests == 'true'
+        if: steps.changes.outputs.needs_tests == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         working-directory: src/cofounder_agent
         run: coverage erase
 
       - name: Unit tests — middleware
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/middleware/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/middleware/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — routes
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/routes/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/routes/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — plugins
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — cli
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/cli/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/cli/ -q --tb=short -p no:cacheprovider $COV
 
       # `--forked` isolates ServiceContainer / site_config singletons that
       # leak across tests in the services directory.
@@ -218,12 +230,12 @@ jobs:
       - name: Unit tests — services (forked)
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/services/ -q --tb=short --forked -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/services/ -q --tb=short --forked -p no:cacheprovider $COV
 
       - name: Unit tests — utils
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/utils/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/utils/ -q --tb=short -p no:cacheprovider $COV
 
       # Brain-daemon probe/dispatcher tests. Previously omitted from the
       # matrix, so brain regressions (e.g. the findings/anomaly probes and
@@ -231,7 +243,7 @@ jobs:
       - name: Unit tests — brain
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/brain/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/brain/ -q --tb=short -p no:cacheprovider $COV
 
       # #641: the matrix previously ran only 7 of the 12 backend test
       # subdirs (middleware/routes/plugins/cli/services/utils/brain). The
@@ -243,27 +255,27 @@ jobs:
       - name: Unit tests — modules
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/modules/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/modules/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — poindexter
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/poindexter/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/poindexter/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — prompts
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/prompts/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/prompts/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — schemas
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/schemas/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/schemas/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — scripts
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/scripts/ -q --tb=short -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/scripts/ -q --tb=short -p no:cacheprovider $COV
 
       # Root-level tests/unit/test_*.py (test_main / test_app_container_wireup
       # / test_bootstrap / approval-service suites). These exercise the
@@ -274,7 +286,7 @@ jobs:
       - name: Unit tests — root-level
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/test_*.py -q --tb=short --forked -p no:cacheprovider --cov=cofounder_agent --cov-append --cov-report=
+        run: python -m pytest tests/unit/test_*.py -q --tb=short --forked -p no:cacheprovider $COV
 
       # #994: tests/integration/ was never run by any CI workflow, so the
       # strongest content-pipeline regression guards ran against nothing.
@@ -304,7 +316,7 @@ jobs:
           tests/integration/test_approval_workflow.py
           tests/integration/test_task_lifecycle.py
           -q --tb=short -p no:cacheprovider
-          --cov=cofounder_agent --cov-append --cov-report=
+          $COV
 
       # #995: ADVISORY coverage signal. Combines the `.coverage` data the
       # steps above accumulated (one file across the per-dir split, thanks
@@ -318,7 +330,7 @@ jobs:
       # `--cov-fail-under=<baseline>` and ratchet it up — see
       # docs/operations/ci-deploy-chain.md "Coverage".
       - name: Coverage report (advisory — never fails the build)
-        if: steps.changes.outputs.needs_tests == 'true'
+        if: steps.changes.outputs.needs_tests == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         working-directory: src/cofounder_agent
         run: |
           coverage combine 2>/dev/null || true
@@ -330,7 +342,7 @@ jobs:
       # Actions allowlist (`selected`) — same pin used in playwright-e2e /
       # release-poindexter-to-pypi.
       - name: Upload coverage.xml artifact
-        if: steps.changes.outputs.needs_tests == 'true'
+        if: steps.changes.outputs.needs_tests == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v4.6.2 as of 2026-05-12
         with:
           name: coverage-xml
