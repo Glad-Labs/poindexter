@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.3...v0.70.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **prefect:** cap content-flow concurrency to protect 5090 VRAM (poindexter[#578](https://github.com/Glad-Labs/glad-labs-stack/issues/578)) ([#1047](https://github.com/Glad-Labs/glad-labs-stack/issues/1047)) ([29921e7](https://github.com/Glad-Labs/glad-labs-stack/commit/29921e7ad7ea47b05a17903f77066096f0f827a2))
+
 ## [0.70.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.2...v0.70.3) (2026-06-03)
 
 
