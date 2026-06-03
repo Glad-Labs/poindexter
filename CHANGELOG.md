@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.69.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.2...v0.69.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **grafana-alert:** surface page-worthy DB rules on no-data instead of resolving OK ([#1026](https://github.com/Glad-Labs/glad-labs-stack/issues/1026)) ([b3bcabe](https://github.com/Glad-Labs/glad-labs-stack/commit/b3bcabe58476b5db6ab5708e09efd22a9f5844df))
+* **qa:** thread research_context to grounding rails on graph_def path (poindexter[#553](https://github.com/Glad-Labs/glad-labs-stack/issues/553)) ([#1025](https://github.com/Glad-Labs/glad-labs-stack/issues/1025)) ([c37b82e](https://github.com/Glad-Labs/glad-labs-stack/commit/c37b82ef1947aff3337d1c8afe4cc6a4e464bde7))
+
 ## [0.69.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.1...v0.69.2) (2026-06-03)
 
 
