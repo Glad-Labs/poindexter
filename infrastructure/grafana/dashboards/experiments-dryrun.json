@@ -1,0 +1,1059 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "weekStart": "",
+  "templating": {
+    "list": []
+  },
+  "schemaVersion": 41,
+  "refresh": "5m",
+  "tags": ["experiments", "dry-run", "gate", "content"],
+  "title": "Experiments & Dry-Run",
+  "uid": "experiments-dryrun",
+  "version": 1,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Auto-Publish Gate — Dry-Run Observability",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": [],
+      "id": 1
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Gate today",
+      "description": "Total auto_publish_gate evaluations logged in the last 24h. One per dev_diary finalize.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS value FROM audit_log WHERE event_type = 'auto_publish_gate' AND timestamp > NOW() - INTERVAL '24 hours'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Would-fire 24h",
+      "description": "Gate decisions where would_fire=true. While dry_run=true (default), these are the candidate auto-publishes — compare against your actual approves before flipping the gate live.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS value FROM audit_log WHERE event_type = 'auto_publish_gate' AND (details->>'would_fire')::boolean = true AND timestamp > NOW() - INTERVAL '24 hours'"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "Trailing-7 mean edit distance — dev_diary",
+      "description": "Mean char-level edit distance across the last 7 dev_diary publishes. Trending toward 0 means operator edits are minimal — the gate is closer to ready to flip live.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 200
+              }
+            ]
+          },
+          "min": 0,
+          "max": 500,
+          "unit": "none"
+        }
+      },
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG(char_diff_count)::numeric, 1) AS value FROM ( SELECT char_diff_count FROM published_post_edit_metrics WHERE category = 'dev_diary' OR niche_slug = 'dev_diary' ORDER BY approved_at DESC LIMIT 7 ) t"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "piechart",
+      "title": "Gate state distribution (last 7 days)",
+      "description": "Where the gate landed per evaluation: pass means it would have auto-published; block_threshold/block_unclean/no_history/disabled mean it correctly held back.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        }
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": {
+          "displayMode": "table",
+          "values": ["value"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT details->>'gate_state' AS metric, COUNT(*) AS value FROM audit_log WHERE event_type = 'auto_publish_gate' AND timestamp > NOW() - INTERVAL '7 days' GROUP BY details->>'gate_state' ORDER BY value DESC"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Edit distance per publish (per niche)",
+      "description": "Char-level edit distance between pre-approve and post-approve content for every published post. Lower = operator made fewer/smaller edits = system output is closer to publish-ready.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 6,
+            "showPoints": "always",
+            "fillOpacity": 10
+          },
+          "unit": "none"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT approved_at AS time, COALESCE(NULLIF(niche_slug, ''), category, 'unknown') AS metric, char_diff_count AS value FROM published_post_edit_metrics WHERE approved_at > NOW() - INTERVAL '30 days' ORDER BY approved_at"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Trailing-7 clean-run count by niche",
+      "description": "Clean = char_diff_count < dev_diary_auto_publish_max_edit_distance (default 50). Once a niche shows 3 clean runs in its trailing 7, the gate's clean-run criterion is satisfied for that niche.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 3
+              }
+            ]
+          },
+          "min": 0,
+          "max": 7,
+          "unit": "none"
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(NULLIF(niche_slug, ''), category, 'unknown') AS niche, SUM(CASE WHEN char_diff_count < 50 THEN 1 ELSE 0 END) AS value FROM ( SELECT niche_slug, category, char_diff_count, ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(niche_slug, ''), category) ORDER BY approved_at DESC) AS rn FROM published_post_edit_metrics ) t WHERE rn <= 7 GROUP BY COALESCE(NULLIF(niche_slug, ''), category, 'unknown')"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Recent gate decisions (last 20)",
+      "description": "Each finalize_task evaluation. would_fire=true and dry_run=true means the gate would have auto-published if you flip dry_run off — worth comparing against your actual approve decision for this task.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "would_fire"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "true": {
+                        "color": "blue",
+                        "text": "WOULD FIRE"
+                      },
+                      "false": {
+                        "color": "orange",
+                        "text": "blocked"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gate_state"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background-solid"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "pass": {
+                        "color": "blue"
+                      },
+                      "block_threshold": {
+                        "color": "yellow"
+                      },
+                      "block_unclean": {
+                        "color": "orange"
+                      },
+                      "disabled": {
+                        "color": "blue"
+                      },
+                      "no_history": {
+                        "color": "purple"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT timestamp AS \"time\", task_id, details->>'gate_state' AS gate_state, (details->>'would_fire')::boolean AS would_fire, (details->>'dry_run')::boolean AS dry_run, ROUND((details->>'quality_score')::numeric, 1) AS quality_score, ROUND((details->>'threshold')::numeric, 1) AS threshold, details->>'reason' AS reason FROM audit_log WHERE event_type = 'auto_publish_gate' ORDER BY timestamp DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 9,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "title": "Dry-Run Mode (gh#215)",
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 10,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 29
+      },
+      "title": "Dry-Run (1h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int AS value FROM pipeline_tasks WHERE status = 'dry_run' AND updated_at > NOW() - INTERVAL '1 hour'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 11,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 29
+      },
+      "title": "Dry-Run all",
+      "datasource": {
+        "type": "postgres",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int AS value FROM pipeline_tasks WHERE status = 'dry_run'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 12,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 29
+      },
+      "title": "Dry-Run Q",
+      "datasource": {
+        "type": "postgres",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(AVG(quality_score)::numeric, 1)::float AS value FROM pipeline_tasks_view WHERE status = 'dry_run' AND quality_score IS NOT NULL",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "blue",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "max": 100,
+          "min": 0
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 13,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 29
+      },
+      "title": "Dry-Run mode",
+      "datasource": {
+        "type": "postgres",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE WHEN value IN ('true','1','yes','on') THEN 'ON' ELSE 'off' END AS value FROM app_settings WHERE key = 'pipeline_dry_run_mode'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "ON": {
+                  "color": "purple",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "off": {
+                  "color": "blue",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 14,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "title": "Dry-Run Generation Rate",
+      "datasource": {
+        "type": "postgres",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('minute', updated_at) AS time, COUNT(*)::int AS dry_run FROM pipeline_tasks WHERE status = 'dry_run' AND $__timeFilter(updated_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "id": 15,
+      "title": "Lab Observability — Variant Experiments",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 16,
+      "title": "Active experiments",
+      "description": "Count of experiments currently in state='active'. Phase 1 enforces one-active-per-niche via a partial unique index, so this number also bounds how many niches are running tests right now. Green at 0-2, yellow at 3-5, red at 6+ (operator-overload threshold — concluding experiments to free up niche slots).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 43
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Active experiments\" FROM experiments WHERE status = 'active';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": 17,
+      "title": "Scorecard — most recently activated experiment",
+      "description": "Per-variant rollup for the experiment with the most recent activated_at. Sorted by approval_rate_pct DESC so the leading variant is on top. Columns: variant_label, runs, approval %, mean edit distance, mean cost, mean wall-clock — the 5 axes the operator uses to conclude(--winner=...). Source: experiment_variant_scorecard_v1 view (Phase 1 PR 1) JOINed against lab_outcomes_v1 for the wall-clock column.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 18,
+        "x": 6,
+        "y": 43
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Approval %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 40
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 60
+                    },
+                    {
+                      "color": "green",
+                      "value": 75
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mean Edit Distance"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mean Cost (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mean Wall-Clock (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH latest_active AS (\n  SELECT id\n    FROM experiments\n   WHERE status = 'active'\n   ORDER BY activated_at DESC NULLS LAST\n   LIMIT 1\n)\nSELECT\n  s.variant_label                         AS \"Variant\",\n  s.posts_attempted                       AS \"Runs\",\n  COALESCE(s.approval_rate_pct, 0)::float AS \"Approval %\",\n  COALESCE(\n    ROUND(AVG(lo.atom_quality_score)::numeric, 1),\n    0\n  )::float                                AS \"Mean Quality Score\",\n  COALESCE(s.avg_edit_distance_pct, 0)::float    AS \"Mean Edit Distance\",\n  COALESCE(s.avg_cost_per_post, 0)::float        AS \"Mean Cost (USD)\",\n  COALESCE(\n    ROUND((AVG(lo.elapsed_ms) / 1000.0)::numeric, 2),\n    0\n  )::float                                AS \"Mean Wall-Clock (s)\"\nFROM experiment_variant_scorecard_v1 s\nJOIN latest_active la ON la.id = s.experiment_id\nLEFT JOIN lab_outcomes_v1 lo ON lo.variant_id = s.variant_id\nGROUP BY s.variant_label, s.posts_attempted, s.approval_rate_pct,\n         s.avg_edit_distance_pct, s.avg_cost_per_post\nORDER BY \"Approval %\" DESC, \"Runs\" DESC;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 18,
+      "title": "Approval rate by variant (rolling 7-day window)",
+      "description": "Approval rate per active-experiment variant, bucketed by day, computed as the rolling 7-day mean (each point is the % of approved tasks across the trailing 7 days for that variant). One line per variant_label across every currently-active experiment. Powered by capability_outcomes.variant_id (Phase 1 PR 2) JOINed against experiment_variants for the label. The 7-day window smooths small-sample noise — for unsmoothed daily approval rates use the scorecard.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "approval %",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH daily AS (\n  SELECT\n    date_trunc('day', co.created_at) AS day,\n    ev.id                            AS variant_id,\n    ev.label                         AS variant_label,\n    e.key                            AS experiment_key,\n    COUNT(*)                                                       AS runs,\n    COUNT(*) FILTER (WHERE pem.approver IS NOT NULL)               AS approved\n  FROM capability_outcomes co\n  JOIN experiment_variants ev ON ev.id = co.variant_id\n  JOIN experiments e          ON e.id = ev.experiment_id\n  LEFT JOIN published_post_edit_metrics pem ON pem.task_id = co.task_id\n  WHERE co.variant_id IS NOT NULL\n    AND e.status = 'active'\n    AND co.created_at > NOW() - INTERVAL '30 days'\n  GROUP BY 1, 2, 3, 4\n)\nSELECT\n  day                                                          AS time,\n  experiment_key || ' / ' || variant_label                     AS metric,\n  ROUND(\n    (SUM(approved) OVER w)::numeric\n    / NULLIF((SUM(runs) OVER w)::numeric, 0) * 100, 1\n  )::float                                                      AS value\nFROM daily\nWINDOW w AS (\n  PARTITION BY variant_id\n  ORDER BY day\n  RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW\n)\nORDER BY time, metric;",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
