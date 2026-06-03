@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.66.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.1...v0.66.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **voice-bridge:** migrate host audio plane to Pipecat 1.2 + CPU Whisper ([#1007](https://github.com/Glad-Labs/glad-labs-stack/issues/1007)) ([9ab6781](https://github.com/Glad-Labs/glad-labs-stack/commit/9ab6781ba99c98576a9633a8c020a215281e8eca))
+
 ## [0.66.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.0...v0.66.1) (2026-06-03)
 
 
