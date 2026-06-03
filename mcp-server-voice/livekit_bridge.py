@@ -36,7 +36,28 @@ A ``PipecatAudioMediaPlane`` will land in PR #2 once the always-on
 and we get the audio for free, no duplicated Whisper / Silero / Kokoro
 state in the MCP server process.
 
-## Pipe layout
+## Process model — subprocess-spawned worker (Glad-Labs/glad-labs-stack#1010)
+
+The bridge worker runs as a **separate Python subprocess**, not as an
+``asyncio.create_task`` inside the long-lived MCP server process. The MCP
+server is a thin launcher: ``voice_join_room`` calls
+:func:`spawn_bridge_subprocess`, which ``Popen``-launches
+``bridge_worker.py`` (detached + hidden), and that child imports the
+*fresh on-disk* :func:`start_bridge` / :func:`_bridge_main` code.
+
+Why: the MCP server is a long-lived process. If the worker ran in-process
+it would bind to whatever modules that process loaded at startup, so any
+code change (e.g. the Pipecat 1.2 migration) leaves the running MCP server
+using STALE cached modules until restarted — which a mobile operator
+cannot do. Symptom: every MCP-spawned bridge's ``.in`` transcript pipe
+stays empty (a deaf bridge) while a standalone subprocess running fresh
+code works. Spawning a subprocess sidesteps module staleness entirely.
+
+:func:`start_bridge` / :func:`_bridge_main` stay callable in-process so
+unit tests and the ``VOICE_BRIDGE_INPROCESS=1`` escape hatch keep the old
+behaviour. Default is subprocess.
+
+## Pipe + status layout
 
 For session_id ``ab12``:
 
@@ -44,8 +65,16 @@ For session_id ``ab12``:
   the slash-command-side ``Monitor`` watches the file for new lines.
 - ``~/.poindexter/voice/ab12.out`` — slash command (or anything else) writes
   text-to-speak lines here; bridge polls and forwards to TTS.
-- ``~/.poindexter/voice/ab12.lock`` — sentinel file; presence means a
-  bridge worker owns this session id. Cleaned up on graceful exit.
+- ``~/.poindexter/voice/ab12.lock`` — sentinel file holding the worker PID
+  (written by :func:`_bridge_main`, unlinked on exit). Cross-process PID
+  file — :func:`terminate_bridge_process` reads it to leave-by-PID.
+- ``~/.poindexter/voice/ab12.status`` — single-word readiness signal the
+  launcher polls: ``connecting`` → ``ready`` (after the audio plane
+  connects) → ``stopped``, or ``error: <repr>`` if connect raised. The
+  lock is written BEFORE connect, so it can't signal "connected" — the
+  status file fills that gap.
+- ``~/.poindexter/voice/ab12.log`` — the launcher's capture of the child's
+  stdout/stderr. The launcher reads its tail into error messages.
 
 Pipes are plain files, not POSIX FIFOs. Plain files survive a worker
 crash without leaving a half-open FD; new writes append; readers track
@@ -56,14 +85,19 @@ host without the Linux-FIFO quirks.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import json
 import logging
 import os
 import re
+import signal
+import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger("livekit-bridge")
 
@@ -88,31 +122,66 @@ def voice_pipe_dir() -> Path:
 
 
 def session_pipe_paths(session_id: str) -> dict[str, Path]:
-    """Return the canonical .in / .out / .lock paths for a session id.
+    """Return the canonical .in / .out / .lock / .status / .log paths.
 
-    Pure function so the slash command, the bridge worker, and the unit
-    tests all agree on where the files live.
+    Pure function so the slash command, the bridge worker, the subprocess
+    launcher, and the unit tests all agree on where the files live.
+
+    - ``in`` / ``out`` — the transcript pipes (see module docstring).
+    - ``lock`` — worker PID file (written by :func:`_bridge_main`).
+    - ``status`` — readiness signal the launcher polls. The lock is
+      written BEFORE the audio plane connects, so it can't say "ready";
+      the status file does (``connecting`` → ``ready`` → ``stopped`` /
+      ``error: ...``).
+    - ``log`` — the launcher's capture of the child's stdout/stderr.
     """
     base = voice_pipe_dir()
     return {
         "in": base / f"{session_id}.in",
         "out": base / f"{session_id}.out",
         "lock": base / f"{session_id}.lock",
+        "status": base / f"{session_id}.status",
+        "log": base / f"{session_id}.log",
     }
 
 
 def ensure_session_pipes(session_id: str) -> dict[str, Path]:
-    """Create the pipe directory + empty .in / .out / .lock files.
+    """Create the pipe directory + empty .in / .out files; clear .status.
 
     Idempotent — safe to call multiple times. Returns the same dict
-    :func:`session_pipe_paths` would.
+    :func:`session_pipe_paths` would. The ``.in`` / ``.out`` files are
+    created-if-absent (never truncated — a re-join must not drop final
+    lines a Monitor hasn't read). The ``.status`` file is *cleared* to an
+    empty string so a stale ``ready`` / ``error`` from a previous session
+    can't fool the launcher's readiness poll into a false positive.
     """
     paths = session_pipe_paths(session_id)
     paths["in"].parent.mkdir(parents=True, exist_ok=True)
     for kind in ("in", "out"):
         if not paths[kind].exists():
             paths[kind].touch()
+    # Clear the readiness signal — fresh session starts with no status.
+    paths["status"].write_text("", encoding="utf-8")
     return paths
+
+
+def _write_status(session_id: str, status: str) -> None:
+    """Best-effort write of the ``.status`` readiness file.
+
+    A status-write failure must never break the worker — the status file
+    is a convenience signal for the launcher's readiness poll, not a
+    correctness invariant (leave-by-PID via ``.lock`` is the primary
+    teardown signal). So we swallow every error and log at debug level.
+    """
+    try:
+        session_pipe_paths(session_id)["status"].write_text(
+            status, encoding="utf-8",
+        )
+    except OSError as exc:  # pragma: no cover — defensive
+        logger.debug(
+            "status-write failed for session %s (status=%r): %r",
+            session_id, status, exc,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +528,9 @@ async def _bridge_main(state: BridgeState) -> None:
     """
     paths = ensure_session_pipes(state.session_id)
     paths["lock"].write_text(str(os.getpid()), encoding="utf-8")
+    # The lock is written BEFORE connect, so it can't signal "ready".
+    # The .status file carries the readiness handshake the launcher polls.
+    _write_status(state.session_id, "connecting")
 
     state.media.set_utterance_callback(
         lambda t: _on_utterance_end(state, t),
@@ -469,11 +541,14 @@ async def _bridge_main(state: BridgeState) -> None:
             room=state.config.room,
             identity=state.config.identity,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Audio plane connect failed for session %s — bridge aborting",
             state.session_id,
         )
+        # Signal the launcher BEFORE the existing raise so its readiness
+        # poll surfaces the connect failure instead of timing out.
+        _write_status(state.session_id, f"error: {exc!r}")
         # Per feedback_no_silent_defaults: tear down + re-raise so the
         # MCP tool sees the failure rather than thinking the bridge is up.
         try:
@@ -482,6 +557,9 @@ async def _bridge_main(state: BridgeState) -> None:
             pass
         _registry.remove(state.session_id)
         raise
+
+    # Connect succeeded — the bridge is live and the .in pipe will fill.
+    _write_status(state.session_id, "ready")
 
     deadline = state.started_at + state.config.max_session_seconds
     poll = state.config.out_poll_interval
@@ -508,10 +586,14 @@ async def _bridge_main(state: BridgeState) -> None:
                 "Audio plane disconnect failed for session %s — continuing",
                 state.session_id,
             )
-        try:
-            paths["lock"].unlink(missing_ok=True)
-        except OSError:
-            pass
+        # Mark stopped then drop the file — leave-by-PID via .lock is the
+        # primary teardown signal, so the .status file is disposable here.
+        _write_status(state.session_id, "stopped")
+        for kind in ("lock", "status"):
+            try:
+                paths[kind].unlink(missing_ok=True)
+            except OSError:
+                pass
         _registry.remove(state.session_id)
         logger.info(
             "Bridge session %s closed — utterances=%d, tts_chunks=%d, "
@@ -682,6 +764,271 @@ async def stop_bridge(session_id: str, *, timeout: float = 5.0) -> bool:
         except Exception:  # noqa: BLE001 — already logged inside the task
             pass
     return True
+
+
+# ---------------------------------------------------------------------------
+# Subprocess launcher + leave-by-PID — the cross-process bridge lifecycle
+# (Glad-Labs/glad-labs-stack#1010)
+# ---------------------------------------------------------------------------
+
+
+# Resolved once: absolute path to the subprocess entrypoint that imports
+# fresh on-disk code and runs the worker. Lives next to this module.
+_BRIDGE_WORKER_PATH = Path(__file__).resolve().parent / "bridge_worker.py"
+
+
+def _read_log_tail(log_path: Path, *, lines: int = 20) -> str:
+    """Return the last ``lines`` lines of the worker log, or a marker.
+
+    Best-effort — a missing / unreadable log returns a short marker so
+    the error message is still actionable rather than crashing the
+    error path itself.
+    """
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "(no worker log captured)"
+    tail = text.splitlines()[-lines:]
+    return "\n".join(tail) if tail else "(worker log empty)"
+
+
+def _read_pid_from_lock(lock_path: Path) -> int | None:
+    """Read the integer PID from a ``.lock`` file, or None if absent/garbage."""
+    try:
+        raw = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def spawn_bridge_subprocess(
+    session_id: str,
+    config: BridgeConfig,
+    *,
+    ready_timeout: float = 30.0,
+) -> int:
+    """Launch the bridge worker as a detached subprocess; return its PID.
+
+    The MCP server is long-lived, so an in-process worker binds to the
+    modules loaded at server startup — stale after any code change, and a
+    mobile operator can't restart the server to pick up fresh code. This
+    launcher spawns ``bridge_worker.py`` as a separate Python process that
+    imports fresh on-disk code, so a Pipecat / STT migration takes effect
+    on the next ``voice_join_room`` with no restart. See
+    Glad-Labs/glad-labs-stack#1010.
+
+    Blocking (``Popen`` + a readiness poll), so call it via
+    ``asyncio.to_thread`` from async code.
+
+    Lifecycle:
+
+    1. :func:`ensure_session_pipes` (clears ``.status``).
+    2. Build the child env: inherit the launcher's env (LiveKit creds +
+       DATABASE_URL are already present on the MCP server), inject
+       ``POINDEXTER_VOICE_BRIDGE_SESSION_ID`` +
+       ``POINDEXTER_VOICE_BRIDGE_CONFIG`` (JSON of ``asdict(config)``),
+       pass through ``POINDEXTER_VOICE_DIR`` if set.
+    3. ``Popen`` the worker fully detached + hidden (no console window on
+       Windows per feedback_no_popups; ``start_new_session`` on POSIX),
+       capturing stdout+stderr to ``<sid>.log``.
+    4. Poll ``<sid>.status`` until ``ready`` (return the PID from
+       ``<sid>.lock``), ``error: ...`` (raise), the process dies (raise),
+       or ``ready_timeout`` elapses (kill + raise). Every failure path
+       raises ``RuntimeError`` with the worker log tail — fail loud,
+       explicit (feedback_no_silent_defaults).
+
+    The 30s default covers a cold faster-whisper ``base`` model load
+    (~10s) with headroom.
+    """
+    paths = ensure_session_pipes(session_id)
+    status_path = paths["status"]
+    lock_path = paths["lock"]
+    log_path = paths["log"]
+
+    env = os.environ.copy()
+    env["POINDEXTER_VOICE_BRIDGE_SESSION_ID"] = session_id
+    env["POINDEXTER_VOICE_BRIDGE_CONFIG"] = json.dumps(
+        dataclasses.asdict(config),
+    )
+    # Pass the voice-dir override through explicitly so the child resolves
+    # the same pipe directory even if os.environ.copy() ever misses it.
+    voice_dir_override = os.environ.get("POINDEXTER_VOICE_DIR", "").strip()
+    if voice_dir_override:
+        env["POINDEXTER_VOICE_DIR"] = voice_dir_override
+
+    popen_kwargs: dict[str, object] = {
+        "env": env,
+        "cwd": str(_BRIDGE_WORKER_PATH.parent),
+    }
+    if os.name == "nt":
+        # Hidden + detached: no console window pops up (feedback_no_popups
+        # — background jobs run hidden), and the child outlives the parent.
+        popen_kwargs["creationflags"] = (
+            subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+        )
+    else:
+        # New session so the child isn't killed with the launcher's group.
+        popen_kwargs["start_new_session"] = True
+
+    # Append so a re-join under the same sid keeps prior diagnostics; the
+    # child's first log line announces the new run.
+    with open(log_path, "a", encoding="utf-8") as log_fh:
+        proc = subprocess.Popen(  # noqa: S603 — fixed argv, our own entrypoint
+            [sys.executable, str(_BRIDGE_WORKER_PATH)],
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            **popen_kwargs,  # type: ignore[arg-type]
+        )
+
+    deadline = time.monotonic() + ready_timeout
+    poll_interval = 0.25
+    while True:
+        try:
+            status = status_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            status = ""
+
+        if status == "ready":
+            pid = _read_pid_from_lock(lock_path)
+            if pid is None:
+                # ready but no PID — the lock should always be written
+                # before status flips to ready. Fail loud rather than
+                # returning a bogus PID the operator can't leave-by.
+                _kill_pid(proc.pid)
+                raise RuntimeError(
+                    f"[VOICE_BRIDGE] bridge worker for session "
+                    f"{session_id!r} reported ready but wrote no PID to "
+                    f"{lock_path}. Worker log tail:\n"
+                    f"{_read_log_tail(log_path)}"
+                )
+            logger.info(
+                "[VOICE_BRIDGE] bridge subprocess ready session=%s pid=%d",
+                session_id, pid,
+            )
+            return pid
+
+        if status.startswith("error:"):
+            raise RuntimeError(
+                f"[VOICE_BRIDGE] bridge worker for session {session_id!r} "
+                f"failed to start: {status}. Worker log tail:\n"
+                f"{_read_log_tail(log_path)}"
+            )
+
+        if proc.poll() is not None:
+            # Process exited without writing a terminal status — crashed
+            # before / during connect (import explosion, bad creds, etc.).
+            raise RuntimeError(
+                f"[VOICE_BRIDGE] bridge worker for session {session_id!r} "
+                f"exited (code={proc.returncode}) before signalling ready. "
+                f"Worker log tail:\n{_read_log_tail(log_path)}"
+            )
+
+        if time.monotonic() >= deadline:
+            _kill_pid(proc.pid)
+            raise RuntimeError(
+                f"[VOICE_BRIDGE] bridge worker for session {session_id!r} "
+                f"did not become ready within {ready_timeout:.0f}s "
+                f"(last status={status!r}). Killed it. Worker log tail:\n"
+                f"{_read_log_tail(log_path)}"
+            )
+
+        time.sleep(poll_interval)
+
+
+def _kill_pid(pid: int) -> None:
+    """Best-effort terminate a PID cross-platform. Swallows already-dead."""
+    try:
+        if os.name == "nt":
+            # taskkill /T also reaps any children the worker spawned.
+            subprocess.run(  # noqa: S603,S607 — fixed argv
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                check=False,
+            )
+        else:
+            os.kill(pid, signal.SIGKILL)
+    except (ProcessLookupError, OSError) as exc:
+        logger.debug("kill pid=%d swallowed: %r", pid, exc)
+
+
+def terminate_bridge_process(session_id: str) -> bool:
+    """Leave-by-PID: signal the subprocess worker for ``session_id``.
+
+    Reads the PID from ``<sid>.lock`` and terminates it cross-platform.
+    Returns True if a process was signalled, False if there was no lock /
+    no PID (nothing to stop). Idempotent: a second call after the first
+    cleaned up the lock returns False. Swallows ``ProcessLookupError`` /
+    already-dead — the goal state (process gone) is reached either way.
+
+    The complement to :func:`spawn_bridge_subprocess`. The in-process
+    :func:`stop_bridge` only knows about workers in *this* process's
+    registry; for a subprocess worker the ``.lock`` PID file is the only
+    cross-process handle.
+    """
+    paths = session_pipe_paths(session_id)
+    pid = _read_pid_from_lock(paths["lock"])
+    if pid is None:
+        return False
+
+    signalled = False
+    try:
+        if os.name == "nt":
+            # SIGTERM maps to TerminateProcess on Windows; /T reaps the
+            # process tree. Try the graceful os.kill first, fall back to
+            # taskkill /F /T to guarantee the tree is gone.
+            try:
+                os.kill(pid, signal.SIGTERM)
+                signalled = True
+            except (ProcessLookupError, OSError):
+                pass
+            result = subprocess.run(  # noqa: S603,S607 — fixed argv
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                check=False,
+            )
+            # taskkill returns 0 when it killed the tree; 128 == no such
+            # process (already dead) — both count as "we reached goal".
+            if result.returncode == 0:
+                signalled = True
+        else:
+            # POSIX: SIGTERM, then escalate to SIGKILL after a short grace
+            # if the process is still alive.
+            os.kill(pid, signal.SIGTERM)
+            signalled = True
+            grace_deadline = time.monotonic() + 2.0
+            while time.monotonic() < grace_deadline:
+                try:
+                    os.kill(pid, 0)  # liveness probe — raises if gone
+                except ProcessLookupError:
+                    break
+                time.sleep(0.1)
+            else:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+    except ProcessLookupError:
+        # Already dead — that's the goal state, treat as "we handled it".
+        signalled = True
+    except OSError as exc:
+        logger.warning(
+            "terminate_bridge_process(%s) os error for pid=%d: %r",
+            session_id, pid, exc,
+        )
+
+    # Drop the cross-process handles so a re-join starts clean and a second
+    # terminate call returns False (idempotent).
+    for kind in ("lock", "status"):
+        try:
+            paths[kind].unlink(missing_ok=True)
+        except OSError:
+            pass
+    return signalled
 
 
 async def speak_into_bridge(

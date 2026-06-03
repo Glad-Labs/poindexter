@@ -40,13 +40,52 @@ LiveKit room when an interactive Claude Code session wants the floor.
    └────────────────────────────────────────────────────┘
 ```
 
-Pipe layout under `~/.poindexter/voice/<session_id>.{in,out,lock}`:
+Pipe layout under `~/.poindexter/voice/<session_id>.{in,out,lock,status,log}`:
 
-| File    | Direction        | Format                       |
-| ------- | ---------------- | ---------------------------- |
-| `.in`   | bridge → session | One transcript per line      |
-| `.out`  | session → bridge | One TTS request per line     |
-| `.lock` | bridge → on-disk | Worker's PID; gone when down |
+| File      | Direction         | Format                                                     |
+| --------- | ----------------- | ---------------------------------------------------------- |
+| `.in`     | bridge → session  | One transcript per line                                    |
+| `.out`    | session → bridge  | One TTS request per line                                   |
+| `.lock`   | bridge → on-disk  | Worker's PID; gone when down (the leave-by-PID handle)     |
+| `.status` | bridge → launcher | Readiness: `connecting` → `ready` → `stopped` / `error: …` |
+| `.log`    | launcher → disk   | Captured worker stdout/stderr (error tails read from here) |
+
+## Process model — subprocess-spawned worker (#1010)
+
+Since [Glad-Labs/glad-labs-stack#1010](https://github.com/Glad-Labs/glad-labs-stack/issues/1010)
+the bridge worker runs as a **separate Python subprocess**
+(`mcp-server-voice/bridge_worker.py`), not as an `asyncio` task inside the
+long-lived MCP server. `voice_join_room` is a thin launcher:
+
+1. `livekit_bridge.spawn_bridge_subprocess` `Popen`-launches
+   `bridge_worker.py` **detached + hidden** (no console window on Windows,
+   `start_new_session` on POSIX), passing the session id + the
+   `BridgeConfig` JSON via env. LiveKit creds + `DATABASE_URL` are
+   inherited from the MCP server's environment.
+2. The child imports **fresh on-disk** `livekit_bridge` /
+   `audio_plane_pipecat` / `services.voice_pipecat` code and runs the worker
+   (`start_bridge` → `_bridge_main`), writing its **PID to `<sid>.lock`**
+   and its readiness to **`<sid>.status`** (`connecting` → `ready`, or
+   `error: <repr>` if the audio plane fails to connect).
+3. The launcher polls `<sid>.status` (up to 30s — covers a cold
+   faster-whisper model load) and returns the PID on `ready`, or raises a
+   loud `RuntimeError` with the `<sid>.log` tail on error / process-death /
+   timeout.
+4. `voice_leave_room` tries the in-process registry first, then falls back
+   to **leave-by-PID** (`terminate_bridge_process` reads `<sid>.lock` and
+   signals the subprocess cross-platform).
+
+**Why a subprocess:** the MCP server is long-lived, so an in-process worker
+binds to whatever modules that process loaded at startup. After any code
+change (e.g. the Pipecat migration) the running server keeps using **stale
+cached modules** until restarted — and a mobile operator can't restart it.
+The visible symptom was a deaf bridge (the `<sid>.in` pipe never filled)
+while a standalone process on fresh code worked. Spawning a fresh
+interpreter per `voice_join_room` sidesteps module staleness entirely.
+
+**Escape hatch:** set `VOICE_BRIDGE_INPROCESS=1` to run the worker
+in-process via the legacy `start_bridge` path (unit tests + interactive
+debugging). Default is subprocess.
 
 ## How to use it from a Claude Code session
 
@@ -165,11 +204,19 @@ causes:
   LiveKit URL is unreachable or the JWT is rejected. Check
   `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` env vars
   match the LiveKit container's compose env.
-- **`.lock` file stuck**. If a previous run crashed without cleaning up,
-  the `.lock` file lingers. The bridge doesn't currently respect
-  stale locks (the registry is in-process, so a "stale lock" only
-  matters across MCP server restarts). Just `rm
-~/.poindexter/voice/<sid>.lock` and re-`voice-on`.
+- **`.lock` file stuck**. The `.lock` file holds the worker subprocess's
+  PID and is the leave-by-PID handle (`terminate_bridge_process` reads it).
+  `voice_leave_room` unlinks it on a clean leave; if a worker is SIGKILLed
+  out-of-band the lock can linger with a dead PID. A fresh `voice-on`
+  starts a new session id (and `ensure_session_pipes` clears any stale
+  `.status`), so a stale lock under an old id is harmless — but you can
+  `rm ~/.poindexter/voice/<sid>.lock ~/.poindexter/voice/<sid>.status` to
+  tidy up.
+- **Worker never reaches `ready`**. `voice_join_room` now returns an
+  explicit error containing the tail of `~/.poindexter/voice/<sid>.log`
+  (the captured worker stdout/stderr) when the subprocess crashes, reports
+  `error: …` in `<sid>.status`, or times out. Read that tail first — it
+  usually names the missing audio extra or the bad LiveKit cred directly.
 
 ### Transcripts arriving slowly
 

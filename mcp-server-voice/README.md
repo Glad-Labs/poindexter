@@ -34,7 +34,7 @@ public `mcp-server/` surface) for four reasons:
 
 ```python
 voice_join_room(channel_id: str = "", session_id: str = "") -> str
-# Returns JSON: {status, session_id, room, in_pipe, out_pipe,
+# Returns JSON: {status, session_id, pid, room, in_pipe, out_pipe,
 #                max_session_seconds, chunk_max_chars, instructions}
 
 voice_speak(text: str, session_id: str) -> str
@@ -43,6 +43,23 @@ voice_speak(text: str, session_id: str) -> str
 voice_leave_room(session_id: str) -> str
 # Returns JSON: {status: "stopped"|"not_running", session_id}
 ```
+
+### Process model — subprocess-spawned worker (#1010)
+
+`voice_join_room` is a thin launcher: it spawns the bridge worker as a
+**separate, detached, hidden Python subprocess** (`bridge_worker.py`) that
+imports **fresh on-disk code**, rather than running it in-process. The
+long-lived MCP server would otherwise bind the worker to stale cached
+modules after any code change (a deaf bridge a mobile operator can't fix by
+restarting) — see
+[Glad-Labs/glad-labs-stack#1010](https://github.com/Glad-Labs/glad-labs-stack/issues/1010).
+The worker's PID lands in `<sid>.lock` and its readiness in `<sid>.status`
+(`connecting` → `ready` / `error: …`); the launcher polls that handshake
+(up to 30s for a cold Whisper load) before returning, and `voice_leave_room`
+falls back to leave-by-PID (`terminate_bridge_process`) for the subprocess.
+Set `VOICE_BRIDGE_INPROCESS=1` to use the legacy in-process path (tests +
+debugging). See [`docs/operations/voice-bridge.md`](../docs/operations/voice-bridge.md)
+for the full protocol.
 
 All three pull defaults from `app_settings` (per `feedback_db_first_config`):
 

@@ -36,6 +36,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -98,12 +99,16 @@ Claude Code session: voice in arrives as transcripts on a per-session
 .in pipe, voice out is TTS-spoken into the room via voice_speak.
 
 Tools:
-  - voice_join_room(channel_id?, session_id?) — spin up a bridge worker
+  - voice_join_room(channel_id?, session_id?) — spawn a bridge worker
+    subprocess (fresh on-disk code; blocks until it reports ready)
   - voice_speak(text, session_id) — TTS reply into the room (chunked)
-  - voice_leave_room(session_id) — tear it down (idempotent)
+  - voice_leave_room(session_id) — tear it down (idempotent; leave-by-PID)
 
-The always-on voice-agent-livekit container is unaffected; this server
-is additive and runs side-by-side with it.
+The bridge worker runs as a detached subprocess (bridge_worker.py) so a
+code change takes effect on the next voice_join_room without restarting
+this server (Glad-Labs/glad-labs-stack#1010). The always-on
+voice-agent-livekit container is unaffected; this server is additive and
+runs side-by-side with it.
 """)
 
 
@@ -131,13 +136,30 @@ try:  # pragma: no cover — import shape only
         ensure_session_pipes,
         new_session_id,
         session_pipe_paths,
+        spawn_bridge_subprocess,
         speak_into_bridge,
         start_bridge,
         stop_bridge,
+        terminate_bridge_process,
     )
     _BRIDGE_AVAILABLE = True
 except Exception:  # noqa: BLE001 — bridge is optional in CI shape
     _BRIDGE_AVAILABLE = False
+
+
+def _inprocess_mode() -> bool:
+    """Whether to run the bridge worker in-process instead of a subprocess.
+
+    Default is subprocess (Glad-Labs/glad-labs-stack#1010): a long-lived
+    MCP server binds to the modules it loaded at startup, so an in-process
+    worker uses STALE cached code after any change — a deaf bridge a mobile
+    operator can't fix by restarting. Spawning a fresh subprocess imports
+    current on-disk code every time.
+
+    The ``VOICE_BRIDGE_INPROCESS=1`` escape hatch keeps the old in-process
+    path for unit tests + interactive debugging (feedback_backcompat).
+    """
+    return (os.environ.get("VOICE_BRIDGE_INPROCESS", "") or "").strip() == "1"
 
 
 async def _bridge_settings(pool: asyncpg.Pool) -> dict[str, str]:
@@ -179,6 +201,20 @@ async def voice_join_room(
     same LiveKit room as a separate participant identity (default
     ``claude-bridge``).
 
+    **Process model (Glad-Labs/glad-labs-stack#1010):** by default the
+    bridge worker is launched as a *separate Python subprocess*
+    (``bridge_worker.py``) that imports fresh on-disk code, NOT as a task
+    inside this long-lived MCP server. The MCP server is a thin launcher.
+    This is what makes a Pipecat / STT code change take effect on the next
+    ``voice_join_room`` without restarting the MCP server (which a mobile
+    operator can't do). The worker's PID lands in ``<sid>.lock`` and its
+    readiness in ``<sid>.status`` (``connecting`` → ``ready`` /
+    ``error: ...``); this tool blocks on that handshake (up to ~30s, which
+    covers a cold faster-whisper model load) before returning.
+
+    Set ``VOICE_BRIDGE_INPROCESS=1`` to use the legacy in-process
+    ``start_bridge`` path instead (unit tests + interactive debugging).
+
     Args:
         channel_id: LiveKit room name. Defaults to
             ``app_settings.voice_default_room`` (seeded as
@@ -190,9 +226,10 @@ async def voice_join_room(
             point a Monitor watcher at the right ``.in`` pipe.
 
     Returns: JSON string with ``session_id``, ``room``, ``in_pipe``,
-        ``out_pipe``, and ``status``. ``status`` is always either
-        ``"started"`` or an explicit error — no silent ok=True per
-        feedback_no_silent_defaults.
+        ``out_pipe``, ``pid`` (the worker subprocess), and ``status``.
+        ``status`` is always either ``"started"`` or an explicit error
+        (with the worker log tail on a launch failure) — no silent ok=True
+        per feedback_no_silent_defaults.
     """
     try:
         if not _BRIDGE_AVAILABLE:
@@ -263,12 +300,32 @@ async def voice_join_room(
             user_speech_timeout=user_speech_timeout,
         )
 
-        state = await start_bridge(session_id=sid, config=config)
-        paths = session_pipe_paths(state.session_id)
+        if _inprocess_mode():
+            # Legacy in-process path — escape hatch for tests + debugging.
+            state = await start_bridge(session_id=sid, config=config)
+            pid = os.getpid()
+            resolved_sid = state.session_id
+        else:
+            # Default: spawn a detached subprocess that imports fresh
+            # on-disk code, so MCP-server module staleness can't make the
+            # bridge go deaf (Glad-Labs/glad-labs-stack#1010). Popen + the
+            # readiness poll are blocking, so run them off the event loop.
+            try:
+                pid = await asyncio.to_thread(
+                    spawn_bridge_subprocess, sid, config,
+                )
+            except RuntimeError as e:
+                # The launcher fails loud with the worker log tail when the
+                # subprocess never reaches "ready" (crash / error / timeout).
+                return json.dumps({"error": str(e)})
+            resolved_sid = sid
+
+        paths = session_pipe_paths(resolved_sid)
 
         return json.dumps({
             "status": "started",
-            "session_id": state.session_id,
+            "session_id": resolved_sid,
+            "pid": pid,
             "room": room,
             "in_pipe": str(paths["in"]),
             "out_pipe": str(paths["out"]),
@@ -332,6 +389,13 @@ async def voice_speak(text: str, session_id: str) -> str:
 async def voice_leave_room(session_id: str) -> str:
     """Disconnect the bridge worker for ``session_id``. Idempotent.
 
+    Tries the in-process registry first (``stop_bridge`` — covers the
+    ``VOICE_BRIDGE_INPROCESS`` / test path). If nothing was registered in
+    *this* process, falls back to leave-by-PID
+    (``terminate_bridge_process``) which reads the worker PID from
+    ``<sid>.lock`` and signals the subprocess — the normal path since
+    Glad-Labs/glad-labs-stack#1010 made the worker a separate process.
+
     Calling twice on the same id returns ``status="stopped"`` the first
     time and ``status="not_running"`` the second — never raises in the
     happy path. The ``.in`` / ``.out`` pipe files are intentionally left
@@ -344,7 +408,12 @@ async def voice_leave_room(session_id: str) -> str:
         if not session_id or not session_id.strip():
             return json.dumps({"error": "session_id is required"})
         sid = session_id.strip()
+        # In-process registry (tests + VOICE_BRIDGE_INPROCESS) first; if
+        # there's no entry here, the worker is a detached subprocess —
+        # leave-by-PID via the .lock file.
         stopped = await stop_bridge(sid)
+        if not stopped:
+            stopped = await asyncio.to_thread(terminate_bridge_process, sid)
         return json.dumps({
             "status": "stopped" if stopped else "not_running",
             "session_id": sid,

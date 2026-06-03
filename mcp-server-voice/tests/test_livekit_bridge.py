@@ -47,8 +47,17 @@ def voice_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     pipe location (the bridge worker, the speak helper, the
     smoke script) all see the same tmp dir. Resets the in-process
     registry so cross-test bridges don't leak.
+
+    Also pins the in-process escape hatch (``VOICE_BRIDGE_INPROCESS=1``)
+    and the no-op audio plane so the ``voice_join_room`` integration
+    tests exercise the real registry lifecycle without spawning a
+    detached subprocess or importing the GPU audio extras. The
+    subprocess launcher itself is tested separately with a monkeypatched
+    ``Popen`` in ``TestSpawnBridgeSubprocess``.
     """
     monkeypatch.setenv("POINDEXTER_VOICE_DIR", str(tmp_path))
+    monkeypatch.setenv("VOICE_BRIDGE_INPROCESS", "1")
+    monkeypatch.setenv("VOICE_BRIDGE_AUDIO_PLANE", "noop")
     # Reset the in-process registry — pytest fixtures share the module,
     # so a leaked bridge from a previous test would poison a fresh
     # voice_join_room call.
@@ -169,6 +178,14 @@ class TestPipeLayout:
         assert paths["out"] == voice_dir / "vb-deadbeef.out"
         assert paths["lock"] == voice_dir / "vb-deadbeef.lock"
 
+    def test_session_pipe_paths_includes_status(self, voice_dir: Path) -> None:
+        # The readiness file the subprocess launcher polls (#1010). The
+        # lock is written before connect, so the status file is what says
+        # "ready".
+        paths = livekit_bridge.session_pipe_paths("vb-deadbeef")
+        assert paths["status"] == voice_dir / "vb-deadbeef.status"
+        assert paths["log"] == voice_dir / "vb-deadbeef.log"
+
     def test_ensure_session_pipes_creates_files(self, voice_dir: Path) -> None:
         paths = livekit_bridge.ensure_session_pipes("vb-test1234")
         assert paths["in"].exists()
@@ -176,6 +193,22 @@ class TestPipeLayout:
         # .lock NOT created here — it's the worker's job (its presence
         # marks an active worker).
         assert not paths["lock"].exists()
+
+    def test_ensure_session_pipes_creates_status(self, voice_dir: Path) -> None:
+        # ensure_session_pipes creates/clears the .status readiness file so
+        # a stale status from a prior session can't fool the launcher poll.
+        paths = livekit_bridge.ensure_session_pipes("vb-status001")
+        assert paths["status"].exists()
+        assert paths["status"].read_text() == ""
+
+    def test_ensure_session_pipes_clears_stale_status(self, voice_dir: Path) -> None:
+        # A leftover "ready" from a previous session must be wiped on
+        # re-ensure so the launcher doesn't see a false-positive ready.
+        paths = livekit_bridge.session_pipe_paths("vb-stale0001")
+        paths["status"].parent.mkdir(parents=True, exist_ok=True)
+        paths["status"].write_text("ready")
+        livekit_bridge.ensure_session_pipes("vb-stale0001")
+        assert paths["status"].read_text() == ""
 
     def test_ensure_session_pipes_is_idempotent(self, voice_dir: Path) -> None:
         livekit_bridge.ensure_session_pipes("vb-idem9999")
@@ -280,6 +313,28 @@ class TestVoiceLeaveRoom:
         payload = json.loads(raw)
         assert payload["status"] == "not_running"
 
+    async def test_falls_back_to_pid_kill_for_subprocess_worker(
+        self, voice_dir: Path, fake_pool: _FakePool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The normal path since #1010: the worker is a detached subprocess,
+        # so there's no in-process registry entry. voice_leave_room must
+        # fall back to leave-by-PID via terminate_bridge_process.
+        sid = "vb-subproc0001"
+        calls: list[str] = []
+
+        def _fake_terminate(session_id: str) -> bool:
+            calls.append(session_id)
+            return True
+
+        monkeypatch.setattr(
+            server, "terminate_bridge_process", _fake_terminate,
+        )
+        # No join → no registry entry → stop_bridge returns False → fallback.
+        payload = json.loads(await _voice_leave_room(sid))
+        assert payload["status"] == "stopped"
+        assert calls == [sid], "must delegate to terminate_bridge_process"
+
 
 # ===========================================================================
 # voice_speak MCP tool — chunking propagates correctly to .out pipe
@@ -316,7 +371,7 @@ class TestVoiceSpeak:
         # Each line in .out is a chunk — verify the file got the right
         # number of lines.
         out_path = voice_dir / f"{sid}.out"
-        lines = [l for l in out_path.read_text().splitlines() if l.strip()]
+        lines = [ln for ln in out_path.read_text().splitlines() if ln.strip()]
         assert len(lines) == speak["chunks"]
         # Every chunk ends in sentence-end punctuation.
         for line in lines:
@@ -514,3 +569,298 @@ class TestResolveDefaultAudioPlane:
         config = livekit_bridge.BridgeConfig(room="claude-bridge")
         with pytest.raises(RuntimeError):
             livekit_bridge._resolve_default_audio_plane(config)
+
+
+# ===========================================================================
+# .status readiness protocol — _bridge_main writes connecting → ready / error
+# (Glad-Labs/glad-labs-stack#1010)
+# ===========================================================================
+
+
+class _RaisingMediaPlane(livekit_bridge.NoopAudioMediaPlane):
+    """No-op plane whose ``connect`` raises — to drive the error status."""
+
+    async def connect(self, *, room: str, identity: str) -> None:
+        raise RuntimeError("simulated connect failure")
+
+
+@pytest.mark.asyncio
+class TestBridgeMainStatusProtocol:
+    """The subprocess launcher polls ``<sid>.status`` for readiness. The
+    lock file is written before connect (so it can't say "ready"); the
+    status file carries the connecting → ready / error handshake.
+    """
+
+    async def test_status_goes_connecting_then_ready(
+        self, voice_dir: Path,
+    ) -> None:
+        sid = "vb-status-ok"
+        livekit_bridge.ensure_session_pipes(sid)
+        media = livekit_bridge.NoopAudioMediaPlane()
+        config = livekit_bridge.BridgeConfig(
+            room="claude-bridge", out_poll_interval=0.05,
+        )
+        await livekit_bridge.start_bridge(
+            session_id=sid, config=config, media=media,
+        )
+        try:
+            # After a connected start the status file reads "ready" and the
+            # lock holds the PID.
+            status_path = voice_dir / f"{sid}.status"
+            await asyncio.wait_for(
+                _await_status(status_path, "ready"), timeout=2.0,
+            )
+            assert status_path.read_text() == "ready"
+            assert (voice_dir / f"{sid}.lock").read_text() == str(os.getpid())
+        finally:
+            await livekit_bridge.stop_bridge(sid)
+        # On clean teardown the status file is unlinked (leave-by-PID via
+        # .lock is the primary signal; the status file is disposable).
+        assert not (voice_dir / f"{sid}.status").exists()
+
+    async def test_status_goes_error_when_connect_raises(
+        self, voice_dir: Path,
+    ) -> None:
+        sid = "vb-status-err"
+        livekit_bridge.ensure_session_pipes(sid)
+        media = _RaisingMediaPlane()
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        # start_bridge kicks off the task; the connect failure surfaces
+        # when we await the task. Status must read "error: ..." before the
+        # raise so the launcher poll catches it.
+        state = await livekit_bridge.start_bridge(
+            session_id=sid, config=config, media=media,
+        )
+        assert state.task is not None
+        with pytest.raises(RuntimeError, match="simulated connect failure"):
+            await state.task
+        status = (voice_dir / f"{sid}.status").read_text()
+        assert status.startswith("error:")
+        assert "simulated connect failure" in status
+        # The lock is cleaned up on the abort path.
+        assert not (voice_dir / f"{sid}.lock").exists()
+
+
+async def _await_status(status_path: Path, want: str) -> None:
+    """Poll a status file until it equals ``want`` (test helper)."""
+    while True:
+        try:
+            if status_path.read_text().strip() == want:
+                return
+        except OSError:
+            pass
+        await asyncio.sleep(0.02)
+
+
+# ===========================================================================
+# spawn_bridge_subprocess — launcher polls .status, returns pid / raises loud
+# (Glad-Labs/glad-labs-stack#1010)
+# ===========================================================================
+
+
+class _FakePopen:
+    """Stand-in for subprocess.Popen that simulates the worker process.
+
+    On construction it runs a caller-supplied ``side_effect(self)`` to mimic
+    what the real worker would do — typically write the ``.status`` and
+    ``.lock`` files. ``poll()`` returns ``_returncode`` (None = still
+    running). ``pid`` is fixed so the launcher's lock-PID read is testable.
+    """
+
+    def __init__(
+        self,
+        *,
+        pid: int = 4242,
+        returncode: int | None = None,
+        side_effect=None,
+    ) -> None:
+        self.pid = pid
+        self._returncode = returncode
+        self.returncode = returncode
+        self.killed = False
+        if side_effect is not None:
+            side_effect(self)
+
+    def poll(self):
+        return self._returncode
+
+
+def _patch_popen(monkeypatch: pytest.MonkeyPatch, fake_factory) -> None:
+    """Patch ``livekit_bridge.subprocess.Popen`` with a fake factory.
+
+    The factory receives the same positional/keyword args Popen would and
+    returns a ``_FakePopen``. We accept and ignore the file handle the
+    launcher passes as ``stdout`` (the real Popen would write to it).
+    """
+
+    def _fake_popen(argv, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        return fake_factory(argv, kwargs)
+
+    monkeypatch.setattr(livekit_bridge.subprocess, "Popen", _fake_popen)
+
+
+class TestSpawnBridgeSubprocess:
+    """The launcher Popens the worker, polls ``<sid>.status`` for ready,
+    and fails loud (with the log tail) on error / death / timeout.
+    """
+
+    def test_returns_pid_when_worker_reports_ready(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "vb-spawn-ok"
+        paths = livekit_bridge.session_pipe_paths(sid)
+
+        def _factory(argv, kwargs):  # noqa: ANN001
+            # Mimic the worker: write the PID lock + ready status.
+            def _se(fp: _FakePopen) -> None:
+                paths["lock"].write_text(str(fp.pid))
+                paths["status"].write_text("ready")
+            return _FakePopen(pid=9090, side_effect=_se)
+
+        _patch_popen(monkeypatch, _factory)
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        pid = livekit_bridge.spawn_bridge_subprocess(
+            sid, config, ready_timeout=2.0,
+        )
+        assert pid == 9090
+
+    def test_raises_with_message_when_worker_reports_error(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "vb-spawn-err"
+        paths = livekit_bridge.session_pipe_paths(sid)
+
+        def _factory(argv, kwargs):  # noqa: ANN001
+            def _se(fp: _FakePopen) -> None:
+                paths["status"].write_text("error: boom")
+                paths["log"].write_text("traceback line 1\nboom happened\n")
+            return _FakePopen(side_effect=_se)
+
+        _patch_popen(monkeypatch, _factory)
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        with pytest.raises(RuntimeError) as excinfo:
+            livekit_bridge.spawn_bridge_subprocess(sid, config, ready_timeout=2.0)
+        msg = str(excinfo.value)
+        assert "error: boom" in msg
+        # Includes the worker log tail so the operator can diagnose.
+        assert "boom happened" in msg
+
+    def test_raises_when_process_dies_before_ready(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "vb-spawn-dead"
+        paths = livekit_bridge.session_pipe_paths(sid)
+
+        def _factory(argv, kwargs):  # noqa: ANN001
+            # Process already exited (returncode set) and wrote no terminal
+            # status — simulates an import explosion / immediate crash.
+            def _se(fp: _FakePopen) -> None:
+                paths["log"].write_text("ImportError: no pipecat\n")
+            return _FakePopen(returncode=1, side_effect=_se)
+
+        _patch_popen(monkeypatch, _factory)
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        with pytest.raises(RuntimeError) as excinfo:
+            livekit_bridge.spawn_bridge_subprocess(sid, config, ready_timeout=2.0)
+        msg = str(excinfo.value)
+        assert "exited" in msg
+        assert "ImportError: no pipecat" in msg
+
+    def test_raises_on_timeout_when_status_never_written(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "vb-spawn-timeout"
+        paths = livekit_bridge.session_pipe_paths(sid)
+        killed: dict[str, bool] = {"called": False}
+
+        def _factory(argv, kwargs):  # noqa: ANN001
+            # Still running, never writes a status — forces the timeout path.
+            def _se(fp: _FakePopen) -> None:
+                paths["log"].write_text("starting up, slow whisper load\n")
+            return _FakePopen(returncode=None, side_effect=_se)
+
+        _patch_popen(monkeypatch, _factory)
+
+        def _fake_kill(pid: int) -> None:
+            killed["called"] = True
+
+        monkeypatch.setattr(livekit_bridge, "_kill_pid", _fake_kill)
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        with pytest.raises(RuntimeError) as excinfo:
+            # Tiny timeout so the test is fast.
+            livekit_bridge.spawn_bridge_subprocess(
+                sid, config, ready_timeout=0.3,
+            )
+        msg = str(excinfo.value)
+        assert "did not become ready" in msg
+        assert "slow whisper load" in msg  # log tail included
+        assert killed["called"], "timeout path must kill the stuck process"
+
+
+# ===========================================================================
+# terminate_bridge_process — leave-by-PID reads .lock, signals, cleans up
+# (Glad-Labs/glad-labs-stack#1010)
+# ===========================================================================
+
+
+class TestTerminateBridgeProcess:
+
+    def test_kills_pid_and_unlinks_lock_and_status(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "vb-term-ok"
+        paths = livekit_bridge.ensure_session_pipes(sid)
+        paths["lock"].write_text("13579")
+        paths["status"].write_text("ready")
+
+        calls: list[tuple[int, int]] = []
+
+        def _fake_kill(pid: int, sig: int) -> None:
+            calls.append((pid, sig))
+            # POSIX path probes liveness with os.kill(pid, 0) after SIGTERM;
+            # raise ProcessLookupError to say "already gone" so the loop
+            # exits without escalating to SIGKILL.
+            if sig == 0:
+                raise ProcessLookupError
+
+        monkeypatch.setattr(livekit_bridge.os, "kill", _fake_kill)
+        # On Windows the function also shells out to taskkill — stub it so
+        # the test is host-independent.
+        monkeypatch.setattr(
+            livekit_bridge.subprocess, "run",
+            lambda *a, **k: type("R", (), {"returncode": 0})(),
+        )
+
+        result = livekit_bridge.terminate_bridge_process(sid)
+        assert result is True
+        # A SIGTERM was sent to the PID from the lock file.
+        assert any(pid == 13579 for pid, _ in calls)
+        # Cross-process handles cleaned up so a re-join starts clean.
+        assert not paths["lock"].exists()
+        assert not paths["status"].exists()
+
+    def test_returns_false_when_no_lock(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # No lock file → nothing to stop → False (idempotent leave).
+        killed: list[int] = []
+        monkeypatch.setattr(
+            livekit_bridge.os, "kill",
+            lambda pid, sig: killed.append(pid),
+        )
+        result = livekit_bridge.terminate_bridge_process("vb-term-nolock")
+        assert result is False
+        assert killed == []
+
+    def test_returns_false_when_lock_has_garbage(
+        self, voice_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "vb-term-garbage"
+        paths = livekit_bridge.ensure_session_pipes(sid)
+        paths["lock"].write_text("not-a-pid")
+        monkeypatch.setattr(
+            livekit_bridge.os, "kill",
+            lambda pid, sig: (_ for _ in ()).throw(AssertionError("kill called")),
+        )
+        result = livekit_bridge.terminate_bridge_process(sid)
+        assert result is False
