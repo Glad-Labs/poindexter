@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.69.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.0...v0.69.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **public-site:** inject consent-gated AdSense loader + pass real ad slot ([#943](https://github.com/Glad-Labs/glad-labs-stack/issues/943)) ([#1024](https://github.com/Glad-Labs/glad-labs-stack/issues/1024)) ([695f48f](https://github.com/Glad-Labs/glad-labs-stack/commit/695f48f3ae7f47b64a28b67e21706f94d8f248e4))
+
 ## [0.69.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.68.0...v0.69.0) (2026-06-03)
 
 
