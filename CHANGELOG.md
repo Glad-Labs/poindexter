@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.66.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.3...v0.66.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **jobs:** surface regenerate_stock_images silent stall (poindexter[#562](https://github.com/Glad-Labs/glad-labs-stack/issues/562)) ([#1011](https://github.com/Glad-Labs/glad-labs-stack/issues/1011)) ([4234112](https://github.com/Glad-Labs/glad-labs-stack/commit/42341129cf0da1a0d397340b469eaa4b3b582819))
+* **newsletter:** persist signups to DB + Resend audience, fail loud (stop silent subscriber loss) ([#1009](https://github.com/Glad-Labs/glad-labs-stack/issues/1009)) ([ad5ea90](https://github.com/Glad-Labs/glad-labs-stack/commit/ad5ea90b0210c16de48ed75d2e4702007ebb497a))
+
 ## [0.66.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.2...v0.66.3) (2026-06-03)
 
 
