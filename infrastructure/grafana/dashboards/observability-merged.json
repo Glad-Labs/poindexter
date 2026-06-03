@@ -1212,6 +1212,72 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "API — HTTP RED (request rate / errors / latency)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 220 },
+      "panels": [],
+      "id": 231
+    },
+    {
+      "type": "timeseries",
+      "title": "API request rate by route",
+      "description": "Per-route request rate from poindexter_http_requests_total (recorded by the Prometheus HTTP RED middleware). 'No data' until the worker is restarted with the middleware deployed.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 221 },
+      "id": 232,
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(poindexter_http_requests_total[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "API error rate (4xx / 5xx %)",
+      "description": "Share of responses that are 4xx (client) and 5xx (server). 5xx is the RED 'Errors' signal; clamp_min avoids divide-by-zero when idle.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 221 },
+      "id": 233,
+      "targets": [
+        {
+          "expr": "100 * sum(rate(poindexter_http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(poindexter_http_requests_total[5m])), 0.001)",
+          "legendFormat": "5xx %",
+          "refId": "A"
+        },
+        {
+          "expr": "100 * sum(rate(poindexter_http_requests_total{status=~\"4..\"}[5m])) / clamp_min(sum(rate(poindexter_http_requests_total[5m])), 0.001)",
+          "legendFormat": "4xx %",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "API latency p95 by route / p99 overall",
+      "description": "histogram_quantile over poindexter_http_request_duration_seconds_bucket. p95 split by route, p99 across all routes.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 221 },
+      "id": 234,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(poindexter_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{route}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(poindexter_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 (all)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
     }
   ],
   "refresh": "30s",

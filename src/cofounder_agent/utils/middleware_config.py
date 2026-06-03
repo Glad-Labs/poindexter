@@ -67,8 +67,32 @@ class MiddlewareConfig:
         # the profiling middleware logs request completion.
         self._setup_request_id(app)
         self._setup_profiling(app)
+        # Prometheus HTTP RED metrics — added LAST so it executes FIRST
+        # (outermost), timing the full request including every inner
+        # middleware. Capturing total wall-clock is the point of RED latency.
+        self._setup_prometheus_metrics(app)
 
         logger.info("✅ All middleware registered successfully")
+
+    def _setup_prometheus_metrics(self, app: FastAPI) -> None:
+        """
+        Setup Prometheus HTTP RED-metrics middleware.
+
+        Records request rate / error rate / duration per route template into
+        ``poindexter_http_{requests_total,request_duration_seconds}``, served
+        on the existing ``/metrics`` endpoint. See
+        ``middleware.prometheus_metrics`` for the cardinality-control design.
+        """
+        try:
+            from middleware.prometheus_metrics import PrometheusMetricsMiddleware
+
+            app.add_middleware(PrometheusMetricsMiddleware)
+            logger.info("✅ Prometheus HTTP metrics middleware initialized")
+        except ImportError as e:
+            logger.warning(
+                f"⚠️  Prometheus HTTP metrics middleware not available: {e}",
+                exc_info=True,
+            )
 
     def _setup_request_id(self, app: FastAPI) -> None:
         """

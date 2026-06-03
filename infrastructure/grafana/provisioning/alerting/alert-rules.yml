@@ -762,54 +762,12 @@ groups:
                   reducer:
                     type: last
 
-      # 15. DISK SPACE LOW — less than 50 GB free
-      - uid: brain-disk-space-low
-        title: Disk Space Low
-        condition: C
-        for: 0s
-        noDataState: OK
-        execErrState: Error
-        labels:
-          severity: warning
-          team: glad-labs
-        annotations:
-          summary: "Less than 50 GB disk space remaining"
-          description: "Free disk space is {{ $values.B.Value }} GB. Consider running docker-prune.ps1 or cleaning up old data."
-        data:
-          - refId: A
-            datasourceUid: local-brain-db
-            relativeTimeRange:
-              from: 300
-              to: 0
-            model:
-              rawSql: "SELECT pg_database_size('poindexter_brain') / (1024*1024*1024.0) as db_size_gb"
-              format: table
-              editorMode: code
-          - refId: B
-            datasourceUid: __expr__
-            relativeTimeRange:
-              from: 0
-              to: 0
-            model:
-              type: reduce
-              expression: A
-              reducer: last
-              settings:
-                mode: dropNN
-          - refId: C
-            datasourceUid: __expr__
-            relativeTimeRange:
-              from: 0
-              to: 0
-            model:
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator:
-                    type: gt
-                    params:
-                      - 5
-                  operator:
-                    type: and
-                  reducer:
-                    type: last
+      # NOTE: The former rule #15 "Disk Space Low" was REMOVED (2026-06-03).
+      # It was mislabeled and redundant: its title/description claimed to
+      # measure free disk space (<50 GB), but the query was
+      # `pg_database_size('poindexter_brain')` with a `> 5` threshold — i.e.
+      # it actually fired on DB size > 5 GB and duplicated rule #4
+      # "DB Size Warning". Real host disk-space alerting now lives in
+      # Prometheus (infrastructure/prometheus/alerts/infrastructure.yml ->
+      # PoindexterDiskSpaceLow / PoindexterDiskSpaceCritical), sourced from
+      # windows_exporter's `windows_logical_disk_free_bytes`.

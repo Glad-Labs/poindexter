@@ -57,6 +57,7 @@ path and the new Prometheus path during the migration.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -323,6 +324,83 @@ TASKS_AWAITING_APPROVAL = Gauge(
     "poindexter_tasks_awaiting_approval",
     "Number of tasks awaiting approval",
 )
+
+
+# ---------------------------------------------------------------------------
+# HTTP RED metrics (Rate / Errors / Duration) — the worker is a FastAPI app
+# but had NO request-level observability (request rate, 5xx rate, latency per
+# route). These are recorded PER-REQUEST by middleware.prometheus_metrics
+# (an ASGI middleware), NOT in refresh_metrics() — they are event-driven, not
+# scrape-time snapshots. The middleware updates them on every request; the
+# /metrics handler just serializes the accumulated values.
+#
+# ## Cardinality discipline (the one thing that matters here)
+#
+# The ``route`` label is the matched ROUTE TEMPLATE (e.g. ``/api/posts/{slug}``)
+# — never the concrete path (``/api/posts/my-actual-post``). Labeling by raw
+# path would mint one time series per slug / task-id / page, which is the
+# classic Prometheus cardinality bomb: unbounded series, ballooning memory,
+# slow queries. Requests that never matched a route (404s, bot path-scans)
+# collapse to a single ``unmatched`` series so a fuzzer can't create series at
+# will. ``http_route_label()`` derives the template from the ASGI scope. With
+# those bounds, total series ≈ routes × methods × status-codes-seen — a few
+# hundred at most for this app.
+HTTP_REQUESTS_TOTAL = Counter(
+    "poindexter_http_requests_total",
+    "Total HTTP requests handled by the worker, by method, route template and status",
+    ["method", "route", "status"],
+)
+
+# Buckets tuned for a local FastAPI app: most JSON routes answer in <100ms;
+# LLM-backed / pipeline routes can run into seconds. 30s is the failure tail
+# (matches typical client / reverse-proxy timeouts).
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "poindexter_http_request_duration_seconds",
+    "HTTP request latency in seconds, by method and route template",
+    ["method", "route"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
+
+def http_route_label(scope: Mapping[str, Any]) -> str:
+    """Return the matched route *template* for an ASGI ``http`` scope.
+
+    Starlette (0.49) populates ``scope['endpoint']`` and
+    ``scope['path_params']`` on a successful match but does NOT set
+    ``scope['route']`` — so we cannot read a ``.path`` template directly.
+    Instead we reconstruct the template by replacing each path segment whose
+    value equals a captured path-param with ``{param_name}``:
+
+        /api/posts/my-slug  +  path_params={'slug': 'my-slug'}
+          -> /api/posts/{slug}
+
+    This keeps the label's cardinality bounded by the number of routes rather
+    than the number of distinct URLs. Whole-segment matching (not substring)
+    avoids corrupting static segments that happen to contain a param value.
+
+    Returns ``"unmatched"`` when no route matched (no ``endpoint`` in scope) —
+    collapsing 404s / bot path-scans into one series instead of one-per-URL.
+    """
+    if scope.get("endpoint") is None:
+        # No route matched (404, or a raw-ASGI path) — do not let arbitrary
+        # paths each become their own series.
+        return "unmatched"
+
+    path = scope.get("path") or "/"
+    path_params = scope.get("path_params") or {}
+    if not path_params:
+        # Static route (e.g. /api/health) — the path IS already the template.
+        return path
+
+    # Map each captured value -> its param name, then swap matching segments.
+    value_to_name = {
+        str(v): name for name, v in path_params.items() if v is not None
+    }
+    segments = [
+        "{" + value_to_name[seg] + "}" if seg in value_to_name else seg
+        for seg in path.split("/")
+    ]
+    return "/".join(segments)
 
 
 # ---------------------------------------------------------------------------

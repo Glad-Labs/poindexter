@@ -64,3 +64,53 @@ groups:
             `/api/tags` on Ollama hasn't returned 200 for 3 minutes.
             All LLM calls are failing. Check `ollama list` on the host
             and `ollama serve` status.
+
+      # --- Host disk space ---
+      #
+      # Real disk-space alerting, sourced from windows_exporter's
+      # `windows_logical_disk_free_bytes` (the `windows` scrape job on
+      # host.docker.internal:9182). This REPLACES the broken Grafana SQL
+      # rule "Disk Space Low" (alert-rules.yml #15), which claimed to
+      # measure free disk but actually queried `pg_database_size()` and
+      # duplicated the "DB Size Warning" rule — so the host could fill up
+      # silently while a DB-size rule masqueraded as disk monitoring.
+      #
+      # Filtered to drive-letter volumes (`[A-Z]:`) so the tiny EFI /
+      # recovery partitions windows_exporter also reports
+      # (HarddiskVolume1/4, ~0.1 GB, always near-full) can't false-fire.
+      # The `volume` label is preserved so the page names the affected
+      # drive. Thresholds are absolute GB (not a percentage) because what
+      # actually hurts — Docker images, Postgres growth, model files —
+      # is absolute headroom, and a percentage floor false-fires on the
+      # 2 TB drives (11% of 2 TB is still 220 GB free). Tune the 20/10 GB
+      # cutoffs if a small data volume routinely runs near the line.
+      - alert: PoindexterDiskSpaceLow
+        expr: |
+          windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) < 20
+        for: 10m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Host disk {{ $labels.volume }} has under 20 GB free"
+          description: |
+            Volume {{ $labels.volume }} on the worker host has
+            {{ $value | humanize }} GB free (warning under 20 GB).
+            Free space before it reaches the critical 10 GB floor:
+            run `powershell scripts/docker-prune.ps1`, clear old model
+            files, or archive `cost_logs` / `page_views`.
+
+      - alert: PoindexterDiskSpaceCritical
+        expr: |
+          windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) < 10
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Host disk {{ $labels.volume }} has under 10 GB free — imminent"
+          description: |
+            Volume {{ $labels.volume }} on the worker host is down to
+            {{ $value | humanize }} GB free. Postgres writes, Docker
+            pulls, and image generation will start failing. Free space
+            now: `powershell scripts/docker-prune.ps1`.
