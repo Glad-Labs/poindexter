@@ -34,10 +34,12 @@ def _reset_gauges():
         mx.APPROVAL_QUEUE_LENGTH,
         mx.AUTO_CANCELLED_TOTAL,
         mx.UNAPPLIED_MIGRATIONS_COUNT,
+        mx.POSTS_PUBLISHED,
     ):
         g.set(0)
-    # Labeled gauge (#524) — clear the series so each test starts absent.
+    # Labeled gauges — clear the series so each test starts absent.
     mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.clear()
+    mx.POSTS_TOTAL.clear()  # poindexter#576
     yield
 
 
@@ -194,6 +196,89 @@ class TestRefreshMetrics:
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.APPROVAL_QUEUE_LENGTH._value.get() == 7  # type: ignore[attr-defined]
+
+    async def test_posts_published_gauge_matches_published_status_only(self):
+        """poindexter#576: the Cost & Analytics dashboard read 23
+        ("posts published") while the DB had 91 published — it was
+        selecting the ``archived`` label (23) off the multi-label
+        ``poindexter_posts_total`` gauge instead of ``published`` (91).
+
+        Pin the semantics: the dedicated ``poindexter_posts_published``
+        gauge equals the ``published`` count and nothing else, and the
+        labeled gauge keeps ``published`` and ``archived`` as distinct
+        series so a correct consumer can never conflate them.
+        """
+        from services import metrics_exporter as mx
+
+        def _posts_total_label(status: str) -> float:
+            """Read poindexter_posts_total{status=...} via collect() so we
+            don't poke version-specific private child internals."""
+            for family in mx.POSTS_TOTAL.collect():
+                for sample in family.samples:
+                    if sample.labels.get("status") == status:
+                        return sample.value
+            return float("nan")
+
+        # The exact status distribution from the live DB in poindexter#576:
+        #   published=91, rejected=143, archived=23, draft=1.
+        posts_rows = [
+            {"status": "published", "n": 91},
+            {"status": "rejected", "n": 143},
+            {"status": "archived", "n": 23},
+            {"status": "draft", "n": 1},
+        ]
+        # fetch queue: [embeddings-by-source_table=[], posts-by-status=rows]
+        pool, _ = _make_pool(
+            [1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0],
+            [[], posts_rows],
+        )
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        # The dedicated gauge tracks ONLY published — not archived (23).
+        assert mx.POSTS_PUBLISHED._value.get() == 91  # type: ignore[attr-defined]
+        assert mx.POSTS_PUBLISHED._value.get() != 23  # type: ignore[attr-defined]
+
+        # The labeled gauge keeps published and archived as separate series.
+        assert _posts_total_label("published") == 91
+        assert _posts_total_label("archived") == 23
+
+    async def test_posts_total_clears_stale_status_between_refreshes(self):
+        """poindexter#576: a labeled Gauge is never auto-reset, so a status
+        that drops to zero rows must be cleared or its series freezes at the
+        last value. Verify a status present in refresh #1 disappears in
+        refresh #2 once it has no rows."""
+        from services import metrics_exporter as mx
+
+        def _has_label(status: str) -> bool:
+            for family in mx.POSTS_TOTAL.collect():
+                for sample in family.samples:
+                    if sample.labels.get("status") == status:
+                        return True
+            return False
+
+        # Refresh #1: a "draft" series exists.
+        pool1, _ = _make_pool(
+            [1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0],
+            [[], [{"status": "published", "n": 90}, {"status": "draft", "n": 5}]],
+        )
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mc:
+            mc.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool1, "http://localhost:11434")
+        assert _has_label("draft") is True
+
+        # Refresh #2: the drafts were all published — no "draft" rows now.
+        pool2, _ = _make_pool(
+            [1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0],
+            [[], [{"status": "published", "n": 95}]],
+        )
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mc:
+            mc.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool2, "http://localhost:11434")
+
+        assert _has_label("draft") is False  # stale series cleared
+        assert mx.POSTS_PUBLISHED._value.get() == 95  # type: ignore[attr-defined]
 
     async def test_auto_cancelled_total_reflects_event_count(self):
         """GH-90 AC #4: sweeper cancellations are exposed as

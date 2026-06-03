@@ -35,6 +35,13 @@ Content pipeline:
   without a corresponding ``embeddings`` row (Gitea #238 — catches
   "new posts stopped getting embedded" even if overall rate stays up)
 - ``poindexter_posts_total`` — gauge by ``status``
+- ``poindexter_posts_published`` — gauge, posts with
+  ``status = 'published'`` (poindexter#576 — the unambiguous
+  published-post count for the Cost & Analytics dashboard; mirrors
+  ``poindexter_posts_total{status="published"}`` but as a single
+  label-free series so a panel can't accidentally select the wrong
+  ``status`` label — the dashboard was reading ``archived`` (23)
+  instead of ``published`` (91+))
 - ``poindexter_approval_queue_length`` — gauge, rows in
   ``content_tasks`` with ``status = 'awaiting_approval'`` (Gitea #238
   — used as the ``unless`` cross-check against cost alerts so they
@@ -183,6 +190,20 @@ POSTS_TOTAL = Gauge(
     "poindexter_posts_total",
     "Total posts, labeled by status",
     ["status"],
+)
+
+# poindexter#576: an unlabeled, unambiguous published-post count. The
+# labeled POSTS_TOTAL above emits one series per status string
+# (published / draft / rejected / archived), and the Cost & Analytics
+# dashboard's "posts published" stat was selecting the wrong label —
+# it read poindexter_posts_total{status="archived"} (23) instead of
+# {status="published"} (91+). This single label-free series can't be
+# mis-selected and is the source of truth a dashboard/alert should use.
+# Definitionally equals SELECT COUNT(*) FROM posts WHERE status='published'
+# (the same predicate get_post_count and the brain health probe use).
+POSTS_PUBLISHED = Gauge(
+    "poindexter_posts_published",
+    "Posts with status='published' (the live count rendered on gladlabs.io)",
 )
 
 APPROVAL_QUEUE_LENGTH = Gauge(
@@ -540,14 +561,28 @@ async def refresh_metrics(
     except Exception as e:
         logger.debug("refresh_metrics: embeddings-gap query failed: %s", e)
 
-    # Posts by status.
+    # Posts by status. ``.clear()`` first so a status that drops to zero
+    # rows (or a renamed status string) doesn't leave a stale child series
+    # frozen at its last value — labeled Gauges are never auto-reset
+    # between refreshes (poindexter#576).
+    #
+    # Also set the dedicated ``poindexter_posts_published`` gauge from the
+    # observed ``published`` count so the Cost & Analytics dashboard has an
+    # unambiguous, label-free series to read (the published-status stat was
+    # mis-reading the ``archived`` label off ``poindexter_posts_total``).
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT status, COUNT(*) AS n FROM posts GROUP BY status"
             )
+        POSTS_TOTAL.clear()
+        published_n = 0
         for r in rows:
-            POSTS_TOTAL.labels(status=r["status"] or "unknown").set(r["n"])
+            status = r["status"] or "unknown"
+            POSTS_TOTAL.labels(status=status).set(r["n"])
+            if status == "published":
+                published_n = r["n"]
+        POSTS_PUBLISHED.set(int(published_n))
     except Exception as e:
         logger.debug("refresh_metrics: posts query failed: %s", e)
 
