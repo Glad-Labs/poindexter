@@ -38,108 +38,6 @@
     },
     {
       "id": 2,
-      "title": "GPU Utilization & Temperature",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "nvidia_gpu_utilization_percent",
-          "legendFormat": "GPU Util %",
-          "refId": "A"
-        },
-        {
-          "expr": "nvidia_gpu_temperature_celsius",
-          "legendFormat": "Temp C",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Temp C"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "celsius"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 3,
-      "title": "VRAM Usage & Power Draw",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "nvidia_gpu_memory_used_mib",
-          "legendFormat": "VRAM Used (MiB)",
-          "refId": "A"
-        },
-        {
-          "expr": "nvidia_gpu_power_draw_watts",
-          "legendFormat": "Power (W)",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "MiB"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Power W"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "watt"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 4,
       "type": "stat",
       "title": "Gaming",
       "description": "Pipeline pauses automatically when external GPU workload (gaming) is detected",
@@ -148,9 +46,9 @@
         "uid": "local-prometheus"
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 16,
+        "h": 4,
+        "w": 4,
+        "x": 0,
         "y": 1
       },
       "fieldConfig": {
@@ -202,6 +100,108 @@
       ]
     },
     {
+      "id": 3,
+      "title": "GPU Utilization & Temperature",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "nvidia_gpu_utilization_percent",
+          "legendFormat": "GPU Util %",
+          "refId": "A"
+        },
+        {
+          "expr": "nvidia_gpu_temperature_celsius",
+          "legendFormat": "Temp C",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "title": "VRAM Usage & Power Draw",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "nvidia_gpu_memory_used_mib",
+          "legendFormat": "VRAM Used (MiB)",
+          "refId": "A"
+        },
+        {
+          "expr": "nvidia_gpu_power_draw_watts",
+          "legendFormat": "Power (W)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MiB"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Power W"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "watt"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": 5,
       "type": "timeseries",
       "title": "Gaming Detection & Pipeline Status",
@@ -211,10 +211,10 @@
         "uid": "local-prometheus"
       },
       "gridPos": {
-        "h": 6,
+        "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 13
       },
       "fieldConfig": {
         "defaults": {
@@ -309,7 +309,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 21
       },
       "panels": [],
       "id": 6
@@ -323,10 +323,10 @@
         "uid": "local-prometheus"
       },
       "gridPos": {
-        "h": 5,
-        "w": 8,
+        "h": 4,
+        "w": 4,
         "x": 0,
-        "y": 13
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -380,10 +380,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 8,
-        "y": 13
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -443,10 +443,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 16,
-        "y": 13
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -507,9 +507,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
+        "w": 12,
         "x": 0,
-        "y": 18
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -647,9 +647,9 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 6,
+        "h": 8,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 26
       },
       "fieldConfig": {
@@ -701,10 +701,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 6,
+        "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 26
+        "x": 0,
+        "y": 34
       },
       "fieldConfig": {
         "defaults": {
@@ -782,7 +782,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 42
       },
       "panels": [],
       "id": 13
@@ -796,10 +796,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -836,10 +836,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 7,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {

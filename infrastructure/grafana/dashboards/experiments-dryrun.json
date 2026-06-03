@@ -220,7 +220,8 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": ["lastNotNull"],
+          "values": true
         }
       },
       "targets": [
@@ -326,7 +327,12 @@
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "showUnfilled": true
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        }
       },
       "targets": [
         {

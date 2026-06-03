@@ -495,8 +495,8 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
+        "h": 4,
+        "w": 4,
         "x": 0,
         "y": 5
       },
@@ -567,9 +567,9 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
+        "h": 4,
+        "w": 4,
+        "x": 4,
         "y": 5
       },
       "id": 9,
@@ -635,9 +635,9 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
+        "h": 4,
+        "w": 4,
+        "x": 8,
         "y": 5
       },
       "id": 10,
@@ -697,9 +697,9 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
+        "h": 4,
+        "w": 4,
+        "x": 12,
         "y": 5
       },
       "id": 11,
@@ -763,10 +763,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 10
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 5
       },
       "id": 12,
       "options": {
@@ -829,10 +829,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 10
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 5
       },
       "id": 13,
       "options": {
@@ -895,10 +895,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 10
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 9
       },
       "id": 14,
       "options": {
@@ -961,10 +961,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 10
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 9
       },
       "id": 15,
       "options": {
@@ -1027,10 +1027,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 15
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 9
       },
       "id": 16,
       "options": {
@@ -1093,10 +1093,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 15
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 9
       },
       "id": 17,
       "options": {
@@ -1159,10 +1159,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 15
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 9
       },
       "id": 18,
       "options": {
@@ -1225,10 +1225,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 15
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 9
       },
       "id": 19,
       "options": {
@@ -1285,10 +1285,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
+        "h": 4,
+        "w": 4,
         "x": 0,
-        "y": 20
+        "y": 13
       },
       "id": 20,
       "options": {
@@ -1351,10 +1351,10 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 20
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 13
       },
       "id": 21,
       "options": {
@@ -1385,76 +1385,14 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Last-run timestamp (age in hours) for each idle-tracked background job. Red = overdue given its interval; investigate the scheduler.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "left",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 25
-      },
       "id": 22,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": ["sum"],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT replace(r.key, 'plugin_job_last_run_', '') AS \"Job\", to_timestamp(r.value::float8)::timestamptz AS \"Last-run\", ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(r.value::float8))) / 3600, 1) AS \"Hours ago\", COALESCE(s.value, '?') AS \"Status\" FROM app_settings r LEFT JOIN app_settings s ON s.key = replace(r.key, 'plugin_job_last_run_', 'plugin_job_last_status_') WHERE r.key LIKE 'plugin_job_last_run_%' ORDER BY r.value::float8 ASC;",
-          "refId": "A"
-        }
-      ],
-      "title": "Scheduled jobs — last run times",
-      "type": "table"
-    },
-    {
-      "id": 23,
       "title": "Pipeline & Worker Status",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 35
+        "w": 4,
+        "x": 8,
+        "y": 13
       },
       "datasource": {
         "type": "prometheus",
@@ -1494,6 +1432,68 @@
       }
     },
     {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Last-run timestamp (age in hours) for each idle-tracked background job. Red = overdue given its interval; investigate the scheduler.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 23,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT replace(r.key, 'plugin_job_last_run_', '') AS \"Job\", to_timestamp(r.value::float8)::timestamptz AS \"Last-run\", ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(r.value::float8))) / 3600, 1) AS \"Hours ago\", COALESCE(s.value, '?') AS \"Status\" FROM app_settings r LEFT JOIN app_settings s ON s.key = replace(r.key, 'plugin_job_last_run_', 'plugin_job_last_status_') WHERE r.key LIKE 'plugin_job_last_run_%' ORDER BY r.value::float8 ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Scheduled jobs — last run times",
+      "type": "table"
+    },
+    {
       "type": "row",
       "title": "Audit Log · GlitchTip · Publish Queues",
       "collapsed": false,
@@ -1501,7 +1501,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 26
       },
       "panels": [],
       "id": 24
@@ -1515,10 +1515,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 3,
-        "w": 6,
+        "h": 4,
+        "w": 4,
         "x": 0,
-        "y": 40
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -1564,10 +1564,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 6,
-        "y": 40
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -1613,10 +1613,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 12,
-        "y": 40
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -1662,10 +1662,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 18,
-        "y": 40
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -1704,6 +1704,506 @@
     },
     {
       "id": 29,
+      "type": "stat",
+      "title": "GT open",
+      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 27
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (details->>'issues_seen')::int AS \"Open issues\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "GT alerted",
+      "description": "Novel high-count issues paged via notify_operator() on the last triage cycle. Non-zero = a new recurring error worth investigating.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 27
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (details->>'alerted_count')::int AS \"Alerted\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "GT resolved",
+      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing — operator's noise rules absorbing known-flapping issues.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM((details->>'auto_resolved_count')::int), 0) AS \"Auto-resolved\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\n  AND timestamp > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "GT probe",
+      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating — check `docker logs poindexter-brain`.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 600
+              },
+              {
+                "color": "orange",
+                "value": 900
+              }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::int AS \"Seconds since\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Sched depth",
+      "description": "Count of posts queued for future publish. Populated by `poindexter schedule batch ...` or `poindexter publish-at <id> <when>`. Zero is fine if the operator publishes manually; non-zero means the scheduled_publisher daemon will fire them at published_at.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM posts WHERE status = 'scheduled' AND published_at > NOW();",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Next slot in",
+      "description": "Seconds until the next scheduled publish fires. Decreases monotonically until the slot hits; then jumps to the next slot in the queue. NULL means the queue is empty.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (MIN(published_at) - NOW()))::int AS \"Seconds\" FROM posts WHERE status = 'scheduled' AND published_at > NOW();",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Sched overdue",
+      "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 — the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Overdue\" FROM posts WHERE status = 'scheduled' AND published_at <= NOW();",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Approved q",
+      "description": "Count of pipeline_tasks in 'approved' status — posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) — these will not publish themselves. See the 'Approved — awaiting publish' table below for the per-task detail.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Approved\" FROM pipeline_tasks WHERE status = 'approved';",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 37,
       "type": "bargauge",
       "title": "By Severity",
       "datasource": {
@@ -1714,7 +2214,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 43
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -1757,7 +2257,7 @@
       ]
     },
     {
-      "id": 30,
+      "id": 38,
       "type": "bargauge",
       "title": "By Source",
       "datasource": {
@@ -1768,7 +2268,7 @@
         "h": 5,
         "w": 8,
         "x": 8,
-        "y": 43
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -1811,7 +2311,7 @@
       ]
     },
     {
-      "id": 31,
+      "id": 39,
       "type": "bargauge",
       "title": "By Event",
       "datasource": {
@@ -1822,7 +2322,7 @@
         "h": 5,
         "w": 8,
         "x": 16,
-        "y": 43
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -1925,12 +2425,12 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 9,
+        "w": 24,
         "x": 0,
-        "y": 48
+        "y": 40
       },
-      "id": 32,
+      "id": 40,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1953,442 +2453,7 @@
       "type": "table"
     },
     {
-      "id": 33,
-      "type": "stat",
-      "title": "GT open",
-      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "orange",
-                "value": 25
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 48
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT (details->>'issues_seen')::int AS \"Open issues\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 34,
-      "type": "stat",
-      "title": "GT alerted",
-      "description": "Novel high-count issues paged via notify_operator() on the last triage cycle. Non-zero = a new recurring error worth investigating.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "orange",
-                "value": 5
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 48
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT (details->>'alerted_count')::int AS \"Alerted\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 35,
-      "type": "stat",
-      "title": "GT resolved",
-      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing — operator's noise rules absorbing known-flapping issues.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 56
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(SUM((details->>'auto_resolved_count')::int), 0) AS \"Auto-resolved\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\n  AND timestamp > NOW() - INTERVAL '24 hours';",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 36,
-      "type": "stat",
-      "title": "GT probe",
-      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating — check `docker logs poindexter-brain`.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 600
-              },
-              {
-                "color": "orange",
-                "value": 900
-              }
-            ]
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 56
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::int AS \"Seconds since\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle';",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 37,
-      "type": "stat",
-      "title": "Sched depth",
-      "description": "Count of posts queued for future publish. Populated by `poindexter schedule batch ...` or `poindexter publish-at <id> <when>`. Zero is fine if the operator publishes manually; non-zero means the scheduled_publisher daemon will fire them at published_at.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              },
-              {
-                "color": "yellow",
-                "value": 20
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 56
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM posts WHERE status = 'scheduled' AND published_at > NOW();",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 38,
-      "type": "stat",
-      "title": "Next slot in",
-      "description": "Seconds until the next scheduled publish fires. Decreases monotonically until the slot hits; then jumps to the next slot in the queue. NULL means the queue is empty.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 56
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (MIN(published_at) - NOW()))::int AS \"Seconds\" FROM posts WHERE status = 'scheduled' AND published_at > NOW();",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 39,
-      "type": "stat",
-      "title": "Sched overdue",
-      "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 — the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 61
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Overdue\" FROM posts WHERE status = 'scheduled' AND published_at <= NOW();",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 40,
+      "id": 41,
       "type": "table",
       "title": "Upcoming scheduled publishes (next 24h)",
       "description": "Posts queued to publish within the next 24 hours. Empty when the queue is dry. Pin to the dashboard playlist so operators can see at a glance what's coming up.",
@@ -2420,10 +2485,10 @@
         }
       },
       "gridPos": {
-        "h": 10,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 49
       },
       "options": {
         "cellHeight": "sm",
@@ -2444,71 +2509,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT published_at AS \"Publish at (UTC)\", slug AS \"Slug\", title AS \"Title\", EXTRACT(EPOCH FROM (published_at - NOW()))::int AS \"In (s)\" FROM posts WHERE status = 'scheduled' AND published_at BETWEEN NOW() AND NOW() + INTERVAL '24 hours' ORDER BY published_at LIMIT 25;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 41,
-      "type": "stat",
-      "title": "Approved q",
-      "description": "Count of pipeline_tasks in 'approved' status — posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) — these will not publish themselves. See the 'Approved — awaiting publish' table below for the per-task detail.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 76
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"Approved\" FROM pipeline_tasks WHERE status = 'approved';",
           "refId": "A"
         }
       ]
@@ -2546,10 +2546,10 @@
         }
       },
       "gridPos": {
-        "h": 10,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 58
       },
       "options": {
         "cellHeight": "sm",
@@ -2582,7 +2582,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 91
+        "y": 67
       },
       "panels": [],
       "id": 43
@@ -2632,9 +2632,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 5,
+        "w": 4,
         "x": 0,
-        "y": 92
+        "y": 68
       },
       "id": 44,
       "options": {
@@ -2696,9 +2696,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 5,
-        "x": 5,
-        "y": 92
+        "w": 4,
+        "x": 4,
+        "y": 68
       },
       "id": 45,
       "options": {
@@ -2773,9 +2773,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 5,
-        "x": 10,
-        "y": 92
+        "w": 4,
+        "x": 8,
+        "y": 68
       },
       "id": 46,
       "options": {
@@ -2847,8 +2847,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 15,
-        "y": 92
+        "x": 12,
+        "y": 68
       },
       "id": 47,
       "options": {
@@ -2914,9 +2914,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 5,
-        "x": 19,
-        "y": 92
+        "w": 4,
+        "x": 16,
+        "y": 68
       },
       "id": 48,
       "options": {

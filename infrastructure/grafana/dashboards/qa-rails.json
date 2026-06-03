@@ -70,7 +70,12 @@
     {
       "type": "row",
       "title": "QA Pass Throughput",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "panels": [],
       "id": 1
     },
@@ -82,20 +87,36 @@
       "description": "Total qa_pass_completed events in the selected time window.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "orange", "value": 500 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "orange",
+                "value": 500
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "background",
@@ -134,23 +155,42 @@
       "description": "Fraction of QA passes that ended with approved=true. Higher = pipeline producing publishable drafts.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 1,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "orange", "value": 0.4 },
-              { "color": "yellow", "value": 0.6 },
-              { "color": "blue", "value": 0.8 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.4
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "blue",
+                "value": 0.8
+              }
             ]
           },
           "unit": "percentunit"
         }
       },
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "minVizHeight": 75,
@@ -188,24 +228,42 @@
       "description": "Count of MemoryClient.search → rag_engine fallbacks in the last 24h. The rail is operator-opt-in (rag_engine_enabled=true); a non-zero count means an enabled rail is failing and silently reverting to the legacy pgvector path. RED at 1+ — investigate and either fix the retriever or set rag_engine_enabled=false. Per `feedback_no_silent_defaults` — operator-enabled rails must never silently degrade.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
-              "options": { "0": { "color": "blue", "text": "✓ 0" } }
+              "options": {
+                "0": {
+                  "color": "blue",
+                  "text": "✓ 0"
+                }
+              }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
       "id": 10,
       "options": {
         "colorMode": "background",
@@ -244,24 +302,42 @@
       "description": "Count of QA reviewer skips in the last 24h. Each row is one operator-enabled rail (deepeval g_eval / faithfulness, guardrails brand / competitor, ragas_eval) raising at runtime — chain still completes without that rail's signal, but the failure is surfaced loudly per `feedback_no_silent_defaults`. Click into the audit_log to see which reviewer + exception. RED at 1+.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
-              "options": { "0": { "color": "blue", "text": "✓ 0" } }
+              "options": {
+                "0": {
+                  "color": "blue",
+                  "text": "✓ 0"
+                }
+              }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 6
+      },
       "id": 11,
       "options": {
         "colorMode": "background",
@@ -300,34 +376,55 @@
       "description": "Per-reviewer skip count in the last 24h — which rails are flaking. Empty table = all rails healthy.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Skips" },
+            "matcher": {
+              "id": "byName",
+              "options": "Skips"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "gradient" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               }
             ]
           }
         ]
       },
-      "gridPos": { "h": 5, "w": 8, "x": 4, "y": 6 },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 4,
+        "y": 6
+      },
       "id": 12,
       "options": {
         "cellHeight": "sm",
@@ -363,7 +460,9 @@
       "description": "QA passes per hour, split by approved/rejected. Lets you spot regressions when a model swap or prompt change tanks the approval rate.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -373,24 +472,45 @@
             "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "auto",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "normal" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "legend": {
@@ -399,7 +519,10 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
       },
       "pluginVersion": "11.0.0",
       "targets": [
@@ -420,7 +543,12 @@
     {
       "type": "row",
       "title": "Per-Reviewer Health",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "panels": [],
       "id": 5
     },
@@ -432,70 +560,130 @@
       "description": "For each reviewer in the last 24h: how often it ran, what fraction approved, average score, and whether it was advisory or required-to-pass on each call. Drives the per-rail false-positive analysis Lane D was built to enable.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 80 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Approval Rate" },
+            "matcher": {
+              "id": "byName",
+              "options": "Approval Rate"
+            },
             "properties": [
-              { "id": "unit", "value": "percentunit" },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "gradient" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "orange", "value": null },
-                    { "color": "orange", "value": 0.5 },
-                    { "color": "yellow", "value": 0.7 },
-                    { "color": "blue", "value": 0.9 }
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.7
+                    },
+                    {
+                      "color": "blue",
+                      "value": 0.9
+                    }
                   ]
                 }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Avg Score" },
+            "matcher": {
+              "id": "byName",
+              "options": "Avg Score"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "gradient" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "orange", "value": null },
-                    { "color": "orange", "value": 50 },
-                    { "color": "yellow", "value": 70 },
-                    { "color": "blue", "value": 85 }
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "blue",
+                      "value": 85
+                    }
                   ]
                 }
               },
-              { "id": "max", "value": 100 },
-              { "id": "min", "value": 0 }
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 12, "w": 16, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 12,
+        "w": 16,
+        "x": 0,
+        "y": 10
+      },
       "id": 6,
       "options": {
         "cellHeight": "sm",
@@ -531,23 +719,42 @@
       "description": "Average score per reviewer (24h). Skips reviewers with <5 runs to avoid noise.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 100,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "orange", "value": 50 },
-              { "color": "yellow", "value": 70 },
-              { "color": "blue", "value": 85 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "blue",
+                "value": 85
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 10 },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
       "id": 7,
       "options": {
         "displayMode": "gradient",
@@ -558,7 +765,7 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
-          "values": false
+          "values": true
         },
         "showUnfilled": true,
         "sizing": "auto",
@@ -583,7 +790,12 @@
     {
       "type": "row",
       "title": "Recent Activity",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
       "panels": [],
       "id": 8
     },
@@ -595,25 +807,40 @@
       "description": "Last 20 QA passes — full reviewer breakdown in the details column. Click into a row to copy the JSON for a deeper trace.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": true
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Approved" },
+            "matcher": {
+              "id": "byName",
+              "options": "Approved"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-text", "mode": "basic" }
+                "value": {
+                  "type": "color-text",
+                  "mode": "basic"
+                }
               },
               {
                 "id": "mappings",
@@ -621,8 +848,14 @@
                   {
                     "type": "value",
                     "options": {
-                      "true": { "color": "blue", "text": "✓ APPROVED" },
-                      "false": { "color": "orange", "text": "✗ REJECTED" }
+                      "true": {
+                        "color": "blue",
+                        "text": "✓ APPROVED"
+                      },
+                      "false": {
+                        "color": "orange",
+                        "text": "✗ REJECTED"
+                      }
                     }
                   }
                 ]
@@ -630,31 +863,60 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Final Score" },
+            "matcher": {
+              "id": "byName",
+              "options": "Final Score"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "gradient" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "orange", "value": null },
-                    { "color": "orange", "value": 60 },
-                    { "color": "yellow", "value": 75 },
-                    { "color": "blue", "value": 85 }
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 60
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 75
+                    },
+                    {
+                      "color": "blue",
+                      "value": 85
+                    }
                   ]
                 }
               },
-              { "id": "max", "value": 100 },
-              { "id": "min", "value": 0 }
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 23 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
       "id": 9,
       "options": {
         "cellHeight": "sm",
@@ -685,7 +947,12 @@
     {
       "type": "row",
       "title": "Ragas Eval — RAG Retrieval Quality",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
       "collapsed": false,
       "panels": [],
       "id": 13
@@ -698,7 +965,9 @@
       "description": "Averaged Ragas score (mean of non-sentinel faithfulness + answer_relevancy + context_precision) over the dashboard time range. Each point is one ragas_eval call emitted from services/ragas_eval.py::evaluate_sample. Trend down = retrieval quality regressing; correlate with rag_engine_enabled / rag_hybrid_enabled / rag_rerank_enabled toggles in app_settings.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -708,15 +977,26 @@
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "opacity",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "auto",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "max": 1,
@@ -724,16 +1004,33 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "orange", "value": 0.5 },
-              { "color": "yellow", "value": 0.65 },
-              { "color": "blue", "value": 0.8 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "yellow",
+                "value": 0.65
+              },
+              {
+                "color": "blue",
+                "value": 0.8
+              }
             ]
           },
           "unit": "percentunit"
         }
       },
-      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 34 },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 34
+      },
       "id": 14,
       "options": {
         "legend": {
@@ -742,7 +1039,10 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
       },
       "pluginVersion": "11.0.0",
       "targets": [
@@ -769,23 +1069,42 @@
       "description": "Most recent Ragas score (averaged across the three component metrics). Green ≥ 0.8 — retrieval is feeding the writer well. Red < 0.5 — the RAG layer is hurting more than helping; investigate which component dropped via the per-row table below.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "max": 1,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "orange", "value": 0.5 },
-              { "color": "yellow", "value": 0.65 },
-              { "color": "blue", "value": 0.8 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "yellow",
+                "value": 0.65
+              },
+              {
+                "color": "blue",
+                "value": 0.8
+              }
             ]
           },
           "unit": "percentunit"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 34 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
       "id": 15,
       "options": {
         "colorMode": "background",
@@ -825,19 +1144,32 @@
       "description": "Count of ragas_eval calls in the dashboard time range. Zero with ragas_enabled=true → ragas_eval is broken; investigate Reviewer Skips panel above. High count = every QA pass is paying the ~6K-token judge cost — consider sampling.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "blue", "value": 1 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 38 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 38
+      },
       "id": 16,
       "options": {
         "colorMode": "background",
@@ -877,38 +1209,74 @@
       "description": "Last 10 Ragas evaluations with task linkage and component breakdown. Component scores below 0 are sentinels — that metric's judge-LLM call failed on that pass (other components still feed the average). Click into a row to read the raw JSONB and correlate with the originating task.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Score" },
+            "matcher": {
+              "id": "byName",
+              "options": "Score"
+            },
             "properties": [
-              { "id": "unit", "value": "percentunit" },
-              { "id": "max", "value": 1 },
-              { "id": "min", "value": 0 },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "gradient" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "orange", "value": null },
-                    { "color": "orange", "value": 0.5 },
-                    { "color": "yellow", "value": 0.65 },
-                    { "color": "blue", "value": 0.8 }
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.65
+                    },
+                    {
+                      "color": "blue",
+                      "value": 0.8
+                    }
                   ]
                 }
               }
@@ -920,22 +1288,46 @@
               "options": "Faithfulness|Answer Relevancy|Context Precision"
             },
             "properties": [
-              { "id": "unit", "value": "percentunit" },
-              { "id": "max", "value": 1 },
-              { "id": "min", "value": -1 },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": -1
+              },
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-text", "mode": "basic" }
+                "value": {
+                  "type": "color-text",
+                  "mode": "basic"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "orange", "value": null },
-                    { "color": "orange", "value": 0 },
-                    { "color": "yellow", "value": 0.6 },
-                    { "color": "blue", "value": 0.8 }
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.6
+                    },
+                    {
+                      "color": "blue",
+                      "value": 0.8
+                    }
                   ]
                 }
               }
@@ -943,7 +1335,12 @@
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 42 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
       "id": 17,
       "options": {
         "cellHeight": "sm",

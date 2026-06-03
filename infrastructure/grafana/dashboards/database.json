@@ -268,7 +268,7 @@
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
-          "values": false
+          "values": true
         },
         "pieType": "donut",
         "tooltip": {

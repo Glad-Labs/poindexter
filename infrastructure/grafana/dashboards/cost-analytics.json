@@ -103,7 +103,10 @@
       },
       "id": 2,
       "options": {
-        "displayLabels": ["percent", "name"],
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -115,9 +118,11 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": false
+          "values": true
         },
         "tooltip": {
           "mode": "single",
@@ -407,7 +412,10 @@
         "overrides": []
       },
       "options": {
-        "displayLabels": ["percent", "name"],
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -419,9 +427,11 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": false
+          "values": true
         },
         "tooltip": {
           "mode": "single",
@@ -473,7 +483,10 @@
         "overrides": []
       },
       "options": {
-        "displayLabels": ["percent", "name"],
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -485,9 +498,11 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": false
+          "values": true
         },
         "tooltip": {
           "mode": "single",
@@ -580,7 +595,10 @@
         "overrides": []
       },
       "options": {
-        "displayLabels": ["percent", "name"],
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -592,9 +610,11 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": false
+          "values": true
         },
         "tooltip": {
           "mode": "single",
@@ -647,7 +667,10 @@
         "overrides": []
       },
       "options": {
-        "displayLabels": ["percent", "name"],
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -659,9 +682,11 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": false
+          "values": true
         },
         "tooltip": {
           "mode": "single",
@@ -875,7 +900,7 @@
     {
       "type": "row",
       "id": 60,
-      "title": "Cost vs Electricity \u2014 local Ollama vs cloud APIs",
+      "title": "Cost vs Electricity — local Ollama vs cloud APIs",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -888,7 +913,7 @@
     {
       "type": "table",
       "id": 61,
-      "title": "Provider economics \u2014 $ vs kWh per call (last 30d)",
+      "title": "Provider economics — $ vs kWh per call (last 30d)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
