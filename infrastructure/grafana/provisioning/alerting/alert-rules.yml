@@ -13,7 +13,11 @@ groups:
         title: High Error Rate
         condition: C
         for: 0s
-        noDataState: OK
+        # `count(*)` always returns a row in a healthy DB, so no-data can
+        # only mean `audit_log` was renamed/dropped or the datasource is
+        # down — i.e. the rule went blind. Surface that loudly instead of
+        # resolving green (fail-loud, no silent fallbacks). See #581.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: critical
@@ -65,7 +69,11 @@ groups:
         title: Stale Tasks
         condition: C
         for: 0s
-        noDataState: OK
+        # `count(*)` over a VIEW (pipeline_tasks_view) always returns a
+        # row when healthy; no-data means the view was repointed/dropped
+        # by a migration or the datasource is down — a dark subsystem, not
+        # "all healthy". Page on it rather than silently passing. See #581.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: warning
@@ -169,6 +177,13 @@ groups:
         title: DB Size Warning
         condition: C
         for: 0s
+        # INTENTIONALLY left on OK (#581). This is a non-page-worthy
+        # capacity warning, not an outage signal. `pg_database_size()`
+        # only returns no-data if the datasource itself is unreachable —
+        # and that condition is already surfaced loudly by the two
+        # critical rules on this same datasource (Worker Offline,
+        # Brain Daemon Stale, both Alerting). Flipping this too would just
+        # add a redundant capacity page on top of the real outage page.
         noDataState: OK
         execErrState: Error
         labels:
@@ -221,7 +236,10 @@ groups:
         title: Daily Cost Spike
         condition: C
         for: 0s
-        noDataState: OK
+        # `COALESCE(SUM(...),0)` always returns a row when healthy; no-data
+        # means `cost_logs` was renamed/dropped or the datasource is down.
+        # A blind cost alarm is worse than a noisy one — surface it. #581.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: warning
@@ -288,7 +306,11 @@ groups:
         title: Content Quality Drop
         condition: C
         for: 0s
-        noDataState: OK
+        # `COALESCE(AVG(...),100)` over a VIEW always returns a row when
+        # healthy; no-data means the view was repointed/dropped or the
+        # datasource is down. Surface that rather than reporting "quality
+        # is fine" off a blind query. See #581.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: warning
@@ -340,7 +362,11 @@ groups:
         title: Traffic Anomaly
         condition: C
         for: 0s
-        noDataState: OK
+        # The CTE cross-join always yields one ratio row when healthy;
+        # no-data means `page_views` was renamed/dropped or the datasource
+        # is down — exactly the "site is dark but the alert stayed green"
+        # failure this audit is about. Surface it. See #581.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: warning
@@ -507,7 +533,11 @@ groups:
         title: Ollama Unresponsive
         condition: C
         for: 10m
-        noDataState: OK
+        # The CASE always returns a row when healthy (it reads
+        # pipeline_tasks_view + cost_logs); no-data means one of those was
+        # renamed/dropped or the datasource is down. A blind "is Ollama
+        # alive?" check that resolves OK is the silent failure #581 targets.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: warning
@@ -715,7 +745,13 @@ groups:
         title: GPU Temperature High
         condition: C
         for: 5m
-        noDataState: OK
+        # `SELECT temperature ... LIMIT 1` genuinely returns no rows when
+        # `gpu_metrics` is empty — i.e. the GPU scraper crashed and we are
+        # flying blind on a critical (hardware-damage) signal. OK here
+        # silenced exactly that; flip to Alerting so a dark thermal sensor
+        # pages. (GPU Metrics Stale also catches scraper death; two loud
+        # signals on a dark GPU is intentional, not redundant.) See #581.
+        noDataState: Alerting
         execErrState: Error
         labels:
           severity: critical

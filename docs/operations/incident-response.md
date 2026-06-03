@@ -46,7 +46,9 @@ Telegram silent but you SEE a problem?
 
 ## Alert index — alert name to runbook section
 
-These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (4 rules as of 2026-05-23). Brain daemon also fires a few synthetic alerts directly to Telegram.
+These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (14 rules as of 2026-06-03). Brain daemon also fires a few synthetic alerts directly to Telegram.
+
+**No-data posture (Glad-Labs/poindexter#581).** 13 of the 14 rules use `noDataState: Alerting`: every page-worthy rule returns a row in the healthy state (a `count(*)` / `SUM` / `AVG` always does; `GPU Temperature High` reads the latest `gpu_metrics` row), so "no data" can only mean the underlying table/view was renamed or dropped, or the datasource is down — i.e. the rule went blind. Those surface loudly rather than silently resolving green (fail-loud, no silent fallbacks). Query _errors_ (renamed column, dropped table) surface independently via `execErrState`, which is `Error` (or `Alerting`) on every rule — never `OK`. The single exception is **DB Size Warning**, intentionally kept on `noDataState: OK`: it is a non-page-worthy capacity warning whose only no-data condition (datasource unreachable) is already paged by the two critical rules on the same datasource (Worker Offline, Brain Daemon Stale). The posture is pinned by `src/cofounder_agent/tests/unit/infrastructure/test_grafana_alert_no_data_state.py`.
 
 | Alert                          | Severity | Section                                                             |
 | ------------------------------ | -------- | ------------------------------------------------------------------- |
