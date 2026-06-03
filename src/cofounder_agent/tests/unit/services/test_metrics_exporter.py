@@ -617,3 +617,107 @@ def test_exporter_registers_social_adapter_counters_at_import():
     text = mx.render_exposition()[0].decode("utf-8")
     assert "poindexter_social_adapter_posts_total" in text
     assert "poindexter_social_adapter_errors_total" in text
+
+
+# ---------------------------------------------------------------------------
+# Module v1 metric-contribution loop (Glad-Labs/poindexter#490 / #565).
+# The exporter calls each registered Module's optional
+# ``refresh_module_metrics(pool)`` at scrape time. The loop must be generic
+# (no per-module knowledge), await an awaitable result, skip modules without
+# the hook, and never let one module's failure break the scrape.
+# ---------------------------------------------------------------------------
+
+
+class _ModWithAsyncHook:
+    def __init__(self):
+        self.called_with = None
+
+    async def refresh_module_metrics(self, pool):
+        self.called_with = pool
+
+
+class _ModWithSyncAwaitableHook:
+    """Hook is a sync method returning an awaitable (a module that does
+    ``return refresh_my_metrics(pool)`` rather than ``async def``)."""
+
+    def __init__(self):
+        self.called_with = None
+
+    def refresh_module_metrics(self, pool):
+        called = {}
+
+        async def _coro():
+            called["pool"] = pool
+            self.called_with = pool
+
+        return _coro()
+
+
+class _ModWithoutHook:
+    pass
+
+
+class _ModThatRaises:
+    def refresh_module_metrics(self, pool):
+        raise RuntimeError("boom")
+
+
+@pytest.mark.unit
+async def test_module_metrics_loop_invokes_async_and_awaitable_hooks():
+    from services import metrics_exporter as mx
+
+    async_mod = _ModWithAsyncHook()
+    sync_mod = _ModWithSyncAwaitableHook()
+    pool = MagicMock()
+
+    with patch("plugins.registry.get_modules", return_value=[async_mod, sync_mod]):
+        await mx._refresh_module_metrics(pool)
+
+    assert async_mod.called_with is pool
+    assert sync_mod.called_with is pool
+
+
+@pytest.mark.unit
+async def test_module_metrics_loop_skips_modules_without_hook():
+    from services import metrics_exporter as mx
+
+    good = _ModWithAsyncHook()
+    pool = MagicMock()
+
+    # A module lacking the hook must be silently skipped (not an error).
+    with patch(
+        "plugins.registry.get_modules", return_value=[_ModWithoutHook(), good]
+    ):
+        await mx._refresh_module_metrics(pool)
+
+    assert good.called_with is pool
+
+
+@pytest.mark.unit
+async def test_module_metrics_loop_isolates_a_failing_hook():
+    """One module raising must not abort the loop nor propagate — /metrics
+    must keep serving."""
+    from services import metrics_exporter as mx
+
+    good = _ModWithAsyncHook()
+    pool = MagicMock()
+
+    with patch(
+        "plugins.registry.get_modules",
+        return_value=[_ModThatRaises(), good],
+    ):
+        # Must not raise.
+        await mx._refresh_module_metrics(pool)
+
+    # The good module after the failing one still ran.
+    assert good.called_with is pool
+
+
+@pytest.mark.unit
+async def test_module_metrics_loop_tolerates_registry_failure():
+    from services import metrics_exporter as mx
+
+    pool = MagicMock()
+    with patch("plugins.registry.get_modules", side_effect=RuntimeError("nope")):
+        # Registry import/call failure must be swallowed.
+        await mx._refresh_module_metrics(pool)

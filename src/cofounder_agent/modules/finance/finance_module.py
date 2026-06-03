@@ -90,16 +90,63 @@ class FinanceModule:
         del grafana
 
     def register_probes(self, brain: object) -> None:
-        """Phase 4 — ``brain`` is a
-        :class:`plugins.probe_registry.BrainProbeRegistry`. Finance probes
-        (Mercury API reachability, token expiry, balance-staleness)
-        will register here as ``brain.register(module="finance",
-        name=..., callable=...)``. F1 ships with zero registered
-        probes — the Mercury read-only integration is healthchecked
-        via ``/api/finance/healthcheck`` (Grafana scrapes it). A
-        future PR moves that to a brain probe so an operator without
-        Grafana still gets paged on Mercury auth loss."""
-        del brain
+        """Register finance brain probes (Glad-Labs/poindexter#565).
+
+        ``brain`` is a
+        :class:`plugins.probe_registry.BrainProbeRegistry`. We register the
+        Mercury poll-staleness probe so it appears in ``/api/modules/probes``
+        and rides the registry-driven execution path the brain daemon polls.
+        The probe pages (via ``notify_operator`` + ``audit_log``) when the
+        hourly Mercury poll stalls or loses auth — the gap #565 filed (the
+        F1 docstring TODO'd exactly this).
+
+        Defensive: a ``brain`` that is ``None`` (the worker process doesn't
+        host the brain — lifespan passes ``None`` as the canonical
+        "subsystem absent" sentinel) is a no-op. A real registry that
+        somehow lacks ``register`` fails loud per
+        ``feedback_no_silent_defaults`` rather than silently dropping the
+        probe — a missing finance probe is the bug #565 is about.
+        """
+        if brain is None:
+            return
+        register = getattr(brain, "register", None)
+        if not callable(register):
+            raise RuntimeError(
+                "FinanceModule.register_probes: expected a BrainProbeRegistry "
+                f"with .register(...), got {type(brain).__name__}"
+            )
+
+        from modules.finance.probes import (
+            FinancePollStalenessProbe,
+            run_finance_poll_staleness_probe,
+        )
+
+        probe = FinancePollStalenessProbe()
+        register(
+            module="finance",
+            name=probe.name,
+            callable=run_finance_poll_staleness_probe,
+            description=probe.description,
+            interval_seconds=probe.interval_seconds,
+        )
+
+    def refresh_module_metrics(self, pool: object) -> object:
+        """Scrape-time Prometheus refresh hook (Glad-Labs/poindexter#565).
+
+        Called by ``services/metrics_exporter.refresh_metrics`` on every
+        ``/metrics`` scrape via the generic module-metrics loop (the loop
+        looks for this optional method on each registered Module — there is
+        no finance-specific import in the public substrate exporter, so the
+        whole surface stays inside the stripped ``modules/finance/`` tree).
+
+        Returns the awaitable from
+        :func:`modules.finance.metrics.refresh_finance_metrics` so the caller
+        can ``await`` it; the exporter wraps the call in its own try/except so
+        a finance refresh failure never makes ``/metrics`` error.
+        """
+        from modules.finance.metrics import refresh_finance_metrics
+
+        return refresh_finance_metrics(pool)
 
     async def healthcheck(self, pool: object) -> object:
         """Phase 4 — aggregate finance sub-probe results."""

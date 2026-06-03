@@ -721,6 +721,56 @@ async def refresh_metrics(
     except Exception as e:
         logger.debug("refresh_metrics: task_counts query failed: %s", e)
 
+    # Module v1 metric contributions (Glad-Labs/poindexter#490 lifecycle).
+    # Each business module MAY expose an optional ``refresh_module_metrics``
+    # hook that updates its own prometheus_client singletons from the DB at
+    # scrape time — the same lifecycle shape as register_routes /
+    # register_probes. This loop is deliberately generic: the substrate
+    # exporter knows nothing about any specific module, so a private module's
+    # metric surface stays entirely inside its own package. A module without
+    # the hook is skipped; a hook that raises is logged and never fails
+    # /metrics.
+    await _refresh_module_metrics(pool)
+
+
+async def _refresh_module_metrics(pool: Any) -> None:
+    """Invoke each registered Module's optional ``refresh_module_metrics``.
+
+    Kept separate from :func:`refresh_metrics` so it's independently
+    testable and so the module-discovery import stays lazy (modules pull in
+    heavier closures we don't want loaded on every substrate scrape path).
+    The hook may be sync-returning-awaitable or plain async; we await
+    whatever is awaitable.
+    """
+    import inspect
+
+    try:
+        from plugins.registry import get_modules
+    except Exception as e:  # noqa: BLE001 — registry import must never break /metrics
+        logger.debug("refresh_metrics: module registry import failed: %s", e)
+        return
+
+    try:
+        modules = get_modules()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("refresh_metrics: get_modules() failed: %s", e)
+        return
+
+    for mod in modules:
+        hook = getattr(mod, "refresh_module_metrics", None)
+        if not callable(hook):
+            continue
+        try:
+            result = hook(pool)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as e:  # noqa: BLE001 — one module must not break /metrics
+            mod_name = type(mod).__name__
+            logger.warning(
+                "refresh_metrics: %s.refresh_module_metrics failed: %s",
+                mod_name, e,
+            )
+
 
 def render_exposition() -> tuple[bytes, str]:
     """Return ``(body, content_type)`` for the ``/metrics`` HTTP response."""

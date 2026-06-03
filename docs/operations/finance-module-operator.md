@@ -135,6 +135,58 @@ WHERE started_at >= NOW() - INTERVAL '24 hours'
 GROUP BY status;
 ```
 
+## Observability — poll-staleness metric + brain probe (#565)
+
+Before #565 the hourly poll had **zero** observability: a silent stall
+surfaced on no dashboard and paged no one, and `/api/finance/healthcheck`
+returns 200 in every case (status in the body) so uptime monitors can't
+catch `auth_failed` / `upstream_error` either. #565 adds two complementary
+signals, both gated on `mercury_enabled` so a non-Mercury deployment stays
+silent, both DB-configurable.
+
+### Prometheus metrics (Grafana / Alertmanager path)
+
+Emitted at scrape time from `finance_poll_runs` (see
+`modules/finance/metrics.py`, wired into `/metrics` via the generic
+`Module.refresh_module_metrics` hook):
+
+| Metric                                                   | Type  | Meaning                                                                                                                                                                                                      |
+| -------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `poindexter_finance_last_poll_success_timestamp_seconds` | gauge | Unix epoch of the most recent `status='ok'` poll. **Cleared (absent)** when Mercury is disabled, no poll ever succeeded, or the DB is unreachable — so `absent()` distinguishes that from a stale timestamp. |
+| `poindexter_finance_last_poll_age_seconds`               | gauge | Seconds since that success (convenience for the dashboard).                                                                                                                                                  |
+| `poindexter_finance_poll_runs_total{status=...}`         | gauge | Cumulative `finance_poll_runs` rows by status (survives worker restarts).                                                                                                                                    |
+
+The DB-sourced alert `FinanceMercuryPollStale` (seeded by migration
+`20260603_000000_seed_finance_poll_observability.py` into
+`app_settings.prometheus.rule.FinanceMercuryPollStale`, rendered into
+`rules/*.yml` by `RenderPrometheusRulesJob`) fires on
+`absent(...) or time() - <gauge> > {threshold.finance_poll_stale_seconds}`.
+Tune the window:
+
+```bash
+poindexter settings set prometheus.threshold.finance_poll_stale_seconds 10800   # default 3h
+```
+
+### Brain probe (pages without Grafana)
+
+`modules/finance/probes.py::run_finance_poll_staleness_probe` (registered
+via `FinanceModule.register_probes`, surfaced at `/api/modules/probes`)
+pages through `notify_operator` + writes an `audit_log` row when:
+
+- **stale** — no successful poll within
+  `finance_poll_interval_seconds × finance_poll_stale_multiplier`
+  (default `3600 × 3 = 3h`) → `warning`; or
+- **auth lost** — the latest run terminated `auth_failed` (a revoked token
+  never "stalls", so this is a distinct, `critical` page).
+
+Tune (no redeploy — all in `app_settings`):
+
+```bash
+poindexter settings set finance_poll_stale_multiplier 3              # missed-tick tolerance
+poindexter settings set finance_poll_interval_seconds 3600           # expected cadence
+poindexter settings set finance_poll_staleness_probe_enabled false   # mute the probe
+```
+
 ## Deferred for future phases (F2c, F2d, …)
 
 - **Brain knowledge entries** — nightly job that snapshots
@@ -144,17 +196,20 @@ GROUP BY status;
 - **Daily digest** — morning brief includes income/expense for the past
   24h + anomaly alerts (unusual large transactions, low-balance
   threshold breaches).
-- **Grafana finance dashboard** — balance trend, daily cashflow chart,
-  polling health panel. Reads from `finance_accounts`,
-  `finance_transactions`, `finance_poll_runs`.
+- **Grafana finance dashboard** — balance trend, daily cashflow chart.
+  Reads from `finance_accounts`, `finance_transactions`,
+  `finance_poll_runs`. (Poll-staleness is already covered by the #565
+  metric + alert above; this dashboard is the richer balance/cashflow view.)
 
 ## Troubleshooting
 
-| Symptom                                                               | Likely cause                                          | Fix                                                                                        |
-| --------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `MercuryAuthError: 401`                                               | Token revoked / wrong / not yet propagated            | Check token in app_settings; mint a new one if needed                                      |
-| `MercuryAuthError: 403`                                               | IP not whitelisted (often IPv6 missing)               | Add current IPv4 + IPv6 to Mercury's token allowlist                                       |
-| `httpx.LocalProtocolError: Illegal header value b'Bearer enc:v1:...'` | Reading the raw ciphertext instead of decrypted token | Call `plugins.secrets.get_secret(conn, key)` not `SELECT value FROM app_settings` directly |
-| `finance_poll_runs` rows with `status='auth_failed'` for hours        | Same as the two above                                 | Same fixes; the daemon will catch up on the next tick after correction                     |
-| CLI errors with `mercury_api_token is empty`                          | Token not seeded into app_settings                    | `poindexter settings set mercury_api_token <token> --secret`                               |
-| Polling never runs despite `mercury_enabled=true`                     | Worker hasn't restarted since enabling                | Restart worker: `docker restart poindexter-worker`                                         |
+| Symptom                                                               | Likely cause                                           | Fix                                                                                                                                                                                                              |
+| --------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MercuryAuthError: 401`                                               | Token revoked / wrong / not yet propagated             | Check token in app_settings; mint a new one if needed                                                                                                                                                            |
+| `MercuryAuthError: 403`                                               | IP not whitelisted (often IPv6 missing)                | Add current IPv4 + IPv6 to Mercury's token allowlist                                                                                                                                                             |
+| `httpx.LocalProtocolError: Illegal header value b'Bearer enc:v1:...'` | Reading the raw ciphertext instead of decrypted token  | Call `plugins.secrets.get_secret(conn, key)` not `SELECT value FROM app_settings` directly                                                                                                                       |
+| `finance_poll_runs` rows with `status='auth_failed'` for hours        | Same as the two above                                  | Same fixes; the daemon will catch up on the next tick after correction                                                                                                                                           |
+| CLI errors with `mercury_api_token is empty`                          | Token not seeded into app_settings                     | `poindexter settings set mercury_api_token <token> --secret`                                                                                                                                                     |
+| Polling never runs despite `mercury_enabled=true`                     | Worker hasn't restarted since enabling                 | Restart worker: `docker restart poindexter-worker`                                                                                                                                                               |
+| `FinanceMercuryPollStale` alert firing / brain "poll stalled" page    | Poll wedged, worker down, or scheduler missed ticks    | Check `/api/finance/healthcheck` + `docker logs poindexter-worker`; widen the window with `poindexter settings set prometheus.threshold.finance_poll_stale_seconds <secs>` / `finance_poll_stale_multiplier <n>` |
+| Brain "auth lost" critical page                                       | Mercury token revoked/expired (latest run auth_failed) | Re-mint Read-Only token, `poindexter settings set mercury_api_token <token> --secret`                                                                                                                            |
