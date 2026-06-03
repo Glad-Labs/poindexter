@@ -32,34 +32,42 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# Private repo URL scrub — defense in depth (Glad-Labs/glad-labs-stack is
-# the private operator repo; only Glad-Labs/poindexter is public). The
-# bundle no longer carries PR/commit URLs to the LLM and the prompt now
-# directs `(PR #N)` plain-text citations, but the model can still echo
-# URLs from training data or partial context. These regexes are the last
-# line before publish.
+# Private-repo URL scrub — defense in depth. Only ``Glad-Labs/poindexter``
+# is public; any OTHER repo under the ``Glad-Labs`` org is internal and must
+# not leak into published content. We match "any Glad-Labs/<repo> that is NOT
+# poindexter" with a negative lookahead instead of naming the private repo —
+# that keeps this module free of the internal repo slug, so the public-mirror
+# sync's cosmetic internal-slug → ``poindexter`` rewrite has nothing to clobber
+# here and the scrub behaves IDENTICALLY on the source repo and the mirror.
+# (Hard-coding the slug made the mirror rewrite flip these regexes to match
+# ``poindexter`` and scrub the project's own public links — it was reddening
+# the mirror's unit-tests run. poindexter#996 follow-up.) The bundle no longer
+# carries PR/commit URLs to the LLM and the prompt directs ``(PR #N)`` plain
+# citations, but the model can still echo URLs from training data — last line
+# before publish.
+_PRIV = r"Glad-Labs/(?!poindexter\b)[A-Za-z0-9._-]+"
 _PRIVATE_REPO_PULL_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)"
+    r"\[([^]]+)\]\(https?://github\.com/" + _PRIV + r"/pull/(\d+)\)"
 )
 _PRIVATE_REPO_COMMIT_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"\[([^]]+)\]\(https?://github\.com/" + _PRIV + r"/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
 )
 _PRIVATE_REPO_PULL_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
+    r"<https?://github\.com/" + _PRIV + r"/pull/(\d+)>"
 )
 _PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"<https?://github\.com/" + _PRIV + r"/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
 )
 _PRIVATE_REPO_PULL_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)"
+    r"https?://github\.com/" + _PRIV + r"/pull/(\d+)"
 )
 _PRIVATE_REPO_COMMIT_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
+    r"https?://github\.com/" + _PRIV + r"/commit/"
     r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
 )
-_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/glad-labs-stack\b")
+_PRIVATE_REPO_MENTION = re.compile(r"\b" + _PRIV + r"\b")
 
 
 def _scrub_private_repo_refs(text: str) -> str:

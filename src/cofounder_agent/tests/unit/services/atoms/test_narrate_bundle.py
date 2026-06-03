@@ -132,48 +132,48 @@ class TestScrubPrivateRepoRefs:
     def test_inline_markdown_pull_link_rewrites_to_pr_number(self):
         text = (
             "We fixed the regex in "
-            "[PR #673](https://github.com/Glad-Labs/glad-labs-stack/pull/673) "
+            "[PR #673](https://github.com/Glad-Labs/private-ops/pull/673) "
             "then moved on."
         )
         out = _scrub_private_repo_refs(text)
         assert "github.com" not in out
-        assert "glad-labs-stack" not in out
+        assert "private-ops" not in out
         assert "We fixed the regex in PR #673 (PR #673) then moved on." in out
 
     def test_inline_markdown_commit_link_rewrites_to_short_sha_backtick(self):
         text = (
             "The fix landed in "
-            "[abc1234f](https://github.com/Glad-Labs/glad-labs-stack/commit/abc1234f5deadbeef)."
+            "[abc1234f](https://github.com/Glad-Labs/private-ops/commit/abc1234f5deadbeef)."
         )
         out = _scrub_private_repo_refs(text)
         assert "github.com" not in out
         assert out == "The fix landed in abc1234f (`abc1234`)."
 
     def test_autolink_pull_rewrites_without_text_label(self):
-        text = "- <https://github.com/Glad-Labs/glad-labs-stack/pull/676>"
+        text = "- <https://github.com/Glad-Labs/private-ops/pull/676>"
         out = _scrub_private_repo_refs(text)
         assert out == "- (PR #676)"
 
     def test_autolink_commit_rewrites_to_sha_backtick(self):
-        text = "see <https://github.com/Glad-Labs/glad-labs-stack/commit/deadbee>"
+        text = "see <https://github.com/Glad-Labs/private-ops/commit/deadbee>"
         out = _scrub_private_repo_refs(text)
         assert out == "see (`deadbee`)"
 
     def test_bare_pull_url_rewrites(self):
-        text = "more at https://github.com/Glad-Labs/glad-labs-stack/pull/42 today"
+        text = "more at https://github.com/Glad-Labs/private-ops/pull/42 today"
         out = _scrub_private_repo_refs(text)
         assert "github.com" not in out
         assert "(PR #42)" in out
 
     def test_bare_commit_url_rewrites(self):
-        text = "https://github.com/Glad-Labs/glad-labs-stack/commit/1234567abcdef"
+        text = "https://github.com/Glad-Labs/private-ops/commit/1234567abcdef"
         out = _scrub_private_repo_refs(text)
         assert out == "(`1234567`)"
 
     def test_plain_text_repo_mention_rewrites_to_public_mirror(self):
-        text = "Pushed to Glad-Labs/glad-labs-stack today."
+        text = "Pushed to Glad-Labs/private-ops today."
         out = _scrub_private_repo_refs(text)
-        assert "glad-labs-stack" not in out
+        assert "private-ops" not in out
         assert "Glad-Labs/poindexter" in out
 
     def test_already_public_links_unchanged(self):
@@ -194,14 +194,14 @@ class TestScrubPrivateRepoRefs:
     def test_multiple_leak_shapes_in_one_paragraph(self):
         text = (
             "Today we shipped "
-            "[PR #673](https://github.com/Glad-Labs/glad-labs-stack/pull/673), "
-            "then <https://github.com/Glad-Labs/glad-labs-stack/pull/676>, "
+            "[PR #673](https://github.com/Glad-Labs/private-ops/pull/673), "
+            "then <https://github.com/Glad-Labs/private-ops/pull/676>, "
             "and a follow-up commit at "
-            "https://github.com/Glad-Labs/glad-labs-stack/commit/abc1234. "
-            "All landed on Glad-Labs/glad-labs-stack."
+            "https://github.com/Glad-Labs/private-ops/commit/abc1234. "
+            "All landed on Glad-Labs/private-ops."
         )
         out = _scrub_private_repo_refs(text)
-        assert "glad-labs-stack" not in out
+        assert "private-ops" not in out
         assert "github.com" not in out
         assert "PR #673 (PR #673)" in out
         assert "(PR #676)" in out
@@ -251,7 +251,7 @@ class TestRunPromptConstruction:
 
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
         ):
@@ -299,7 +299,7 @@ class TestRunPromptConstruction:
 
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
         ):
@@ -341,7 +341,7 @@ class TestRunPromptConstruction:
         misleading_topic = "totally unrelated string about widgets"
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
         ):
@@ -370,7 +370,7 @@ class TestRunPromptConstruction:
 
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
         ):
