@@ -551,6 +551,10 @@ markers = [
     "voice: voice interface tests",
     "websocket: websocket tests",
     "benchmark: benchmark tests",
+    # Provided by the pytest-timeout plugin, but registered here too so
+    # `--strict-markers` collection still passes when the plugin isn't
+    # installed (e.g. a slim worktree without the dev deps). #994.
+    "timeout: per-test wall-clock timeout (pytest-timeout)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

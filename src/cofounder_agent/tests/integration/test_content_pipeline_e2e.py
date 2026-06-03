@@ -16,6 +16,7 @@ Requirements:
   - Marked with @pytest.mark.integration (excluded from unit test suite)
 """
 
+import functools
 import json
 import re
 
@@ -27,8 +28,13 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=1)
 def _ollama_is_running() -> bool:
-    """Synchronous check — used at module import time for skipif."""
+    """Synchronous reachability check, cached so it runs at most once.
+
+    Called by the ``_require_ollama`` autouse fixture at test *setup*
+    (not import) time, so pytest collection makes no network call (#994).
+    """
     try:
         r = httpx.get("http://localhost:11434/api/tags", timeout=3.0)
         return r.status_code == 200
@@ -63,12 +69,22 @@ def _find_ollama_model(prefix: str) -> str | None:
         return None
 
 
-OLLAMA_AVAILABLE = _ollama_is_running()
+pytestmark = pytest.mark.integration
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(not OLLAMA_AVAILABLE, reason="Ollama not running on localhost:11434"),
-]
+
+@pytest.fixture(autouse=True)
+def _require_ollama() -> None:
+    """Skip every test in this module unless Ollama is reachable.
+
+    Replaces the former module-level ``skipif(not _ollama_is_running())``,
+    which probed the network at *import* time — so merely collecting this
+    file (e.g. a CI `pytest tests/integration/` sweep) hit localhost:11434.
+    A fixture defers the probe to test setup, keeping collection offline
+    while preserving the "skip the whole module when Ollama is down"
+    behaviour. The probe is cached, so it fires at most once per session.
+    """
+    if not _ollama_is_running():
+        pytest.skip("Ollama not running on localhost:11434")
 
 
 # ---------------------------------------------------------------------------
