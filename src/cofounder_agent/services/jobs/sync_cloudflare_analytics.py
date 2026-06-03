@@ -2,7 +2,7 @@
 
 Closes the 50-day gap (page_views beacon silent since 2026-04-09). The
 Cloudflare Worker at ``infrastructure/cloudflare/page-views-beacon/``
-writes one data point per view to the ``page_views_ae`` Analytics Engine
+writes one data point per view to the ``analytics_events`` Analytics Engine
 dataset; this job pulls those rows out via the CF AE SQL HTTP API every
 5 minutes and inserts them into the existing ``page_views`` table.
 
@@ -54,7 +54,7 @@ _QUERY_TEMPLATE = (
     "blob3 AS referrer, "
     "blob5 AS user_agent, "
     "timestamp AS created_at "
-    "FROM page_views_ae "
+    "FROM analytics_events "
     "WHERE timestamp > toDateTime('{since}', 'UTC') "
     "ORDER BY timestamp ASC "
     "LIMIT {limit} "

@@ -355,7 +355,7 @@ class TestSyncCloudflareAnalyticsWatermark:
         # The POST should have happened
         client.post.assert_awaited()
         sent_sql = client.post.await_args.kwargs.get("content") or ""
-        assert "page_views_ae" in sent_sql
+        assert "analytics_events" in sent_sql
 
     async def test_subsequent_run_uses_stored_watermark(self):
         """Watermark row present → query bounds by that timestamp."""

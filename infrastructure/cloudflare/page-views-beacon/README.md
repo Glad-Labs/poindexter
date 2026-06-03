@@ -2,7 +2,7 @@
 
 Lightweight Cloudflare Worker that receives page-view beacons from the
 public site and writes one data point per view to a Cloudflare Analytics
-Engine dataset (`page_views_ae`). The backend sync job
+Engine dataset (`analytics_events`). The backend sync job
 (`services/jobs/sync_cloudflare_analytics.py`) pulls aggregated rows out
 via the CF AE SQL HTTP API every 5 minutes and inserts them into the
 local `page_views` table — feeding the existing Grafana panels,
@@ -30,7 +30,7 @@ fill those in at deploy time via the steps below.
 
 1. **Create the Analytics Engine dataset.**
    In the Cloudflare dashboard → Workers & Pages → Analytics Engine,
-   create a new dataset named `page_views_ae`. (The name is referenced
+   create a new dataset named `analytics_events`. (The name is referenced
    in `wrangler.toml`.)
 
 2. **Mint an API token for SQL reads.**
@@ -92,7 +92,7 @@ fill those in at deploy time via the steps below.
 
 After the public site redeploys, hit any post page and watch:
 
-- Cloudflare dashboard → Analytics Engine → `page_views_ae` shows
+- Cloudflare dashboard → Analytics Engine → `analytics_events` shows
   a non-zero query count within ~30 seconds.
 - After the next sync cycle (5 minutes), the local `page_views` table
   picks up new rows:
@@ -111,7 +111,7 @@ curl -X POST \
   "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql" \
   -H "Authorization: Bearer ${CF_ANALYTICS_TOKEN}" \
   --data "SELECT blob1 AS slug, count() AS views
-          FROM page_views_ae
+          FROM analytics_events
           WHERE timestamp > NOW() - INTERVAL '24' HOUR
           GROUP BY slug ORDER BY views DESC LIMIT 20
           FORMAT JSON"

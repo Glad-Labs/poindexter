@@ -4,10 +4,10 @@
 //
 // Read back via the CF AE SQL HTTP API:
 //   POST https://api.cloudflare.com/client/v4/accounts/{account_id}/analytics_engine/sql
-//   SELECT blob1 AS slug, count() AS views FROM page_views_ae WHERE ...
+//   SELECT blob1 AS slug, count() AS views FROM analytics_events WHERE ...
 
 export interface Env {
-  ANALYTICS: AnalyticsEngineDataset;
+  ANALYTICS_ENGINE: AnalyticsEngineDataset;
 }
 
 export default {
@@ -32,7 +32,7 @@ export default {
 
     const cf = (req.cf as Record<string, unknown> | undefined) ?? {};
 
-    env.ANALYTICS.writeDataPoint({
+    env.ANALYTICS_ENGINE.writeDataPoint({
       blobs: [
         slug, // blob1: post slug (lab join key)
         path, // blob2: full path
