@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.1...v0.70.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **newsletter:** genericize name field placeholders (drop founder's name) ([#1044](https://github.com/Glad-Labs/glad-labs-stack/issues/1044)) ([e292c7c](https://github.com/Glad-Labs/glad-labs-stack/commit/e292c7c0c798b0cedb784234470e0f35107e4ff2))
+
 ## [0.70.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.0...v0.70.1) (2026-06-03)
 
 
