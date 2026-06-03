@@ -485,6 +485,18 @@
     },
 
     {
+      "key": "prometheus.threshold.qa_rail_skip_ratio",
+      "value": "1",
+      "category": "prometheus",
+      "description": "Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page earlier) — poindexter#553"
+    },
+    {
+      "key": "qa_rail_skip_window_passes",
+      "value": "20",
+      "category": "qa",
+      "description": "How many recent QA passes the poindexter_qa_rail_skip_ratio gauge measures a rail's skip rate over — poindexter#553"
+    },
+    {
       "key": "plugin.job.render_prometheus_rules",
       "value": "{\"enabled\": true, \"interval_seconds\": 300, \"config\": {\"output_path\": \"/etc/prometheus/rules/dynamic.yml\", \"prometheus_url\": \"http://prometheus:9090\", \"reload_on_change\": true}}",
       "category": "plugins",

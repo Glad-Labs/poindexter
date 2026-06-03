@@ -58,6 +58,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_THRESHOLDS: dict[str, str] = {
     # Content pipeline
     "embeddings_stale_seconds": "21600",  # 6h
+    # poindexter#553 — QaRailFullySkipped trigger. "1" = the rail skipped
+    # 100% of the last N passes. Lower it (e.g. "0.9") to page before a
+    # rail reaches a total blackout. The window N itself is the exporter's
+    # app_settings.qa_rail_skip_window_passes (default 20), not a threshold.
+    "qa_rail_skip_ratio": "1",
     # Infrastructure (Gitea #238 recovery)
     "postgres_p99_latency_seconds": "0.1",  # alert when SELECT 1 > 100ms p99
     "embeddings_missing_posts": "3",  # alert when >3 published posts lack embeddings
@@ -132,6 +137,39 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "Published post count hasn't grown in 48h. Either content "
             "generation is stalled, QA is rejecting everything, or the "
             "approval queue is backed up awaiting human review."
+        ),
+    },
+    # poindexter#553 — a QA rail that's skipping 100% of recent passes is
+    # silently not contributing its signal to the gate. The graph_def QA
+    # path (atom-cutover #355) keeps running without it, so this never
+    # fails loud on its own — the alert is the only operator-facing signal.
+    "QaRailFullySkipped": {
+        "enabled": True,
+        "group": "poindexter-content",
+        "interval": "1m",
+        # poindexter_qa_rail_skip_ratio{reviewer} is the fraction of the
+        # last N QA passes the rail was skipped (exporter caps it at 1.0).
+        # >= 1 means a TOTAL blackout for that rail. Per-reviewer label, so
+        # the firing alert names the offending rail.
+        "expr": "poindexter_qa_rail_skip_ratio >= {threshold.qa_rail_skip_ratio}",
+        "for": "30m",
+        "severity": "warning",
+        "category": "content",
+        "summary": "A QA rail has skipped 100% of recent passes ({{ $labels.reviewer }})",
+        "description": (
+            "QA rail {{ $labels.reviewer }} was skipped in every one of the "
+            "last N QA passes — its signal is missing from the gate decision "
+            "while the pipeline keeps publishing. Likely causes (read the "
+            "exact reason in audit_log WHERE event_type='qa_reviewer_skipped' "
+            "ORDER BY \"timestamp\" DESC): (1) empty research_context — the "
+            "grounding rails (ragas_eval, deepeval_faithfulness) need a "
+            "retrieved corpus; check the research stage is populating it. "
+            "(2) disabled master flag — ragas_enabled / deepeval_enabled / "
+            "guardrails_enabled is false in app_settings. (3) unresolvable "
+            "judge model — fix deepeval_judge_model OR cost_tier.standard.model "
+            "OR pipeline_writer_model. Inspect per-rail on the QA Rails "
+            "dashboard /d/qa-rails. If the rail is intentionally off, lower or "
+            "disable this alert via prometheus.rule.QaRailFullySkipped."
         ),
     },
     # Gitea #238 — recovers nuances the retired brain probes measured.

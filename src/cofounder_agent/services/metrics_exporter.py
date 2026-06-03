@@ -51,6 +51,11 @@ Content pipeline:
   ``schema_migrations`` (GH-227 — catches the "container updated but
   worker not restarted, running on stale schema" failure mode that the
   ``/api/health`` JSON probe already surfaces but Prometheus didn't see)
+- ``poindexter_qa_rail_skip_ratio`` — gauge by ``reviewer``, fraction of
+  the last N QA passes a rail was skipped (poindexter#553). 1.0 = the rail
+  is skipping every pass (empty research_context / disabled master flag /
+  unresolvable judge). Drives the ``QaRailFullySkipped`` alert; only
+  currently-skipping rails emit a series, so a healthy rail is absent.
 
 Cost:
 - ``poindexter_daily_spend_usd`` — gauge
@@ -246,6 +251,52 @@ MONTHLY_SPEND_USD = Gauge(
     "poindexter_monthly_spend_usd",
     "Total LLM spend this month in USD (from cost_logs)",
 )
+
+# poindexter#553 — per-QA-rail skip ratio over the last N passes. A value of
+# 1.0 means the rail was skipped in EVERY one of the last N QA passes (a rail
+# that's structurally not contributing — empty research_context for grounding
+# rails, a disabled master flag, or an unresolvable judge model). Labeled by
+# reviewer; only rails that actually skipped in the window emit a series, so a
+# healthy rail is absent (no false alert). The QaRailFullySkipped Prometheus
+# rule fires on ``>= 1``. Both event types are emitted on the graph_def QA
+# path: qa.aggregate writes qa_pass_completed (the denominator), the rail
+# methods write qa_reviewer_skipped (the numerator).
+QA_RAIL_SKIP_RATIO = Gauge(
+    "poindexter_qa_rail_skip_ratio",
+    "Fraction of the last N QA passes in which this rail was skipped "
+    "(1.0 = skipped every recent pass). Labeled by reviewer.",
+    ["reviewer"],
+)
+
+# Default number of recent QA passes to measure the skip ratio over. Operators
+# tune via app_settings.qa_rail_skip_window_passes (sensible-default tunable
+# per the config-in-DB principle; '' sentinel / absent row → this default).
+_QA_RAIL_SKIP_WINDOW_DEFAULT = 20
+
+# Per-rail skip ratio = (skips of that rail since the Nth-newest pass) / N.
+# recent_passes pins the window to the last N qa_pass_completed rows so the
+# ratio is "last N passes" (count-based), not a wall-clock window. audit_log's
+# time column is the quoted "timestamp" (NOT created_at).
+_QA_RAIL_SKIP_SQL = """
+WITH recent_passes AS (
+    SELECT "timestamp" AS ts
+    FROM audit_log
+    WHERE event_type = 'qa_pass_completed'
+    ORDER BY "timestamp" DESC
+    LIMIT $1
+),
+win AS (
+    SELECT MIN(ts) AS start_ts, COUNT(*) AS n FROM recent_passes
+)
+SELECT s.details->>'reviewer' AS reviewer,
+       COUNT(*)::float        AS skips,
+       (SELECT n FROM win)    AS passes
+FROM audit_log s, win
+WHERE s.event_type = 'qa_reviewer_skipped'
+  AND (SELECT n FROM win) > 0
+  AND s."timestamp" >= win.start_ts
+GROUP BY s.details->>'reviewer'
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -732,6 +783,11 @@ async def refresh_metrics(
     # /metrics.
     await _refresh_module_metrics(pool)
 
+    # poindexter#553: per-rail skip ratio over the last N QA passes. Self-
+    # contained (own connection + own try/except) so it can't disturb the
+    # blocks above. Powers the QaRailFullySkipped alert.
+    await refresh_qa_rail_skip_ratio(pool)
+
 
 async def _refresh_module_metrics(pool: Any) -> None:
     """Invoke each registered Module's optional ``refresh_module_metrics``.
@@ -770,6 +826,54 @@ async def _refresh_module_metrics(pool: Any) -> None:
                 "refresh_metrics: %s.refresh_module_metrics failed: %s",
                 mod_name, e,
             )
+
+
+async def refresh_qa_rail_skip_ratio(
+    pool: Any,
+    *,
+    window_passes: int | None = None,
+) -> None:
+    """Recompute the per-rail skip ratio gauge from ``audit_log``.
+
+    For each QA rail that was skipped at least once in the last
+    ``window_passes`` QA passes, set ``poindexter_qa_rail_skip_ratio`` to
+    ``skips / passes`` (capped at 1.0). The gauge is CLEARED first, so a
+    rail that has recovered loses its series and the alert resolves; a
+    healthy rail never gets a series (no skip rows → no alert).
+
+    ``window_passes`` defaults to ``app_settings.qa_rail_skip_window_passes``
+    (then ``_QA_RAIL_SKIP_WINDOW_DEFAULT``). Best-effort: any failure leaves
+    the gauge cleared rather than raising — ``/metrics`` must never 500.
+    """
+    QA_RAIL_SKIP_RATIO.clear()
+    try:
+        async with pool.acquire() as conn:
+            n = window_passes
+            if n is None:
+                try:
+                    raw = await conn.fetchval(
+                        "SELECT value FROM app_settings "
+                        "WHERE key = 'qa_rail_skip_window_passes'"
+                    )
+                    # app_settings.value is NOT NULL; '' is the unset
+                    # sentinel — guard int() against it.
+                    n = int(raw) if raw else _QA_RAIL_SKIP_WINDOW_DEFAULT
+                except (TypeError, ValueError):
+                    n = _QA_RAIL_SKIP_WINDOW_DEFAULT
+            if n < 1:
+                n = _QA_RAIL_SKIP_WINDOW_DEFAULT
+            rows = await conn.fetch(_QA_RAIL_SKIP_SQL, n)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("refresh_metrics: qa_rail_skip_ratio query failed: %s", e)
+        return
+
+    for r in rows:
+        reviewer = r["reviewer"]
+        passes = float(r["passes"] or 0)
+        if not reviewer or passes <= 0:
+            continue
+        ratio = float(r["skips"] or 0) / passes
+        QA_RAIL_SKIP_RATIO.labels(reviewer=reviewer).set(min(ratio, 1.0))
 
 
 def render_exposition() -> tuple[bytes, str]:

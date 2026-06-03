@@ -245,3 +245,26 @@ async def test_new_oss_rails_bump_their_gate_counters():
         "guardrails_competitor",
         "ragas_eval",
     }
+
+
+@pytest.mark.asyncio
+async def test_accepts_dict_shaped_reviews():
+    """qa.aggregate (the graph_def QA path since #355) carries the rail
+    reviews as ``reviewer_to_dict()`` dicts on the ``qa_rail_reviews``
+    channel, NOT as ``ReviewerResult`` objects. The writer must read its
+    fields from dicts as well as attributes — otherwise ``getattr`` returns
+    the default for every dict, no gate matches, and ``total_runs`` stays
+    frozen at 0 on the prod path (poindexter#553). Pin both shapes so a
+    future serializer change can't silently re-break the counter."""
+    pool = _FakePool()
+    await record_chain_run(pool, [
+        {"reviewer": "ollama_critic", "approved": True, "advisory": False,
+         "score": 90.0, "provider": "ollama"},
+        {"reviewer": "ragas_eval", "approved": False, "advisory": True,
+         "score": 40.0, "provider": "ollama"},
+    ])
+    bumped = {args[0]: tuple(args[1:]) for _, args in pool.executes}
+    # ollama_critic aliases to the llm_critic gate row.
+    assert bumped["llm_critic"] == ("passed", 0)
+    # A failing rail (even advisory) records a rejection on its own counter.
+    assert bumped["ragas_eval"] == ("rejected", 1)

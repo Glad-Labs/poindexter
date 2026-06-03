@@ -17,10 +17,13 @@ the cross_model_qa stage used to be:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
 from services.atoms._qa_rail_common import aggregate_rail_reviews
+
+logger = logging.getLogger(__name__)
 
 ATOM_META = AtomMeta(
     name="qa.aggregate",
@@ -56,14 +59,16 @@ def _weight(site_config: Any, key: str, default: float) -> float:
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     site_config = state.get("site_config")
     reviews = state.get("qa_rail_reviews") or []
+    threshold = _weight(site_config, "qa_final_score_threshold", 70.0)
     result = aggregate_rail_reviews(
         reviews,
         validator_weight=_weight(site_config, "qa_validator_weight", 0.4),
         critic_weight=_weight(site_config, "qa_critic_weight", 0.6),
         gate_weight=_weight(site_config, "qa_gate_weight", 0.3),
-        threshold=_weight(site_config, "qa_final_score_threshold", 70.0),
+        threshold=threshold,
     )
     final_score = result["qa_final_score"]
+    approved = bool(result["approved"])
 
     # Promote the canonical quality_score (max of early-eval + QA), mirroring
     # the legacy stage so downstream finalize_task / auto-publish use the QA score.
@@ -85,7 +90,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "qa_rewrite_attempts": 0,
     }
 
-    if not result["approved"]:
+    if not approved:
         from services.atoms._qa_persist import (
             build_qa_feedback,
             build_reject_reason,
@@ -108,6 +113,58 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # not a PipelineState channel), but set it in state too in case a
         # caller reads final_state.
         out["status"] = "rejected"
+
+    # Bump the qa_gates run counters (total_runs / total_rejections) for
+    # every rail that produced a review. The legacy cross_model_qa stage did
+    # this via MultiModelQA.review() -> record_chain_run; #355 routed QA
+    # through the qa.* atoms, which bypass review(), so the counters froze at
+    # 0 and the operator dashboard showed every gate as last_run_at=NEVER
+    # (poindexter#553). Fire it here so the counters reflect every
+    # qa.aggregate pass (approve and reject). Best-effort — a telemetry
+    # write must never break the pipeline.
+    pool = getattr(state.get("database_service"), "pool", None)
+    if pool is not None:
+        try:
+            from services.qa_gates_db_writer import record_chain_run
+            await record_chain_run(pool, reviews)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[qa.aggregate] qa_gates counter update skipped: %s", exc)
+
+    # One audit row per QA pass with the full reviewer breakdown. The
+    # legacy MultiModelQA.review() emitted this; #355 bypassed review() so
+    # the row froze — darkening the /d/qa-rails dashboard (its panels query
+    # audit_log WHERE event_type='qa_pass_completed' and project details)
+    # AND removing the "N passes" denominator the QaRailFullySkipped alert
+    # needs (poindexter#553). Re-emit it here. Best-effort — a telemetry
+    # write must never break the pipeline.
+    try:
+        from services.audit_log import audit_log_bg
+        audit_log_bg(
+            "qa_pass_completed",
+            "qa.aggregate",
+            {
+                "approved": approved,
+                "final_score": round(float(final_score), 2),
+                "approval_threshold": float(threshold),
+                "reviewer_count": len(reviews),
+                "reviews": [
+                    {
+                        "reviewer": r.get("reviewer"),
+                        "provider": r.get("provider"),
+                        "approved": bool(r.get("approved")),
+                        "score": round(float(r.get("score") or 0.0), 2),
+                        "advisory": bool(r.get("advisory")),
+                        # First 200 chars for debugging; full text stays in logs.
+                        "feedback_preview": (str(r.get("feedback") or ""))[:200],
+                    }
+                    for r in reviews
+                ],
+            },
+            task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
+            severity="info" if approved else "warning",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[qa.aggregate] qa_pass_completed audit skipped: %s", exc)
 
     return out
 

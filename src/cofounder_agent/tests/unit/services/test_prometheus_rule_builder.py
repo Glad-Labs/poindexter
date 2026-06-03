@@ -276,3 +276,46 @@ class TestGpuRules:
         out = await rb.build_current(pool)
         assert "nvidia_gpu_temperature_celsius > 80" in out
         assert "nvidia_gpu_memory_utilization_percent > 90" in out
+
+
+@pytest.mark.unit
+class TestQaRailFullySkippedRule:
+    """poindexter#553 AC#2 — the QA-rail-skip-rate alert. A rail skipping
+    100% of the last N passes (empty research_context, disabled master
+    flag, unresolvable judge) must page via the poindexter-content group."""
+
+    def test_default_rule_shape(self):
+        rule = rb.DEFAULT_RULES["QaRailFullySkipped"]
+        assert rule["group"] == "poindexter-content"
+        assert rule["category"] == "content"
+        assert rule["severity"] == "warning"  # → Discord, not Telegram spam
+        assert "poindexter_qa_rail_skip_ratio" in rule["expr"]
+        # Remediation (feedback_alert_auto_triage — every alert needs a path).
+        desc = rule["description"].lower()
+        assert "research_context" in desc
+        assert "master" in desc and "flag" in desc
+        assert "judge" in desc
+        assert "/d/qa-rails" in rule["description"]
+
+    @pytest.mark.asyncio
+    async def test_rule_renders_with_threshold_substituted(self):
+        """build_current with no DB overrides must render the alert into the
+        content group with the 100% (>= 1) trigger — the synthetic
+        'alert fires' definition for the metric the exporter sets to 1.0."""
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: QaRailFullySkipped" in out
+        # Threshold placeholder substituted to the default "1".
+        assert "poindexter_qa_rail_skip_ratio >= 1" in out
+        # No unsubstituted placeholder leaks into the rendered YAML.
+        assert "{threshold." not in out.split("QaRailFullySkipped", 1)[1][:400]
+
+    @pytest.mark.asyncio
+    async def test_trigger_ratio_is_operator_tunable(self):
+        """An operator can lower the trigger to alert before a rail reaches
+        a full 100% skip rate."""
+        pool = _FakePool([
+            {"key": "prometheus.threshold.qa_rail_skip_ratio", "value": "0.9"},
+        ])
+        out = await rb.build_current(pool)
+        assert "poindexter_qa_rail_skip_ratio >= 0.9" in out

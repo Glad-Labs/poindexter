@@ -142,3 +142,184 @@ class TestQaAggregateParity:
         out = await qa_aggregate.run(state)  # no database_service
         assert out["_halt"] is True
         assert out["qa_final_verdict"] == "reject"
+
+
+class _GateConn:
+    """Supports the acquire()/transaction()/execute() protocol that
+    qa_gates_db_writer.record_chain_run uses."""
+
+    def __init__(self, recorder):
+        self._rec = recorder
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    def transaction(self):
+        return self
+
+    async def execute(self, sql, *args):
+        self._rec.append((sql, args))
+
+
+class _GatePool:
+    def __init__(self):
+        self.gate_execs = []   # qa_gates counter UPDATEs (via acquire/transaction)
+        self.direct_execs = []  # direct .execute() (e.g. gate_history INSERT)
+
+    def acquire(self):
+        return _GateConn(self.gate_execs)
+
+    async def execute(self, sql, *args):
+        self.direct_execs.append((sql, args))
+
+
+class _GateDB:
+    """database_service stand-in exposing the asyncpg-style .pool plus the
+    update_task / mark_model_performance_outcome the reject path needs."""
+
+    def __init__(self):
+        self.pool = _GatePool()
+        self.update_task_calls = []
+        self.mark_calls = []
+
+    async def update_task(self, task_id, fields):
+        self.update_task_calls.append((task_id, fields))
+
+    async def mark_model_performance_outcome(self, task_id, human_approved):
+        self.mark_calls.append((task_id, human_approved))
+
+
+def _bumped_gates(db):
+    return {args[0] for _, args in db.pool.gate_execs}
+
+
+@pytest.mark.unit
+class TestQaAggregateBumpsGateCounters:
+    """poindexter#553: the #355 atom-cutover routed QA through the qa.*
+    atoms → qa.aggregate, bypassing MultiModelQA.review() where
+    record_chain_run lived. So qa_gates.total_runs froze at 0 on the prod
+    graph_def path. qa.aggregate must bump the per-rail counters on EVERY
+    run (approve and reject)."""
+
+    async def test_approve_bumps_per_rail_counters(self):
+        db = _GateDB()
+        state = {
+            "site_config": _Cfg(),
+            "database_service": db,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False},
+                {"reviewer": "ragas_eval", "approved": True, "score": 85.0,
+                 "provider": "ollama", "advisory": True},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "approve"
+        # ollama_critic aliases to the llm_critic gate row.
+        assert _bumped_gates(db) == {"llm_critic", "ragas_eval"}
+
+    async def test_reject_also_bumps_counters(self, monkeypatch):
+        class _FakePipelineDB:
+            def __init__(self, pool): ...
+            async def upsert_version(self, task_id, fields): ...
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _GateDB()
+        state = {
+            "site_config": _Cfg(),
+            "task_id": "task-553",
+            "content": "body",
+            "title": "T",
+            "models_used_by_phase": {},
+            "database_service": db,
+            "qa_rail_reviews": [
+                {"reviewer": "guardrails_brand", "approved": False, "score": 30.0,
+                 "provider": "consistency_gate", "advisory": False, "feedback": "off-brand"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        # Counter still bumps on the reject path...
+        assert _bumped_gates(db) == {"guardrails_brand"}
+        # ...AND the existing reject persistence still happens.
+        assert db.update_task_calls[0][1]["status"] == "rejected"
+
+    async def test_no_db_service_does_not_raise(self):
+        # The counter bump is best-effort: with no database_service the
+        # atom must still produce its decision without raising.
+        out = await qa_aggregate.run({
+            "site_config": _Cfg(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False},
+            ],
+        })
+        assert out["qa_final_verdict"] == "approve"
+
+
+@pytest.mark.unit
+class TestQaAggregateEmitsPassAudit:
+    """poindexter#553: #355 bypassed MultiModelQA.review(), which was the
+    sole emitter of the ``qa_pass_completed`` audit row that powers the
+    /d/qa-rails dashboard AND is the denominator for the rail-skip-rate
+    alert. qa.aggregate must re-emit it (one row per QA pass, full
+    reviewer breakdown), mirroring the legacy stage."""
+
+    def _spy(self, monkeypatch):
+        calls = []
+
+        def _fake(event_type, source, details=None, task_id=None, severity="info"):
+            calls.append({
+                "event_type": event_type, "source": source,
+                "details": details or {}, "task_id": task_id, "severity": severity,
+            })
+
+        monkeypatch.setattr("services.audit_log.audit_log_bg", _fake)
+        return calls
+
+    async def test_approve_emits_qa_pass_completed(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        state = {
+            "site_config": _Cfg(),
+            "task_id": "task-abc",
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False, "feedback": "solid"},
+                {"reviewer": "ragas_eval", "approved": True, "score": 88.0,
+                 "provider": "ollama", "advisory": True, "feedback": ""},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "approve"
+        passes = [c for c in calls if c["event_type"] == "qa_pass_completed"]
+        assert len(passes) == 1
+        d = passes[0]["details"]
+        assert d["approved"] is True
+        assert d["reviewer_count"] == 2
+        assert passes[0]["task_id"] == "task-abc"
+        # The reviews breakdown the dashboard's per-reviewer panels read.
+        reviewers = {r["reviewer"] for r in d["reviews"]}
+        assert reviewers == {"ollama_critic", "ragas_eval"}
+        assert all({"provider", "approved", "score", "advisory"} <= set(r) for r in d["reviews"])
+
+    async def test_reject_emits_warning_severity_pass(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        state = {
+            "site_config": _Cfg(),
+            "task_id": "task-xyz",
+            "qa_rail_reviews": [
+                {"reviewer": "guardrails_brand", "approved": False, "score": 20.0,
+                 "provider": "consistency_gate", "advisory": False, "feedback": "off-brand"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        passes = [c for c in calls if c["event_type"] == "qa_pass_completed"]
+        assert len(passes) == 1
+        assert passes[0]["details"]["approved"] is False
+        # Rejected passes are severity=warning (mirrors the legacy stage).
+        assert passes[0]["severity"] == "warning"

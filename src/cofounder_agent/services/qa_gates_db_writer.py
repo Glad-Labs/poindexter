@@ -29,7 +29,8 @@ Design notes:
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from services.logger_config import get_logger
 
@@ -67,6 +68,22 @@ _REVIEWER_TO_GATE: dict[str, str] = {
 }
 
 
+def _field(review: Any, name: str, default: Any) -> Any:
+    """Read a review field from either shape.
+
+    The legacy ``MultiModelQA.review()`` call-site passes ``ReviewerResult``
+    *objects* (attribute access). The ``qa.aggregate`` atom — the graph_def
+    QA path since #355 — passes ``reviewer_to_dict()`` *dicts* on the
+    ``qa_rail_reviews`` channel (key access). Tolerate both so the counter
+    fires on every QA path. A dict-only ``getattr`` (the pre-#553 behavior)
+    silently returned the default for every dict, so no gate matched and
+    ``total_runs`` stayed frozen at 0 on prod.
+    """
+    if isinstance(review, dict):
+        return review.get(name, default)
+    return getattr(review, name, default)
+
+
 async def record_chain_run(
     pool: Any,
     reviews: Iterable[Any],
@@ -87,16 +104,16 @@ async def record_chain_run(
     # twice for dead-link vs bonus paths) updates the row exactly once.
     runs: dict[str, dict[str, Any]] = {}
     for r in reviews:
-        gate_name = _REVIEWER_TO_GATE.get(getattr(r, "reviewer", ""))
+        gate_name = _REVIEWER_TO_GATE.get(_field(r, "reviewer", ""))
         if gate_name is None:
             continue
         bucket = runs.setdefault(
             gate_name,
             {"approved_all": True, "any_advisory_only": True},
         )
-        if not getattr(r, "approved", True):
+        if not _field(r, "approved", True):
             bucket["approved_all"] = False
-        if not getattr(r, "advisory", False):
+        if not _field(r, "advisory", False):
             bucket["any_advisory_only"] = False
 
     if not runs:

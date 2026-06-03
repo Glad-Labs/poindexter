@@ -582,6 +582,128 @@ class TestBrainCycleHeartbeat:
         assert _heartbeat_series_value(mx) is None
 
 
+def _skip_pool(fetch_rows, *, window_val=None):
+    """Fake pool for refresh_qa_rail_skip_ratio: one fetchval (window
+    size from app_settings) + one fetch (the per-rail skip/pass rows)."""
+    pool = MagicMock()
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value=window_val)
+    conn.fetch = AsyncMock(return_value=fetch_rows)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=conn)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    pool.acquire = MagicMock(return_value=ctx)
+    return pool, conn
+
+
+def _skip_ratio_value(mx, reviewer):
+    """Return the gauge value for one reviewer, or None if the series is
+    absent (a healthy rail emits no series → no alert)."""
+    for family in mx.QA_RAIL_SKIP_RATIO.collect():
+        for sample in family.samples:
+            if sample.labels.get("reviewer") == reviewer:
+                return sample.value
+    return None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestQaRailSkipRatio:
+    """poindexter#553 — the rail-skip-rate alert's metric. The gauge is the
+    fraction of the last N QA passes in which a rail was skipped; the
+    QaRailFullySkipped Prometheus rule fires when it reaches 1.0 (a rail
+    skipping 100% of recent passes — e.g. ragas_eval with empty
+    research_context, a disabled master flag, or an unresolvable judge)."""
+
+    async def test_ratio_is_one_when_rail_skipped_every_pass(self):
+        """Synthetic 'alert fires' case: ragas_eval skipped in all 20 of the
+        last 20 passes → ratio 1.0 → QaRailFullySkipped fires."""
+        from services import metrics_exporter as mx
+
+        pool, _ = _skip_pool([
+            {"reviewer": "ragas_eval", "skips": 20.0, "passes": 20},
+        ])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        assert _skip_ratio_value(mx, "ragas_eval") == 1.0
+
+    async def test_partial_skip_ratio(self):
+        from services import metrics_exporter as mx
+
+        pool, _ = _skip_pool([
+            {"reviewer": "deepeval_faithfulness", "skips": 5.0, "passes": 20},
+        ])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        assert _skip_ratio_value(mx, "deepeval_faithfulness") == 0.25
+
+    async def test_ratio_capped_at_one(self):
+        """More skips than passes (an in-flight pass's skip lands in the
+        window) must clamp to 1.0, never exceed it."""
+        from services import metrics_exporter as mx
+
+        pool, _ = _skip_pool([
+            {"reviewer": "ragas_eval", "skips": 25.0, "passes": 20},
+        ])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        assert _skip_ratio_value(mx, "ragas_eval") == 1.0
+
+    async def test_no_passes_emits_no_series(self):
+        """No qa_pass_completed rows in the window → no denominator → no
+        series (can't have a 100% skip rate with nothing to measure)."""
+        from services import metrics_exporter as mx
+
+        pool, _ = _skip_pool([])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        assert _skip_ratio_value(mx, "ragas_eval") is None
+
+    async def test_recovered_rail_series_cleared(self):
+        """A rail that stopped skipping must lose its series so the alert
+        resolves — the gauge is cleared each refresh."""
+        from services import metrics_exporter as mx
+
+        pool, _ = _skip_pool([{"reviewer": "ragas_eval", "skips": 20.0, "passes": 20}])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        assert _skip_ratio_value(mx, "ragas_eval") == 1.0
+        # Next refresh: ragas recovered (no skip rows) → series gone.
+        pool2, _ = _skip_pool([])
+        await mx.refresh_qa_rail_skip_ratio(pool2, window_passes=20)
+        assert _skip_ratio_value(mx, "ragas_eval") is None
+
+    async def test_window_size_read_from_app_settings_with_default(self):
+        """window_passes defaults to the app_settings key; an empty-string
+        sentinel (app_settings.value is NOT NULL) falls back to 20."""
+        from services import metrics_exporter as mx
+
+        # '' is the unset sentinel — must NOT crash int(), must default to 20.
+        pool, conn = _skip_pool([], window_val="")
+        await mx.refresh_qa_rail_skip_ratio(pool)
+        # The skip query was issued with the default window of 20.
+        assert conn.fetch.call_args.args[1] == 20
+
+    async def test_sql_targets_real_audit_log_schema(self):
+        """Guard against schema drift: the gauge SQL must read the two QA
+        event types and the quoted ``timestamp`` column (audit_log has no
+        created_at). A wrong column silently errors every scrape → the
+        gauge is always empty → the alert can never fire."""
+        from services import metrics_exporter as mx
+
+        pool, conn = _skip_pool([{"reviewer": "ragas_eval", "skips": 1.0, "passes": 1}])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=10)
+        sql = conn.fetch.call_args.args[0]
+        assert "qa_pass_completed" in sql
+        assert "qa_reviewer_skipped" in sql
+        assert '"timestamp"' in sql
+        assert "created_at" not in sql
+        assert "details->>'reviewer'" in sql
+
+    async def test_appears_in_exposition(self):
+        from services import metrics_exporter as mx
+
+        pool, _ = _skip_pool([{"reviewer": "ragas_eval", "skips": 20.0, "passes": 20}])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        text = mx.render_exposition()[0].decode("utf-8")
+        assert "poindexter_qa_rail_skip_ratio" in text
+
+
 @pytest.mark.unit
 def test_render_exposition_returns_text_format():
     """Smoke check: /metrics endpoint returns bytes + the standard
