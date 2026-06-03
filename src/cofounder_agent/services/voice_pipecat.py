@@ -181,8 +181,8 @@ def resolve_bridge_voice_settings(
             return default
 
     return {
-        "stt_model": (settings.get("voice_bridge_stt_model") or "base.en").strip()
-        or "base.en",
+        "stt_model": (settings.get("voice_bridge_stt_model") or "base").strip()
+        or "base",
         "tts_voice": (settings.get("voice_bridge_tts_voice") or "af_bella").strip()
         or "af_bella",
         "max_session_seconds": _int("voice_bridge_max_session_seconds", 1800),
@@ -211,26 +211,58 @@ def resolve_whisper_model(name: str) -> Any:
     try:
         return WhisperModel(name)
     except ValueError:
+        pass
+    try:
+        return WhisperModel[name.upper()]
+    except KeyError:
+        pass
+    # Backcompat: Pipecat dropped the english-only ``.en`` enum values
+    # (e.g. ``base.en`` / ``medium.en``) in the 1.x line. Map a stale
+    # ``<model>.en`` value to its multilingual base so existing
+    # ``voice_bridge_stt_model`` rows keep resolving rather than crashing
+    # the audio plane on connect (feedback_backcompat_now_required).
+    if name.lower().endswith(".en"):
+        base = name[:-3]
         try:
-            return WhisperModel[name.upper()]
-        except KeyError as exc:
-            valid = ", ".join(m.value for m in WhisperModel)
-            raise RuntimeError(
-                f"{_LOG_PREFIX} resolve_whisper_model: {name!r} is not a "
-                f"valid Pipecat Whisper model. Valid values: {valid}.",
-            ) from exc
+            resolved = WhisperModel(base.lower())
+        except ValueError:
+            resolved = None
+        if resolved is not None:
+            logger.warning(
+                "%s resolve_whisper_model: %r is no longer a valid Pipecat "
+                "Whisper model (the '.en' variants were removed); mapping to "
+                "%r. Update voice_bridge_stt_model to silence this.",
+                _LOG_PREFIX, name, base.lower(),
+            )
+            return resolved
+    valid = ", ".join(m.value for m in WhisperModel)
+    raise RuntimeError(
+        f"{_LOG_PREFIX} resolve_whisper_model: {name!r} is not a "
+        f"valid Pipecat Whisper model. Valid values: {valid}.",
+    )
 
 
 def build_whisper_stt(model_name: str) -> Any:
     """Construct a configured ``WhisperSTTService`` for the given model id.
 
-    Thin wrapper kept here so the bridge and the always-on bot share one
-    construction path -- if a future Pipecat upgrade adds required kwargs
-    (compute type, device hint), both consumers pick them up at once.
+    Pinned to CPU (``device="cpu"``, ``compute_type="int8"``). This builder
+    is used by the **host** MCP bridge (``mcp-server-voice``), whose Python
+    process has no reliable CUDA runtime on its PATH — faster-whisper's
+    ``device="auto"`` default selects the GPU and then dies with
+    ``cublas64_12.dll is not found`` mid-transcribe, swallowing every
+    utterance. CPU + int8 transcribes short voice turns with the ``base``
+    model in well under a second, which is plenty for a relay. The
+    always-on ``voice-agent-livekit`` container is unaffected: it builds
+    ``WhisperSTTService`` directly in ``services/voice_agent.py`` and keeps
+    its GPU path (the container ships the CUDA runtime).
     """
     from pipecat.services.whisper.stt import WhisperSTTService
 
-    return WhisperSTTService(model=resolve_whisper_model(model_name))
+    return WhisperSTTService(
+        model=resolve_whisper_model(model_name),
+        device="cpu",
+        compute_type="int8",
+    )
 
 
 def build_silero_vad(stop_secs: float = 0.2) -> Any:

@@ -108,7 +108,7 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
     def __init__(
         self,
         *,
-        stt_model: str = "base.en",
+        stt_model: str = "base",
         tts_voice: str = "af_bella",
         livekit_url: str | None = None,
         livekit_api_key: str | None = None,
@@ -163,11 +163,28 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
         from pipecat.pipeline.pipeline import Pipeline
         from pipecat.pipeline.runner import PipelineRunner
         from pipecat.pipeline.task import PipelineParams, PipelineTask
-        from pipecat.frames.frames import TTSSpeakFrame
+        from pipecat.frames.frames import TTSSpeakFrame, TranscriptionFrame
+        from pipecat.processors.frame_processor import (
+            FrameDirection,
+            FrameProcessor,
+        )
+        from pipecat.processors.aggregators.llm_context import LLMContext
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMContextAggregatorPair,
+            LLMUserAggregatorParams,
+        )
+        from pipecat.turns.user_start.vad_user_turn_start_strategy import (
+            VADUserTurnStartStrategy,
+        )
+        from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
+            SpeechTimeoutUserTurnStopStrategy,
+        )
+        from pipecat.turns.user_turn_strategies import UserTurnStrategies
+        from pipecat.audio.vad.silero import SileroVADAnalyzer
+        from pipecat.audio.vad.vad_analyzer import VADParams
         from services.voice_pipecat import (
             build_kokoro_tts,
             build_livekit_bridge_transport,
-            build_silero_vad,
             build_whisper_stt,
             mint_livekit_token,
             resolve_livekit_creds,
@@ -237,11 +254,26 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
                 f"{type(exc).__name__}: {exc}"
             ) from exc
 
-        # Wire the STT output to our utterance callback. Pipecat exposes a
-        # ``register_event_handler`` hook on STT services for transcript
-        # frames; we install a coroutine that fans out to the bridge's
-        # callback (which writes to ``<sid>.in``).
-        self._install_stt_callback(stt)
+        # Capture finalized transcripts off the STT output and fan them to
+        # the bridge's on_utterance callback (which appends to ``<sid>.in``).
+        # Pipecat 1.2 dropped the ``register_event_handler('on_transcript')``
+        # hook PR#2 used; the supported path is a pass-through
+        # ``FrameProcessor`` that inspects ``TranscriptionFrame``. ``plane``
+        # is captured so the closure reads the live ``_on_utterance`` (the
+        # bridge installs it via ``set_utterance_callback`` either side of
+        # connect()).
+        plane = self
+
+        class _TranscriptCapture(FrameProcessor):
+            async def process_frame(
+                self, frame: Any, direction: FrameDirection,
+            ) -> None:
+                await super().process_frame(frame, direction)
+                if isinstance(frame, TranscriptionFrame):
+                    text = (getattr(frame, "text", "") or "").strip()
+                    if text:
+                        await plane._dispatch_utterance(text)
+                await self.push_frame(frame, direction)
 
         # Build a TTS feeder queue. ``speak()`` puts strings on this queue;
         # the pump task converts them to Pipecat ``TTSSpeakFrame`` and
@@ -250,16 +282,45 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
         self._tts_queue = tts_queue
         self._TTSSpeakFrame = TTSSpeakFrame  # noqa: N815 -- captured for pump
 
-        # Bridge pipeline: transport in -> STT (utterance fan-out) ->
-        # transport out for non-LLM path; TTS frames are queued via the
-        # pump and injected through transport.output().
+        # VAD + turn detection live on the user-aggregator params in Pipecat
+        # 1.2 — passing ``vad_analyzer`` to the transport's params is
+        # silently dropped by pydantic v2 (see services/voice_agent.py), so
+        # speech start/stop never fires and Whisper never segments. The
+        # bridge runs no LLM, so the aggregator's ``LLMContextFrame`` output
+        # is a dead end (TTS + transport ignore it); we keep the aggregator
+        # purely to drive VAD-based utterance segmentation, mirroring the
+        # always-on bot's validated turn config.
+        context = LLMContext(messages=[])
+        aggregator = LLMContextAggregatorPair(
+            context=context,
+            user_params=LLMUserAggregatorParams(
+                vad_analyzer=SileroVADAnalyzer(
+                    params=VADParams(stop_secs=0.2),
+                ),
+                user_turn_strategies=UserTurnStrategies(
+                    start=[VADUserTurnStartStrategy()],
+                    stop=[
+                        SpeechTimeoutUserTurnStopStrategy(
+                            user_speech_timeout=0.8,
+                        )
+                    ],
+                ),
+            ),
+        )
+
+        # Bridge pipeline (no LLM): inbound audio -> Whisper STT ->
+        # transcript capture (-> .in pipe) -> user aggregator (VAD/turn) ->
+        # Kokoro TTS (renders queued TTSSpeakFrames) -> outbound audio ->
+        # assistant aggregator (no-op without an LLM, kept for symmetry).
         pipeline = Pipeline(
             [
                 transport.input(),
                 stt,
-                build_silero_vad(stop_secs=0.2),
+                _TranscriptCapture(),
+                aggregator.user(),
                 tts,
                 transport.output(),
+                aggregator.assistant(),
             ],
         )
 
@@ -383,79 +444,29 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _install_stt_callback(self, stt: Any) -> None:
-        """Hook STT transcript frames -> on_utterance fan-out.
+    async def _dispatch_utterance(self, text: str) -> None:
+        """Fan a finalized transcript to the bridge's on_utterance callback.
 
-        Pipecat 1.1's ``WhisperSTTService`` exposes
-        ``register_event_handler("on_transcript", handler)``. The handler
-        receives a ``TranscriptionFrame``-like object with a ``.text``
-        attribute; we await the bridge's callback if it returns a
-        coroutine (which it does in the worker -- it appends to the
-        ``.in`` pipe).
-
-        Falls back to a ``frame_handler``-style intercept on older
-        Pipecat versions so a minor upgrade doesn't break the bridge.
+        Called by the in-pipeline ``_TranscriptCapture`` processor on every
+        ``TranscriptionFrame``. Reads ``self._on_utterance`` live so the
+        bridge can install the callback before *or* after ``connect()``.
+        The callback (installed by the worker) appends ``text`` to the
+        ``<sid>.in`` pipe, which becomes the next user turn for the
+        session. A failing callback must never kill the audio pipeline, so
+        we log + swallow per ``feedback_machine_rules``.
         """
-        async def _on_transcript(*args: Any, **_kw: Any) -> None:
-            # Pipecat passes (service, frame) or (frame,) depending on
-            # version -- pick the last positional arg as the frame.
-            frame = args[-1] if args else None
-            text = ""
-            if frame is not None:
-                # TranscriptionFrame, InterimTranscriptionFrame, plain str
-                text = getattr(frame, "text", None)
-                if text is None:
-                    text = getattr(frame, "transcript", None) or ""
-                if isinstance(text, bytes):
-                    text = text.decode("utf-8", errors="replace")
-                text = (text or "").strip()
-            if not text:
-                return
-            cb = self._on_utterance
-            if cb is None:
-                return
-            try:
-                result = cb(text)
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "%s utterance callback raised -- transcript dropped: %r",
-                    _LOG_PREFIX, text[:120],
-                )
-
-        register = getattr(stt, "register_event_handler", None)
-        if callable(register):
-            try:
-                register("on_transcript", _on_transcript)
-                return
-            except Exception:  # noqa: BLE001 -- fall through to frame_handler
-                logger.warning(
-                    "%s register_event_handler('on_transcript') failed; "
-                    "trying frame_handler fallback",
-                    _LOG_PREFIX,
-                )
-        # frame_handler fallback -- install a wrapping coroutine on the
-        # STT service so transcript frames fan out to the callback.
-        original_handler = getattr(stt, "frame_handler", None)
-        if callable(original_handler):
-            async def _wrapped_handler(frame: Any) -> Any:
-                rv = original_handler(frame)
-                if asyncio.iscoroutine(rv):
-                    rv = await rv
-                await _on_transcript(frame)
-                return rv
-            try:
-                stt.frame_handler = _wrapped_handler  # type: ignore[assignment]
-                return
-            except Exception:  # noqa: BLE001
-                pass
-        logger.warning(
-            "%s STT service exposes neither register_event_handler nor "
-            "frame_handler -- utterance callback will not fire. Pipecat "
-            "version mismatch?",
-            _LOG_PREFIX,
-        )
+        cb = self._on_utterance
+        if cb is None:
+            return
+        try:
+            result = cb(text)
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "%s utterance callback raised -- transcript dropped: %r",
+                _LOG_PREFIX, text[:120],
+            )
 
     async def _tts_pump(self) -> None:
         """Drain the TTS queue, converting each string to a Pipecat frame.

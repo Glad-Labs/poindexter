@@ -6,8 +6,10 @@ boundary and verify the seams that matter:
 
 1. ``connect()`` mints a token with the right room / identity / TTL and
    builds a transport against that token.
-2. The STT callback registration fans transcript text to the bridge's
-   ``on_utterance`` closure.
+2. The in-pipeline ``_TranscriptCapture`` processor fans finalized
+   ``TranscriptionFrame`` text to the bridge's ``on_utterance`` closure
+   (Pipecat 1.2 dropped the ``register_event_handler('on_transcript')``
+   hook PR#2 used).
 3. ``speak()`` enqueues into the TTS pump (which converts to
    ``TTSSpeakFrame`` and feeds the Pipecat task).
 4. ``disconnect()`` is idempotent and cleans up the runner / pump tasks.
@@ -41,6 +43,35 @@ class _FakeTTSSpeakFrame:
 
     def __init__(self, text: str = "") -> None:
         self.text = text
+
+
+class _FakeTranscriptionFrame:
+    """Stand-in for ``pipecat.frames.frames.TranscriptionFrame``."""
+
+    def __init__(self, text: str = "", *_a: Any, **_kw: Any) -> None:
+        self.text = text
+
+
+class _FakeFrameDirection:
+    DOWNSTREAM = "downstream"
+    UPSTREAM = "upstream"
+
+
+class _FakeFrameProcessor:
+    """Base class the plane's local ``_TranscriptCapture`` subclasses.
+
+    Provides the two coroutines the capture relies on: ``process_frame``
+    (the ``super()`` call) and ``push_frame`` (forwarding the frame on).
+    """
+
+    def __init__(self, *_a: Any, **_kw: Any) -> None:
+        self.pushed: list[tuple[Any, Any]] = []
+
+    async def process_frame(self, frame: Any, direction: Any) -> None:
+        return None
+
+    async def push_frame(self, frame: Any, direction: Any = None) -> None:
+        self.pushed.append((frame, direction))
 
 
 class _FakePipelineTask:
@@ -82,15 +113,29 @@ class _FakeLiveKitTransport:
 
 
 class _FakeStt:
-    def __init__(self) -> None:
-        self.handlers: dict[str, Any] = {}
-
-    def register_event_handler(self, name: str, handler: Any) -> None:
-        self.handlers[name] = handler
+    """Minimal STT stand-in. The plane no longer registers callbacks on
+    it (Pipecat 1.2) — transcripts are captured by an in-pipeline
+    processor — so this is just an identity marker in the pipeline."""
 
 
 class _FakeTts:
     pass
+
+
+class _FakeAggregatorPair:
+    """Stand-in for ``LLMContextAggregatorPair``. The plane keeps it only
+    to drive VAD-based turn detection; we just need ``.user()`` /
+    ``.assistant()`` to return identifiable pipeline stages."""
+
+    def __init__(self, *, context: Any = None, user_params: Any = None) -> None:
+        self.context = context
+        self.user_params = user_params
+
+    def user(self) -> tuple[str]:
+        return ("user-agg",)
+
+    def assistant(self) -> tuple[str]:
+        return ("assistant-agg",)
 
 
 @pytest.fixture
@@ -105,7 +150,6 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "transports": [],
         "stts": [],
         "ttses": [],
-        "vads": [],
         "pipelines": [],
         "tasks": [],
         "runners": [],
@@ -119,8 +163,7 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     def _build_transport(**kwargs: Any) -> Any:
         spy["transports"].append(kwargs)
-        t = _FakeLiveKitTransport(**kwargs)
-        return t
+        return _FakeLiveKitTransport(**kwargs)
 
     def _build_whisper_stt(model: str) -> Any:
         spy["stts"].append(model)
@@ -129,10 +172,6 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def _build_kokoro_tts(voice: str) -> Any:
         spy["ttses"].append(voice)
         return _FakeTts()
-
-    def _build_silero_vad(stop_secs: float = 0.2) -> Any:
-        spy["vads"].append(stop_secs)
-        return object()
 
     def _mint_token(**kwargs: Any) -> str:
         spy["tokens_minted"].append(kwargs)
@@ -144,56 +183,99 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     voice_pipecat.build_livekit_bridge_transport = _build_transport
     voice_pipecat.build_whisper_stt = _build_whisper_stt
     voice_pipecat.build_kokoro_tts = _build_kokoro_tts
-    voice_pipecat.build_silero_vad = _build_silero_vad
     voice_pipecat.mint_livekit_token = _mint_token
     voice_pipecat.resolve_livekit_creds = _resolve_creds
 
     monkeypatch.setitem(sys.modules, "services", services_pkg)
     monkeypatch.setitem(sys.modules, "services.voice_pipecat", voice_pipecat)
 
-    # pipecat.pipeline.* -- only the symbols the plane imports.
-    pipecat_pkg = types.ModuleType("pipecat")
-    pipecat_pkg.__path__ = []  # type: ignore[attr-defined]
-    pipeline_pkg = types.ModuleType("pipecat.pipeline")
-    pipeline_pkg.__path__ = []  # type: ignore[attr-defined]
-    pipeline_mod = types.ModuleType("pipecat.pipeline.pipeline")
+    # --- pipecat package tree (only the symbols the plane imports) ---
+    def _pkg(name: str) -> types.ModuleType:
+        m = types.ModuleType(name)
+        m.__path__ = []  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, name, m)
+        return m
+
+    def _mod(name: str, **attrs: Any) -> types.ModuleType:
+        m = types.ModuleType(name)
+        for k, v in attrs.items():
+            setattr(m, k, v)
+        monkeypatch.setitem(sys.modules, name, m)
+        return m
+
+    _pkg("pipecat")
+    _pkg("pipecat.pipeline")
+    _pkg("pipecat.frames")
+    _pkg("pipecat.processors")
+    _pkg("pipecat.processors.aggregators")
+    _pkg("pipecat.turns")
+    _pkg("pipecat.turns.user_start")
+    _pkg("pipecat.turns.user_stop")
+    _pkg("pipecat.audio")
+    _pkg("pipecat.audio.vad")
 
     def _make_pipeline(stages: list[Any]) -> Any:
         spy["pipelines"].append(list(stages))
         return ("pipeline", tuple(stages))
 
-    pipeline_mod.Pipeline = _make_pipeline
-
-    runner_mod = types.ModuleType("pipecat.pipeline.runner")
-    runner_mod.PipelineRunner = _FakePipelineRunner
-
-    task_mod = types.ModuleType("pipecat.pipeline.task")
+    _mod("pipecat.pipeline.pipeline", Pipeline=_make_pipeline)
+    _mod("pipecat.pipeline.runner", PipelineRunner=_FakePipelineRunner)
 
     def _make_task(*args: Any, **kwargs: Any) -> Any:
         t = _FakePipelineTask(*args, **kwargs)
         spy["tasks"].append(t)
         return t
 
-    task_mod.PipelineTask = _make_task
-
-    class _Params:
-        def __init__(self, **kwargs: Any) -> None:
-            self.kwargs = kwargs
-
-    task_mod.PipelineParams = _Params
-
-    frames_pkg = types.ModuleType("pipecat.frames")
-    frames_pkg.__path__ = []  # type: ignore[attr-defined]
-    frames_mod = types.ModuleType("pipecat.frames.frames")
-    frames_mod.TTSSpeakFrame = _FakeTTSSpeakFrame
-
-    monkeypatch.setitem(sys.modules, "pipecat", pipecat_pkg)
-    monkeypatch.setitem(sys.modules, "pipecat.pipeline", pipeline_pkg)
-    monkeypatch.setitem(sys.modules, "pipecat.pipeline.pipeline", pipeline_mod)
-    monkeypatch.setitem(sys.modules, "pipecat.pipeline.runner", runner_mod)
-    monkeypatch.setitem(sys.modules, "pipecat.pipeline.task", task_mod)
-    monkeypatch.setitem(sys.modules, "pipecat.frames", frames_pkg)
-    monkeypatch.setitem(sys.modules, "pipecat.frames.frames", frames_mod)
+    _mod(
+        "pipecat.pipeline.task",
+        PipelineTask=_make_task,
+        PipelineParams=type("PipelineParams", (), {"__init__": lambda self, **kw: None}),
+    )
+    _mod(
+        "pipecat.frames.frames",
+        TTSSpeakFrame=_FakeTTSSpeakFrame,
+        TranscriptionFrame=_FakeTranscriptionFrame,
+    )
+    _mod(
+        "pipecat.processors.frame_processor",
+        FrameProcessor=_FakeFrameProcessor,
+        FrameDirection=_FakeFrameDirection,
+    )
+    _mod(
+        "pipecat.processors.aggregators.llm_context",
+        LLMContext=type("LLMContext", (), {"__init__": lambda self, **kw: None}),
+    )
+    _mod(
+        "pipecat.processors.aggregators.llm_response_universal",
+        LLMContextAggregatorPair=_FakeAggregatorPair,
+        LLMUserAggregatorParams=type(
+            "LLMUserAggregatorParams", (), {"__init__": lambda self, **kw: None}
+        ),
+    )
+    _mod(
+        "pipecat.turns.user_start.vad_user_turn_start_strategy",
+        VADUserTurnStartStrategy=type(
+            "VADUserTurnStartStrategy", (), {"__init__": lambda self, **kw: None}
+        ),
+    )
+    _mod(
+        "pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy",
+        SpeechTimeoutUserTurnStopStrategy=type(
+            "SpeechTimeoutUserTurnStopStrategy", (), {"__init__": lambda self, **kw: None}
+        ),
+    )
+    _mod(
+        "pipecat.turns.user_turn_strategies",
+        UserTurnStrategies=type("UserTurnStrategies", (), {"__init__": lambda self, **kw: None}),
+    )
+    _mod(
+        "pipecat.audio.vad.silero",
+        SileroVADAnalyzer=type("SileroVADAnalyzer", (), {"__init__": lambda self, **kw: None}),
+    )
+    _mod(
+        "pipecat.audio.vad.vad_analyzer",
+        VADParams=type("VADParams", (), {"__init__": lambda self, **kw: None}),
+    )
 
     return spy
 
@@ -205,6 +287,14 @@ def plane_module(fake_pipecat: dict[str, Any]):
     sys.modules.pop("audio_plane_pipecat", None)
     import audio_plane_pipecat  # noqa: WPS433 -- reimport after patching
     return audio_plane_pipecat
+
+
+def _find_capture(stages: list[Any]) -> Any:
+    """Pull the local ``_TranscriptCapture`` instance out of the pipeline."""
+    for stage in stages:
+        if type(stage).__name__ == "_TranscriptCapture":
+            return stage
+    return None
 
 
 # ===========================================================================
@@ -220,7 +310,7 @@ class TestConnect:
         self, plane_module: Any, fake_pipecat: dict[str, Any],
     ) -> None:
         plane = plane_module.PipecatAudioMediaPlane(
-            stt_model="base.en", tts_voice="af_bella",
+            stt_model="base", tts_voice="af_bella",
             livekit_url="ws://livekit:7880",
             livekit_api_key="k", livekit_api_secret="s",
             token_ttl_s=900,
@@ -252,6 +342,27 @@ class TestConnect:
         finally:
             await plane.disconnect()
 
+    async def test_pipeline_has_capture_between_stt_and_aggregator(
+        self, plane_module: Any, fake_pipecat: dict[str, Any],
+    ) -> None:
+        plane = plane_module.PipecatAudioMediaPlane(
+            livekit_url="ws://x", livekit_api_key="k", livekit_api_secret="s",
+        )
+        try:
+            await plane.connect(room="r", identity="me")
+            stages = fake_pipecat["pipelines"][0]
+            # transport.input() -> stt -> capture -> user-agg -> tts ->
+            # transport.output() -> assistant-agg
+            assert stages[0] == "in"
+            assert isinstance(stages[1], _FakeStt)
+            assert type(stages[2]).__name__ == "_TranscriptCapture"
+            assert stages[3] == ("user-agg",)
+            assert isinstance(stages[4], _FakeTts)
+            assert stages[5] == "out"
+            assert stages[6] == ("assistant-agg",)
+        finally:
+            await plane.disconnect()
+
     async def test_idempotent_connect_does_not_remint(
         self, plane_module: Any, fake_pipecat: dict[str, Any],
     ) -> None:
@@ -269,10 +380,6 @@ class TestConnect:
         self, plane_module: Any, fake_pipecat: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Wipe both the constructor-level creds AND env so the fallback
-        # path also runs dry. The fixture's resolve_livekit_creds is
-        # plumbed in, but we patch services.voice_pipecat to return
-        # blanks for this test.
         from services import voice_pipecat as vp  # type: ignore[import-not-found]
 
         def _empty(_cfg: Any) -> tuple[str, str, str]:
@@ -285,7 +392,7 @@ class TestConnect:
 
 
 # ===========================================================================
-# Utterance fan-out -- transcripts -> on_utterance callback
+# Utterance fan-out -- TranscriptionFrame -> _TranscriptCapture -> callback
 # ===========================================================================
 
 
@@ -306,24 +413,16 @@ class TestUtteranceCallback:
         plane.set_utterance_callback(_cb)
         try:
             await plane.connect(room="r", identity="me")
-            stt = plane._transport  # for typing only -- next line uses stt directly
-            # The fake STT instance was returned by build_whisper_stt; pull
-            # it back via the spy.
-            stt_obj = None
-            for mod in fake_pipecat["pipelines"][0]:
-                if isinstance(mod, _FakeStt):
-                    stt_obj = mod
-                    break
-            assert stt_obj is not None, "STT fake not present in pipeline"
-            handler = stt_obj.handlers.get("on_transcript")
-            assert handler is not None, "register_event_handler('on_transcript') was not called"
+            capture = _find_capture(fake_pipecat["pipelines"][0])
+            assert capture is not None, "_TranscriptCapture not present in pipeline"
 
-            # Simulate Pipecat firing a transcript frame.
-            class _Frame:
-                text = "hello bridge"
-
-            await handler(_Frame())
+            await capture.process_frame(
+                _FakeTranscriptionFrame("hello bridge"),
+                _FakeFrameDirection.DOWNSTREAM,
+            )
             assert seen == ["hello bridge"]
+            # The frame is also forwarded downstream (pass-through).
+            assert capture.pushed and capture.pushed[-1][0].text == "hello bridge"
         finally:
             await plane.disconnect()
 
@@ -337,16 +436,29 @@ class TestUtteranceCallback:
         plane.set_utterance_callback(lambda t: seen.append(t) or None)
         try:
             await plane.connect(room="r", identity="me")
-            stt_obj = next(
-                m for m in fake_pipecat["pipelines"][0] if isinstance(m, _FakeStt)
+            capture = _find_capture(fake_pipecat["pipelines"][0])
+            await capture.process_frame(
+                _FakeTranscriptionFrame("   "), _FakeFrameDirection.DOWNSTREAM,
             )
-            handler = stt_obj.handlers["on_transcript"]
-
-            class _Frame:
-                text = "   "
-
-            await handler(_Frame())
             assert seen == []
+        finally:
+            await plane.disconnect()
+
+    async def test_non_transcript_frame_passes_through_without_callback(
+        self, plane_module: Any, fake_pipecat: dict[str, Any],
+    ) -> None:
+        plane = plane_module.PipecatAudioMediaPlane(
+            livekit_url="ws://x", livekit_api_key="k", livekit_api_secret="s",
+        )
+        seen: list[str] = []
+        plane.set_utterance_callback(lambda t: seen.append(t) or None)
+        try:
+            await plane.connect(room="r", identity="me")
+            capture = _find_capture(fake_pipecat["pipelines"][0])
+            other = _FakeTTSSpeakFrame("not a transcript")
+            await capture.process_frame(other, _FakeFrameDirection.DOWNSTREAM)
+            assert seen == []  # not a TranscriptionFrame -> no callback
+            assert capture.pushed[-1][0] is other  # still forwarded
         finally:
             await plane.disconnect()
 
@@ -363,17 +475,11 @@ class TestUtteranceCallback:
         plane.set_utterance_callback(_bad)
         try:
             await plane.connect(room="r", identity="me")
-            stt_obj = next(
-                m for m in fake_pipecat["pipelines"][0] if isinstance(m, _FakeStt)
+            capture = _find_capture(fake_pipecat["pipelines"][0])
+            # Must NOT raise -- a bad bridge writer shouldn't poison the pipeline.
+            await capture.process_frame(
+                _FakeTranscriptionFrame("tricky"), _FakeFrameDirection.DOWNSTREAM,
             )
-            handler = stt_obj.handlers["on_transcript"]
-
-            class _Frame:
-                text = "tricky"
-
-            # Must NOT raise -- a bad bridge writer shouldn't poison
-            # the pipeline.
-            await handler(_Frame())
         finally:
             await plane.disconnect()
 
@@ -395,11 +501,9 @@ class TestSpeak:
         try:
             await plane.connect(room="r", identity="me")
             await plane.speak("hello world")
-            # Give the pump task a tick to drain.
             for _ in range(20):
                 await asyncio.sleep(0.01)
-                task_obj = fake_pipecat["tasks"][0]
-                if task_obj.queued:
+                if fake_pipecat["tasks"][0].queued:
                     break
             task_obj = fake_pipecat["tasks"][0]
             assert task_obj.queued, "TTS pump never enqueued a frame"
@@ -413,11 +517,6 @@ class TestSpeak:
     async def test_speak_chunked_input_one_call_per_chunk(
         self, plane_module: Any, fake_pipecat: dict[str, Any],
     ) -> None:
-        # Bridge's voice_speak chunks at sentence boundaries before
-        # writing to .out; the audio plane gets one speak() call per
-        # chunk and must produce one TTS frame per call (preserving
-        # interruptibility -- if we batched them, the operator could
-        # only interrupt at the batch boundary).
         plane = plane_module.PipecatAudioMediaPlane(
             livekit_url="ws://x", livekit_api_key="k", livekit_api_secret="s",
         )
@@ -480,11 +579,8 @@ class TestDisconnect:
         assert plane._tts_pump_task is not None
 
         await plane.disconnect()
-        # All bg tasks were either cancelled or completed.
         assert plane._runner_task is None
         assert plane._tts_pump_task is None
-        # Speaking after disconnect must raise (per the no_silent_defaults
-        # contract -- caller should know the plane is dead).
         with pytest.raises(RuntimeError, match=r"not connected"):
             await plane.speak("oops")
 
@@ -496,8 +592,7 @@ class TestDisconnect:
         )
         await plane.connect(room="r", identity="me")
         await plane.disconnect()
-        # Second call MUST NOT raise.
-        await plane.disconnect()
+        await plane.disconnect()  # second call MUST NOT raise
 
 
 # ===========================================================================
@@ -513,8 +608,6 @@ class TestResolveAudioPlane:
 
     def test_noop_escape_hatch(self, plane_module: Any) -> None:
         plane = plane_module.resolve_audio_plane(env={"VOICE_BRIDGE_AUDIO_PLANE": "noop"})
-        # NoopAudioMediaPlane lives in livekit_bridge -- plane.__class__
-        # name is the cheapest way to verify without a circular import.
         assert plane.__class__.__name__ == "NoopAudioMediaPlane"
 
     def test_noop_is_case_insensitive(self, plane_module: Any) -> None:

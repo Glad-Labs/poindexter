@@ -241,7 +241,7 @@ async def voice_join_room(
 
         sid = (session_id or "").strip() or new_session_id()
         ensure_session_pipes(sid)
-        stt_model = (settings.get("voice_bridge_stt_model") or "base.en").strip() or "base.en"
+        stt_model = (settings.get("voice_bridge_stt_model") or "base").strip() or "base"
         tts_voice = (settings.get("voice_bridge_tts_voice") or "af_bella").strip() or "af_bella"
         config = BridgeConfig(
             room=room,

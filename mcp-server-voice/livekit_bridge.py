@@ -303,7 +303,7 @@ class BridgeConfig:
     # Audio-plane knobs piped through to PipecatAudioMediaPlane (PR #2).
     # Defaults match the migration seed in
     # services/migrations/20260507_022644_seed_voice_bridge_app_settings.py.
-    stt_model: str = "base.en"
+    stt_model: str = "base"
     tts_voice: str = "af_bella"
 
 
@@ -573,7 +573,7 @@ def _resolve_default_audio_plane(config: BridgeConfig) -> AudioMediaPlane:
             f"This is a packaging bug -- file an issue with the full "
             f"traceback."
         ) from exc
-    stt_model = getattr(config, "stt_model", "base.en") or "base.en"
+    stt_model = getattr(config, "stt_model", "base") or "base"
     tts_voice = getattr(config, "tts_voice", "af_bella") or "af_bella"
     return resolve_audio_plane(stt_model=stt_model, tts_voice=tts_voice)
 

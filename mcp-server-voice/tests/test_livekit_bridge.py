@@ -481,10 +481,16 @@ class TestResolveDefaultAudioPlane:
     def test_missing_audio_extras_raises_with_install_hint(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Default test env has no audio extras installed -- the plane
-        # selector must fail loudly per feedback_no_silent_defaults
-        # rather than silently routing real audio to the no-op stub.
+        # The plane selector must fail loudly per feedback_no_silent_defaults
+        # rather than silently routing real audio to the no-op stub. We
+        # simulate missing extras by pointing the probe list at modules that
+        # cannot exist -- env-independent, so the test passes whether or not
+        # the audio extras happen to be installed in this venv.
         monkeypatch.delenv("VOICE_BRIDGE_AUDIO_PLANE", raising=False)
+        monkeypatch.setattr(
+            livekit_bridge, "_AUDIO_DEP_MODULES",
+            ["pipecat_missing_probe", "kokoro_missing_probe"],
+        )
         config = livekit_bridge.BridgeConfig(room="claude-bridge")
         with pytest.raises(RuntimeError) as excinfo:
             livekit_bridge._resolve_default_audio_plane(config)
@@ -494,6 +500,7 @@ class TestResolveDefaultAudioPlane:
         # Names every missing module so the operator sees exactly which
         # extras did not install (rather than first-failure-only).
         assert "pipecat" in msg
+        assert "kokoro_missing_probe" in msg
 
     def test_explicit_pipecat_value_also_raises_when_deps_missing(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -501,6 +508,9 @@ class TestResolveDefaultAudioPlane:
         # `pipecat` is the implicit default; setting it explicitly should
         # behave identically (the only special-cased value is `noop`).
         monkeypatch.setenv("VOICE_BRIDGE_AUDIO_PLANE", "pipecat")
+        monkeypatch.setattr(
+            livekit_bridge, "_AUDIO_DEP_MODULES", ["pipecat_missing_probe"],
+        )
         config = livekit_bridge.BridgeConfig(room="claude-bridge")
         with pytest.raises(RuntimeError):
             livekit_bridge._resolve_default_audio_plane(config)

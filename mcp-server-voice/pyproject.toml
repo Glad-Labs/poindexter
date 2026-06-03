@@ -27,6 +27,7 @@ audio = [
     "livekit-api>=1.0.5,<2.0",
     "faster-whisper>=1.1,<2.0",
     "kokoro>=0.7,<1.0",
+    "websockets>=16.0",
 ]
 # CPU-only operators skip GPU. 5090 boxes do `uv pip install ".[gpu]"`.
 gpu = [
