@@ -238,7 +238,9 @@ def fake_pool_and_config(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_service_exits_zero_when_disabled(fake_pool_and_config, caplog):
+async def test_run_service_exits_zero_when_disabled(
+    fake_pool_and_config, caplog, monkeypatch,
+):
     """Disabled toggle -> exit 0 + log message + run_bot never called."""
     fake_pool_and_config["cfg"] = _FakeSiteConfig(
         {"voice_agent_livekit_enabled": "false"},
@@ -249,7 +251,7 @@ async def test_run_service_exits_zero_when_disabled(fake_pool_and_config, caplog
     async def _fake_run_bot(*_a, **_kw):
         called["run_bot"] = True
 
-    voice_agent_livekit.run_bot = _fake_run_bot  # type: ignore[assignment]
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
 
     rc = await voice_agent_livekit.run_service()
 
@@ -260,7 +262,7 @@ async def test_run_service_exits_zero_when_disabled(fake_pool_and_config, caplog
 @pytest.mark.asyncio
 @pytest.mark.parametrize("flag_value", ["false", "False", "0", "no", "off", "OFF"])
 async def test_run_service_disabled_accepts_common_falsy_strings(
-    fake_pool_and_config, flag_value,
+    fake_pool_and_config, flag_value, monkeypatch,
 ):
     """All the common ways an operator might write 'off' should disable
     the surface — explicit list per feedback_no_silent_defaults (silent
@@ -275,7 +277,7 @@ async def test_run_service_disabled_accepts_common_falsy_strings(
     async def _fake_run_bot(*_a, **_kw):
         called["run_bot"] = True
 
-    voice_agent_livekit.run_bot = _fake_run_bot  # type: ignore[assignment]
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
 
     rc = await voice_agent_livekit.run_service()
     assert rc == 0
@@ -283,7 +285,9 @@ async def test_run_service_disabled_accepts_common_falsy_strings(
 
 
 @pytest.mark.asyncio
-async def test_run_service_passes_room_identity_to_run_bot(fake_pool_and_config):
+async def test_run_service_passes_room_identity_to_run_bot(
+    fake_pool_and_config, monkeypatch,
+):
     """run_service forwards room + identity but defers brain resolution.
 
     Half B runtime brain-mode toggle: ``run_service`` no longer pre-reads
@@ -309,7 +313,7 @@ async def test_run_service_passes_room_identity_to_run_bot(fake_pool_and_config)
         captured["identity"] = identity
         captured["brain"] = brain
 
-    voice_agent_livekit.run_bot = _fake_run_bot  # type: ignore[assignment]
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
 
     rc = await voice_agent_livekit.run_service()
     assert rc == 0
@@ -323,7 +327,9 @@ async def test_run_service_passes_room_identity_to_run_bot(fake_pool_and_config)
 
 
 @pytest.mark.asyncio
-async def test_run_service_uses_defaults_when_settings_absent(fake_pool_and_config):
+async def test_run_service_uses_defaults_when_settings_absent(
+    fake_pool_and_config, monkeypatch,
+):
     """No app_settings rows -> documented defaults for room/identity, and
     brain=None so run_bot falls back to its own default chain.
     """
@@ -336,7 +342,7 @@ async def test_run_service_uses_defaults_when_settings_absent(fake_pool_and_conf
         captured["identity"] = identity
         captured["brain"] = brain
 
-    voice_agent_livekit.run_bot = _fake_run_bot  # type: ignore[assignment]
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
 
     rc = await voice_agent_livekit.run_service()
     assert rc == 0

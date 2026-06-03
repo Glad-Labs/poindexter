@@ -776,6 +776,23 @@ _DEFAULT_TOOLS: list[Any] = [
 # ---------------------------------------------------------------------------
 
 
+# Default join-JWT TTL for the always-on bot (minutes). Kept as a module
+# constant so the mint default and the proactive refresh loop agree on the
+# same number — the refresh fires one safety-margin BEFORE this elapses.
+_DEFAULT_TOKEN_TTL_MINUTES = 360
+
+# Default safety margin (minutes) the refresh loop subtracts from the TTL
+# when scheduling the re-mint. Operators tune it via app_settings key
+# ``voice_agent_token_refresh_margin_minutes`` (config-in-DB). Five minutes
+# is generous headroom against clock skew + reconnect latency.
+_DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES = 5
+
+# Floor for the refresh interval (seconds). Guards against a misconfigured
+# margin >= TTL that would otherwise schedule a zero/negative sleep and spin
+# the loop in a tight busy-reconnect cycle.
+_MIN_TOKEN_REFRESH_INTERVAL_S = 60
+
+
 def _mint_token(
     api_key: str,
     api_secret: str,
@@ -784,7 +801,7 @@ def _mint_token(
     room: str,
     can_publish: bool = True,
     can_subscribe: bool = True,
-    ttl_minutes: int = 360,
+    ttl_minutes: int = _DEFAULT_TOKEN_TTL_MINUTES,
 ) -> str:
     """Mint a LiveKit JWT for the given identity + room.
 
@@ -815,6 +832,173 @@ def _resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, st
     _resolve_livekit_creds`` continue to work.
     """
     return _shared_resolve_livekit_creds(site_config)
+
+
+# ---------------------------------------------------------------------------
+# Proactive JWT refresh (#564)
+# ---------------------------------------------------------------------------
+#
+# The always-on bot mints a fixed-TTL join JWT and stays in room
+# ``poindexter`` indefinitely. Once that JWT expires, the LiveKit rtc
+# ``Room``'s *native* reconnect re-uses the original (now-expired) token and
+# gets ``401 Unauthorized - no permissions to access the room`` — the bot
+# can't self-recover until the container restart-policy bounces it.
+#
+# Verified against the installed SDKs: ``pipecat``'s
+# ``LiveKitTransportClient`` captures the token once (``self._token``) and
+# the rtc ``Room`` ships it to the native FFI engine a single time inside
+# ``connect()``. The engine's automatic reconnect re-uses that captured
+# token; mutating ``self._token`` afterward is NOT pushed back down. The only
+# way to present a fresh token is a controlled reconnect — a fresh
+# ``connect()`` handshake carrying a newly-minted JWT.
+#
+# So we run a background loop that re-mints BEFORE the current token expires
+# and drives a controlled disconnect -> reconnect so the bot stays
+# authenticated for arbitrarily long sessions. Proactive refresh (vs. just
+# raising the TTL) is the durable fix: every token expires eventually, and a
+# higher TTL only delays the same 401.
+
+
+def _resolve_token_refresh_interval_s(
+    site_config: Any | None,
+    *,
+    ttl_minutes: int = _DEFAULT_TOKEN_TTL_MINUTES,
+) -> int:
+    """Resolve how long to wait before re-minting the join JWT, in seconds.
+
+    The refresh fires one safety-margin BEFORE the TTL elapses so the
+    controlled reconnect always presents a still-valid replacement token.
+    The margin is DB-configurable via app_settings
+    ``voice_agent_token_refresh_margin_minutes`` (config-in-DB per Matt's
+    "every tunable lives in app_settings" rule); it defaults to
+    :data:`_DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES`.
+
+    A margin >= the TTL (operator typo) would yield a zero/negative sleep
+    that spins the loop in a tight busy-reconnect cycle, so the result is
+    clamped to :data:`_MIN_TOKEN_REFRESH_INTERVAL_S`.
+    """
+    margin_minutes = _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES
+    if site_config is not None:
+        raw: Any = _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES
+        try:
+            raw = site_config.get(
+                "voice_agent_token_refresh_margin_minutes",
+                _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES,
+            )
+            margin_minutes = int(str(raw).strip())
+        except (TypeError, ValueError):
+            log.warning(
+                "voice_agent_token_refresh_margin_minutes=%r is not an int; "
+                "using default %d.",
+                raw,
+                _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES,
+            )
+            margin_minutes = _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES
+
+    interval_s = (ttl_minutes - margin_minutes) * 60
+    return max(interval_s, _MIN_TOKEN_REFRESH_INTERVAL_S)
+
+
+async def _refresh_transport_token(
+    transport: Any,
+    *,
+    api_key: str,
+    api_secret: str,
+    identity: str,
+    room: str,
+    ttl_minutes: int = _DEFAULT_TOKEN_TTL_MINUTES,
+) -> str:
+    """Re-mint a fresh join JWT and reconnect the transport with it.
+
+    The native LiveKit engine only reads the token at ``connect()`` time, so
+    the fresh token MUST be installed on the Pipecat client BEFORE the
+    reconnect handshake. Sequence:
+
+    1. Mint a brand-new JWT for ``identity`` in ``room``.
+    2. Swap ``transport._client._token`` for it.
+    3. Drive a controlled reconnect (``disconnect()`` then ``connect()``) so
+       the engine re-handshakes carrying the fresh token.
+
+    Returns the freshly-minted token. Tolerates a transport whose ``_client``
+    isn't wired yet (Pipecat builds it lazily during ``setup()``); in that
+    window we still re-mint so the caller can log progress, and skip the
+    reconnect rather than crashing the loop.
+    """
+    new_token = _mint_token(
+        api_key,
+        api_secret,
+        identity=identity,
+        room=room,
+        ttl_minutes=ttl_minutes,
+    )
+
+    client = getattr(transport, "_client", None)
+    if client is None:
+        log.warning(
+            "Token refresh: transport has no _client yet (setup incomplete?); "
+            "minted a fresh JWT but skipping the reconnect this tick.",
+        )
+        return new_token
+
+    # Install the fresh token first — the engine captures it at connect()
+    # time, so a stale value here would reproduce the very 401 we're fixing.
+    client._token = new_token
+
+    # Controlled reconnect. The Pipecat client reference-counts connect /
+    # disconnect; for the single always-on bot the counter is 1, so one
+    # disconnect() actually tears the native connection down and the
+    # following connect() re-handshakes with the fresh token. The rtc Room
+    # object persists across this cycle (created once in setup()).
+    await client.disconnect()
+    await client.connect()
+
+    log.info(
+        "Refreshed LiveKit JWT and reconnected room %r as %r "
+        "(proactive, before TTL expiry).",
+        room,
+        identity,
+    )
+    return new_token
+
+
+async def _token_refresh_loop(
+    transport: Any,
+    *,
+    site_config: Any | None,
+    api_key: str,
+    api_secret: str,
+    identity: str,
+    room: str,
+    ttl_minutes: int = _DEFAULT_TOKEN_TTL_MINUTES,
+) -> None:
+    """Background loop: re-mint + reconnect once per (TTL - margin) window.
+
+    Runs concurrently with the Pipecat ``PipelineRunner`` for the lifetime
+    of the bot. A single failed refresh (e.g. a transient reconnect error)
+    is logged and retried on the next tick rather than propagated — keeping
+    the bot online is the whole point of #564. ``CancelledError`` propagates
+    so the loop tears down cleanly when ``run_bot`` shuts down.
+    """
+    while True:
+        interval_s = _resolve_token_refresh_interval_s(site_config, ttl_minutes=ttl_minutes)
+        await asyncio.sleep(interval_s)
+        try:
+            await _refresh_transport_token(
+                transport,
+                api_key=api_key,
+                api_secret=api_secret,
+                identity=identity,
+                room=room,
+                ttl_minutes=ttl_minutes,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 — never let one failure kill the loop
+            log.warning(
+                "Token refresh tick failed (%s); will retry next window. "
+                "The bot keeps running on its current token until then.",
+                e,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1050,8 +1234,31 @@ async def run_bot(
                 transport, site_config, log=log, tools=_DEFAULT_TOOLS,
             )
 
+        # Proactive JWT refresh (#564). Mint a fresh join token + drive a
+        # controlled reconnect one safety-margin BEFORE the current TTL
+        # expires, so the bot's native reconnect never re-presents an
+        # expired token and 401s. Runs concurrently with the pipeline for
+        # the lifetime of the bot; cancelled cleanly on shutdown below.
+        refresh_task = asyncio.create_task(
+            _token_refresh_loop(
+                transport,
+                site_config=site_config,
+                api_key=key,
+                api_secret=secret,
+                identity=identity,
+                room=room,
+            ),
+        )
+
         runner = PipelineRunner(handle_sigint=False)
-        await runner.run(task)
+        try:
+            await runner.run(task)
+        finally:
+            refresh_task.cancel()
+            try:
+                await refresh_task
+            except asyncio.CancelledError:
+                pass
     finally:
         await pool.close()
         log.info("Voice agent shut down.")
