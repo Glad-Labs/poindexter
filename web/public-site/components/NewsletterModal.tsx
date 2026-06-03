@@ -357,7 +357,7 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleInputChange}
-                    placeholder="Matt"
+                    placeholder="Jane"
                     className={INPUT_CLASS}
                     style={INPUT_STYLE}
                   />
@@ -372,7 +372,7 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleInputChange}
-                    placeholder="Gladding"
+                    placeholder="Doe"
                     className={INPUT_CLASS}
                     style={INPUT_STYLE}
                   />
