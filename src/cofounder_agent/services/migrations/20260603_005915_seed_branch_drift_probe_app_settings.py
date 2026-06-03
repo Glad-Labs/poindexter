@@ -15,7 +15,7 @@ _ROWS = [
      "Master switch for the brain branch-drift deploy canary (#942). When true, the brain pages the operator if the bind-mounted prod checkout falls behind origin/main."),
     ("branch_drift_poll_interval_minutes", "15", "monitoring",
      "Internal cadence gate (minutes) for the branch-drift canary's GitHub round-trip. The probe is dispatched every brain cycle (~5 min) but does real work only this often."),
-    ("branch_drift_repo", "Glad-Labs/glad-labs-stack", "monitoring",
+    ("branch_drift_repo", "Glad-Labs/poindexter", "monitoring",
      "owner/name of the source-of-truth repo the branch-drift canary compares against. Paired with the gh_token secret for private-repo access."),
     ("branch_drift_dedup_hours", "6", "monitoring",
      "Re-page interval (hours) for an unchanged branch-drift state. Dedup is keyed on (repo, local HEAD, origin/main SHA); a new commit on either side re-pages immediately."),
