@@ -7,15 +7,24 @@ Endpoints for managing email campaign subscriptions and newsletter signups.
 
 import secrets
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
+
+# api.resend.com is behind Cloudflare, which 403s ("error code: 1010") on
+# default library User-Agents; a browser-like UA gets through.
+_RESEND_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+)
 
 
 router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
@@ -32,6 +41,53 @@ def _mint_unsubscribe_token() -> str:
     operationally infeasible.
     """
     return secrets.token_urlsafe(32)
+
+
+async def _sync_to_resend_audience(
+    site_config: SiteConfig,
+    *,
+    email: str,
+    first_name: str | None,
+    last_name: str | None,
+) -> None:
+    """Best-effort mirror of a subscriber into the Resend audience (broadcasts).
+
+    Reads ``resend_audience_id`` + ``resend_api_key`` from app_settings; if
+    either is unset, the sync is skipped (the ``newsletter_subscribers`` row is
+    the system of record). NEVER raises — a Resend hiccup must not fail a signup.
+    """
+    audience_id = (site_config.get("resend_audience_id", "") or "").strip()
+    if not audience_id:
+        return
+    api_key = (await site_config.get_secret("resend_api_key", "")) or ""
+    if not api_key:
+        logger.warning(
+            "[newsletter] resend_audience_id set but resend_api_key missing — "
+            "skipping audience sync"
+        )
+        return
+
+    contact: dict[str, object] = {"email": email, "unsubscribed": False}
+    if first_name:
+        contact["first_name"] = first_name
+    if last_name:
+        contact["last_name"] = last_name
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"https://api.resend.com/audiences/{audience_id}/contacts",
+                headers={"Authorization": f"Bearer {api_key}", "User-Agent": _RESEND_UA},
+                json=contact,
+            )
+        if resp.status_code >= 400:
+            logger.warning(
+                "[newsletter] Resend audience add failed for %s: HTTP %s %s",
+                email, resp.status_code, resp.text[:200],
+            )
+        else:
+            logger.info("[newsletter] synced %s to Resend audience", email)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[newsletter] Resend audience add error for %s: %s", email, exc)
 
 
 class NewsletterSubscribeRequest(BaseModel):
@@ -72,7 +128,10 @@ class NewsletterUnsubscribeRequest(BaseModel):
 @router.post("/subscribe", response_model=NewsletterSubscribeResponse)
 @limiter.limit("5/minute")
 async def subscribe_to_newsletter(
-    request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
+    request: Request,
+    payload: NewsletterSubscribeRequest,
+    db=Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ):
     """Subscribe email to newsletter. Used by the public site 'Get Updates' button."""
     try:
@@ -145,6 +204,15 @@ async def subscribe_to_newsletter(
         )
 
         logger.info("Newsletter subscriber added: %s (ID: %s)", payload.email, subscriber_id)
+
+        # Best-effort: mirror into the Resend audience for broadcasts. Never
+        # fails the signup — the DB row above is the system of record.
+        await _sync_to_resend_audience(
+            site_config,
+            email=payload.email,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+        )
 
         return NewsletterSubscribeResponse(
             success=True,

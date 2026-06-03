@@ -377,3 +377,71 @@ class TestGetSubscriberCount:
         client = TestClient(_build_app(_make_db(pool)), raise_server_exceptions=False)
         resp = client.get("/api/newsletter/subscribers/count")
         assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# _sync_to_resend_audience — best-effort Resend audience mirror (broadcasts)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_audience_sync_skips_when_unconfigured():
+    """No resend_audience_id -> no Resend call, never touches the key."""
+    from routes.newsletter_routes import _sync_to_resend_audience
+
+    sc = MagicMock()
+    sc.get = MagicMock(return_value="")  # resend_audience_id unset
+    sc.get_secret = AsyncMock(return_value="")
+    await _sync_to_resend_audience(sc, email="a@b.com", first_name=None, last_name=None)
+    sc.get_secret.assert_not_awaited()  # returned before reading the key
+
+
+@pytest.mark.asyncio
+async def test_audience_sync_never_raises_on_error(monkeypatch):
+    """A Resend/network failure must NOT bubble up and fail the signup."""
+    from routes import newsletter_routes as nr
+
+    sc = MagicMock()
+    sc.get = MagicMock(return_value="aud-123")
+    sc.get_secret = AsyncMock(return_value="re_key")
+
+    class _Boom:
+        async def __aenter__(self):
+            raise RuntimeError("network down")
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(nr.httpx, "AsyncClient", lambda *a, **k: _Boom())
+    await nr._sync_to_resend_audience(sc, email="a@b.com", first_name="A", last_name=None)
+
+
+@pytest.mark.asyncio
+async def test_audience_sync_posts_contact_when_configured(monkeypatch):
+    """Configured -> POSTs the contact to the right audience with a browser UA."""
+    from routes import newsletter_routes as nr
+
+    sc = MagicMock()
+    sc.get = MagicMock(return_value="aud-123")
+    sc.get_secret = AsyncMock(return_value="re_key")
+    captured: dict = {}
+
+    class _Resp:
+        status_code = 201
+        text = ""
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured.update(url=url, headers=headers, json=json)
+            return _Resp()
+
+    monkeypatch.setattr(nr.httpx, "AsyncClient", lambda *a, **k: _Client())
+    await nr._sync_to_resend_audience(sc, email="a@b.com", first_name="A", last_name="B")
+    assert "aud-123/contacts" in captured["url"]
+    assert captured["json"]["email"] == "a@b.com"
+    assert captured["json"]["first_name"] == "A"
+    assert "Mozilla" in captured["headers"]["User-Agent"]
