@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.8](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.7...v0.70.8) (2026-06-03)
+
+
+### Bug Fixes
+
+* **analytics:** stop sync_cloudflare_analytics masking a dead page_views ingest ([2590c69](https://github.com/Glad-Labs/glad-labs-stack/commit/2590c696c7ff2e1eba28f2ab40563779e4d5b8b0))
+
 ## [0.70.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.6...v0.70.7) (2026-06-03)
 
 
