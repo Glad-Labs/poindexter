@@ -266,7 +266,13 @@ Search before asking the user — the answer may already be in memory.
 """)
 
 
-async def _api(method: str, path: str, data: dict | None = None) -> dict:
+async def _api(
+    method: str,
+    path: str,
+    data: dict | None = None,
+    *,
+    timeout: float = 15.0,
+) -> dict:
     """Call the Poindexter worker API through the OAuth-aware client.
 
     Uses ``McpOAuthClient`` (mint + cache + 401 retry, with legacy
@@ -274,6 +280,12 @@ async def _api(method: str, path: str, data: dict | None = None) -> dict:
     as the CLI and brain — see Glad-Labs/poindexter#243. The function
     keeps its original error-flattening shape (``{"error": "..."}`` on
     failure) so existing tool callers don't need updates.
+
+    ``timeout`` is the per-call httpx read timeout (seconds). It defaults
+    to 15s — fast-fail is the right default so a genuinely hung endpoint
+    surfaces quickly. Known-slow endpoints (e.g. the ~35s full static
+    export, Glad-Labs/poindexter#657) pass a larger value so a slow-but-
+    successful call isn't reported as a false failure.
     """
     try:
         oauth = await _get_oauth()
@@ -281,7 +293,7 @@ async def _api(method: str, path: str, data: dict | None = None) -> dict:
         return {"error": f"oauth init failed: {type(e).__name__}: {str(e)[:200]}"}
 
     try:
-        kwargs: dict[str, Any] = {"timeout": 15.0}
+        kwargs: dict[str, Any] = {"timeout": timeout}
         if data is not None:
             kwargs["json"] = data
         resp = await oauth.request(method, path, **kwargs)
@@ -1175,7 +1187,11 @@ async def rebuild_static_export() -> str:
     Triggers a full export of the headless CMS data to R2/S3 storage.
     Any frontend can consume these files without needing the API.
     """
-    result = await _api("POST", "/api/export/rebuild")
+    # A full rebuild is ~35s at current post volume (Glad-Labs/poindexter#657);
+    # the default 15s read timeout fired before the 200 came back and the tool
+    # reported a false "Export failed:" on a successful export. 120s gives the
+    # worst case comfortable headroom without masking a truly hung worker.
+    result = await _api("POST", "/api/export/rebuild", timeout=120.0)
     if "error" in result:
         return f"Export failed: {result['error']}"
     posts = result.get("posts_exported", 0)

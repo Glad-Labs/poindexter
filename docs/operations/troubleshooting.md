@@ -788,6 +788,21 @@ Then let the watchdog's next cycle bring the gateway up, or kick it manually wit
 
 ---
 
+## `rebuild_static_export` reports "Export failed:" but the export actually succeeded
+
+**Symptom.** The `rebuild_static_export` MCP tool (or `POST /api/export/rebuild` driven through the MCP server) returns `Export failed:` with an empty or `ReadTimeout` error, yet the worker log for the same request shows the export completing and the R2 files are current:
+
+```
+[STATIC_EXPORT] Full rebuild complete — 92 posts, 6 categories, 2 authors, 0 errors
+POST /api/export/rebuild took 34996ms (status: 200)
+```
+
+**Root cause.** A full rebuild runs ~35s at current post volume, but the MCP server's `_api` helper defaulted to a 15s httpx read timeout. The client aborted with `ReadTimeout` before the worker's 200 came back, and `_api` flattens that into `{"error": ...}` → a false `Export failed:` on a successful export. Dangerous for operators — a takedown/rebuild looks failed and may be retried or assumed not to have worked (Glad-Labs/poindexter#657).
+
+**Fix (shipped).** `_api` now takes a per-call `timeout` and `rebuild_static_export` passes `120.0s` — comfortable headroom over the ~35s worst case while still failing fast for everything else (the 15s default is unchanged for other tools). If the export ever legitimately grows past ~2 min, raise that constant in `mcp-server/server.py`. A genuine non-2xx / transport error still surfaces as `Export failed:`.
+
+---
+
 ## Topic discovery keeps generating the same rejected topic genre
 
 **Symptom.** The pipeline generates 5+ variations of the same topic (e.g., "Bootstrap Your SaaS") in a 24-hour period. QA rejects all of them for the same reasons (internal consistency, unlinked references). The rejection rate climbs above 80%.
