@@ -632,10 +632,10 @@
         "overrides": []
       },
       "gridPos": {
-        "x": 0,
-        "y": 5,
+        "h": 5,
         "w": 8,
-        "h": 5
+        "x": 0,
+        "y": 5
       },
       "id": 7,
       "options": {
@@ -700,10 +700,10 @@
         }
       },
       "gridPos": {
-        "x": 8,
-        "y": 5,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 8,
+        "y": 5
       },
       "id": 8,
       "options": {
@@ -767,10 +767,10 @@
         }
       },
       "gridPos": {
-        "x": 12,
-        "y": 5,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 12,
+        "y": 5
       },
       "id": 9,
       "options": {
@@ -833,10 +833,10 @@
         }
       },
       "gridPos": {
-        "x": 16,
-        "y": 5,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 16,
+        "y": 5
       },
       "id": 10,
       "options": {
@@ -895,10 +895,10 @@
         }
       },
       "gridPos": {
-        "x": 20,
-        "y": 5,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 20,
+        "y": 5
       },
       "id": 11,
       "options": {
@@ -961,10 +961,10 @@
         }
       },
       "gridPos": {
-        "x": 0,
-        "y": 10,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 0,
+        "y": 10
       },
       "id": 12,
       "options": {
@@ -995,7 +995,7 @@
       "type": "stat"
     },
     {
-      "id": 14,
+      "id": 13,
       "title": "Recently published",
       "type": "table",
       "description": "Last 5 posts on the public site, newest first.",
@@ -1004,10 +1004,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 4,
-        "y": 10,
+        "h": 5,
         "w": 12,
-        "h": 5
+        "x": 4,
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -1044,7 +1044,7 @@
       ]
     },
     {
-      "id": 15,
+      "id": 14,
       "title": "Top category",
       "type": "stat",
       "description": "Most-published category (name + count). Was a pie chart, but the data is monotype right now — one category dominates, so the slice was always 100%. Stat is honest about that.",
@@ -1053,10 +1053,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 16,
-        "y": 10,
+        "h": 5,
         "w": 8,
-        "h": 5
+        "x": 16,
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -1102,7 +1102,7 @@
       ]
     },
     {
-      "id": 16,
+      "id": 15,
       "title": "LLM spend",
       "type": "timeseries",
       "description": "Daily LLM cost in USD from cost_logs. Range respects the dashboard time picker — change it at the top right to widen or narrow the window.",
@@ -1111,10 +1111,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 15,
+        "h": 6,
         "w": 24,
-        "h": 6
+        "x": 0,
+        "y": 15
       },
       "fieldConfig": {
         "defaults": {
@@ -1175,7 +1175,7 @@
       ]
     },
     {
-      "id": 17,
+      "id": 16,
       "title": "Page-views 1h",
       "type": "stat",
       "description": "Page-view beacon hits over the global dashboard time range. Sourced from the page_views table populated by the sync_cloudflare_analytics job (5-min cycle pulling from CF Analytics Engine, which the Worker beacon at infrastructure/cloudflare/page-views-beacon/ writes to). If this flatlines to 0 while CF AE shows traffic, the sync job has regressed. Red at 0, yellow at <10, green at 10+.",
@@ -1184,10 +1184,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 21,
+        "h": 5,
         "w": 6,
-        "h": 5
+        "x": 0,
+        "y": 21
       },
       "fieldConfig": {
         "defaults": {
@@ -1242,7 +1242,7 @@
       ]
     },
     {
-      "id": 20,
+      "id": 17,
       "title": "media_approvals — pending",
       "type": "stat",
       "description": "Pending media_approvals rows in the dashboard time window (filtered on created_at — pending rows have no decided_at). PR #647 lit up this table; 177 rows live as of 2026-05-28.",
@@ -1251,10 +1251,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 26,
+        "h": 4,
         "w": 8,
-        "h": 4
+        "x": 6,
+        "y": 21
       },
       "fieldConfig": {
         "defaults": {
@@ -1308,445 +1308,7 @@
       ]
     },
     {
-      "id": 21,
-      "title": "media_approvals — approved (window)",
-      "type": "stat",
-      "description": "Approved media_approvals in the dashboard time window, filtered on decided_at.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 26,
-        "w": 8,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Approved\" FROM media_approvals WHERE status='approved' AND $__timeFilter(decided_at);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 22,
-      "title": "media_approvals — rejected by medium",
-      "type": "bargauge",
-      "description": "Rejected media_approvals grouped by medium (podcast / video / video_short) in the dashboard time window. Filtered on decided_at.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 26,
-        "w": 8,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "orange",
-                "value": 15
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT medium AS metric, COUNT(*)::int AS value FROM media_approvals WHERE status='rejected' AND $__timeFilter(decided_at) GROUP BY medium ORDER BY value DESC;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 23,
-      "title": "Posts with shot list (window)",
-      "type": "stat",
-      "description": "Posts where the video director produced a non-null video_shot_list, filtered on posts.updated_at within the dashboard time window. PR #650.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 30,
-        "w": 8,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"With shot list\" FROM posts WHERE video_shot_list IS NOT NULL AND $__timeFilter(updated_at);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 24,
-      "title": "Director: shot list produced",
-      "type": "stat",
-      "description": "audit_log rows where event_type='video_director.shot_list_produced' in the dashboard time window. Emitted by services/stages/generate_video_shot_list.py once the video-shot-list stage runs.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 30,
-        "w": 8,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Produced\" FROM audit_log WHERE event_type='video_director.shot_list_produced' AND $__timeFilter(timestamp);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 25,
-      "title": "Director: shot list failed",
-      "type": "stat",
-      "description": "audit_log rows where event_type='video_director.shot_list_failed' in the dashboard time window. Any nonzero count is a regression signal.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 30,
-        "w": 8,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "orange",
-                "value": 5
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM audit_log WHERE event_type='video_director.shot_list_failed' AND $__timeFilter(timestamp);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 26,
-      "title": "Media auto-rejected by quality (window)",
-      "type": "stat",
-      "description": "media_approvals rows the Layer 1 quality gate auto-rejected (decided_by LIKE 'auto:layer1%'). PR #648 wired this gate to write quality_score on every decision.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 34,
-        "w": 12,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              },
-              {
-                "color": "orange",
-                "value": 30
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Auto-rejected\" FROM media_approvals WHERE decided_by LIKE 'auto:layer1%' AND status='rejected' AND $__timeFilter(decided_at);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 27,
-      "title": "Quality eval score by medium",
-      "type": "timeseries",
-      "description": "Per-medium quality_score from media_approvals over time. quality_evaluated_at drives the x-axis; one series per medium (podcast / video / video_short). PR #648.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 34,
-        "w": 12,
-        "h": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "points",
-            "fillOpacity": 30,
-            "lineWidth": 1,
-            "axisPlacement": "auto",
-            "pointSize": 5,
-            "showPoints": "always",
-            "spanNulls": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT quality_evaluated_at AS time, medium AS metric, quality_score::float AS value FROM media_approvals WHERE quality_score IS NOT NULL AND $__timeFilter(quality_evaluated_at) ORDER BY 1;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 28,
+      "id": 18,
       "title": "Tasks approved-but-already-published (drift)",
       "type": "stat",
       "description": "Snapshot drift counter — pipeline_tasks rows whose linked post is published but whose own status hasn't been promoted to published. Should always be 0; nonzero means PR #653's lockstep sync regressed. Intentionally ignores the dashboard time picker.",
@@ -1755,10 +1317,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 38,
+        "h": 4,
         "w": 12,
-        "h": 4
+        "x": 0,
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -1808,7 +1370,7 @@
       ]
     },
     {
-      "id": 29,
+      "id": 19,
       "title": "LLM spend by provider (window)",
       "type": "piechart",
       "description": "USD spend per provider in the dashboard time window. Local providers (ollama / electricity / local / system / compositor.ffmpeg_local) excluded so any wedge here represents real cloud spend.",
@@ -1817,10 +1379,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 12,
-        "y": 38,
+        "h": 4,
         "w": 12,
-        "h": 4
+        "x": 12,
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -1864,7 +1426,7 @@
       ]
     },
     {
-      "id": 30,
+      "id": 20,
       "title": "Cloud fallback fires (window)",
       "type": "stat",
       "description": "PAID inference calls in the window: cost_logs rows from a non-local provider AND cost_usd>0. The cost_usd>0 guard is essential — litellm is the LOCAL router (routes to local Ollama at $0) and is NOT in the exclusion list, so counting bare non-local rows miscounted every local litellm call as a cloud fire (showed 37 at $0). Per feedback_cost_controls, any sustained nonzero = real cloud spend to inspect.",
@@ -1873,10 +1435,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 42,
+        "h": 4,
         "w": 8,
-        "h": 4
+        "x": 0,
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -1930,7 +1492,7 @@
       ]
     },
     {
-      "id": 31,
+      "id": 21,
       "title": "Spend vs daily limit",
       "type": "gauge",
       "description": "Today's cost_logs.cost_usd sum as a percentage of app_settings.daily_spend_limit_usd. Orange at 80%. Intentionally uses CURRENT_DATE (a calendar-day snapshot) rather than the dashboard time picker — the limit is a daily budget.",
@@ -1939,10 +1501,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 8,
-        "y": 42,
+        "h": 4,
         "w": 8,
-        "h": 4
+        "x": 8,
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -1996,7 +1558,7 @@
       ]
     },
     {
-      "id": 32,
+      "id": 22,
       "title": "Image style mix (window)",
       "type": "bargauge",
       "description": "Featured image style mix grouped by audit_log details->>'style'. Emitted as event_type='image_style_picked' by services/stages/source_featured_image.py when a featured image is sourced.",
@@ -2005,10 +1567,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 16,
-        "y": 42,
+        "h": 4,
         "w": 8,
-        "h": 4
+        "x": 16,
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -2052,15 +1614,15 @@
       ]
     },
     {
-      "id": 33,
+      "id": 23,
       "title": "GlitchTip — error tracking",
       "type": "text",
       "description": "GlitchTip Postgres is not provisioned as a Grafana datasource (separate container, no datasource yml). Open the GlitchTip UI for live unresolved-issue counts; a future PR can add it via Grafana's Infinity plugin once installed.",
       "gridPos": {
-        "x": 0,
-        "y": 46,
+        "h": 5,
         "w": 12,
-        "h": 5
+        "x": 0,
+        "y": 34
       },
       "options": {
         "mode": "markdown",
@@ -2068,15 +1630,15 @@
       }
     },
     {
-      "id": 34,
+      "id": 24,
       "title": "Langfuse — traces + judge cost",
       "type": "text",
       "description": "Langfuse Postgres (and Clickhouse, if v3 is wired) is not provisioned as a Grafana datasource. Open the Langfuse UI to drill into traces and judge-model spend; a future PR can add live stats via Infinity or a langfuse-postgres datasource.",
       "gridPos": {
-        "x": 12,
-        "y": 46,
+        "h": 5,
         "w": 12,
-        "h": 5
+        "x": 12,
+        "y": 34
       },
       "options": {
         "mode": "markdown",

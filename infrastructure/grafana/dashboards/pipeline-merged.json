@@ -1247,7 +1247,7 @@
     },
     {
       "type": "row",
-      "title": "QA Observability",
+      "title": "Quality — scores & output",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1257,80 +1257,6 @@
       },
       "panels": [],
       "id": 17
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Rejection rate over the selected time window. Lower is better — but a 0% rate with low throughput often means content isn't being generated.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 40
-              },
-              {
-                "color": "orange",
-                "value": 60
-              },
-              {
-                "color": "orange",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "percent"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 55
-      },
-      "id": 18,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'rejected')::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN ('rejected', 'awaiting_approval', 'approved', 'published')), 0), 1) AS \"Rejection %\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
-          "refId": "A"
-        }
-      ],
-      "title": "Rejection Rate",
-      "type": "stat"
     },
     {
       "datasource": {
@@ -1373,10 +1299,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 6,
+        "x": 0,
         "y": 55
       },
-      "id": 19,
+      "id": 18,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1447,10 +1373,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 12,
+        "x": 6,
         "y": 55
       },
-      "id": 20,
+      "id": 19,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1511,10 +1437,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 18,
+        "x": 12,
         "y": 55
       },
-      "id": 21,
+      "id": 20,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1542,6 +1468,643 @@
         }
       ],
       "title": "Tasks (win)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Total posts generated in the selected time range",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 55
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Generated\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Posts gen",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Total published posts on your site",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 60
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Published\" FROM posts WHERE status = 'published' AND $__timeFilter(published_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Published",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "quality_score distribution split by approved vs rejected. Wide spread = high generation variance.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1
+          },
+          "mappings": [],
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 6,
+        "y": 60
+      },
+      "id": 23,
+      "options": {
+        "bucketOffset": 0,
+        "bucketSize": 5,
+        "combine": false,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT quality_score AS approved FROM pipeline_tasks_view WHERE status IN ('awaiting_approval','approved','published') AND quality_score IS NOT NULL AND $__timeFilter(created_at) UNION ALL SELECT -quality_score AS rejected FROM pipeline_tasks_view WHERE status = 'rejected' AND quality_score IS NOT NULL AND $__timeFilter(created_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Score Distribution (approved positive / rejected negative)",
+      "type": "histogram"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Distribution of quality scores in generated content",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "scheme",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "blue",
+                "value": 20
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 69
+      },
+      "id": 24,
+      "options": {
+        "barRadius": 0.1,
+        "barWidth": 0.85,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN quality_score >= 90 THEN '90-100 Excellent' WHEN quality_score >= 80 THEN '80-89 Good' WHEN quality_score >= 70 THEN '70-79 Fair' WHEN quality_score >= 60 THEN '60-69 Weak' ELSE '<60 Poor' END AS \"Score\", COUNT(*) AS \"Posts\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Distribution",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Top categories by output volume",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 8,
+        "y": 69
+      },
+      "id": 25,
+      "options": {
+        "displayLabels": ["percent", "name"],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(category, 'uncategorized') AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Content by Category",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Quality scores over time — are we improving?",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Quality Score",
+            "axisPlacement": "auto",
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 3,
+            "pointSize": 6,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "rgba(255, 152, 0, 0.1)",
+                "value": 70
+              },
+              {
+                "color": "rgba(76, 175, 80, 0.1)",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 78
+      },
+      "id": 26,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "min", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, ROUND(AVG(quality_score)) AS \"Avg Quality\", MAX(quality_score) AS \"Max\", MIN(quality_score) AS \"Min\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Score Trend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Highest scoring published posts",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Score"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "blue",
+                      "value": 85
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 87
+      },
+      "id": 27,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Score"
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Score\", category AS \"Category\" FROM pipeline_tasks_view WHERE status = 'published' AND quality_score IS NOT NULL AND $__timeFilter(created_at) ORDER BY quality_score DESC, created_at DESC LIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Quality Published Posts",
+      "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "QA — rejections & validation",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 95
+      },
+      "panels": [],
+      "id": 28
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Rejection rate over the selected time window. Lower is better — but a 0% rate with low throughput often means content isn't being generated.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "orange",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 96
+      },
+      "id": 29,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'rejected')::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN ('rejected', 'awaiting_approval', 'approved', 'published')), 0), 1) AS \"Rejection %\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Rejection Rate",
       "type": "stat"
     },
     {
@@ -1593,9 +2156,9 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 101
       },
-      "id": 22,
+      "id": 30,
       "options": {
         "legend": {
           "calcs": ["sum"],
@@ -1673,9 +2236,9 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 69
+        "y": 110
       },
-      "id": 23,
+      "id": 31,
       "options": {
         "legend": {
           "calcs": ["sum"],
@@ -1702,669 +2265,6 @@
       ],
       "title": "Hallucination Warnings (rate 5m) by Rule",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "quality_score distribution split by approved vs rejected. Wide spread = high generation variance.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineWidth": 1
-          },
-          "mappings": [],
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 69
-      },
-      "id": 24,
-      "options": {
-        "bucketOffset": 0,
-        "bucketSize": 5,
-        "combine": false,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT quality_score AS approved FROM pipeline_tasks_view WHERE status IN ('awaiting_approval','approved','published') AND quality_score IS NOT NULL AND $__timeFilter(created_at) UNION ALL SELECT -quality_score AS rejected FROM pipeline_tasks_view WHERE status = 'rejected' AND quality_score IS NOT NULL AND $__timeFilter(created_at);",
-          "refId": "A"
-        }
-      ],
-      "title": "Score Distribution (approved positive / rejected negative)",
-      "type": "histogram"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Breakdown of the last 100 rejections by classified reason.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "left",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 78
-      },
-      "id": 25,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": ["sum"],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN error_message LIKE '%fabricated%' OR error_message LIKE '%Fabricated%' THEN 'fabricated_content' WHEN error_message LIKE '%Named source without%' THEN 'named_source_no_url' WHEN error_message LIKE '%dead link%' OR error_message LIKE '%Dead link%' THEN 'dead_links' WHEN error_message LIKE '%Unlinked citation%' THEN 'unlinked_citation' WHEN error_message LIKE '%Hallucinated%' OR error_message LIKE '%hallucinated library%' THEN 'hallucinated_ref' WHEN error_message LIKE '%score-gate%' THEN 'score_gate' WHEN error_message LIKE '%veto: internal_consistency%' THEN 'internal_consistency_veto' WHEN error_message LIKE '%citation_verifier%' THEN 'citation_verifier' WHEN error_message LIKE '%Off-brand%' THEN 'off_brand' WHEN error_message LIKE '%Semantic duplicate%' THEN 'semantic_dup' ELSE 'other' END AS \"Reason\", COUNT(*) AS \"Count\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM pipeline_tasks_view WHERE status = 'rejected' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC;",
-          "refId": "A"
-        }
-      ],
-      "title": "Top Rejection Reasons (in window)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Per-writer-model approval rate — reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "left",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 78
-      },
-      "id": 26,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": ["sum"],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(models_used_by_phase->>'writer', 'unknown') AS \"Writer Model\", COUNT(*) AS \"Tasks\", COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published')) AS \"Approved\", ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published'))::numeric / NULLIF(COUNT(*),0), 1) AS \"Approval %\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM pipeline_tasks_view WHERE status IN ('rejected','awaiting_approval','approved','published') AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC;",
-          "refId": "A"
-        }
-      ],
-      "title": "Approval Rate by Writer Model",
-      "type": "table"
-    },
-    {
-      "type": "row",
-      "title": "Quality & Content",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 87
-      },
-      "panels": [],
-      "id": 27
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Average quality score across all generated content",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 70
-              },
-              {
-                "color": "yellow",
-                "value": 80
-              },
-              {
-                "color": "blue",
-                "value": 90
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 88
-      },
-      "id": 28,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Score\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND $__timeFilter(created_at);",
-          "refId": "A"
-        }
-      ],
-      "title": "Avg quality",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Approval rate — % of generated content that passes quality bar",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 40
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "blue",
-                "value": 75
-              }
-            ]
-          },
-          "unit": "percent"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 88
-      },
-      "id": 29,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('published', 'awaiting_approval')) / NULLIF(COUNT(*), 0)) AS \"Pass Rate\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND status IN ('published', 'awaiting_approval', 'rejected');",
-          "refId": "A"
-        }
-      ],
-      "title": "Pass Rate",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Total posts generated in the selected time range",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 88
-      },
-      "id": 30,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Generated\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
-          "refId": "A"
-        }
-      ],
-      "title": "Posts gen",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Total published posts on your site",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "purple"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 88
-      },
-      "id": 31,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Published\" FROM posts WHERE status = 'published' AND $__timeFilter(published_at);",
-          "refId": "A"
-        }
-      ],
-      "title": "Published",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Quality scores over time — are we improving?",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Quality Score",
-            "axisPlacement": "auto",
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 3,
-            "pointSize": 6,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line+area"
-            }
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "rgba(255, 152, 0, 0.1)",
-                "value": 70
-              },
-              {
-                "color": "rgba(76, 175, 80, 0.1)",
-                "value": 80
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 16,
-        "x": 0,
-        "y": 93
-      },
-      "id": 32,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "min", "max"],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, ROUND(AVG(quality_score)) AS \"Avg Quality\", MAX(quality_score) AS \"Max\", MIN(quality_score) AS \"Min\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
-          "refId": "A"
-        }
-      ],
-      "title": "Quality Score Trend",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Distribution of quality scores in generated content",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "scheme",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineWidth": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 5
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              },
-              {
-                "color": "blue",
-                "value": 20
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 16,
-        "y": 93
-      },
-      "id": 33,
-      "options": {
-        "barRadius": 0.1,
-        "barWidth": 0.85,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "orientation": "horizontal",
-        "showValue": "auto",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN quality_score >= 90 THEN '90-100 Excellent' WHEN quality_score >= 80 THEN '80-89 Good' WHEN quality_score >= 70 THEN '70-79 Fair' WHEN quality_score >= 60 THEN '60-69 Weak' ELSE '<60 Poor' END AS \"Score\", COUNT(*) AS \"Posts\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 DESC;",
-          "refId": "A"
-        }
-      ],
-      "title": "Quality Distribution",
-      "type": "barchart"
     },
     {
       "datasource": {
@@ -2469,9 +2369,9 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 102
+        "y": 119
       },
-      "id": 34,
+      "id": 32,
       "options": {
         "legend": {
           "calcs": ["sum"],
@@ -2505,81 +2405,17 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Top categories by output volume",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": []
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 110
-      },
-      "id": 35,
-      "options": {
-        "displayLabels": ["percent", "name"],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "values": ["value"]
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(category, 'uncategorized') AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 10;",
-          "refId": "A"
-        }
-      ],
-      "title": "Content by Category",
-      "type": "piechart"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Highest scoring published posts",
+      "description": "Breakdown of the last 100 rejections by classified reason.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
           "custom": {
-            "align": "auto",
+            "align": "left",
             "cellOptions": {
               "type": "auto"
             },
-            "filterable": false,
             "inspect": false
           },
           "mappings": [],
@@ -2592,56 +2428,15 @@
               }
             ]
           }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Score"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "mode": "gradient",
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "yellow",
-                      "value": null
-                    },
-                    {
-                      "color": "blue",
-                      "value": 85
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "max",
-                "value": 100
-              },
-              {
-                "id": "min",
-                "value": 70
-              }
-            ]
-          }
-        ]
+        }
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
-        "x": 12,
-        "y": 110
+        "x": 0,
+        "y": 127
       },
-      "id": 36,
+      "id": 33,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -2650,13 +2445,7 @@
           "reducer": ["sum"],
           "show": false
         },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "Score"
-          }
-        ]
+        "showHeader": true
       },
       "pluginVersion": "11.0.0",
       "targets": [
@@ -2667,29 +2456,92 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Score\", category AS \"Category\" FROM pipeline_tasks_view WHERE status = 'published' AND quality_score IS NOT NULL AND $__timeFilter(created_at) ORDER BY quality_score DESC, created_at DESC LIMIT 10;",
+          "rawSql": "SELECT CASE WHEN error_message LIKE '%fabricated%' OR error_message LIKE '%Fabricated%' THEN 'fabricated_content' WHEN error_message LIKE '%Named source without%' THEN 'named_source_no_url' WHEN error_message LIKE '%dead link%' OR error_message LIKE '%Dead link%' THEN 'dead_links' WHEN error_message LIKE '%Unlinked citation%' THEN 'unlinked_citation' WHEN error_message LIKE '%Hallucinated%' OR error_message LIKE '%hallucinated library%' THEN 'hallucinated_ref' WHEN error_message LIKE '%score-gate%' THEN 'score_gate' WHEN error_message LIKE '%veto: internal_consistency%' THEN 'internal_consistency_veto' WHEN error_message LIKE '%citation_verifier%' THEN 'citation_verifier' WHEN error_message LIKE '%Off-brand%' THEN 'off_brand' WHEN error_message LIKE '%Semantic duplicate%' THEN 'semantic_dup' ELSE 'other' END AS \"Reason\", COUNT(*) AS \"Count\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM pipeline_tasks_view WHERE status = 'rejected' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC;",
           "refId": "A"
         }
       ],
-      "title": "Top Quality Published Posts",
+      "title": "Top Rejection Reasons (in window)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Per-writer-model approval rate — reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 127
+      },
+      "id": 34,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(models_used_by_phase->>'writer', 'unknown') AS \"Writer Model\", COUNT(*) AS \"Tasks\", COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published')) AS \"Approved\", ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published'))::numeric / NULLIF(COUNT(*),0), 1) AS \"Approval %\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM pipeline_tasks_view WHERE status IN ('rejected','awaiting_approval','approved','published') AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Approval Rate by Writer Model",
       "type": "table"
     },
     {
       "type": "row",
-      "id": 43,
       "title": "Topic Discovery — Niche Pivot",
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 132
+        "y": 136
       },
       "panels": [],
-      "collapsed": false
+      "id": 35
     },
     {
       "type": "stat",
-      "id": 44,
+      "id": 36,
       "title": "Open batches",
       "description": "Topic batches in `open` state. When >0 you have decisions to make.",
       "datasource": {
@@ -2700,7 +2552,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 133
+        "y": 137
       },
       "targets": [
         {
@@ -2746,7 +2598,7 @@
     },
     {
       "type": "stat",
-      "id": 45,
+      "id": 37,
       "title": "Last batch h",
       "description": "Time since the discovery sweep last produced anything.",
       "datasource": {
@@ -2757,7 +2609,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 133
+        "y": 137
       },
       "targets": [
         {
@@ -2804,7 +2656,7 @@
     },
     {
       "type": "stat",
-      "id": 46,
+      "id": 38,
       "title": "Ranked (24h)",
       "description": "Candidates the discovery sweep produced in last 24h (external + internal RAG).",
       "datasource": {
@@ -2815,7 +2667,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 133
+        "y": 137
       },
       "targets": [
         {
@@ -2849,7 +2701,7 @@
     },
     {
       "type": "stat",
-      "id": 47,
+      "id": 39,
       "title": "Active niches",
       "description": "Niches with active=true — each has its own discovery sweep.",
       "datasource": {
@@ -2860,7 +2712,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 133
+        "y": 137
       },
       "targets": [
         {
@@ -2894,7 +2746,7 @@
     },
     {
       "type": "table",
-      "id": 48,
+      "id": 40,
       "title": "Open batches awaiting your decision",
       "description": "Each row = one open topic batch with its top candidate. To resolve: poindexter topics resolve-batch <batch_id> (or MCP topics_show_batch from your phone).",
       "datasource": {
@@ -2905,7 +2757,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 138
+        "y": 142
       },
       "targets": [
         {
@@ -2930,7 +2782,7 @@
     },
     {
       "type": "table",
-      "id": 49,
+      "id": 41,
       "title": "Recent batch decisions (7 days)",
       "description": "Closed batches with the picked candidate — retroactive review of what got shipped to research/draft.",
       "datasource": {
@@ -2941,7 +2793,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 146
+        "y": 150
       },
       "targets": [
         {
@@ -2966,20 +2818,20 @@
     },
     {
       "type": "row",
-      "id": 50,
       "title": "Media Approval Queue",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 154
+        "y": 158
       },
-      "panels": []
+      "panels": [],
+      "id": 42
     },
     {
       "type": "stat",
-      "id": 51,
+      "id": 43,
       "title": "Media awaiting review",
       "description": "Generated podcasts/videos/shorts queued for operator approval",
       "datasource": {
@@ -2990,7 +2842,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 155
+        "y": 159
       },
       "fieldConfig": {
         "defaults": {
@@ -3001,9 +2853,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "orange", "value": 6 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 6
+              }
             ]
           },
           "unit": "none"
@@ -3038,7 +2899,7 @@
     },
     {
       "type": "bargauge",
-      "id": 52,
+      "id": 44,
       "title": "Pending by medium",
       "description": "Pending media_approvals rows grouped by medium type",
       "datasource": {
@@ -3049,7 +2910,7 @@
         "h": 5,
         "w": 8,
         "x": 8,
-        "y": 155
+        "y": 159
       },
       "fieldConfig": {
         "defaults": {
@@ -3058,7 +2919,12 @@
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
@@ -3088,7 +2954,7 @@
     },
     {
       "type": "stat",
-      "id": 53,
+      "id": 45,
       "title": "Oldest pending",
       "description": "Age of the oldest pending media — surfaces stuck items (green <24h, yellow <7d, red ≥7d)",
       "datasource": {
@@ -3099,7 +2965,7 @@
         "h": 5,
         "w": 8,
         "x": 16,
-        "y": 155
+        "y": 159
       },
       "fieldConfig": {
         "defaults": {
@@ -3110,9 +2976,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 86400 },
-              { "color": "red", "value": 604800 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 86400
+              },
+              {
+                "color": "red",
+                "value": 604800
+              }
             ]
           },
           "unit": "s"
@@ -3147,7 +3022,7 @@
     },
     {
       "type": "stat",
-      "id": 54,
+      "id": 46,
       "title": "Page views (last 24h)",
       "description": "Page views from CF Analytics Engine landed in page_views by sync_cloudflare_analytics. Red at 0 means the Worker beacon or the sync job is broken (silent-failure detector — the same regression mode that ran 2026-04-09 → 2026-05-28).",
       "datasource": {
@@ -3158,7 +3033,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 160
+        "y": 164
       },
       "fieldConfig": {
         "defaults": {
@@ -3169,9 +3044,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "green", "value": 10 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
             ]
           },
           "unit": "short"
@@ -3205,40 +3089,505 @@
       ]
     },
     {
+      "id": 47,
+      "title": "media_approvals — approved (window)",
+      "type": "stat",
+      "description": "Approved media_approvals in the dashboard time window, filtered on decided_at.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 164
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Approved\" FROM media_approvals WHERE status='approved' AND $__timeFilter(decided_at);",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "title": "media_approvals — rejected by medium",
+      "type": "bargauge",
+      "description": "Rejected media_approvals grouped by medium (podcast / video / video_short) in the dashboard time window. Filtered on decided_at.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 164
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 15
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT medium AS metric, COUNT(*)::int AS value FROM media_approvals WHERE status='rejected' AND $__timeFilter(decided_at) GROUP BY medium ORDER BY value DESC;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "title": "Posts with shot list (window)",
+      "type": "stat",
+      "description": "Posts where the video director produced a non-null video_shot_list, filtered on posts.updated_at within the dashboard time window. PR #650.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 169
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"With shot list\" FROM posts WHERE video_shot_list IS NOT NULL AND $__timeFilter(updated_at);",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "title": "Director: shot list produced",
+      "type": "stat",
+      "description": "audit_log rows where event_type='video_director.shot_list_produced' in the dashboard time window. Emitted by services/stages/generate_video_shot_list.py once the video-shot-list stage runs.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 169
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Produced\" FROM audit_log WHERE event_type='video_director.shot_list_produced' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "title": "Director: shot list failed",
+      "type": "stat",
+      "description": "audit_log rows where event_type='video_director.shot_list_failed' in the dashboard time window. Any nonzero count is a regression signal.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 169
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM audit_log WHERE event_type='video_director.shot_list_failed' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "title": "Media auto-rejected by quality (window)",
+      "type": "stat",
+      "description": "media_approvals rows the Layer 1 quality gate auto-rejected (decided_by LIKE 'auto:layer1%'). PR #648 wired this gate to write quality_score on every decision.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 173
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "orange",
+                "value": 30
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Auto-rejected\" FROM media_approvals WHERE decided_by LIKE 'auto:layer1%' AND status='rejected' AND $__timeFilter(decided_at);",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 53,
+      "title": "Quality eval score by medium",
+      "type": "timeseries",
+      "description": "Per-medium quality_score from media_approvals over time. quality_evaluated_at drives the x-axis; one series per medium (podcast / video / video_short). PR #648.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 173
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "points",
+            "fillOpacity": 30,
+            "lineWidth": 1,
+            "axisPlacement": "auto",
+            "pointSize": 5,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT quality_evaluated_at AS time, medium AS metric, quality_score::float AS value FROM media_approvals WHERE quality_score IS NOT NULL AND $__timeFilter(quality_evaluated_at) ORDER BY 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Pipeline Throttle & Stale-Task Sweeper · Prometheus",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 184 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 177
+      },
       "panels": [],
-      "id": 199
+      "id": 54
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_pipeline_throttle_active — 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": { "color": "green", "text": "✓ flowing" },
-                "1": { "color": "red", "text": "⚠ THROTTLED" }
+                "0": {
+                  "color": "green",
+                  "text": "✓ flowing"
+                },
+                "1": {
+                  "color": "red",
+                  "text": "⚠ THROTTLED"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 185 },
-      "id": 200,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 178
+      },
+      "id": 55,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -3255,7 +3604,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_pipeline_throttle_active",
           "legendFormat": "throttle",
           "refId": "A"
@@ -3265,25 +3617,44 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_pipeline_throttle_queue_size — current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "orange", "value": 20 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "orange",
+                "value": 20
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 185 },
-      "id": 201,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 178
+      },
+      "id": 56,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3300,7 +3671,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_pipeline_throttle_queue_size",
           "legendFormat": "queue",
           "refId": "A"
@@ -3310,24 +3684,40 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_pipeline_throttle_seconds_total — cumulative seconds the pipeline has spent throttled by the approval queue. Defined as a Gauge (survives worker restarts) so it is shown as a raw cumulative value, NOT a rate.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 185 },
-      "id": 202,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 178
+      },
+      "id": 57,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -3344,7 +3734,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_pipeline_throttle_seconds_total",
           "legendFormat": "throttled",
           "refId": "A"
@@ -3354,24 +3747,40 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_pipeline_auto_cancelled_total — cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed → shown as a raw cumulative value.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 185 },
-      "id": 203,
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 178
+      },
+      "id": 58,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3388,7 +3797,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_pipeline_auto_cancelled_total",
           "legendFormat": "auto-cancelled",
           "refId": "A"
@@ -3398,11 +3810,16 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles — correlate with the 'Throttle state' tile above.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -3412,26 +3829,47 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineInterpolation": "stepAfter",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "auto",
             "spanNulls": true,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 189 },
-      "id": 204,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 182
+      },
+      "id": 59,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -3439,18 +3877,27 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
       },
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_pipeline_throttle_queue_size",
           "legendFormat": "queue size",
           "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_pipeline_throttle_queue_limit",
           "legendFormat": "queue limit",
           "refId": "B"
@@ -3463,16 +3910,26 @@
       "type": "row",
       "title": "Per-Stage Latency · Prometheus (requires worker rebuild)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 197 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 190
+      },
       "panels": [],
-      "id": 205
+      "id": 60
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "p95 execution latency per pipeline node, from the poindexter_pipeline_node_duration_seconds histogram (services/template_runner.py). Answers 'which of the canonical_blog stages is slow' — the writer/QA nodes should dominate. NOTE: this metric was added 2026-06-02 and only appears after the worker image is rebuilt/restarted and at least one pipeline run has executed; until then this reads 'No data'.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -3482,26 +3939,47 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "auto",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 198 },
-      "id": 206,
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 191
+      },
+      "id": 61,
       "options": {
         "legend": {
           "calcs": ["max", "mean"],
@@ -3509,12 +3987,18 @@
           "placement": "right",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum by (node, le) (rate(poindexter_pipeline_node_duration_seconds_bucket[$__rate_interval])))",
           "legendFormat": "{{node}}",
           "refId": "A"
@@ -3524,11 +4008,16 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "Node completions per minute split by terminal outcome (ok / halted / timeout / error), from the _count series of the node-duration histogram. A rising 'timeout'/'error' line points at the failing stage; correlate with the p95 panel. Same worker-rebuild dependency as the p95 panel.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -3538,26 +4027,47 @@
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "auto",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "cpm"
         }
       },
-      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 198 },
-      "id": 207,
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 191
+      },
+      "id": 62,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -3565,12 +4075,18 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
       },
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "sum by (outcome) (rate(poindexter_pipeline_node_duration_seconds_count[$__rate_interval])) * 60",
           "legendFormat": "{{outcome}}",
           "refId": "A"

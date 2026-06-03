@@ -100,7 +100,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail \u2014 this is a belt+suspenders sanity check.",
+      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail — this is a belt+suspenders sanity check.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -498,7 +498,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 6
+        "y": 5
       },
       "id": 8,
       "options": {
@@ -533,7 +533,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline \u2014 bump to 40% green once topic-discovery dedup (GH-101) ships.",
+      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline — bump to 40% green once topic-discovery dedup (GH-101) ships.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -570,7 +570,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 6
+        "y": 5
       },
       "id": 9,
       "options": {
@@ -638,7 +638,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 6
+        "y": 5
       },
       "id": 10,
       "options": {
@@ -673,7 +673,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung \u2014 see docs/operations/troubleshooting.md.",
+      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung — see docs/operations/troubleshooting.md.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -700,7 +700,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 6
+        "y": 5
       },
       "id": 11,
       "options": {
@@ -766,7 +766,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 12
+        "y": 10
       },
       "id": 12,
       "options": {
@@ -832,7 +832,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 12
+        "y": 10
       },
       "id": 13,
       "options": {
@@ -867,7 +867,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job \u2014 see GH-106.",
+      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job — see GH-106.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -897,10 +897,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 0,
-        "y": 18
+        "x": 12,
+        "y": 10
       },
-      "id": 16,
+      "id": 14,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -963,10 +963,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 6,
-        "y": 18
+        "x": 18,
+        "y": 10
       },
-      "id": 17,
+      "id": 15,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1029,10 +1029,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 12,
-        "y": 18
+        "x": 0,
+        "y": 15
       },
-      "id": 18,
+      "id": 16,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -1065,7 +1065,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "24h cost across cost_logs \u2014 electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
+      "description": "24h cost across cost_logs — electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1095,10 +1095,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 18,
-        "y": 18
+        "x": 6,
+        "y": 15
       },
-      "id": 19,
+      "id": 17,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1161,10 +1161,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 0,
-        "y": 24
+        "x": 12,
+        "y": 15
       },
-      "id": 20,
+      "id": 18,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1227,10 +1227,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 6,
-        "y": 24
+        "x": 18,
+        "y": 15
       },
-      "id": 21,
+      "id": 19,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1261,7 +1261,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 \u2014 any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1287,10 +1287,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 12,
-        "y": 24
+        "x": 0,
+        "y": 20
       },
-      "id": 22,
+      "id": 20,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -1323,7 +1323,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline \u2014 expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1353,10 +1353,10 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 18,
-        "y": 24
+        "x": 6,
+        "y": 20
       },
-      "id": 23,
+      "id": 21,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -1418,9 +1418,9 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 25
       },
-      "id": 24,
+      "id": 22,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1443,148 +1443,18 @@
           "refId": "A"
         }
       ],
-      "title": "Scheduled jobs \u2014 last run times",
+      "title": "Scheduled jobs — last run times",
       "type": "table"
     },
     {
-      "type": "row",
-      "title": "Infrastructure Detail (Postgres / Hardware / Audit / Data / Settings)",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 45
-      },
-      "panels": [],
-      "id": 25
-    },
-    {
-      "id": 39,
-      "title": "Prometheus GPU & System Metrics (Live)",
-      "type": "text",
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 78
-      },
-      "options": {
-        "content": "**Real-time metrics from nvidia-smi exporter + Poindexter worker.**",
-        "mode": "markdown"
-      }
-    },
-    {
-      "id": 40,
-      "title": "GPU Utilization & Temperature",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 80
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "nvidia_gpu_utilization_percent",
-          "legendFormat": "GPU Util %",
-          "refId": "A"
-        },
-        {
-          "expr": "nvidia_gpu_temperature_celsius",
-          "legendFormat": "Temp C",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Temp C"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "celsius"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 41,
-      "title": "VRAM Usage & Power Draw",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 80
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "targets": [
-        {
-          "expr": "nvidia_gpu_memory_used_mib",
-          "legendFormat": "VRAM Used (MiB)",
-          "refId": "A"
-        },
-        {
-          "expr": "nvidia_gpu_power_draw_watts",
-          "legendFormat": "Power (W)",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "MiB"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Power W"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "watt"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 42,
+      "id": 23,
       "title": "Pipeline & Worker Status",
       "type": "stat",
       "gridPos": {
         "h": 4,
         "w": 8,
-        "x": 16,
-        "y": 80
+        "x": 0,
+        "y": 35
       },
       "datasource": {
         "type": "prometheus",
@@ -1624,946 +1494,20 @@
       }
     },
     {
-      "id": 43,
-      "type": "gauge",
-      "title": "GPU Util %",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
+      "type": "row",
+      "title": "Audit Log · GlitchTip · Publish Queues",
+      "collapsed": false,
       "gridPos": {
-        "x": 0,
-        "y": 85,
-        "w": 6,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 100,
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "orange",
-                "value": 85
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT utilization FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 44,
-      "type": "gauge",
-      "title": "GPU Temp",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 85,
-        "w": 6,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 100,
-          "unit": "celsius",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "orange",
-                "value": 85
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT temperature FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 45,
-      "type": "gauge",
-      "title": "GPU Power",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 85,
-        "w": 6,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 600,
-          "unit": "watt",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 360
-              },
-              {
-                "color": "orange",
-                "value": 510
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT power_draw FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 46,
-      "type": "gauge",
-      "title": "VRAM %",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 85,
-        "w": 6,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 100,
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "orange",
-                "value": 85
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT ROUND(((memory_used/NULLIF(memory_total,0))*100)::numeric,1) FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 47,
-      "type": "gauge",
-      "title": "Wall Power (HX1500i)",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 90,
-        "w": 8,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 1500,
-          "unit": "watt",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 500
-              },
-              {
-                "color": "orange",
-                "value": 800
-              },
-              {
-                "color": "orange",
-                "value": 1200
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 48,
-      "type": "gauge",
-      "title": "DC Output (HX1500i)",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 90,
-        "w": 8,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 1500,
-          "unit": "watt",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 500
-              },
-              {
-                "color": "orange",
-                "value": 800
-              },
-              {
-                "color": "orange",
-                "value": 1200
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 49,
-      "type": "gauge",
-      "title": "CPU Package Power",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 90,
-        "w": 8,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 200,
-          "unit": "watt",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 100
-              },
-              {
-                "color": "orange",
-                "value": 150
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "system_cpu_package_power_watts",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 50,
-      "type": "timeseries",
-      "title": "Power Over Time",
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Mixed --"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 95,
+        "h": 1,
         "w": 24,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "Watts",
-            "fillOpacity": 20,
-            "lineWidth": 2,
-            "showPoints": "never"
-          },
-          "unit": "watt"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Wall Power"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "DC Output"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GPU"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CPU"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"Wall Power\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"DC Output\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "nvidia_gpu_power_draw_watts",
-          "legendFormat": "GPU",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "system_cpu_package_power_watts",
-          "legendFormat": "CPU",
-          "refId": "D"
-        }
-      ]
-    },
-    {
-      "id": 51,
-      "type": "timeseries",
-      "title": "Electricity Cost (EIA rate)",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
         "x": 0,
-        "y": 103,
-        "w": 12,
-        "h": 6
+        "y": 39
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "$/day",
-            "fillOpacity": 10,
-            "lineWidth": 2,
-            "showPoints": "never"
-          },
-          "unit": "currencyUSD",
-          "decimals": 2
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": ["mean", "lastNotNull"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, (metric_value / 1000.0 * 0.14 * 24)::float AS \"Est. Daily Cost\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "A"
-        }
-      ]
+      "panels": [],
+      "id": 24
     },
     {
-      "id": 52,
-      "type": "timeseries",
-      "title": "PSU Temperatures",
-      "description": "HX1500i internal temp from Corsair iCUE CSV. HWiNFO previously surfaced two PSU temps (VRM + Case); Corsair exposes only one, so the VRM line is what's shown \u2014 the trace label is kept for dashboard continuity.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 103,
-        "w": 12,
-        "h": 6
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "fillOpacity": 10,
-            "lineWidth": 2,
-            "showPoints": "never"
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PSU VRM"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PSU Case"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"PSU VRM\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_temp' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 53,
-      "type": "table",
-      "title": "Recent GPU Samples",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 125,
-        "w": 24,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT to_char(\"timestamp\",'HH24:MI') as sample_time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 20",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 54,
-      "type": "table",
-      "title": "Daily GPU Avg",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 133,
-        "w": 24,
-        "h": 7
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day',\"timestamp\")::date as day, ROUND(AVG(utilization)::numeric,1) as util, ROUND(AVG(temperature)::numeric,1) as temp, ROUND(AVG(power_draw)::numeric) as watts, COUNT(*) as samples FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 1 DESC",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 55,
-      "type": "stat",
-      "title": "Gaming",
-      "description": "Pipeline pauses automatically when external GPU workload (gaming) is detected",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 140,
-        "w": 6,
-        "h": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "text": "Clear",
-                  "color": "blue"
-                }
-              },
-              "type": "value"
-            },
-            {
-              "options": {
-                "1": {
-                  "text": "Gaming",
-                  "color": "orange"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "poindexter_gpu_gaming_detected",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 57,
-      "type": "timeseries",
-      "title": "Gaming Detection & Pipeline Status",
-      "description": "Shows when gaming pauses the pipeline vs active GPU usage",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 140,
-        "w": 12,
-        "h": 6
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "fillOpacity": 20
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Gaming"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GPU Busy"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GPU Util %"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              }
-            ]
-          }
-        ]
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "poindexter_gpu_gaming_detected",
-          "legendFormat": "Gaming",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "poindexter_gpu_busy",
-          "legendFormat": "GPU Busy",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "nvidia_gpu_utilization_percent",
-          "legendFormat": "GPU Util %",
-          "refId": "C"
-        }
-      ]
-    },
-    {
-      "id": 60,
+      "id": 25,
       "type": "stat",
       "title": "Events",
       "datasource": {
@@ -2571,10 +1515,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 152,
+        "h": 3,
         "w": 6,
-        "h": 3
+        "x": 0,
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -2612,7 +1556,7 @@
       ]
     },
     {
-      "id": 61,
+      "id": 26,
       "type": "stat",
       "title": "Errors",
       "datasource": {
@@ -2620,10 +1564,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 6,
-        "y": 152,
+        "h": 3,
         "w": 6,
-        "h": 3
+        "x": 6,
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -2661,7 +1605,7 @@
       ]
     },
     {
-      "id": 62,
+      "id": 27,
       "type": "stat",
       "title": "Sources",
       "datasource": {
@@ -2669,10 +1613,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 12,
-        "y": 152,
+        "h": 3,
         "w": 6,
-        "h": 3
+        "x": 12,
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -2710,7 +1654,7 @@
       ]
     },
     {
-      "id": 63,
+      "id": 28,
       "type": "stat",
       "title": "Tasks",
       "datasource": {
@@ -2718,10 +1662,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 18,
-        "y": 152,
+        "h": 3,
         "w": 6,
-        "h": 3
+        "x": 18,
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -2759,7 +1703,7 @@
       ]
     },
     {
-      "id": 64,
+      "id": 29,
       "type": "bargauge",
       "title": "By Severity",
       "datasource": {
@@ -2767,10 +1711,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 155,
+        "h": 5,
         "w": 8,
-        "h": 5
+        "x": 0,
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -2813,7 +1757,7 @@
       ]
     },
     {
-      "id": 65,
+      "id": 30,
       "type": "bargauge",
       "title": "By Source",
       "datasource": {
@@ -2821,10 +1765,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 8,
-        "y": 155,
+        "h": 5,
         "w": 8,
-        "h": 5
+        "x": 8,
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -2867,7 +1811,7 @@
       ]
     },
     {
-      "id": 66,
+      "id": 31,
       "type": "bargauge",
       "title": "By Event",
       "datasource": {
@@ -2875,10 +1819,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 16,
-        "y": 155,
+        "h": 5,
         "w": 8,
-        "h": 5
+        "x": 16,
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -2981,12 +1925,12 @@
         ]
       },
       "gridPos": {
-        "x": 0,
-        "y": 178,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 48
       },
-      "id": 69,
+      "id": 32,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -3009,7 +1953,7 @@
       "type": "table"
     },
     {
-      "id": 70,
+      "id": 33,
       "type": "stat",
       "title": "GT open",
       "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
@@ -3045,8 +1989,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 0,
-        "y": 29
+        "x": 12,
+        "y": 48
       },
       "options": {
         "colorMode": "background",
@@ -3074,7 +2018,7 @@
       ]
     },
     {
-      "id": 71,
+      "id": 34,
       "type": "stat",
       "title": "GT alerted",
       "description": "Novel high-count issues paged via notify_operator() on the last triage cycle. Non-zero = a new recurring error worth investigating.",
@@ -3110,8 +2054,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 6,
-        "y": 29
+        "x": 18,
+        "y": 48
       },
       "options": {
         "colorMode": "background",
@@ -3139,10 +2083,10 @@
       ]
     },
     {
-      "id": 72,
+      "id": 35,
       "type": "stat",
       "title": "GT resolved",
-      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing \u2014 operator's noise rules absorbing known-flapping issues.",
+      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing — operator's noise rules absorbing known-flapping issues.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -3167,8 +2111,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 12,
-        "y": 29
+        "x": 0,
+        "y": 56
       },
       "options": {
         "colorMode": "background",
@@ -3196,10 +2140,10 @@
       ]
     },
     {
-      "id": 73,
+      "id": 36,
       "type": "stat",
       "title": "GT probe",
-      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating \u2014 check `docker logs poindexter-brain`.",
+      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating — check `docker logs poindexter-brain`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -3232,8 +2176,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 18,
-        "y": 29
+        "x": 6,
+        "y": 56
       },
       "options": {
         "colorMode": "background",
@@ -3261,7 +2205,7 @@
       ]
     },
     {
-      "id": 74,
+      "id": 37,
       "type": "stat",
       "title": "Sched depth",
       "description": "Count of posts queued for future publish. Populated by `poindexter schedule batch ...` or `poindexter publish-at <id> <when>`. Zero is fine if the operator publishes manually; non-zero means the scheduled_publisher daemon will fire them at published_at.",
@@ -3297,8 +2241,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 0,
-        "y": 110
+        "x": 12,
+        "y": 56
       },
       "options": {
         "colorMode": "background",
@@ -3326,7 +2270,7 @@
       ]
     },
     {
-      "id": 75,
+      "id": 38,
       "type": "stat",
       "title": "Next slot in",
       "description": "Seconds until the next scheduled publish fires. Decreases monotonically until the slot hits; then jumps to the next slot in the queue. NULL means the queue is empty.",
@@ -3354,8 +2298,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 6,
-        "y": 110
+        "x": 18,
+        "y": 56
       },
       "options": {
         "colorMode": "background",
@@ -3383,7 +2327,7 @@
       ]
     },
     {
-      "id": 76,
+      "id": 39,
       "type": "stat",
       "title": "Sched overdue",
       "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 — the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
@@ -3415,8 +2359,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 12,
-        "y": 110
+        "x": 0,
+        "y": 61
       },
       "options": {
         "colorMode": "background",
@@ -3444,7 +2388,7 @@
       ]
     },
     {
-      "id": 77,
+      "id": 40,
       "type": "table",
       "title": "Upcoming scheduled publishes (next 24h)",
       "description": "Posts queued to publish within the next 24 hours. Empty when the queue is dry. Pin to the dashboard playlist so operators can see at a glance what's coming up.",
@@ -3479,7 +2423,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 115
+        "y": 66
       },
       "options": {
         "cellHeight": "sm",
@@ -3505,7 +2449,7 @@
       ]
     },
     {
-      "id": 78,
+      "id": 41,
       "type": "stat",
       "title": "Approved q",
       "description": "Count of pipeline_tasks in 'approved' status — posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) — these will not publish themselves. See the 'Approved — awaiting publish' table below for the per-task detail.",
@@ -3541,8 +2485,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 18,
-        "y": 110
+        "x": 0,
+        "y": 76
       },
       "options": {
         "colorMode": "background",
@@ -3570,7 +2514,7 @@
       ]
     },
     {
-      "id": 79,
+      "id": 42,
       "type": "table",
       "title": "Approved — awaiting publish",
       "description": "Tasks the operator has approved (pipeline_tasks.status='approved') that have not yet been published. The post-approval, pre-publish queue — distinct from the awaiting_approval review queue surfaced elsewhere. Empty when nothing is waiting. Each row stays here until published (`poindexter publish <task>` / go-live), after which media generation runs via the 4h backfill jobs. Ordered most-recently-approved first.",
@@ -3605,7 +2549,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 125
+        "y": 81
       },
       "options": {
         "cellHeight": "sm",
@@ -3634,38 +2578,65 @@
       "type": "row",
       "title": "Exporter Signals — LLM Engine · Embeddings · Schema · Brain · Prometheus",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 186 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 91
+      },
       "panels": [],
-      "id": 199
+      "id": 43
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_ollama_reachable — 1 if Ollama /api/tags returned 200 on the last scrape. Ollama is the local LLM engine the whole pipeline runs on, yet it had no health tile anywhere until now.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
-                "0": { "color": "red", "text": "✗ DOWN" },
-                "1": { "color": "green", "text": "✓ up" }
+                "0": {
+                  "color": "red",
+                  "text": "✗ DOWN"
+                },
+                "1": {
+                  "color": "green",
+                  "text": "✓ up"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           },
           "noValue": "no scrape",
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 187 },
-      "id": 200,
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 92
+      },
+      "id": 44,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -3682,7 +2653,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_ollama_reachable",
           "legendFormat": "ollama",
           "refId": "A"
@@ -3692,25 +2666,41 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_ollama_model_count — number of models Ollama reports. 0 while reachable=1 is the 'up but no models pulled' failure the plain up-check misses — every generation would fail with that state.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           },
           "noValue": "no scrape",
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 187 },
-      "id": 201,
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 92
+      },
+      "id": 45,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -3727,7 +2717,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_ollama_model_count",
           "legendFormat": "models",
           "refId": "A"
@@ -3737,30 +2730,54 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_embeddings_missing_posts — published posts with no embeddings row. Catches 'new posts stopped getting embedded' even when overall embedding throughput looks fine. 0 is healthy; any positive value means RAG/search coverage is silently degrading.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
-              "options": { "0": { "color": "green", "text": "✓ 0" } }
+              "options": {
+                "0": {
+                  "color": "green",
+                  "text": "✓ 0"
+                }
+              }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 187 },
-      "id": 202,
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 92
+      },
+      "id": 46,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3777,7 +2794,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_embeddings_missing_posts",
           "legendFormat": "missing",
           "refId": "A"
@@ -3787,29 +2807,50 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "poindexter_unapplied_migrations_count — migration .py files on disk not yet recorded in schema_migrations. >0 means the running worker is on a stale schema (container updated, process not restarted). Surfaced by /api/health but never on a dashboard until now.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
-              "options": { "0": { "color": "green", "text": "✓ current" } }
+              "options": {
+                "0": {
+                  "color": "green",
+                  "text": "✓ current"
+                }
+              }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 15, "y": 187 },
-      "id": 203,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 15,
+        "y": 92
+      },
+      "id": 47,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -3826,7 +2867,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "poindexter_unapplied_migrations_count",
           "legendFormat": "unapplied",
           "refId": "A"
@@ -3836,26 +2880,45 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
       "description": "Age of the most recent brain.cycle_heartbeat (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds). The brain writes one heartbeat per ~5-min cycle; this is the delivery-plane dead-man's switch. 'No data' or red (>15m) means the brain has stopped — the same condition the BrainDeliveryDeadMansSwitch alert fires on, now visible on the dashboard.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 300 },
-              { "color": "red", "value": 900 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
             ]
           },
           "noValue": "stale / absent",
           "unit": "s"
         }
       },
-      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 187 },
-      "id": 204,
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 92
+      },
+      "id": 48,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -3872,7 +2935,10 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "time() - poindexter_brain_cycle_heartbeat_timestamp_seconds",
           "legendFormat": "heartbeat age",
           "refId": "A"
