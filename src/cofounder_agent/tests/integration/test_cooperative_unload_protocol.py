@@ -21,6 +21,7 @@ Why this lives here, not under tests/unit:
 """
 from __future__ import annotations
 
+import functools
 import os
 
 import httpx
@@ -29,11 +30,17 @@ import pytest
 from services.gpu_scheduler import GPUScheduler
 from services.site_config import SiteConfig
 
-
 _WAN_URL = os.environ.get("WAN_SERVER_URL", "http://localhost:9840")
 
 
+@functools.lru_cache(maxsize=1)
 def _wan_reachable() -> bool:
+    """Synchronous reachability check, cached so it runs at most once.
+
+    Called by the ``_require_wan`` autouse fixture at test *setup*
+    (not import) time, so pytest collection makes no network call
+    (#1057, sibling of #994).
+    """
     try:
         with httpx.Client(timeout=2.0) as client:
             resp = client.get(f"{_WAN_URL}/health")
@@ -42,10 +49,23 @@ def _wan_reachable() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _wan_reachable(),
-    reason="wan-server not reachable at %s" % _WAN_URL,
-)
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def _require_wan() -> None:
+    """Skip every test in this module unless wan-server is reachable.
+
+    Replaces the former module-level ``skipif(not _wan_reachable())``,
+    which probed the sidecar at *import* time — so merely collecting this
+    file (e.g. a CI `pytest tests/integration/` sweep) hit
+    ``{_WAN_URL}/health``. A fixture defers the probe to test setup,
+    keeping collection offline while preserving the "skip the whole
+    module when the wan-server is unreachable" behaviour. The probe is
+    cached, so it fires at most once per session.
+    """
+    if not _wan_reachable():
+        pytest.skip(f"wan-server not reachable at {_WAN_URL}")
 
 
 @pytest.mark.asyncio
