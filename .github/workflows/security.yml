@@ -24,6 +24,81 @@ permissions:
   security-events: write
 
 jobs:
+  # Path-classifier (Glad-Labs/glad-labs-stack CI-minutes sweep). The four
+  # file-specific lint jobs below (trivy-config / action-pins /
+  # shell-line-endings / poetry-lock) only need to run when their inputs
+  # change — gating them on this output skips up to 4 of the 7 jobs on a
+  # typical backend-only PR (each job otherwise bills a rounded-up minute
+  # of runner spin-up). Security is NOT a branch-protection-required check,
+  # so a skipped job blocks nothing.
+  #
+  # gitleaks / trivy-fs / sbom stay UNGATED — a secret or vulnerable dep can
+  # land in any file, so those always run. On the weekly baseline scan and
+  # manual dispatch, every job runs regardless (the `|| schedule ||
+  # workflow_dispatch` escape on each gated `if:`), so the comprehensive
+  # scan is never narrowed by path classification.
+  changes:
+    name: classify changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      workflows: ${{ steps.classify.outputs.workflows }}
+      shell: ${{ steps.classify.outputs.shell }}
+      pylock: ${{ steps.classify.outputs.pylock }}
+      docker: ${{ steps.classify.outputs.docker }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
+        with:
+          # >=2 so `git diff` against the parent works on push; PRs use the
+          # virtual merge commit's HEAD^1 (current main's tip).
+          fetch-depth: 2
+      # Pure git-diff path classifier — NO third-party action on purpose.
+      # This repo's Actions allowlist permits only github-owned + verified-
+      # creator actions plus an explicit pattern list (see
+      # docs/operations/ci-deploy-chain.md), so dorny/paths-filter etc. fail
+      # at startup. Mirrors the detect-changes step in unit-tests.yml.
+      - name: Classify changed paths
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+
+          # Resolve the diff base. PR events check out a virtual merge commit
+          # (HEAD^1 = main's tip); push events diff against the parent.
+          if [ "$EVENT" = "pull_request" ]; then
+            if git cat-file -e "HEAD^1" 2>/dev/null; then
+              base="$(git rev-parse HEAD^1)"
+            else
+              base="${PR_BASE:-}"
+            fi
+          else
+            base="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+
+          # Fetch the base if the shallow checkout didn't include it.
+          if [ -n "${base:-}" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$base" 2>/dev/null || true
+          fi
+
+          if [ -n "${base:-}" ] && git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            changed="$(git diff --name-only "$base" HEAD)"
+          else
+            # Unknown base (initial push / fetch failure) — fail OPEN: treat
+            # everything as changed so no scan is silently skipped.
+            changed="$(git ls-files)"
+          fi
+          echo "Changed files vs ${base:-<none>}:"
+          echo "$changed" | sed 's/^/  /'
+
+          emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; echo "  -> $1=$2"; }
+          # A broad match here only ever over-runs a scan (safe); the risk to
+          # avoid is under-running, so patterns lean inclusive.
+          if echo "$changed" | grep -qE '^\.github/workflows/'; then emit workflows true; else emit workflows false; fi
+          if echo "$changed" | grep -qE '\.(sh|bash)$'; then emit shell true; else emit shell false; fi
+          if echo "$changed" | grep -qE '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$'; then emit pylock true; else emit pylock false; fi
+          if echo "$changed" | grep -qiE 'dockerfile|docker-compose|(^|/)compose\.ya?ml$|^infrastructure/'; then emit docker true; else emit docker false; fi
+
   gitleaks:
     name: gitleaks — secret scan
     runs-on: ubuntu-latest
@@ -120,6 +195,10 @@ jobs:
   trivy-config:
     name: Trivy — Dockerfile + IaC config
     runs-on: ubuntu-latest
+    needs: changes
+    # Only when Dockerfiles / compose / IaC change (or the comprehensive
+    # weekly + manual scans). CI-minutes sweep.
+    if: ${{ needs.changes.outputs.docker == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
       - name: Scan Dockerfiles / compose for misconfig
@@ -143,6 +222,9 @@ jobs:
   action-pins:
     name: Lint third-party Actions for SHA pins
     runs-on: ubuntu-latest
+    needs: changes
+    # Only when workflow files change (or the comprehensive scans). CI-minutes sweep.
+    if: ${{ needs.changes.outputs.workflows == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     # Defends against the floating-tag supply-chain vector.
     # Fails the build if any `uses:` in .github/workflows/ points at a
     # tag/branch instead of a 40-char commit SHA. Pure-stdlib script —
@@ -155,6 +237,9 @@ jobs:
   shell-line-endings:
     name: Lint shell scripts for LF line endings
     runs-on: ubuntu-latest
+    needs: changes
+    # Only when shell scripts change (or the comprehensive scans). CI-minutes sweep.
+    if: ${{ needs.changes.outputs.shell == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     # Regression gate for the DbBackupJob `set: pipefail: invalid opt`
     # crash. ``.gitattributes`` normalizes ``*.sh`` to ``eol=lf`` on
     # fresh checkouts, but a contributor on Windows can re-introduce
@@ -171,6 +256,9 @@ jobs:
   poetry-lock:
     name: poetry check --lock (src/cofounder_agent)
     runs-on: ubuntu-latest
+    needs: changes
+    # Only when pyproject.toml / poetry.lock change (or the comprehensive scans). CI-minutes sweep.
+    if: ${{ needs.changes.outputs.pylock == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     # GH#180 defense-in-depth — the same check runs locally as a pre-commit
     # hook (.pre-commit-config.yaml) AND in the test workflow on Gitea
     # (.gitea/workflows/ci.yml). Mirroring it here protects the public

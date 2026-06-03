@@ -1,9 +1,23 @@
 name: Release Please
 
 on:
-    push:
-        branches:
-            - main
+    # CI-minutes throttle (Glad-Labs/glad-labs-stack CI-minutes sweep):
+    # this used to fire `on: push: [main]` and auto-merge its own PR, so
+    # EVERY feat:/fix: merge cut a release — which is itself a push to main
+    # that re-ran the full CI suite AND re-triggered this workflow. That
+    # 3x-amplified the run count (0.70.3 -> 0.70.7 in a single workday).
+    #
+    # release-please always computes the next version from ALL unreleased
+    # conventional commits, so running once a day batches the day's work
+    # into a single release instead of one-per-merge. No correctness loss —
+    # just fewer release commits hitting main. Use `workflow_dispatch` to
+    # cut an ad-hoc release immediately (e.g. before a deploy you want
+    # tagged now).
+    schedule:
+        # 08:00 UTC daily — after the nightly scheduled-agent window, in a
+        # low-contention slot away from the docs-bot crons (06:13 / 06:17).
+        - cron: "0 8 * * *"
+    workflow_dispatch:
 
 permissions:
     contents: write

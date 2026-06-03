@@ -31,10 +31,31 @@
 name: playwright-e2e
 
 on:
+  # This job is NOT a branch-protection-required check (only `test-backend`
+  # and `migrations-smoke` are), so a `paths:` filter is safe here — a PR
+  # that doesn't touch the frontend simply never queues this workflow and
+  # nothing waits on it. (Required checks can't be path-filtered — they'd
+  # never report and block the PR forever; those gate their *steps* instead.
+  # See unit-tests.yml.) The frontend-only specs only exercise the
+  # statically-served Next.js site, so a backend/docs/infra-only change has
+  # zero chance of regressing them — skipping the ~Chromium-build run for
+  # those is free savings. Glad-Labs/glad-labs-stack CI-minutes sweep.
   push:
     branches: [main]
+    paths:
+      - 'web/public-site/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/playwright-e2e.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'web/public-site/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/playwright-e2e.yml'
   workflow_dispatch:
 
 concurrency:

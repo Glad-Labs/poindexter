@@ -103,8 +103,15 @@ decorators in `test_database_service.py` and
 - `scripts/sync-to-github.sh` — filter that runs inside the sync
   workflow. Strips operator-only files before pushing the public
   subset.
-- `.github/workflows/release-please.yml` — Release Please on the
-  public poindexter repo. Versioning only.
+- `.github/workflows/release-please.yml` — Release Please on
+  `Glad-Labs/glad-labs-stack` (the source repo — NOT the public
+  mirror; running it on the force-rebuilt mirror broke versioning,
+  see the workflow header). Versioning only. **Runs daily at 08:00
+  UTC** (was `on: push` to main) so a day's `feat:`/`fix:` commits
+  batch into one release instead of one-per-merge — the per-merge
+  cadence 3×-amplified Actions-minute usage (each release commit
+  re-ran the full suite AND re-triggered this workflow).
+  `workflow_dispatch` cuts an ad-hoc release immediately.
 - `.github/workflows/regen-app-settings-doc.yml` — nightly regen of
   `docs/reference/app-settings.md` against a clean Postgres seeded
   by the baseline migration. Opens a single PR on
@@ -116,6 +123,41 @@ decorators in `test_database_service.py` and
 - `web/public-site/next.config.js` — has a `validateEnv` check that
   rejects localhost URLs in production. `SKIP_ENV_VALIDATION=true`
   bypasses for local dev.
+
+## CI minutes / cost discipline
+
+Actions minutes are billable on this private repo, and a high PR +
+push-to-main volume (nightly scheduled agents, release commits, docs
+bots, dependabot) multiplies fast. The rules that keep the bill down:
+
+- **Only `test-backend` and `migrations-smoke` are branch-protection
+  required checks.** Required checks can't be `paths:`-filtered — a
+  skipped required check never reports, so it would block the PR
+  forever; they keep firing and gate their _expensive steps_ instead
+  (see the `detect-changes` step in `unit-tests.yml`). Every other
+  workflow is non-required and is `paths:`-filtered freely.
+- **`playwright-e2e` is `paths:`-gated** to `web/public-site/**` +
+  the playwright config + root `package*.json`. A backend/docs/infra
+  change skips the Chromium build entirely (those specs only exercise
+  the static Next.js site, so they can't regress on a backend change).
+- **`security.yml` classifies changed paths first** (the `changes`
+  job), then runs only the relevant file-specific jobs (`trivy-config`
+  / `action-pins` / `shell-line-endings` / `poetry-lock`). `gitleaks`
+  / `trivy-fs` / `sbom` always run — a secret or CVE can land in any
+  file. The weekly baseline + manual `workflow_dispatch` scans run
+  every job regardless.
+- **`grafana-panels-lint` is `paths:`-gated** to
+  `infrastructure/grafana/**` + the lint script + migrations — the
+  model the others copy.
+- **Release Please batches daily** rather than per-merge (see Key
+  files above).
+- **Deferred:** a GitHub **merge queue** (would run the heavy suite
+  once at merge instead of PR-then-post-merge-on-main) is intentionally
+  NOT adopted yet — a merge queue amplifies flaky failures (an evicted
+  entry rebuilds everything behind it), so it waits until the unit
+  suite is reliably green. **CodeQL** is moving to advanced setup
+  (PR + weekly schedule, `paths-ignore` for docs/infra) to drop its
+  per-push-to-main scan — tracked as the fast-follow to this sweep.
 
 ## The public release repo is separate
 
