@@ -160,7 +160,6 @@ _REQUIRED_APP_SETTINGS_KEYS = (
     # 20260528_223439_seed_cloudflare_analytics_beacon_keys.py
     "cloudflare_analytics_api_token",
     "cloudflare_analytics_last_sync",
-    "cloudflare_beacon_url",
 )
 
 
