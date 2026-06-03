@@ -2,14 +2,14 @@ r"""Sync the source-truth stats in CLAUDE.md to current repo state.
 
 Stats CLAUDE.md carries fall in two buckets:
 
-1. **Source-truth** — derivable from the checked-in repo alone (file
-   counts, migration counts, dashboard counts, test counts, latest
-   migration name). These drift the moment any of those land. This
-   script updates them in place.
+1. **Source-truth** — derivable from the checked-in repo alone (service
+   + test file counts, dashboard count). These drift the moment any of
+   those land. This script updates them in place.
 2. **DB-derived** — only visible from the live production database
    (post counts, embeddings totals, pipeline_tasks lifetime totals,
-   app_settings totals). Out of scope here — needs a brain-side probe
-   that has DB access.
+   app_settings totals). Out of scope here — owned by the companion
+   ``sync_claude_md_db_stats.py``, which runs locally (where a DSN
+   resolves) and is invoked by the daily ``claude-md-sync`` session.
 
 Idempotent: re-running on already-fresh state produces zero changes.
 Diff-only mode (``--check``) exits non-zero if drift would happen,
@@ -53,9 +53,9 @@ def collect_stats() -> OrderedDict[str, int | str]:
     return OrderedDict([
         ("service_py_files", len(list(services_dir.rglob("*.py")))),
         ("test_files", len(test_files)),
-        ("migration_files", _glob_count(
-            "src/cofounder_agent/services/migrations/*.py",
-        )),
+        # No migration count: CLAUDE.md carries no "N migration files" claim
+        # to sync, and the "Latest as of …: <file>.py" line needs narrative
+        # reasoning (handled by the claude-md-sync session, not regex).
         ("grafana_dashboards", _glob_count(
             "infrastructure/grafana/dashboards/*.json",
         )),

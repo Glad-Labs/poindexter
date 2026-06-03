@@ -115,6 +115,14 @@ $Sessions = @{
         Days = "MON"
         MaxMinutes = 30
     }
+    "claude-md-sync" = @{
+        Prompt = "You are running autonomously in a dedicated worktree. GOAL: keep CLAUDE.md's DB-derived counts and migration narrative in sync with prod (the deterministic numbers + the LLM-judgment prose that the CI sync-claude-md.yml Action does NOT handle). STEP 1 (deterministic numbers): run the DB-count sync that lives in YOUR worktree, but through the MAIN checkout's poetry env - a fresh worktree venv lacks the asyncpg driver, and the script edits YOUR worktree's CLAUDE.md in place via its own __file__ path regardless of which env runs it. Run: cd C:\Users\mattm\glad-labs-website\src\cofounder_agent ; poetry run python YOUR_WORKTREE_PATH\scripts\sync_claude_md_db_stats.py  (substitute YOUR_WORKTREE_PATH with the worktree dir from the preamble above; PowerShell 5.1 has no '&&', use ';'). It prints which counts changed (live/total posts, pipeline_tasks, app_settings, embeddings). Do NOT recompute repo file-stat counts (service .py / test files / dashboards) - sync-claude-md.yml owns those; touching them here double-counts. STEP 2 (narrative, LLM judgment): cd back into your worktree, then compare the 'Latest as of YYYY-MM-DD:' migration line in CLAUDE.md against the newest timestamped file(s) under src/cofounder_agent/services/migrations/ - if a newer migration has landed, update that line (filename + a one-clause description of what it does, read from the file). Only change what you can verify from the repo; do NOT speculatively rewrite architecture prose. STEP 3: if neither step changed CLAUDE.md, exit with no commit. Otherwise commit on the current branch with 'git commit --no-verify' (REQUIRED - the pre-commit prettier hook mangles CLAUDE.md prose containing '*' glob tokens and the eslint hook is broken repo-wide), push via git push -u origin HEAD, then gh pr create --repo Glad-Labs/glad-labs-stack --base main --title 'docs(CLAUDE.md): sync DB-derived counts + migration narrative (auto)'. Do NOT push to main, do NOT merge. Keep output minimal."
+        Cron = "30 2 * * *"
+        TimeHH = "02"
+        TimeMM = "30"
+        Days = "daily"
+        MaxMinutes = 20
+    }
 }
 
 function Run-Session {

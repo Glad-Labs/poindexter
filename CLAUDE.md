@@ -61,7 +61,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Key Numbers (as of May 27, 2026)
 
-- 78 live posts on gladlabs.io (222 posts total; 1,626 pipeline_tasks across all generation runs)
+- 92 live posts on gladlabs.io (259 posts total; 1,653 pipeline_tasks across all generation runs)
 - 321 Python files under `src/cofounder_agent/services/` (~298 substantive after migrations + `__init__.py` stubs; down from ~455 after the 2026-05-08+09+16 cleanup passes). The "load-bearing services" table below covers the services on a critical execution path — `flows/content_generation.py`, `worker_service.py`, and `auto_publish_gate.py` were missing from prior versions of the table.
 - **2026-05-09 deletion**: the entire workflow_executor chain — `workflow_executor.py` + `custom_workflows_service.py` + `template_execution_service.py` + `workflow_validator.py` + `phase_mapper.py` + `phase_registry.py` + `workflow_progress_service.py` + `phases/` tree + `schemas/custom_workflow_schemas.py` + the `agents/` tree — all removed (~3,800 LOC).
 - **2026-05-16 deletion**: `services/task_executor.py` (~1,500 LOC) — the legacy polling daemon, replaced by `services/flows/content_generation.py` (Prefect) per Glad-Labs/poindexter#410 Stage 4. The `_notify_discord` / `_notify_alert` helpers + `_auto_publish_task` / `_get_auto_publish_threshold` methods were ported to `services/integrations/operator_notify.py` and `services/auto_publish.py` respectively.
@@ -71,10 +71,10 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 - **Migration files** — `0000_baseline.py` (the squashed history) plus the post-baseline migrations under `services/migrations/`. Latest as of 2026-06-02: the atom-cutover (#355) trio — `20260602_010711_create_atom_runs_table.py` (new `atom_runs` capture table; seeds `atom_runs_capture_enabled=true`), `20260602_023250_seed_canonical_blog_graph_def.py` (seeds `CANONICAL_BLOG_GRAPH_DEF` into `pipeline_templates.graph_def`), and `20260602_034251_flip_pipeline_use_graph_def_to_true.py` (flips the prod cutover flag). Before that, the 2026-05-10 batch: `20260510_065631_drop_experiments_tables.py` (closes #202 — A/B harness moved from SQL tables to Langfuse Datasets/Traces/Scores, `services/langfuse_experiments.py` is the new home; legacy `services/experiment_service.py` deleted). Preceded by `20260510_044707_seed_default_template_slug.py` (Lane C cutover seam) and `20260510_040315_seed_rag_engine_master_switch.py` (Lane D #329 sub-issue 4). Lane D landed 4/4 sub-issues over 2026-05-09 → 2026-05-10: DeepEval / Ragas / Guardrails / LlamaIndex. The 169 historical migrations were squashed 2026-05-08 — see `services/migrations/0000_baseline.py` for the rationale. New schema changes still go in fresh `YYYYMMDD_HHMMSS*<slug>.py`files; the runner sorts`0000_baseline.py`first because`0`<`2` lexically.
 - 10 Grafana dashboards (Mission Control / Pipeline / Auto-Publish Gate / Cost / Observability / System Health / Integrations / QA Rails / Findings / Revenue), 16 Prometheus alert rules across 6 groups + 15 Grafana-managed rules; Pyroscope app-profiles ship from worker/brain/voice agents under `service_name` tags (poindexter#406). Of the 16 Prometheus rules, 7 are static repo rules in `infrastructure/prometheus/alerts/*.yml` (3 groups); the remaining 9 (`poindexter-business` / `poindexter-content` / `poindexter-infra`) are DB-sourced, rendered into `rules/*.yml` by `RenderPrometheusRulesJob` every 5 min — so the live count is the repo files plus whatever the DB currently seeds.
 - 8,748 Python unit tests across ~457 test files (some skipped in container due to host/container path-depth quirks at `Path(__file__).parents[5]` — works on host; collection picks up ~21 errors as of 2026-05-27, tracked for cleanup)
-- 801 app_settings keys (60 secret) plus 4 cost_tier mappings (`cost_tier.{free,budget,standard,premium}.model`) wired 2026-05-09 — the baseline seeds the non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml. (Cost-guard key rename 2026-05-27 closed a silent fallthrough on `daily_spend_limit_usd` / `monthly_spend_limit_usd` — see #598.)
+- 888 app_settings keys (62 secret) plus 4 cost_tier mappings (`cost_tier.{free,budget,standard,premium}.model`) wired 2026-05-09 — the baseline seeds the non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml. (Cost-guard key rename 2026-05-27 closed a silent fallthrough on `daily_spend_limit_usd` / `monthly_spend_limit_usd` — see #598.)
 - PluginScheduler boots 39 jobs (taps + retention + memory hygiene + content surfaces) — see `plugins/registry.py:_SAMPLES`
 - 5 declarative-data-plane tables (`external_taps` / `retention_policies` / `webhook_endpoints` / `publishing_adapters` / `qa_gates`) feeding the integrations handler registry's 14 handlers across 5 surfaces (`tap` / `retention` / `webhook` / `outbound` / `publishing`)
-- 40,497 embeddings across posts / issues / audit / memory / brain / claude_sessions
+- 14,675 embeddings across posts / issues / audit / memory / brain / claude_sessions
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
@@ -354,7 +354,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 
 ## Scheduled agents (Windows Task Scheduler)
 
-Eight autonomous Claude Code sessions run on Matt's PC via Windows Task
+Nine autonomous Claude Code sessions run on Matt's PC via Windows Task
 Scheduler, defined in `scripts/claude-sessions.ps1` (register/list/remove with
 `.\claude-sessions.ps1 -Install | -List | -Uninstall`). Each runs in an
 isolated git worktree off the latest `origin/main`, makes changes on a branch,
@@ -374,6 +374,7 @@ poindexter, business/internal → glad-labs-stack). Per-session model is set in 
 | `dependency-review` | daily 06:30  | sonnet-4-6 | auto-merges green patch-bump dependabot PRs          |
 | `doc-sync`          | Fri 05:00    | sonnet-4-6 | verifies CLAUDE.md file references resolve           |
 | `triage-sweep`      | Mon 07:00    | sonnet-4-6 | applies derivable labels + surfaces triage proposals |
+| `claude-md-sync`    | daily 02:30  | sonnet-4-6 | syncs CLAUDE.md DB-derived counts + migration narrative |
 
 ## Database migrations
 
