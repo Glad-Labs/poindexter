@@ -258,3 +258,91 @@ async def test_happy_path_first_turn_no_collision(monkeypatch):
     assert len(recorder.calls) == 1
     assert "--session-id" in recorder.calls[0]
     assert svc._first_turn is False
+
+
+# ---------------------------------------------------------------------------
+# The mirror of #431 — #1006: --resume hits a session with no JSONL on disk.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_missing_session_creates_with_session_id(monkeypatch):
+    """A pinned ``--resume`` against a UUID with no JSONL on disk — a
+    freshly-minted pinned id on first deploy (run_bot persisted it but never
+    created it), or a pinned id whose JSONL was pruned — fails with 'No
+    conversation found' → the bridge flips to ``--session-id`` to CREATE that
+    same id and returns the second call's result. The pin stays stable
+    (#1006). Without this, the always-on bot would fail every turn on its
+    first deploy."""
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    success_payload = b'{"type":"result","result":"fresh session ready"}'
+    recorder = _SpawnRecorder(
+        [
+            (1, b"", b"No conversation found with session ID: pinned-1"),
+            (0, success_payload, b""),
+        ],
+    )
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", recorder)
+
+    # A provided session_id starts the service in RESUME mode (first_turn False).
+    svc = vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id="pinned-1")
+    assert svc._first_turn is False
+
+    reply = await svc._run_claude("hi")
+
+    assert reply == "fresh session ready"
+    assert len(recorder.calls) == 2
+    # First call tried --resume on the missing session.
+    assert "--resume" in recorder.calls[0]
+    assert "--session-id" not in recorder.calls[0]
+    # Recovery CREATED it with --session-id on the SAME pinned id.
+    assert "--session-id" in recorder.calls[1]
+    assert "--resume" not in recorder.calls[1]
+    assert recorder.calls[1][recorder.calls[1].index("--session-id") + 1] == "pinned-1"
+    # The pinned id is unchanged — continuity resumes from this turn onward.
+    assert svc._session_id == "pinned-1"
+
+
+@pytest.mark.asyncio
+async def test_resume_missing_session_does_not_loop_if_create_also_fails(monkeypatch):
+    """The create-recovery is attempted at most once. If the --session-id
+    create ALSO fails (here with 'already in use', which would otherwise
+    trigger the #431 resume-recovery), the _recovered guard stops the
+    ping-pong and the error surfaces — exactly two subprocess calls, no loop."""
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    recorder = _SpawnRecorder(
+        [
+            (1, b"", b"No conversation found with session ID: pinned-1"),
+            (1, b"", b"Error: Session ID pinned-1 is already in use."),
+        ],
+    )
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", recorder)
+
+    svc = vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id="pinned-1")
+
+    with pytest.raises(RuntimeError, match="already in use"):
+        await svc._run_claude("hi")
+
+    assert len(recorder.calls) == 2  # original resume + one recovery, then stop
+
+
+@pytest.mark.asyncio
+async def test_resume_other_failure_still_raises(monkeypatch):
+    """A --resume failure that is NOT 'no conversation found' must not
+    trigger the create-recovery — that path is reserved for the missing-JSONL
+    case."""
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    recorder = _SpawnRecorder(
+        [(2, b"", b"Error: claude binary exploded")],
+    )
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", recorder)
+
+    svc = vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id="pinned-1")
+
+    with pytest.raises(RuntimeError, match="exploded"):
+        await svc._run_claude("hi")
+
+    assert len(recorder.calls) == 1

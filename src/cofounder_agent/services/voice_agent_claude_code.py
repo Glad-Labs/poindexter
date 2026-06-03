@@ -131,6 +131,19 @@ _TURN_TIMEOUT_SECONDS = 90.0
 _SESSION_ALREADY_IN_USE = re.compile(r"already in use", re.IGNORECASE)
 
 
+# The mirror of #431: claude's stderr when --resume targets a UUID that has
+# no JSONL on disk — "No conversation found with session ID: <uuid>". This
+# happens on the FIRST deploy of a pinned session (run_bot mints + persists a
+# fresh UUID, then asks the service to --resume it before it's been created),
+# and whenever a previously-pinned session's on-disk JSONL gets cleaned up
+# (claude prunes ~/.claude/projects/ by cleanupPeriodDays). In both cases the
+# fix is the same: create the session with that same id (flip --resume ->
+# --session-id) and keep the pinned id stable. See #1006.
+_NO_CONVERSATION_FOUND = re.compile(
+    r"no conversation found", re.IGNORECASE,
+)
+
+
 # Manual session-rotation phrases the operator can speak to start a fresh
 # claude -p session mid-call (#1006). Matched against the user turn at the
 # top of the turn handler so the rest of that same turn lands in the new
@@ -363,12 +376,20 @@ class ClaudeCodeBridgeLLMService(LLMService):
         self._cumulative_tokens += self._extract_usage(stdout_bytes)
         return self._extract_text(stdout_bytes)
 
-    async def _spawn_claude(self, user_text: str) -> bytes:
-        """Run `claude -p` once; recover from a first-turn session collision.
+    async def _spawn_claude(self, user_text: str, *, _recovered: bool = False) -> bytes:
+        """Run `claude -p` once; recover from a session create/resume mismatch.
 
-        Split off of :meth:`_run_claude` so the session-collision recovery
-        path can re-enter the same exec without re-decoding the prior
-        call's stdout.
+        Split off of :meth:`_run_claude` so the session-recovery path can
+        re-enter the same exec without re-decoding the prior call's stdout.
+        Two symmetric recoveries, each attempted at most once (``_recovered``
+        guards against ping-ponging between them):
+
+        * #431 — a first-turn ``--session-id`` hits an already-existing JSONL
+          ("already in use") -> flip to ``--resume``.
+        * #1006 — a ``--resume`` hits a missing JSONL ("no conversation
+          found": a freshly-minted pinned id on first deploy, or a pinned id
+          whose JSONL was pruned) -> flip to ``--session-id`` (create), so the
+          pinned id stays stable.
         """
         argv = self._build_argv()
         logger.info(
@@ -396,7 +417,11 @@ class ClaudeCodeBridgeLLMService(LLMService):
 
         if proc.returncode != 0:
             stderr_txt = stderr_bytes.decode("utf-8", errors="replace").strip()
-            if self._first_turn and _SESSION_ALREADY_IN_USE.search(stderr_txt):
+            if (
+                not _recovered
+                and self._first_turn
+                and _SESSION_ALREADY_IN_USE.search(stderr_txt)
+            ):
                 # poindexter#431 — something spawned claude with this
                 # UUID before the user's first turn (pipecat warmup,
                 # healthcheck, restarted bot reusing a UUID). Flip to
@@ -410,7 +435,27 @@ class ClaudeCodeBridgeLLMService(LLMService):
                 )
                 self._first_turn = False
                 self._resumed = True
-                return await self._spawn_claude(user_text)
+                return await self._spawn_claude(user_text, _recovered=True)
+            if (
+                not _recovered
+                and not self._first_turn
+                and _NO_CONVERSATION_FOUND.search(stderr_txt)
+            ):
+                # #1006 — we asked claude to --resume a pinned session whose
+                # JSONL isn't on disk: either a freshly-minted pinned id on
+                # its first-ever turn (run_bot persisted the id but never
+                # created the session), or a pinned id whose JSONL was pruned.
+                # Create it with the SAME id (flip to --session-id) so the pin
+                # stays stable and continuity resumes from here.
+                logger.warning(
+                    "voice-agent: session %s has no conversation on disk; "
+                    "creating it with --session-id (the pin stays stable, "
+                    "#1006). claude stderr=%r",
+                    self._session_id, stderr_txt[:200],
+                )
+                self._first_turn = True
+                self._resumed = False
+                return await self._spawn_claude(user_text, _recovered=True)
             raise RuntimeError(
                 f"claude -p exited {proc.returncode}: {stderr_txt[:300]}",
             )
