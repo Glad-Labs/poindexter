@@ -181,7 +181,7 @@
         },
         {
           "anchor": "Pro",
-          "href": "https://gladlabs.io/product",
+          "href": "https://github.com/Glad-Labs/poindexter",
           "icon": "star"
         }
       ]
@@ -190,7 +190,7 @@
   "footer": {
     "socials": {
       "github": "https://github.com/Glad-Labs/poindexter",
-      "website": "https://www.gladlabs.io"
+      "website": "https://github.com/Glad-Labs/poindexter"
     }
   }
 }

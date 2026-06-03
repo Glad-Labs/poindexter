@@ -39,7 +39,7 @@ on:
   # See unit-tests.yml.) The frontend-only specs only exercise the
   # statically-served Next.js site, so a backend/docs/infra-only change has
   # zero chance of regressing them — skipping the ~Chromium-build run for
-  # those is free savings. Glad-Labs/glad-labs-stack CI-minutes sweep.
+  # those is free savings. Glad-Labs/poindexter CI-minutes sweep.
   push:
     branches: [main]
     paths:

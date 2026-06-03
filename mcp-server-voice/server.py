@@ -106,7 +106,7 @@ Tools:
 
 The bridge worker runs as a detached subprocess (bridge_worker.py) so a
 code change takes effect on the next voice_join_room without restarting
-this server (Glad-Labs/glad-labs-stack#1010). The always-on
+this server (Glad-Labs/poindexter#1010). The always-on
 voice-agent-livekit container is unaffected; this server is additive and
 runs side-by-side with it.
 """)
@@ -150,7 +150,7 @@ except Exception:  # noqa: BLE001 — bridge is optional in CI shape
 def _inprocess_mode() -> bool:
     """Whether to run the bridge worker in-process instead of a subprocess.
 
-    Default is subprocess (Glad-Labs/glad-labs-stack#1010): a long-lived
+    Default is subprocess (Glad-Labs/poindexter#1010): a long-lived
     MCP server binds to the modules it loaded at startup, so an in-process
     worker uses STALE cached code after any change — a deaf bridge a mobile
     operator can't fix by restarting. Spawning a fresh subprocess imports
@@ -201,7 +201,7 @@ async def voice_join_room(
     same LiveKit room as a separate participant identity (default
     ``claude-bridge``).
 
-    **Process model (Glad-Labs/glad-labs-stack#1010):** by default the
+    **Process model (Glad-Labs/poindexter#1010):** by default the
     bridge worker is launched as a *separate Python subprocess*
     (``bridge_worker.py``) that imports fresh on-disk code, NOT as a task
     inside this long-lived MCP server. The MCP server is a thin launcher.
@@ -308,7 +308,7 @@ async def voice_join_room(
         else:
             # Default: spawn a detached subprocess that imports fresh
             # on-disk code, so MCP-server module staleness can't make the
-            # bridge go deaf (Glad-Labs/glad-labs-stack#1010). Popen + the
+            # bridge go deaf (Glad-Labs/poindexter#1010). Popen + the
             # readiness poll are blocking, so run them off the event loop.
             try:
                 pid = await asyncio.to_thread(
@@ -394,7 +394,7 @@ async def voice_leave_room(session_id: str) -> str:
     *this* process, falls back to leave-by-PID
     (``terminate_bridge_process``) which reads the worker PID from
     ``<sid>.lock`` and signals the subprocess — the normal path since
-    Glad-Labs/glad-labs-stack#1010 made the worker a separate process.
+    Glad-Labs/poindexter#1010 made the worker a separate process.
 
     Calling twice on the same id returns ``status="stopped"`` the first
     time and ``status="not_running"`` the second — never raises in the

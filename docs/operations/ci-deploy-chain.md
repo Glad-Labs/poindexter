@@ -15,7 +15,7 @@
 ## The flow
 
 ```
-Glad-Labs/glad-labs-stack (private GitHub, source of truth)
+Glad-Labs/poindexter (private GitHub, source of truth)
     │
     ├─→ GitHub Actions (.github/workflows/ci.yml)
     │       runs backend pytest + frontend tests + lint
@@ -37,7 +37,7 @@ Glad-Labs/glad-labs-stack (private GitHub, source of truth)
                         (no deploy)
 ```
 
-Vercel watches `Glad-Labs/glad-labs-stack` (the private origin),
+Vercel watches `Glad-Labs/poindexter` (the private origin),
 NOT the public `poindexter` repo. The public repo has no deploy
 workflow — Release Please is the only thing producing artifacts.
 
@@ -104,7 +104,7 @@ decorators in `test_database_service.py` and
   workflow. Strips operator-only files before pushing the public
   subset.
 - `.github/workflows/release-please.yml` — Release Please on
-  `Glad-Labs/glad-labs-stack` (the source repo — NOT the public
+  `Glad-Labs/poindexter` (the source repo — NOT the public
   mirror; running it on the force-rebuilt mirror broke versioning,
   see the workflow header). Versioning only. **Runs daily at 08:00
   UTC** (was `on: push` to main) so a day's `feat:`/`fix:` commits
@@ -164,7 +164,7 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
 `github.com/Glad-Labs/poindexter` is the open-source release repo.
 It gets a filtered snapshot via the auto-sync workflow above. It
 does NOT auto-deploy anywhere. Vercel watches the private origin
-(`Glad-Labs/glad-labs-stack`), not the public mirror.
+(`Glad-Labs/poindexter`), not the public mirror.
 
 The public mirror has `allow_force_pushes: true` in its branch
 protection — the mirror is rebuilt from scratch on every sync, so
