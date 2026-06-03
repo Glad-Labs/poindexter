@@ -12,13 +12,21 @@ stages have already been decomposed into atom chains (#362):
 
 - ``cross_model_qa`` → the Plan-3 qa.* rail atoms wired as a LINEAR chain
   (qa.programmatic → qa.critic → qa.deepeval → qa.guardrails → qa.ragas →
-  qa.vision → qa.aggregate). Each rail appends to the operator.add-reduced
+  qa.vision → qa.topic_delivery → qa.citations → qa.consistency →
+  qa.web_factcheck → qa.aggregate). Each rail appends to the operator.add-reduced
   ``qa_rail_reviews`` channel; qa.aggregate combines them into the gate
   decision (and halts on reject). qa.programmatic is the cheap deterministic
   anti-hallucination net (regex/heuristics, NO LLM); it restores the
   ``programmatic_validator`` gate the cutover originally dropped. qa.vision
   (Glad-Labs/poindexter#563) restores the two vision gates the cutover
   dropped — image-relevance + rendered-preview screenshot — both opt-in.
+  qa.topic_delivery / qa.citations / qa.consistency / qa.web_factcheck
+  (Glad-Labs/poindexter#658/#659/#660/#661) restore four more checks the
+  cutover silently dropped — bait-and-switch delivery, dead-link/citation,
+  internal-consistency, and web fact-check — all advisory-first (they score
+  but do not yet veto). qa.web_factcheck is ordered LAST so qa.aggregate can
+  apply its known_wrong_fact rescue (suppressing a stale-regex
+  known_wrong_fact veto when the web confirmed the claim, #661).
 - ``generate_seo_metadata`` → the seo.* atom chain (seo.generate_title →
   seo.generate_description → seo.extract_keywords). Linear so description +
   keywords read the freshly-generated ``seo_title``; each is LLM-driven with
@@ -70,6 +78,25 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # (qa_vision_check_enabled / qa_preview_screenshot_enabled) — a no-op
         # when off, so it's safe in the default chain.
         {"id": "qa_vision", "atom": "qa.vision"},
+        # Four more QA checks the #355 cutover silently dropped (advisory-first
+        # restoration, #658/#659/#660/#661). Each delegates to a retained
+        # MultiModelQA._check_* method, appends to qa_rail_reviews, and is
+        # advisory by default (qa_gates.<gate>.required_to_pass=false) — they
+        # SCORE but do not yet veto, to be graduated later.
+        # qa.topic_delivery (#658): bait-and-switch — body must deliver what the
+        # title/topic promised.
+        {"id": "qa_topic_delivery", "atom": "qa.topic_delivery"},
+        # qa.citations (#659): dead-link / min-citation gate (HTTP HEAD). Distinct
+        # from the advisory url_verifier rail.
+        {"id": "qa_citations", "atom": "qa.citations"},
+        # qa.consistency (#660): cross-section self-contradiction check.
+        {"id": "qa_consistency", "atom": "qa.consistency"},
+        # qa.web_factcheck (#661): DuckDuckGo product/spec verification. Ordered
+        # LAST in the qa block, immediately before qa.aggregate, because the
+        # known_wrong_fact rescue (qa.aggregate suppressing a stale-regex
+        # known_wrong_fact veto when the web confirmed the claim) needs this
+        # rail's verdict present when aggregate runs.
+        {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
         # seo.* atom chain (replaces the generate_seo_metadata stage, #362) —
         # linear so description + keywords read the freshly-generated seo_title.
@@ -96,7 +123,11 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_deepeval", "to": "qa_guardrails"},
         {"from": "qa_guardrails", "to": "qa_ragas"},
         {"from": "qa_ragas", "to": "qa_vision"},
-        {"from": "qa_vision", "to": "qa_aggregate"},
+        {"from": "qa_vision", "to": "qa_topic_delivery"},
+        {"from": "qa_topic_delivery", "to": "qa_citations"},
+        {"from": "qa_citations", "to": "qa_consistency"},
+        {"from": "qa_consistency", "to": "qa_web_factcheck"},
+        {"from": "qa_web_factcheck", "to": "qa_aggregate"},
         {"from": "qa_aggregate", "to": "seo_title"},
         {"from": "seo_title", "to": "seo_description"},
         {"from": "seo_description", "to": "seo_keywords"},

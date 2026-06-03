@@ -11,6 +11,9 @@ from services.atom_registry import discover, get_atom_callable, get_atom_meta
 _RAILS = (
     "qa.programmatic", "qa.deepeval", "qa.guardrails", "qa.ragas", "qa.critic",
     "qa.vision",
+    # Four checks restored from the #355 silent-drop (advisory-first):
+    # #658 / #659 / #660 / #661.
+    "qa.topic_delivery", "qa.citations", "qa.consistency", "qa.web_factcheck",
 )
 _ALL = _RAILS + ("qa.aggregate",)
 

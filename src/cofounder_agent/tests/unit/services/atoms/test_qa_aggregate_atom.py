@@ -64,6 +64,61 @@ class TestQaAggregateAtom:
         assert out["qa_final_score"] == 0.0
         assert out["_halt"] is True
 
+    async def test_known_wrong_fact_rescue_suppresses_validator_veto(self):
+        """#661: the qa_known_wrong_fact_only flag (set by qa.programmatic) +
+        an approved web_factcheck rail suppresses the programmatic_validator
+        veto — qa.aggregate APPROVES instead of wrongly hard-rejecting legit
+        post-cutoff content."""
+        state = {
+            "site_config": _Cfg(),
+            "qa_known_wrong_fact_only": True,
+            "qa_rail_reviews": [
+                {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+                 "provider": "programmatic", "advisory": False,
+                 "feedback": "known_wrong_fact: RTX 5090"},
+                {"reviewer": "web_factcheck", "approved": True, "score": 100.0,
+                 "provider": "web_factcheck", "advisory": True, "feedback": "verified"},
+                {"reviewer": "llm_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False, "feedback": "ok"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "approve"
+        assert "_halt" not in out
+
+    async def test_no_rescue_when_web_failed_still_rejects(self):
+        """Same flag, but the web check did NOT confirm → the validator veto
+        STANDS and qa.aggregate rejects + halts (the genuinely-wrong case)."""
+        state = {
+            "site_config": _Cfg(),
+            "qa_known_wrong_fact_only": True,
+            "qa_rail_reviews": [
+                {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+                 "provider": "programmatic", "advisory": False, "feedback": "known_wrong_fact"},
+                {"reviewer": "web_factcheck", "approved": False, "score": 0.0,
+                 "provider": "web_factcheck", "advisory": True, "feedback": "unverified"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+
+    async def test_no_flag_means_validator_veto_stands(self):
+        """Without the flag (a normal fabrication), an approved web_factcheck does
+        NOT rescue the validator veto — only stale-regex known_wrong_fact does."""
+        state = {
+            "site_config": _Cfg(),
+            "qa_rail_reviews": [
+                {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+                 "provider": "programmatic", "advisory": False, "feedback": "fake_person"},
+                {"reviewer": "web_factcheck", "approved": True, "score": 100.0,
+                 "provider": "web_factcheck", "advisory": True, "feedback": "verified"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+
 
 class _Pool2:
     def __init__(self):

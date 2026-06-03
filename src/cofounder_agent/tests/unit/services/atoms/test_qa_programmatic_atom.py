@@ -72,6 +72,22 @@ def _warning_result() -> ValidationResult:
     )
 
 
+def _known_wrong_fact_result() -> ValidationResult:
+    """A critical rejection whose ONLY critical is a known_wrong_fact — the
+    stale-regex false-positive on a real post-cutoff product (#661)."""
+    return ValidationResult(
+        passed=False,
+        issues=[
+            ValidationIssue(
+                severity="critical",
+                category="known_wrong_fact",
+                description="known_wrong_fact: RTX 5090 has 32GB VRAM",
+                matched_text="RTX 5090",
+            )
+        ],
+    )
+
+
 def _patch_gates(monkeypatch, states):
     async def gates(self):
         return states
@@ -189,3 +205,25 @@ class TestQaProgrammaticAtom:
         out = await qa_programmatic.run(_state())
         decision = aggregate_rail_reviews(out["qa_rail_reviews"])
         assert "programmatic_validator" not in decision["vetoed_by"]
+
+    async def test_known_wrong_fact_only_sets_rescue_flag(self, monkeypatch):
+        """#661: a known_wrong_fact-only critical sets qa_known_wrong_fact_only on
+        state so qa.aggregate can apply the web fact-check rescue."""
+        monkeypatch.setattr(
+            "services.content_validator.validate_content", lambda **kw: _known_wrong_fact_result()
+        )
+        _patch_gates(monkeypatch, _HARD_GATE_STATES)
+        out = await qa_programmatic.run(_state())
+        assert out.get("qa_known_wrong_fact_only") is True
+        # The review still fails (the rescue happens in qa.aggregate, not here).
+        assert out["qa_rail_reviews"][0]["approved"] is False
+
+    async def test_non_kwf_fabrication_does_not_set_flag(self, monkeypatch):
+        """A normal fabrication (fake_person) must NOT set the rescue flag —
+        only stale-regex known_wrong_fact qualifies for the web rescue."""
+        monkeypatch.setattr(
+            "services.content_validator.validate_content", lambda **kw: _fabrication_result()
+        )
+        _patch_gates(monkeypatch, _HARD_GATE_STATES)
+        out = await qa_programmatic.run(_state())
+        assert "qa_known_wrong_fact_only" not in out

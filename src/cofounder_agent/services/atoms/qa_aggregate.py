@@ -60,15 +60,30 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     site_config = state.get("site_config")
     reviews = state.get("qa_rail_reviews") or []
     threshold = _weight(site_config, "qa_final_score_threshold", 70.0)
+    # #661: qa.programmatic sets this flag when its ONLY critical was a
+    # known_wrong_fact (the stale-regex false-positive on a real post-cutoff
+    # product). When set, an approved web_factcheck review suppresses the
+    # validator veto — restoring the legacy review() rescue so legit
+    # post-cutoff content stops getting hard-rejected with no web second
+    # opinion. This PREVENTS a wrong reject; it never introduces a new one.
+    known_wrong_fact_only = bool(state.get("qa_known_wrong_fact_only"))
     result = aggregate_rail_reviews(
         reviews,
         validator_weight=_weight(site_config, "qa_validator_weight", 0.4),
         critic_weight=_weight(site_config, "qa_critic_weight", 0.6),
         gate_weight=_weight(site_config, "qa_gate_weight", 0.3),
         threshold=threshold,
+        known_wrong_fact_only=known_wrong_fact_only,
     )
     final_score = result["qa_final_score"]
     approved = bool(result["approved"])
+    if result.get("known_wrong_fact_rescued"):
+        logger.info(
+            "[qa.aggregate] web fact-check rescued a known_wrong_fact-only "
+            "validator rejection (task=%s) — the stale regex flagged a real "
+            "post-cutoff product the web confirmed (#661)",
+            str(state.get("task_id") or "?")[:8],
+        )
 
     # Promote the canonical quality_score (max of early-eval + QA), mirroring
     # the legacy stage so downstream finalize_task / auto-publish use the QA score.

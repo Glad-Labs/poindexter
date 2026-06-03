@@ -81,6 +81,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     tags = state.get("tags") or []
     niche = state.get("niche")
 
+    # known_wrong_fact-only rejection: when EVERY critical issue is a
+    # known_wrong_fact (the stale-regex false-positive on a real post-cutoff
+    # product), the legacy review() deferred the rejection to the web
+    # fact-check rail, which could OVERRIDE it. We surface that condition as a
+    # state flag so qa.aggregate (which owns the veto) can apply the rescue
+    # when qa.web_factcheck approved (Glad-Labs/poindexter#661).
+    known_wrong_fact_only = False
     try:
         result = validate_content(
             title=title,
@@ -95,6 +102,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         if crit > 0:
             first = result.issues[0].description if result.issues else "?"
             feedback = f"{crit} critical issue(s) — first: {first}"
+            # Mirror review()'s _fact_only_rejection: not-passed AND every
+            # critical issue is category 'known_wrong_fact'.
+            known_wrong_fact_only = not result.passed and all(
+                i.severity != "critical" or i.category == "known_wrong_fact"
+                for i in result.issues
+            )
         elif warn > 0:
             feedback = f"clean (no fabrication); {warn} warning(s)"
         else:
@@ -125,7 +138,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Advisory is DB-driven: required_to_pass=True (prod) → stays a real veto;
     # False → advisory; absent → stays required (fail-closed).
     MultiModelQA._mark_advisory_if_configured(review, gate_states, "programmatic_validator")
-    return {"qa_rail_reviews": [reviewer_to_dict(review)]}
+    out: dict[str, Any] = {"qa_rail_reviews": [reviewer_to_dict(review)]}
+    # Surface the known_wrong_fact-only flag so qa.aggregate can apply the web
+    # fact-check rescue (#661). Last-value channel — only set it when true so a
+    # later rail can't accidentally clobber a True with a default False.
+    if known_wrong_fact_only:
+        out["qa_known_wrong_fact_only"] = True
+    return out
 
 
 __all__ = ["ATOM_META", "run"]

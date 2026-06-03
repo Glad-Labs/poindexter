@@ -50,6 +50,37 @@ def _weight_for(provider: str | None, *, validator_weight: float, critic_weight:
     return 0.5
 
 
+def known_wrong_fact_rescued(
+    reviews: list[dict[str, Any]],
+    vetoed_by: list[Any],
+    *,
+    known_wrong_fact_only: bool,
+) -> bool:
+    """Decide whether the programmatic_validator's known_wrong_fact veto is
+    rescued by the web fact-check rail (Glad-Labs/poindexter#661).
+
+    Mirrors review()'s ``_fact_only_rejection`` carve-out: when the ONLY
+    non-advisory veto is the ``programmatic_validator`` and its rejection was
+    a known_wrong_fact-only critical (the stale-regex false-positive on a real
+    post-cutoff product), the web fact-check gets to override it. The rescue
+    fires only when a ``web_factcheck`` review is present AND approved — a
+    missing/failed web check upholds the rejection (matches the legacy else
+    branch). All other critical categories never reach here.
+
+    Returns True when the ``programmatic_validator`` veto should be SUPPRESSED.
+    This is a correctness fix that prevents a WRONG hard-reject, not a new veto.
+    """
+    if not known_wrong_fact_only:
+        return False
+    # The validator's veto must be the only thing rejecting the pass.
+    if list(vetoed_by) != ["programmatic_validator"]:
+        return False
+    web = next(
+        (r for r in reviews if r.get("reviewer") == "web_factcheck"), None,
+    )
+    return bool(web is not None and web.get("approved"))
+
+
 def aggregate_rail_reviews(
     reviews: list[dict[str, Any]],
     *,
@@ -57,10 +88,18 @@ def aggregate_rail_reviews(
     critic_weight: float = 0.6,
     gate_weight: float = 0.3,
     threshold: float = 70.0,
+    known_wrong_fact_only: bool = False,
 ) -> dict[str, Any]:
     """Combine per-rail review dicts into the gate decision.
 
-    Returns ``{"qa_final_score", "qa_final_verdict", "approved", "vetoed_by"}``.
+    ``known_wrong_fact_only`` (#661): when the programmatic validator's only
+    critical was a known_wrong_fact (set by qa.programmatic on the shared
+    state), a present + approved ``web_factcheck`` review SUPPRESSES the
+    validator veto — restoring the legacy review() rescue for stale-regex
+    false-positives on real post-cutoff products.
+
+    Returns ``{"qa_final_score", "qa_final_verdict", "approved", "vetoed_by",
+    "known_wrong_fact_rescued"}``.
     """
     def _score(r: dict[str, Any]) -> float:
         try:
@@ -91,6 +130,15 @@ def aggregate_rail_reviews(
         r.get("reviewer") for r in reviews
         if not r.get("approved") and not r.get("advisory")
     ]
+
+    # #661 rescue: a known_wrong_fact-only validator veto that the web
+    # fact-check rail confirmed is suppressed (the stale regex was wrong).
+    rescued = known_wrong_fact_rescued(
+        reviews, vetoed_by, known_wrong_fact_only=known_wrong_fact_only,
+    )
+    if rescued:
+        vetoed_by = [v for v in vetoed_by if v != "programmatic_validator"]
+
     all_passed = not vetoed_by
     approved = all_passed and final_score >= threshold
     return {
@@ -98,6 +146,7 @@ def aggregate_rail_reviews(
         "qa_final_verdict": "approve" if approved else "reject",
         "approved": approved,
         "vetoed_by": vetoed_by,
+        "known_wrong_fact_rescued": rescued,
     }
 
 
@@ -112,4 +161,9 @@ async def resolve_gate_states(qa: Any) -> dict[str, Any]:
         return {}
 
 
-__all__ = ["aggregate_rail_reviews", "resolve_gate_states", "reviewer_to_dict"]
+__all__ = [
+    "aggregate_rail_reviews",
+    "known_wrong_fact_rescued",
+    "resolve_gate_states",
+    "reviewer_to_dict",
+]

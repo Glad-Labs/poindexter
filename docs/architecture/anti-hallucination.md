@@ -20,9 +20,11 @@ to the LLM and HTTP reviewers.
 `graph_def` path the cross-model review runs as composable atoms in
 `src/cofounder_agent/services/atoms/` — `qa.programmatic` → `qa.critic` →
 `qa.deepeval` → `qa.guardrails` → `qa.ragas` → `qa.vision` →
-`qa.aggregate`. Each rail atom delegates
+`qa.topic_delivery` → `qa.citations` → `qa.consistency` →
+`qa.web_factcheck` → `qa.aggregate`. Each rail atom delegates
 to the matching `MultiModelQA` rail methods (the `_review_with_cloud_model`
-critic plus the per-rail DeepEval, guardrails, Ragas, and vision checks) and
+critic plus the per-rail DeepEval, guardrails, Ragas, vision,
+topic-delivery, citation, consistency, and web-factcheck checks) and
 appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the atoms
@@ -97,6 +99,68 @@ is true but no `preview_url` arrives, **pages the operator** instead of
 silently skipping (`feedback_no_silent_defaults` — the silent skip is exactly
 how the gate stayed cold for ~3 weeks). `test_qa_vision_atom.py` +
 `test_verify_task_preview.py` pin the threading.
+
+#### Four more dropped checks: topic-delivery, citations, consistency, web-factcheck
+
+Four additional `MultiModelQA.review()` checks went cold the same way the
+vision gate did — they only ever lived inside the deleted `review()`, so the
+#355 cutover stopped running them on the live path. Each is restored as a thin
+rail atom (between `qa.vision` and `qa.aggregate`), mirroring `qa.vision`'s
+shape, and is **advisory-first**: it scores + feeds the weighted average but
+does not yet veto, to be graduated later via `qa_gates.<gate>.required_to_pass`
+(poindexter#454) once verified live.
+
+- **`qa.topic_delivery`** (`_check_topic_delivery` → reviewer `topic_delivery`,
+  `consistency_gate` provider; Glad-Labs/poindexter#658) — the bait-and-switch
+  veto (title promises something the body never delivers). It ran
+  _unconditionally_ in `review()` (no gate row); the fix seeds a NEW
+  `qa_gates.topic_delivery` row, advisory-first (`required_to_pass=false`).
+  Flip it `true` to restore the legacy binary veto.
+- **`qa.citations`** (`_check_citations` → reviewer `citation_verifier`,
+  `http_head` provider; Glad-Labs/poindexter#659) — the default-on dead-link /
+  minimum-citation gate (the `qa_citation_*` settings family). Distinct from
+  the advisory `url_verifier` rail (which the live path never halted on). The
+  fix seeds a NEW `qa_gates.citation_verifier` row, advisory-first.
+- **`qa.consistency`** (`_check_internal_consistency` → reviewer
+  `internal_consistency`, `consistency_gate` provider; Glad-Labs/poindexter#660)
+  — cross-section self-contradiction. The baseline `qa_gates.consistency` row
+  was already advisory; the rail just makes it run again. The legacy low-score
+  hard-veto escape (`< qa_consistency_veto_threshold`) lived in `review()`, not
+  the rail aggregator, and is intentionally NOT re-introduced — that would be a
+  new veto path, out of scope for the additive restore.
+- **`qa.web_factcheck`** (`_web_fact_check` → reviewer `web_factcheck`,
+  `web_factcheck` provider; Glad-Labs/poindexter#661) — DuckDuckGo product/spec
+  verification (the training-cutoff override). Ordered **last** in the qa block,
+  immediately before `qa.aggregate`, because of the rescue below.
+
+##### The `known_wrong_fact` web-rescue (the #661 regression fix)
+
+`review()` had a rescue: when the programmatic validator's _only_ critical was a
+`known_wrong_fact` (the stale-regex false-positive on a real post-cutoff
+product — see Layer 2's `known_wrong_fact` rule, and `project_qa_critic_cutoff`),
+the rejection was deferred to the web fact-check, which could **override** it if
+the web confirmed the claim. After #355 that rescue path no longer existed:
+`qa.programmatic` emitted a non-advisory `known_wrong_fact` veto that
+**hard-rejected legit post-cutoff content with no web second opinion**. This is
+a behavior regression, not just a dropped advisory rail.
+
+The fix restores the rescue across two atoms:
+
+1. `qa.programmatic` flags the condition — when every critical it found is a
+   `known_wrong_fact`, it sets the `qa_known_wrong_fact_only` PipelineState
+   channel.
+2. `qa.aggregate` (which owns the veto decision) reads that flag + the
+   `qa.web_factcheck` rail's verdict via
+   `_qa_rail_common.known_wrong_fact_rescued`: when the _only_ non-advisory veto
+   is `programmatic_validator`, the flag is set, AND `web_factcheck` approved,
+   the validator veto is **suppressed** and the pass is approved — mirroring
+   `review()`'s `_fact_only_rejection` carve-out. A missing/failed web check
+   upholds the rejection (the genuinely-wrong-fact case).
+
+This rescue only ever PREVENTS a wrong hard-reject; it never introduces a new
+veto. `test_qa_web_factcheck_atom.py` (rail + rescue helper + end-to-end
+aggregation), `test_qa_programmatic_atom.py` (the flag), and
+`test_qa_aggregate_atom.py` (the state-read) pin it.
 
 ## Layer 1 — Prompt-level guards
 
@@ -284,9 +348,25 @@ content_validator_warning_qa_penalty` (default 3 pts/warning, line
    model won't kill an otherwise 85-scoring post.
 5. **Fact-check override** — if Layer 2 rejected for
    `known_wrong_fact`-only and the `web_factcheck` reviewer approved
-   the claim, the validator's rejection is reversed (line 568).
+   the claim, the validator's rejection is reversed (line 568). **On the
+   live graph_def path** this rescue is restored in `qa.aggregate` via
+   `_qa_rail_common.known_wrong_fact_rescued` (driven by the
+   `qa_known_wrong_fact_only` flag that `qa.programmatic` sets) — see the
+   "`known_wrong_fact` web-rescue" subsection under Pipeline ordering
+   (Glad-Labs/poindexter#661).
 6. **Final decision** — `approved = all_passed and final_score >=
 qa_final_score_threshold` (default 70).
+
+> **Live-path note.** Items 1, 2, 4 (the non-advisory veto), 5, and 6
+> are mirrored on the live graph_def path by
+> `_qa_rail_common.aggregate_rail_reviews` (called from `qa.aggregate`).
+> The provider→weight buckets are identical. Item 3 (the warning penalty)
+> and the consistency low-score escape in item 4 live only in the legacy
+> `review()` and are intentionally not ported (the rail aggregation is
+> quality-canary-validated, not parity-checked — see `_qa_rail_common`).
+> The restored `qa.consistency` rail is advisory on the live path until
+> graduated; the `qa.topic_delivery` / `qa.citations` rails are seeded
+> advisory-first and graduate to vetoes via `required_to_pass=true`.
 
 ### Degraded-pool guard
 

@@ -329,6 +329,13 @@ class PipelineState(TypedDict, total=False):
     # (Plan 4's graph_def) can each append concurrently without
     # InvalidUpdateError. qa.aggregate reads the merged list.
     qa_rail_reviews: Annotated[list, operator.add]
+    # qa_known_wrong_fact_only (#661): qa.programmatic sets this last-value flag
+    # when EVERY critical it found is a known_wrong_fact (the stale-regex
+    # false-positive on a real post-cutoff product). qa.aggregate reads it +
+    # the qa.web_factcheck verdict to apply the known_wrong_fact rescue —
+    # suppressing the validator veto when the web confirmed the claims. Declared
+    # so it survives the graph_def adapter's last-value channel merge.
+    qa_known_wrong_fact_only: bool
     qa_rewrite_attempts: int
     # preview_token / preview_url (#563): the rendered-preview QA rail
     # (qa.vision) screenshots the post's /preview/{token} page, so it needs a
