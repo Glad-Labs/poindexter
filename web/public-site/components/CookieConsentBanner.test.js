@@ -272,3 +272,78 @@ describe('CookieConsentBanner — a11y: customize modal (issue #765)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Consent-gated AdSense loader injection (issue #943)
+//
+// The adsbygoogle.js loader is intentionally NOT in the root layout (GDPR).
+// CookieConsentBanner must inject it ONLY after the visitor opts in to
+// advertising — mirroring how loadGoogleAnalytics() injects gtag.js.
+// ---------------------------------------------------------------------------
+
+const ADSENSE_SRC_PREFIX =
+  'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js';
+
+function adSenseScriptEl() {
+  return document.querySelector('script[data-gl-adsense]');
+}
+
+describe('CookieConsentBanner — consent-gated AdSense loader (issue #943)', () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    jest.clearAllMocks();
+    // Remove any loader injected by a prior test so each case starts clean.
+    document
+      .querySelectorAll('script[data-gl-adsense]')
+      .forEach((el) => el.remove());
+    delete window.adsbygoogle;
+  });
+
+  it('does NOT inject the adsbygoogle.js loader before any consent', () => {
+    render(<CookieConsentBanner />);
+    expect(adSenseScriptEl()).toBeNull();
+  });
+
+  it('does NOT inject the loader when advertising is rejected', () => {
+    render(<CookieConsentBanner />);
+    fireEvent.click(
+      screen.getByRole('button', { name: /reject all/i })
+    );
+    expect(adSenseScriptEl()).toBeNull();
+  });
+
+  it('injects the adsbygoogle.js loader after advertising consent (Accept All)', () => {
+    render(<CookieConsentBanner />);
+    fireEvent.click(
+      screen.getByRole('button', { name: /accept all/i })
+    );
+    const script = adSenseScriptEl();
+    expect(script).not.toBeNull();
+    expect(script.src).toContain(ADSENSE_SRC_PREFIX);
+    // Publisher ID must be wired into the loader src (defaults to the
+    // Glad Labs account when NEXT_PUBLIC_ADSENSE_ID is unset).
+    expect(script.src).toContain('client=ca-pub-');
+    expect(script.async).toBe(true);
+  });
+
+  it('persists the advertising consent choice to localStorage', () => {
+    render(<CookieConsentBanner />);
+    fireEvent.click(
+      screen.getByRole('button', { name: /accept all/i })
+    );
+    const saved = JSON.parse(localStorageMock.getItem('cookieConsent'));
+    expect(saved.advertising).toBe(true);
+  });
+
+  it('does not inject the loader twice when consent is granted repeatedly', () => {
+    const { rerender } = render(<CookieConsentBanner />);
+    fireEvent.click(
+      screen.getByRole('button', { name: /accept all/i })
+    );
+    // Simulate the banner re-mounting and consent being re-saved.
+    rerender(<CookieConsentBanner />);
+    expect(
+      document.querySelectorAll('script[data-gl-adsense]').length
+    ).toBe(1);
+  });
+});

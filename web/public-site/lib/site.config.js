@@ -21,3 +21,15 @@ export const NEWSLETTER_EMAIL = process.env.NEXT_PUBLIC_NEWSLETTER_EMAIL || 'new
 
 export const PODCAST_NAME = process.env.NEXT_PUBLIC_PODCAST_NAME || 'Glad Labs Podcast';
 export const VIDEO_FEED_NAME = process.env.NEXT_PUBLIC_VIDEO_FEED_NAME || 'Glad Labs Video';
+
+// Google AdSense — publisher ID + the in-content ad slot used at the bottom of
+// each post. Both come from NEXT_PUBLIC_* env so a fork can drop in its own
+// account without code changes. ADSENSE_ID defaults to the Glad Labs account
+// (ca-pub-4578747062758519). ADSENSE_SLOT_ID has no default: AdSense is pending
+// approval, so there is no real slot yet — an empty slot makes AdUnit render
+// nothing (no fabricated slot ID). When approval lands, create an in-article
+// unit in the AdSense dashboard and set NEXT_PUBLIC_ADSENSE_SLOT_ID to its slot
+// ID; the bottom-of-post <ins> then renders and the consent-gated loader
+// (CookieConsentBanner) fills it.
+export const ADSENSE_ID = process.env.NEXT_PUBLIC_ADSENSE_ID || 'ca-pub-4578747062758519';
+export const ADSENSE_SLOT_ID = process.env.NEXT_PUBLIC_ADSENSE_SLOT_ID || '';

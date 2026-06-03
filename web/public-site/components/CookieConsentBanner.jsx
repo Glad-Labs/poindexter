@@ -135,12 +135,8 @@ export default function CookieConsentBanner() {
         loadGoogleAnalytics();
       }
 
-      if (newConsent.advertising && window.adsbygoogle) {
-        try {
-          window.adsbygoogle.push({});
-        } catch {
-          // AdSense script not yet loaded -- will be pushed on next load
-        }
+      if (newConsent.advertising) {
+        loadAdSense();
       }
     }
   };
@@ -407,6 +403,42 @@ function loadGoogleAnalytics() {
     window.gtag = gtag;
     gtag('js', new Date());
     gtag('config', gaId);
+  };
+  document.head.appendChild(script);
+}
+
+// Helper function to load the Google AdSense loader after advertising consent.
+// Mirrors loadGoogleAnalytics(): the adsbygoogle.js bootstrap is NOT in the
+// root layout (GDPR — see app/layout.js), so it must be injected here only
+// after the user opts in to advertising. Once loaded, window.adsbygoogle is
+// populated and any <AdUnit> <ins> elements already in the DOM are filled by
+// a single push (AdSense fills every queued <ins> on the page per push).
+function loadAdSense() {
+  if (typeof window === 'undefined') return;
+
+  const adSenseId =
+    process.env.NEXT_PUBLIC_ADSENSE_ID || 'ca-pub-4578747062758519';
+  if (!adSenseId) {
+    return;
+  }
+
+  // Idempotent: never inject the loader twice (e.g. consent re-saved).
+  if (document.querySelector('script[data-gl-adsense]')) {
+    return;
+  }
+
+  const script = document.createElement('script');
+  script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adSenseId}`;
+  script.async = true;
+  script.crossOrigin = 'anonymous';
+  script.setAttribute('data-gl-adsense', '');
+  script.onload = () => {
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch {
+      // No <ins> on the page yet, or AdSense not ready — AdUnit's own
+      // useEffect will push when it mounts.
+    }
   };
   document.head.appendChild(script);
 }

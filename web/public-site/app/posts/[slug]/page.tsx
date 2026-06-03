@@ -22,7 +22,7 @@ import {
   postFeaturedImage,
   type Post,
 } from '../../../lib/posts';
-import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { SITE_NAME, SITE_URL, ADSENSE_SLOT_ID } from '@/lib/site.config';
 
 // #945: Bounded generateStaticParams — pre-generate recent post pages at build time
 // for faster first-hit latency and better SEO indexing. Long-tail slugs still
@@ -471,7 +471,7 @@ export default async function PostPage({
         {/* AdSense — Bottom of article */}
         <div className="px-4 sm:px-6 lg:px-8 py-8">
           <div className="container mx-auto max-w-4xl">
-            <AdUnit slot="" format="auto" className="my-4" />
+            <AdUnit slot={ADSENSE_SLOT_ID} format="auto" className="my-4" />
           </div>
         </div>
 

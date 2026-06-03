@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { ADSENSE_ID, ADSENSE_SLOT_ID } from '@/lib/site.config';
 
 interface AdUnitProps {
   slot: string;
@@ -25,9 +26,8 @@ export default function AdUnit({
   className = '',
 }: AdUnitProps) {
   const adRef = useRef<HTMLModElement>(null);
-  const adSenseId =
-    process.env.NEXT_PUBLIC_ADSENSE_ID || 'ca-pub-4578747062758519';
-  const adSlot = slot || process.env.NEXT_PUBLIC_ADSENSE_SLOT_ID || '';
+  const adSenseId = ADSENSE_ID;
+  const adSlot = slot || ADSENSE_SLOT_ID;
 
   useEffect(() => {
     if (!adSenseId || !adSlot) return;

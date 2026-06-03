@@ -40,8 +40,8 @@ web/public-site/
 │   ├── legal/                   # Privacy, terms, cookies, data requests
 │   └── api/posts/               # API routes for post data
 ├── components/                  # React components
-│   ├── AdSenseScript.tsx        # Google AdSense
-│   ├── CookieConsentBanner.jsx  # Cookie consent
+│   ├── AdUnit.tsx               # Google AdSense in-content ad slot
+│   ├── CookieConsentBanner.jsx  # Cookie consent (consent-gated GA + AdSense loaders)
 │   ├── GiscusComments.tsx       # GitHub Discussions comments
 │   ├── NewsletterModal.tsx      # Newsletter subscription
 │   ├── StructuredData.tsx       # JSON-LD structured data
