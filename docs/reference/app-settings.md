@@ -643,7 +643,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `discord_bot_token` | `*(encrypted)*` | encrypted | Discord bot token (the same one Discord posts to channels with). Encrypted at rest via plugins.secrets. Used by the D... |
-| `gh_repo` | `Glad-Labs/glad-labs-stack` |  | GitHub repository (``owner/name``) the dev_diary topic source queries for merged PRs and notable commits when assembl... |
+| `gh_repo` | `Glad-Labs/poindexter` |  | GitHub repository (``owner/name``) the dev_diary topic source queries for merged PRs and notable commits when assembl... |
 | `google_oauth_client_id` | `206722606964-lt75101b5surs28ede8t7d3j...` |  | Google OAuth client ID — shared by GSC + GA4 Singer taps |
 | `igdb_twitch_client_id` | `` |  | Twitch app client ID for IGDB access. Get it from https://dev.twitch.tv/console/apps. Public — not a secret. Used by ... |
 | `igdb_twitch_client_secret` | `*(encrypted)*` | encrypted | Twitch app client SECRET for IGDB access. is_secret=true → encrypted at rest via plugins.secrets. Get it from https:/... |
@@ -735,7 +735,7 @@ The worker re-reads on every poll; no restart needed.
 | `branch_drift_git_dir` | `/host-git` |  | git --git-dir path inside the brain container for reading the running checkout's HEAD. Matches the read-only ./.git:/... |
 | `branch_drift_poll_interval_minutes` | `15` |  | Internal cadence gate (minutes) for the branch-drift canary's GitHub round-trip. The probe is dispatched every brain ... |
 | `branch_drift_probe_enabled` | `true` |  | Master switch for the brain branch-drift deploy canary (#942). When true, the brain pages the operator if the bind-mo... |
-| `branch_drift_repo` | `Glad-Labs/glad-labs-stack` |  | owner/name of the source-of-truth repo the branch-drift canary compares against. Paired with the gh_token secret for ... |
+| `branch_drift_repo` | `Glad-Labs/poindexter` |  | owner/name of the source-of-truth repo the branch-drift canary compares against. Paired with the gh_token secret for ... |
 | `compose_drift_auto_recover_enabled` | `false` |  | Brain compose-drift probe auto-recover toggle (#213). When 'false' (default, safe), the probe only notifies the opera... |
 | `compose_drift_skip_services` | `` |  | Comma-separated list of compose service names the brain drift probe (#213) should skip. Useful for services with inte... |
 | `compose_spec_path` | `/app/docker-compose.local.yml` |  | Path to the docker-compose.yml the brain compose-drift probe (#213) reads. The brain container bind-mounts the host's... |
@@ -766,7 +766,7 @@ The worker re-reads on every poll; no restart needed.
 | `pr_staleness_min_hours` | `24` |  | Minimum age (in hours) before an open PR is considered stale by the brain PR staleness probe. PRs younger than this a... |
 | `pr_staleness_poll_interval_minutes` | `60` |  | Internal cadence gate for the brain PR staleness probe. The brain dispatches the probe every cycle (~5 min); the actu... |
 | `pr_staleness_probe_enabled` | `true` |  | Master switch for the brain PR staleness probe. When false the probe short-circuits without hitting GitHub. See brain... |
-| `pr_staleness_repo` | `Glad-Labs/glad-labs-stack` |  | GitHub repository (``owner/name``) the brain PR staleness probe scans for open PRs. Future-proofs for multi-repo. Pai... |
+| `pr_staleness_repo` | `Glad-Labs/poindexter` |  | GitHub repository (``owner/name``) the brain PR staleness probe scans for open PRs. Future-proofs for multi-repo. Pai... |
 | `smart_monitor_alert_dedup_minutes` | `360` |  | Don't re-fire the same (drive, attribute) alert within this many minutes. Default 360 (6 h) matches the default poll ... |
 | `smart_monitor_current_pending_threshold` | `0` |  | Inclusive threshold for Current_Pending_Sector. Anything strictly greater fires a warning. 0 = any pending sector at ... |
 | `smart_monitor_drive_filter` | `` |  | Optional comma-separated list of drive names (e.g. /dev/sda,/dev/nvme0) to restrict scanning to. Empty = scan everyth... |

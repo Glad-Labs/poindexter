@@ -304,7 +304,7 @@ class TestLegacyFallback:
         assert chain == []
 
 
-# NOTE (Glad-Labs/glad-labs-stack#997): a module-level
+# NOTE (Glad-Labs/poindexter#997): a module-level
 # ``pytestmark = pytest.mark.asyncio`` used to live here. It was redundant —
 # the project runs ``asyncio_mode = "auto"`` (pyproject.toml), which already
 # auto-marks every coroutine test — and it wrongly tagged the two *sync*
