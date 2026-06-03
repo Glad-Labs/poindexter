@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.68.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.67.0...v0.68.0) (2026-06-03)
+
+
+### Features
+
+* **obs:** HTTP RED metrics + fix broken disk-space alert (audit follow-up) ([#1018](https://github.com/Glad-Labs/glad-labs-stack/issues/1018)) ([951ec81](https://github.com/Glad-Labs/glad-labs-stack/commit/951ec816fd9413b1acc8bee2b77c14468d4133a3))
+
 ## [0.67.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.4...v0.67.0) (2026-06-03)
 
 
