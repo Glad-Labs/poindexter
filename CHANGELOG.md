@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.66.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.2...v0.66.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **rag:** coerce string JSONB metadata so hybrid retriever stops crashing (poindexter[#554](https://github.com/Glad-Labs/glad-labs-stack/issues/554)) ([#1005](https://github.com/Glad-Labs/glad-labs-stack/issues/1005)) ([99b0093](https://github.com/Glad-Labs/glad-labs-stack/commit/99b009301d60c9635c62dac42d54628c32c6b7d5))
+* **social:** thread pool into social auto-post dispatch (poindexter[#556](https://github.com/Glad-Labs/glad-labs-stack/issues/556)) ([#1008](https://github.com/Glad-Labs/glad-labs-stack/issues/1008)) ([50e1110](https://github.com/Glad-Labs/glad-labs-stack/commit/50e11101d8dbc9954536a8212733af7ae8743453))
+
 ## [0.66.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.1...v0.66.2) (2026-06-03)
 
 
