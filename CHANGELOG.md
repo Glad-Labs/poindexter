@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.4...v0.70.0) (2026-06-03)
+
+
+### Features
+
+* **newsletter:** mirror subscribers into the Resend audience from the backend ([#1034](https://github.com/Glad-Labs/glad-labs-stack/issues/1034)) ([7dc87fe](https://github.com/Glad-Labs/glad-labs-stack/commit/7dc87fe07c87b3aaa0b04a4dd4597dd58b9b7022))
+
 ## [0.69.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.3...v0.69.4) (2026-06-03)
 
 
