@@ -49,6 +49,13 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from services.audit_log import audit_log_bg
+from services.gate_machinery import (
+    GateServiceError,
+    ensure_gate_match,
+    iso_or_none,
+    resolve_reject_status,
+)
+from services.gate_machinery import coerce_artifact as _coerce_artifact
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -77,8 +84,12 @@ DEFAULT_REJECT_STATUS = "rejected"
 # ---------------------------------------------------------------------------
 
 
-class PostsApprovalServiceError(Exception):
-    """Base class for posts-approval errors."""
+class PostsApprovalServiceError(GateServiceError):
+    """Base class for posts-approval errors.
+
+    Derives from the shared :class:`services.gate_machinery.GateServiceError`
+    root so a caller can ``except GateServiceError`` to catch a failure from
+    either approval service (#622)."""
 
 
 class PostNotFoundError(PostsApprovalServiceError):
@@ -101,21 +112,6 @@ class PostGateMismatchError(PostsApprovalServiceError):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _coerce_artifact(raw: Any) -> dict[str, Any]:
-    """Defensive parse — JSONB sometimes round-trips as str via asyncpg."""
-    if raw is None:
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {"raw": parsed}
-        except (ValueError, TypeError):
-            return {"raw": raw}
-    return {"raw": str(raw)}
 
 
 async def _fetch_post_row(pool: Any, post_id: str) -> dict[str, Any] | None:
@@ -331,20 +327,15 @@ async def approve_publish(
         )
         raise PostNotFoundError(f"Post {post_id} not found")
 
-    active_gate = row.get("awaiting_gate")
-    if not active_gate:
-        raise PostNotPausedError(
-            f"Post {post_id} is not paused at any gate "
-            f"(current status={row.get('status')!r})"
-        )
-
-    if gate_name is not None and gate_name != active_gate:
-        raise PostGateMismatchError(
-            f"Post {post_id} is paused at gate {active_gate!r}, "
-            f"not {gate_name!r}. Refusing to approve the wrong gate."
-        )
-
-    cleared_gate = active_gate
+    cleared_gate = ensure_gate_match(
+        row,
+        gate_name,
+        entity_label="Post",
+        entity_id=str(post_id),
+        not_paused_exc=PostNotPausedError,
+        mismatch_exc=PostGateMismatchError,
+        verb="approve",
+    )
 
     async with pool.acquire() as conn:
         await conn.execute(
@@ -428,28 +419,17 @@ async def reject_publish(
         )
         raise PostNotFoundError(f"Post {post_id} not found")
 
-    active_gate = row.get("awaiting_gate")
-    if not active_gate:
-        raise PostNotPausedError(
-            f"Post {post_id} is not paused at any gate "
-            f"(current status={row.get('status')!r})"
-        )
+    rejected_gate = ensure_gate_match(
+        row,
+        gate_name,
+        entity_label="Post",
+        entity_id=str(post_id),
+        not_paused_exc=PostNotPausedError,
+        mismatch_exc=PostGateMismatchError,
+        verb="reject",
+    )
 
-    if gate_name is not None and gate_name != active_gate:
-        raise PostGateMismatchError(
-            f"Post {post_id} is paused at gate {active_gate!r}, "
-            f"not {gate_name!r}. Refusing to reject the wrong gate."
-        )
-
-    rejected_gate = active_gate
-
-    new_status = DEFAULT_REJECT_STATUS
-    if site_config is not None:
-        custom = site_config.get(
-            f"approval_gate_{rejected_gate}_reject_status", ""
-        )
-        if custom:
-            new_status = str(custom).strip()
+    new_status = resolve_reject_status(site_config, rejected_gate, DEFAULT_REJECT_STATUS)
 
     async with pool.acquire() as conn:
         await conn.execute(
@@ -557,9 +537,7 @@ async def list_pending_publish(
         d = dict(row)
         d["artifact"] = _coerce_artifact(d.pop("gate_artifact", None))
         for ts_field in ("gate_paused_at", "published_at"):
-            ts = d.get(ts_field)
-            if ts is not None and hasattr(ts, "isoformat"):
-                d[ts_field] = ts.isoformat()
+            d[ts_field] = iso_or_none(d.get(ts_field))
         out.append(d)
     return out
 
@@ -573,19 +551,19 @@ async def show_pending_publish(
     row = await _fetch_post_row(pool, post_id)
     if row is None:
         raise PostNotFoundError(f"Post {post_id} not found")
-    if not row.get("awaiting_gate"):
-        raise PostNotPausedError(
-            f"Post {post_id} is not paused at any gate "
-            f"(current status={row.get('status')!r})"
-        )
+    ensure_gate_match(
+        row,
+        None,
+        entity_label="Post",
+        entity_id=str(post_id),
+        not_paused_exc=PostNotPausedError,
+        mismatch_exc=PostGateMismatchError,
+        verb="approve",
+    )
 
     artifact = _coerce_artifact(row.get("gate_artifact"))
-    paused_at = row.get("gate_paused_at")
-    if paused_at is not None and hasattr(paused_at, "isoformat"):
-        paused_at = paused_at.isoformat()
-    published_at = row.get("published_at")
-    if published_at is not None and hasattr(published_at, "isoformat"):
-        published_at = published_at.isoformat()
+    paused_at = iso_or_none(row.get("gate_paused_at"))
+    published_at = iso_or_none(row.get("published_at"))
 
     return {
         "post_id": row["id"],

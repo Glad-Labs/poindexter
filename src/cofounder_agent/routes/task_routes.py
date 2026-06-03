@@ -257,7 +257,7 @@ async def discover_topics(
         raise
     except Exception as e:
         logger.error("Topic discovery failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Topic discovery failed: {e}") from e
+        raise HTTPException(status_code=500, detail="Topic discovery failed") from e
 
 
 @router.post(
@@ -361,7 +361,7 @@ async def _handle_blog_post_creation(
                 raise ValueError("No fresh topics found — all discovered topics are duplicates of recent content")
         except Exception as e:
             logger.warning("[create_task] Auto-topic resolution failed: %s", e)
-            raise HTTPException(status_code=422, detail=f"Could not resolve auto topic: {e}") from e
+            raise HTTPException(status_code=422, detail="Could not resolve auto topic") from e
 
     task_data = {
         "id": task_id,

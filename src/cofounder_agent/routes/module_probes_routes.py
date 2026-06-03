@@ -19,13 +19,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from middleware.api_token_auth import verify_api_token
 
 router = APIRouter(prefix="/api/modules", tags=["modules"])
 
 
 @router.get("/probes", response_model=None)
-async def list_module_probes(request: Request) -> dict[str, Any]:
+async def list_module_probes(
+    request: Request,
+    _principal: str = Depends(verify_api_token),
+) -> dict[str, Any]:
     """List brain probes contributed by Module v1 modules.
 
     Response shape::

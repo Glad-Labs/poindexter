@@ -254,7 +254,7 @@ async def send_failure_alert(
         out["reason"] = f"notify_operator raised: {e}"
         logger.warning(
             "[task_failure_alerts] notify_operator failed for task=%s: %s",
-            str(task_id)[:8], e,
+            str(task_id)[:8], e, exc_info=True,
         )
 
     return out

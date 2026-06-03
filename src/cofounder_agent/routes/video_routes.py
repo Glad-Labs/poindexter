@@ -156,7 +156,11 @@ async def list_video_episodes():
             stat = mp4.stat()
             episodes.append({
                 "post_id": mp4.stem,
-                "file_path": str(mp4),
+                # file_path intentionally omitted — it leaked the worker's
+                # absolute filesystem layout. Clients fetch the bytes via
+                # /api/video/episodes/{post_id}.mp4 (poindexter#636). Matches
+                # the unauthenticated podcast episodes endpoint, which also
+                # does not expose on-disk paths.
                 "file_size_bytes": stat.st_size,
                 "created_at": stat.st_ctime,
             })
@@ -228,7 +232,7 @@ async def generate_video(
 
     if not result.success:
         logger.error("Video generation failed for %s: %s", post_id, result.error)
-        raise HTTPException(status_code=500, detail=f"Video generation failed: {result.error}")
+        raise HTTPException(status_code=500, detail="Video generation failed")
 
     return {
         "success": True,

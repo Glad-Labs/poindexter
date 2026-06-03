@@ -23,6 +23,7 @@ These tests assert:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -154,62 +155,124 @@ class TestLemonSqueezyVerify:
 # ---------------------------------------------------------------------------
 
 
+# A Svix/Resend signing secret is ``whsec_<base64-payload>``; the HMAC key
+# is the *decoded* payload bytes, not the literal string (poindexter#642).
+_RESEND_SECRET = "whsec_" + base64.b64encode(b"resend-signing-key-bytes").decode()
+_SVIX_ID = "msg_2abcDEF456"
+_SVIX_TS = "1700000000"  # fixed; tests pin ``now`` to this for replay checks
+
+
+def _svix_sign(secret: str, svix_id: str, ts: str, body: bytes) -> str:
+    """Produce a real Svix ``v1,<base64sig>`` header for ``id.timestamp.body``."""
+    raw = secret[len("whsec_") :] if secret.startswith("whsec_") else secret
+    key = base64.b64decode(raw)
+    signed = svix_id.encode() + b"." + ts.encode() + b"." + body
+    sig = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode()
+    return f"v1,{sig}"
+
+
 class TestResendVerify:
-    """_verify_resend_signature must decrypt the secret and HMAC with
-    plaintext."""
+    """_verify_resend_signature must implement the Svix scheme: HMAC of
+    ``{id}.{timestamp}.{body}`` keyed by the base64-decoded ``whsec_`` secret,
+    base64-compared, with a timestamp replay window (poindexter#642)."""
 
     @pytest.mark.asyncio
-    async def test_valid_signature_with_plaintext_secret(self):
-        secret = "resend_real_signing_secret"
+    async def test_valid_svix_signature(self):
         body = json.dumps({"type": "email.delivered"}).encode()
-        provided = _hmac_hex(secret, body)
-        sc = _mock_sc(resend_secret=secret)
+        sig = _svix_sign(_RESEND_SECRET, _SVIX_ID, _SVIX_TS, body)
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
 
-        ok = await _verify_resend_signature(body, provided, sc)
+        ok = await _verify_resend_signature(
+            body, _SVIX_ID, _SVIX_TS, sig, sc, now=int(_SVIX_TS)
+        )
         assert ok is True
 
     @pytest.mark.asyncio
-    async def test_valid_signature_with_svix_v1_format(self):
-        """Resend may format as 'v1,<hex>' — the verifier handles it."""
-        secret = "rs_secret"
+    async def test_multiple_space_delimited_sigs_one_valid(self):
+        """Svix sends space-delimited ``v1,<sig>`` entries during key
+        rotation; a match against any entry passes."""
         body = b'{"type":"email.sent"}'
-        provided = f"v1,{_hmac_hex(secret, body)}"
-        sc = _mock_sc(resend_secret=secret)
+        good = _svix_sign(_RESEND_SECRET, _SVIX_ID, _SVIX_TS, body)
+        header = f"v1,{base64.b64encode(b'wrong').decode()} {good}"
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
 
-        ok = await _verify_resend_signature(body, provided, sc)
+        ok = await _verify_resend_signature(
+            body, _SVIX_ID, _SVIX_TS, header, sc, now=int(_SVIX_TS)
+        )
         assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_body_only_hmac_rejected(self):
+        """The old (pre-#642) scheme HMAC'd only the body and compared hex.
+        A signature built that way must NOT validate against the Svix path —
+        pins the bug so a regression to body-only HMAC fails the suite."""
+        body = b'{"type":"email.opened"}'
+        legacy_hex = _hmac_hex(_RESEND_SECRET, body)  # body-only, hex, literal key
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
+
+        ok = await _verify_resend_signature(
+            body, _SVIX_ID, _SVIX_TS, f"v1,{legacy_hex}", sc, now=int(_SVIX_TS)
+        )
+        assert ok is False
 
     @pytest.mark.asyncio
     async def test_uses_get_secret_not_get(self):
-        sc = _mock_sc(resend_secret="x")
         body = b"{}"
-        await _verify_resend_signature(body, _hmac_hex("x", body), sc)
+        sig = _svix_sign(_RESEND_SECRET, _SVIX_ID, _SVIX_TS, body)
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
+        await _verify_resend_signature(
+            body, _SVIX_ID, _SVIX_TS, sig, sc, now=int(_SVIX_TS)
+        )
         sc.get_secret.assert_awaited_once_with("resend_webhook_secret", "")
         for call in sc.get.mock_calls:
             if call.args:
                 assert call.args[0] != "resend_webhook_secret"
 
     @pytest.mark.asyncio
-    async def test_signature_signed_with_ciphertext_key_rejected(self):
-        secret = "rs_secret"
-        body = b'{"type":"email.bounced"}'
-        ciphertext_sig = _hmac_hex(f"enc:v1:CIPHERTEXT_FOR_{secret}", body)
-        sc = _mock_sc(resend_secret=secret)
+    async def test_stale_timestamp_rejected_as_replay(self):
+        """A timestamp outside the tolerance window is refused even when the
+        signature itself is valid — replay protection."""
+        body = b'{"type":"email.clicked"}'
+        sig = _svix_sign(_RESEND_SECRET, _SVIX_ID, _SVIX_TS, body)
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
 
-        ok = await _verify_resend_signature(body, ciphertext_sig, sc)
-        assert ok is False, (
-            "Verifier accepted a signature forged with ciphertext-as-key — "
-            "the GH-107 ciphertext-leak regression has resurfaced."
+        # now is 10 minutes after the signed timestamp; default tolerance 300s.
+        ok = await _verify_resend_signature(
+            body, _SVIX_ID, _SVIX_TS, sig, sc, now=int(_SVIX_TS) + 600
         )
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_tampered_body_rejected(self):
+        body = b'{"type":"email.bounced"}'
+        sig = _svix_sign(_RESEND_SECRET, _SVIX_ID, _SVIX_TS, body)
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
+
+        ok = await _verify_resend_signature(
+            body + b" ", _SVIX_ID, _SVIX_TS, sig, sc, now=int(_SVIX_TS)
+        )
+        assert ok is False
 
     @pytest.mark.asyncio
     async def test_missing_secret_rejects(self):
         sc = _mock_sc()
-        ok = await _verify_resend_signature(b"{}", "any", sc)
+        ok = await _verify_resend_signature(
+            b"{}", _SVIX_ID, _SVIX_TS, "v1,x", sc, now=int(_SVIX_TS)
+        )
         assert ok is False
 
     @pytest.mark.asyncio
-    async def test_missing_signature_header_rejects(self):
-        sc = _mock_sc(resend_secret="real")
-        ok = await _verify_resend_signature(b"{}", None, sc)
-        assert ok is False
+    async def test_missing_svix_headers_reject(self):
+        body = b"{}"
+        sig = _svix_sign(_RESEND_SECRET, _SVIX_ID, _SVIX_TS, body)
+        sc = _mock_sc(resend_secret=_RESEND_SECRET)
+        # Each of the three Svix headers is required.
+        assert not await _verify_resend_signature(
+            body, None, _SVIX_TS, sig, sc, now=int(_SVIX_TS)
+        )
+        assert not await _verify_resend_signature(
+            body, _SVIX_ID, None, sig, sc, now=int(_SVIX_TS)
+        )
+        assert not await _verify_resend_signature(
+            body, _SVIX_ID, _SVIX_TS, None, sc, now=int(_SVIX_TS)
+        )

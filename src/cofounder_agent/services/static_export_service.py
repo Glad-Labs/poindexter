@@ -323,7 +323,11 @@ async def export_post(
             logger.warning("[STATIC_EXPORT] Post not found for slug: %s", slug)
             return False
 
-        all_posts = await _fetch_published_posts(pool)
+        # Single fetch WITH content — the index/sitemap derive content-stripped
+        # summaries in-memory (_post_summary ignores the content column), and the
+        # feed slices the newest 50 below. Avoids a second full posts JOIN/GROUP BY
+        # scan per publish (#620).
+        all_posts = await _fetch_published_posts(pool, include_content=True)
         index_data = {
             "posts": [_post_summary(p) for p in all_posts],
             "total": len(all_posts),
@@ -333,8 +337,7 @@ async def export_post(
         if not url:
             success = False
 
-        posts_with_content = await _fetch_published_posts(pool, include_content=True)
-        feed = _build_json_feed(posts_with_content[:50], site_url, site_title)
+        feed = _build_json_feed(all_posts[:50], site_url, site_title)
         url = await _upload_json("feed.json", _to_json(feed), site_config=_sc)
         if not url:
             success = False

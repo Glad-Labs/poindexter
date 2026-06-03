@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
@@ -198,18 +198,41 @@ def clean_generated_content(content: str, title: str = "") -> str:
 # ============================================================================
 
 
+class ApproveTaskRequest(BaseModel):
+    """Request body for ``POST /{task_id}/approve`` (Glad-Labs/poindexter#615).
+
+    These mutation fields used to bind as query parameters, leaking
+    ``auto_publish`` / ``featured_image_url`` into proxy + access logs on a
+    state-changing POST and breaking the documented JSON-body cURL. The JSON
+    body is now canonical; query-param binding is retained as a deprecated
+    back-compat fallback for existing CLI / MCP callers (see ``approve_task``).
+    """
+
+    approved: bool = True
+    human_feedback: str | None = None
+    reviewer_id: str | None = None
+    featured_image_url: str | None = None
+    image_source: str | None = None
+    auto_publish: bool = False
+    publish_at: str | None = None
+
+
 @publishing_router.post(
     "/{task_id}/approve", response_model=UnifiedTaskResponse, summary="Approve task for publishing"
 )
 async def approve_task(
     task_id: str,
-    approved: bool = True,
-    human_feedback: str | None = None,
-    reviewer_id: str | None = None,
-    featured_image_url: str | None = None,
-    image_source: str | None = None,
-    auto_publish: bool = False,
-    publish_at: str | None = None,
+    body: ApproveTaskRequest | None = None,
+    # Deprecated query-param fallback (#615) — hidden from the OpenAPI schema so
+    # the JSON body is the documented contract. Consulted only when no body is
+    # sent, preserving existing query-string CLI/MCP callers.
+    approved: bool = Query(default=True, include_in_schema=False),
+    human_feedback: str | None = Query(default=None, include_in_schema=False),
+    reviewer_id: str | None = Query(default=None, include_in_schema=False),
+    featured_image_url: str | None = Query(default=None, include_in_schema=False),
+    image_source: str | None = Query(default=None, include_in_schema=False),
+    auto_publish: bool = Query(default=False, include_in_schema=False),
+    publish_at: str | None = Query(default=None, include_in_schema=False),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config_dep=Depends(get_site_config_dependency),
@@ -257,6 +280,18 @@ async def approve_task(
       }'
     ```
     """
+    # #615: the JSON body is the canonical input. Fall back to the deprecated
+    # query params only when no body was sent (legacy CLI/MCP callers + the old
+    # query-string cURL). Body wins field-by-field when present.
+    if body is not None:
+        approved = body.approved
+        human_feedback = body.human_feedback
+        reviewer_id = body.reviewer_id
+        featured_image_url = body.featured_image_url
+        image_source = body.image_source
+        auto_publish = body.auto_publish
+        publish_at = body.publish_at
+
     try:
         # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
         try:
@@ -809,113 +844,6 @@ async def go_live(
         "published_url": f"/posts/{row['slug']}",
         "message": "Post is now live",
     }
-
-
-@publishing_router.post(
-    "/{task_id}/reject", response_model=UnifiedTaskResponse, summary="Reject task for revision"
-)
-async def reject_task(
-    task_id: str,
-    token: str = Depends(verify_api_token),
-    db_service: DatabaseService = Depends(get_database_dependency),
-):
-    """
-    Reject a task and send it back for revision.
-
-    Changes task status to 'rejected' with optional feedback.
-    Task can be revised and resubmitted.
-
-    **Parameters:**
-    - task_id: Task UUID or numeric ID
-
-    **Returns:**
-    - Updated task with status 'rejected'
-
-    **Example cURL:**
-    ```bash
-    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/reject \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
-    """
-    try:
-        # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
-        try:
-            UUID(task_id)
-        except ValueError:
-            if len(task_id) >= 6 and hasattr(db_service, 'pool') and db_service.pool:
-                resolved = await db_service.pool.fetchval(
-                    "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
-                    task_id,
-                )
-                if resolved:
-                    task_id = str(resolved)
-                elif not task_id.isdigit():
-                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'") from None
-            elif not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format") from None
-
-        # Fetch task
-        task = await db_service.get_task(task_id)
-
-        if not task:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        # Ownership check
-        if isinstance(task, dict):
-            _check_task_ownership(task, token)
-
-        # Check if task is in a state that can be rejected
-        current_status = task.get("status", "unknown")
-        if current_status not in ["completed", "approved", "awaiting_approval"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot reject task with status '{current_status}'. Must be 'completed', 'approved', or 'awaiting_approval'.",
-            )
-
-        # Update task status to rejected
-        logger.info("Rejecting task %s (current status: %s)", task_id, current_status)
-        reject_metadata = {
-            "rejected_at": datetime.now(timezone.utc).isoformat(),
-            "rejected_by": "operator",
-        }
-        await db_service.update_task_status(
-            task_id, "rejected", result=json.dumps({"metadata": reject_metadata})
-        )
-
-        # Record the rejection on pipeline_gate_history so `content_tasks`
-        # view's approval_status / approved_by columns resolve non-NULL.
-        try:
-            await db_service.pool.execute(
-                """
-                INSERT INTO pipeline_gate_history
-                    (task_id, gate_name, event_kind, feedback, metadata)
-                VALUES ($1, $2, $3, $4, $5::jsonb)
-                """,
-                task_id,
-                LEGACY_APPROVAL_GATE,
-                "rejected",
-                None,
-                json.dumps({"reviewer": "operator", "decision": "rejected"}, default=str),
-            )
-        except Exception as review_err:
-            logger.warning(
-                "[reject_task] pipeline_gate_history write failed for %s: %s",
-                task_id, review_err,
-            )
-
-        # Fetch updated task
-        updated_task = await db_service.get_task(task_id)
-
-        # Convert to response schema
-        return UnifiedTaskResponse(
-            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to reject task %s: %s", task_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to reject task") from e
 
 
 class GenerateImageRequest(BaseModel):

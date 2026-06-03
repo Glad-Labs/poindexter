@@ -720,6 +720,38 @@ class TestGetTasksPaginated:
         tasks, total = await db.get_tasks_paginated(status="pending")
         assert tasks == []
 
+    @pytest.mark.asyncio
+    async def test_light_projection_truncates_content(self):
+        """#619 — light=True projects LEFT(content, 250) (a preview) and drops
+        SELECT *, so Postgres prunes the heavy view blobs + correlated
+        subqueries instead of materializing them for a polled list."""
+        captured: dict[str, str] = {}
+
+        def _capture(sql, *_args):
+            captured["sql"] = sql
+            return []
+
+        pool = _make_pool(fetch_side_effect=_capture)
+        db = _make_db(pool)
+        await db.get_tasks_paginated(light=True)
+        assert "LEFT(content, 250)" in captured["sql"]
+        assert "SELECT *" not in captured["sql"]
+
+    @pytest.mark.asyncio
+    async def test_default_uses_select_star(self):
+        """Default (non-light) keeps SELECT * — existing callers unchanged."""
+        captured: dict[str, str] = {}
+
+        def _capture(sql, *_args):
+            captured["sql"] = sql
+            return []
+
+        pool = _make_pool(fetch_side_effect=_capture)
+        db = _make_db(pool)
+        await db.get_tasks_paginated()
+        assert "SELECT *" in captured["sql"]
+        assert "LEFT(content" not in captured["sql"]
+
 
 # ---------------------------------------------------------------------------
 # get_task_counts

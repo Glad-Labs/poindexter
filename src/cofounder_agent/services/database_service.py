@@ -335,14 +335,21 @@ class DatabaseService:
         status: str | None = None,
         category: str | None = None,
         search: str | None = None,
+        light: bool = False,
     ) -> PaginatedTasksResult:
         """Delegate to tasks module.
 
         Returns ``(rows, total)`` — destructure at the call site. The
         prior ``-> dict`` annotation was a long-standing lie; callers
         always received the leaf's tuple. See #201.
+
+        ``light=True`` returns a lean projection (content truncated to a
+        preview, heavy view blobs + correlated subqueries pruned) for
+        list/preview callers — see ``tasks.get_tasks_paginated`` (#619).
         """
-        return await self.tasks.get_tasks_paginated(offset, limit, status, category, search)
+        return await self.tasks.get_tasks_paginated(
+            offset, limit, status, category, search, light=light
+        )
 
     async def get_task_counts(self) -> dict:
         """Delegate to tasks module."""

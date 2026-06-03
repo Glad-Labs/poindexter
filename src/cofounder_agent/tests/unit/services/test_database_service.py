@@ -393,7 +393,10 @@ class TestTaskDelegation:
             return_value={"tasks": [], "total": 0, "offset": 0, "limit": 20}
         )
         await svc.get_tasks_paginated(offset=0, limit=20, status="pending")
-        mocks["tasks"].get_tasks_paginated.assert_awaited_once_with(0, 20, "pending", None, None)
+        # The delegate forwards the #619 `light` flag (default False) to the leaf.
+        mocks["tasks"].get_tasks_paginated.assert_awaited_once_with(
+            0, 20, "pending", None, None, light=False
+        )
 
     @pytest.mark.asyncio
     async def test_delete_task_delegates(self):

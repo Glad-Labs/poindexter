@@ -979,7 +979,9 @@ async def get_view_stats(
         }
     except Exception as e:
         logger.error("[ANALYTICS] Failed: %s", e, exc_info=True)
-        return {"error": "analytics_unavailable"}
+        # Signal the failure via the HTTP status, not a 200 with an {error}
+        # body that monitors/clients read as success (poindexter#637).
+        raise HTTPException(status_code=503, detail="analytics_unavailable") from e
 
 
 # ============================================================================
@@ -1041,4 +1043,4 @@ async def rebuild_static_export(
         return JSONResponse(content=result, status_code=status_code)
     except Exception as e:
         logger.error("[STATIC_EXPORT] Rebuild failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Static export rebuild failed") from e

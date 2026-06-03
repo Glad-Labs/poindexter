@@ -23,13 +23,22 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from services.error_handler import handle_error
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
 
 class ErrorResponse:
-    """Standardized error response format."""
+    """Standardized error response format.
+
+    ``to_dict()`` emits the canonical ``{error_code, message, details}``
+    envelope shared with ``services.error_handler.ErrorResponse`` so every
+    endpoint returns one error contract regardless of which helper built the
+    response (Glad-Labs/poindexter#624). The richer constructor (status_code /
+    operation / timestamp) is retained for backward compatibility; the extra
+    context is folded into ``details``.
+    """
 
     def __init__(
         self,
@@ -54,13 +63,19 @@ class ErrorResponse:
         self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON response."""
+        """Convert to the canonical ``{error_code, message, details}`` envelope.
+
+        Mirrors ``services.error_handler.ErrorResponse`` (#624). The legacy
+        ``status_code`` / ``operation`` / ``timestamp`` fields live under
+        ``details`` so no context is lost in the unification.
+        """
+        details: dict[str, Any] = {"timestamp": self.timestamp}
+        if self.operation:
+            details["operation"] = self.operation
         return {
-            "error": {
-                "type": self.error_type,
-                "detail": self.detail,
-                "timestamp": self.timestamp,
-            }
+            "error_code": self.error_type,
+            "message": self.detail,
+            "details": details,
         }
 
     def to_http_exception(self) -> HTTPException:
@@ -212,33 +227,33 @@ def create_error_response(
     """
     Create a standardized error response dictionary.
 
+    Delegates to the canonical ``services.error_handler`` contract (#624) so
+    this and ``services.error_handler.create_error_response`` emit the same
+    ``{error_code, message, details}`` envelope. The raw exception message is
+    never exposed — ``handle_error`` substitutes a generic message and records
+    the exception class under ``details.error_type`` — so a client-side parser
+    sees one shape across every endpoint.
+
     Args:
         error: The exception that occurred
-        operation: Name of operation
-        status_code: HTTP status code
+        operation: Name of operation (recorded under ``details.operation``)
+        status_code: HTTP status code (advisory; retained for signature compat)
 
     Returns:
-        Dictionary with standardized error format
+        Dictionary with the canonical error format::
 
-    Example:
-        ```python
-        error_resp = create_error_response(e, "create_post", 400)
-        # {
-        #     "error": {
-        #         "type": "ValueError",
-        #         "detail": "Invalid input",
-        #         "timestamp": "2026-01-17T12:34:56+00:00"
-        #     }
-        # }
-        ```
+            {
+                "error_code": "INTERNAL_ERROR",
+                "message": "An internal service error occurred",
+                "details": {"operation": "create_post", "error_type": "ValueError"}
+            }
     """
-    error_response = ErrorResponse(
-        status_code=status_code,
-        detail="An error occurred",
-        operation=operation,
-        error_type=type(error).__name__,
+    app_error = handle_error(
+        error,
+        log_exception=False,  # callers log via handle_route_error; keep this pure
+        context={"operation": operation} if operation else None,
     )
-    return error_response.to_dict()
+    return app_error.to_response().model_dump(exclude_none=True)
 
 
 def log_and_raise_http_error(

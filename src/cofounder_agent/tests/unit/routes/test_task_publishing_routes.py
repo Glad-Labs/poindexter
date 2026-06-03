@@ -4,7 +4,6 @@ Unit tests for routes/task_publishing_routes.py.
 Tests cover:
 - POST /{task_id}/approve     — approve_task (happy path, reject via approved=false, 404, invalid status, invalid ID)
 - POST /{task_id}/publish     — publish_task (happy path, 404, non-approved status, invalid ID)
-- POST /{task_id}/reject      — reject_task (happy path, 404, invalid status, invalid ID)
 - POST /{task_id}/generate-image — generate_task_image (invalid source, 404, pexels missing key)
 - Utility function            — clean_generated_content
 
@@ -219,6 +218,54 @@ class TestApproveTask:
         assert resp.status_code == 200
         call_args = mock_db.update_task_status.call_args
         assert call_args[0][1] == "rejected"
+
+    def test_approve_via_json_body(self):
+        """#615 — the canonical path: mutation fields arrive in the JSON body."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = client.post(
+            f"/{VALID_TASK_ID}/approve",
+            json={"approved": True, "reviewer_id": "u1", "auto_publish": False},
+        )
+
+        assert resp.status_code == 200
+        first_call = mock_db.update_task_status.call_args_list[0]
+        assert first_call[0][1] == "approved"
+
+    def test_reject_via_json_body(self):
+        """#615 — approved=false in the JSON body rejects the task."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = client.post(f"/{VALID_TASK_ID}/approve", json={"approved": False})
+
+        assert resp.status_code == 200
+        assert mock_db.update_task_status.call_args[0][1] == "rejected"
+
+    def test_json_body_wins_over_query_params(self):
+        """#615 — when both are present the JSON body is authoritative, so a
+        proxy-cached query string can't override the intended action."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        # query says approve=true, body says approve=false → body wins → rejected
+        resp = client.post(
+            f"/{VALID_TASK_ID}/approve?approved=true",
+            json={"approved": False},
+        )
+
+        assert resp.status_code == 200
+        assert mock_db.update_task_status.call_args[0][1] == "rejected"
 
     def test_task_not_found_returns_404(self):
         mock_db = make_mock_db()
@@ -536,116 +583,6 @@ class TestPublishTask:
 
         # Should still succeed despite post creation failure
         assert resp.status_code == 200
-
-
-# ===========================================================================
-# POST /{task_id}/reject
-# ===========================================================================
-
-
-@pytest.mark.unit
-class TestRejectTask:
-    def _post_reject(self, client, task_id=VALID_TASK_ID):
-        return client.post(f"/{task_id}/reject")
-
-    def test_reject_happy_path(self):
-        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
-        mock_db = make_mock_db()
-        task = _make_task(status="awaiting_approval")
-        mock_db.get_task = AsyncMock(side_effect=[task, task])
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        assert resp.status_code == 200
-        call_args = mock_db.update_task_status.call_args
-        assert call_args[0][1] == "rejected"
-
-    def test_reject_approved_task(self):
-        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
-        mock_db = make_mock_db()
-        task = _make_task(status="approved")
-        mock_db.get_task = AsyncMock(side_effect=[task, task])
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        assert resp.status_code == 200
-
-    def test_reject_completed_task(self):
-        # GH#337 workstream (b): real ModelConverter runs against ``_make_task()``.
-        mock_db = make_mock_db()
-        task = _make_task(status="completed")
-        mock_db.get_task = AsyncMock(side_effect=[task, task])
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        assert resp.status_code == 200
-
-    def test_task_not_found_returns_404(self):
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=None)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        assert resp.status_code == 404
-        assert "not found" in resp.json()["detail"]
-
-    def test_invalid_status_returns_400(self):
-        mock_db = make_mock_db()
-        task = _make_task(status="pending")
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        assert resp.status_code == 400
-        assert "Cannot reject" in resp.json()["detail"]
-
-    def test_published_status_returns_400(self):
-        """Published tasks cannot be rejected."""
-        mock_db = make_mock_db()
-        task = _make_task(status="published")
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        assert resp.status_code == 400
-
-    def test_invalid_task_id_returns_400(self):
-        mock_db = make_mock_db()
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client, task_id="bad!")
-
-        assert resp.status_code == 400
-        assert "Invalid task ID" in resp.json()["detail"]
-
-    def test_ownership_bypass_in_solo_operator_mode(self):
-        mock_db = make_mock_db()
-        task = _make_task(status="completed", user_id="different-user")
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_reject(client)
-
-        # Solo-operator: token auth bypasses ownership
-        assert resp.status_code in (200, 404, 500)
-
-
-# ===========================================================================
-# POST /{task_id}/generate-image
-# ===========================================================================
 
 
 @pytest.mark.unit

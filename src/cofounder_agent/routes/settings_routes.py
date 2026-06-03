@@ -72,8 +72,14 @@ async def list_settings(
     ),
     tags: str | None = Query(None, description="Comma-separated tag filter"),
     search: str | None = Query(None, description="Search in key and description"),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed). Aliased by offset/limit."),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page. Aliased by offset/limit."),
+    offset: int | None = Query(
+        None, ge=0, description="Result offset — canonical across the API; overrides page/per_page (#635)."
+    ),
+    limit: int | None = Query(
+        None, ge=1, le=100, description="Max results — canonical across the API; overrides page/per_page (#635)."
+    ),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -84,40 +90,56 @@ async def list_settings(
             category=category if category else None
         )
 
-        # Apply pagination
+        # Apply pagination. offset/limit are the canonical API params (#635);
+        # when supplied they take precedence over the legacy page/per_page.
         total = len(all_settings)
-        offset = (page - 1) * per_page
-        pages = (total + per_page - 1) // per_page if per_page > 0 else 1
+        if offset is not None or limit is not None:
+            eff_limit = limit if limit is not None else per_page
+            eff_offset = offset if offset is not None else 0
+        else:
+            eff_limit = per_page
+            eff_offset = (page - 1) * per_page
+        pages = (total + eff_limit - 1) // eff_limit if eff_limit > 0 else 1
+        eff_page = (eff_offset // eff_limit) + 1 if eff_limit > 0 else 1
 
         # Slice for pagination
-        paginated_items = all_settings[offset : offset + per_page]
+        paginated_items = all_settings[eff_offset : eff_offset + eff_limit]
 
-        # Convert to SettingResponse objects
-        items = [
-            SettingResponse(
-                id=_setting_attr(setting, "id") or idx,
-                key=_setting_attr(setting, "key", ""),
-                value=_setting_attr(setting, "value", ""),
-                data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
-                category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
-                environment=_setting_attr(
-                    setting, "environment", SettingEnvironmentEnum.PRODUCTION
-                ),
-                description=_setting_attr(setting, "description", ""),
-                is_encrypted=_setting_attr(setting, "is_encrypted", False),
-                is_read_only=_setting_attr(setting, "is_read_only", False),
-                tags=_setting_attr(setting, "tags", []),
-                created_at=_setting_attr(setting, "created_at") or datetime.now(timezone.utc),
-                updated_at=_setting_attr(setting, "updated_at") or datetime.now(timezone.utc),
-                created_by_id=_setting_attr(setting, "created_by_id", 1),
-                updated_by_id=_setting_attr(setting, "updated_by_id"),
-                value_preview=(_setting_attr(setting, "value", "") or "")[:50],
+        # Convert to SettingResponse objects. Secret values (and encrypted
+        # ciphertext) are masked — they must never round-trip through the
+        # read API (#642).
+        items = []
+        for idx, setting in enumerate(paginated_items):
+            raw_value = _setting_attr(setting, "value", "") or ""
+            is_secret = bool(_setting_attr(setting, "is_secret", False)) or str(
+                raw_value
+            ).startswith("enc:")
+            value = "********" if is_secret else raw_value
+            value_preview = "********" if is_secret else raw_value[:50]
+            items.append(
+                SettingResponse(
+                    id=_setting_attr(setting, "id") or idx,
+                    key=_setting_attr(setting, "key", ""),
+                    value=value,
+                    data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
+                    category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
+                    environment=_setting_attr(
+                        setting, "environment", SettingEnvironmentEnum.PRODUCTION
+                    ),
+                    description=_setting_attr(setting, "description", ""),
+                    is_encrypted=_setting_attr(setting, "is_encrypted", False),
+                    is_read_only=_setting_attr(setting, "is_read_only", False),
+                    tags=_setting_attr(setting, "tags", []),
+                    created_at=_setting_attr(setting, "created_at") or datetime.now(timezone.utc),
+                    updated_at=_setting_attr(setting, "updated_at") or datetime.now(timezone.utc),
+                    created_by_id=_setting_attr(setting, "created_by_id", 1),
+                    updated_by_id=_setting_attr(setting, "updated_by_id"),
+                    value_preview=value_preview,
+                )
             )
-            for idx, setting in enumerate(paginated_items)
-        ]
 
         return SettingListResponse(
-            total=total, page=page, per_page=per_page, pages=pages, items=items
+            total=total, page=eff_page, per_page=eff_limit, pages=pages, items=items
         )
     except Exception as exc:
         logger.error("[list_settings] Failed to retrieve settings", exc_info=True)
@@ -375,7 +397,7 @@ async def toggle_setting_active(
             setting_id, active, exc_info=True,
         )
         raise HTTPException(
-            status_code=500, detail=f"Failed to toggle setting: {exc}"
+            status_code=500, detail="Failed to toggle setting"
         ) from exc
 
 
@@ -413,5 +435,5 @@ async def reload_site_config(
     except Exception as exc:
         logger.exception("[settings_routes] site_config reload failed")
         raise HTTPException(
-            status_code=500, detail=f"site_config reload failed: {exc}"
+            status_code=500, detail="site_config reload failed"
         ) from exc

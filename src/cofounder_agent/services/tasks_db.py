@@ -959,6 +959,7 @@ class TasksDatabase(DatabaseServiceMixin):
         category: str | None = None,
         search: str | None = None,
         site_id: str | None = None,
+        light: bool = False,
     ) -> PaginatedTasksResult:
         """
         Get paginated tasks from content_tasks with optional filtering.
@@ -1012,14 +1013,29 @@ class TasksDatabase(DatabaseServiceMixin):
         limit_param = param_idx
         offset_param = param_idx + 1
 
+        # The content_tasks view's SELECT * pulls heavy blobs (full content,
+        # qa_feedback, stage_data-derived metadata/result) AND evaluates 5
+        # correlated subqueries per row (approval_status / approved_by /
+        # human_feedback / post_id / post_slug). The polled approvals list only
+        # needs a content PREVIEW + a few scalars, so light=True projects just
+        # those and lets Postgres prune the unused view expressions (#619).
+        if light:
+            select_cols = (
+                "id, task_id, task_type, title, topic, status, created_at, "
+                "quality_score, featured_image_url, "
+                "LEFT(content, 250) AS content, task_metadata"
+            )
+        else:
+            select_cols = "*"
+
         # Single round-trip: window function COUNT(*) OVER () returns total alongside rows
         sql_list = f"""
-            SELECT *, COUNT(*) OVER () AS total_count
+            SELECT {select_cols}, COUNT(*) OVER () AS total_count
             FROM content_tasks
             {where_sql}
             ORDER BY created_at DESC
             LIMIT ${limit_param} OFFSET ${offset_param}
-        """  # nosec B608  # where_sql built from local literals; limit/offset rendered as "${N}" placeholders; values use $N params
+        """  # nosec B608  # select_cols + where_sql built from local literals; limit/offset are "${N}" placeholders; values use $N params
 
         try:
             async with self.pool.acquire() as conn:

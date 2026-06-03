@@ -106,6 +106,37 @@ class TestListSettings:
         assert data["per_page"] == 20
         assert data["page"] == 1
 
+    def test_secret_value_is_masked(self):
+        """#642 — secret values (and enc: ciphertext) must not round-trip
+        through the read API; both value and value_preview are masked."""
+        secret = {
+            **SETTING_DICT,
+            "key": "openai_api_key",
+            "value": "enc:v1:c2VjcmV0Y2lwaGVydGV4dA==",
+            "is_secret": True,
+        }
+        mock_db = _make_settings_db()
+        mock_db.get_all_settings = AsyncMock(return_value=[secret])
+        item = TestClient(_build_app(mock_db)).get("/api/settings").json()["items"][0]
+        assert item["value"] == "********"
+        assert item["value_preview"] == "********"
+
+    def test_non_secret_value_not_masked(self):
+        """Non-secret settings still expose their value (unchanged)."""
+        item = TestClient(_build_app()).get("/api/settings").json()["items"][0]
+        assert item["value"] == "debug"
+
+    def test_offset_limit_override_page(self):
+        """#635 — offset/limit (the canonical API params) override page/per_page
+        and the response reflects the effective window."""
+        mock_db = _make_settings_db()
+        mock_db.get_all_settings = AsyncMock(return_value=[SETTING_DICT] * 10)
+        data = TestClient(_build_app(mock_db)).get("/api/settings?offset=2&limit=3").json()
+        assert data["total"] == 10
+        assert len(data["items"]) == 3
+        assert data["per_page"] == 3
+        assert data["pages"] == 4
+
     def test_custom_limit_via_query(self):
         mock_db = _make_settings_db()
         mock_db.get_all_settings = AsyncMock(return_value=[SETTING_DICT] * 10)

@@ -61,12 +61,20 @@ class TestErrorResponse:
         assert "+" in resp.timestamp or "Z" in resp.timestamp or "T" in resp.timestamp
 
     def test_to_dict_shape(self):
+        # #624 — canonical {error_code, message, details} envelope, shared with
+        # services.error_handler.ErrorResponse. Legacy fields fold into details.
         resp = ErrorResponse(status_code=422, detail="unprocessable", error_type="InputError")
         d = resp.to_dict()
-        assert "error" in d
-        assert d["error"]["type"] == "InputError"
-        assert d["error"]["detail"] == "unprocessable"
-        assert d["error"]["timestamp"] == resp.timestamp
+        assert d["error_code"] == "InputError"
+        assert d["message"] == "unprocessable"
+        assert d["details"]["timestamp"] == resp.timestamp
+
+    def test_to_dict_includes_operation_in_details(self):
+        resp = ErrorResponse(
+            status_code=500, detail="boom", operation="get_post", error_type="DBError"
+        )
+        d = resp.to_dict()
+        assert d["details"]["operation"] == "get_post"
 
     def test_to_http_exception_has_correct_status_and_detail(self):
         resp = ErrorResponse(status_code=403, detail="Forbidden")
@@ -208,39 +216,34 @@ class TestHandleServiceError:
 
 @pytest.mark.unit
 class TestCreateErrorResponse:
-    def test_returns_dict_with_error_key(self):
+    """#624 — delegates to the canonical services.error_handler contract, so
+    the result is the {error_code, message, details} envelope (not the legacy
+    {error: {type, detail, timestamp}} shape)."""
+
+    def test_returns_dict_with_canonical_keys(self):
         exc = ValueError("bad")
         result = create_error_response(exc, "parse")
         assert isinstance(result, dict)
-        assert "error" in result
+        assert "error_code" in result
+        assert "message" in result
 
-    def test_error_type_matches_exception_class(self):
+    def test_exception_class_recorded_in_details(self):
         exc = KeyError("key")
         result = create_error_response(exc, "lookup")
-        assert result["error"]["type"] == "KeyError"
+        assert result["details"]["error_type"] == "KeyError"
 
-    def test_detail_is_generic_message(self):
-        # Error messages are not exposed in HTTP responses to prevent information
-        # leakage; create_error_response returns a generic "An error occurred" detail.
+    def test_message_does_not_leak_exception_text(self):
+        # Raw exception messages are never exposed in HTTP responses (info-leak
+        # guard, shared with the canonical handler).
         exc = RuntimeError("something specific")
         result = create_error_response(exc, "run")
-        assert result["error"]["detail"] == "An error occurred"
+        assert "something specific" not in result["message"]
 
-    def test_default_status_code_500(self):
-        exc = RuntimeError("oops")
-        result = create_error_response(exc, "op")
-        # status_code is on the ErrorResponse but not in to_dict() output;
-        # just verify we get the dict shape
-        assert "type" in result["error"]
-        assert "detail" in result["error"]
-        assert "timestamp" in result["error"]
-
-    def test_custom_operation_name(self):
+    def test_operation_recorded_in_details(self):
         exc = ValueError("bad data")
-        # create_error_response stores operation on ErrorResponse but doesn't include
-        # it in to_dict() — that's fine, just test it doesn't raise
         result = create_error_response(exc, "custom_op", status_code=400)
-        assert result["error"]["type"] == "ValueError"
+        assert result["details"]["operation"] == "custom_op"
+        assert result["details"]["error_type"] == "ValueError"
 
 
 # ---------------------------------------------------------------------------

@@ -43,6 +43,13 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from services.audit_log import audit_log_bg
+from services.gate_machinery import (
+    GateServiceError,
+    ensure_gate_match,
+    iso_or_none,
+    resolve_reject_status,
+)
+from services.gate_machinery import coerce_artifact as _coerce_artifact
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -72,8 +79,12 @@ DEFAULT_REJECT_STATUS_DISMISS = "dismissed"
 # ---------------------------------------------------------------------------
 
 
-class ApprovalServiceError(Exception):
-    """Base class — every service-level failure derives from this."""
+class ApprovalServiceError(GateServiceError):
+    """Base class — every service-level failure derives from this.
+
+    Derives from the shared :class:`services.gate_machinery.GateServiceError`
+    root so a caller can ``except GateServiceError`` to catch a failure from
+    either approval service (#622)."""
 
 
 class TaskNotFoundError(ApprovalServiceError):
@@ -152,24 +163,6 @@ async def _fetch_task_row(pool: Any, task_id: str) -> dict[str, Any] | None:
             str(task_id),
         )
         return dict(row) if row else None
-
-
-def _coerce_artifact(raw: Any) -> dict[str, Any]:
-    """``gate_artifact`` returns as JSON string from asyncpg unless an
-    automatic JSONB codec is set. Parse defensively so callers always
-    see a dict."""
-    if raw is None:
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {"raw": parsed}
-        except (ValueError, TypeError):
-            return {"raw": raw}
-    # Anything else — wrap so we don't leak arbitrary types upstream.
-    return {"raw": str(raw)}
 
 
 # ---------------------------------------------------------------------------
@@ -376,20 +369,15 @@ async def approve(
         )
         raise TaskNotFoundError(f"Task {task_id} not found")
 
-    active_gate = row.get("awaiting_gate")
-    if not active_gate:
-        raise TaskNotPausedError(
-            f"Task {task_id} is not paused at any gate "
-            f"(current status={row.get('status')!r})"
-        )
-
-    if gate_name is not None and gate_name != active_gate:
-        raise GateMismatchError(
-            f"Task {task_id} is paused at gate {active_gate!r}, "
-            f"not {gate_name!r}. Refusing to approve the wrong gate."
-        )
-
-    cleared_gate = active_gate
+    cleared_gate = ensure_gate_match(
+        row,
+        gate_name,
+        entity_label="Task",
+        entity_id=str(task_id),
+        not_paused_exc=TaskNotPausedError,
+        mismatch_exc=GateMismatchError,
+        verb="approve",
+    )
     previous_status = row.get("status")
 
     # Clear the gate columns. Keep status as-is (the runner flipped it
@@ -486,33 +474,22 @@ async def reject(
         )
         raise TaskNotFoundError(f"Task {task_id} not found")
 
-    active_gate = row.get("awaiting_gate")
-    if not active_gate:
-        raise TaskNotPausedError(
-            f"Task {task_id} is not paused at any gate "
-            f"(current status={row.get('status')!r})"
-        )
-
-    if gate_name is not None and gate_name != active_gate:
-        raise GateMismatchError(
-            f"Task {task_id} is paused at gate {active_gate!r}, "
-            f"not {gate_name!r}. Refusing to reject the wrong gate."
-        )
-
-    rejected_gate = active_gate
+    rejected_gate = ensure_gate_match(
+        row,
+        gate_name,
+        entity_label="Task",
+        entity_id=str(task_id),
+        not_paused_exc=TaskNotPausedError,
+        mismatch_exc=GateMismatchError,
+        verb="reject",
+    )
 
     # Per-gate reject status — operators / Stages can pin a specific
     # value via app_settings (``approval_gate_<gate>_reject_status``).
     # Fallback is the global ``rejected``. This lets a topic_decision
     # gate dismiss-not-reject (so the task is closed cleanly) while a
     # final_media gate fully rejects (so retry logic kicks in).
-    new_status = DEFAULT_REJECT_STATUS
-    if site_config is not None:
-        custom = site_config.get(
-            f"approval_gate_{rejected_gate}_reject_status", ""
-        )
-        if custom:
-            new_status = str(custom).strip()
+    new_status = resolve_reject_status(site_config, rejected_gate, DEFAULT_REJECT_STATUS)
 
     async with pool.acquire() as conn:
         await conn.execute(
@@ -638,9 +615,7 @@ async def list_pending(
         d["artifact"] = _coerce_artifact(d.pop("gate_artifact", None))
         # Stringify timestamp for JSON-friendliness — CLI and MCP both
         # want serializable shapes.
-        ts = d.get("gate_paused_at")
-        if ts is not None and hasattr(ts, "isoformat"):
-            d["gate_paused_at"] = ts.isoformat()
+        d["gate_paused_at"] = iso_or_none(d.get("gate_paused_at"))
         out.append(d)
     return out
 
@@ -659,16 +634,18 @@ async def show_pending(
     row = await _fetch_task_row(pool, task_id)
     if row is None:
         raise TaskNotFoundError(f"Task {task_id} not found")
-    if not row.get("awaiting_gate"):
-        raise TaskNotPausedError(
-            f"Task {task_id} is not paused at any gate "
-            f"(current status={row.get('status')!r})"
-        )
+    ensure_gate_match(
+        row,
+        None,
+        entity_label="Task",
+        entity_id=str(task_id),
+        not_paused_exc=TaskNotPausedError,
+        mismatch_exc=GateMismatchError,
+        verb="approve",
+    )
 
     artifact = _coerce_artifact(row.get("gate_artifact"))
-    paused_at = row.get("gate_paused_at")
-    if paused_at is not None and hasattr(paused_at, "isoformat"):
-        paused_at = paused_at.isoformat()
+    paused_at = iso_or_none(row.get("gate_paused_at"))
 
     return {
         "task_id": row["id"],

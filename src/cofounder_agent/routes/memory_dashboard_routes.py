@@ -141,7 +141,7 @@ async def memory_stats(
         stats = await mem.stats()
     except Exception as exc:
         logger.error("memory stats failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Stats failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Stats failed") from exc
     finally:
         if mem is not None:
             await mem.close()
@@ -214,7 +214,7 @@ async def memory_search_endpoint(
         )
     except Exception as exc:
         logger.error("memory search failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Search failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Search failed") from exc
     finally:
         if mem is not None:
             await mem.close()

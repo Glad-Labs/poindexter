@@ -247,6 +247,7 @@ async def get_pending_approvals(
                 limit=limit,
                 status="awaiting_approval",
                 category=task_type,  # task_type is stored as category in database
+                light=True,  # this list only renders a 200-char content_preview (#619)
             )
             # get_tasks_paginated returns tuple of (tasks, total)
             if isinstance(result, tuple):

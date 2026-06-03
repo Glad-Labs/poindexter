@@ -17,6 +17,7 @@ import random
 import re
 import tempfile
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -514,6 +515,702 @@ async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
     return None
 
 
+# ===========================================================================
+# publish_post_from_task — decomposed phases (Glad-Labs/poindexter#623)
+#
+# publish_post_from_task is "the ONE place where a task becomes a post". It was
+# a 941-line god-function; #623 split it into the named phases below, each
+# independently testable, with the public entrypoint reduced to a readable
+# orchestrator. Behavior is preserved exactly — pinned by the existing
+# publish-service test suite.
+# ===========================================================================
+
+
+@dataclass
+class _ParsedPublishInputs:
+    """Parsed + normalized inputs derived from a task, ready to build a post.
+
+    Phase 1 of :func:`publish_post_from_task` — pure (no I/O). Produced by
+    :func:`_parse_publish_inputs`.
+    """
+
+    merged: dict[str, Any]
+    task_metadata: dict[str, Any]
+    topic: str
+    draft_content: str
+    seo_description: str
+    seo_keywords: Any
+    featured_image_url: Any
+    featured_image_data: dict[str, Any]
+    metadata: dict[str, Any]
+
+
+def _parse_publish_inputs(
+    task: dict[str, Any], task_id: str
+) -> _ParsedPublishInputs | PublishResult:
+    """Phase 1 — parse + normalize the task into publish-ready inputs.
+
+    Merges ``task_metadata`` with ``result`` (result wins), pulls topic /
+    content / SEO / featured-image fields with their fallback chains, peels any
+    leaked writer JSON envelope off the content, strips stray HTML from the SEO
+    description, and stamps ``pipeline_task_id`` onto the post metadata seam.
+
+    Returns the parsed inputs, or a failed :class:`PublishResult` when the task
+    is missing the content or topic required to create a post.
+    """
+    from services.llm_text import maybe_unwrap_json
+
+    task_result = _parse_json_field(task.get("result"), "result", task_id)
+    task_metadata = _parse_json_field(task.get("task_metadata"), "task_metadata", task_id)
+    # task_result wins over task_metadata
+    merged = {**task_metadata, **task_result}
+
+    topic = task.get("topic", "") or merged.get("topic", "")
+    draft_content = (
+        task.get("content", "")
+        or merged.get("draft_content", "")
+        or merged.get("content", "")
+        or merged.get("body", "")
+        or merged.get("article", "")
+        or ""
+    )
+    # Defense at the publish boundary: peel any leaked writer JSON envelope
+    # (e.g. a ```json-fenced {"title": ..., "post_body": "<markdown>"} that
+    # slipped past the generation-time unwrap) so the published article is
+    # markdown, never a raw envelope. Mirrors the preview-render unwrap so
+    # preview and publish produce identical output. No-op on clean prose.
+    draft_content = maybe_unwrap_json(draft_content)
+    seo_description = merged.get("seo_description", "") or task.get("seo_description", "")
+    # internal tracker: strip any stray HTML (notably <img> tags) from the SEO
+    # description before it ships as the post's excerpt + meta description.
+    # Upstream writers occasionally leak markup that the /posts cards then
+    # render as literal text.
+    if seo_description:
+        seo_description = re.sub(r"<[^>]+>", "", seo_description).strip()
+        seo_description = re.sub(r"\s+", " ", seo_description)
+    seo_keywords = merged.get("seo_keywords", [])
+    featured_image_url = merged.get("featured_image_url") or task.get("featured_image_url")
+    # featured_image_data — reproducibility blob (SDXL prompt / model /
+    # seed / generation_seconds for the SDXL branch, basic provenance
+    # for the Pexels branch). Sourced by source_featured_image.execute
+    # and threaded through pipeline_versions.stage_data ->
+    # task_metadata.featured_image_data so it survives the
+    # finalize_task → publish hand-off. Lands on
+    # posts.featured_image_data via content_db.create_post. Closes the
+    # 2026-05-19 jank-audit dead-seam finding for the column.
+    featured_image_data = (
+        merged.get("featured_image_data")
+        or task.get("featured_image_data")
+        or {}
+    )
+    if not isinstance(featured_image_data, dict):
+        # Defensive: stage_data round-trips through JSONB so the value
+        # should always be a dict on arrival, but we shouldn't crash
+        # the publisher if some legacy upstream wrote a string.
+        featured_image_data = {}
+    metadata = merged.get("metadata", {})
+    if not isinstance(metadata, dict):
+        # Defensive — same shape as featured_image_data above. The
+        # downstream INSERT requires a dict so it can be json.dumps'd.
+        metadata = {}
+    # Stamp the source task_id onto posts.metadata so the
+    # posts ↔ pipeline_tasks link is a first-class structured seam
+    # rather than slug-suffix archaeology. scheduled_publisher reads
+    # this key to keep ``pipeline_tasks.status`` in lockstep with
+    # ``posts.status`` promotions; the /go-live admin route does the
+    # same. Per ``feedback_filter_on_seams_not_slugs`` — when a
+    # structured field exists, populate + filter on it. The 2026-05-28
+    # backfill migration populates this key for every existing post.
+    if task_id:
+        metadata["pipeline_task_id"] = str(task_id)
+
+    if not draft_content or not topic:
+        msg = "Missing content or topic — cannot create post"
+        logger.warning("[publish_service] %s for task %s", msg, task_id)
+        return PublishResult(success=False, error=msg)
+
+    return _ParsedPublishInputs(
+        merged=merged,
+        task_metadata=task_metadata,
+        topic=topic,
+        draft_content=draft_content,
+        seo_description=seo_description,
+        seo_keywords=seo_keywords,
+        featured_image_url=featured_image_url,
+        featured_image_data=featured_image_data,
+        metadata=metadata,
+    )
+
+
+async def _promote_or_skip_existing(
+    pool: Any,
+    task_id: str,
+    *,
+    stage_only: bool,
+    draft_mode: bool,
+    topic: str,
+    site_config: SiteConfig,
+) -> PublishResult | None:
+    """Phase 2 — idempotency / approve-then-publish promotion guard.
+
+    Slugs carry a ``task_id[:8]`` suffix, so an existing post for this task is
+    found by suffix match. Behavior matrix:
+
+    - existing.status='published' → idempotent no-op (real duplicate)
+    - existing.status='approved' AND stage_only=True → no-op (re-stage)
+    - existing.status='approved' AND stage_only=False → PROMOTE in place to
+      'published' (+ published_at / distributed_at), sync ``pipeline_tasks``,
+      push to R2, and return the existing post (no duplicate row created)
+    - existing.status='draft' → no-op (mid-edit, leave alone)
+
+    Returns a :class:`PublishResult` to short-circuit the publish, or ``None``
+    when no existing post matched and the caller should create one.
+
+    (2026-05-27: the old guard returned "skipping duplicate" for ANY existing
+    post, so the two-step approve→publish flow left the row stuck at
+    'approved'. The promote branch fixes that; the inline R2 push closes the
+    2026-05-27 R2-drift alert where the short-circuit returned before export.)
+    """
+    _task_suffix = task_id[:8]
+    existing = await pool.fetchrow(
+        "SELECT id, slug, title, status FROM posts WHERE slug LIKE '%' || $1",
+        _task_suffix,
+    )
+    if not existing:
+        return None
+
+    existing_status = (existing.get("status") or "").lower()
+    if existing_status == "approved" and not stage_only and not draft_mode:
+        now_ts = datetime.now(timezone.utc)
+        async with pool.acquire() as _promote_conn:
+            async with _promote_conn.transaction():
+                await _promote_conn.execute(
+                    "UPDATE posts SET status = 'published', "
+                    "published_at = COALESCE(published_at, $2), "
+                    "distributed_at = COALESCE(distributed_at, $2), "
+                    "updated_at = $2 "
+                    "WHERE id = $1",
+                    existing["id"], now_ts,
+                )
+                # Sync pipeline_tasks.status in lockstep — same rationale as
+                # the scheduled_publisher loop. Reads the seam
+                # (posts.metadata->>'pipeline_task_id') populated either at
+                # insert by publish_post_from_task or by the 2026-05-28 backfill.
+                sync_result = await _promote_conn.execute(
+                    """
+                    UPDATE pipeline_tasks
+                       SET status = 'published',
+                           updated_at = NOW()
+                     WHERE task_id = $1
+                       AND status IN ('approved', 'scheduled')
+                    """,
+                    str(task_id),
+                )
+                logger.info(
+                    "[publish_service] Promote-path pipeline_tasks "
+                    "sync for task=%s: %s",
+                    task_id, sync_result,
+                )
+        logger.info(
+            "[publish_service] Promoted existing approved post to "
+            "published: task=%s post_id=%s slug=%s",
+            task_id, existing["id"], existing["slug"],
+        )
+        # Push to R2 inline. Skipping this is what caused the 2026-05-27 R2
+        # drift alert — the short-circuit returned before reaching the main
+        # path's export_post call, leaving R2 one post stale until the
+        # static_export_reconciliation probe caught up.
+        promote_export_success = False
+        try:
+            from services.static_export_service import export_post
+
+            promote_export_success = await export_post(
+                pool, existing["slug"], site_config=site_config,
+            )
+            if not promote_export_success:
+                logger.warning(
+                    "[STATIC_EXPORT] Promote-path export_post returned "
+                    "failure for %s — R2 stays stale until next "
+                    "reconciliation cycle",
+                    existing["slug"],
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[STATIC_EXPORT] Promote-path export_post raised for "
+                "%s: %s",
+                existing["slug"], exc, exc_info=True,
+            )
+        return PublishResult(
+            success=True,
+            post_id=str(existing["id"]),
+            post_slug=existing["slug"],
+            published_url=f"/posts/{existing['slug']}",
+            post_title=existing.get("title", topic),
+            static_export_success=promote_export_success,
+        )
+
+    logger.warning(
+        "[publish_service] Post already exists for task %s "
+        "(post_id=%s, slug=%s, status=%s) — skipping duplicate",
+        task_id, existing["id"], existing["slug"], existing_status,
+    )
+    return PublishResult(
+        success=True,
+        post_id=str(existing["id"]),
+        post_slug=existing["slug"],
+        published_url=f"/posts/{existing['slug']}",
+        post_title=existing.get("title", topic),
+    )
+
+
+async def _resolve_tag_ids(
+    pool: Any,
+    task: dict[str, Any],
+    merged: dict[str, Any],
+    seo_keywords: Any,
+    task_id: str,
+) -> list[str]:
+    """Phase 4c — derive post.tag_ids from the task's tags + seo_keywords.
+
+    Normalizes each candidate to slug form, upserts into the ``tags`` table
+    (new terms auto-create), and returns the resolved tag ids. Empty/garbage
+    input → ``[]``. Tag resolution must never block publishing, so a DB error
+    is logged and swallowed (returns ``[]``).
+    """
+    candidate_tag_strings: list[str] = []
+    # Task-level tags (now threaded via ModelConverter.to_task_response
+    # since internal tracker fix — pulls from metadata JSONB as fallback).
+    task_tags = task.get("tags") or merged.get("tags") or []
+    if isinstance(task_tags, str):
+        task_tags = [t.strip() for t in task_tags.split(",") if t.strip()]
+    candidate_tag_strings.extend(task_tags or [])
+    # SEO keywords as a fallback source (already a list here; the
+    # str-join happens later when writing posts.seo_keywords).
+    if isinstance(seo_keywords, list):
+        candidate_tag_strings.extend(seo_keywords)
+    elif isinstance(seo_keywords, str) and seo_keywords:
+        candidate_tag_strings.extend(
+            t.strip() for t in seo_keywords.split(",") if t.strip()
+        )
+
+    if not candidate_tag_strings:
+        return []
+
+    # Normalize to slug form: lowercase, hyphenated, alnum-only.
+    seen_slugs: set[str] = set()
+    clean_pairs: list[tuple[str, str]] = []  # (slug, display_name)
+    for raw in candidate_tag_strings:
+        if not raw or not isinstance(raw, str):
+            continue
+        name = raw.strip()
+        if not name:
+            continue
+        slug_form = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        if not slug_form or slug_form in seen_slugs:
+            continue
+        seen_slugs.add(slug_form)
+        clean_pairs.append((slug_form, name))
+    if not clean_pairs:
+        return []
+
+    tag_ids: list[str] = []
+    try:
+        async with pool.acquire() as conn:
+            for slug_form, display_name in clean_pairs:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO tags (name, slug)
+                    VALUES ($1, $2)
+                    ON CONFLICT (slug) DO UPDATE SET updated_at = NOW()
+                    RETURNING id
+                    """,
+                    display_name, slug_form,
+                )
+                if row:
+                    tag_ids.append(str(row["id"]))
+        logger.info(
+            "[publish_service] Resolved %d tag_ids for task %s: %s",
+            len(tag_ids), task_id, [p[0] for p in clean_pairs],
+        )
+    except Exception as tag_err:
+        # Tag resolution must never block publishing.
+        logger.warning(
+            "[publish_service] Tag resolution failed for task %s: %s",
+            task_id, tag_err,
+        )
+        return []
+    return tag_ids
+
+
+async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
+    """Phase 11e (fire-and-forget) — wait for media files, then upload to R2.
+
+    Waits ``media_upload_delay_seconds`` for podcast/video/short generation to
+    finish, uploads each medium to R2, and regenerates the public podcast +
+    video RSS feeds on the CDN. Each feed regen is best-effort (non-fatal).
+    """
+    import asyncio as _aio
+    from pathlib import Path
+
+    from services.r2_upload_service import R2UploadService
+    _r2 = R2UploadService(site_config=site_config)
+    # Give podcast/video/short generation time to complete
+    _delay = int(site_config.get("media_upload_delay_seconds", "240"))
+    await _aio.sleep(_delay)
+    await _r2.upload_podcast_episode(post_id)
+    await _r2.upload_video_episode(post_id)
+    # Upload short video if it exists
+    short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{post_id}-short.mp4"
+    if short_path.exists():
+        await _r2.upload_to_r2(str(short_path), f"video/{post_id}-short.mp4", "video/mp4")
+    # Regenerate public podcast RSS feed on R2
+    try:
+        import httpx as _hx
+
+        from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+        _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+        # Per-call temp file via tempfile.mkstemp avoids hardcoded
+        # /tmp paths (Bandit B108) and prevents collisions when
+        # multiple publishes run concurrently.
+        _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-podcast-")
+        try:
+            os.close(_fd)  # _write_text_file reopens the path
+            async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
+                # Blocking file I/O in async context — push to worker thread
+                # so the event loop isn't stalled while we write the feed file.
+                await asyncio.to_thread(
+                    _write_text_file, _feed_path, _feed.text,
+                )
+                await _r2.upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
+                logger.info("[R2] Podcast RSS feed regenerated on CDN")
+        finally:
+            # Best-effort temp-file cleanup; ignore if it's already gone.
+            with suppress(OSError):
+                os.unlink(_feed_path)
+    except Exception as _e:
+        logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
+
+    # Regenerate public video RSS feed on R2
+    try:
+        import httpx as _hx
+
+        from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+        _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+        # Per-call temp file via tempfile.mkstemp avoids hardcoded
+        # /tmp paths (Bandit B108).
+        _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")
+        try:
+            os.close(_fd)
+            async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
+                await asyncio.to_thread(
+                    _write_text_file, _feed_path, _feed.text,
+                )
+                await _r2.upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
+                logger.info("[R2] Video RSS feed regenerated on CDN")
+        finally:
+            # Best-effort temp-file cleanup; ignore if it's already gone.
+            with suppress(OSError):
+                os.unlink(_feed_path)
+    except Exception as _e:
+        logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)
+
+    # YouTube upload removed in the 2026-05-08 services audit cleanup —
+    # the stub adapter raised NotImplementedError and there's no real
+    # implementation behind it yet. See poindexter#449 for the OAuth
+    # setup checklist; re-wire this branch when the real adapter ships.
+
+
+async def _send_post_newsletter_bg(
+    db_service,
+    site_config: SiteConfig,
+    title: str,
+    excerpt: str,
+    slug: str,
+) -> None:
+    """Phase 11f (fire-and-forget) — email the new post to subscribers."""
+    try:
+        from services.newsletter_service import send_post_newsletter
+        _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+        # #272 Phase-2b/2g: newsletter_service requires a site_config — pass the
+        # run-bound instance threaded from publish_post_from_task.
+        result = await send_post_newsletter(
+            _pool, title, excerpt, slug, site_config=site_config,
+        )
+        logger.info("[NEWSLETTER] Result: %s", result)
+    except Exception as e:
+        logger.warning("[NEWSLETTER] Failed (non-fatal): %s", e)
+
+
+async def _record_edit_distance_metrics(
+    db_service,
+    *,
+    task: dict[str, Any],
+    task_metadata: dict[str, Any],
+    merged: dict[str, Any],
+    draft_content: str,
+    task_id: str,
+    post_id: str,
+    publisher: str,
+) -> None:
+    """Phase 13 — record the operator's edit distance as an auto-publish signal.
+
+    Pre-approve content is what finalize_task snapshotted; post-approve is what
+    shipped. The diff is the gate's primary trust signal per
+    ``feedback_auto_publish_requires_edit_distance_track_record``. Best-effort —
+    a failure here must never fail a successful publish.
+    """
+    try:
+        from services.auto_publish_gate import record_post_approve_metrics
+        # Pre-approve snapshot lives in task_metadata under "pre_approve_content"
+        # (written by finalize_task). Falls back to "content" — same key
+        # publish_service reads as the post-approve content. Falling back to
+        # post_approve when the snapshot is missing produces a 0-char-diff
+        # row (operator made no edits or snapshot wasn't captured), which
+        # is a more accurate signal than a fabricated full-content delta.
+        pre_approve = (
+            task_metadata.get("pre_approve_content")
+            or merged.get("pre_approve_content")
+            or task_metadata.get("content")
+            or merged.get("content")
+            or ""
+        )
+        post_approve = draft_content or ""
+        pool = getattr(db_service, "pool", None)
+        await record_post_approve_metrics(
+            pool,
+            task_id=str(task_id),
+            pre_approve_content=pre_approve,
+            post_approve_content=post_approve,
+            niche_slug=task.get("niche_slug") or merged.get("niche_slug"),
+            category=task.get("category") or merged.get("category"),
+            approver=publisher,
+            approve_method="publish_post_from_task",
+            post_id=int(post_id) if str(post_id).isdigit() else None,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[publish_service] edit-distance metrics failed (non-fatal)",
+            exc_info=True,
+        )
+
+
+async def _backstamp_media_assets(db_service, task_id: str, post_id: str) -> None:
+    """Close the FK on media_assets rows that upstream stages (e.g.
+    source_featured_image) recorded with ``post_id=NULL`` before this post
+    existed — they carry the producing ``task_id``. Best-effort
+    (Glad-Labs/glad-labs-stack#193)."""
+    try:
+        pool = getattr(db_service, "pool", None)
+        if pool is not None and task_id and post_id:
+            async with pool.acquire() as _conn:
+                result = await _conn.execute(
+                    """
+                    UPDATE media_assets
+                       SET post_id = $1
+                     WHERE task_id = $2
+                       AND post_id IS NULL
+                    """,
+                    post_id,
+                    task_id,
+                )
+                logger.info(
+                    "[publish_service] media_assets back-stamp: task_id=%s post_id=%s %s",
+                    task_id, post_id, result,
+                )
+    except Exception as exc:  # noqa: BLE001 — back-stamp is best-effort
+        logger.warning(
+            "[publish_service] media_assets back-stamp failed for task_id=%s post_id=%s: %s",
+            task_id, post_id, exc,
+        )
+
+
+async def _create_media_gate_sequence(
+    db_service, post_id: str, media_to_generate: list[str], status: Any
+) -> None:
+    """Phase 5b — create the per-medium approval gate sequence (#24).
+
+    Only fires when the post parks at status='approved' (the approve/stage
+    path); published/draft posts stay gate-less (back-compat). Best-effort — a
+    failure logs loudly but must not strand the already-created post."""
+    if status != "approved":
+        return
+    _gate_pool = getattr(db_service, "pool", None)
+    if _gate_pool is None:
+        return
+    try:
+        await create_gates_for_post(
+            _gate_pool, post_id, media_gate_sequence(media_to_generate),
+        )
+    except Exception as gate_exc:  # noqa: BLE001 — never strand the post
+        logger.error(
+            "[publish_service] failed to create media gate sequence "
+            "for post %s (media=%s): %s",
+            post_id, media_to_generate, gate_exc, exc_info=True,
+        )
+
+
+async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> None:
+    """Phase 7 — emit the ``post.published`` webhook event (best-effort)."""
+    try:
+        from services.webhook_delivery_service import emit_webhook_event
+
+        await emit_webhook_event(
+            getattr(db_service, "cloud_pool", None) or db_service.pool,
+            "post.published",
+            {"task_id": str(task_id), "title": post_title, "site": "default"},
+        )
+    except Exception:
+        logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
+
+
+def _queue_sync_and_embed(
+    db_service,
+    background_tasks,
+    post_id: str,
+    post_title: str,
+    seo_description: str,
+    post_content: Any,
+) -> None:
+    """Phase 8 — queue cloud-DB sync + pgvector embed (no-op when hooks off)."""
+    if not _should_run_post_publish_hooks():
+        return
+    post_dict = {
+        "id": post_id,
+        "title": post_title,
+        "excerpt": seo_description,
+        "content": post_content,
+    }
+    if background_tasks:
+        background_tasks.add_task(_sync_published_post, post_id)
+        background_tasks.add_task(_embed_published_post, db_service, post_dict)
+    else:
+        _spawn_background(
+            _sync_published_post(post_id), name=f"sync_published_post({post_id})"
+        )
+        _spawn_background(
+            _embed_published_post(db_service, post_dict),
+            name=f"embed_published_post({post_id})",
+        )
+    logger.info("[publish_service] Queued sync + embed for post %s", post_id)
+
+
+def _queue_social_distribution(
+    background_tasks,
+    *,
+    task: dict[str, Any],
+    slug: str,
+    seo_description: str,
+    seo_keywords: Any,
+    post_title: str,
+    site_config: SiteConfig,
+) -> None:
+    """Phase 9 — queue social-media post generation + distribution (best-effort)."""
+    try:
+        from services.social_poster import generate_and_distribute_social_posts
+
+        _title = task.get("title") or task.get("topic") or post_title
+        _seo_kw = seo_keywords
+        if isinstance(_seo_kw, str):
+            _seo_kw = [k.strip() for k in _seo_kw.split(",") if k.strip()]
+        if _title and slug:
+            if background_tasks:
+                background_tasks.add_task(
+                    generate_and_distribute_social_posts,
+                    title=_title, slug=slug,
+                    excerpt=seo_description, keywords=_seo_kw,
+                    site_config=site_config,
+                )
+            else:
+                _spawn_background(
+                    generate_and_distribute_social_posts(
+                        title=_title, slug=slug,
+                        excerpt=seo_description, keywords=_seo_kw,
+                        site_config=site_config,
+                    ),
+                    name=f"social_posts({slug})",
+                )
+            logger.info("[SOCIAL] Queued social post generation for %s", slug)
+    except Exception as e:
+        logger.warning("[SOCIAL] Social posting failed (non-fatal): %s", e)
+
+
+def _queue_devto_crosspost(
+    db_service, background_tasks, post_id: str, site_config: SiteConfig
+) -> None:
+    """Phase 9b — queue Dev.to cross-posting (best-effort)."""
+    try:
+        from services.devto_service import DevToCrossPostService
+
+        # Thread the lifespan-bound site_config so the DevTo crosspost can read
+        # site_url for the canonical URL; without it the service falls back to a
+        # fresh empty SiteConfig and crashes on .require("site_url") — observed
+        # during the 2026-05-17 auto-publish stress test.
+        devto_svc = DevToCrossPostService(
+            getattr(db_service, "cloud_pool", None) or db_service.pool,
+            site_config=site_config,
+        )
+        if background_tasks:
+            background_tasks.add_task(devto_svc.cross_post_by_post_id, post_id)
+        else:
+            _spawn_background(
+                devto_svc.cross_post_by_post_id(post_id),
+                name=f"devto_crosspost({post_id})",
+            )
+        logger.info("[DEVTO] Queued cross-post for post %s", post_id)
+    except Exception as e:
+        logger.warning("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
+
+
+async def _revalidate_isr(slug: str, site_config: SiteConfig) -> bool:
+    """Phase 10 — trigger ISR revalidation for ``slug``. Returns success.
+
+    Routed through trigger_isr_revalidate (#327) so every publish path uses the
+    same canonical-paths/tags + async get_secret() flow."""
+    try:
+        from services.revalidation_service import trigger_isr_revalidate
+
+        ok = await trigger_isr_revalidate(slug, site_config=site_config)
+        if not ok:
+            logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
+        return ok
+    except Exception as reval_err:
+        logger.warning("[publish_service] ISR revalidation error (non-fatal): %s", reval_err)
+        return False
+
+
+async def _export_static_post(db_service, slug: str, site_config: SiteConfig) -> bool:
+    """Phase 10b — synchronous static JSON export to R2. Returns success.
+
+    Awaited inline (not fire-and-forget): a cancelled background task silently
+    froze R2 between 2026-05-08 and 2026-05-11 (four posts never reached the
+    bucket). ~3-5s on R2 is within the publish-endpoint latency budget; the
+    result lands on PublishResult.static_export_success so callers can surface
+    the failure."""
+    try:
+        from services.static_export_service import export_post
+
+        _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+        ok = await export_post(_pool, slug, site_config=site_config)
+        if ok:
+            logger.info("[STATIC_EXPORT] Synchronous export complete for %s", slug)
+        else:
+            logger.warning(
+                "[STATIC_EXPORT] export_post returned failure for %s — "
+                "R2 index will be stale until the reconciliation watchdog "
+                "fires or the next successful publish completes",
+                slug,
+            )
+        return ok
+    except Exception as e:
+        logger.error(
+            "[STATIC_EXPORT] export_post raised for %s: %s",
+            slug, e, exc_info=True,
+        )
+        return False
+
+
 async def publish_post_from_task(
     db_service,
     task: dict[str, Any],
@@ -565,195 +1262,35 @@ async def publish_post_from_task(
     from utils.json_encoder import convert_decimals, safe_json_dumps
 
     # ---------------------------------------------------------------
-    # 1. Parse task data (result + task_metadata merged)
+    # 1. Parse task data (result + task_metadata merged) — phase 1
     # ---------------------------------------------------------------
-    task_result = _parse_json_field(task.get("result"), "result", task_id)
-    task_metadata = _parse_json_field(task.get("task_metadata"), "task_metadata", task_id)
-    # task_result wins over task_metadata
-    merged = {**task_metadata, **task_result}
-
-    topic = task.get("topic", "") or merged.get("topic", "")
-    draft_content = (
-        task.get("content", "")
-        or merged.get("draft_content", "")
-        or merged.get("content", "")
-        or merged.get("body", "")
-        or merged.get("article", "")
-        or ""
-    )
-    # Defense at the publish boundary: peel any leaked writer JSON envelope
-    # (e.g. a ```json-fenced {"title": ..., "post_body": "<markdown>"} that
-    # slipped past the generation-time unwrap) so the published article is
-    # markdown, never a raw envelope. Mirrors the preview-render unwrap so
-    # preview and publish produce identical output. No-op on clean prose.
-    from services.llm_text import maybe_unwrap_json
-    draft_content = maybe_unwrap_json(draft_content)
-    seo_description = merged.get("seo_description", "") or task.get("seo_description", "")
-    # internal tracker: strip any stray HTML (notably <img> tags) from the SEO
-    # description before it ships as the post's excerpt + meta description.
-    # Upstream writers occasionally leak markup that the /posts cards then
-    # render as literal text.
-    if seo_description:
-        seo_description = re.sub(r"<[^>]+>", "", seo_description).strip()
-        seo_description = re.sub(r"\s+", " ", seo_description)
-    seo_keywords = merged.get("seo_keywords", [])
-    featured_image_url = merged.get("featured_image_url") or task.get("featured_image_url")
-    # featured_image_data — reproducibility blob (SDXL prompt / model /
-    # seed / generation_seconds for the SDXL branch, basic provenance
-    # for the Pexels branch). Sourced by source_featured_image.execute
-    # and threaded through pipeline_versions.stage_data ->
-    # task_metadata.featured_image_data so it survives the
-    # finalize_task → publish hand-off. Lands on
-    # posts.featured_image_data via content_db.create_post. Closes the
-    # 2026-05-19 jank-audit dead-seam finding for the column.
-    featured_image_data = (
-        merged.get("featured_image_data")
-        or task.get("featured_image_data")
-        or {}
-    )
-    if not isinstance(featured_image_data, dict):
-        # Defensive: stage_data round-trips through JSONB so the value
-        # should always be a dict on arrival, but we shouldn't crash
-        # the publisher if some legacy upstream wrote a string.
-        featured_image_data = {}
-    metadata = merged.get("metadata", {})
-    if not isinstance(metadata, dict):
-        # Defensive — same shape as featured_image_data above. The
-        # downstream INSERT requires a dict so it can be json.dumps'd.
-        metadata = {}
-    # Stamp the source task_id onto posts.metadata so the
-    # posts ↔ pipeline_tasks link is a first-class structured seam
-    # rather than slug-suffix archaeology. scheduled_publisher reads
-    # this key to keep ``pipeline_tasks.status`` in lockstep with
-    # ``posts.status`` promotions; the /go-live admin route does the
-    # same. Per ``feedback_filter_on_seams_not_slugs`` — when a
-    # structured field exists, populate + filter on it. The 2026-05-28
-    # backfill migration populates this key for every existing post.
-    if task_id:
-        metadata["pipeline_task_id"] = str(task_id)
-
-    if not draft_content or not topic:
-        msg = "Missing content or topic — cannot create post"
-        logger.warning("[publish_service] %s for task %s", msg, task_id)
-        return PublishResult(success=False, error=msg)
+    _parsed = _parse_publish_inputs(task, task_id)
+    if isinstance(_parsed, PublishResult):
+        return _parsed  # missing content/topic — already logged
+    merged = _parsed.merged
+    task_metadata = _parsed.task_metadata
+    topic = _parsed.topic
+    draft_content = _parsed.draft_content
+    seo_description = _parsed.seo_description
+    seo_keywords = _parsed.seo_keywords
+    featured_image_url = _parsed.featured_image_url
+    featured_image_data = _parsed.featured_image_data
+    metadata = _parsed.metadata
 
     # ---------------------------------------------------------------
-    # 1b. Idempotency / approve-then-publish promotion guard.
-    #
-    # Slugs contain task_id[:8] suffix, so we can match on that.
-    #
-    # 2026-05-27 fix: the guard used to return "skipping duplicate"
-    # whenever any post existed — but the operator flow is two-step:
-    #   1. ``approve`` calls this with stage_only=True → row at
-    #      status='approved' (published_at NULL, distributed_at NULL).
-    #   2. ``publish`` calls this with stage_only=False → expected to
-    #      promote the existing approved row to status='published'.
-    #
-    # The old guard caught the publish call and silently returned
-    # success without touching the row. Result: operator's
-    # ``poindexter tasks publish <id>`` looked successful (HTTP 200)
-    # but the post stayed at status='approved' forever, invisible to
-    # the site. Surfaced by Matt 2026-05-27 on task 677cc2df.
-    #
-    # Behavior matrix now:
-    # - existing.status='published' → idempotent no-op (real duplicate)
-    # - existing.status='approved' AND stage_only=True → no-op (re-stage)
-    # - existing.status='approved' AND stage_only=False → PROMOTE in
-    #   place to 'published' + set published_at + distributed_at, return
-    #   the existing post (no duplicate row created)
-    # - existing.status='draft' → no-op (mid-edit, leave alone)
+    # 1b. Idempotency / approve-then-publish promotion guard — phase 2
     # ---------------------------------------------------------------
-    _task_suffix = task_id[:8]
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-    existing = await pool.fetchrow(
-        "SELECT id, slug, title, status FROM posts WHERE slug LIKE '%' || $1",
-        _task_suffix,
+    _existing_result = await _promote_or_skip_existing(
+        pool,
+        task_id,
+        stage_only=stage_only,
+        draft_mode=draft_mode,
+        topic=topic,
+        site_config=_sc,
     )
-    if existing:
-        existing_status = (existing.get("status") or "").lower()
-        if existing_status == "approved" and not stage_only and not draft_mode:
-            now_ts = datetime.now(timezone.utc)
-            async with pool.acquire() as _promote_conn:
-                async with _promote_conn.transaction():
-                    await _promote_conn.execute(
-                        "UPDATE posts SET status = 'published', "
-                        "published_at = COALESCE(published_at, $2), "
-                        "distributed_at = COALESCE(distributed_at, $2), "
-                        "updated_at = $2 "
-                        "WHERE id = $1",
-                        existing["id"], now_ts,
-                    )
-                    # Sync pipeline_tasks.status in lockstep — same
-                    # rationale as the scheduled_publisher loop. Reads
-                    # the seam (posts.metadata->>'pipeline_task_id')
-                    # populated either at insert by this same function
-                    # or by the 2026-05-28 backfill migration.
-                    sync_result = await _promote_conn.execute(
-                        """
-                        UPDATE pipeline_tasks
-                           SET status = 'published',
-                               updated_at = NOW()
-                         WHERE task_id = $1
-                           AND status IN ('approved', 'scheduled')
-                        """,
-                        str(task_id),
-                    )
-                    logger.info(
-                        "[publish_service] Promote-path pipeline_tasks "
-                        "sync for task=%s: %s",
-                        task_id, sync_result,
-                    )
-            logger.info(
-                "[publish_service] Promoted existing approved post to "
-                "published: task=%s post_id=%s slug=%s",
-                task_id, existing["id"], existing["slug"],
-            )
-            # Push to R2 inline. Skipping this is what caused the
-            # 2026-05-27 R2 drift alert — the short-circuit returned
-            # before reaching the main path's ``export_post`` call,
-            # leaving R2 one post stale until the
-            # static_export_reconciliation probe caught up. Mirror the
-            # same try/except shape as the main path (lines ~1090).
-            promote_export_success = False
-            try:
-                from services.static_export_service import export_post
-
-                promote_export_success = await export_post(
-                    pool, existing["slug"], site_config=_sc,
-                )
-                if not promote_export_success:
-                    logger.warning(
-                        "[STATIC_EXPORT] Promote-path export_post returned "
-                        "failure for %s — R2 stays stale until next "
-                        "reconciliation cycle",
-                        existing["slug"],
-                    )
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "[STATIC_EXPORT] Promote-path export_post raised for "
-                    "%s: %s",
-                    existing["slug"], exc, exc_info=True,
-                )
-            return PublishResult(
-                success=True,
-                post_id=str(existing["id"]),
-                post_slug=existing["slug"],
-                published_url=f"/posts/{existing['slug']}",
-                post_title=existing.get("title", topic),
-                static_export_success=promote_export_success,
-            )
-        logger.warning(
-            "[publish_service] Post already exists for task %s "
-            "(post_id=%s, slug=%s, status=%s) — skipping duplicate",
-            task_id, existing["id"], existing["slug"], existing_status,
-        )
-        return PublishResult(
-            success=True,
-            post_id=str(existing["id"]),
-            post_slug=existing["slug"],
-            published_url=f"/posts/{existing['slug']}",
-            post_title=existing.get("title", topic),
-        )
+    if _existing_result is not None:
+        return _existing_result
 
     # ---------------------------------------------------------------
     # 2. Extract title from content (LLM often puts # Title at top)
@@ -785,70 +1322,9 @@ async def publish_post_from_task(
     category_id = await select_category_for_topic(post_title, db_service)
 
     # ---------------------------------------------------------------
-    # 4c. Resolve tags (internal tracker) — derive post.tag_ids from the task's
-    # submitted tags + seo_keywords, upsert into the `tags` table so new
-    # terms auto-create, and pass to content_db.create_post which will
-    # populate post_tags junction. Empty tags → no-op (downstream code
-    # tolerates missing tag_ids).
+    # 4c. Resolve tags — phase 4c
     # ---------------------------------------------------------------
-    candidate_tag_strings: list[str] = []
-    # Task-level tags (now threaded via ModelConverter.to_task_response
-    # since internal tracker fix — pulls from metadata JSONB as fallback).
-    task_tags = task.get("tags") or merged.get("tags") or []
-    if isinstance(task_tags, str):
-        task_tags = [t.strip() for t in task_tags.split(",") if t.strip()]
-    candidate_tag_strings.extend(task_tags or [])
-    # SEO keywords as a fallback source (already a list here; the
-    # str-join happens later when writing posts.seo_keywords).
-    if isinstance(seo_keywords, list):
-        candidate_tag_strings.extend(seo_keywords)
-    elif isinstance(seo_keywords, str) and seo_keywords:
-        candidate_tag_strings.extend(
-            t.strip() for t in seo_keywords.split(",") if t.strip()
-        )
-
-    tag_ids: list[str] = []
-    if candidate_tag_strings:
-        # Normalize to slug form: lowercase, hyphenated, alnum-only.
-        seen_slugs: set[str] = set()
-        clean_pairs: list[tuple[str, str]] = []  # (slug, display_name)
-        for raw in candidate_tag_strings:
-            if not raw or not isinstance(raw, str):
-                continue
-            name = raw.strip()
-            if not name:
-                continue
-            slug_form = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-            if not slug_form or slug_form in seen_slugs:
-                continue
-            seen_slugs.add(slug_form)
-            clean_pairs.append((slug_form, name))
-        if clean_pairs:
-            try:
-                async with pool.acquire() as conn:
-                    for slug_form, display_name in clean_pairs:
-                        row = await conn.fetchrow(
-                            """
-                            INSERT INTO tags (name, slug)
-                            VALUES ($1, $2)
-                            ON CONFLICT (slug) DO UPDATE SET updated_at = NOW()
-                            RETURNING id
-                            """,
-                            display_name, slug_form,
-                        )
-                        if row:
-                            tag_ids.append(str(row["id"]))
-                logger.info(
-                    "[publish_service] Resolved %d tag_ids for task %s: %s",
-                    len(tag_ids), task_id, [p[0] for p in clean_pairs],
-                )
-            except Exception as tag_err:
-                # Tag resolution must never block publishing.
-                logger.warning(
-                    "[publish_service] Tag resolution failed for task %s: %s",
-                    task_id, tag_err,
-                )
-                tag_ids = []
+    tag_ids = await _resolve_tag_ids(pool, task, merged, seo_keywords, task_id)
 
     # ---------------------------------------------------------------
     # 4b. Determine scheduled publish time (content spacing)
@@ -962,64 +1438,15 @@ async def publish_post_from_task(
         task_id, post_id, publisher, slug,
     )
 
-    # Back-stamp media_assets rows that were recorded by upstream stages
-    # (e.g. source_featured_image) before this post existed. Those rows
-    # are persisted with ``post_id=NULL`` but carry the producing
-    # ``task_id`` — closing the FK here turns them into proper child
-    # rows of the post. Glad-Labs/glad-labs-stack#193.
-    try:
-        pool = getattr(db_service, "pool", None)
-        if pool is not None and task_id and post_id:
-            async with pool.acquire() as _conn:
-                result = await _conn.execute(
-                    """
-                    UPDATE media_assets
-                       SET post_id = $1
-                     WHERE task_id = $2
-                       AND post_id IS NULL
-                    """,
-                    post_id,
-                    task_id,
-                )
-                logger.info(
-                    "[publish_service] media_assets back-stamp: task_id=%s post_id=%s %s",
-                    task_id, post_id, result,
-                )
-    except Exception as exc:  # noqa: BLE001 — back-stamp is best-effort
-        logger.warning(
-            "[publish_service] media_assets back-stamp failed for task_id=%s post_id=%s: %s",
-            task_id, post_id, exc,
-        )
+    # Back-stamp media_assets rows recorded with post_id=NULL before insert.
+    await _backstamp_media_assets(db_service, task_id, post_id)
 
     # ---------------------------------------------------------------
-    # 5b. Create the per-medium approval gate sequence (poindexter#24)
+    # 5b. Create the per-medium approval gate sequence (#24) — phase 5b
     # ---------------------------------------------------------------
-    # When the post parks at status='approved' (the approve/stage path),
-    # create the gate sequence the driver walks: one gate per medium in
-    # ``media_to_generate`` (canonical order) + a final publish checkpoint.
-    # The driver (services/jobs/drive_media_gates.py) generates media per
-    # medium, the operator reviews, then publish fires on the final gate.
-    #
-    # Scoped to status='approved' so the autonomous/direct-publish path
-    # (status='published') and draft previews stay gate-less — back-compat:
-    # ``_post_has_pending_gates`` returns False for them, exactly as today.
-    # Best-effort: a gate-create failure logs loudly but must not strand the
-    # already-created post + un-acked task (the idempotency guard would
-    # re-stage as a no-op on retry, never re-creating gates). A gate-less
-    # post simply degrades to the legacy publish-immediately behaviour.
-    if post_data.get("status") == "approved":
-        _gate_pool = getattr(db_service, "pool", None)
-        if _gate_pool is not None:
-            try:
-                await create_gates_for_post(
-                    _gate_pool, post_id, media_gate_sequence(media_to_generate),
-                )
-            except Exception as gate_exc:  # noqa: BLE001 — never strand the post
-                logger.error(
-                    "[publish_service] failed to create media gate sequence "
-                    "for post %s (media=%s): %s",
-                    post_id, media_to_generate, gate_exc, exc_info=True,
-                )
+    await _create_media_gate_sequence(
+        db_service, post_id, media_to_generate, post_data.get("status")
+    )
 
     # ---------------------------------------------------------------
     # 6. Update task result with post info
@@ -1075,39 +1502,16 @@ async def publish_post_from_task(
         logger.warning("[publish_service] Failed to update task result: %s", e)
 
     # ---------------------------------------------------------------
-    # 7. Emit webhook
+    # 7. Emit webhook — phase 7
     # ---------------------------------------------------------------
-    try:
-        from services.webhook_delivery_service import emit_webhook_event
-
-        await emit_webhook_event(getattr(db_service, "cloud_pool", None) or db_service.pool, "post.published", {
-            "task_id": str(task_id), "title": post_title, "site": "default",
-        })
-    except Exception:
-        logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
+    await _emit_publish_webhook(db_service, task_id, post_title)
 
     # ---------------------------------------------------------------
-    # 8. Sync to cloud DB + embed in pgvector
+    # 8. Sync to cloud DB + embed in pgvector — phase 8
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks():
-        post_dict = {
-            "id": post_id,
-            "title": post_title,
-            "excerpt": seo_description,
-            "content": post_content,
-        }
-        if background_tasks:
-            background_tasks.add_task(_sync_published_post, post_id)
-            background_tasks.add_task(_embed_published_post, db_service, post_dict)
-        else:
-            _spawn_background(
-                _sync_published_post(post_id), name=f"sync_published_post({post_id})"
-            )
-            _spawn_background(
-                _embed_published_post(db_service, post_dict),
-                name=f"embed_published_post({post_id})",
-            )
-        logger.info("[publish_service] Queued sync + embed for post %s", post_id)
+    _queue_sync_and_embed(
+        db_service, background_tasks, post_id, post_title, seo_description, post_content
+    )
 
     # ---------------------------------------------------------------
     # 8b. Gate engine — defer distribution if any approval gate is pending
@@ -1132,130 +1536,43 @@ async def publish_post_from_task(
         )
 
     # ---------------------------------------------------------------
-    # 9. Queue social media post generation
+    # 9. Queue social media post generation — phase 9
     # ---------------------------------------------------------------
     if queue_social and not _gates_block_distribution:
-        try:
-            from services.social_poster import generate_and_distribute_social_posts
-
-            _title = task.get("title") or task.get("topic") or post_title
-            _seo_kw = seo_keywords
-            if isinstance(_seo_kw, str):
-                _seo_kw = [k.strip() for k in _seo_kw.split(",") if k.strip()]
-            if _title and slug:
-                if background_tasks:
-                    background_tasks.add_task(
-                        generate_and_distribute_social_posts,
-                        title=_title, slug=slug,
-                        excerpt=seo_description, keywords=_seo_kw,
-                        site_config=_sc,
-                    )
-                else:
-                    _spawn_background(
-                        generate_and_distribute_social_posts(
-                            title=_title, slug=slug,
-                            excerpt=seo_description, keywords=_seo_kw,
-                            site_config=_sc,
-                        ),
-                        name=f"social_posts({slug})",
-                    )
-                logger.info("[SOCIAL] Queued social post generation for %s", slug)
-        except Exception as e:
-            logger.warning("[SOCIAL] Social posting failed (non-fatal): %s", e)
+        _queue_social_distribution(
+            background_tasks,
+            task=task,
+            slug=slug,
+            seo_description=seo_description,
+            seo_keywords=seo_keywords,
+            post_title=post_title,
+            site_config=_sc,
+        )
 
     # ---------------------------------------------------------------
-    # 9b. Queue Dev.to cross-posting (fire-and-forget)
+    # 9b. Queue Dev.to cross-posting (fire-and-forget) — phase 9b
     # ---------------------------------------------------------------
     if not _gates_block_distribution:
-        try:
-            from services.devto_service import DevToCrossPostService
-
-            # Thread the lifespan-bound site_config through so the
-            # DevTo crosspost can read site_url for the canonical URL.
-            # Without this kwarg the service falls back to a fresh
-            # empty SiteConfig and crashes on .require("site_url") —
-            # observed during the 2026-05-17 auto-publish stress test.
-            devto_svc = DevToCrossPostService(
-                getattr(db_service, "cloud_pool", None) or db_service.pool,
-                site_config=_sc,
-            )
-            if background_tasks:
-                background_tasks.add_task(
-                    devto_svc.cross_post_by_post_id, post_id
-                )
-            else:
-                _spawn_background(
-                    devto_svc.cross_post_by_post_id(post_id),
-                    name=f"devto_crosspost({post_id})",
-                )
-            logger.info("[DEVTO] Queued cross-post for post %s", post_id)
-        except Exception as e:
-            logger.warning("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
+        _queue_devto_crosspost(db_service, background_tasks, post_id, _sc)
 
     # ---------------------------------------------------------------
-    # 10. ISR revalidation
+    # 10. ISR revalidation — phase 10
     # ---------------------------------------------------------------
-    # Glad-Labs/poindexter#327: routed through trigger_isr_revalidate
-    # so every publish path (canonical, /go-live, scheduled_publisher)
-    # uses the same code that knows the canonical paths/tags +
-    # async get_secret() flow.
-    #
-    # Strict-mode gate (#24): if the post has pending gates, do NOT
-    # revalidate — the post status is 'awaiting_gates', so revalidation
-    # would just expose a 404 to anyone who clicks. fire_post_distribution_hooks
-    # fires ISR revalidate after gates clear.
+    # Strict-mode gate (#24): a post with pending gates is at
+    # 'awaiting_gates', so revalidating would just expose a 404 —
+    # fire_post_distribution_hooks revalidates after gates clear.
     revalidation_success = False
     if trigger_revalidation and not _gates_block_distribution:
-        try:
-            from services.revalidation_service import trigger_isr_revalidate
-
-            revalidation_success = await trigger_isr_revalidate(slug, site_config=_sc)
-            if not revalidation_success:
-                logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
-        except Exception as reval_err:
-            logger.warning("[publish_service] ISR revalidation error (non-fatal): %s", reval_err)
+        revalidation_success = await _revalidate_isr(slug, _sc)
 
     # ---------------------------------------------------------------
-    # 10b. Static JSON export to CDN (inline, not fire-and-forget)
+    # 10b. Static JSON export to CDN (inline) — phase 10b
     # ---------------------------------------------------------------
-    # The public site reads R2 ``static/posts/index.json`` as its source
-    # of truth (web/public-site/lib/posts.ts → ``fetchPostIndex``). When
-    # this step is fire-and-forget, any process boundary that cancels
-    # the asyncio task (Prefect subprocess teardown for auto-publish,
-    # worker restart, transient hiccup) silently freezes R2 — between
-    # 2026-05-08 and 2026-05-11 four published posts never reached the
-    # bucket because the background task never completed.
-    #
-    # Awaiting inline costs ~3-5s on R2 (5 small JSON files) which is
-    # well within the publish-endpoint latency budget. The return value
-    # lands on PublishResult.static_export_success so /approve + /publish
-    # callers can surface the failure to the operator.
-    #
-    # Strict-mode gate (#24): same reason as ISR — static export filters
-    # on status='published', so 'awaiting_gates' posts are excluded
-    # automatically. But we ALSO skip the export call entirely as a
-    # belt-and-suspenders against future filter changes.
+    # Same strict-mode gate as ISR. The export is awaited inline (see the
+    # helper docstring for why fire-and-forget froze R2).
     static_export_success = False
     if not _gates_block_distribution:
-        try:
-            from services.static_export_service import export_post
-
-            _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-            static_export_success = await export_post(_pool, slug, site_config=_sc)
-            if static_export_success:
-                logger.info("[STATIC_EXPORT] Synchronous export complete for %s", slug)
-            else:
-                logger.warning(
-                    "[STATIC_EXPORT] export_post returned failure for %s — "
-                    "R2 index will be stale until the reconciliation watchdog "
-                    "fires or the next successful publish completes",
-                    slug,
-                )
-        except Exception as e:
-            logger.error(
-                "[STATIC_EXPORT] export_post raised for %s: %s",
-                slug, e, exc_info=True,
-            )
+        static_export_success = await _export_static_post(db_service, slug, _sc)
 
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
@@ -1285,109 +1602,18 @@ async def publish_post_from_task(
     # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
     # ---------------------------------------------------------------
     if _should_run_post_publish_hooks() and not _gates_block_distribution:
-        async def _upload_media_to_r2(pid: str) -> None:
-            """Wait for media files to appear, then upload to R2."""
-            import asyncio as _aio
-            from pathlib import Path
-
-            from services.r2_upload_service import R2UploadService
-            _r2 = R2UploadService(site_config=_sc)
-            # Give podcast/video/short generation time to complete
-            _delay = int(_sc.get("media_upload_delay_seconds", "240"))
-            await _aio.sleep(_delay)
-            await _r2.upload_podcast_episode(pid)
-            await _r2.upload_video_episode(pid)
-            # Upload short video if it exists
-            short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}-short.mp4"
-            if short_path.exists():
-                await _r2.upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
-            # Regenerate public podcast RSS feed on R2
-            try:
-                import httpx as _hx
-
-                from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                _api_base = _sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-                # Per-call temp file via tempfile.mkstemp avoids hardcoded
-                # /tmp paths (Bandit B108) and prevents collisions when
-                # multiple publishes run concurrently.
-                _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-podcast-")
-                try:
-                    os.close(_fd)  # _write_text_file reopens the path
-                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                        _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
-                        # Blocking file I/O in async context — push to worker thread
-                        # so the event loop isn't stalled while we write the feed file.
-                        await asyncio.to_thread(
-                            _write_text_file, _feed_path, _feed.text,
-                        )
-                        await _r2.upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
-                        logger.info("[R2] Podcast RSS feed regenerated on CDN")
-                finally:
-                    try:
-                        os.unlink(_feed_path)
-                    except OSError:
-                        pass
-            except Exception as _e:
-                logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
-
-            # Regenerate public video RSS feed on R2
-            try:
-                import httpx as _hx
-
-                from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                _api_base = _sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-                # Per-call temp file via tempfile.mkstemp avoids hardcoded
-                # /tmp paths (Bandit B108).
-                _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")
-                try:
-                    os.close(_fd)
-                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                        _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
-                        await asyncio.to_thread(
-                            _write_text_file, _feed_path, _feed.text,
-                        )
-                        await _r2.upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
-                        logger.info("[R2] Video RSS feed regenerated on CDN")
-                finally:
-                    try:
-                        os.unlink(_feed_path)
-                    except OSError:
-                        pass
-            except Exception as _e:
-                logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)
-
-            # YouTube upload removed in the 2026-05-08 services audit cleanup —
-            # the stub adapter raised NotImplementedError and there's no real
-            # implementation behind it yet. See poindexter#449 for the OAuth
-            # setup checklist; re-wire this branch when the real adapter ships.
-
         _spawn_background(
-            _upload_media_to_r2(post_id), name=f"upload_media_r2({post_id})"
+            _upload_media_to_r2_bg(_sc, post_id), name=f"upload_media_r2({post_id})"
         )
 
     # ---------------------------------------------------------------
     # 11f. Newsletter to subscribers (fire-and-forget)
     # ---------------------------------------------------------------
     if _should_run_post_publish_hooks() and not _gates_block_distribution:
-        async def _send_newsletter(_pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
-            try:
-                from services.newsletter_service import send_post_newsletter
-                _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                # #272 Phase-2b/2g: newsletter_service requires a site_config —
-                # pass the run-bound instance resolved at the top of
-                # ``publish_post_from_task`` (the ``_sc`` closure variable).
-                # (Pre-2g this read the outer ``site_config`` param, which was
-                # the as-passed kwarg — possibly None — a latent bug now that
-                # injection is mandatory.)
-                result = await send_post_newsletter(
-                    _pool, ptitle, pexcerpt, pslug, site_config=_sc,
-                )
-                logger.info("[NEWSLETTER] Result: %s", result)
-            except Exception as e:
-                logger.warning("[NEWSLETTER] Failed (non-fatal): %s", e)
-
         _spawn_background(
-            _send_newsletter(post_id, post_title, seo_description, slug),
+            _send_post_newsletter_bg(
+                db_service, _sc, post_title, seo_description, slug
+            ),
             name=f"send_newsletter({post_id})",
         )
 
@@ -1406,46 +1632,18 @@ async def publish_post_from_task(
         logger.warning("[publish_service] Notification failed (non-fatal)", exc_info=True)
 
     # ---------------------------------------------------------------
-    # 13. Edit-distance metrics — auto_publish_gate training signal.
-    #     Pre-approve content is what finalize_task wrote into
-    #     task_metadata.content_text; post-approve is what actually
-    #     shipped. Diff is the operator's edit distance — the gate's
-    #     primary trust signal per
-    #     feedback_auto_publish_requires_edit_distance_track_record.
+    # 13. Edit-distance metrics — auto_publish_gate training signal — phase 13
     # ---------------------------------------------------------------
-    try:
-        from services.auto_publish_gate import record_post_approve_metrics
-        # Pre-approve snapshot lives in task_metadata under "pre_approve_content"
-        # (written by finalize_task). Falls back to "content" — same key
-        # publish_service reads as the post-approve content. Falling back to
-        # post_approve when the snapshot is missing produces a 0-char-diff
-        # row (operator made no edits or snapshot wasn't captured), which
-        # is a more accurate signal than a fabricated full-content delta.
-        pre_approve = (
-            task_metadata.get("pre_approve_content")
-            or merged.get("pre_approve_content")
-            or task_metadata.get("content")
-            or merged.get("content")
-            or ""
-        )
-        post_approve = draft_content or ""
-        pool = getattr(db_service, "pool", None)
-        await record_post_approve_metrics(
-            pool,
-            task_id=str(task_id),
-            pre_approve_content=pre_approve,
-            post_approve_content=post_approve,
-            niche_slug=task.get("niche_slug") or merged.get("niche_slug"),
-            category=task.get("category") or merged.get("category"),
-            approver=publisher,
-            approve_method="publish_post_from_task",
-            post_id=int(post_id) if str(post_id).isdigit() else None,
-        )
-    except Exception:  # noqa: BLE001
-        logger.debug(
-            "[publish_service] edit-distance metrics failed (non-fatal)",
-            exc_info=True,
-        )
+    await _record_edit_distance_metrics(
+        db_service,
+        task=task,
+        task_metadata=task_metadata,
+        merged=merged,
+        draft_content=draft_content,
+        task_id=task_id,
+        post_id=post_id,
+        publisher=publisher,
+    )
 
     return PublishResult(
         success=True,

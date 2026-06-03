@@ -348,6 +348,14 @@ class ModelConverter:
         if "is_active" not in data:
             data["is_active"] = True
 
+        # Never round-trip a secret value (or its encrypted ciphertext)
+        # through the read API — mask it (#642).
+        if data.get("is_secret") or str(data.get("value") or "").startswith("enc:"):
+            if data.get("value") is not None:
+                data["value"] = "********"
+            if data.get("value_preview") is not None:
+                data["value_preview"] = "********"
+
         return SettingResponse(**data)
 
     @staticmethod

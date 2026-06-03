@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from middleware.api_token_auth import verify_api_token
 from plugins.probe_registry import BrainProbeRegistry
 from routes.module_probes_routes import router as module_probes_router
 
@@ -21,9 +22,13 @@ async def _fake_probe() -> dict[str, str]:
     return {"ok": "true"}
 
 
-def _make_app(registry: BrainProbeRegistry | None) -> FastAPI:
+def _make_app(registry: BrainProbeRegistry | None, *, authed: bool = True) -> FastAPI:
     app = FastAPI()
     app.include_router(module_probes_router)
+    if authed:
+        # #642 — the route is now OAuth-gated; override the dependency so the
+        # behavioural tests below exercise probe-listing, not the auth path.
+        app.dependency_overrides[verify_api_token] = lambda: "test-client"
     if registry is not None:
         app.state.brain_probe_registry = registry
     return app
@@ -81,6 +86,18 @@ def test_populated_registry_returns_probe_specs():
             "interval_seconds": 300,
         },
     ]
+
+
+@pytest.mark.unit
+def test_unauthenticated_request_returns_401():
+    """#642 — the probe inventory was reachable unauthenticated (not in
+    PROTECTED_PATHS, no route dependency). It now carries
+    ``Depends(verify_api_token)`` like every sibling observability route;
+    a request with no Bearer token is refused before the registry is read."""
+    app = _make_app(BrainProbeRegistry(), authed=False)
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/api/modules/probes")
+    assert resp.status_code == 401
 
 
 @pytest.mark.unit

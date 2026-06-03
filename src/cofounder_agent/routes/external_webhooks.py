@@ -28,9 +28,11 @@ Registration (external — must be done once per environment):
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -170,36 +172,120 @@ async def lemon_squeezy_webhook(
 # ---------------------------------------------------------------------------
 
 
+# Svix replay window. Per the Svix spec the default tolerance is 5 minutes on
+# either side of the signed timestamp. Tunable per the config-in-DB discipline.
+_RESEND_DEFAULT_TOLERANCE_SECONDS = 300
+
+
+def _decode_svix_secret(secret: str) -> bytes | None:
+    """Resolve a Svix/Resend ``whsec_<base64>`` signing secret to key bytes.
+
+    Svix secrets are a base64-encoded key, conventionally prefixed with
+    ``whsec_``. The HMAC key is the *decoded* payload bytes — keying HMAC
+    with the literal ``whsec_...`` string was the #642 bug. Returns ``None``
+    when the secret can't be base64-decoded so the caller fails closed.
+    """
+    raw = secret[len("whsec_") :] if secret.startswith("whsec_") else secret
+    try:
+        # binascii.Error (bad padding/alphabet) subclasses ValueError.
+        return base64.b64decode(raw, validate=True)
+    except (ValueError, TypeError):
+        return None
+
+
 async def _verify_resend_signature(
-    body: bytes, provided_signature: str | None, site_config: SiteConfig
+    body: bytes,
+    svix_id: str | None,
+    svix_timestamp: str | None,
+    svix_signature: str | None,
+    site_config: SiteConfig,
+    *,
+    now: float | None = None,
 ) -> bool:
-    """Resend uses Svix-style HMAC signatures — Authorization-style header.
+    """Verify a Resend webhook per the Svix signature spec.
 
-    Same async/get_secret pattern as ``_verify_lemon_squeezy_signature`` —
-    ``resend_webhook_secret`` is ``is_secret=true`` so sync ``.get()``
-    returns ciphertext and HMAC against ciphertext silently fails.
+    Resend signs webhooks with Svix. The scheme is::
 
-    https://resend.com/docs/dashboard/webhooks/verify-webhooks
+        signed_content = f"{svix_id}.{svix_timestamp}.{body}"
+        expected       = base64(HMAC_SHA256(base64decode(whsec), signed_content))
+
+    The ``Svix-Signature`` header is a space-delimited list of ``v1,<base64sig>``
+    entries (multiple during key rotation); a constant-time match against any
+    entry passes. ``Svix-Timestamp`` outside the tolerance window is refused to
+    thwart replay.
+
+    The prior implementation HMAC'd only the body, keyed HMAC with the literal
+    secret string, and compared hex — so it rejected every genuine Resend
+    webhook (fail-closed → email events silently dropped) and had no replay
+    protection (Glad-Labs/poindexter#642). ``resend_webhook_secret`` is
+    ``is_secret=true``, so the plaintext MUST come from the async
+    ``get_secret`` accessor (sync ``.get()`` returns ``enc:v1:`` ciphertext).
+
+    https://docs.svix.com/receiving/verifying-payloads/how-manual
     """
     secret = await site_config.get_secret("resend_webhook_secret", "") or ""
     if not secret:
+        logger.warning("[Resend] resend_webhook_secret not set — refusing webhook")
+        return False
+    if not (svix_id and svix_timestamp and svix_signature):
         logger.warning(
-            "[Resend] resend_webhook_secret not set — refusing webhook",
+            "[Resend] missing Svix-Id / Svix-Timestamp / Svix-Signature header "
+            "— refusing webhook",
         )
         return False
-    if not provided_signature:
+
+    # Replay protection: refuse timestamps outside the tolerance window.
+    try:
+        ts = int(svix_timestamp)
+    except (TypeError, ValueError):
+        logger.warning("[Resend] non-integer Svix-Timestamp — refusing webhook")
         return False
-    expected = hmac.new(
-        secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
-    # Resend may format as "v1,<hex>" — split on comma and compare each.
-    parts = [s.strip().split(",")[-1] for s in provided_signature.split(" ")]
-    return any(hmac.compare_digest(expected, p) for p in parts)
+    try:
+        tolerance = int(
+            site_config.get(
+                "resend_webhook_tolerance_seconds",
+                str(_RESEND_DEFAULT_TOLERANCE_SECONDS),
+            )
+        )
+    except (TypeError, ValueError):
+        tolerance = _RESEND_DEFAULT_TOLERANCE_SECONDS
+    current = time.time() if now is None else now
+    if abs(current - ts) > tolerance:
+        logger.warning(
+            "[Resend] Svix-Timestamp %s outside %ss tolerance — refusing (replay?)",
+            ts, tolerance,
+        )
+        return False
+
+    key = _decode_svix_secret(secret)
+    if key is None:
+        logger.warning(
+            "[Resend] resend_webhook_secret is not valid base64 "
+            "(expected whsec_<base64>) — refusing webhook",
+        )
+        return False
+
+    signed_content = svix_id.encode("utf-8") + b"." + svix_timestamp.encode("utf-8") + b"." + body
+    expected = base64.b64encode(
+        hmac.new(key, signed_content, hashlib.sha256).digest()
+    ).decode("utf-8")
+
+    # Header: space-delimited "v1,<base64sig>" entries (Svix key rotation).
+    for entry in svix_signature.split(" "):
+        entry = entry.strip()
+        if not entry:
+            continue
+        sig = entry.split(",", 1)[1] if "," in entry else entry
+        if hmac.compare_digest(expected, sig):
+            return True
+    return False
 
 
 @external_webhooks_router.post("/resend")
 async def resend_webhook(
     request: Request,
+    svix_id: str | None = Header(default=None, alias="Svix-Id"),
+    svix_timestamp: str | None = Header(default=None, alias="Svix-Timestamp"),
     svix_signature: str | None = Header(default=None, alias="Svix-Signature"),
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config: SiteConfig = Depends(get_site_config_dependency),
@@ -208,9 +294,14 @@ async def resend_webhook(
 
     Supported event types: email.sent, email.delivered, email.opened,
     email.clicked, email.bounced, email.complained.
+
+    Resend signs with Svix, sending ``Svix-Id`` / ``Svix-Timestamp`` /
+    ``Svix-Signature`` — all three feed the signature check.
     """
     body = await request.body()
-    if not await _verify_resend_signature(body, svix_signature, site_config):
+    if not await _verify_resend_signature(
+        body, svix_id, svix_timestamp, svix_signature, site_config
+    ):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
