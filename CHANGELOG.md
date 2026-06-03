@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.0...v0.70.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **jobs:** media_reconciliation stamps file-present-row-absent asset rows (poindexter[#560](https://github.com/Glad-Labs/glad-labs-stack/issues/560)) ([#1036](https://github.com/Glad-Labs/glad-labs-stack/issues/1036)) ([b178b60](https://github.com/Glad-Labs/glad-labs-stack/commit/b178b603f2030efbd3d6591307a9e0700fe4c9f5))
+
 ## [0.70.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.4...v0.70.0) (2026-06-03)
 
 
