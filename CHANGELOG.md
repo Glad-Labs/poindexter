@@ -7,6 +7,7 @@
 
 ### Bug Fixes
 
+* **qa:** restore qa_gates counters + qa_pass_completed on graph_def path; add rail-skip-rate alert (poindexter[#553](https://github.com/Glad-Labs/glad-labs-stack/issues/553)) ([#1039](https://github.com/Glad-Labs/glad-labs-stack/issues/1039)) ([6394d1a](https://github.com/Glad-Labs/glad-labs-stack/commit/6394d1ac7eabc1458b5cb6e4b577ea2d71e4c0f4))
 * **qa:** thread preview_url to a qa.vision rail on the graph_def path (poindexter[#563](https://github.com/Glad-Labs/glad-labs-stack/issues/563)) ([#1049](https://github.com/Glad-Labs/glad-labs-stack/issues/1049)) ([74dcb57](https://github.com/Glad-Labs/glad-labs-stack/commit/74dcb57558e98d14bb564a69a4256d4c20ea4b83))
 
 ## [0.70.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.3...v0.70.4) (2026-06-03)
