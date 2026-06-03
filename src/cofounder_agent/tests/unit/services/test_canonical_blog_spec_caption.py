@@ -1,4 +1,8 @@
-"""The caption_images node is wired between source_featured_image and qa_critic."""
+"""The caption_images node is wired between source_featured_image and the qa block.
+
+The qa block's first node is qa_programmatic (the programmatic anti-hallucination
+gate); caption_images feeds into it. (Pre-C1 this fed qa_critic directly.)
+"""
 from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF as S
 
 
@@ -10,6 +14,8 @@ def test_caption_images_node_present():
 def test_caption_images_wired_between_featured_and_qa():
     edges = {(e["from"], e["to"]) for e in S["edges"]}
     assert ("source_featured_image", "caption_images") in edges
-    assert ("caption_images", "qa_critic") in edges
-    # the old direct edge is gone
+    # caption_images now feeds the qa block's first node (qa_programmatic).
+    assert ("caption_images", "qa_programmatic") in edges
+    # the old direct edges are gone
     assert ("source_featured_image", "qa_critic") not in edges
+    assert ("caption_images", "qa_critic") not in edges

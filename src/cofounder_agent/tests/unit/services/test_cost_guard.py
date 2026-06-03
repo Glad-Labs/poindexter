@@ -177,6 +177,46 @@ class TestCostGuardPreflight:
         assert excinfo.value.scope == "unknown"
 
 
+class TestCheckBudgetFailsClosed:
+    """``check_budget`` is the helper the cloud providers + dispatcher use.
+    It must fail CLOSED on a cost_logs read error, like ``preflight`` already
+    does (audit M4) — previously it read spend NON-strict, so a transient DB
+    error read as $0 and ADMITTED the call, silently disabling the spend cap."""
+
+    @pytest.mark.asyncio
+    async def test_check_budget_fails_closed_on_unreadable_daily_spend(self) -> None:
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda key, default=None: {
+            "daily_spend_limit_usd": 2.0,
+            "monthly_spend_limit_usd": 10.0,
+        }.get(key, default))
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=RuntimeError("cost_logs down"))
+        guard = CostGuard(site_config=sc, pool=pool)
+        with pytest.raises(CostGuardExhausted):
+            await guard.check_budget(
+                provider="gemini", model="gemini-2.0-flash",
+                estimated_cost_usd=0.10,
+            )
+
+    @pytest.mark.asyncio
+    async def test_check_budget_admits_when_spend_readable_and_under_cap(self) -> None:
+        """Sanity: a healthy read under the cap does NOT raise (no over-zealous
+        blocking of legitimate paid calls)."""
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda key, default=None: {
+            "daily_spend_limit_usd": 2.0,
+            "monthly_spend_limit_usd": 10.0,
+        }.get(key, default))
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(return_value={"total": 0.10})
+        guard = CostGuard(site_config=sc, pool=pool)
+        # 0.10 spent + 0.05 estimate < 2.0 daily → no raise.
+        await guard.check_budget(
+            provider="gemini", model="gemini-2.0-flash", estimated_cost_usd=0.05,
+        )
+
+
 # ---------------------------------------------------------------------------
 # CostGuard.record
 # ---------------------------------------------------------------------------

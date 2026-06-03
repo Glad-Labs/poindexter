@@ -57,8 +57,9 @@ COPY pyproject.toml poetry.lock /app/
 RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     poetry config virtualenvs.create false && \
     poetry install --no-root --no-interaction --no-ansi && \
-    pip install --no-cache-dir 'pyroscope-io>=0.8.5' && \
+    pip install --no-cache-dir 'pyroscope-io>=0.8.5' 'sentry-sdk>=2.0' && \
     python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')" && \
+    python -c "import sentry_sdk; print('[BUILD] sentry-sdk OK —', sentry_sdk.VERSION)" && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 

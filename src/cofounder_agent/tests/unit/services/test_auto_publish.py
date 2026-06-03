@@ -198,6 +198,41 @@ class TestAutoPublishBails:
         )
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_fails_closed_when_daily_limit_check_errors(self):
+        """A DB error in the daily-limit COUNT(*) must NOT fall through and
+        publish anyway (audit H3). Fail closed: return False, leave the task
+        in awaiting_approval, never publish. The daily_post_limit rate cap
+        is a safety rail — an unverifiable limit means we must not publish.
+
+        This is the module that caused the 2026-05-26 unauthorized auto-publish
+        incident; a fail-open daily-limit check could let a DB blip auto-publish
+        an unbounded number of posts in a day.
+        """
+        from services.auto_publish import auto_publish_task
+
+        task = {
+            "task_id": "t-dberr",
+            "featured_image_url": "https://img/featured.png",
+            "task_metadata": {},
+        }
+        db = _make_db(published_today=0, daily_limit="1", task=task)
+        # Make the daily-limit COUNT(*) raise on whichever pool check_pool uses.
+        check_pool = db.cloud_pool if db.cloud_pool is not None else db.pool
+        check_pool.fetchval = AsyncMock(side_effect=RuntimeError("connection reset"))
+
+        pub_mock = AsyncMock(return_value=_publish_result())
+        with patch("services.publish_service.publish_post_from_task", pub_mock):
+            result = await auto_publish_task(
+                database_service=db,
+                task_id="t-dberr",
+                quality_score=95.0,
+                site_config=_make_site_config(),
+            )
+        assert result is False
+        pub_mock.assert_not_awaited()
+        db.update_task_status.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # auto_publish_task — happy path

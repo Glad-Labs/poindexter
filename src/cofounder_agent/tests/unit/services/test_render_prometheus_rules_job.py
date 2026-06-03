@@ -51,7 +51,7 @@ class TestRun:
             return "groups: []\n"
 
         async def fake_reload(_url):
-            return "prometheus reloaded"
+            return (True, "prometheus reloaded")
 
         monkeypatch.setattr(
             "services.jobs.render_prometheus_rules.build_current", fake_build
@@ -145,6 +145,34 @@ class TestRun:
         # File should not have been written when build failed
         assert not out.exists()
 
+    async def test_failed_reload_surfaces_as_not_ok(self, tmp_path, monkeypatch):
+        """A failed Prometheus reload means the new rules were written to disk
+        but are NOT live — Prometheus is still serving the old rules, so new
+        alert thresholds silently never deploy. Surface ok=False so the
+        scheduler escalates (audit M3), mirroring render_alertmanager_config."""
+        out = tmp_path / "dynamic.yml"
+
+        async def fake_build(_pool):
+            return "groups: [x]\n"
+
+        async def failed_reload(_url):
+            return (False, "reload returned 403")
+
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules.build_current", fake_build
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._reload_prometheus", failed_reload
+        )
+
+        result = await RenderPrometheusRulesJob().run(
+            pool=None,
+            config={"output_path": str(out), "reload_on_change": True},
+        )
+        assert result.ok is False
+        assert result.changes_made == 1  # written, just not live
+        assert "403" in result.detail
+
     async def test_creates_parent_directory(self, tmp_path, monkeypatch):
         out = tmp_path / "nested" / "subdir" / "dynamic.yml"
 
@@ -152,7 +180,7 @@ class TestRun:
             return "groups: []\n"
 
         async def fake_reload(_url):
-            return "ok"
+            return (True, "ok")
 
         monkeypatch.setattr(
             "services.jobs.render_prometheus_rules.build_current", fake_build
@@ -182,7 +210,7 @@ class TestRun:
 
         async def capture_reload(url):
             captured.append(url)
-            return "prometheus reloaded"
+            return (True, "prometheus reloaded")
 
         monkeypatch.setattr(
             "services.jobs.render_prometheus_rules.build_current", fake_build
@@ -252,7 +280,7 @@ class TestRun:
             return "groups: [new]\n"
 
         async def fake_reload(_url):
-            return "prometheus reloaded"
+            return (True, "prometheus reloaded")
 
         original_read_text = type(out).read_text
 
@@ -292,7 +320,7 @@ class TestRun:
             return rendered
 
         async def fake_reload(_url):
-            return "prometheus reloaded"
+            return (True, "prometheus reloaded")
 
         monkeypatch.setattr(
             "services.jobs.render_prometheus_rules.build_current", fake_build
@@ -376,7 +404,7 @@ class TestReloadPrometheus:
 
         result = await _reload_prometheus("http://prom:9090")
 
-        assert result == "prometheus reloaded"
+        assert result == (True, "prometheus reloaded")
         assert _FakeAsyncClient.posts == ["http://prom:9090/-/reload"]
 
     async def test_returns_status_code_on_403(self, monkeypatch):
@@ -391,7 +419,7 @@ class TestReloadPrometheus:
 
         result = await _reload_prometheus("http://prom:9090")
 
-        assert result == "reload returned 403"
+        assert result == (False, "reload returned 403")
 
     async def test_handles_http_error(self, monkeypatch):
         """A connection error on reload must NOT raise — return a string
@@ -404,7 +432,8 @@ class TestReloadPrometheus:
             ),
         )
 
-        result = await _reload_prometheus("http://prom:9090")
+        ok, detail = await _reload_prometheus("http://prom:9090")
 
-        assert result.startswith("reload failed:")
-        assert "connection refused" in result
+        assert ok is False
+        assert detail.startswith("reload failed:")
+        assert "connection refused" in detail

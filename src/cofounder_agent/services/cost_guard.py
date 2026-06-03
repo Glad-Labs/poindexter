@@ -668,7 +668,25 @@ class CostGuard:
                 model=model,
             )
 
-        daily = await self.get_daily_spend()
+        # Enforcement path: read STRICT so a cost_logs query failure fails
+        # CLOSED (raises) instead of silently reading $0 and admitting
+        # unbounded cloud spend — the same fail-open bug preflight() already
+        # guards against (audit M4). check_budget is the helper the cloud
+        # providers + dispatcher use, so it must share the fail-closed posture.
+        try:
+            daily = await self.get_daily_spend(strict=True)
+        except CostGuardExhausted:
+            raise
+        except Exception as e:
+            raise CostGuardExhausted(
+                f"Cost-guard daily-spend read failed; failing closed "
+                f"(budget unverifiable): {e}",
+                scope="unknown",
+                spent_usd=0.0,
+                limit_usd=daily_limit,
+                provider=provider,
+                model=model,
+            ) from e
         if daily_limit > 0 and (daily + estimated) > daily_limit:
             raise CostGuardExhausted(
                 f"Daily spend cap reached: ${daily:.4f} + ${estimated:.4f} "
@@ -680,7 +698,20 @@ class CostGuard:
                 model=model,
             )
 
-        monthly = await self.get_monthly_spend()
+        try:
+            monthly = await self.get_monthly_spend(strict=True)
+        except CostGuardExhausted:
+            raise
+        except Exception as e:
+            raise CostGuardExhausted(
+                f"Cost-guard monthly-spend read failed; failing closed "
+                f"(budget unverifiable): {e}",
+                scope="unknown",
+                spent_usd=0.0,
+                limit_usd=monthly_limit,
+                provider=provider,
+                model=model,
+            ) from e
         if monthly_limit > 0 and (monthly + estimated) > monthly_limit:
             raise CostGuardExhausted(
                 f"Monthly spend cap reached: ${monthly:.4f} + "

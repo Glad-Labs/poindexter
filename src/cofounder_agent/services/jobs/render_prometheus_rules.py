@@ -79,28 +79,40 @@ class RenderPrometheusRulesJob:
                 ok=False, detail=f"write failed: {e}", changes_made=0
             )
 
+        reload_ok = True
         reload_detail = "written (reload skipped)"
         if reload_on_change:
-            reload_detail = await _reload_prometheus(prometheus_url)
+            reload_ok, reload_detail = await _reload_prometheus(prometheus_url)
 
+        # A failed reload means the new rules were written to disk but are NOT
+        # live — Prometheus is still serving the old rules, so updated alert
+        # thresholds silently never deploy. Surface ok=False so the scheduler
+        # escalates (this job is in _CIRCULAR_SAFE_JOBS → direct critical page),
+        # matching the render_alertmanager_config sibling. The write still
+        # happened (changes_made=1) so the next run won't re-write. (audit M3)
         return JobResult(
-            ok=True,
+            ok=reload_ok,
             detail=f"rules updated; {reload_detail}",
             changes_made=1,
             metrics={"bytes": len(rendered)},
         )
 
 
-async def _reload_prometheus(base_url: str) -> str:
-    """POST /-/reload; return a short status string for JobResult.detail."""
+async def _reload_prometheus(base_url: str) -> tuple[bool, str]:
+    """POST /-/reload; return ``(ok, short status string for JobResult.detail)``.
+
+    ``ok`` is False on any non-200 (e.g. 403 when ``--web.enable-lifecycle``
+    isn't set) or transport error, so the caller can propagate the failure
+    instead of reporting a silent success while Prometheus keeps the old rules.
+    """
     url = f"{base_url}/-/reload"
     try:
         async with httpx.AsyncClient(timeout=5.0) as http:
             resp = await http.post(url)
         if resp.status_code == 200:
-            return "prometheus reloaded"
+            return True, "prometheus reloaded"
         # 403 means --web.enable-lifecycle is not set on prometheus.
-        return f"reload returned {resp.status_code}"
+        return False, f"reload returned {resp.status_code}"
     except httpx.HTTPError as e:
         logger.warning("render_prometheus_rules: reload failed: %s", e)
-        return f"reload failed: {e}"
+        return False, f"reload failed: {e}"

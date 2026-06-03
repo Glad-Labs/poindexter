@@ -11,9 +11,12 @@ Structure: the coarse stages still awaiting granularity decomposition are
 stages have already been decomposed into atom chains (#362):
 
 - ``cross_model_qa`` → the Plan-3 qa.* rail atoms wired as a LINEAR chain
-  (qa.critic → qa.deepeval → qa.guardrails → qa.ragas → qa.aggregate). Each
-  rail appends to the operator.add-reduced ``qa_rail_reviews`` channel;
-  qa.aggregate combines them into the gate decision (and halts on reject).
+  (qa.programmatic → qa.critic → qa.deepeval → qa.guardrails → qa.ragas →
+  qa.aggregate). Each rail appends to the operator.add-reduced
+  ``qa_rail_reviews`` channel; qa.aggregate combines them into the gate
+  decision (and halts on reject). qa.programmatic is the cheap deterministic
+  anti-hallucination net (regex/heuristics, NO LLM); it restores the
+  ``programmatic_validator`` gate the cutover originally dropped.
 - ``generate_seo_metadata`` → the seo.* atom chain (seo.generate_title →
   seo.generate_description → seo.extract_keywords). Linear so description +
   keywords read the freshly-generated ``seo_title``; each is LLM-driven with
@@ -49,6 +52,11 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # text describes the ACTUAL rendered pixels, not the generation prompt.
         {"id": "caption_images", "atom": "stage.caption_images"},
         # qa.* rail block (replaces the cross_model_qa stage) — linear chain.
+        # qa.programmatic FIRST: the cheap deterministic anti-hallucination net
+        # (regex/heuristics, NO LLM). Restores the programmatic_validator gate
+        # the #355 cutover dropped — a critical fabrication vetoes in
+        # qa.aggregate when qa_gates.programmatic_validator.required_to_pass=true.
+        {"id": "qa_programmatic", "atom": "qa.programmatic"},
         {"id": "qa_critic", "atom": "qa.critic"},
         {"id": "qa_deepeval", "atom": "qa.deepeval"},
         {"id": "qa_guardrails", "atom": "qa.guardrails"},
@@ -73,7 +81,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "url_validation", "to": "replace_inline_images"},
         {"from": "replace_inline_images", "to": "source_featured_image"},
         {"from": "source_featured_image", "to": "caption_images"},
-        {"from": "caption_images", "to": "qa_critic"},
+        {"from": "caption_images", "to": "qa_programmatic"},
+        {"from": "qa_programmatic", "to": "qa_critic"},
         {"from": "qa_critic", "to": "qa_deepeval"},
         {"from": "qa_deepeval", "to": "qa_guardrails"},
         {"from": "qa_guardrails", "to": "qa_ragas"},

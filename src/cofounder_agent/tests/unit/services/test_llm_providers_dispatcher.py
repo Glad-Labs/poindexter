@@ -429,3 +429,128 @@ class TestDispatchCompleteAutoLog:
                 model="gemma3:27b",
             )
         assert result.prompt_tokens == 1
+
+
+# ---------------------------------------------------------------------------
+# Spend-cap enforcement on the primary dispatch path (audit H2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestIsPaidLlmCall:
+    """Local vs paid classification — must be CONSERVATIVE toward local so a
+    misclassification can never block a free Ollama call."""
+
+    def test_bare_model_is_local(self):
+        assert dispatcher._is_paid_llm_call("gemma3:27b", {}) is False
+
+    def test_ollama_prefix_is_local(self):
+        assert dispatcher._is_paid_llm_call("ollama/gemma3:27b", {}) is False
+
+    def test_vllm_prefix_is_local(self):
+        assert dispatcher._is_paid_llm_call("vllm/some-model", None) is False
+
+    def test_openai_prefix_is_paid(self):
+        assert dispatcher._is_paid_llm_call("openai/gpt-4o-mini", {}) is True
+
+    def test_anthropic_prefix_is_paid(self):
+        assert dispatcher._is_paid_llm_call("anthropic/claude-haiku-4-5", None) is True
+
+    def test_local_api_base_keeps_call_local(self):
+        assert dispatcher._is_paid_llm_call(
+            "gemma3:27b", {"api_base": "http://localhost:11434"}
+        ) is False
+
+    def test_remote_api_base_is_paid(self):
+        assert dispatcher._is_paid_llm_call(
+            "gpt-4o", {"api_base": "https://api.openai.com/v1"}
+        ) is True
+
+    def test_inline_remote_http_model_is_paid(self):
+        assert dispatcher._is_paid_llm_call("https://api.openai.com/v1", {}) is True
+
+    def test_inline_local_http_model_is_local(self):
+        assert dispatcher._is_paid_llm_call("http://localhost:8080/v1", {}) is False
+
+
+@pytest.mark.unit
+class TestEnforceBudgetIfPaid:
+    async def test_local_call_skips_cost_guard(self):
+        """A local model must NOT even construct a CostGuard — zero overhead,
+        zero risk to the 99.99% local path."""
+        with patch("services.cost_guard.CostGuard") as CG:
+            await dispatcher._enforce_budget_if_paid(
+                pool=MagicMock(), provider=_FakeProvider("ollama_native"),
+                model="gemma3:27b", provider_config={},
+            )
+        CG.assert_not_called()
+
+    async def test_paid_call_enforces_budget(self):
+        guard = MagicMock()
+        guard.check_budget = AsyncMock()
+        with patch("services.cost_guard.CostGuard", return_value=guard):
+            await dispatcher._enforce_budget_if_paid(
+                pool=MagicMock(), provider=_FakeProvider("litellm"),
+                model="openai/gpt-4o-mini", provider_config={},
+            )
+        guard.check_budget.assert_awaited_once()
+
+    async def test_paid_call_over_budget_raises(self):
+        from services.cost_guard import CostGuardExhausted
+
+        guard = MagicMock()
+        guard.check_budget = AsyncMock(
+            side_effect=CostGuardExhausted("over budget", scope="daily")
+        )
+        with patch("services.cost_guard.CostGuard", return_value=guard):
+            with pytest.raises(CostGuardExhausted):
+                await dispatcher._enforce_budget_if_paid(
+                    pool=MagicMock(), provider=_FakeProvider("litellm"),
+                    model="openai/gpt-4o-mini", provider_config={},
+                )
+
+
+@pytest.mark.unit
+class TestDispatchCompleteBudgetGate:
+    async def test_paid_call_over_budget_blocks_before_provider(self):
+        """End-to-end: dispatch_complete enforces the spend cap BEFORE calling
+        the provider, so an over-budget paid call never fires (audit H2)."""
+        from services.cost_guard import CostGuardExhausted
+
+        pool = _FakePool(setting_value="litellm")
+        provider = _FakeProvider(name="litellm")
+        guard = MagicMock()
+        guard.check_budget = AsyncMock(
+            side_effect=CostGuardExhausted("over budget", scope="daily")
+        )
+        with patch.object(
+            dispatcher, "get_all_llm_providers", return_value=[provider]
+        ), patch(
+            "services.cost_guard.CostGuard", return_value=guard
+        ), patch.object(
+            dispatcher, "get_provider_config", AsyncMock(return_value={})
+        ):
+            with pytest.raises(CostGuardExhausted):
+                await dispatcher.dispatch_complete(
+                    pool, messages=[{"role": "user", "content": "hi"}],
+                    model="openai/gpt-4o-mini", tier="premium",
+                )
+        provider.complete.assert_not_awaited()
+
+    async def test_local_call_not_gated(self):
+        """A local call dispatches normally — the budget gate is a no-op."""
+        pool = _FakePool(setting_value="ollama_native")
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete = AsyncMock(return_value=_FakeCompletionResult(prompt_tokens=2))
+        with patch.object(
+            dispatcher, "get_all_llm_providers", return_value=[provider]
+        ), patch.object(
+            dispatcher, "get_provider_config", AsyncMock(return_value={})
+        ), patch("services.cost_guard.CostGuard") as CG:
+            result = await dispatcher.dispatch_complete(
+                pool, messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+            )
+        CG.assert_not_called()
+        provider.complete.assert_awaited_once()
+        assert result.prompt_tokens == 2

@@ -481,10 +481,10 @@ class TestGeminiCostGuard:
         )
 
         # Build a guard whose monthly check passes but daily fails.
-        async def _fake_daily() -> float:
+        async def _fake_daily(*, strict: bool = False) -> float:
             return 999.0  # well past any limit
 
-        async def _fake_monthly() -> float:
+        async def _fake_monthly(*, strict: bool = False) -> float:
             return 0.0
 
         guard = CostGuard(site_config=site_config, pool=None)
@@ -514,10 +514,10 @@ class TestGeminiCostGuard:
             extra={"monthly_spend_limit_usd": "0.001"},
         )
 
-        async def _fake_monthly() -> float:
+        async def _fake_monthly(*, strict: bool = False) -> float:
             return 5.0
 
-        async def _fake_daily() -> float:
+        async def _fake_daily(*, strict: bool = False) -> float:
             return 0.0
 
         guard = CostGuard(site_config=site_config, pool=None)

@@ -71,6 +71,12 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # above the steady-state operating cost. Tunable per-operator;
     # raise as cloud-API use ramps up.
     "monthly_spend_warning_usd": "35.0",
+    # GPU hardware (audit C3). Thresholds for the container-supervised
+    # nvidia-smi exporter (job="nvidia-smi", gpu-exporter:9835). 85°C is a
+    # safe warning ceiling well below the ~90°C throttle point; 95% VRAM
+    # catches OOM-imminent before Ollama/SDXL allocations start failing.
+    "gpu_temperature_celsius": "85",
+    "gpu_vram_utilization_percent": "95",
 }
 
 
@@ -197,6 +203,55 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "`poindexter migrate status` (or `--json` for machine-readable)."
         ),
     },
+    # --- GPU hardware (audit C3) ---
+    # These COMPLEMENT the Grafana "GPU Temperature High" alert (rule #14),
+    # which reads the `gpu_metrics` DB table fed by the hand-started
+    # scripts/gpu-scraper.py daemon and is `noDataState: OK` (so it goes silent
+    # if that daemon dies). These rules target the container-supervised
+    # nvidia-smi exporter (job="nvidia-smi") that Prometheus scrapes directly,
+    # giving a GPU-temp alert that survives a dead scraper — an independently-
+    # supervised second path. VRAM had no alert at all before this.
+    "GpuTemperatureHigh": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "30s",
+        "expr": "nvidia_gpu_temperature_celsius > {threshold.gpu_temperature_celsius}",
+        "for": "2m",
+        "severity": "critical",
+        "category": "infra",
+        "summary": "GPU temperature above safe ceiling",
+        "description": (
+            "nvidia_gpu_temperature_celsius > threshold for 2m (container "
+            "exporter, job=nvidia-smi). Sustained high temp risks thermal "
+            "throttling or hardware damage. Check airflow/fans, pause heavy "
+            "GPU jobs (Ollama/SDXL), and confirm the card isn't dust-clogged."
+        ),
+    },
+    "GpuVramHigh": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "30s",
+        "expr": (
+            "nvidia_gpu_memory_utilization_percent > "
+            "{threshold.gpu_vram_utilization_percent}"
+        ),
+        "for": "5m",
+        "severity": "warning",
+        "category": "infra",
+        "summary": "GPU VRAM utilization critically high",
+        "description": (
+            "nvidia_gpu_memory_utilization_percent > threshold for 5m. VRAM is "
+            "nearly exhausted — the next Ollama/SDXL model load may OOM and "
+            "fail silently. Unload idle models (the gpu_scheduler should), or "
+            "reduce concurrent model residency."
+        ),
+    },
+    # NOTE: disk-free alerting lives in the STATIC rule file
+    # infrastructure/prometheus/alerts/infrastructure.yml
+    # (PoindexterDiskSpaceLow < 20 GB / PoindexterDiskSpaceCritical < 10 GB on
+    # windows_logical_disk_free_bytes) — static rules fire even when the DB is
+    # down, which is the right place for infra alerts. No DB-rendered duplicate
+    # here.
     "OllamaNoModelsLoaded": {
         "enabled": True,
         "group": "poindexter-infra",

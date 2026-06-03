@@ -152,8 +152,16 @@ class SiteConfig:
                     if value is not None and value != "":
                         return str(value)
             except Exception as e:
-                logger.warning(
-                    "[SITE_CONFIG] get_secret(%s) query failed: %s", key, e
+                # A secret-read FAILURE is not the same as "secret unset": the
+                # caller falls through to env/default and treats it as "not
+                # configured", silently disabling whatever the secret gates
+                # (e.g. discord_ops_webhook_url / telegram_* → no operator
+                # alerts). Log at ERROR (GlitchTip-visible) so a persistent
+                # failure surfaces instead of a Loki-only warning. (audit M2)
+                logger.error(
+                    "[SITE_CONFIG] get_secret(%s) query failed — returning "
+                    "fallback; the feature this secret gates is now silently "
+                    "disabled: %s", key, e, exc_info=True,
                 )
         env_val = os.getenv(key.upper())
         if env_val:

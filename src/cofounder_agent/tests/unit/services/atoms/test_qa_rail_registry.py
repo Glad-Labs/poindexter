@@ -8,7 +8,7 @@ import pytest
 from services import pipeline_architect
 from services.atom_registry import discover, get_atom_callable, get_atom_meta
 
-_RAILS = ("qa.deepeval", "qa.guardrails", "qa.ragas", "qa.critic")
+_RAILS = ("qa.programmatic", "qa.deepeval", "qa.guardrails", "qa.ragas", "qa.critic")
 _ALL = _RAILS + ("qa.aggregate",)
 
 

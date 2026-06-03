@@ -294,6 +294,33 @@ class TestGetSecret:
             val = await cfg.get_secret("missing_secret", default="fallback-val")
         assert val == "fallback-val"
 
+    async def test_get_secret_db_error_logged_at_error_not_warning(self, config):
+        """A secret-read DB error must log at ERROR (GlitchTip-visible), not a
+        Loki-only warning — otherwise a transient DB blip silently returns the
+        default and callers treat an alerting webhook/token as 'not configured',
+        silently disabling a notification channel (audit M2)."""
+        import services.site_config as sc_mod
+
+        pool = AsyncMock()
+        acquire_ctx = AsyncMock()
+        acquire_ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("pool exhausted"))
+        acquire_ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = lambda: acquire_ctx
+        cfg = SiteConfig(pool=pool)
+
+        mock_logger = MagicMock()
+        with patch.object(sc_mod, "logger", mock_logger):
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("DISCORD_OPS_WEBHOOK_URL", None)
+                await cfg.get_secret("discord_ops_webhook_url", default="")
+
+        assert mock_logger.error.called, "secret-read DB error must log at ERROR"
+        assert mock_logger.error.call_args.kwargs.get("exc_info") is True
+        # And NOT at warning (the silent-failure level we're fixing).
+        assert not any(
+            "get_secret" in str(c) for c in mock_logger.warning.mock_calls
+        )
+
     async def test_get_secret_returns_default_when_no_pool_no_env(self, config):
         cfg = SiteConfig()  # no pool
         with patch.dict(os.environ, {}, clear=False):

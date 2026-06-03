@@ -226,3 +226,56 @@ class TestHeartbeatLoopErrorVisibility:
         # Two execute() calls = the loop survived the first exception and
         # ran a second iteration.
         assert conn.execute.call_count == 2
+
+
+class TestHangWatchdog:
+    """faulthandler hang diagnostics (audit M7). CLAUDE.md claimed the worker
+    wired these but grep showed no faulthandler anywhere — a wedged event loop
+    was a silent hang (brain sees 'offline', no clue WHY). The watchdog dumps
+    all thread stacks if a heartbeat tick stalls past the timeout."""
+
+    def _service_with_setting(self, value):
+        from services.site_config import SiteConfig
+        from services.worker_service import WorkerService
+
+        return WorkerService(
+            MagicMock(),
+            worker_type="test",
+            site_config=SiteConfig(initial_config={"worker_hang_dump_seconds": value}),
+        )
+
+    def test_hang_dump_seconds_default(self, service):
+        assert service._hang_dump_seconds() == 300.0
+
+    def test_hang_dump_seconds_from_setting(self):
+        assert self._service_with_setting("120")._hang_dump_seconds() == 120.0
+
+    def test_hang_dump_seconds_bad_value_falls_back(self):
+        assert self._service_with_setting("not-a-number")._hang_dump_seconds() == 300.0
+
+    def test_arm_schedules_dump(self, service):
+        with patch("services.worker_service.faulthandler") as fh:
+            fh.is_enabled.return_value = False
+            service._arm_hang_watchdog()
+        fh.enable.assert_called_once()
+        fh.dump_traceback_later.assert_called_once()
+        assert fh.dump_traceback_later.call_args.args[0] == 300.0
+
+    def test_arm_disabled_when_zero(self):
+        svc = self._service_with_setting("0")
+        with patch("services.worker_service.faulthandler") as fh:
+            svc._arm_hang_watchdog()
+        fh.dump_traceback_later.assert_not_called()
+
+    def test_arm_never_raises(self, service):
+        """A faulthandler failure must be swallowed — diagnostics can't break
+        the worker (e.g. no stderr fileno under captured output)."""
+        with patch("services.worker_service.faulthandler") as fh:
+            fh.is_enabled.return_value = True
+            fh.dump_traceback_later.side_effect = RuntimeError("no fileno")
+            service._arm_hang_watchdog()  # must not raise
+
+    def test_disarm_cancels(self, service):
+        with patch("services.worker_service.faulthandler") as fh:
+            service._disarm_hang_watchdog()
+        fh.cancel_dump_traceback_later.assert_called_once()

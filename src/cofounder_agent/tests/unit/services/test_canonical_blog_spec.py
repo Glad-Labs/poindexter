@@ -16,8 +16,10 @@ class TestCanonicalBlogSpec:
         assert spec["name"] == "canonical_blog"
         assert spec["entry"] == "verify_task"
         node_atoms = {n["atom"] for n in spec["nodes"]}
-        # The five qa.* atoms replace cross_model_qa.
-        assert {"qa.critic", "qa.deepeval", "qa.guardrails", "qa.ragas", "qa.aggregate"} <= node_atoms
+        # The qa.* atoms replace cross_model_qa. qa.programmatic restores the
+        # programmatic anti-hallucination gate dropped at the #355 cutover.
+        assert {"qa.programmatic", "qa.critic", "qa.deepeval", "qa.guardrails",
+                "qa.ragas", "qa.aggregate"} <= node_atoms
         # The three seo.* atoms replace generate_seo_metadata (#362).
         assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
         # No legacy monolithic QA / SEO stage nodes.
@@ -32,6 +34,15 @@ class TestCanonicalBlogSpec:
             "generate_video_shot_list", "capture_training_data", "finalize_task",
         ):
             assert f"stage.{s}" in node_atoms, s
+
+    def test_programmatic_runs_before_critic(self):
+        """The programmatic validator is the cheap deterministic gate and must
+        sit FIRST in the qa block (caption_images → qa_programmatic → qa_critic)."""
+        edges = {(e["from"], e["to"]) for e in CANONICAL_BLOG_GRAPH_DEF["edges"]}
+        assert ("caption_images", "qa_programmatic") in edges
+        assert ("qa_programmatic", "qa_critic") in edges
+        # The old caption_images → qa_critic edge must be gone (re-routed).
+        assert ("caption_images", "qa_critic") not in edges
 
     def test_passes_plan1_validator(self):
         discover()  # surfaces stage.* + registers qa.* atoms (idempotent)

@@ -88,6 +88,83 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
     _tracer = _NoopTracer()
 
 
+# Positive sentinel cost so check_budget runs its ACCUMULATED daily/monthly
+# spend checks (it short-circuits on estimated<=0). Pre-call we don't know the
+# token count; the meaningful gate is "have we already hit today's cap", which
+# the accumulated comparison enforces regardless of this call's exact cost.
+_PAID_PREFLIGHT_SENTINEL_USD = 1e-9
+
+
+def _is_paid_llm_call(model: str, provider_config: dict[str, Any] | None) -> bool:
+    """Best-effort: is this dispatch a PAID (non-local) LLM call?
+
+    Local Ollama/vLLM/etc. cost $0 and are exempt from budget gating. Mirrors
+    the litellm provider's ``_enforce_paid_endpoint_policy`` local-detection
+    (same ``_LOCAL_MODEL_PREFIXES`` + ``is_local_base_url``) so the two stay
+    consistent. CONSERVATIVE toward LOCAL — only returns True when the target
+    is unambiguously non-local — so a misclassification can never block a free
+    local call.
+    """
+    from services.cost_guard import is_local_base_url
+    from services.llm_providers.litellm_provider import _LOCAL_MODEL_PREFIXES
+
+    model = (model or "").strip()
+    cfg = provider_config or {}
+
+    # Inline http(s) model string is itself an api_base.
+    if model.startswith("http"):
+        return not is_local_base_url(model)
+    # Explicit api_base pointing at a non-local host (the DB-swap bypass the
+    # litellm policy guards — treat as paid).
+    api_base = cfg.get("api_base")
+    if api_base and not is_local_base_url(api_base):
+        return True
+    # Model namespace prefix. A bare name uses the default ollama prefix (local).
+    if "/" not in model:
+        return False
+    prefix = model.split("/", 1)[0].lower()
+    return prefix not in _LOCAL_MODEL_PREFIXES
+
+
+async def _enforce_budget_if_paid(
+    *,
+    pool: Any,
+    provider: Any,
+    model: str,
+    provider_config: dict[str, Any] | None,
+) -> None:
+    """Enforce the daily/monthly USD cap before a PAID LLM call fires (audit H2).
+
+    The cost-guard dollar cap was previously only enforced by the gemini /
+    anthropic plugin providers — the PRIMARY litellm dispatch path had no
+    spend cap, so once ``allow_paid_base_url=true`` was set there was no dollar
+    backstop. This closes that gap at the single dispatch choke point.
+
+    Local calls ($0) are a no-op — zero behavior change to the local path. For
+    paid calls, ``check_budget`` raises ``CostGuardExhausted`` when the
+    accumulated daily/monthly spend is already at the cap, and fails CLOSED
+    (raises) when cost_logs can't be read (the M4 strict-read fix).
+    """
+    if not _is_paid_llm_call(model, provider_config):
+        return
+    from services.cost_guard import CostGuard
+
+    site_config = None
+    try:
+        from services.integrations.shared_context import get_site_config
+
+        site_config = get_site_config()
+    except Exception:  # noqa: BLE001 — DI seam optional; CostGuard uses defaults
+        site_config = None
+
+    guard = CostGuard(pool=pool, site_config=site_config)
+    await guard.check_budget(
+        provider=getattr(provider, "name", "unknown"),
+        model=model,
+        estimated_cost_usd=_PAID_PREFLIGHT_SENTINEL_USD,
+    )
+
+
 # Default provider per tier if no app_settings override exists.
 _DEFAULT_PROVIDER_PER_TIER = {
     "free": "ollama_native",
@@ -236,6 +313,13 @@ async def dispatch_complete(
             span.set_attribute("llm.provider.name", provider.name)
             provider_config = await get_provider_config(pool, provider.name)
             kwargs.setdefault("_provider_config", provider_config)
+            # Spend cap on the PRIMARY path (audit H2). No-op for local calls;
+            # raises CostGuardExhausted (fails closed) for an over-budget or
+            # budget-unverifiable PAID call, before the provider fires.
+            await _enforce_budget_if_paid(
+                pool=pool, provider=provider, model=model,
+                provider_config=provider_config,
+            )
             result = await provider.complete(messages=messages, model=model, **kwargs)
             # Completion has .prompt_tokens / .completion_tokens when the
             # provider populates them; safe getattr for non-standard shapes.

@@ -142,7 +142,19 @@ async def auto_publish_task(
             )
             return False
     except Exception as exc:  # noqa: BLE001 — defensive
-        logger.warning("[AUTO_PUBLISH] Failed to check daily limit: %s", exc)
+        # FAIL CLOSED (audit H3): the daily_post_limit rate cap is a safety
+        # rail. If we can't verify how many posts went out today, we must NOT
+        # publish — previously this fell through and published anyway, so a DB
+        # blip could auto-publish an unbounded number of posts in a day. Leave
+        # the task in awaiting_approval for the operator. Logged at error so a
+        # persistent failure of this safety check reaches GlitchTip, not just
+        # Loki.
+        logger.error(
+            "[AUTO_PUBLISH] daily-limit check failed for task %s — NOT "
+            "auto-publishing (fail-closed); leaving in awaiting_approval: %s",
+            task_id, exc, exc_info=True,
+        )
+        return False
 
     task = await database_service.get_task(task_id)
     if not task:

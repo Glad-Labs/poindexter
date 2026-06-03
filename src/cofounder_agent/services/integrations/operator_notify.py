@@ -233,4 +233,15 @@ async def notify_operator(
     try:
         await _legacy_discord_webhook(message)
     except Exception as e:
-        logger.warning("[notify_operator] discord fallback failed: %s", e)
+        # Both the framework dispatcher path and the legacy Discord fallback
+        # have now failed — this operator message reached NO channel. Escalate
+        # to error (with traceback) so a total alert-channel outage becomes a
+        # GlitchTip event: the alerting system must be able to alert that it is
+        # itself down, instead of leaving a Loki-only warning nobody watches.
+        # (audit finding H4)
+        logger.error(
+            "[notify_operator] ALL delivery paths failed — operator alert NOT "
+            "delivered to any channel: %s",
+            e,
+            exc_info=True,
+        )

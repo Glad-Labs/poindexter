@@ -243,3 +243,36 @@ class TestBuildCurrent:
         out = await rb.build_current(pool)
         assert "> 9.99" in out
         assert "MonthlySpendHigh" not in out
+
+
+# ---------------------------------------------------------------------------
+# GPU thermal + VRAM alerts (audit C3) — self-supervised via the container
+# exporter, NOT the hand-started gpu-scraper.py DB path.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGpuRules:
+    async def test_gpu_temp_and_vram_rules_present_and_target_live_metrics(self):
+        """The GPU thermal + VRAM rules must target the container-scraped
+        exporter metrics (verified live: job="nvidia-smi", gpu-exporter:9835),
+        so they fire even when the unsupervised gpu-scraper.py host script is
+        dead — the inverse of the old noDataState:OK DB-path alert."""
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: GpuTemperatureHigh" in out
+        assert "alert: GpuVramHigh" in out
+        assert "nvidia_gpu_temperature_celsius" in out
+        assert "nvidia_gpu_memory_utilization_percent" in out
+        # Defaults substituted: 85°C thermal, 95% VRAM.
+        assert "nvidia_gpu_temperature_celsius > 85" in out
+        assert "nvidia_gpu_memory_utilization_percent > 95" in out
+
+    async def test_gpu_thresholds_overridable(self):
+        pool = _FakePool([
+            {"key": "prometheus.threshold.gpu_temperature_celsius", "value": "80"},
+            {"key": "prometheus.threshold.gpu_vram_utilization_percent", "value": "90"},
+        ])
+        out = await rb.build_current(pool)
+        assert "nvidia_gpu_temperature_celsius > 80" in out
+        assert "nvidia_gpu_memory_utilization_percent > 90" in out

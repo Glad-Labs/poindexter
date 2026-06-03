@@ -7,6 +7,7 @@ with health metrics, and claim tasks atomically.
 """
 
 import asyncio
+import faulthandler
 import json
 import os
 import platform
@@ -101,34 +102,43 @@ class WorkerService:
 
     async def _heartbeat_loop(self):
         """Send periodic heartbeats with health metrics."""
-        while self._running:
-            try:
-                health = await self._collect_health_metrics()
-                async with self.pool.acquire() as conn:
-                    await conn.execute(
-                        """
-                        UPDATE capability_registry
-                        SET last_heartbeat = NOW(),
-                            health = $2::jsonb,
-                            status = CASE
-                                WHEN $3::text IS NOT NULL THEN 'busy'
-                                ELSE 'online'
-                            END,
-                            updated_at = NOW()
-                        WHERE id = $1
-                        """,
-                        self.worker_id,
-                        json.dumps(health),
-                        self._current_task_id,
-                    )
-            except Exception:
-                # Per feedback_no_silent_defaults: heartbeat failures must
-                # surface — without them the brain can't see worker state.
-                # Log at WARNING (not DEBUG) so the suppressed exception
-                # actually shows up in production logs. Loop keeps running
-                # so a transient DB blip doesn't kill the heartbeat forever.
-                logger.warning("[WORKER] Heartbeat failed", exc_info=True)
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
+        try:
+            while self._running:
+                try:
+                    health = await self._collect_health_metrics()
+                    async with self.pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            UPDATE capability_registry
+                            SET last_heartbeat = NOW(),
+                                health = $2::jsonb,
+                                status = CASE
+                                    WHEN $3::text IS NOT NULL THEN 'busy'
+                                    ELSE 'online'
+                                END,
+                                updated_at = NOW()
+                            WHERE id = $1
+                            """,
+                            self.worker_id,
+                            json.dumps(health),
+                            self._current_task_id,
+                        )
+                except Exception:
+                    # Per feedback_no_silent_defaults: heartbeat failures must
+                    # surface — without them the brain can't see worker state.
+                    # Log at WARNING (not DEBUG) so the suppressed exception
+                    # actually shows up in production logs. Loop keeps running
+                    # so a transient DB blip doesn't kill the heartbeat forever.
+                    logger.warning("[WORKER] Heartbeat failed", exc_info=True)
+                # Re-arm the hang watchdog each tick (audit M7): a healthy
+                # iteration resets the deadline, so the all-thread traceback
+                # dump only fires if THIS loop stalls past the timeout (a
+                # wedged event loop / deadlock) — turning a silent hang into a
+                # captured stack trace.
+                self._arm_hang_watchdog()
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+        finally:
+            self._disarm_hang_watchdog()
 
     async def _collect_health_metrics(self) -> dict[str, Any]:
         """Collect current health metrics."""
@@ -141,3 +151,42 @@ class WorkerService:
     def set_current_task(self, task_id: str | None):
         """Track which task is being processed."""
         self._current_task_id = task_id
+
+    # ------------------------------------------------------------------
+    # Hang diagnostics (audit M7)
+    # ------------------------------------------------------------------
+
+    def _hang_dump_seconds(self) -> float:
+        """Heartbeat-loop stall (seconds) before faulthandler dumps all thread
+        stacks. 0 disables. DB-tunable via app_settings.worker_hang_dump_seconds
+        (default 300 — ~10x the 30s heartbeat interval, so only a real wedge
+        trips it)."""
+        try:
+            return float(self._site_config.get("worker_hang_dump_seconds", "300"))
+        except (TypeError, ValueError):
+            return 300.0
+
+    def _arm_hang_watchdog(self) -> None:
+        """(Re)arm the faulthandler hang watchdog.
+
+        ``dump_traceback_later`` schedules a one-shot all-thread traceback dump
+        via a separate watchdog thread that fires even when the event loop is
+        blocked. Re-armed each heartbeat tick, so it only dumps if a tick stalls
+        past the timeout. Best-effort — a faulthandler failure (e.g. no stderr
+        fileno under captured output) must never break the worker."""
+        secs = self._hang_dump_seconds()
+        if secs <= 0:
+            return
+        try:
+            if not faulthandler.is_enabled():
+                faulthandler.enable()
+            faulthandler.dump_traceback_later(secs, repeat=False)
+        except Exception:  # noqa: BLE001 — diagnostics must not break the worker
+            logger.debug("[WORKER] hang watchdog arm failed", exc_info=True)
+
+    def _disarm_hang_watchdog(self) -> None:
+        """Cancel any pending hang-watchdog dump (loop exit / shutdown)."""
+        try:
+            faulthandler.cancel_dump_traceback_later()
+        except Exception:  # noqa: BLE001 — best-effort teardown
+            pass

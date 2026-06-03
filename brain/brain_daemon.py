@@ -459,6 +459,125 @@ def _audit_brain_module_imports() -> None:
         logger.warning("[BRAIN] notify_operator raised: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Watchdog self-protection (audit C2 + H1)
+# ---------------------------------------------------------------------------
+# The brain is the thing that pages the operator when services break. These
+# helpers protect the brain's OWN failure modes: a monitoring cycle that keeps
+# throwing (C2) or the alert-dispatch loop dying while the daemon still looks
+# healthy (H1). Both escalate through the stdlib operator_notifier failsafe,
+# which reads tokens from os.getenv and so pages even when the DB pool — the
+# resource the normal notify() path depends on — is itself dead.
+
+# Page after this many back-to-back run_cycle() failures. run_cycle failing
+# repeatedly means outage detection is DOWN; the operator must hear about it.
+CYCLE_FAILURE_ALERT_THRESHOLD = 3
+
+
+def _should_page_cycle_failure(
+    consecutive_failures: int, threshold: int = CYCLE_FAILURE_ALERT_THRESHOLD
+) -> bool:
+    """Page when consecutive run_cycle failures first reach the threshold, then
+    again every ``threshold`` cycles — so a persistent outage re-pings without
+    spamming a page every single cycle."""
+    return consecutive_failures >= threshold and consecutive_failures % threshold == 0
+
+
+def _alert_dispatch_died(task) -> tuple[bool, BaseException | None]:
+    """Whether the alert-dispatch task has died unexpectedly.
+
+    The dispatch loop is supposed to run until shutdown. A task that is ``done``
+    while the daemon is still running has died — either by raising or by
+    returning early — and the Grafana→Telegram delivery path is dark. Returns
+    ``(died, exc)``; a task cancelled at shutdown is NOT a death.
+    """
+    if task is None or not task.done():
+        return (False, None)
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return (False, None)  # cancelled cleanly — graceful shutdown
+    return (True, exc)
+
+
+def _page_operator_failsafe(
+    title: str, detail: str, *, source: str, severity: str = "critical"
+) -> bool:
+    """Page the operator through the DB-independent operator_notifier failsafe.
+
+    operator_notifier reads its channel tokens from os.getenv (hydrated at
+    startup), so it pages even when the asyncpg pool is dead — exactly the
+    scenario where the normal DB-backed ``notify()`` path can reach no one.
+    Returns True if the failsafe was invoked. Never raises.
+    """
+    try:
+        from operator_notifier import notify_operator
+    except ImportError:
+        try:
+            from brain.operator_notifier import notify_operator  # type: ignore[no-redef]
+        except ImportError:
+            logger.error(
+                "[BRAIN] operator_notifier failsafe unavailable — cannot page "
+                "operator about: %s", title,
+            )
+            return False
+    try:
+        notify_operator(title=title, detail=detail, source=source, severity=severity)
+        return True
+    except Exception as exc:  # noqa: BLE001 — failsafe is best-effort
+        logger.error("[BRAIN] failsafe page raised: %s", exc, exc_info=True)
+        return False
+
+
+async def _init_sentry(pool) -> bool:
+    """Initialise Sentry/GlitchTip error capture for the brain daemon (audit H5).
+
+    The brain — the self-healing watchdog AND the alert dispatcher — previously
+    had NO Sentry SDK wired at all, so an exception in it reached no error
+    tracker (Loki only). A crash in the component whose job is to notice crashes
+    is exactly what you most want captured. Reads ``sentry_dsn`` from
+    app_settings via the brain's stdlib-only secret_reader. Best-effort: skips
+    cleanly when the DSN is unset or the SDK isn't baked into the brain image.
+    Returns True when Sentry was initialised.
+    """
+    dsn = await _read_app_setting(pool, "sentry_dsn", "")
+    if not dsn:
+        logger.info("[BRAIN] sentry_dsn not configured — Sentry init skipped")
+        return False
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.asyncio import AsyncioIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+    except ImportError:
+        logger.warning(
+            "[BRAIN] sentry-sdk not installed in the brain image — brain "
+            "exceptions will NOT reach GlitchTip. Rebuild the brain image "
+            "(its Dockerfile pip-installs sentry-sdk)."
+        )
+        return False
+    try:
+        environment = await _read_app_setting(pool, "sentry_environment", "production")
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=environment,
+            # Errors-only: the brain has no web-request spans to trace. The
+            # LoggingIntegration mirrors the worker — logger.error+ become
+            # Sentry events (so the failsafe/cycle-watchdog errors land here).
+            integrations=[
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+                AsyncioIntegration(),
+            ],
+            traces_sample_rate=0.0,
+        )
+        logger.info(
+            "[BRAIN] Sentry initialised (errors → GlitchTip, env=%s)", environment
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 — never block boot on telemetry
+        logger.warning("[BRAIN] Sentry init failed: %s", exc, exc_info=True)
+        return False
+
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1400,13 +1519,25 @@ async def monitor_services(pool) -> list:
         else:
             ok, code, detail = check_http(config["url"])
 
-        # Store in knowledge graph
-        await pool.execute("""
-            INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
-            VALUES ($1, $2, $3, $4, 'brain_monitor', $5)
-            ON CONFLICT (entity, attribute) DO UPDATE SET
-                value = EXCLUDED.value, updated_at = NOW()
-        """, f"service.{name}", "status", "up" if ok else "down", 1.0, ["monitoring"])
+        # Store in knowledge graph. GUARDED (audit C2): this write must NOT be
+        # able to suppress the outage page below. Previously an unguarded
+        # failure here (e.g. a transient DB blip) would raise, abort
+        # monitor_services before the `notify()` page, abort the whole cycle,
+        # and leave the operator blind with only a Loki log line — silently
+        # disabling outage detection. A KG-write hiccup is non-fatal; the alert
+        # is what matters.
+        try:
+            await pool.execute("""
+                INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
+                VALUES ($1, $2, $3, $4, 'brain_monitor', $5)
+                ON CONFLICT (entity, attribute) DO UPDATE SET
+                    value = EXCLUDED.value, updated_at = NOW()
+            """, f"service.{name}", "status", "up" if ok else "down", 1.0, ["monitoring"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[BRAIN] brain_knowledge write for service.%s failed "
+                "(continuing to alert): %s", name, exc,
+            )
 
         if not ok:
             issues.append({"service": name, "code": code, "detail": detail, "critical": config["critical"]})
@@ -2168,8 +2299,20 @@ async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
 
-    issues = await monitor_services(pool)
-    ext_issues = await monitor_external_services(pool)
+    # GUARDED (audit C2): a wholesale failure in either monitor must not abort
+    # the rest of the cycle (probes, heartbeat, self-maintain). Each already
+    # alerts internally; here we keep the cycle alive so one monitor's bad day
+    # doesn't take the others' detection down with it.
+    try:
+        issues = await monitor_services(pool)
+    except Exception as exc:
+        logger.error("[BRAIN] monitor_services failed: %s", exc, exc_info=True)
+        issues = []
+    try:
+        ext_issues = await monitor_external_services(pool)
+    except Exception as exc:
+        logger.error("[BRAIN] monitor_external_services failed: %s", exc, exc_info=True)
+        ext_issues = []
     # process_queue is dead since migration 0080 dropped brain_queue
     # (2026-04-21). Nothing enqueues to it anymore. The handler
     # functions (enqueue_brain_item, accept_topic, etc.) are kept in
@@ -2561,6 +2704,10 @@ async def main():
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)
 
+    # Initialise Sentry/GlitchTip as soon as the DB is reachable so brain
+    # startup + cycle exceptions are captured (audit H5). Best-effort.
+    await _init_sentry(pool)
+
     # Boot-time import audit (poindexter#504). Every _HAS_* flag in this
     # module is set at import time by a try/except ImportError block. If
     # any are False at this point, a brain-side module that SHIPS with
@@ -2778,13 +2925,61 @@ async def main():
             name="alert_dispatch_loop",
         )
 
+    consecutive_cycle_failures = 0
     while not shutdown.is_set():
         try:
             await run_cycle(pool)
+            consecutive_cycle_failures = 0
             # Update heartbeat after successful cycle
             _touch_heartbeat()
         except Exception as e:
-            logger.error("[BRAIN] Cycle failed: %s", e, exc_info=True)
+            consecutive_cycle_failures += 1
+            logger.error(
+                "[BRAIN] Cycle failed (%d in a row): %s",
+                consecutive_cycle_failures, e, exc_info=True,
+            )
+            # C2: a repeatedly-failing cycle means outage detection is DOWN.
+            # The DB-backed notify() path is likely the very thing unavailable
+            # here, so escalate through the env-based failsafe instead.
+            if _should_page_cycle_failure(consecutive_cycle_failures):
+                _page_operator_failsafe(
+                    title="Brain monitoring cycle failing repeatedly",
+                    detail=(
+                        f"run_cycle() has failed {consecutive_cycle_failures} "
+                        "times in a row — the brain's outage detection is DOWN. "
+                        "The DB-backed notify() path may be unavailable; this "
+                        "page came via the stdlib failsafe. Check the brain DB "
+                        f"connection and logs. Last error: {e!r}"
+                    ),
+                    source="brain:cycle-watchdog",
+                    severity="critical",
+                )
+
+        # H1: the alert-dispatch loop must run until shutdown. If it died, the
+        # Grafana/AlertManager → Telegram delivery path is dark while the brain
+        # still looks healthy (heartbeat fresh). Page out-of-band and restart.
+        if not one_shot:
+            died, dispatch_exc = _alert_dispatch_died(alert_dispatch_task)
+            if died:
+                logger.error(
+                    "[BRAIN] alert_dispatch_loop died (exc=%r) — restarting",
+                    dispatch_exc, exc_info=dispatch_exc,
+                )
+                _page_operator_failsafe(
+                    title="Brain alert-dispatch loop died",
+                    detail=(
+                        "The brain's alert_dispatch_loop task exited while the "
+                        "daemon is still running. Grafana/AlertManager-sourced "
+                        "pages were NOT being delivered. Restarting it now. "
+                        f"Last error: {dispatch_exc!r}"
+                    ),
+                    source="brain:alert-dispatch-watchdog",
+                    severity="critical",
+                )
+                alert_dispatch_task = asyncio.create_task(
+                    alert_dispatch_loop(pool, shutdown),
+                    name="alert_dispatch_loop",
+                )
 
         if one_shot:
             break
