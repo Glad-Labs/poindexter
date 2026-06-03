@@ -498,6 +498,37 @@ curl -s http://localhost:9840/health | jq '.idle_timeout_s'
 
 ---
 
+## Most media-wanting posts show no `media_assets` row even though the MP3/MP4 files exist (Glad-Labs/poindexter#560)
+
+**Symptom.** A query like the one below shows that the bulk of published, media-wanting posts have no asset row, even though the podcast/video files are sitting in `~/.poindexter/podcast/` and `~/.poindexter/video/` (and on R2):
+
+```sql
+SELECT type, count(*) FILTER (WHERE post_id IS NOT NULL) AS linked
+FROM media_assets GROUP BY type;
+-- e.g. podcast 16, video 17, video_short 1  — vs 61 posts wanting media
+```
+
+**Root cause.** `media_reconciliation` had two gaps that combined into the coverage hole:
+
+1. **14-day scan window.** The job only scanned posts with `published_at >= now() - 14d`. The vast majority of media-wanting posts are older than that, so they were never reconciled.
+2. **Rows were only written as a side-effect of regeneration.** The job HEAD-checked R2, and if the file was present it declared the post "in sync" and did nothing — it never checked whether the **DB row** existed. So a post whose file was on R2 but whose `media_assets` row was missing (the common case after the 2026-04/05 fire-and-forget outages) was invisible to the job. Only when a file was genuinely **absent** did the regen path run and stamp a row.
+
+**Fix (shipped #560).** `media_reconciliation` now runs two passes per cycle:
+
+- **Row-stamp pass (unbounded, cheap, no GPU).** For every media-wanting post whose file IS on R2 but has no `media_assets` row, the deterministic R2 URL is stamped onto a row idempotently. This pass is **not** time-windowed (`config.max_lookback_days = 0` = all-time by default) and **not** capped, because it's a pure DB write. It closes the bulk of the gap in one cycle.
+- **Regen pass (capped, GPU-bound).** Genuinely-absent files are still regenerated + uploaded + stamped, but only for posts inside `config.lookback_days` (default 14) so a backlog of old, truly-missing media doesn't pin the GPU.
+
+**Tuning.** Both knobs are DB-configurable via the `plugin.job.media_reconciliation` row's `config` blob:
+
+- `config.max_lookback_days` (default `0` = unbounded) — scan window for the row-stamp pass. Set a positive value only to bound the per-cycle HEAD-check fan-out on very large sites.
+- `config.lookback_days` (default `14`) — regen window for genuinely-missing files.
+
+**Detection.** Watch the job's metrics — `stamped_podcast` / `stamped_video` spike on the first cycle after a backlog appears, then settle to 0 once coverage is restored. A persistent non-zero `missing_*` with `regen_*_fail > 0` means the file is genuinely absent AND regen is failing — that's the case to dig into (TTS/video service, R2 upload).
+
+**Note on `video_short`.** Shorts (`{post_id}-short.mp4`) have no R2 upload path or public key convention yet, so the reconciliation job does not HEAD-check or stamp them — that's a separate product decision (see #560 acceptance criteria, "if shorts remain a product").
+
+---
+
 ## Voice agent (or any non-interactive Claude session) reports "Permission denied" for an MCP tool the allowlist seems to cover
 
 **Symptom.** The voice-agent-livekit container, a `/schedule` cron Claude Code session, or anything running with `dontAsk` permissions denies a tool call like `mcp__claude_ai_Poindexter__check_health` even though `~/.claude/settings.json` has `"mcp__*"` or `"mcp__claude_ai_*"` in `permissions.allow`. Surfaces to the user as "Sorry, I had trouble talking to Claude Code" or a flat "Permission denied".

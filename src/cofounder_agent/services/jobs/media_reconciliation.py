@@ -29,10 +29,38 @@ finding so the operator finds out the upstream regression happened
 when regen itself starts failing — that's the case where the human
 has to step in.
 
+## Two reconciliation passes
+
+The job runs two passes per cycle, because two *different* drifts
+produce the same symptom (a media-wanting post with no asset):
+
+1. **Row-stamp pass (unbounded, cheap).** For every media-wanting post
+   whose file IS present on R2 but has NO ``media_assets`` row, stamp
+   the row idempotently. This is the dominant gap (Glad-Labs/poindexter
+   #560): 81 MP3 / 60 MP4 files already exist in-container/on-R2 but
+   only ~16-17 of 61 media-wanting posts have a DB asset row, because
+   the file-present-row-absent case was never detected — the old job
+   only wrote a row as a *side-effect of regeneration*. Stamping is a
+   pure DB write (no GPU, no upload), so this pass is NOT capped and
+   NOT time-windowed.
+2. **Regen pass (capped, GPU-bound).** For media-wanting posts whose
+   file is genuinely ABSENT from R2, regenerate + upload + stamp,
+   capped per cycle so a backlog doesn't pin the GPU. This is the
+   original watchdog behaviour.
+
 ## Config (``plugin.job.media_reconciliation``)
 
-- ``config.lookback_days`` (default 14) — scan posts published in the
-  last N days. Older posts are considered intentionally archived.
+- ``config.lookback_days`` (default 14) — REGEN-pass window: only
+  regenerate genuinely-missing media for posts published in the last N
+  days (older posts are considered intentionally archived for the
+  GPU-bound regen). The cheap row-stamp pass ignores this and scans the
+  full ``max_lookback_days`` window — stamping a missing row for an old
+  post costs nothing.
+- ``config.max_lookback_days`` (default 0 = unbounded) — SCAN window
+  for the row-stamp pass. ``0`` scans every published media-wanting
+  post regardless of age, which is what closes #560 (the gap is
+  dominated by posts older than 14 days). Set a positive value to bound
+  the per-cycle HEAD-check fan-out on very large sites.
 - ``config.podcast_cap_per_cycle`` (default 3) — regen at most N missing
   podcasts per cycle. Podcast gen is fast (~30 s) so this is mostly a
   rate-limit on the disk/R2 side.
@@ -155,6 +183,10 @@ class MediaReconciliationJob:
         self._site_config = config.get("_site_config")
 
         lookback_days = int(config.get("lookback_days", 14))
+        # Row-stamp pass scans the full window (default unbounded). The
+        # #560 gap is dominated by posts > 14d old whose files exist on
+        # R2 but never got a media_assets row — see module docstring.
+        max_lookback_days = int(config.get("max_lookback_days", 0))
         podcast_cap = max(0, int(config.get("podcast_cap_per_cycle", 3)))
         video_cap = max(0, int(config.get("video_cap_per_cycle", 2)))
         alert_on_drift = bool(config.get("alert_on_drift", True))
@@ -212,7 +244,20 @@ class MediaReconciliationJob:
             )
         cdn_ver = config.get("podcast_cdn_version") or _DEFAULT_PODCAST_CDN_VERSION
 
-        since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        # Scan window for the row-stamp pass. ``max_lookback_days <= 0``
+        # means unbounded (scan every published media-wanting post) — the
+        # default, because #560's gap is dominated by old posts whose
+        # files exist on R2 but never got a media_assets row. ``since``
+        # of ``None`` disables the time predicate in the SQL below.
+        since = (
+            None
+            if max_lookback_days <= 0
+            else datetime.now(timezone.utc) - timedelta(days=max_lookback_days)
+        )
+        # Regen-pass cutoff: genuinely-missing media is only regenerated
+        # for posts inside ``lookback_days`` (GPU-bound; older posts are
+        # archived for regen). A NULL published_at sorts as "old".
+        regen_cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
 
         try:
             async with pool.acquire() as conn:
@@ -231,7 +276,7 @@ class MediaReconciliationJob:
                 # at all" — only the former counts as drift. Skip rows
                 # whose policy array is empty or NULL (treated as
                 # "exempt") via the SQL filter so the HEAD-check fan-out
-                # below stays small.
+                # below stays small. ``$1`` may be NULL (unbounded scan).
                 rows = await conn.fetch(
                     """
                     SELECT id::text AS id,
@@ -242,7 +287,7 @@ class MediaReconciliationJob:
                       FROM posts
                      WHERE status = 'published'
                        AND published_at IS NOT NULL
-                       AND published_at >= $1
+                       AND ($1::timestamptz IS NULL OR published_at >= $1)
                        AND NOT (slug ILIKE ANY($2::text[]))
                        AND cardinality(COALESCE(media_to_generate, ARRAY[]::text[])) > 0
                      ORDER BY published_at DESC
@@ -250,16 +295,50 @@ class MediaReconciliationJob:
                     since,
                     exclude_patterns,
                 )
+                # Which (post_id, type) already have a media_assets row?
+                # The row-stamp pass below only stamps posts whose file is
+                # present on R2 but whose DB row is absent — so we need the
+                # existing set up front. One batch query keyed on the
+                # scanned ids keeps this O(1) round-trips.
+                post_ids = [r["id"] for r in rows]
+                existing_rows = (
+                    await conn.fetch(
+                        """
+                        SELECT post_id::text AS post_id, type
+                          FROM media_assets
+                         WHERE post_id::text = ANY($1::text[])
+                        """,
+                        post_ids,
+                    )
+                    if post_ids
+                    else []
+                )
         except Exception as e:
             logger.exception("media_reconciliation: DB query failed: %s", e)
             return JobResult(
                 ok=False, detail=f"DB query failed: {e}", changes_made=0,
             )
 
+        # Set of (post_id, asset_type) pairs that already have a row. The
+        # legacy ``video`` type covers both ``video`` and ``video_long``
+        # media-policy flavours; ``_record_video_asset`` writes the
+        # narrower type but the reconciliation regen/stamp path uses the
+        # ``video`` key (matching ``upload_video_episode``), so we treat
+        # any of {video, video_long} as "the video row exists".
+        existing_pairs: set[tuple[str, str]] = set()
+        for er in existing_rows:
+            t = er["type"]
+            if t in ("video", "video_long"):
+                existing_pairs.add((er["post_id"], "video"))
+            existing_pairs.add((er["post_id"], t))
+
         if not rows:
+            window = (
+                "all-time" if since is None else f"last {max_lookback_days}d"
+            )
             return JobResult(
                 ok=True,
-                detail=f"no published posts in last {lookback_days}d",
+                detail=f"no published media-wanting posts ({window})",
                 changes_made=0,
                 metrics={"scanned": 0, "missing_podcast": 0, "missing_video": 0},
             )
@@ -280,15 +359,59 @@ class MediaReconciliationJob:
         missing_podcast = [r for r in results if r["podcast_missing"]]
         missing_video = [r for r in results if r["video_missing"]]
 
+        # ---- Pass 1: row-stamp (unbounded, cheap, no GPU) ---------------
+        # The #560 gap: file IS on R2 but the media_assets row is absent.
+        # Stamp the deterministic R2 URL onto a row so cleanup / retention
+        # / cost-attribution / the public feed see the asset. This is a
+        # pure DB write, so it's NOT capped and NOT time-windowed — every
+        # file-present-row-absent post gets healed in a single cycle.
+        stamped_podcast = 0
+        stamped_video = 0
+        for r in results:
+            pid = r["id"]
+            if (
+                r.get("podcast_exists")
+                and (pid, "podcast") not in existing_pairs
+            ):
+                await self._record_media_asset(
+                    pool, post_id=pid, asset_type="podcast",
+                    url=r["podcast_url"],
+                )
+                existing_pairs.add((pid, "podcast"))
+                stamped_podcast += 1
+            if (
+                r.get("video_exists")
+                and (pid, "video") not in existing_pairs
+            ):
+                await self._record_media_asset(
+                    pool, post_id=pid, asset_type="video",
+                    url=r["video_url"],
+                )
+                existing_pairs.add((pid, "video"))
+                stamped_video += 1
+
+        stamped_total = stamped_podcast + stamped_video
+        if stamped_total:
+            logger.info(
+                "media_reconciliation: stamped %d file-present-row-absent "
+                "media_assets rows (%d podcast, %d video) — #560 gap close",
+                stamped_total, stamped_podcast, stamped_video,
+            )
+
         if not missing_podcast and not missing_video:
             return JobResult(
                 ok=True,
-                detail=f"in sync — {len(rows)} posts scanned, no drift",
-                changes_made=0,
+                detail=(
+                    f"in sync — {len(rows)} posts scanned, no drift; "
+                    f"stamped {stamped_total} missing rows"
+                ),
+                changes_made=stamped_total,
                 metrics={
                     "scanned": len(rows),
                     "missing_podcast": 0,
                     "missing_video": 0,
+                    "stamped_podcast": stamped_podcast,
+                    "stamped_video": stamped_video,
                 },
             )
 
@@ -298,13 +421,23 @@ class MediaReconciliationJob:
             len(missing_podcast), len(missing_video), len(rows),
         )
 
-        # Self-heal: regen the missing files, capped per cycle. Podcast
+        # ---- Pass 2: regen (capped, GPU-bound, regen-window only) -------
+        # Self-heal genuinely-absent files: regen, upload, stamp. Podcast
         # before video — video uses the podcast MP3 as narration, so
         # regenerating the podcast first means a single cycle can recover
-        # both for the same post.
+        # both for the same post. Only posts inside ``lookback_days`` are
+        # regenerated; older posts with truly-missing files are surfaced
+        # in the finding but not auto-regenerated (GPU triage).
+        def _in_regen_window(r: dict[str, Any]) -> bool:
+            pub = r.get("published_at")
+            return pub is not None and pub >= regen_cutoff
+
+        regen_podcast = [r for r in missing_podcast if _in_regen_window(r)]
+        regen_video = [r for r in missing_video if _in_regen_window(r)]
+
         regen_podcast_ok = 0
         regen_podcast_fail = 0
-        for r in missing_podcast[:podcast_cap]:
+        for r in regen_podcast[:podcast_cap]:
             try:
                 if await self._regen_podcast(pool, r):
                     regen_podcast_ok += 1
@@ -319,7 +452,7 @@ class MediaReconciliationJob:
 
         regen_video_ok = 0
         regen_video_fail = 0
-        for r in missing_video[:video_cap]:
+        for r in regen_video[:video_cap]:
             try:
                 if await self._regen_video(pool, r):
                     regen_video_ok += 1
@@ -362,7 +495,10 @@ class MediaReconciliationJob:
                     f"{preview_podcast}\n\n"
                     f"## Missing video ({len(missing_video)})\n\n"
                     f"{preview_video}\n\n"
-                    f"## Regen this cycle (capped)\n"
+                    f"## Rows stamped this cycle (file present, row absent)\n"
+                    f"- podcast: {stamped_podcast}\n"
+                    f"- video: {stamped_video}\n\n"
+                    f"## Regen this cycle (capped, regen-window only)\n"
                     f"- podcast: {regen_podcast_ok}/{podcast_cap} ok, "
                     f"{regen_podcast_fail} failed\n"
                     f"- video: {regen_video_ok}/{video_cap} ok, "
@@ -381,6 +517,8 @@ class MediaReconciliationJob:
                     "scanned": len(rows),
                     "missing_podcast": len(missing_podcast),
                     "missing_video": len(missing_video),
+                    "stamped_podcast": stamped_podcast,
+                    "stamped_video": stamped_video,
                     "regen_podcast_ok": regen_podcast_ok,
                     "regen_podcast_fail": regen_podcast_fail,
                     "regen_video_ok": regen_video_ok,
@@ -393,14 +531,17 @@ class MediaReconciliationJob:
             detail=(
                 f"drift: -{len(missing_podcast)} podcast / "
                 f"-{len(missing_video)} video; "
+                f"stamped {stamped_total} rows; "
                 f"regen ok podcast={regen_podcast_ok} video={regen_video_ok}, "
                 f"failed={regen_failed}"
             ),
-            changes_made=regen_podcast_ok + regen_video_ok,
+            changes_made=stamped_total + regen_podcast_ok + regen_video_ok,
             metrics={
                 "scanned": len(rows),
                 "missing_podcast": len(missing_podcast),
                 "missing_video": len(missing_video),
+                "stamped_podcast": stamped_podcast,
+                "stamped_video": stamped_video,
                 "regen_podcast_ok": regen_podcast_ok,
                 "regen_podcast_fail": regen_podcast_fail,
                 "regen_video_ok": regen_video_ok,
@@ -449,12 +590,21 @@ class MediaReconciliationJob:
         # type — saves an HTTP round-trip on every reconciliation cycle
         # for every text-only post, and avoids spurious "404" noise in
         # the R2 access logs.
-        podcast_exists = await _exists(podcast_url) if wants_podcast else True
-        video_exists = await _exists(video_url) if wants_video else True
+        podcast_exists = await _exists(podcast_url) if wants_podcast else False
+        video_exists = await _exists(video_url) if wants_video else False
         # A post that doesn't want a podcast/video is never "missing"
         # one — the upstream pipeline correctly declined to produce it.
         row["podcast_missing"] = wants_podcast and not podcast_exists
         row["video_missing"] = wants_video and not video_exists
+        # File-present flags drive the cheap row-stamp pass (#560): a file
+        # that IS on R2 but has no media_assets row gets the row stamped
+        # without regenerating. ``wants_*`` gates so a text-only post
+        # never gets a spurious stamp. The deterministic R2 URLs are
+        # recomputed here so the caller can stamp them verbatim.
+        row["podcast_exists"] = wants_podcast and podcast_exists
+        row["video_exists"] = wants_video and video_exists
+        row["podcast_url"] = podcast_url if wants_podcast else ""
+        row["video_url"] = video_url if wants_video else ""
         return row
 
     async def _record_media_asset(

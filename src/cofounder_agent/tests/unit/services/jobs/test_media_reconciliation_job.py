@@ -18,7 +18,7 @@ are all mocked. No real network, no real GPU, no real DB.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,21 +27,37 @@ import pytest
 
 from services.jobs.media_reconciliation import MediaReconciliationJob
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_pool(rows: list[dict[str, Any]]) -> Any:
-    """asyncpg pool stub: conn.fetch returns ``rows``, conn.execute swallowed.
+def _make_pool(
+    rows: list[dict[str, Any]],
+    existing_assets: list[dict[str, Any]] | None = None,
+) -> Any:
+    """asyncpg pool stub.
 
-    fetchrow defaults to returning the seeded storage_public_url so the
-    URL resolver short-circuits to ``https://r2.test`` — matches the
-    URL prefix the test's _patch_head helpers route on.
+    ``conn.fetch`` routes by SQL text: the ``FROM posts`` query returns
+    ``rows``; the ``FROM media_assets`` existence query returns
+    ``existing_assets`` (default empty, i.e. no media_assets rows exist
+    yet — which makes the #560 row-stamp pass fire for every
+    file-present post).
+
+    ``conn.fetchrow`` defaults to returning the seeded storage_public_url
+    so the URL resolver short-circuits to ``https://r2.test`` — matches
+    the URL prefix the test's _patch_head helpers route on.
     """
+    post_rows = [dict(r) for r in rows]
+    asset_rows = [dict(r) for r in (existing_assets or [])]
+
+    async def _fetch(query, *args, **kwargs):  # noqa: ANN001, ARG001
+        if "FROM media_assets" in query:
+            return asset_rows
+        return post_rows
+
     conn = AsyncMock()
-    conn.fetch = AsyncMock(return_value=[dict(r) for r in rows])
+    conn.fetch = AsyncMock(side_effect=_fetch)
     conn.fetchrow = AsyncMock(return_value={"value": "https://r2.test"})
     conn.execute = AsyncMock(return_value=None)
     ctx = AsyncMock()
@@ -107,16 +123,25 @@ class TestMediaReconciliation:
         job = MediaReconciliationJob()
         result = await job.run(pool, config={})
         assert result.ok is True
-        assert "no published posts" in result.detail
+        assert "no published media-wanting posts" in result.detail
         assert result.changes_made == 0
         assert result.metrics["scanned"] == 0
 
     @pytest.mark.asyncio
     async def test_in_sync_no_finding_no_regen(self):
-        """Every published post has both podcast + video on R2 (HEAD 200).
-        Job MUST NOT regen anything, MUST NOT emit a finding.
+        """Every published post has both podcast + video on R2 (HEAD 200)
+        AND already has the media_assets rows. Job MUST NOT regen, MUST
+        NOT stamp, MUST NOT emit a finding.
         """
-        pool, _ = _make_pool([_post(id_="p1"), _post(id_="p2")])
+        existing = [
+            {"post_id": "p1", "type": "podcast"},
+            {"post_id": "p1", "type": "video"},
+            {"post_id": "p2", "type": "podcast"},
+            {"post_id": "p2", "type": "video"},
+        ]
+        pool, conn = _make_pool(
+            [_post(id_="p1"), _post(id_="p2")], existing_assets=existing,
+        )
         with _patch_head(podcast_status=200, video_status=200), \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
@@ -126,7 +151,75 @@ class TestMediaReconciliation:
         assert "in sync" in result.detail
         assert result.metrics["missing_podcast"] == 0
         assert result.metrics["missing_video"] == 0
+        # Rows already present → no stamp writes at all.
+        assert result.metrics["stamped_podcast"] == 0
+        assert result.metrics["stamped_video"] == 0
+        assert conn.execute.await_count == 0
         emit_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_files_present_rows_absent_get_stamped_no_regen(self):
+        """#560 core: files ARE on R2 (HEAD 200) but no media_assets rows
+        exist. Job MUST stamp a podcast + video row per post WITHOUT
+        regenerating anything and WITHOUT emitting a drift finding.
+        """
+        # No existing_assets → every (post, type) row is absent.
+        pool, conn = _make_pool([_post(id_="old1"), _post(id_="old2")])
+        with _patch_head(podcast_status=200, video_status=200), \
+             patch(
+                 "services.podcast_service.generate_podcast_episode",
+             ) as gen_pod, \
+             patch(
+                 "services.video_service.generate_video_for_post",
+             ) as gen_vid, \
+             patch(
+                 "services.jobs.media_reconciliation.emit_finding"
+             ) as emit_mock:
+            result = await MediaReconciliationJob().run(pool, config={})
+        assert result.ok is True
+        assert "in sync" in result.detail
+        # 2 posts × (podcast + video) = 4 stamps.
+        assert result.metrics["stamped_podcast"] == 2
+        assert result.metrics["stamped_video"] == 2
+        assert result.changes_made == 4
+        # No regen, no finding — the cheap pass handled everything.
+        gen_pod.assert_not_called()
+        gen_vid.assert_not_called()
+        emit_mock.assert_not_called()
+        # Each stamp is UPDATE-then-INSERT (mock execute returns None so
+        # the INSERT branch fires): 4 stamps × 2 = 8 execute calls.
+        assert conn.execute.await_count == 8
+        # The stamped URLs follow the deterministic R2 key pattern.
+        podcast_inserts = [
+            c for c in conn.execute.await_args_list
+            if "INSERT INTO media_assets" in c.args[0] and c.args[2] == "podcast"
+        ]
+        assert len(podcast_inserts) == 2
+        assert all("/podcast/v2/" in c.args[3] for c in podcast_inserts)
+
+    @pytest.mark.asyncio
+    async def test_max_lookback_days_bounds_scan_window(self):
+        """``config.max_lookback_days`` (>0) passes a non-NULL cutoff to
+        the posts SELECT; the default (0) passes NULL (unbounded)."""
+        # Default: unbounded → $1 is None.
+        pool, conn = _make_pool([])
+        await MediaReconciliationJob().run(pool, config={})
+        posts_calls = [
+            c for c in conn.fetch.await_args_list
+            if "FROM posts" in (c.args[0] if c.args else "")
+        ]
+        assert posts_calls and posts_calls[0].args[1] is None
+
+        # Bounded: positive value → $1 is a datetime.
+        pool2, conn2 = _make_pool([])
+        await MediaReconciliationJob().run(
+            pool2, config={"max_lookback_days": 30},
+        )
+        posts_calls2 = [
+            c for c in conn2.fetch.await_args_list
+            if "FROM posts" in (c.args[0] if c.args else "")
+        ]
+        assert posts_calls2 and posts_calls2[0].args[1] is not None
 
     @pytest.mark.asyncio
     async def test_missing_podcast_triggers_regen_and_warning_finding(self):
@@ -164,23 +257,28 @@ class TestMediaReconciliation:
         assert result.metrics["regen_podcast_fail"] == 0
         gen_mock.assert_awaited_once()
         upload_mock.assert_awaited_once_with("p1")
-        # 2026-05-14: media URLs are recorded in ``media_assets`` (one row
-        # per (post_id, type)), not on the posts table. The recorder does
-        # UPDATE-then-INSERT — the mock's ``execute`` returns None so the
-        # UPDATE branch is treated as "no rows matched" and the INSERT
-        # fires too, yielding 2 calls.
-        assert conn.execute.await_count == 2
-        update_call, insert_call = conn.execute.await_args_list
-        assert "UPDATE media_assets" in update_call.args[0]
-        assert update_call.args[0:1][0].startswith("\n                    UPDATE media_assets") \
-            or "UPDATE media_assets" in update_call.args[0]
-        assert update_call.args[1] == "https://r2.test/podcast/v2/p1.mp3"
-        assert update_call.args[2] == "p1"
-        assert update_call.args[3] == "podcast"
-        assert "INSERT INTO media_assets" in insert_call.args[0]
-        assert insert_call.args[1] == "p1"
-        assert insert_call.args[2] == "podcast"
-        assert insert_call.args[3] == "https://r2.test/podcast/v2/p1.mp3"
+        # media URLs are recorded in ``media_assets`` (one row per
+        # (post_id, type)) via UPDATE-then-INSERT. The mock's ``execute``
+        # returns None so the UPDATE is treated as "no rows matched" and
+        # the INSERT fires too. The podcast row comes from the regen path
+        # (the video row is stamped by the #560 file-present pass since
+        # video HEAD returned 200 — filter to the podcast writes here).
+        podcast_updates = [
+            c for c in conn.execute.await_args_list
+            if "UPDATE media_assets" in c.args[0] and c.args[3] == "podcast"
+        ]
+        podcast_inserts = [
+            c for c in conn.execute.await_args_list
+            if "INSERT INTO media_assets" in c.args[0] and c.args[2] == "podcast"
+        ]
+        assert len(podcast_updates) == 1
+        assert podcast_updates[0].args[1] == "https://r2.test/podcast/v2/p1.mp3"
+        assert podcast_updates[0].args[2] == "p1"
+        assert len(podcast_inserts) == 1
+        assert podcast_inserts[0].args[1] == "p1"
+        assert podcast_inserts[0].args[3] == "https://r2.test/podcast/v2/p1.mp3"
+        # The video row was stamped by the cheap file-present pass.
+        assert result.metrics["stamped_video"] == 1
         # Finding emitted with warning severity (regen succeeded).
         emit_mock.assert_called_once()
         kwargs = emit_mock.call_args.kwargs
@@ -221,10 +319,17 @@ class TestMediaReconciliation:
             "p2", "A title", "Body markdown.", site_config=sc,
         )
         upload_mock.assert_awaited_once_with("p2")
-        # UPDATE-then-INSERT recorder in _record_media_asset; mock's
-        # execute() returns None so UPDATE is treated as "no match"
-        # and the INSERT fires. See test_missing_podcast_* for shape.
-        assert conn.execute.await_count == 2
+        # Video row written by the regen path (UPDATE-then-INSERT). The
+        # podcast row (HEAD 200, no existing row) is stamped by the cheap
+        # file-present pass — filter to the video writes here.
+        video_inserts = [
+            c for c in conn.execute.await_args_list
+            if "INSERT INTO media_assets" in c.args[0] and c.args[2] == "video"
+        ]
+        assert len(video_inserts) == 1
+        assert video_inserts[0].args[3] == "https://r2.test/video/p2.mp4"
+        # The podcast row was stamped by the file-present pass.
+        assert result.metrics["stamped_podcast"] == 1
 
     @pytest.mark.asyncio
     async def test_regen_upload_failure_escalates_to_critical(self):
@@ -290,6 +395,51 @@ class TestMediaReconciliation:
         assert result.metrics["missing_podcast"] == 10
         assert result.metrics["regen_podcast_ok"] == 2
         assert len(gen_calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_out_of_window_missing_file_is_surfaced_not_regenerated(self):
+        """A post older than ``lookback_days`` whose file is genuinely
+        ABSENT (HEAD 404) is reported as missing (so the finding fires)
+        but is NOT regenerated — old truly-missing media is GPU triage,
+        not auto-regen. The row-stamp pass also can't help (no file).
+        """
+        old = _post(
+            id_="ancient",
+            published_at=datetime.now(timezone.utc) - timedelta(days=400),
+        )
+        pool, _ = _make_pool([old])
+        gen_calls: list[str] = []
+
+        async def _capture_gen(post_id, *a, **kw):  # noqa: ANN001, ARG001
+            gen_calls.append(post_id)
+
+        r2 = MagicMock()
+        r2.upload_podcast_episode = AsyncMock(return_value="https://r2.test/x.mp3")
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
+        with _patch_head(podcast_status=404, video_status=200), \
+             patch(
+                 "services.podcast_service.generate_podcast_episode",
+                 new=AsyncMock(side_effect=_capture_gen),
+             ), \
+             patch(
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
+             ), \
+             patch(
+                 "services.jobs.media_reconciliation.emit_finding"
+             ) as emit_mock:
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
+        # Detected as missing (surfaced in the finding) but NOT regen'd.
+        assert result.metrics["missing_podcast"] == 1
+        assert result.metrics["regen_podcast_ok"] == 0
+        assert result.metrics["regen_podcast_fail"] == 0
+        assert gen_calls == []
+        # The video file (HEAD 200) still gets its row stamped regardless
+        # of age — the cheap pass is unbounded.
+        assert result.metrics["stamped_video"] == 1
+        emit_mock.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_regen_exception_counted_as_failure(self):
