@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.70.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.6...v0.70.7) (2026-06-03)
+
+
+### Bug Fixes
+
+* **voice:** subprocess-spawn the bridge so MCP staleness can't make voice go deaf ([#1010](https://github.com/Glad-Labs/glad-labs-stack/issues/1010)) ([#1065](https://github.com/Glad-Labs/glad-labs-stack/issues/1065)) ([757a554](https://github.com/Glad-Labs/glad-labs-stack/commit/757a5548fdec7bd86e2b12bb8dea053d612c1ca0))
+
 ## [0.70.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.5...v0.70.6) (2026-06-03)
 
 
