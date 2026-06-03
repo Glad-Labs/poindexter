@@ -127,13 +127,32 @@ def test_bridge_settings_default_stt_model_is_base() -> None:
     assert settings["stt_model"] == "base"  # not the dropped "base.en"
     assert settings["tts_voice"] == "af_bella"
     assert settings["default_room"] == "claude-bridge"
+    # Turn-detection defaults raised from the bring-up's 0.2/0.8 (#1010).
+    assert settings["vad_stop_secs"] == 0.5
+    assert settings["user_speech_timeout"] == 1.5
 
 
 def test_bridge_settings_explicit_values_win() -> None:
     from services.voice_pipecat import resolve_bridge_voice_settings
 
     settings = resolve_bridge_voice_settings(
-        {"voice_bridge_stt_model": "medium", "voice_bridge_tts_voice": "bf_emma"},
+        {
+            "voice_bridge_stt_model": "medium",
+            "voice_bridge_tts_voice": "bf_emma",
+            "voice_bridge_user_speech_timeout": "2.5",
+            "voice_bridge_vad_stop_secs": "0.4",
+        },
     )
     assert settings["stt_model"] == "medium"
     assert settings["tts_voice"] == "bf_emma"
+    assert settings["user_speech_timeout"] == 2.5
+    assert settings["vad_stop_secs"] == 0.4
+
+
+def test_bridge_settings_bad_float_falls_back_to_default() -> None:
+    from services.voice_pipecat import resolve_bridge_voice_settings
+
+    settings = resolve_bridge_voice_settings(
+        {"voice_bridge_user_speech_timeout": "not-a-number"},
+    )
+    assert settings["user_speech_timeout"] == 1.5  # loud warning + default

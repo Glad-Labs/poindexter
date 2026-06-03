@@ -243,12 +243,24 @@ async def voice_join_room(
         ensure_session_pipes(sid)
         stt_model = (settings.get("voice_bridge_stt_model") or "base").strip() or "base"
         tts_voice = (settings.get("voice_bridge_tts_voice") or "af_bella").strip() or "af_bella"
+        try:
+            vad_stop_secs = float(settings.get("voice_bridge_vad_stop_secs") or "0.5")
+        except ValueError:
+            vad_stop_secs = 0.5
+        try:
+            user_speech_timeout = float(
+                settings.get("voice_bridge_user_speech_timeout") or "1.5"
+            )
+        except ValueError:
+            user_speech_timeout = 1.5
         config = BridgeConfig(
             room=room,
             chunk_max_chars=chunk_max,
             max_session_seconds=max_session_seconds,
             stt_model=stt_model,
             tts_voice=tts_voice,
+            vad_stop_secs=vad_stop_secs,
+            user_speech_timeout=user_speech_timeout,
         )
 
         state = await start_bridge(session_id=sid, config=config)

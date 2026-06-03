@@ -114,6 +114,8 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
         livekit_api_key: str | None = None,
         livekit_api_secret: str | None = None,
         token_ttl_s: int = 3600,
+        vad_stop_secs: float = 0.5,
+        user_speech_timeout: float = 1.5,
     ) -> None:
         """Capture the runtime knobs; do NOT touch Pipecat / LiveKit yet.
 
@@ -127,6 +129,12 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
         self._livekit_api_key = livekit_api_key
         self._livekit_api_secret = livekit_api_secret
         self._token_ttl_s = token_ttl_s
+        # Turn-detection cadence. ``user_speech_timeout`` is how long after
+        # you stop talking the turn finalizes; the bring-up default of 0.8s
+        # chopped sentences at every natural pause, so the bridge default is
+        # a more forgiving 1.5s (operator-tunable via app_settings).
+        self._vad_stop_secs = vad_stop_secs
+        self._user_speech_timeout = user_speech_timeout
 
         self._connected = False
         self._on_utterance: Callable[[str], Awaitable[None] | None] | None = None
@@ -295,13 +303,13 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
             context=context,
             user_params=LLMUserAggregatorParams(
                 vad_analyzer=SileroVADAnalyzer(
-                    params=VADParams(stop_secs=0.2),
+                    params=VADParams(stop_secs=self._vad_stop_secs),
                 ),
                 user_turn_strategies=UserTurnStrategies(
                     start=[VADUserTurnStartStrategy()],
                     stop=[
                         SpeechTimeoutUserTurnStopStrategy(
-                            user_speech_timeout=0.8,
+                            user_speech_timeout=self._user_speech_timeout,
                         )
                     ],
                 ),
@@ -521,8 +529,10 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
 
 def resolve_audio_plane(
     *,
-    stt_model: str = "base.en",
+    stt_model: str = "base",
     tts_voice: str = "af_bella",
+    vad_stop_secs: float = 0.5,
+    user_speech_timeout: float = 1.5,
     env: dict[str, str] | None = None,
 ) -> AudioMediaPlane:
     """Pick the audio plane for a new bridge session.
@@ -557,7 +567,12 @@ def resolve_audio_plane(
             f"{choice!r} is not recognised. Use 'pipecat' (default) or "
             f"'noop'."
         )
-    return PipecatAudioMediaPlane(stt_model=stt_model, tts_voice=tts_voice)
+    return PipecatAudioMediaPlane(
+        stt_model=stt_model,
+        tts_voice=tts_voice,
+        vad_stop_secs=vad_stop_secs,
+        user_speech_timeout=user_speech_timeout,
+    )
 
 
 __all__ = [

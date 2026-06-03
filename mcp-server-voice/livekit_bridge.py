@@ -305,6 +305,11 @@ class BridgeConfig:
     # services/migrations/20260507_022644_seed_voice_bridge_app_settings.py.
     stt_model: str = "base"
     tts_voice: str = "af_bella"
+    # Turn-detection cadence (operator-tunable via app_settings). Defaults
+    # raised from the bring-up's 0.2/0.8 — that chopped sentences at every
+    # pause. See Glad-Labs/glad-labs-stack#1010 (voice hardening).
+    vad_stop_secs: float = 0.5
+    user_speech_timeout: float = 1.5
 
 
 @dataclass
@@ -575,7 +580,14 @@ def _resolve_default_audio_plane(config: BridgeConfig) -> AudioMediaPlane:
         ) from exc
     stt_model = getattr(config, "stt_model", "base") or "base"
     tts_voice = getattr(config, "tts_voice", "af_bella") or "af_bella"
-    return resolve_audio_plane(stt_model=stt_model, tts_voice=tts_voice)
+    vad_stop_secs = getattr(config, "vad_stop_secs", 0.5)
+    user_speech_timeout = getattr(config, "user_speech_timeout", 1.5)
+    return resolve_audio_plane(
+        stt_model=stt_model,
+        tts_voice=tts_voice,
+        vad_stop_secs=vad_stop_secs,
+        user_speech_timeout=user_speech_timeout,
+    )
 
 
 async def start_bridge(

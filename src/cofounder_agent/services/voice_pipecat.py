@@ -155,6 +155,8 @@ _BRIDGE_SETTING_KEYS: tuple[str, ...] = (
     "voice_bridge_chunk_max_chars",
     "voice_default_room",
     "voice_bridge_enabled",
+    "voice_bridge_vad_stop_secs",
+    "voice_bridge_user_speech_timeout",
 )
 
 
@@ -180,6 +182,16 @@ def resolve_bridge_voice_settings(
             )
             return default
 
+    def _float(key: str, default: float) -> float:
+        try:
+            return float((settings.get(key) or "").strip() or str(default))
+        except ValueError:
+            logger.warning(
+                "%s %s=%r is not a float; using default %s",
+                _LOG_PREFIX, key, settings.get(key), default,
+            )
+            return default
+
     return {
         "stt_model": (settings.get("voice_bridge_stt_model") or "base").strip()
         or "base",
@@ -189,6 +201,9 @@ def resolve_bridge_voice_settings(
         "chunk_max_chars": _int("voice_bridge_chunk_max_chars", 500),
         "default_room": (settings.get("voice_default_room") or "claude-bridge").strip()
         or "claude-bridge",
+        # Turn-detection cadence (raised from 0.2/0.8 — see #1010).
+        "vad_stop_secs": _float("voice_bridge_vad_stop_secs", 0.5),
+        "user_speech_timeout": _float("voice_bridge_user_speech_timeout", 1.5),
     }
 
 
