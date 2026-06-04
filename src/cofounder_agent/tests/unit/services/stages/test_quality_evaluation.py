@@ -56,7 +56,7 @@ class TestExecute:
             "database_service": MagicMock(),
         }
         with patch(
-            "services.quality_service.UnifiedQualityService",
+            "modules.content.quality_service.UnifiedQualityService",
             return_value=fake_svc,
         ):
             result = await QualityEvaluationStage().execute(ctx, {})
@@ -81,7 +81,7 @@ class TestExecute:
             "topic": "AI", "content": "body", "database_service": MagicMock(),
         }
         with patch(
-            "services.quality_service.UnifiedQualityService",
+            "modules.content.quality_service.UnifiedQualityService",
             return_value=fake_svc,
         ):
             with pytest.raises(ValueError, match="no result produced"):
@@ -94,7 +94,7 @@ class TestExecute:
             "database_service": MagicMock(), "tags": [],
         }
         with patch(
-            "services.quality_service.UnifiedQualityService",
+            "modules.content.quality_service.UnifiedQualityService",
             return_value=fake_svc,
         ):
             await QualityEvaluationStage().execute(ctx, {})

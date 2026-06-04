@@ -14,7 +14,7 @@ fixed sequence of operator-visible side-effects to run:
 3. Auto-publish gate — when ``app_settings.require_human_approval``
    is ``false`` AND the QA score crosses
    ``app_settings.auto_publish_threshold``, delegate to
-   :func:`services.auto_publish.auto_publish_task` so trusted niches
+   :func:`modules.content.auto_publish.auto_publish_task` so trusted niches
    ship without manual approval.
 4. Operator notification — a single Discord-or-Telegram message
    that links to the rendered preview, plus the opt-in
@@ -348,7 +348,7 @@ async def _maybe_auto_publish(
 ) -> bool:
     """Auto-publish trusted-niche posts that clear the threshold.
 
-    Returns ``True`` when :func:`services.auto_publish.auto_publish_task`
+    Returns ``True`` when :func:`modules.content.auto_publish.auto_publish_task`
     successfully shipped the post (caller should suppress the
     operator notification because ``publish_service`` sends its own
     published-post message). Returns ``False`` when the task stays
@@ -357,7 +357,7 @@ async def _maybe_auto_publish(
     publish error). The task is operator-visible either way; the
     only difference is whether we send the awaiting-approval ping.
 
-    The publishing logic lives in :mod:`services.auto_publish` (ported
+    The publishing logic lives in :mod:`modules.content.auto_publish` (ported
     from the deleted ``TaskExecutor._auto_publish_task`` during the
     Prefect Stage 4 cutover — Glad-Labs/poindexter#410). This helper
     only decides whether to call it.
@@ -366,7 +366,7 @@ async def _maybe_auto_publish(
     ``auto_publish_gate`` dict with ``would_fire=True`` and
     ``dry_run=False``, the global ``require_human_approval`` flag is
     bypassed. This is the operator opt-in pattern from
-    :mod:`services.auto_publish_gate` — setting
+    :mod:`modules.content.auto_publish_gate` — setting
     ``dev_diary_auto_publish_threshold > 0`` AND
     ``dev_diary_auto_publish_dry_run=false`` is the affirmative signal
     that this niche has been audited and trusted to ship without a
@@ -393,7 +393,7 @@ async def _maybe_auto_publish(
                 )
                 niche_slug = row["niche_slug"] if row else None
                 category = row["category"] if row else None
-                from services.auto_publish_gate import evaluate as _gate_evaluate
+                from modules.content.auto_publish_gate import evaluate as _gate_evaluate
                 decision = await _gate_evaluate(
                     pool,
                     task_id=task_id,
@@ -443,7 +443,7 @@ async def _maybe_auto_publish(
             task_id, quality_score, gate.get("gate_state"), gate.get("reason"),
         )
 
-    from services.auto_publish import auto_publish_task, get_auto_publish_threshold
+    from modules.content.auto_publish import auto_publish_task, get_auto_publish_threshold
 
     if not gate_bypass:
         try:

@@ -23,7 +23,7 @@ from services.container import service_container
 
 # Import services
 from services.logger_config import get_logger
-from services.quality_service import UnifiedQualityService
+from modules.content.quality_service import UnifiedQualityService
 
 try:
     from services.sentry_integration import setup_sentry

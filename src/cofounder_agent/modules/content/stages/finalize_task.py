@@ -383,7 +383,7 @@ class FinalizeTaskStage:
         # actually approves while dry_run=true (default).
         gate_decision = None
         try:
-            from services.auto_publish_gate import evaluate as _gate_check
+            from modules.content.auto_publish_gate import evaluate as _gate_check
             from services.audit_log import audit_log_bg
             db_pool = getattr(database_service, "pool", None)
             gate_decision = await _gate_check(

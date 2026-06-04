@@ -1,4 +1,4 @@
-"""Contract tests for ``services.auto_publish_gate.evaluate``.
+"""Contract tests for ``modules.content.auto_publish_gate.evaluate``.
 
 Pins the 2026-05-27 niche-leak fix. Before the fix, the gate read a
 HARDCODED ``dev_diary_auto_publish_threshold`` regardless of the
@@ -63,7 +63,7 @@ async def test_dev_diary_opt_in_does_not_leak_to_other_niches() -> None:
     to opt in dev_diary. A canonical_blog/glad-labs post scoring 92 must
     NOT inherit that opt-in — glad-labs has no explicit opt-in keys,
     so the gate must return ``disabled``."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",
@@ -97,7 +97,7 @@ async def test_dev_diary_opt_in_does_not_leak_to_other_niches() -> None:
 async def test_dev_diary_opt_in_still_works_for_dev_diary_niche() -> None:
     """Backward-compat: dev_diary's existing keys still control dev_diary
     posts. The niche-leak fix doesn't break the niche it was named after."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",
@@ -135,7 +135,7 @@ async def test_glad_labs_opts_in_via_its_own_keys() -> None:
     """When the operator explicitly opts in glad-labs via
     ``glad-labs_auto_publish_threshold=70`` + ``glad-labs_auto_publish_dry_run=false``,
     the gate fires for glad-labs (independent of dev_diary)."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "glad-labs_auto_publish_threshold": "70",
@@ -173,7 +173,7 @@ async def test_glad_labs_opts_in_via_its_own_keys() -> None:
 async def test_missing_niche_slug_returns_disabled() -> None:
     """``feedback_no_silent_defaults``: a task without a niche cannot
     auto-publish. The gate must NOT pick an arbitrary fallback niche."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",
@@ -197,7 +197,7 @@ async def test_missing_niche_slug_returns_disabled() -> None:
 @pytest.mark.asyncio
 async def test_empty_niche_slug_returns_disabled() -> None:
     """Whitespace-only niche slug is treated the same as None."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({})
 
@@ -218,7 +218,7 @@ async def test_empty_niche_slug_returns_disabled() -> None:
 async def test_no_site_config_returns_disabled() -> None:
     """Stages running outside the DI seam (e.g. legacy callers) must not
     auto-publish — they have no operator-tuned settings to read."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     decision = await evaluate(
         _make_pool(),
@@ -237,7 +237,7 @@ async def test_no_site_config_returns_disabled() -> None:
 async def test_threshold_negative_returns_disabled() -> None:
     """The default ``threshold=-1`` opts OUT — the gate must not fire
     even on a perfect score."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "-1",
@@ -265,7 +265,7 @@ async def test_threshold_negative_returns_disabled() -> None:
 
 @pytest.mark.asyncio
 async def test_score_below_threshold_returns_block_threshold() -> None:
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "80",
@@ -289,7 +289,7 @@ async def test_score_below_threshold_returns_block_threshold() -> None:
 async def test_insufficient_history_returns_no_history() -> None:
     """Until N historical approves exist, the gate can't establish the
     clean-run baseline — return ``no_history``."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",
@@ -316,7 +316,7 @@ async def test_insufficient_history_returns_no_history() -> None:
 @pytest.mark.asyncio
 async def test_unclean_history_returns_block_unclean() -> None:
     """Enough history, but too many were heavily edited — block."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",
@@ -356,7 +356,7 @@ async def test_dry_run_true_marks_decision_dry_run_even_when_would_fire() -> Non
     """``dry_run=true`` is the observe-only mode — the gate still
     computes ``would_fire=True`` so dashboards can show it, but the
     caller must NOT approve the task."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",
@@ -425,7 +425,7 @@ async def test_history_query_filters_on_niche_OR_category() -> None:
     history can influence another's gate. This test makes the OR
     explicit so a refactor to AND (or a hardcoded niche) is caught, and
     confirms BOTH niche_slug ($1) and category ($2) are bound."""
-    from services.auto_publish_gate import evaluate
+    from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_site_config({
         "dev_diary_auto_publish_threshold": "70",

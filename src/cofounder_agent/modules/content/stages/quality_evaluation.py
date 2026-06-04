@@ -51,7 +51,7 @@ class QualityEvaluationStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.quality_service import EvaluationMethod, UnifiedQualityService
+        from modules.content.quality_service import EvaluationMethod, UnifiedQualityService
 
         topic = context.get("topic", "")
         tags = context.get("tags") or []

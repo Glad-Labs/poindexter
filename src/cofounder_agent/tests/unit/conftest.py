@@ -198,7 +198,7 @@ _SHARED_TEST_MODULES = (
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the QualityDimensions dataclass.
-    # ``services.quality_service`` + ``services.validator_config`` removed from
+    # ``modules.content.quality_service`` + ``services.validator_config`` removed from
     # _SHARED_TEST_MODULES 2026-05-29 (#272 Phase-2d); no module-level
     # site_config attr to share. Tests construct
     # ``UnifiedQualityService(site_config=...)`` and pass ``site_config=`` to

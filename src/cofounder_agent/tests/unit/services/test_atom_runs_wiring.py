@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 import services.atom_runs as atom_runs
-from services.auto_publish_gate import record_post_approve_metrics
+from modules.content.auto_publish_gate import record_post_approve_metrics
 from services.pipeline_templates import TEMPLATES
 from services.site_config import SiteConfig
 from services.template_runner import (
