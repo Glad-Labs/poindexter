@@ -168,12 +168,17 @@ source — a module that hardcodes a literal is a bug (DB-configurable). A requi
 config that is missing makes the handle raise, not default (fail loud). The
 make-or-break is keeping the handle **small but complete**: too thin and modules
 reach around it (back to direct imports); too fat and it is the kernel
-re-exported and the isolation is fiction.
+re-exported and the isolation is fiction. The handle is also the **trust
+boundary** — it is **capability-scoped**, injecting only the capabilities a
+module's manifest declares (see [Trust & isolation](#trust--isolation)). "Small
+but complete" is therefore a _security_ property, not just hygiene: every
+capability on the handle is a grant.
 
 ### Seam 2 — the catalog (chef ↔ ingredients)
 
-Every composable unit registers into **one shared catalog** with a uniform,
-LLM-readable descriptor:
+Every composable unit — an **atom** (deterministic code) or a **skill** (an LLM
+procedure; see [Skills & borrowed bundles](#skills--borrowed-bundles)) —
+registers into **one shared catalog** with a uniform, LLM-readable descriptor:
 
 - `name` — unique slug (`qa.critic`, `finance.reconcile`)
 - `description` — routing text the architect reads ("what + when")
@@ -183,8 +188,9 @@ LLM-readable descriptor:
   and safety
 
 The architect's loop: **read catalog + order → emit a `graph_def` → validator
-checks types/reachability → engine runs it.** Three of those four pieces exist
-today (`AtomMeta` descriptors, the `graph_def` format, `build_graph_from_spec`).
+checks types/reachability/acyclicity → engine runs it.** Three of those four
+pieces exist today (`AtomMeta` descriptors, the `graph_def` format,
+`build_graph_from_spec`).
 
 **The one design move that matters now is uniformity:** every module exposes its
 units through the same descriptor into the _one_ catalog. Today only content's
@@ -218,6 +224,112 @@ which is the whole reason to get the contract right now. Every self-dev
 capability is gated by an **earned-autonomy** dial (an `app_setting`) + track
 record + reversible rails; install/uninstall and spend increases stay
 human-gated until a dial is earned.
+
+---
+
+## Skills & borrowed bundles
+
+A **skill** is the _judgment_ flavor of a catalog entry — an
+[`agentskills.io`](https://agentskills.io) `SKILL.md` (instruction body +
+frontmatter) plus optional bundled scripts and assets. Where an atom is "run
+this code," a skill is "follow these instructions, using these capabilities."
+Both carry the same descriptor and both register into the **one catalog**, so
+the architect stitches skills and atoms into a `graph_def` interchangeably (some
+nodes execute code, some have an LLM execute a procedure).
+
+This is the primary way new departments bootstrap: a **thin-tier module** is
+mostly _borrowed_ skills + a manifest binding capabilities + minimal glue.
+Standing up a support or legal department is largely _declaring which existing
+skills it uses_, drawing on the open ecosystem (vet each borrowed skill's
+license).
+
+**Where a skill lives — exactly one place, owned by one module:**
+
+- domain skills → the business module that owns them (content's editorial-voice
+  skills, finance's reconciliation skills);
+- generic, un-owned **procedures** (`summarize`, a web-research procedure) → a
+  **commons / base module** whose job is shared utilities;
+- a generic **tool** (not a procedure) is not a skill at all — it's a
+  **capability**.
+
+**There is no separate "cookbook."** Every skill, wherever it lives, registers
+into the **one catalog** — and that catalog _is_ the unified menu the architect
+composes across at runtime. Cross-module composition is the catalog doing its
+job; it needs nothing beyond the catalog, and a skill is therefore stored
+**once**, never duplicated.
+
+**The bolt-on spectrum.** A "pre-packaged bundle with multiple layers" is a
+spectrum, and its difficulty is a function of contract quality, not of the
+bundle:
+
+- **A single skill** (`SKILL.md` + scripts) → trivial. Self-contained already;
+  drop it into a module's pack, it registers into the catalog.
+- **A skill + the atoms/capabilities it composes + its own routes / dashboards /
+  jobs** → that _is_ a **module**. A turnkey "drop a package, the kernel
+  discovers it" department. As easy as the module contract (manifest + Platform
+  handle + catalog registration + presence-based discovery) is good.
+
+So **bolt-on-ability is the contract's quality made visible** — the cleaner the
+seams, the more a stranger's pre-packaged bundle is a literal drop-in.
+
+**Vendoring** (copying a skill into a module) matters only when a module ships as
+a **standalone external package** that must run without the rest of the repo
+present — the overlay / third-party-install case. Then the module bundles the
+skills it needs to be self-sufficient. In the monorepo, skills live once and the
+catalog shows them all; vendoring is deferred along with the overlay endgame.
+
+---
+
+## Trust & isolation
+
+The bolt-on vision — borrowed skills and drop-in modules from the open ecosystem
+— means a module is **not** automatically trusted just because it loaded. A skill
+is instruction-text an LLM executes, and a module ships arbitrary code that runs
+with a `Platform` handle, so a careless or adversarial bundle is a real attack
+surface: prompt-injection that exfiltrates a secret through `dispatch`, or an atom
+that writes another department's tables through the shared `db`. **We design for
+untrusted bundles from the start** — not as a retrofit — because bolting a trust
+boundary onto a handle that already hands out everything is exactly the rework
+this document exists to avoid.
+
+The posture is **least privilege, earned upward** — the same shape as
+`OperatorScope` and the autonomy dial:
+
+1. **Capability-scoped handle.** A module's manifest **declares the capabilities
+   it needs** (`requires: [db, dispatch, events]`); the kernel injects a handle
+   exposing **only** those. A module that never declared `secret` has no `.secret`
+   to reach. It is the one existing injection seam — tightening it is additive,
+   never a contract change.
+2. **Secrets are brokered, never handed to skill-text.** A skill references a
+   **named credential** (`mercury_readonly`); the kernel binds the secret to the
+   capability call (a publish adapter, a bank tap) **without the value ever
+   entering the LLM's context.** Prompt injection cannot exfiltrate a secret the
+   skill never sees. Raw `secret` reads stay a graduated-tier capability for
+   trusted first-party modules.
+3. **Data is namespaced per module.** The `db` capability is scoped to the
+   module's **own** tables (schema-per-module or an enforced prefix), so a module
+   cannot read or mutate another department's — or the kernel's — data directly.
+   Cross-department data flows through the **expo line** (events / shared brain),
+   never a foreign table read. This is the data-plane twin of "no handle to other
+   modules."
+4. **Trust is a tier, earned by track record.** A borrowed bundle enters at the
+   **lowest tier** (propose-only / advisory / minimal grants) and widens through
+   the **earned-autonomy** dial + telemetry + operator approval — the same
+   machinery as the architect's propose→auto-compose ladder. Untrusted by
+   default; trust is earned, runtime-tunable, and reversible.
+5. **Code isolation is a swappable boundary — deferred, but seam-ready.**
+   In-process is today's reality and Module v1's stated non-goal is process
+   isolation. But because a module touches the kernel **only** through the
+   injected handle, that boundary can later become a subprocess / container / WASM
+   line **without changing the module contract** — the handle simply becomes an
+   RPC proxy instead of an in-process object. Making the handle the sole seam is
+   what keeps that future additive.
+
+The first-party / third-party split then falls out for free: **first-party**
+modules (content, finance) run in-process at a high tier with broad grants;
+**third-party / borrowed** bundles run at the lowest tier, capability-scoped and
+data-namespaced, until they earn more. The **contract is identical** — only the
+dial position differs.
 
 ---
 
@@ -273,7 +385,20 @@ Two properties fall out of modeling surfaces as uniform channels:
 
 A **kernel** service (cross-cutting; operates across all modules). Given the
 catalog + an intent, it emits a `graph_def`, the validator checks it, the engine
-runs it. It is **half-built already**: `atom_registry.to_catalog_text()`
+runs it.
+
+**The `graph_def` is a strict DAG — no cycles.** This is a chosen property, not
+a limitation to lift later. A DAG lets the validator **prove termination** (a
+cyclic flow-chart cannot be), and it is far easier for the architect LLM to
+compose and reason about. Iteration is therefore **never a back-edge**. The two
+sanctioned ways to "try again" are: (a) **bounded retry inside a node** — a node
+may internally retry N times; this is exactly how the old `cross_model_qa`
+rewrite loop collapsed into `qa.aggregate`, which **halts** on reject rather than
+looping back; and (b) **re-invocation of the whole graph** by the orchestrator or
+operator with new feedback. A "loop until quality passes" construct, if ever
+wanted, lives inside a node's bounded logic — not as a cycle the architect draws.
+
+It is **half-built already**: `atom_registry.to_catalog_text()`
 (literally "so the architect can scan"), the DB-stored `graph_def`, and
 `build_graph_from_spec`. What's missing is the LLM that turns catalog + intent
 into a `graph_def` — and that is deliberately deferred. **Design the seam now,
@@ -289,8 +414,8 @@ traced and reversible.
   migration pulled content's code into `modules/content/`, leaving the generic
   engine (`template_runner`, `pipeline_architect`, `prompt_manager`, `llm_text`,
   `atom_registry`) in substrate — i.e. the kernel/module split has _begun_.
-  `module-v1.md` already defines the manifest + lifecycle hooks; the atom catalog
-  - `graph_def` + validator are the architect's machinery.
+  `module-v1.md` already defines the manifest and lifecycle hooks; the
+  atom-catalog, `graph_def`, and validator are the architect's machinery.
 - **The first buildable slice is Seam 1 — the `Platform` handle.** It doubles as
   the thin-adapter cleanup the migration left behind (the transitional
   `main.py`→`quality_service`, `task_routes`→`stages` imports become
@@ -310,6 +435,68 @@ traced and reversible.
    trust dial + telemetry + reversible rails.
 6. **CLI-first / MCP-parity** — every operator action is a CLI verb with MCP
    parity, drivable by human and architect alike.
+7. **Least-privilege handle** — a module receives only the capabilities its
+   manifest declares; secrets are brokered (never handed to skill-text), data is
+   namespaced per module, and trust widens only by an earned dial. Untrusted by
+   default.
 
 A stable contract on these is the precondition for the system to eventually run
 and extend itself — which is the actual deliverable, more than any one feature.
+
+---
+
+## Hard edges & open questions
+
+Stress-testing the design surfaced edges the seams above must eventually answer.
+Two are **decided** (and folded in above); the rest are **named now, designed
+later** — captured so the contract leaves room for them instead of being reworked
+around them.
+
+**Decided**
+
+- **Untrusted bundles are a first-class constraint** — least-privilege handle,
+  brokered secrets, per-module data namespacing, earned trust tiers, swappable
+  isolation boundary (see [Trust & isolation](#trust--isolation)).
+- **The `graph_def` is a strict DAG** — termination is provable; iteration lives
+  inside a node or as a re-invocation, never as a cycle (see
+  [The architect](#the-architect-the-chef)).
+
+**Named, designed later**
+
+- **Expo-line delivery semantics.** The event bus needs explicit guarantees —
+  at-least-once + idempotent consumers, durable and replayable over the spinal
+  cord (outbox + consumer-offset), not fire-and-forget. Cross-department
+  consistency is **eventual**, reconciled by jobs (the pattern already in use),
+  because there is no cross-module transaction. Say this plainly so "shared DB" is
+  never mistaken for atomicity.
+- **Catalog / contract versioning.** A stored `graph_def` references atoms/skills
+  whose typed I/O may change. Descriptors already carry `version`; the validator
+  must pin/check it at load and **fail loud on drift**, not run a stale shape.
+  Borrowed bundles make this acute — they version on someone else's schedule.
+- **Cross-module migration ordering + uninstall data lifecycle.** Per-module
+  migrations have no cross-department ordering (a future FK from B→A could apply
+  out of order), and uninstall today removes **code** (delete the directory) but
+  leaves **data** (tables, `app_settings`, `audit_log`). A module needs an
+  uninstall lifecycle hook (archive / drop / retain) so a removed bundle doesn't
+  orphan rows.
+- **Per-module resource governance.** `cost_guard` is global; one module's runaway
+  atom can starve the GPU/budget (noisy neighbor). Per-module cost + concurrency
+  caps — and metric-cardinality limits, since a module emitting per-post labels
+  can blow up Prometheus — are missing.
+- **Namespacing + collision policy.** Two modules registering the same CLI verb,
+  MCP tool, HTTP route, or catalog slug. Route-prefixing exists; extend the same
+  per-module namespacing to CLI / MCP / catalog and **fail loud on collision**
+  (consistent with no-silent-defaults), never first-wins-silently.
+- **Kernel-purity guard.** The whole design rests on the kernel staying
+  domain-free, but nothing enforces it — domain logic drifts in under deadline
+  pressure. A cheap CI lint ("the kernel package must not import `modules.*`")
+  makes "bulletproof isolated kernel" a checked invariant, not an aspiration.
+- **Fake-kernel drift.** The handle's payoff is testing a module against a fake
+  `Platform` — but a hand-rolled fake drifts from the real kernel. Make `Platform`
+  a real `Protocol` with one conformance-tested fake everyone shares.
+- **Architect semantic validity.** Type-valid ≠ sensible: the validator catches
+  structural errors (types, reachability, acyclicity) but not a
+  type-compatible-yet-wrong ordering. The backstops are the QA rails, the
+  human-approval gate on novel graphs, and the earned-autonomy dial gating
+  **irreversible** nodes (publish, spend, schema change) far harder than
+  reversible ones.
