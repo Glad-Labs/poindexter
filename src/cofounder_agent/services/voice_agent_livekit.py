@@ -1397,6 +1397,13 @@ async def run_bot(
                     "outcome in one sentence rather than narrating the "
                     "steps."
                 ),
+                # Let the dev (claude-code) room run a distinct Kokoro
+                # voice from the public poindexter room. Empty = fall
+                # back to the shared ``voice_agent_tts_voice`` so this
+                # is a no-op until an operator sets the override.
+                tts_voice_override=site_config.get(
+                    "voice_agent_claude_code_tts_voice", "",
+                ),
             )
         else:
             task = build_voice_pipeline_task(

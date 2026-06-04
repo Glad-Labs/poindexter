@@ -149,6 +149,22 @@ def _resolve_whisper_model(name: str) -> WhisperModel:
             ) from exc
 
 
+def _resolve_tts_voice(site_config: Any, override: str | None) -> str:
+    """Resolve the Kokoro voice id for this surface.
+
+    A non-empty ``override`` (after whitespace strip) wins — this is how a
+    single surface (e.g. the ``claude-code`` LiveKit room via
+    ``voice_agent_claude_code_tts_voice``) runs a distinct voice. An
+    empty/whitespace/``None`` override falls back to the shared
+    ``voice_agent_tts_voice`` setting (default ``bf_emma``), so surfaces
+    that don't pass an override are unaffected.
+    """
+    chosen = (override or "").strip()
+    if chosen:
+        return chosen
+    return site_config.get("voice_agent_tts_voice", "bf_emma")
+
+
 def build_voice_pipeline_task(
     transport: BaseTransport,
     site_config: Any,
@@ -157,6 +173,7 @@ def build_voice_pipeline_task(
     tools: list[Any] | None = None,
     llm: Any | None = None,
     system_prompt_override: str | None = None,
+    tts_voice_override: str | None = None,
 ) -> PipelineTask:
     """Build a configured :class:`PipelineTask` for the given transport.
 
@@ -182,6 +199,13 @@ def build_voice_pipeline_task(
             Claude bridge, which already has its own system prompt
             via the project's CLAUDE.md and shouldn't get the
             "you are Emma" preamble.
+        tts_voice_override: If set (non-empty after strip), used in
+            place of the shared ``voice_agent_tts_voice`` setting.
+            Lets a single surface run a different Kokoro voice from
+            the rest — e.g. the ``claude-code`` LiveKit room speaking
+            as a distinct voice while the public ``poindexter`` room
+            keeps Emma. Empty/None falls back to the shared key, so
+            surfaces that don't pass it are unaffected.
     """
     log = log or logging.getLogger("voice_agent")
 
@@ -203,7 +227,7 @@ def build_voice_pipeline_task(
     ollama_url = site_config.get(
         "voice_agent_ollama_url", "http://localhost:11434/v1",
     )
-    tts_voice = site_config.get("voice_agent_tts_voice", "bf_emma")
+    tts_voice = _resolve_tts_voice(site_config, tts_voice_override)
     tts_speed = float(site_config.get("voice_agent_tts_speed", 1.0))
     whisper_model_name = site_config.get(
         "voice_agent_whisper_model", "base",
