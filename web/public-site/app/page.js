@@ -6,6 +6,11 @@ import { OrganizationSchema } from '../components/StructuredData';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 import { postFeaturedImage } from '@/lib/posts';
 
+// Time-based ISR backstop (1h). Primary refresh is on-demand
+// revalidateTag('posts') on publish; this floor self-heals the index if a
+// publish path ever skips the on-demand revalidate (poindexter#575).
+export const revalidate = 3600;
+
 // SEO Metadata
 export const metadata = {
   title: `${SITE_NAME} - AI & Technology Insights`,

@@ -5,6 +5,11 @@ import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { getPosts, postFeaturedImage } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
+// Time-based ISR backstop (1h) — see app/page.js. On-demand
+// revalidateTag('posts') on publish is primary; this floor self-heals if a
+// publish path skips the on-demand revalidate (poindexter#575).
+export const revalidate = 3600;
+
 const POSTS_PER_PAGE = 12;
 
 async function getAllPublishedPosts() {

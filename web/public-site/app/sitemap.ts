@@ -2,6 +2,11 @@ import logger from '@/lib/logger';
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site.config';
 
+// Time-based ISR backstop (1h). On-demand revalidateTag('posts') on publish
+// is primary; this floor keeps the sitemap from going stale indefinitely if
+// a publish path ever skips the on-demand revalidate (poindexter#575).
+export const revalidate = 3600;
+
 /**
  * Type definitions for sitemap content
  */
