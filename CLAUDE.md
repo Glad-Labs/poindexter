@@ -136,16 +136,34 @@ capability-plugin contributions plus DB migrations, jobs, HTTP routes,
 and Grafana panels into a manifested business function. As of 2026-05-16
 (Phase 4 lifecycle fully wired):
 
-| Module    | Path               | Visibility | What it does                                                                                                                                                                                        |
-| --------- | ------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `content` | `modules/content/` | public     | Reference Module — proves the pattern. Substrate still owns the 21-stage tree until Phase 3.5 (physical move deferred until a 3rd module justifies symmetry).                                       |
-| `finance` | `modules/finance/` | private    | Mercury read-only banking (Glad Labs operator overlay). HTTP surface live at `/api/finance/{healthcheck,balances,transactions}` (OAuth-JWT protected). Stripped from public mirror via sync filter. |
+| Module    | Path               | Visibility | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------- | ------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `content` | `modules/content/` | public     | Reference Module. Owns its content code after the incremental Phase 3 migration (2026-06-04): `content_validator`, `stages/`, `atoms/`, `multi_model_qa`, `ai_content_generator`, `internal_link_coherence`, `quality_service`, `auto_publish(_gate)`. Generic engine (`template_runner`, `pipeline_architect`, `prompt_manager`, `llm_text`, `atom_registry`) + `canonical_blog_spec` (migration-anchored) stay in substrate; content rents the engine via the DB graph_def seam. |
+| `finance` | `modules/finance/` | private    | Mercury read-only banking (Glad Labs operator overlay). HTTP surface live at `/api/finance/{healthcheck,balances,transactions}` (OAuth-JWT protected). Stripped from public mirror via sync filter.                                                                                                                                                                                                                                                                                |
 
 Adding a new business module (HR, customer support, ops/security) follows
 the [extending-poindexter §9 walkthrough](docs/operations/extending-poindexter.md).
 Operator-overlay specifics for the finance module live in
 [docs/operations/finance-module-operator.md](docs/operations/finance-module-operator.md)
 (also stripped from public mirror).
+
+**Content module owns its code (incremental Phase 3, 2026-06-04).** The
+content-pipeline code physically moved from `services/` into `modules/content/`
+over a chain of squash-merged PRs (#1111 validator → #1113 `stages/` → #1114
+`atoms/` → #1115 `multi_model_qa` + `ai_content_generator` → #1117
+`internal_link_coherence` → #1123 `quality_service` + `auto_publish(_gate)`).
+This resolved the long-deferred Phase 3 not as a big-bang but as one-file/one-tree
+relocations, enabled by Phase 5's presence-based discovery. **Generic pipeline
+engine stays in substrate** (`template_runner`, `pipeline_architect`,
+`prompt_manager`, `llm_text`, `atom_registry`) — content rents it via the DB
+`graph_def` seam, so the engine never imports content. `canonical_blog_spec`
+also stays (it's imported by historical migrations). The substrate→content
+imports the moves introduced (`main.py` → `quality_service`,
+`post_pipeline_actions` → `auto_publish`, `routes/task_routes` → `stages`) are a
+transitional state for a later holistic **thin-adapter / interface pass** that
+routes substrate's use of content through the module's public surface. NOTE for
+path lookups: many `services/<name>.py` references elsewhere in this file are
+historical narrative; the live content code is under `modules/content/`.
 
 **Key services (22 load-bearing):**
 
