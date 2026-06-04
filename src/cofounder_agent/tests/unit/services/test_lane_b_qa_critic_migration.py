@@ -8,7 +8,7 @@ sites migrated in the QA / critic batch:
   ``_review_with_cloud_model`` fallback)
 - ``services.self_review._resolve_self_review_model`` +
   ``self_review_and_revise``
-- ``services.stages.cross_model_qa._resolve_writer_model``
+- ``modules.content.stages.cross_model_qa._resolve_writer_model``
 
 Per ``feedback_no_silent_defaults.md``, a missing tier mapping must
 fail loudly (``notify_operator``) before falling back to the per-

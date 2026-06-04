@@ -1,6 +1,6 @@
 """TopicDecisionGateStage — topic-decision HITL gate (#146).
 
-Wires the generic :class:`services.stages.approval_gate.ApprovalGateStage`
+Wires the generic :class:`modules.content.stages.approval_gate.ApprovalGateStage`
 to a topic-decision-shaped artifact and registers itself under the stable
 Stage name ``"topic_decision_gate"`` so the StageRunner can pick it up
 from the configured order list.
@@ -49,7 +49,7 @@ from typing import Any
 
 from plugins.stage import StageResult
 from services.logger_config import get_logger
-from services.stages.approval_gate import ApprovalGateStage
+from modules.content.stages.approval_gate import ApprovalGateStage
 
 logger = get_logger(__name__)
 

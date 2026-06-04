@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.stage import Stage
-from services.stages.writer_self_review import WriterSelfReviewStage
+from modules.content.stages.writer_self_review import WriterSelfReviewStage
 
 
 class TestProtocol:

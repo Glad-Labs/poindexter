@@ -528,7 +528,7 @@ def test_extract_h1_ignores_h3_and_deeper():
 
 # ---------------------------------------------------------------------------
 # choose_canonical_title — the orchestrator that picks topic / H1 / LLM.
-# Matches the call site in services.stages.generate_content where the
+# Matches the call site in modules.content.stages.generate_content where the
 # title is set right before persistence (poindexter#471 leak point).
 # ---------------------------------------------------------------------------
 

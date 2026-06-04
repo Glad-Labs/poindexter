@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.stages.generate_content import (
+from modules.content.stages.generate_content import (
     GenerateContentStage,
     _extract_caller_research,
     _self_review_enabled,

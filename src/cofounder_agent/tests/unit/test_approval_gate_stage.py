@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.stage import Stage, StageResult
-from services.stages.approval_gate import ApprovalGateStage
+from modules.content.stages.approval_gate import ApprovalGateStage
 
 
 def _make_site_config(values: dict[str, str] | None = None) -> Any:
@@ -93,7 +93,7 @@ class TestExecute:
         ctx = _make_context(site_config=site_cfg)
         # No pause_at_gate import-side-effect should occur.
         with patch(
-            "services.stages.approval_gate.pause_at_gate",
+            "modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(),
         ) as mock_pause:
             result = await ApprovalGateStage().execute(
@@ -112,7 +112,7 @@ class TestExecute:
         })
         ctx = _make_context(site_config=site_cfg)
         with patch(
-            "services.stages.approval_gate.pause_at_gate",
+            "modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(),
         ) as mock_pause:
             result = await ApprovalGateStage().execute(
@@ -146,7 +146,7 @@ class TestExecute:
             }
 
         with patch(
-            "services.stages.approval_gate.pause_at_gate",
+            "modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(side_effect=_fake_pause),
         ):
             result = await ApprovalGateStage().execute(
@@ -179,7 +179,7 @@ class TestExecute:
             return {"ok": True, "paused_at": "x", "notify": {"sent": False}}
 
         with patch(
-            "services.stages.approval_gate.pause_at_gate",
+            "modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(side_effect=_fake_pause),
         ):
             result = await ApprovalGateStage().execute(
@@ -199,7 +199,7 @@ class TestExecute:
             raise RuntimeError("artifact_fn boom")
 
         with patch(
-            "services.stages.approval_gate.pause_at_gate",
+            "modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(),
         ) as mock_pause:
             result = await ApprovalGateStage().execute(
@@ -216,7 +216,7 @@ class TestExecute:
         ctx = _make_context(site_config=site_cfg)
 
         with patch(
-            "services.stages.approval_gate.pause_at_gate",
+            "modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(side_effect=RuntimeError("DB exploded")),
         ):
             result = await ApprovalGateStage().execute(

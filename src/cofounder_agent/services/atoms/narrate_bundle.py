@@ -411,7 +411,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     """LangGraph node entrypoint.
 
     Reads the dev_diary bundle from state (placed there by
-    ``services.stages.generate_content._read_context_bundle`` upstream
+    ``modules.content.stages.generate_content._read_context_bundle`` upstream
     OR injected by an earlier node), produces narrative prose with
     inline PR links via a single LLM call, wraps it with a
     deterministic header + footer, writes back to ``state['content']``.

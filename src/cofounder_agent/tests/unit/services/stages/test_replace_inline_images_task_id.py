@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.stages.replace_inline_images import (
+from modules.content.stages.replace_inline_images import (
     ReplaceInlineImagesStage,
     _try_sdxl,
 )
@@ -86,20 +86,20 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
     )
 
     with patch(
-        "services.stages.replace_inline_images.gpu", recorder, create=True,
+        "modules.content.stages.replace_inline_images.gpu", recorder, create=True,
     ), patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
         "services.llm_providers.dispatcher.dispatch_complete",
         new=AsyncMock(return_value=completion),
     ), patch(
-        "services.stages.replace_inline_images.httpx.AsyncClient",
+        "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "services.stages.replace_inline_images._resolve_sdxl_response",
+        "modules.content.stages.replace_inline_images._resolve_sdxl_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
-        "services.stages.replace_inline_images._upload_to_r2_with_fallback",
+        "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/x.png"),
     ):
         result = await _try_sdxl(
@@ -152,7 +152,7 @@ async def test_stage_propagates_task_id_into_try_sdxl():
     }
 
     with patch(
-        "services.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_sdxl",
         new=AsyncMock(side_effect=fake_try_sdxl),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -172,7 +172,7 @@ async def test_sdxl_prompt_in_placeholder_does_not_leak_to_alt():
     and the SDXL render succeeds, the rendered ``<img alt="...">`` must
     show the topic-derived fallback, not the raw imperative-mood prompt.
     """
-    from services.stages.replace_inline_images import _resolve_one_placeholder
+    from modules.content.stages.replace_inline_images import _resolve_one_placeholder
 
     # The exact poisoned descriptor shape from the bug report.
     poisoned_desc = (
@@ -185,10 +185,10 @@ async def test_sdxl_prompt_in_placeholder_does_not_leak_to_alt():
 
     # SDXL path succeeds — returns a URL we can assert on.
     with patch(
-        "services.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_sdxl",
         new=AsyncMock(return_value="https://r2.example/inline-1.png"),
     ), patch(
-        "services.stages.replace_inline_images._record_inline_image_asset",
+        "modules.content.stages.replace_inline_images._record_inline_image_asset",
         new=AsyncMock(return_value=None),
     ):
         result = await _resolve_one_placeholder(
@@ -222,16 +222,16 @@ async def test_real_human_alt_in_placeholder_passes_through():
     word "macro" appears in our INLINE_STYLES rotation but here it's
     used as a noun-modifier in natural prose.
     """
-    from services.stages.replace_inline_images import _resolve_one_placeholder
+    from modules.content.stages.replace_inline_images import _resolve_one_placeholder
 
     clean_desc = "A close-up macro photo of a circuit board with red LEDs"
     content_text = f"Intro\n\n[IMAGE-1: {clean_desc}]\n\nOutro"
 
     with patch(
-        "services.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_sdxl",
         new=AsyncMock(return_value="https://r2.example/inline-1.png"),
     ), patch(
-        "services.stages.replace_inline_images._record_inline_image_asset",
+        "modules.content.stages.replace_inline_images._record_inline_image_asset",
         new=AsyncMock(return_value=None),
     ):
         result = await _resolve_one_placeholder(

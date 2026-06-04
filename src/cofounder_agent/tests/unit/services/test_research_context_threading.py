@@ -147,7 +147,7 @@ async def test_generate_content_stage_returns_research_context_in_updates():
     async def _no_gpu_lock(*_a: Any, **_kw: Any):
         yield None
 
-    from services.stages.generate_content import GenerateContentStage
+    from modules.content.stages.generate_content import GenerateContentStage
 
     patches = [
         patch(

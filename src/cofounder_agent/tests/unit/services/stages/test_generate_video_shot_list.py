@@ -1,4 +1,4 @@
-"""Tests for ``services.stages.generate_video_shot_list``.
+"""Tests for ``modules.content.stages.generate_video_shot_list``.
 
 The LLM call + DB pool are mocked. Focus: contract behavior at the
 stage boundary (input context → output context + audit_log + skip
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.stages.generate_video_shot_list import (
+from modules.content.stages.generate_video_shot_list import (
     GenerateVideoShotListStage,
     _estimate_target_duration,
     _extract_json_object,

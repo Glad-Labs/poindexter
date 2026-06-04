@@ -745,9 +745,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("llm_providers", "plugins.llm_providers.gemini", "GeminiProvider"),
         # Core Stages (Phase E migration — one per file, unblocks tearing
         # down content_router_service.py over a handful of commits).
-        ("stages", "services.stages.verify_task", "VerifyTaskStage"),
-        ("stages", "services.stages.generate_content", "GenerateContentStage"),
-        ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),
+        ("stages", "modules.content.stages.verify_task", "VerifyTaskStage"),
+        ("stages", "modules.content.stages.generate_content", "GenerateContentStage"),
+        ("stages", "modules.content.stages.writer_self_review", "WriterSelfReviewStage"),
         # Resolve ``[posts/<slug>]`` placeholders before validation. The
         # writer LLM emits these as hints to internal posts but NO code
         # ever resolved them; the validator (added 2026-05-12) catches
@@ -757,19 +757,19 @@ def get_core_samples() -> dict[str, list[Any]]:
         # markdown links, or strips unknown placeholders.
         (
             "stages",
-            "services.stages.resolve_internal_link_placeholders",
+            "modules.content.stages.resolve_internal_link_placeholders",
             "ResolveInternalLinkPlaceholdersStage",
         ),
-        ("stages", "services.stages.quality_evaluation", "QualityEvaluationStage"),
-        ("stages", "services.stages.url_validation", "UrlValidationStage"),
-        ("stages", "services.stages.replace_inline_images", "ReplaceInlineImagesStage"),
-        ("stages", "services.stages.source_featured_image", "SourceFeaturedImageStage"),
-        ("stages", "services.stages.caption_images", "CaptionImagesStage"),
-        ("stages", "services.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
-        ("stages", "services.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
-        ("stages", "services.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
-        ("stages", "services.stages.capture_training_data", "CaptureTrainingDataStage"),
-        ("stages", "services.stages.finalize_task", "FinalizeTaskStage"),
+        ("stages", "modules.content.stages.quality_evaluation", "QualityEvaluationStage"),
+        ("stages", "modules.content.stages.url_validation", "UrlValidationStage"),
+        ("stages", "modules.content.stages.replace_inline_images", "ReplaceInlineImagesStage"),
+        ("stages", "modules.content.stages.source_featured_image", "SourceFeaturedImageStage"),
+        ("stages", "modules.content.stages.caption_images", "CaptionImagesStage"),
+        ("stages", "modules.content.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
+        ("stages", "modules.content.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
+        ("stages", "modules.content.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
+        ("stages", "modules.content.stages.capture_training_data", "CaptureTrainingDataStage"),
+        ("stages", "modules.content.stages.finalize_task", "FinalizeTaskStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:

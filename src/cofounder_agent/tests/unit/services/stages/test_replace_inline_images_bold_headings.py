@@ -1,5 +1,5 @@
 """Contract test for the 2026-05-27 bold-text heading fallback in
-``services.stages.replace_inline_images._plan_and_inject_placeholders``.
+``modules.content.stages.replace_inline_images._plan_and_inject_placeholders``.
 
 Pins the fix for the production observation: 12 consecutive published
 canonical_blog posts had 0 inline images because the writer emitted
@@ -47,7 +47,7 @@ def _make_plan_images_result(*sections: str):
 async def test_bold_pseudo_headings_anchor_inline_image_placeholders():
     """The exact prod content shape: bold-text pseudo-headings.
     Verify ``_plan_and_inject_placeholders`` injects ``[IMAGE-N]``."""
-    from services.stages.replace_inline_images import (
+    from modules.content.stages.replace_inline_images import (
         _plan_and_inject_placeholders,
     )
 
@@ -83,7 +83,7 @@ async def test_bold_pseudo_headings_anchor_inline_image_placeholders():
 async def test_real_h2_headings_still_take_priority():
     """When the writer DOES emit real H2 markdown, the bold-text
     fallback must NOT replace it — real headings win."""
-    from services.stages.replace_inline_images import (
+    from modules.content.stages.replace_inline_images import (
         _plan_and_inject_placeholders,
     )
 
@@ -115,7 +115,7 @@ async def test_inline_bold_text_does_not_anchor_placeholders():
     """A bold phrase mid-paragraph is NOT a section heading and must
     NOT serve as an image anchor — otherwise we'd inject images inside
     paragraphs, not between them."""
-    from services.stages.replace_inline_images import (
+    from modules.content.stages.replace_inline_images import (
         _plan_and_inject_placeholders,
     )
 

@@ -66,7 +66,7 @@ async def test_sdxl_attempted_when_local_diffusers_missing() -> None:
 
     Verify the new gate calls ``_try_sdxl_featured`` regardless of
     local-diffusers state."""
-    from services.stages.source_featured_image import SourceFeaturedImageStage
+    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     image_service = _make_image_service(
         sdxl_available=False, sdxl_initialized=True,
@@ -79,7 +79,7 @@ async def test_sdxl_attempted_when_local_diffusers_missing() -> None:
 
     sdxl_mock = AsyncMock(return_value=None)  # Skip the SDXL call's side-effects
     with patch(
-        "services.stages.source_featured_image._try_sdxl_featured",
+        "modules.content.stages.source_featured_image._try_sdxl_featured",
         sdxl_mock,
     ):
         stage = SourceFeaturedImageStage()
@@ -98,7 +98,7 @@ async def test_sdxl_skipped_when_explicitly_disabled() -> None:
     """The new gate honours ``app_settings.sdxl_enabled=false`` so
     operators can disable SDXL during maintenance windows without
     code edits."""
-    from services.stages.source_featured_image import SourceFeaturedImageStage
+    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     image_service = _make_image_service(sdxl_available=True, sdxl_initialized=True)
     site_config = _make_site_config({
@@ -109,7 +109,7 @@ async def test_sdxl_skipped_when_explicitly_disabled() -> None:
 
     sdxl_mock = AsyncMock(return_value=None)
     with patch(
-        "services.stages.source_featured_image._try_sdxl_featured",
+        "modules.content.stages.source_featured_image._try_sdxl_featured",
         sdxl_mock,
     ):
         stage = SourceFeaturedImageStage()
@@ -125,7 +125,7 @@ async def test_sdxl_skipped_when_explicitly_disabled() -> None:
 async def test_sdxl_attempted_by_default_when_setting_unset() -> None:
     """No ``sdxl_enabled`` setting in app_settings — default to attempting
     SDXL. Fresh installs shouldn't have to set the flag to get SDXL working."""
-    from services.stages.source_featured_image import SourceFeaturedImageStage
+    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     image_service = _make_image_service(sdxl_available=False, sdxl_initialized=True)
     site_config = _make_site_config({})  # no sdxl_enabled key
@@ -133,7 +133,7 @@ async def test_sdxl_attempted_by_default_when_setting_unset() -> None:
 
     sdxl_mock = AsyncMock(return_value=None)
     with patch(
-        "services.stages.source_featured_image._try_sdxl_featured",
+        "modules.content.stages.source_featured_image._try_sdxl_featured",
         sdxl_mock,
     ):
         stage = SourceFeaturedImageStage()

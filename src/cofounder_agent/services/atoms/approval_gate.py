@@ -1,7 +1,7 @@
 """``atoms.approval_gate`` — composable HITL pause-and-wait atom.
 
 Phase 3 of the dynamic-pipeline-composition spec. Wraps the existing
-:class:`services.stages.approval_gate.ApprovalGateStage` logic in atom
+:class:`modules.content.stages.approval_gate.ApprovalGateStage` logic in atom
 shape so the architect-LLM can drop a gate at any point in a composed
 graph without subclassing.
 

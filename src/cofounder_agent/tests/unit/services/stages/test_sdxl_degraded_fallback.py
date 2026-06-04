@@ -104,11 +104,11 @@ class TestRenderSdxlNon200ReturnsNone:
         position 0; ``sdxl_meta`` is ``{}`` because there's no JSON to
         parse on an error response.
         """
-        from services.stages.source_featured_image import _render_sdxl
+        from modules.content.stages.source_featured_image import _render_sdxl
 
         post_resp = _fake_response(status_code)
         with patch(
-            "services.stages.source_featured_image.httpx.AsyncClient",
+            "modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=_fake_httpx_client_returning(post_resp),
         ), patch(
             "services.gpu_scheduler.gpu", _gpu_lock_noop(),
@@ -143,7 +143,7 @@ class TestStageFallsBackToPexels:
 
     @pytest.mark.asyncio
     async def test_sdxl_returns_none_yields_pexels_featured_image(self):
-        from services.stages.source_featured_image import SourceFeaturedImageStage
+        from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         pexels_image = SimpleNamespace(
             url="https://images.pexels.com/photos/12345/photo.jpg",
@@ -175,7 +175,7 @@ class TestStageFallsBackToPexels:
         # Force the SDXL branch to return None — simulating the
         # 2026-05-11 17:48 UTC degraded scenario.
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             new=AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -205,7 +205,7 @@ class TestStageFallsBackToPexels:
         the post lands without a featured image rather than crashing
         the whole task.
         """
-        from services.stages.source_featured_image import SourceFeaturedImageStage
+        from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         image_service = SimpleNamespace(
             sdxl_available=True,
@@ -227,7 +227,7 @@ class TestStageFallsBackToPexels:
         }
 
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             new=AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})

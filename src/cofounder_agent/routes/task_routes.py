@@ -109,7 +109,7 @@ async def _resolve_seed_url(
       - Stores the seed URL, title, excerpt, and a pre-formatted
         "Source article:" research_context block in
         ``task_request.metadata`` so the downstream stage
-        :mod:`services.stages.generate_content` picks it up via
+        :mod:`modules.content.stages.generate_content` picks it up via
         ``_extract_caller_research``.
 
     On any fetch/parse failure, raises HTTPException 400 with a clear
