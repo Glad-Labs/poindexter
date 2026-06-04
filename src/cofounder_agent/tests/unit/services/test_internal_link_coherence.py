@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.internal_link_coherence import (
+from modules.content.internal_link_coherence import (
     InternalLinkCoherenceFilter,
     LinkCandidate,
     count_inbound_links_to_slug,
