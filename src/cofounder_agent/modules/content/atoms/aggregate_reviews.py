@@ -1,7 +1,7 @@
 """``atoms.aggregate_reviews`` — fold N critic reviews into one verdict.
 
 Phase 3 of the dynamic-pipeline-composition spec. Pairs with
-:mod:`services.atoms.review_with_critic` — N critics push Review dicts
+:mod:`modules.content.atoms.review_with_critic` — N critics push Review dicts
 onto ``state['qa_reviews']``, this atom folds them into a single
 ``qa_final_score`` + verdict. Sets ``_halt=True`` when the aggregated
 verdict is "reject".

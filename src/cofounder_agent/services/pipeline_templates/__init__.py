@@ -69,7 +69,7 @@ def dev_diary(
     Three nodes:
 
     1. ``verify_task`` (existing stage) — confirm the task row exists.
-    2. ``narrate_bundle`` (new atom under ``services.atoms``) — single
+    2. ``narrate_bundle`` (new atom under ``modules.content.atoms``) — single
        LLM call that reads the preserved bundle from
        ``pipeline_versions.stage_data._dev_diary_bundle`` and produces
        2-3 paragraphs of narrative prose with inline PR markdown
@@ -102,7 +102,7 @@ def dev_diary(
     operator confirmed images are wanted on the daily build-in-public
     posts (Telegram, 2026-05-07).
     """
-    from services.atoms import narrate_bundle as _narrate_atom
+    from modules.content.atoms import narrate_bundle as _narrate_atom
 
     stages_by_name = _registered_stages()
     g: StateGraph = StateGraph(PipelineState)

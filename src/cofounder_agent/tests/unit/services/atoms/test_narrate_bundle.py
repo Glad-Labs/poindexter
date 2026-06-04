@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.atoms.narrate_bundle import (
+from modules.content.atoms.narrate_bundle import (
     _format_bundle_for_narrative,
     _scrub_private_repo_refs,
     run,
@@ -250,7 +250,7 @@ class TestRunPromptConstruction:
             return "Stub LLM output."
 
         with (
-            patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -298,7 +298,7 @@ class TestRunPromptConstruction:
             return "Stub LLM output."
 
         with (
-            patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -340,7 +340,7 @@ class TestRunPromptConstruction:
 
         misleading_topic = "totally unrelated string about widgets"
         with (
-            patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -369,7 +369,7 @@ class TestRunPromptConstruction:
             return "Stub."
 
         with (
-            patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.

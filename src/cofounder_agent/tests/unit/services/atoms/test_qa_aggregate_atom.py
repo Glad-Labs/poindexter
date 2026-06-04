@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_aggregate
+from modules.content.atoms import qa_aggregate
 
 
 class _Cfg:

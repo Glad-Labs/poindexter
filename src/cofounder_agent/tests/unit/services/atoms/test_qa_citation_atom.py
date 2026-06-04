@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_citation
+from modules.content.atoms import qa_citation
 from services.multi_model_qa import MultiModelQA, ReviewerResult
 
 
@@ -75,7 +75,7 @@ class TestQaCitationAtom:
 
     async def test_advisory_first_dead_links_do_not_veto(self, monkeypatch):
         """Seeded advisory → a high dead-link ratio scores but does NOT veto."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         async def chk(self, content):
             return ReviewerResult("citation_verifier", False, 20.0, "60% dead", "http_head")
@@ -89,7 +89,7 @@ class TestQaCitationAtom:
 
     async def test_graduated_to_hard_veto(self, monkeypatch):
         """required_to_pass=true → the dead-link hard veto bites again."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         async def chk(self, content):
             return ReviewerResult("citation_verifier", False, 10.0, "all dead", "http_head")

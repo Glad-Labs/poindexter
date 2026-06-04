@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_vision
+from modules.content.atoms import qa_vision
 from services.multi_model_qa import MultiModelQA, ReviewerResult
 
 

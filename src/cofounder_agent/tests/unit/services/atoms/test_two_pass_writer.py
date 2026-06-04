@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.atoms import two_pass_writer as two_pass
+from modules.content.atoms import two_pass_writer as two_pass
 
 pytestmark = pytest.mark.asyncio
 

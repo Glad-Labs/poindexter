@@ -716,7 +716,7 @@ class GenerateContentStage:
         no-variant production path (per the design doc's "Posture:
         testing in production").
         """
-        from services.atoms import two_pass_writer
+        from modules.content.atoms import two_pass_writer
 
         # The writer modes use "angle" rather than separate style/tone/tags;
         # collapse the available descriptors into a single angle string.

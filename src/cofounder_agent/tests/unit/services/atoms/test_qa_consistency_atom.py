@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_consistency
+from modules.content.atoms import qa_consistency
 from services.multi_model_qa import MultiModelQA, ReviewerResult
 
 
@@ -77,7 +77,7 @@ class TestQaConsistencyAtom:
     async def test_advisory_baseline_does_not_veto(self, monkeypatch):
         """consistency is advisory in the baseline → a contradiction scores but
         does NOT veto (the legacy low-score escape lived in review(), not here)."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         async def chk(self, content):
             return ReviewerResult("internal_consistency", False, 15.0, "contradicts", "consistency_gate")
@@ -90,7 +90,7 @@ class TestQaConsistencyAtom:
         assert "internal_consistency" not in decision["vetoed_by"]
 
     async def test_graduated_to_hard_veto(self, monkeypatch):
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         async def chk(self, content):
             return ReviewerResult("internal_consistency", False, 15.0, "contradicts", "consistency_gate")

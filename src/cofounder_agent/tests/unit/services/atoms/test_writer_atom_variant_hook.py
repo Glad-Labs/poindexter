@@ -102,7 +102,7 @@ async def test_no_active_experiment_state_unchanged() -> None:
         "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.atoms.two_pass_writer.run",
+        "modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
         "services.experiment_runner.pick_variant",
@@ -175,7 +175,7 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
         "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.atoms.two_pass_writer.run", new=fake_run,
+        "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),
@@ -247,7 +247,7 @@ async def test_active_experiment_no_overrides_preserves_defaults() -> None:
         "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.atoms.two_pass_writer.run", new=fake_run,
+        "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),

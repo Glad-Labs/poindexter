@@ -398,7 +398,7 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
 # ``plugin.llm_provider.primary.standard='litellm'``) AND keeps the
 # maybe-unwrap-json defense at the result boundary. The module-level
 # aliases keep test patches at the historical name working
-# (tests patch ``services.atoms.narrate_bundle._ollama_chat_text``).
+# (tests patch ``modules.content.atoms.narrate_bundle._ollama_chat_text``).
 from services.llm_text import maybe_unwrap_json as _maybe_unwrap_json
 from services.llm_text import ollama_chat_text as _ollama_chat_text
 

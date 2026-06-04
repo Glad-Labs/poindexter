@@ -460,7 +460,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # fresh on every call). Audit confirmed zero production readers.
 
         # Atom registry — Phase 2 of dynamic-pipeline-composition.
-        # Walks ``services.atoms`` collecting ATOM_META declarations,
+        # Walks ``modules.content.atoms`` collecting ATOM_META declarations,
         # then writes them through to ``pipeline_atoms`` so the
         # architect-LLM (and operator dashboards) can query the live
         # block inventory by SQL. Best-effort — DB sync is non-fatal

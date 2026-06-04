@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from services.atoms import _seo_common as sc
+from modules.content.atoms import _seo_common as sc
 from utils.title_utils import derive_seo_title
 
 ATOM_META = AtomMeta(

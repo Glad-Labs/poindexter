@@ -21,7 +21,7 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
-from services.atoms._qa_rail_common import aggregate_rail_reviews
+from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     }
 
     if not approved:
-        from services.atoms._qa_persist import (
+        from modules.content.atoms._qa_persist import (
             build_qa_feedback,
             build_reject_reason,
             persist_qa_reject,

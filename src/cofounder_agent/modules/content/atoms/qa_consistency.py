@@ -39,7 +39,7 @@ from __future__ import annotations
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
-from services.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 
 ATOM_META = AtomMeta(
     name="qa.consistency",

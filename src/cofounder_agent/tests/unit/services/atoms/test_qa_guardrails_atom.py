@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_guardrails
+from modules.content.atoms import qa_guardrails
 from services.multi_model_qa import MultiModelQA, ReviewerResult
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_programmatic
+from modules.content.atoms import qa_programmatic
 from modules.content.content_validator import ValidationIssue, ValidationResult
 from services.multi_model_qa import MultiModelQA
 
@@ -182,7 +182,7 @@ class TestQaProgrammaticAtom:
         """End-to-end proof of the C1 fix: a critical fabrication flowing from
         qa.programmatic into the real aggregation produces a REJECT — the gate
         that the #355 cutover silently dropped now bites again."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         monkeypatch.setattr(
             "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
@@ -196,7 +196,7 @@ class TestQaProgrammaticAtom:
     async def test_advisory_fabrication_does_not_veto_through_aggregation(self, monkeypatch):
         """When the operator demotes the gate to advisory, the same fabrication
         no longer vetoes (score still factored, but no reject)."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         monkeypatch.setattr(
             "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()

@@ -359,7 +359,7 @@ class TestUpsertVersionHasProductionCallers:
         """
         import inspect
 
-        from services.atoms import _qa_persist
+        from modules.content.atoms import _qa_persist
 
         source = inspect.getsource(_qa_persist)
         assert "PipelineDB" in source, (

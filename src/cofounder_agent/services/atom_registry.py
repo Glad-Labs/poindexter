@@ -1,6 +1,6 @@
 """Atom registry — discovery + cache of all ``ATOM_META`` declarations.
 
-Walks ``services.atoms.*`` (and a future-extensible list of additional
+Walks ``modules.content.atoms.*`` (and a future-extensible list of additional
 modules) at startup, collects ``ATOM_META: AtomMeta`` from each, and
 exposes the catalog as:
 
@@ -86,7 +86,7 @@ def _walk_package(pkg_name: str) -> None:
 def discover() -> None:
     """Run discovery exactly once. Idempotent across multiple calls.
 
-    Walks ``services.atoms`` for ATOM_META declarations, then
+    Walks ``modules.content.atoms`` for ATOM_META declarations, then
     surfaces every registered Stage plugin as a virtual atom so the
     architect-LLM sees the full composable surface (real atoms +
     existing stages) in one catalog. Future packages with atoms
@@ -96,7 +96,7 @@ def discover() -> None:
     global _DISCOVERED
     if _DISCOVERED:
         return
-    _walk_package("services.atoms")
+    _walk_package("modules.content.atoms")
     _surface_stages_as_atoms()
     _DISCOVERED = True
     logger.info(

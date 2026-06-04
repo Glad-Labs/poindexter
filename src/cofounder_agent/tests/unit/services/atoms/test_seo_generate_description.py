@@ -1,8 +1,8 @@
 """Tests for services/atoms/seo_generate_description.py."""
 from unittest.mock import AsyncMock, MagicMock
 
-from services.atoms import _seo_common as sc
-from services.atoms import seo_generate_description as atom
+from modules.content.atoms import _seo_common as sc
+from modules.content.atoms import seo_generate_description as atom
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
 # already auto-marks coroutine tests. An explicit mark wrongly tagged the
