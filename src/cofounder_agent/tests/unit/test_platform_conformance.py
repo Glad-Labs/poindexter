@@ -55,7 +55,14 @@ def _make_kernel_platform() -> KernelPlatform:
     async def _dispatch(*args: object, **kwargs: object) -> str:
         return "completion"
 
-    async def _audit_write(event_type: str, **details: object) -> None:
+    async def _audit_write(
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, object] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
         return None
 
     def _metric_emit(name: str, value: float = 1.0, **labels: str) -> None:
@@ -113,7 +120,11 @@ def test_metric_is_callable(platform: Platform) -> None:
 
 
 async def test_audit_write(platform: Platform) -> None:
-    await platform.audit.write("thing_happened", detail=1)  # must not raise
+    # The production audit shape: event_type + source + structured details
+    # (+ optional task_id/severity). Must not raise on either backing.
+    await platform.audit.write(
+        "thing_happened", source="conformance_test", details={"detail": 1}
+    )
 
 
 def test_scoped_wrapper_works_over_either_backing(platform: Platform) -> None:
@@ -122,3 +133,25 @@ def test_scoped_wrapper_works_over_either_backing(platform: Platform) -> None:
     assert scoped.config.get("k") == "v"
     with pytest.raises(CapabilityError):
         _ = scoped.audit
+
+
+async def test_fake_audit_records_production_fields() -> None:
+    # FakePlatform records every audit field so a module's test can assert on
+    # ``fake.audit.writes`` after migrating a stage off its raw INSERT.
+    fake = FakePlatform()
+    await fake.audit.write(
+        "image_style_picked",
+        source="stages.source_featured_image",
+        details={"style": "cyberpunk"},
+        task_id="task-1",
+        severity="info",
+    )
+    assert fake.audit.writes == [
+        {
+            "event_type": "image_style_picked",
+            "source": "stages.source_featured_image",
+            "details": {"style": "cyberpunk"},
+            "task_id": "task-1",
+            "severity": "info",
+        }
+    ]

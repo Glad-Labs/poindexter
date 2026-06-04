@@ -98,10 +98,26 @@ class _FakeMetric:
 
 class _FakeAudit:
     def __init__(self) -> None:
-        self.writes: list[tuple[str, dict[str, Any]]] = []
+        self.writes: list[dict[str, Any]] = []
 
-    async def write(self, event_type: str, /, **details: Any) -> None:
-        self.writes.append((event_type, details))
+    async def write(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
+        self.writes.append(
+            {
+                "event_type": event_type,
+                "source": source,
+                "details": details or {},
+                "task_id": task_id,
+                "severity": severity,
+            }
+        )
 
 
 class FakePlatform:

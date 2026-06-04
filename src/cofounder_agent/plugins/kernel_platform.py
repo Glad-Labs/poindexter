@@ -102,13 +102,32 @@ class _MetricAdapter:
 
 
 class _AuditAdapter:
-    """Forwards the ``audit`` capability to the injected ``audit_log`` writer."""
+    """Forwards the ``audit`` capability to the injected ``audit_log`` writer.
+
+    The injected ``audit_write`` is bound (in the lifespan) to the kernel's
+    ``AuditLogger.log(event_type, source, details, task_id, severity)``, whose
+    signature these keywords map straight onto.
+    """
 
     def __init__(self, audit_write: Callable[..., Awaitable[None]]) -> None:
         self._audit_write = audit_write
 
-    async def write(self, event_type: str, /, **details: Any) -> None:
-        await self._audit_write(event_type, **details)
+    async def write(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
+        await self._audit_write(
+            event_type,
+            source=source,
+            details=details,
+            task_id=task_id,
+            severity=severity,
+        )
 
 
 class KernelPlatform:

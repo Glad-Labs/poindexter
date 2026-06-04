@@ -49,10 +49,26 @@ class _StubDb:
 
 class _StubAudit:
     def __init__(self) -> None:
-        self.rows: list[tuple[str, dict[str, object]]] = []
+        self.rows: list[dict[str, object]] = []
 
-    async def write(self, event_type: str, /, **details: object) -> None:
-        self.rows.append((event_type, details))
+    async def write(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, object] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
+        self.rows.append(
+            {
+                "event_type": event_type,
+                "source": source,
+                "details": details or {},
+                "task_id": task_id,
+                "severity": severity,
+            }
+        )
 
 
 class _StubPlatform:

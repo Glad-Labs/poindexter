@@ -122,9 +122,25 @@ class MetricCapability(Protocol):
 
 @runtime_checkable
 class AuditCapability(Protocol):
-    """Append a scoped ``audit_log`` row (async; DB write)."""
+    """Append a scoped ``audit_log`` row (async; DB write).
 
-    async def write(self, event_type: str, /, **details: Any) -> None: ...
+    Mirrors the columns the ``audit_log`` table + the downstream
+    ``findings_alert_router`` actually read: ``event_type`` + ``source`` (who
+    emitted it) + structured ``details`` + optional ``task_id`` + ``severity``
+    (``info`` / ``warning`` / ``critical``). ``source`` and ``severity`` are
+    load-bearing — alert routing keys on them — so they are first-class
+    parameters, not buried in ``details``.
+    """
+
+    async def write(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None: ...
 
 
 # --- the handle ---------------------------------------------------------------
