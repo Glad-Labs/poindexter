@@ -31,6 +31,9 @@ def _find_repo_root(start: Path) -> Path:
 def _load_sdxl_module():
     if "torch" not in sys.modules:
         torch_stub = types.ModuleType("torch")
+        # __spec__=None causes ValueError in importlib.util.find_spec() (Python 3.12+),
+        # which breaks diffusers' optional-dep check in later tests.
+        torch_stub.__spec__ = importlib.util.spec_from_loader("torch", loader=None)
         torch_stub.float16 = "float16"
         torch_stub.cuda = types.SimpleNamespace(is_available=lambda: False)
         sys.modules["torch"] = torch_stub
