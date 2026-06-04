@@ -198,8 +198,14 @@ def get_cpu_power_metrics():
         lines.append("# TYPE system_cpu_package_power_watts gauge")
         lines.append(f"system_cpu_package_power_watts {pkg_power}")
 
-        # Per-core power dropped to reduce metric series count (Grafana free tier)
-        # Package total is sufficient for monitoring
+        # Per-core power (capture-everything, 2026-06-03): the old "drop to reduce
+        # series count" rationale was the Grafana Cloud free-tier cardinality cap,
+        # retired 2026-05-03. Local Prometheus has no such limit, so expose the
+        # per-core RAPL series too. (core_lines was previously built but discarded.)
+        if core_lines:
+            lines.append("# HELP system_cpu_core_power_watts Per-core power draw (AMD RAPL)")
+            lines.append("# TYPE system_cpu_core_power_watts gauge")
+            lines.extend(core_lines)
 
         return "\n".join(lines) + "\n"
     except Exception as e:
@@ -315,16 +321,14 @@ def get_aida64_metrics():
     seen_metrics = set()
     psu_total_power = None
 
-    # Only export important sensors to stay within Grafana Cloud free tier limits.
-    # Skip: sys sensors (clocks, dates — not useful), most voltages, per-pin GPU power.
-    # Keep: temps, fan RPMs, total power, duty cycles, PSU data.
+    # Capture-everything posture (2026-06-03): the previous filtering existed to
+    # stay under the Grafana Cloud free-tier cardinality cap, retired 2026-05-03.
+    # Local Prometheus has no such limit, so export every numeric sensor except
+    # the literal calendar date/time fields, which aren't telemetry.
     SKIP_SENSORS = {
         "syear", "smonth", "sdayofmonth", "sdow", "sweekofyear",
-        "shour12", "shour24", "smin", "ssec",  # date/time — useless
-        "scpumul",  # CPU multiplier — not needed
+        "shour12", "shour24", "smin", "ssec",  # date/time — not telemetry
     }
-    # Skip per-pin GPU power (6 pins), keep total GPU power
-    SKIP_PREFIXES = ("scc_1_", "vgpu1p", "pgpu1p")  # per-core clocks, per-pin voltage/power
 
     for match in pattern.finditer(raw):
         sensor_type, sensor_id, label, val_str = match.groups()
@@ -337,13 +341,8 @@ def get_aida64_metrics():
         safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", sensor_id).lower()
         safe_label = label.replace('"', '\\"')
 
-        # Skip unimportant sensors
+        # Skip only the literal date/time fields; everything else is captured.
         if sensor_id.lower() in SKIP_SENSORS:
-            continue
-        if any(safe_id.startswith(p) for p in SKIP_PREFIXES):
-            continue
-        # Skip all sys sensors (clocks, utilization — duplicated by nvidia-smi/RAPL)
-        if sensor_type == "sys":
             continue
 
         if sensor_type in type_map:
@@ -497,6 +496,25 @@ def get_hwinfo_metrics():
             lines.append(f"# TYPE {metric_name} gauge")
 
         lines.append(f'{metric_name}{{sensor="{safe_id}",label="{safe_label}"}} {r["value"]}')
+
+    # Canonical wall-power metric for the brain's electricity-cost calc.
+    # HWiNFO reads the Corsair HXi PSU natively (via iCUE). "PSU Power In (est)"
+    # is the AC draw from the wall — what the utility bills — so it's the right
+    # source for $/kWh; fall back to Out / sum if the input estimate is absent.
+    # brain_daemon.log_electricity_cost greps for psu_total_power_watts; without
+    # this it silently falls back to the CPU+GPU+50W software estimate. (HWiNFO is
+    # the canonical PSU source — the AIDA64 path's psu_total_power_watts only fires
+    # if AIDA exposes a Corsair PSU sensor, which it doesn't on this hardware.)
+    _psu_by_label = {
+        r["label"]: r["value"] for r in readings
+        if r["label"] in ("PSU Power In (est)", "PSU Power Out", "PSU Power (sum)")
+    }
+    for _psu_label in ("PSU Power In (est)", "PSU Power Out", "PSU Power (sum)"):
+        if _psu_label in _psu_by_label:
+            lines.append("# HELP psu_total_power_watts Wall power draw from the Corsair HXi PSU (HWiNFO)")
+            lines.append("# TYPE psu_total_power_watts gauge")
+            lines.append(f"psu_total_power_watts {_psu_by_label[_psu_label]}")
+            break
 
     return "\n".join(lines) + "\n" if lines else ""
 
@@ -654,10 +672,29 @@ class MetricsHandler(BaseHTTPRequestHandler):
         pass  # Silence request logging
 
 
-if __name__ == "__main__":
+class _SingletonExporter(ThreadingHTTPServer):
     # ThreadingHTTPServer (issue #319): the prior single-threaded HTTPServer
     # would silently stop accepting connections when a single scrape wedged.
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), MetricsHandler)
-    server.daemon_threads = True
+    #
+    # allow_reuse_address=False (2026-06-03): Python's HTTPServer defaults this
+    # to True -> SO_REUSEADDR, which on Windows lets a SECOND host exporter
+    # silently co-bind 0.0.0.0:9835. Scrapes then round-robin between the two
+    # and a stale instance (old code, no HWiNFO/AIDA sensors) can answer half of
+    # them. With reuse disabled a duplicate launch fails loudly at bind() instead
+    # of stacking, so whatever is running is always the authoritative instance.
+    allow_reuse_address = False
+    daemon_threads = True
+
+
+if __name__ == "__main__":
+    try:
+        server = _SingletonExporter(("0.0.0.0", PORT), MetricsHandler)
+    except OSError as exc:
+        logger.error(
+            "nvidia-smi exporter failed to bind :%d (%s) — another instance is "
+            "already running. Refusing to start a duplicate; exiting.",
+            PORT, exc,
+        )
+        sys.exit(1)
     logger.info("nvidia-smi exporter listening on :%d/metrics", PORT)
     server.serve_forever()

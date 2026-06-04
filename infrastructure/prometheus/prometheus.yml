@@ -29,22 +29,22 @@ scrape_configs:
     static_configs:
       - targets: ["gpu-exporter:9835"]
 
-  # CPU package power — sourced from the host nvidia-smi-exporter.py.
-  # The container above can't read AMD RAPL (Linux can't pull Windows
-  # Energy Meter perfcounters), so the host-side pythonw service is the
-  # authoritative source for system_cpu_package_power_watts. We pull
-  # ONLY the cpu_* metrics here to avoid duplicating the GPU/system
-  # metrics the container already provides (Prometheus would otherwise
-  # see two series with different ``job`` labels and Grafana panels
-  # would draw double lines). The metric_relabel_configs ``keep`` rule
-  # drops everything except the CPU family.
-  - job_name: nvidia-smi-host-cpu
+  # Host hardware sensors — the host-side pythonw nvidia-smi-exporter.py is the
+  # ONLY source for Windows shared-memory sensors (HWiNFO64 + AIDA64) and AMD RAPL
+  # CPU power: the gpu-exporter container above runs the same script on Linux and
+  # can't read any of them. Capture-everything posture (2026-06-03; the Grafana
+  # Cloud free-tier cardinality cap that motivated keep-only-cpu was retired
+  # 2026-05-03): keep the full hwinfo_/aida64_/psu_/system_cpu_ families. We still
+  # DROP the host's nvidia_gpu_* and system_*_power_estimate_* because the container
+  # job already supplies those — keeping both would draw double lines in Grafana
+  # (two series differing only by ``job`` label).
+  - job_name: nvidia-smi-host
     scrape_interval: 30s
     static_configs:
       - targets: ["host.docker.internal:9835"]
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'system_cpu_.*'
+        regex: 'hwinfo_.*|aida64_.*|psu_.*|system_cpu_.*'
         action: keep
 
   # Canonical worker metrics — exposition produced via prometheus_client.
