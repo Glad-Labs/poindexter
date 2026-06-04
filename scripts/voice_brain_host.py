@@ -39,6 +39,9 @@ Env:
                          container via host.docker.internal)
     VOICE_BRAIN_CLAUDE  (default: resolved from PATH) claude binary/path
     VOICE_BRAIN_TIMEOUT (default 120) per-turn subprocess timeout, seconds
+    VOICE_BRAIN_LOG     (optional) file to mirror logs to — set by the
+                         persistence launcher since the hidden ``pythonw``
+                         daemon has no console/stderr. No token is ever logged.
 """
 
 from __future__ import annotations
@@ -77,8 +80,20 @@ class _Config:
     """Validated daemon config, loaded once at startup (fail-loud)."""
 
     def __init__(self) -> None:
+        # Token: env wins; otherwise read ``~/.poindexter/voice_brain_token``.
+        # The file fallback lets the persistence launcher keep the secret OUT
+        # of the scheduled-task definition / registry / process env — the task
+        # just runs the daemon and it picks the token up from the operator's
+        # local state dir (same trust boundary as bootstrap.toml).
         self.token = os.environ.get("VOICE_BRAIN_TOKEN", "").strip()
+        if not self.token:
+            self.token = self._read_token_file()
+        # CWD: env wins; otherwise default to the repo root (this file lives at
+        # ``<repo>/scripts/voice_brain_host.py``), so a bare ``pythonw
+        # voice_brain_host.py`` from the scheduled task needs no env wiring.
         self.cwd = os.environ.get("VOICE_BRAIN_CWD", "").strip()
+        if not self.cwd:
+            self.cwd = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.port = int(os.environ.get("VOICE_BRAIN_PORT", "8123"))
         self.bind = os.environ.get("VOICE_BRAIN_BIND", "0.0.0.0").strip()
         self.timeout = float(os.environ.get("VOICE_BRAIN_TIMEOUT", "120"))
@@ -104,6 +119,20 @@ class _Config:
             for p in problems:
                 logger.error("config error: %s", p)
             sys.exit(2)
+
+    @staticmethod
+    def _read_token_file() -> str:
+        """Read the bearer token from ``~/.poindexter/voice_brain_token``.
+
+        Returns ``""`` if the file is absent/unreadable — the caller's
+        fail-loud length check then reports the missing-token problem.
+        """
+        path = os.path.join(_default_poindexter_dir(), "voice_brain_token")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return fh.read().strip()
+        except OSError:
+            return ""
 
     def exec_prefix(self) -> list[str]:
         """Base argv prefix for invoking claude.
@@ -241,8 +270,53 @@ class _Handler(BaseHTTPRequestHandler):
         logger.info("%s - %s", self.address_string(), fmt % args)
 
 
+def _default_poindexter_dir() -> str:
+    """``~/.poindexter`` — the operator's local state dir (no hardcoded path)."""
+    return os.path.join(os.path.expanduser("~"), ".poindexter")
+
+
+def _attach_file_log() -> None:
+    """Mirror logs to a file when run windowless (or when explicitly asked).
+
+    The persistence launcher (`scripts/voice-brain-host.ps1`) runs this daemon
+    under ``pythonw`` so it has NO console window (per the hidden-background-job
+    policy) — which means stderr (where ``basicConfig`` sends logs) is
+    discarded. Resolution:
+
+      1. ``VOICE_BRAIN_LOG`` (explicit) — always honoured.
+      2. else if there is no usable stderr (``pythonw`` sets ``sys.stderr`` to
+         ``None``) — default to ``~/.poindexter/voice_brain_host.log`` so the
+         hidden daemon is never silently logless.
+      3. else (interactive ``python``) — stderr only, no file.
+
+    The token is never logged, so the file carries no secret.
+    """
+    path = os.environ.get("VOICE_BRAIN_LOG", "").strip()
+    if not path and sys.stderr is None:
+        path = os.path.join(_default_poindexter_dir(), "voice_brain_host.log")
+    if not path:
+        return
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [voice-brain-host] %(levelname)s %(message)s",
+            ),
+        )
+        logging.getLogger().addHandler(handler)
+        logger.info("file logging enabled -> %s", path)
+    except OSError as e:
+        # A bad log path must not take the daemon down — it still serves and
+        # logs to stderr (visible when run interactively).
+        logger.warning("could not open VOICE_BRAIN_LOG=%r: %s", path, e)
+
+
 def main() -> int:
     global CFG
+    _attach_file_log()
     CFG = _Config()
     httpd = ThreadingHTTPServer((CFG.bind, CFG.port), _Handler)
     logger.info(

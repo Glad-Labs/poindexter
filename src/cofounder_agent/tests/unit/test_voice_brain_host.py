@@ -155,3 +155,103 @@ def test_healthz_open_no_token(server):
     base, _ = server
     with urllib.request.urlopen(f"{base}/healthz", timeout=5) as r:
         assert r.status == 200 and json.loads(r.read())["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Self-configuring defaults (#1006 persistence) — token-file fallback, repo-root
+# cwd default, and windowless file logging. These let the scheduled task run a
+# bare `pythonw voice_brain_host.py` with NO secret/path in its definition.
+# ---------------------------------------------------------------------------
+
+
+import logging  # noqa: E402
+import os  # noqa: E402
+
+
+def test_config_reads_token_from_file_when_env_absent(monkeypatch, tmp_path):
+    """No VOICE_BRAIN_TOKEN env -> read ~/.poindexter/voice_brain_token."""
+    monkeypatch.delenv("VOICE_BRAIN_TOKEN", raising=False)
+    monkeypatch.setenv("VOICE_BRAIN_CWD", str(tmp_path))
+    monkeypatch.setenv("VOICE_BRAIN_CLAUDE", sys.executable)
+    monkeypatch.setattr(vbh, "_default_poindexter_dir", lambda: str(tmp_path))
+    (tmp_path / "voice_brain_token").write_text("file-token-" + "x" * 20, encoding="utf-8")
+
+    cfg = vbh._Config()
+    assert cfg.token == "file-token-" + "x" * 20
+
+
+def test_config_env_token_wins_over_file(monkeypatch, tmp_path):
+    """Explicit env token takes precedence over the file fallback."""
+    monkeypatch.setenv("VOICE_BRAIN_TOKEN", "env-token-" + "y" * 20)
+    monkeypatch.setenv("VOICE_BRAIN_CWD", str(tmp_path))
+    monkeypatch.setenv("VOICE_BRAIN_CLAUDE", sys.executable)
+    monkeypatch.setattr(vbh, "_default_poindexter_dir", lambda: str(tmp_path))
+    (tmp_path / "voice_brain_token").write_text("file-token-should-lose", encoding="utf-8")
+
+    cfg = vbh._Config()
+    assert cfg.token == "env-token-" + "y" * 20
+
+
+def test_config_defaults_cwd_to_repo_root(monkeypatch):
+    """No VOICE_BRAIN_CWD -> default to the repo root holding scripts/."""
+    monkeypatch.setenv("VOICE_BRAIN_TOKEN", "t" * 32)
+    monkeypatch.delenv("VOICE_BRAIN_CWD", raising=False)
+    monkeypatch.setenv("VOICE_BRAIN_CLAUDE", sys.executable)
+
+    cfg = vbh._Config()
+    # The default must be an existing dir that actually contains the daemon.
+    assert os.path.isdir(cfg.cwd)
+    assert os.path.exists(os.path.join(cfg.cwd, "scripts", "voice_brain_host.py"))
+
+
+def _strip_added_file_handlers(before):
+    """Remove + close any FileHandler _attach_file_log added (Windows holds the
+    file open, which would block tmp cleanup and leak into later tests)."""
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        if h not in before and isinstance(h, logging.FileHandler):
+            root.removeHandler(h)
+            h.close()
+
+
+def test_attach_file_log_writes_to_explicit_path(monkeypatch, tmp_path):
+    """VOICE_BRAIN_LOG -> logs land in that file."""
+    log_path = tmp_path / "vbh.log"
+    monkeypatch.setenv("VOICE_BRAIN_LOG", str(log_path))
+    before = list(logging.getLogger().handlers)
+    try:
+        vbh._attach_file_log()
+        vbh.logger.info("hello-from-test")
+        for h in logging.getLogger().handlers:
+            h.flush()
+        assert log_path.exists()
+        assert "hello-from-test" in log_path.read_text(encoding="utf-8")
+    finally:
+        _strip_added_file_handlers(before)
+
+
+def test_attach_file_log_defaults_when_no_stderr(monkeypatch, tmp_path):
+    """pythonw (sys.stderr is None) + no VOICE_BRAIN_LOG -> default log file."""
+    monkeypatch.delenv("VOICE_BRAIN_LOG", raising=False)
+    monkeypatch.setattr(sys, "stderr", None)
+    monkeypatch.setattr(vbh, "_default_poindexter_dir", lambda: str(tmp_path))
+    before = list(logging.getLogger().handlers)
+    try:
+        vbh._attach_file_log()
+        assert (tmp_path / "voice_brain_host.log").exists()
+    finally:
+        _strip_added_file_handlers(before)
+
+
+def test_attach_file_log_noop_with_stderr_and_no_env(monkeypatch, tmp_path):
+    """Interactive python (real stderr) + no env -> no file handler added."""
+    monkeypatch.delenv("VOICE_BRAIN_LOG", raising=False)
+    monkeypatch.setattr(vbh, "_default_poindexter_dir", lambda: str(tmp_path))
+    before = list(logging.getLogger().handlers)
+    try:
+        # sys.stderr is the real stream here (pytest capture), not None.
+        vbh._attach_file_log()
+        added = [h for h in logging.getLogger().handlers if h not in before]
+        assert added == []
+    finally:
+        _strip_added_file_handlers(before)
