@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from utils.edge_challenge import is_edge_challenge
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class CheckPublishedLinksJob:
         site_domain = sc.get("site_domain", "localhost") if sc is not None else "localhost"
 
         broken: list[dict[str, Any]] = []
+        edge_challenged = 0
         checked = 0
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0),
@@ -81,6 +83,12 @@ class CheckPublishedLinksJob:
                     try:
                         resp = await client.head(url, timeout=8)
                         if resp.status_code >= 400:
+                            if is_edge_challenge(resp):
+                                # The destination's CDN (Cloudflare) challenged
+                                # our automated HEAD — the link works for real
+                                # users, so it's NOT broken. Skip it (don't file).
+                                edge_challenged += 1
+                                continue
                             broken.append({
                                 "post": (row["title"] or "")[:40],
                                 "url": url,
@@ -110,11 +118,18 @@ class CheckPublishedLinksJob:
                 extra={"broken_count": len(broken), "checked_count": checked},
             )
 
-        detail = f"checked {checked} URL(s) across {len(rows)} post(s), {len(broken)} broken"
+        detail = (
+            f"checked {checked} URL(s) across {len(rows)} post(s), "
+            f"{len(broken)} broken, {edge_challenged} edge-challenged (skipped)"
+        )
         logger.info("CheckPublishedLinksJob: %s", detail)
         return JobResult(
             ok=True,
             detail=detail,
             changes_made=len(broken),
-            metrics={"urls_checked": checked, "urls_broken": len(broken)},
+            metrics={
+                "urls_checked": checked,
+                "urls_broken": len(broken),
+                "urls_edge_challenged": edge_challenged,
+            },
         )

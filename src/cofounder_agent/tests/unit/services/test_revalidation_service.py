@@ -80,11 +80,14 @@ def _build_site_config(*, secret: str = "shh", url: str | None = None) -> MagicM
     return cfg
 
 
-def _build_httpx_client(status_code: int = 200, text: str = "ok"):
+def _build_httpx_client(status_code: int = 200, text: str = "ok", headers: dict | None = None):
     """Build an httpx.AsyncClient context-manager mock."""
     response = MagicMock()
     response.status_code = status_code
     response.text = text
+    # Real dict (not an auto-MagicMock) so is_edge_challenge's header probe
+    # is deterministic.
+    response.headers = headers or {}
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=None)
@@ -515,6 +518,31 @@ class TestTriggerNextjsRevalidationDetailed:
         assert result.status_code == 401
         assert result.error_kind == "http"
         assert "Unauthorized" in result.error
+
+    @pytest.mark.asyncio
+    async def test_edge_challenge_tagged_distinctly(self):
+        """A Cloudflare bot-challenge (403 + cf-mitigated) is tagged
+        'edge_challenge', not 'http' — it's an edge block (the cause of the
+        2026-06-04 stale-ISR incident), not a Next.js handler failure."""
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(
+            403, text="<title>Just a moment...</title>",
+            headers={"cf-mitigated": "challenge", "server": "cloudflare"},
+        )
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert result.success is False
+        assert result.status_code == 403
+        assert result.error_kind == "edge_challenge"
+
+    @pytest.mark.asyncio
+    async def test_plain_403_without_cf_header_is_http(self):
+        """A 403 lacking cf-mitigated stays 'http' (genuine upstream auth fail)."""
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(403, text="Forbidden", headers={"server": "vercel"})
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert result.error_kind == "http"
 
     @pytest.mark.asyncio
     async def test_timeout_tagged_as_timeout(self):

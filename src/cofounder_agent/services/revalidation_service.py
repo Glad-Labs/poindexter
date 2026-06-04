@@ -55,6 +55,7 @@ import httpx
 from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.edge_challenge import is_edge_challenge
 
 logger = get_logger(__name__)
 
@@ -170,7 +171,7 @@ class RevalidationResult:
     skipped: bool  # True when the secret was unset and the POST was never attempted.
     status_code: int | None  # Upstream HTTP status, or None when the request never landed.
     error: str  # Truncated upstream body, exception class+message, or skip reason. "" on success.
-    error_kind: str  # Categorical tag: '', 'skipped', 'timeout', 'http', 'exception'.
+    error_kind: str  # Categorical tag: '', 'skipped', 'timeout', 'http', 'edge_challenge', 'exception'.
     duration_ms: int
     url: str  # The fully resolved revalidate URL we POSTed against.
 
@@ -236,23 +237,47 @@ async def _post_revalidate(
             )
 
         body_excerpt = response.text[:500]
-        logger.warning(
-            "[revalidation] ISR revalidation returned %s in %dms: %s",
-            response.status_code, duration_ms, body_excerpt[:200],
-            extra={
-                "revalidate_url": revalidate_url,
-                "status_code": response.status_code,
-                "duration_ms": duration_ms,
-                "paths": paths,
-                "tags": tags,
-            },
-        )
+        # A CDN bot-challenge (Cloudflare `cf-mitigated`) is distinct from a
+        # genuine upstream 4xx/5xx: the edge blocked the POST, so publishes
+        # silently stop busting the ISR cache (the 2026-06-04 Bot-Fight-Mode
+        # stale-content incident). Tag it so the operator-facing route /
+        # monitoring can point at the edge, not the Next.js handler.
+        if is_edge_challenge(response):
+            logger.warning(
+                "[revalidation] ISR revalidation BLOCKED by a CDN bot-challenge "
+                "(HTTP %s, cf-mitigated) in %dms — publishes are NOT busting the "
+                "ISR cache (stale-content risk). Disable Bot Fight Mode / "
+                "allowlist the worker egress IP at Cloudflare. url=%s",
+                response.status_code, duration_ms, revalidate_url,
+                extra={
+                    "revalidate_url": revalidate_url,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "paths": paths,
+                    "tags": tags,
+                    "error_kind": "edge_challenge",
+                },
+            )
+            error_kind = "edge_challenge"
+        else:
+            logger.warning(
+                "[revalidation] ISR revalidation returned %s in %dms: %s",
+                response.status_code, duration_ms, body_excerpt[:200],
+                extra={
+                    "revalidate_url": revalidate_url,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "paths": paths,
+                    "tags": tags,
+                },
+            )
+            error_kind = "http"
         return RevalidationResult(
             success=False,
             skipped=False,
             status_code=response.status_code,
             error=body_excerpt,
-            error_kind="http",
+            error_kind=error_kind,
             duration_ms=duration_ms,
             url=revalidate_url,
         )

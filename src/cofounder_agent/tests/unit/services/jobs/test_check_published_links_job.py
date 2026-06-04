@@ -29,20 +29,23 @@ def _make_pool(rows: list[dict]) -> Any:
 
 
 class _FakeHeadResponse:
-    def __init__(self, status_code: int = 200):
+    def __init__(self, status_code: int = 200, headers: dict | None = None):
         self.status_code = status_code
+        self.headers = headers or {}
 
 
 def _patched_httpx_client(head_responses: dict[str, Any]):
     """Return a context manager that yields a mock httpx client.
 
-    ``head_responses`` maps URL → either an int (status_code) or an
-    Exception (to raise from head()).
+    ``head_responses`` maps URL → an int (status_code), a
+    ``_FakeHeadResponse`` (to control headers), or an Exception (to raise).
     """
     async def _head(url: str, timeout: float = 8) -> _FakeHeadResponse:
         resp = head_responses.get(url, 200)
         if isinstance(resp, Exception):
             raise resp
+        if isinstance(resp, _FakeHeadResponse):
+            return resp
         return _FakeHeadResponse(status_code=resp)
 
     client = MagicMock()
@@ -109,6 +112,32 @@ class TestRun:
         assert result.ok is True
         assert result.changes_made == 1
         assert result.metrics["urls_broken"] == 1
+
+    @pytest.mark.asyncio
+    async def test_edge_challenge_not_counted_as_broken(self):
+        """A destination behind Cloudflare that challenges our HEAD
+        (403 + cf-mitigated) is reachable to real users — not a broken link."""
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "cf-site: https://cf.example"},
+        ])
+        client = _patched_httpx_client({
+            "https://cf.example": _FakeHeadResponse(403, {"cf-mitigated": "challenge"}),
+        })
+        finds = MagicMock()
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.check_published_links.emit_finding", new=finds,
+        ):
+            job = CheckPublishedLinksJob()
+            result = await job.run(pool, {})
+
+        assert result.metrics["urls_broken"] == 0
+        assert result.metrics["urls_edge_challenged"] == 1
+        assert result.changes_made == 0
+        # No broken-link finding should be filed for a CDN challenge.
+        finds.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_httpx_error_counts_as_unreachable(self):

@@ -49,30 +49,10 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from utils.edge_challenge import is_edge_challenge
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
-
-
-def _is_edge_challenge(resp: Any) -> bool:
-    """True when a non-200 is a CDN bot-challenge, not a content outage.
-
-    Cloudflare's Managed Challenge / Bot Fight Mode answers clients it
-    classifies as automated with HTTP 403/429/503 plus a ``cf-mitigated``
-    header (body: "Just a moment..."). That means the EDGE blocked our
-    monitor's request — the post itself is still reachable to a real
-    browser, which solves the challenge and gets 200. Treating it as a
-    content outage produces false "post not reachable" critical pages.
-
-    Keyed on the ``cf-mitigated`` header because it's the unambiguous
-    "Cloudflare challenged this request" signal — a plain origin 403
-    proxied through Cloudflare does NOT carry it, so genuine 403s still
-    surface as real failures.
-    """
-    if resp.status_code not in (403, 429, 503):
-        return False
-    headers = getattr(resp, "headers", None) or {}
-    return bool(headers.get("cf-mitigated"))
 
 
 class VerifyPublishedPostsJob:
@@ -130,7 +110,7 @@ class VerifyPublishedPostsJob:
                     resp = await client.get(url, timeout=10)
                     if resp.status_code == 200:
                         verified += 1
-                    elif _is_edge_challenge(resp):
+                    elif is_edge_challenge(resp):
                         # CDN bot-challenge — NOT a content outage. Real
                         # readers still reach the post; only our automated
                         # request was blocked. Tracked separately so it
