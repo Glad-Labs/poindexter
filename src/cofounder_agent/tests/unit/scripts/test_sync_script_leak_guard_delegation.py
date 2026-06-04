@@ -94,3 +94,64 @@ def test_sync_script_keeps_post_rewrite_internal_repo_check() -> None:
         "Expected the post-rewrite check to use the INTERNAL_REPO_HITS "
         "shell variable. If you renamed it, update this test."
     )
+
+
+def test_sync_rewrite_delegates_text_detection_to_guard() -> None:
+    """The cosmetic-rewrite pass must reuse the guard's ``_is_text_file``.
+
+    Root cause of the 2026-06-04 sync abort: the rewrite kept its OWN
+    inline ``text_exts`` set that had drifted from the guard's
+    ``_TEXT_EXTS`` — it lacked ``.ps1``, so voice-brain-host.ps1's
+    internal-repo doc-comment link (Glad-Labs/glad-labs-stack#1006) was
+    never normalized and tripped the post-rewrite belt-and-suspenders
+    check. Sharing one predicate makes the rewrite's coverage track the
+    guard's scan set automatically — the same single-source-of-truth move
+    that killed the LEAK_PATTERNS/allowlist drift.
+    """
+    text = _read_sync_script()
+    assert "from check_public_mirror_safety import _is_text_file" in text, (
+        "scripts/sync-to-github.sh's cosmetic-rewrite pass must import "
+        "_is_text_file from the leak guard (single source of truth for "
+        "'rewritable text file'), not re-declare an extension allowlist."
+    )
+    assert "text_exts = {" not in text, (
+        "The rewrite must not keep its own inline `text_exts` set — that "
+        "list drifted from the guard's _TEXT_EXTS and leaked a .ps1 file. "
+        "Delegate to the shared _is_text_file predicate instead."
+    )
+
+
+def test_sync_rewrite_preserves_line_endings() -> None:
+    """The cosmetic rewrite must use byte-level IO so CRLF files survive.
+
+    ``.ps1`` / ``.cmd`` / ``.bat`` are ``eol=crlf`` per .gitattributes.
+    The old text-mode write forced ``newline="\\n"``, which would convert
+    them to LF the moment the rewrite touched one — corrupting the file
+    and desyncing the mirror blob from the eol attribute. A raw
+    ``read_bytes`` / ``replace`` / ``write_bytes`` leaves endings intact.
+    """
+    text = _read_sync_script()
+    assert "read_bytes()" in text and "write_bytes(" in text, (
+        "scripts/sync-to-github.sh's cosmetic-rewrite pass must do a "
+        "byte-level substitution (read_bytes/write_bytes) so it can "
+        "safely rewrite CRLF files (.ps1 etc.) without normalizing their "
+        "line endings to LF."
+    )
+
+
+def test_guard_text_predicate_covers_powershell() -> None:
+    """PowerShell scripts must stay a recognized rewritable text type.
+
+    ``.ps1`` files ship to the public mirror (e.g. voice-brain-host.ps1,
+    which documents itself as public-safe) and can carry internal-repo
+    links in doc comments. Now that the rewrite delegates to the guard's
+    predicate, dropping ``.ps1`` from the guard's text set would silently
+    stop normalizing those links and re-open the leak.
+    """
+    import sys
+
+    sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
+    from check_public_mirror_safety import _TEXT_EXTS, _is_text_file
+
+    assert ".ps1" in _TEXT_EXTS
+    assert _is_text_file("scripts/voice-brain-host.ps1") is True

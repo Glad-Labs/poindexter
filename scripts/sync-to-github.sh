@@ -213,29 +213,42 @@ git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2
 # behavior.
 
 python3 - <<'PYSUB'
-import pathlib, subprocess
+import pathlib, subprocess, sys
+
+# "Is this a rewritable text file?" is delegated to the leak guard's
+# canonical ``_is_text_file`` predicate (scripts/ci/check_public_mirror_safety.py)
+# rather than a second inline extension list. The guard SCANS a file set;
+# the rewrite must NORMALIZE the same set — keeping two hand-maintained
+# lists is exactly the drift class that already took the sync down once
+# (the LEAK_PATTERNS/allowlist consolidation, 2026-05-27). It drifted
+# again on the extension axis: ``.ps1`` was in the guard's _TEXT_EXTS but
+# NOT this rewrite's old inline allowlist, so voice-brain-host.ps1's
+# internal-repo doc-comment link sailed past the rewrite and tripped the
+# post-rewrite belt-and-suspenders check below. One predicate, no drift.
+sys.path.insert(0, "scripts/ci")
+from check_public_mirror_safety import _is_text_file
+
+OLD = b"Glad-Labs/glad-labs-stack"
+NEW = b"Glad-Labs/poindexter"
+
 tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
 changed = 0
 for rel in tracked:
     p = pathlib.Path(rel)
     if not p.is_file():
         continue
-    # Skip binary types — only rewrite text we know we wrote.
-    # Allowlist: known text extensions PLUS Dockerfile* and dotfiles
-    # (.gitignore, .githooks/*) which don't have a regular suffix.
-    text_exts = {".py", ".md", ".json", ".yml", ".yaml", ".toml", ".sh", ".sql", ".txt", ".cfg", ".ini"}
-    name = p.name
-    is_dockerfile = name.startswith("Dockerfile")
-    is_dotfile = name.startswith(".") and "." not in name[1:]  # .gitignore etc.
-    if p.suffix.lower() not in text_exts and not is_dockerfile and not is_dotfile:
+    if not _is_text_file(rel):
         continue
-    try:
-        txt = p.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        continue
-    new = txt.replace("Glad-Labs/glad-labs-stack", "Glad-Labs/poindexter")
-    if new != txt:
-        p.write_text(new, encoding="utf-8", newline="\n")
+    # Byte-level substitution so line endings are preserved verbatim. The
+    # previous text-mode write forced newline="\n", which would silently
+    # convert CRLF files (.ps1/.cmd/.bat are eol=crlf per .gitattributes)
+    # to LF on rewrite — the real reason .ps1 had been excluded from the
+    # old inline allowlist. The literal never spans a line boundary, so a
+    # raw bytes .replace() is safe and ending-agnostic.
+    raw = p.read_bytes()
+    new = raw.replace(OLD, NEW)
+    if new != raw:
+        p.write_bytes(new)
         subprocess.run(["git", "add", rel], check=False)
         changed += 1
 print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files")
