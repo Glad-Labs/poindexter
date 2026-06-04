@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## [0.71.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.8...v0.71.0) (2026-06-04)
+
+
+### Features
+
+* **brain:** fall back to iCUE PSU tap when HWiNFO drops + graduated watchdog ([48f0906](https://github.com/Glad-Labs/glad-labs-stack/commit/48f0906e2e95289d1c9e64ad8ab55ae1293970ab))
+* **brain:** iCUE corsair_csv feed-freshness watchdog ([#868](https://github.com/Glad-Labs/glad-labs-stack/issues/868)) + fix brain Dockerfile to ship psu_power/corsair_feed_probe (latent crashloop) ([1e38558](https://github.com/Glad-Labs/glad-labs-stack/commit/1e385586679f098eef01f3ed2d2dd2cb03f73e5f))
+* **edge:** shared CDN bot-challenge guard across verify / check_links / revalidation ([#1096](https://github.com/Glad-Labs/glad-labs-stack/issues/1096)) ([95d825b](https://github.com/Glad-Labs/glad-labs-stack/commit/95d825b08b124ebb151fa9d239f3d54655d8d693))
+* **grafana:** add HWiNFO/AIDA64 sensor panels (temps/fans/per-core power/PSU/voltages) to Hardware & Power board ([d32a832](https://github.com/Glad-Labs/glad-labs-stack/commit/d32a832efda3aaf8eb44c590e333763a78378bfa))
+* **modules:** Module v1 Phase 5 — presence-based visibility sync ([#1109](https://github.com/Glad-Labs/glad-labs-stack/issues/1109)) ([0eed6dc](https://github.com/Glad-Labs/glad-labs-stack/commit/0eed6dc7dd9f9639d831c569613f87d3fc5c3610))
+* **qa:** reimplement guardrails rails natively, drop guardrails-ai dep ([#996](https://github.com/Glad-Labs/glad-labs-stack/issues/996)) ([#1079](https://github.com/Glad-Labs/glad-labs-stack/issues/1079)) ([c1b7db3](https://github.com/Glad-Labs/glad-labs-stack/commit/c1b7db3cf6940d06a12083a2167197dd52faafbf))
+* **voice:** /voice/join?room= routing for the two-room split ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1097](https://github.com/Glad-Labs/glad-labs-stack/issues/1097)) ([81debaf](https://github.com/Glad-Labs/glad-labs-stack/commit/81debaf9c938ec227b0b50f1caef31e1dbedf63f))
+* **voice:** claude-code room container + DB-driven service profiles ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1098](https://github.com/Glad-Labs/glad-labs-stack/issues/1098)) ([9c27bec](https://github.com/Glad-Labs/glad-labs-stack/commit/9c27bec81bc0e60e048c8ccdb4e8bf13e7c06157))
+* **voice:** DB-driven pinned + auto-resetting claude-code voice session ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1085](https://github.com/Glad-Labs/glad-labs-stack/issues/1085)) ([26eca42](https://github.com/Glad-Labs/glad-labs-stack/commit/26eca42d57834b84a2d387a05d235ef1b2e14035))
+* **voice:** deprecate in-container claude-code mode; host-brain is the path ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1102](https://github.com/Glad-Labs/glad-labs-stack/issues/1102)) ([d19e42d](https://github.com/Glad-Labs/glad-labs-stack/commit/d19e42da85afe9d0dda2b623c7deb20cbde679ae))
+* **voice:** durable host-brain daemon — hidden self-restarting task ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1101](https://github.com/Glad-Labs/glad-labs-stack/issues/1101)) ([3a6026c](https://github.com/Glad-Labs/glad-labs-stack/commit/3a6026cb4c83fcfa5400fe04adba80ac82319981))
+* **voice:** host-side brain — full dev-on-the-go for the voice room ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1093](https://github.com/Glad-Labs/glad-labs-stack/issues/1093)) ([080333b](https://github.com/Glad-Labs/glad-labs-stack/commit/080333be1ada398419c75dab3892297b96f594ba))
+* **voice:** move the claude-code voice transcript from Telegram to Discord ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1108](https://github.com/Glad-Labs/glad-labs-stack/issues/1108)) ([88a2b13](https://github.com/Glad-Labs/glad-labs-stack/commit/88a2b13c20c3b9af97ae9bedce3ad681d97aeb90))
+* **voice:** per-room TTS voice override for the claude-code room ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1107](https://github.com/Glad-Labs/glad-labs-stack/issues/1107)) ([2781420](https://github.com/Glad-Labs/glad-labs-stack/commit/27814201fbd2b63bb45eb9af1625ec515ae9c4e1))
+* **voice:** read LiveKit key/secret from app_settings, env fallback ([#1000](https://github.com/Glad-Labs/glad-labs-stack/issues/1000)) ([#1103](https://github.com/Glad-Labs/glad-labs-stack/issues/1103)) ([38670ca](https://github.com/Glad-Labs/glad-labs-stack/commit/38670ca3475ca0d623ffd76cd433dae46e9bc7ce))
+* **web:** time-based ISR backstop (1h) on canonical index routes ([#1100](https://github.com/Glad-Labs/glad-labs-stack/issues/1100)) ([f3b4c7e](https://github.com/Glad-Labs/glad-labs-stack/commit/f3b4c7e7011ae6d155345322d73cdbb4d057e737))
+
+
+### Bug Fixes
+
+* **analytics:** CF AE query must ORDER BY the alias, not the raw timestamp col ([#1074](https://github.com/Glad-Labs/glad-labs-stack/issues/1074)) ([8d44a9a](https://github.com/Glad-Labs/glad-labs-stack/commit/8d44a9a1753951c5828736d0d8bcbc25c757ab58))
+* **analytics:** point the page-views beacon + sync at the analytics_events AE dataset ([366473e](https://github.com/Glad-Labs/glad-labs-stack/commit/366473e7b55957b19c853b6ea8617cee9e1679e5))
+* **analytics:** reset page_views.id sequence past max(id) (poindexter[#555](https://github.com/Glad-Labs/glad-labs-stack/issues/555)) ([#1076](https://github.com/Glad-Labs/glad-labs-stack/issues/1076)) ([f105861](https://github.com/Glad-Labs/glad-labs-stack/commit/f105861534399e38c7f8e4f23cd49993cde467ee))
+* **brain:** widen iCUE PSU fallback window to 90m to match hourly tap cadence ([1bcdbbf](https://github.com/Glad-Labs/glad-labs-stack/commit/1bcdbbf1877e64e4353dd8ebe442e196a5a9b87b))
+* **ci:** green the public mirror — strip playwright-e2e, make repo-scrub substitution-proof ([#1084](https://github.com/Glad-Labs/glad-labs-stack/issues/1084)) ([711ecd0](https://github.com/Glad-Labs/glad-labs-stack/commit/711ecd08505ff99926d74a42164ef4bbae5b4cc0))
+* **ci:** tolerate pytest exit-5 on the modules step (empty on the public mirror) ([#1086](https://github.com/Glad-Labs/glad-labs-stack/issues/1086)) ([e297d39](https://github.com/Glad-Labs/glad-labs-stack/commit/e297d39e5491cc29a888dd08a42cbe12b1111074))
+* **deps:** bump aiohttp to 3.14.0 (untrusted-data deserialization CVE) ([#1091](https://github.com/Glad-Labs/glad-labs-stack/issues/1091)) ([e7ce9f8](https://github.com/Glad-Labs/glad-labs-stack/commit/e7ce9f84889c3e1463048b292af9cf258eb7bde6))
+* **exporter:** stop :9835 port stacking + capture full HWiNFO/AIDA sensors ([e796fd7](https://github.com/Glad-Labs/glad-labs-stack/commit/e796fd7e05190481e155d4874c2fcf03b4d1873a))
+* **publish:** ISR-revalidate on the promote-existing-approved path ([#1099](https://github.com/Glad-Labs/glad-labs-stack/issues/1099)) ([0eab834](https://github.com/Glad-Labs/glad-labs-stack/commit/0eab8344a4d4b086e46c0e7b3da0cbd1cb89c9c8))
+* **sdxl:** self-heal degraded state so a Postgres boot race can't latch forever ([#1110](https://github.com/Glad-Labs/glad-labs-stack/issues/1110)) ([33e2173](https://github.com/Glad-Labs/glad-labs-stack/commit/33e217388d11bd2f9034458f9ea0d3f9b5c0c884))
+* **tests:** set torch stub __spec__ to prevent find_spec ValueError cascade ([#1116](https://github.com/Glad-Labs/glad-labs-stack/issues/1116)) ([2382ad5](https://github.com/Glad-Labs/glad-labs-stack/commit/2382ad5acee395c4ea3d348edd6415d4bc51bbc2))
+* **verify:** don't page critical on a Cloudflare bot-challenge (edge ≠ outage) ([#1094](https://github.com/Glad-Labs/glad-labs-stack/issues/1094)) ([bb4051e](https://github.com/Glad-Labs/glad-labs-stack/commit/bb4051e4ef884d5ef964c2b357a57d7a31171599))
+* **voice:** create pinned session on --resume "no conversation found" ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1090](https://github.com/Glad-Labs/glad-labs-stack/issues/1090)) ([89e704f](https://github.com/Glad-Labs/glad-labs-stack/commit/89e704fa1327f86f0e27c682a8168afcba645b96))
+* **voice:** resilient brain-mode + secrets in lean image; drop legacy key ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1095](https://github.com/Glad-Labs/glad-labs-stack/issues/1095)) ([01546b3](https://github.com/Glad-Labs/glad-labs-stack/commit/01546b3a888fa01a5301fabec0d19f35211fa154))
+
 ## [0.70.8](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.7...v0.70.8) (2026-06-03)
 
 
