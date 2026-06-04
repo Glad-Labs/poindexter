@@ -359,9 +359,12 @@ async def test_run_service_uses_defaults_when_settings_absent(
 # `_resolve_brain_mode` is the seam between the "set it at process start"
 # pre-#383 era and the "flip it mid-shift" Half B world. The MCP
 # ``start_voice_call`` tool writes ``voice_agent_brain_mode``; the next
-# pipeline build reads it through this function. Validation here is
-# load-bearing: a typo in the setting must SystemExit instead of
-# silently falling through to ollama (per feedback_no_silent_defaults).
+# pipeline build reads it through this function. Validation is split by
+# source: an invalid *override* (a caller bug) raises SystemExit, but an
+# invalid *setting* (an operator typo) logs loudly and falls back to the
+# default — a fat-fingered app_settings value must never crash-loop the
+# always-on voice line (one did on 2026-06-04). The legacy
+# ``voice_agent_brain`` fallback key was retired.
 # ---------------------------------------------------------------------------
 
 
@@ -374,21 +377,26 @@ def test_resolve_brain_mode_uses_override_when_provided():
     )
 
 
-def test_resolve_brain_mode_prefers_new_key_over_legacy():
-    """voice_agent_brain_mode (new) beats voice_agent_brain (legacy)."""
+def test_resolve_brain_mode_uses_canonical_key():
+    """voice_agent_brain_mode is the canonical key; the retired legacy
+    voice_agent_brain is ignored even when present."""
     cfg = _FakeSiteConfig(
         {
             "voice_agent_brain_mode": "claude-code",
-            "voice_agent_brain": "ollama",
+            "voice_agent_brain": "ollama",  # retired — must be ignored
         },
     )
     assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "claude-code"
 
 
-def test_resolve_brain_mode_falls_back_to_legacy_key():
-    """No new key, but legacy ``voice_agent_brain`` set -> use legacy."""
+def test_resolve_brain_mode_ignores_retired_legacy_key():
+    """With ONLY the retired ``voice_agent_brain`` set (no canonical key),
+    resolution falls back to the default — the legacy key is no longer read."""
     cfg = _FakeSiteConfig({"voice_agent_brain": "claude-code"})
-    assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "claude-code"
+    assert (
+        voice_agent_livekit._resolve_brain_mode(cfg, None)
+        == voice_agent_livekit._DEFAULT_BRAIN_MODE
+    )
 
 
 def test_resolve_brain_mode_default_when_both_absent():
@@ -403,14 +411,19 @@ def test_resolve_brain_mode_normalises_whitespace_and_case():
     assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "claude-code"
 
 
-def test_resolve_brain_mode_rejects_invalid_setting():
-    """Unknown setting value -> SystemExit, no silent fallback to ollama."""
+def test_resolve_brain_mode_invalid_setting_defaults_not_crashes(caplog):
+    """An invalid app_settings value (operator typo) must NOT crash — it
+    logs loudly and falls back to the default so the always-on voice line
+    stays up. This is the regression guard for the 2026-06-04 crash-loop
+    (``voice_agent_brain_mode`` fat-fingered to the room name)."""
+    import logging
+
     cfg = _FakeSiteConfig({"voice_agent_brain_mode": "totally-not-a-brain"})
-    with pytest.raises(SystemExit) as excinfo:
-        voice_agent_livekit._resolve_brain_mode(cfg, None)
-    msg = str(excinfo.value)
-    assert "totally-not-a-brain" in msg
-    assert "ollama" in msg and "claude-code" in msg
+    with caplog.at_level(logging.ERROR):
+        result = voice_agent_livekit._resolve_brain_mode(cfg, None)
+    assert result == voice_agent_livekit._DEFAULT_BRAIN_MODE
+    # Loud about it (operator needs to see + fix the typo).
+    assert any("totally-not-a-brain" in r.message for r in caplog.records)
 
 
 def test_resolve_brain_mode_rejects_invalid_override():

@@ -1043,6 +1043,10 @@ def _ensure_brain_on_path() -> None:
 
 
 _VALID_BRAIN_MODES = ("ollama", "claude-code")
+# Fallback when the DB-config brain mode is missing or invalid. A typo in
+# app_settings must keep the always-on voice line UP (warn + default), not
+# crash-loop it — see _resolve_brain_mode.
+_DEFAULT_BRAIN_MODE = "ollama"
 
 
 def _coerce_int(raw: Any, default: int) -> int:
@@ -1069,40 +1073,50 @@ def _resolve_brain_mode(site_config: Any, override: str | None) -> str:
     Resolution order (Half B — runtime brain-mode toggle):
 
     1. ``override`` — the explicit ``--brain`` CLI flag or the ``brain``
-       kwarg passed to :func:`run_bot`. When set, wins outright. Lets
-       the operator force a specific mode for an ad-hoc invocation
-       without touching the DB.
-    2. ``site_config['voice_agent_brain_mode']`` — the canonical key
-       seeded by migration ``20260506_220613``. This is the surface the
-       ``start_voice_call`` MCP tool flips at runtime so the next
-       pipeline build picks up a different brain without bouncing the
-       always-on container.
-    3. ``site_config['voice_agent_brain']`` — the legacy key seeded by
-       ``20260505_135518``. Read second so older deployments that
-       explicitly set the legacy key keep working through the soft
-       transition; new operators only ever touch the ``_mode`` key.
-    4. ``"ollama"`` — the documented default.
+       kwarg passed to :func:`run_bot`. When set, wins outright. An
+       invalid override is a caller bug and raises ``SystemExit``.
+    2. ``site_config['voice_agent_brain_mode']`` — the canonical (and
+       now only) DB key. This is the surface the ``start_voice_call``
+       MCP tool flips at runtime so the next pipeline build picks up a
+       different brain without bouncing the always-on container.
+    3. :data:`_DEFAULT_BRAIN_MODE` — the documented default, used when
+       the DB key is empty OR holds an invalid value.
 
-    Validates the result against :data:`_VALID_BRAIN_MODES` and raises
-    ``SystemExit`` (no silent fallback) on an unknown value, per
-    ``feedback_no_silent_defaults``. Whitespace and casing are
-    normalised before validation so a stray space in app_settings
-    doesn't take the surface offline.
+    The DB value is operator-editable, so an invalid one (a typo) is
+    logged loudly and falls back to the default rather than crashing:
+    a bad app_settings value must never crash-loop the always-on voice
+    line (a fat-fingered value did exactly that on 2026-06-04). The
+    legacy ``voice_agent_brain`` fallback key was retired here.
+    Whitespace and casing are normalised.
     """
+    # An explicit override (the --brain CLI flag / the brain kwarg passed by
+    # the start_voice_call MCP tool) is a deliberate per-invocation choice, so
+    # an invalid one is a caller bug — surface it loudly rather than silently
+    # picking something else.
     if override is not None:
-        candidate = override
-    else:
-        candidate = (
-            site_config.get("voice_agent_brain_mode", None)
-            or site_config.get("voice_agent_brain", None)
-            or "ollama"
-        )
-    candidate = str(candidate).strip().lower()
+        candidate = str(override).strip().lower()
+        if candidate not in _VALID_BRAIN_MODES:
+            raise SystemExit(
+                f"voice brain override={candidate!r} is invalid. "
+                f"Valid values: {', '.join(_VALID_BRAIN_MODES)}.",
+            )
+        return candidate
+
+    # DB-config path (the always-on --service container). This value is
+    # operator-editable, so a typo must NOT crash-loop the voice line — a
+    # fat-fingered ``voice_agent_brain_mode`` (set to the room name) took the
+    # bot down on a restart loop 2026-06-04. Warn loudly and fall back to the
+    # documented default so the surface stays up.
+    candidate = str(site_config.get("voice_agent_brain_mode", "") or "").strip().lower()
+    if not candidate:
+        return _DEFAULT_BRAIN_MODE
     if candidate not in _VALID_BRAIN_MODES:
-        raise SystemExit(
-            f"voice_agent_brain_mode={candidate!r} is invalid. "
-            f"Valid values: {', '.join(_VALID_BRAIN_MODES)}.",
+        log.error(
+            "voice_agent_brain_mode=%r is invalid (valid: %s) — falling back to "
+            "%r so the voice line stays up. Fix the app_settings value.",
+            candidate, ", ".join(_VALID_BRAIN_MODES), _DEFAULT_BRAIN_MODE,
         )
+        return _DEFAULT_BRAIN_MODE
     return candidate
 
 
@@ -1278,20 +1292,25 @@ async def run_bot(
             host_brain_url = str(
                 site_config.get("voice_agent_claude_code_host_brain_url", "") or "",
             ).strip()
-            host_brain_token = (
-                await site_config.get_secret(
-                    "voice_agent_claude_code_host_brain_token", "",
-                )
-                or ""
-            ).strip()
-            if host_brain_url and not host_brain_token:
-                # Fail loud (no silent default): the daemon requires a bearer
-                # token, so a URL with no token would 401 every turn.
-                log.warning(
-                    "voice-agent: host_brain_url is set but "
-                    "voice_agent_claude_code_host_brain_token is empty — the "
-                    "host daemon will reject every turn with 401 (#1006).",
-                )
+            # Only fetch the (secret) token when host mode is actually on —
+            # the get_secret round-trip is a per-restart DB hit we skip in the
+            # common local-mode case.
+            host_brain_token = ""
+            if host_brain_url:
+                host_brain_token = (
+                    await site_config.get_secret(
+                        "voice_agent_claude_code_host_brain_token", "",
+                    )
+                    or ""
+                ).strip()
+                if not host_brain_token:
+                    # Fail loud (no silent default): the daemon requires a
+                    # bearer token, so a URL with no token would 401 every turn.
+                    log.warning(
+                        "voice-agent: host_brain_url is set but "
+                        "voice_agent_claude_code_host_brain_token is empty — the "
+                        "host daemon will reject every turn with 401 (#1006).",
+                    )
 
             llm_service = ClaudeCodeBridgeLLMService(
                 cwd=project_dir or os.getcwd(),

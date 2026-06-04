@@ -31,9 +31,20 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+# apscheduler is only needed by the worker that actually RUNS the scheduler.
+# Gate the import so lean images (the voice agent) can still ``import plugins``
+# — and thus ``plugins.secrets`` for get_secret — without shipping the dep.
+# Mirrors the pipecat-gating pattern in voice_agent_claude_code.py. Constructing
+# PluginScheduler without apscheduler fails loud in __init__ (below).
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    _APSCHEDULER_IMPORT_ERROR: ImportError | None = None
+except ImportError as _exc:  # noqa: BLE001
+    AsyncIOScheduler = CronTrigger = IntervalTrigger = None  # type: ignore[assignment,misc]
+    _APSCHEDULER_IMPORT_ERROR = _exc
 
 from .config import PluginConfig
 
@@ -111,6 +122,12 @@ class PluginScheduler:
         ``site_config`` (Phase H DI seam, GH#95) is stored for jobs that
         need DB-backed config at scheduling time. Optional for back-compat.
         """
+        if AsyncIOScheduler is None:  # apscheduler absent (lean image)
+            raise ImportError(
+                "PluginScheduler requires apscheduler — install the worker "
+                "extras. Lean images (e.g. the voice agent) import `plugins` "
+                "for plugins.secrets but never construct the scheduler.",
+            ) from _APSCHEDULER_IMPORT_ERROR
         self._pool = pool
         self._site_config = site_config
         self._scheduler = AsyncIOScheduler()
