@@ -225,3 +225,40 @@ async def test_local_mode_when_no_host_url(monkeypatch):
     reply = await svc._run_claude("hey")
     assert reply == "local"
     assert called["text"] == "hey"
+
+
+def test_container_mode_logs_deprecation_warning(caplog):
+    """No host_brain_url -> container-mode is DEPRECATED + warns loudly (#1006).
+
+    Container-mode (in-container ``claude -p``) is a degraded fallback that
+    can't do coding tasks; the supported path is host-brain. A missing
+    host_brain_url must not pass silently."""
+    import logging
+
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    with caplog.at_level(logging.WARNING):
+        vac.ClaudeCodeBridgeLLMService(cwd="/tmp", session_id=_UUID)  # no host_brain_url
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "CONTAINER mode (DEPRECATED" in r.message and "host_brain_url" in r.message
+        for r in warnings
+    ), "container-mode must emit a deprecation warning naming host_brain_url"
+
+
+def test_host_mode_does_not_log_container_deprecation(caplog):
+    """The supported host-brain path must NOT emit the deprecation warning."""
+    import logging
+
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    with caplog.at_level(logging.WARNING):
+        vac.ClaudeCodeBridgeLLMService(
+            cwd="/tmp", session_id=_UUID,
+            host_brain_url=_URL, host_brain_token="s" * 32,
+        )
+
+    assert not any(
+        "CONTAINER mode (DEPRECATED" in r.message for r in caplog.records
+    ), "host-brain mode should not warn about deprecated container mode"

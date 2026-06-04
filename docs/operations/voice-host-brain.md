@@ -89,11 +89,47 @@ This is a **voice → host-RCE** endpoint, treated as one:
    # -> "HOST-BRAIN mode: turns execute on the host via http://host.docker.internal:8123/turn"
    ```
 
-## Turning it off (back to read-only in-container)
+## Container-mode is deprecated (host-brain is the supported path)
 
-Set `voice_agent_claude_code_host_brain_url` to `''` and restart the container —
-it falls back to running `claude -p` read-only inside the container (can read +
-talk, can't edit/git). Optionally stop the daemon: `.\scripts\voice-brain-host.ps1 -Stop`.
+When `voice_agent_claude_code_host_brain_url` is **empty**, the bot falls back to
+running `claude -p` **inside the voice container** — a **deprecated, degraded**
+mode (#1006):
+
+- `/app` is mounted `:ro` with no `.git`/toolchain → **no coding ability**.
+- The container has no `~/.claude.json` → the CLI may not even start.
+
+It's kept only as graceful degradation (it can still read + talk if the host
+daemon is unreachable), and the service logs a loud `CONTAINER mode (DEPRECATED)`
+warning so a missing `host_brain_url` never passes silently. **Always run
+host-brain for the claude-code room.** To intentionally drop to the degraded
+fallback, set `voice_agent_claude_code_host_brain_url=''` and restart the
+container; optionally stop the daemon (`.\scripts\voice-brain-host.ps1 -Stop`).
+
+## Memory & context
+
+Host-brain `claude` runs with `cwd=<repo root>`, so Claude Code namespaces its
+auto-memory under `~/.claude/projects/C--Users-mattm-glad-labs-website/memory/`.
+To give the voice bot the **full operator brain** (preferences, feedback,
+project decisions — the same memory an interactive session sees), that
+namespace's `memory` dir is a **junction** to the canonical operator memory:
+
+```
+~/.claude/projects/C--Users-mattm-glad-labs-website/memory  ──▶ (junction)
+~/.claude/projects/C--Users-mattm/memory
+```
+
+Create/repair it with:
+
+```powershell
+$op = "$env:USERPROFILE\.claude\projects\C--Users-mattm\memory"
+$gl = "$env:USERPROFILE\.claude\projects\C--Users-mattm-glad-labs-website\memory"
+if (Test-Path $gl) { Remove-Item -Recurse -Force $gl }   # back up first if it holds unmerged notes
+New-Item -ItemType Junction -Path $gl -Target $op | Out-Null
+```
+
+A **junction** (not a symlink) is used so it resolves natively for the host
+`claude` without elevation. The repo-specific notes that used to live in the
+gl-website namespace were folded into the operator memory (one unified brain).
 
 ## The persistence task
 

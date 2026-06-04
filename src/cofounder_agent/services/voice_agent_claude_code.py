@@ -267,6 +267,24 @@ class ClaudeCodeBridgeLLMService(LLMService):
                 "the host via %s (container does audio only) (#1006)",
                 self._host_brain_url,
             )
+        else:
+            # Container-mode (in-container ``claude -p``) is a DEPRECATED,
+            # degraded fallback (#1006). It runs read-only inside the voice
+            # container (``/app`` is ``:ro``, no .git/toolchain, and the
+            # container has no ``~/.claude.json`` so the CLI may not even
+            # start) — useless for actual coding. The supported path is
+            # host-brain: set ``voice_agent_claude_code_host_brain_url`` so
+            # turns run on the host with full repo/git/write/MCP. We keep this
+            # fallback only as graceful degradation when the host daemon is
+            # unreachable (it can still read + talk), and warn loudly so a
+            # missing host_brain_url doesn't pass silently.
+            logger.warning(
+                "ClaudeCodeBridgeLLMService CONTAINER mode (DEPRECATED, #1006): "
+                "running claude -p read-only in-container — degraded, no "
+                "coding ability, may fail without ~/.claude.json. Set "
+                "voice_agent_claude_code_host_brain_url to use host-brain "
+                "(the supported dev-on-the-go path).",
+            )
 
     # ------------------------------------------------------------------
     # Pipecat plumbing
