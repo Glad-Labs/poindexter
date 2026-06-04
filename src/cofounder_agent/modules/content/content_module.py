@@ -94,6 +94,17 @@ class ContentModule:
         as ``object`` to match the Protocol shape; the call site casts."""
         del brain
 
+    def bind_platform(self, platform: object) -> None:
+        """Receive this module's capability-scoped kernel handle (Wave 2 of
+        Seam 1, Glad-Labs/poindexter#667).
+
+        Stored for the module's own code to reach the kernel through. Content
+        does not use it yet — Wave 3 migrates content's direct kernel imports
+        onto it one capability at a time, and grows ``_MANIFEST.capabilities``
+        in lockstep. ``platform`` is a ``plugins.platform.Platform`` (typed
+        ``object`` to match this module's cheap-import convention)."""
+        self._platform = platform
+
     async def healthcheck(self, pool: object) -> object:
         """Phase 1 contract allows ``None`` — Phase 4 will aggregate
         sub-probe results into a real ``ProbeResult``."""

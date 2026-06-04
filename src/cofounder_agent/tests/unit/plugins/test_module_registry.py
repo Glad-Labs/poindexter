@@ -53,6 +53,9 @@ def _make_module(
         def register_probes(self, brain: object) -> None:  # pragma: no cover
             pass
 
+        def bind_platform(self, platform: object) -> None:  # pragma: no cover
+            pass
+
         async def healthcheck(self, pool: object) -> object:  # pragma: no cover
             return None
 

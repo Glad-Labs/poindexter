@@ -164,6 +164,16 @@ class FinanceModule:
 
         return refresh_finance_metrics(pool)
 
+    def bind_platform(self, platform: object) -> None:
+        """Receive this module's capability-scoped kernel handle (Wave 2 of
+        Seam 1, Glad-Labs/poindexter#667).
+
+        Stored for the module's own code to reach the kernel through; finance
+        grows ``_MANIFEST.capabilities`` as it routes its own kernel access
+        through the handle. ``platform`` is a ``plugins.platform.Platform``
+        (typed ``object`` to match this module's cheap-import convention)."""
+        self._platform = platform
+
     async def healthcheck(self, pool: object) -> object:
         """Phase 4 — aggregate finance sub-probe results."""
         del pool

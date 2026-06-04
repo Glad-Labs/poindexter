@@ -222,11 +222,25 @@ class ScopedPlatform:
         )
 
 
+def scope_for_module(module: Any, platform: Platform) -> ScopedPlatform:
+    """Build a capability-scoped handle for ``module`` from the full ``platform``.
+
+    Reads the module's declared capabilities from its manifest
+    (``module.manifest().capabilities``) and wraps the backing platform so the
+    module can reach only those — the single place the kernel turns "what a
+    module declared" into "what its handle exposes." Duck-typed on ``module``
+    so this stays free of a ``plugins.module`` import (one-directional
+    dependency: ``module`` names ``platform``, never the reverse).
+    """
+    return ScopedPlatform(platform, module.manifest().capabilities)
+
+
 __all__ = [
     "Capability",
     "CapabilityError",
     "Platform",
     "ScopedPlatform",
+    "scope_for_module",
     "ConfigCapability",
     "SecretCapability",
     "DispatchCapability",
