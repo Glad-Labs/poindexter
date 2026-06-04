@@ -301,7 +301,7 @@ The posture is **least privilege, earned upward** — the same shape as
    to reach. It is the one existing injection seam — tightening it is additive,
    never a contract change.
 2. **Secrets are brokered, never handed to skill-text.** A skill references a
-   **named credential** (`mercury_readonly`); the kernel binds the secret to the
+   **named credential** (`payments_readonly`); the kernel binds the secret to the
    capability call (a publish adapter, a bank tap) **without the value ever
    entering the LLM's context.** Prompt injection cannot exfiltrate a secret the
    skill never sees. Raw `secret` reads stay a graduated-tier capability for
