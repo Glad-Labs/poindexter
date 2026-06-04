@@ -122,6 +122,13 @@ except ImportError as _exc:  # noqa: BLE001
 _TURN_TIMEOUT_SECONDS = 90.0
 
 
+# Host-brain mode (#1006): the in-container HTTP call to the host daemon must
+# outlast the daemon's own per-turn subprocess timeout, so it never pre-empts a
+# turn the daemon is still running. Keep comfortably above the daemon's
+# VOICE_BRAIN_TIMEOUT (default 120s).
+_HOST_BRAIN_HTTP_TIMEOUT = 180.0
+
+
 # Matches claude CLI's stderr when --session-id targets a UUID whose
 # JSONL already exists on disk: "Error: Session ID <uuid> is already in
 # use." Whatever spawned the session (pipecat warmup probe, healthcheck,
@@ -178,6 +185,8 @@ class ClaudeCodeBridgeLLMService(LLMService):
         max_age_seconds: int | None = None,
         persist_session_id: "Callable[[str], Any] | None" = None,
         monotonic: "Callable[[], float]" = time.monotonic,
+        host_brain_url: str | None = None,
+        host_brain_token: str | None = None,
         **kwargs,
     ):
         """
@@ -207,6 +216,11 @@ class ClaudeCodeBridgeLLMService(LLMService):
             monotonic: Injectable monotonic clock. Defaults to
                 :func:`time.monotonic`; tests pass a fake for
                 deterministic age-trip assertions (#1006).
+            host_brain_url: If set, run each turn on the HOST via this daemon
+                URL (full repo + git + write + all MCP) instead of locally in
+                this read-only container — the container then only does audio.
+                Unset => local subprocess (back-compat) (#1006).
+            host_brain_token: Bearer token for the host-brain daemon.
         """
         super().__init__(**kwargs)
         self._cwd = cwd or os.getcwd()
@@ -226,6 +240,12 @@ class ClaudeCodeBridgeLLMService(LLMService):
             self._resumed = False
         self._permission_mode = permission_mode
         self._extra_args = list(extra_args or [])
+        # Host-brain mode (#1006): when a daemon URL is configured the turn is
+        # executed by `claude -p` on the HOST (full repo + git + write + all
+        # MCP) instead of locally in this read-only container; the container
+        # only shuttles audio<->transcript. Unset => local subprocess.
+        self._host_brain_url = (host_brain_url or "").strip() or None
+        self._host_brain_token = host_brain_token or None
         # Auto-reset config (#1006). The session rotates when it ages out,
         # burns through its token budget, or the operator says a manual
         # phrase — see _maybe_reset.
@@ -241,6 +261,12 @@ class ClaudeCodeBridgeLLMService(LLMService):
             self._session_id, self._resumed, self._cwd, self._permission_mode,
             self._token_budget, self._max_age_seconds,
         )
+        if self._host_brain_url:
+            logger.info(
+                "ClaudeCodeBridgeLLMService HOST-BRAIN mode: turns execute on "
+                "the host via %s (container does audio only) (#1006)",
+                self._host_brain_url,
+            )
 
     # ------------------------------------------------------------------
     # Pipecat plumbing
@@ -391,31 +417,9 @@ class ClaudeCodeBridgeLLMService(LLMService):
           whose JSONL was pruned) -> flip to ``--session-id`` (create), so the
           pinned id stays stable.
         """
-        argv = self._build_argv()
-        logger.info(
-            "claude turn (first=%s session=%s) cmd=%s",
-            self._first_turn, self._session_id, " ".join(argv[:6]) + " ...",
-        )
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=self._cwd,
-        )
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(input=user_text.encode("utf-8")),
-                timeout=_TURN_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            raise RuntimeError(
-                f"claude -p timed out after {_TURN_TIMEOUT_SECONDS}s",
-            ) from None
+        returncode, stdout_bytes, stderr_bytes = await self._exec_turn(user_text)
 
-        if proc.returncode != 0:
+        if returncode != 0:
             stderr_txt = stderr_bytes.decode("utf-8", errors="replace").strip()
             if (
                 not _recovered
@@ -457,10 +461,100 @@ class ClaudeCodeBridgeLLMService(LLMService):
                 self._resumed = False
                 return await self._spawn_claude(user_text, _recovered=True)
             raise RuntimeError(
-                f"claude -p exited {proc.returncode}: {stderr_txt[:300]}",
+                f"claude -p exited {returncode}: {stderr_txt[:300]}",
             )
 
         return stdout_bytes
+
+    # ------------------------------------------------------------------
+    # Turn execution — local subprocess OR the host-brain daemon (#1006)
+    # ------------------------------------------------------------------
+
+    async def _exec_turn(self, user_text: str) -> tuple[int, bytes, bytes]:
+        """Run one claude turn and return ``(returncode, stdout, stderr)``.
+
+        Dispatches to the host-brain daemon when configured, else the local
+        subprocess. Both return the same shape so :meth:`_spawn_claude`'s
+        create/resume recovery is identical regardless of where claude ran.
+        """
+        if self._host_brain_url:
+            return await self._exec_host(user_text)
+        return await self._exec_local(user_text)
+
+    async def _exec_local(self, user_text: str) -> tuple[int, bytes, bytes]:
+        """Run claude -p as a local subprocess (the in-container path)."""
+        argv = self._build_argv()
+        logger.info(
+            "claude turn (first=%s session=%s) cmd=%s",
+            self._first_turn, self._session_id, " ".join(argv[:6]) + " ...",
+        )
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=self._cwd,
+        )
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(input=user_text.encode("utf-8")),
+                timeout=_TURN_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError(
+                f"claude -p timed out after {_TURN_TIMEOUT_SECONDS}s",
+            ) from None
+        return (proc.returncode or 0, stdout_bytes, stderr_bytes)
+
+    async def _exec_host(self, user_text: str) -> tuple[int, bytes, bytes]:
+        """Run the turn on the HOST brain daemon over HTTP (#1006).
+
+        The container only does audio; `claude -p` runs on the host (full repo
+        + git + write + all MCP). We POST the turn params; the daemon builds
+        the same argv and runs claude with cwd=repo-root, returning
+        ``{returncode, stdout, stderr}`` — the same shape as the local path, so
+        the recovery logic (re-POST with the flipped flag) works unchanged. A
+        non-200 (auth/transport) is surfaced as a failed turn.
+        """
+        import httpx  # lazy — only the host-brain path needs an HTTP client
+
+        url = self._host_brain_url
+        assert url, "_exec_host called without host_brain_url"
+        payload = {
+            "text": user_text,
+            "session_id": self._session_id,
+            "first_turn": self._first_turn,
+            "permission_mode": self._permission_mode,
+            "extra_args": list(self._extra_args),
+        }
+        headers = {}
+        if self._host_brain_token:
+            headers["Authorization"] = f"Bearer {self._host_brain_token}"
+        logger.info(
+            "claude turn via host brain (first=%s session=%s url=%s)",
+            self._first_turn, self._session_id, self._host_brain_url,
+        )
+        try:
+            async with httpx.AsyncClient(timeout=_HOST_BRAIN_HTTP_TIMEOUT) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+        except Exception as e:  # noqa: BLE001 — surface any transport error loudly
+            raise RuntimeError(
+                f"host brain unreachable at {self._host_brain_url}: "
+                f"{type(e).__name__}: {e}",
+            ) from e
+        if resp.status_code != 200:
+            # 401 (bad/absent token), 400 (bad body), 500 (daemon error).
+            raise RuntimeError(
+                f"host brain HTTP {resp.status_code}: {resp.text[:200]}",
+            )
+        data = resp.json()
+        return (
+            int(data.get("returncode", 1)),
+            (data.get("stdout") or "").encode("utf-8"),
+            (data.get("stderr") or "").encode("utf-8"),
+        )
 
     @staticmethod
     def _extract_text(stdout_bytes: bytes) -> str:

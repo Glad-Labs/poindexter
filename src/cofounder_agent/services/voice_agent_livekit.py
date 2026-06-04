@@ -1272,6 +1272,27 @@ async def run_bot(
                 14400,
             )
 
+            # Host-brain mode (#1006): when a daemon URL is configured the turn
+            # runs on the HOST (full repo + git + write + all MCP) and this
+            # read-only container only does audio. Unset => local subprocess.
+            host_brain_url = str(
+                site_config.get("voice_agent_claude_code_host_brain_url", "") or "",
+            ).strip()
+            host_brain_token = (
+                await site_config.get_secret(
+                    "voice_agent_claude_code_host_brain_token", "",
+                )
+                or ""
+            ).strip()
+            if host_brain_url and not host_brain_token:
+                # Fail loud (no silent default): the daemon requires a bearer
+                # token, so a URL with no token would 401 every turn.
+                log.warning(
+                    "voice-agent: host_brain_url is set but "
+                    "voice_agent_claude_code_host_brain_token is empty — the "
+                    "host daemon will reject every turn with 401 (#1006).",
+                )
+
             llm_service = ClaudeCodeBridgeLLMService(
                 cwd=project_dir or os.getcwd(),
                 extra_args=extra or None,
@@ -1279,13 +1300,16 @@ async def run_bot(
                 token_budget=token_budget,
                 max_age_seconds=max_age_seconds,
                 persist_session_id=_persist_session_id,
+                host_brain_url=host_brain_url or None,
+                host_brain_token=host_brain_token or None,
             )
             log.info(
                 "Pinned Claude session_id=%s (source=%s, token_budget=%s, "
-                "max_age_seconds=%s) — preserves prior turns + auto-resets",
+                "max_age_seconds=%s, brain=%s) — preserves prior turns + auto-resets",
                 sess,
                 "env" if env_sess else ("app_settings" if stored_sess else "generated"),
                 token_budget, max_age_seconds,
+                "host" if host_brain_url else "container",
             )
             # The Claude bridge ignores Pipecat-side tools (it has its
             # own MCP harness); we also override the system prompt so
