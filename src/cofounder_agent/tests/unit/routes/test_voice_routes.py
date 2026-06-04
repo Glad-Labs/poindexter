@@ -29,7 +29,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.voice_routes import _DEV_PLACEHOLDER_SECRET, _mint_livekit_token, router
+from routes.voice_routes import (
+    _DEV_PLACEHOLDER_SECRET,
+    _mint_livekit_token,
+    _resolve_voice_room,
+    router,
+)
 
 # Tailscale Serve injects this header for authenticated tailnet devices;
 # public Funnel traffic never carries it. Presence == tailnet caller.
@@ -178,3 +183,35 @@ class TestMintLivekitToken:
         assert payload["video"]["room"] == "poindexter"
         # 7-day TTL window.
         assert payload["exp"] - payload["iat"] == 7 * 24 * 3600
+
+
+# ---------------------------------------------------------------------------
+# Room routing for the two-room split (#1006) — `/voice/join?room=`.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_voice_room_allows_both_rooms(monkeypatch):
+    monkeypatch.delenv("LIVEKIT_ROOM", raising=False)
+    assert _resolve_voice_room("poindexter") == "poindexter"
+    assert _resolve_voice_room("claude-code") == "claude-code"
+
+
+def test_resolve_voice_room_normalises_case_and_space(monkeypatch):
+    monkeypatch.delenv("LIVEKIT_ROOM", raising=False)
+    assert _resolve_voice_room("  Claude-Code ") == "claude-code"
+
+
+def test_resolve_voice_room_unknown_or_absent_uses_default(monkeypatch):
+    """A bad/absent value must NOT mint a token for an arbitrary room — it
+    falls back to the default (so a typo can't escape the allowlist)."""
+    monkeypatch.delenv("LIVEKIT_ROOM", raising=False)  # default -> poindexter
+    assert _resolve_voice_room("../../evil-room") == "poindexter"
+    assert _resolve_voice_room("") == "poindexter"
+    assert _resolve_voice_room(None) == "poindexter"
+
+
+def test_resolve_voice_room_default_honours_env(monkeypatch):
+    monkeypatch.setenv("LIVEKIT_ROOM", "poindexter")
+    # Unknown -> the env default; an allow-listed room still wins.
+    assert _resolve_voice_room("nope") == "poindexter"
+    assert _resolve_voice_room("claude-code") == "claude-code"

@@ -48,7 +48,7 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -91,6 +91,26 @@ def require_tailnet(request: Request) -> str:
 # placeholder. Surface a clear error so the operator sees the
 # misconfiguration instead of silently shipping forgeable tokens.
 _DEV_PLACEHOLDER_SECRET = "devsecret_change_me_change_me_change_me"
+
+# Two-room voice split (#1006). The join page mints a token scoped to ONE of
+# these rooms, picked via ``?room=``. Allow-listed so a typo or hostile value
+# can't mint a token for an arbitrary room; anything else -> the default.
+#   * poindexter  — always-on Emma (local GLM ops assistant)
+#   * claude-code — the claude -p dev brain (host-side; full repo/git/write)
+_ALLOWED_VOICE_ROOMS = ("poindexter", "claude-code")
+
+
+def _resolve_voice_room(requested: str | None) -> str:
+    """Pick the LiveKit room for a join request (#1006 two-room split).
+
+    Allow-listed against :data:`_ALLOWED_VOICE_ROOMS`; whitespace/case are
+    normalised. An unknown or absent value falls back to the operator default
+    (``LIVEKIT_ROOM`` env, itself defaulting to ``poindexter``) so a typo can't
+    mint a token for an arbitrary room.
+    """
+    default_room = os.environ.get("LIVEKIT_ROOM", "poindexter")
+    req = (requested or "").strip().lower()
+    return req if req in _ALLOWED_VOICE_ROOMS else default_room
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +162,13 @@ def _mint_livekit_token(
 
 @router.get("/join", response_class=HTMLResponse)
 async def voice_join(
+    room: str | None = Query(
+        default=None,
+        description=(
+            "LiveKit room to join: 'poindexter' (Emma/GLM ops) or "
+            "'claude-code' (the dev brain). Unknown/absent -> operator default."
+        ),
+    ),
     _tailnet_user: str = Depends(require_tailnet),
 ) -> HTMLResponse:
     """Render the LiveKit web client with a freshly-minted JWT.
@@ -174,7 +201,8 @@ async def voice_join(
             ),
         )
 
-    room = os.environ.get("LIVEKIT_ROOM", "poindexter")
+    # Room routing (#1006 two-room split): the phone picks via ?room=.
+    room = _resolve_voice_room(room)
     identity = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "operator")
     # Default to the local LiveKit signal endpoint. Operators exposing
     # voice over a Tailscale Funnel or other public hostname override
