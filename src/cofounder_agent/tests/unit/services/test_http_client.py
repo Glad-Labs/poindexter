@@ -24,7 +24,7 @@ import httpx
 import pytest
 
 import services.citation_verifier as citation_verifier
-import services.content_validator as content_validator
+import modules.content.content_validator as content_validator
 import services.image_decision_agent as image_decision_agent
 import services.image_providers.ai_generation as ai_generation
 import services.image_providers.flux_schnell as flux_schnell

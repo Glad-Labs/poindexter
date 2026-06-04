@@ -161,7 +161,7 @@ def _build_brand_fabrication_metric():
     from deepeval.metrics import BaseMetric
     from deepeval.test_case import LLMTestCase
 
-    from services import content_validator as cv
+    from modules.content import content_validator as cv
 
     class BrandFabricationMetric(BaseMetric):
         """DeepEval metric: 1.0 = clean, 0.0 = fabrication detected.

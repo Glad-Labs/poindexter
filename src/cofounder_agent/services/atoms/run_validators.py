@@ -1,7 +1,7 @@
 """``atoms.run_validators`` — programmatic content validator atom.
 
 Phase 3 of the dynamic-pipeline-composition spec. Wraps the existing
-:func:`services.content_validator.validate_content` (regex + heuristic
+:func:`modules.content.content_validator.validate_content` (regex + heuristic
 quality rules, no LLM) so the architect-LLM can drop a programmatic
 quality gate at any point in a composed graph.
 
@@ -140,7 +140,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     Maps the dataclass result back to plain dicts so downstream atoms
     (and the LLM critics) read consistent JSON shapes.
     """
-    from services.content_validator import validate_content
+    from modules.content.content_validator import validate_content
 
     content = (state.get("content") or "").strip()
     if not content:

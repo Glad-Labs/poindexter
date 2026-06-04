@@ -9,7 +9,7 @@ No LLM judgment — deterministic pattern matching that catches:
 - Impossible timeframes and metrics
 
 Usage:
-    from services.content_validator import validate_content
+    from modules.content.content_validator import validate_content
     result = validate_content(title, content, topic, site_config=site_config)
     if not result.passed:
         # Reject — content has quality issues

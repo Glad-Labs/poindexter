@@ -87,7 +87,7 @@ def run_brand_guard(content: str) -> tuple[bool, str | None]:
         return True, None
 
     try:
-        from services import content_validator as cv
+        from modules.content import content_validator as cv
 
         issues: list[str] = []
         # Hit each pattern set the legacy validator hits, accumulate

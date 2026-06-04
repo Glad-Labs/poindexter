@@ -9,7 +9,7 @@ Labs claims, hallucinated library refs) silently stopped gating, even though
 ``qa_gates.programmatic_validator.required_to_pass`` is still ``true`` in prod.
 
 Design mirrors ``qa.critic``: this atom runs the deterministic validator
-(``services.content_validator.validate_content`` — NO LLM) and contributes a
+(``modules.content.content_validator.validate_content`` — NO LLM) and contributes a
 ``ReviewerResult`` into the ``qa_rail_reviews`` channel that ``qa.aggregate``
 folds into the gate decision. ``provider='programmatic'`` so
 ``_qa_rail_common`` weights it at ``validator_weight`` and a non-advisory
@@ -73,7 +73,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content or site_config is None:
         return {}
 
-    from services.content_validator import validate_content
+    from modules.content.content_validator import validate_content
     from services.multi_model_qa import MultiModelQA, ReviewerResult
 
     title = state.get("seo_title") or state.get("title") or ""

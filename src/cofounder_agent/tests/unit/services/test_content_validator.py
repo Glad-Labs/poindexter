@@ -11,7 +11,7 @@ from services.site_config import SiteConfig
 
 _SC = SiteConfig()
 
-from services.content_validator import (
+from modules.content.content_validator import (
     GLAD_LABS_FACTS,
     ValidationResult,
     validate_content,
@@ -562,21 +562,21 @@ class TestLateAcronymExpansion:
 
 class TestStripHtml:
     def test_removes_simple_tags(self):
-        from services.content_validator import _strip_html
+        from modules.content.content_validator import _strip_html
         assert _strip_html("<p>Hello</p>") == "Hello"
 
     def test_removes_nested_tags(self):
-        from services.content_validator import _strip_html
+        from modules.content.content_validator import _strip_html
         result = _strip_html("<div><p>nested <span>text</span></p></div>")
         assert "<" not in result
         assert ">" not in result
 
     def test_removes_attributes(self):
-        from services.content_validator import _strip_html
+        from modules.content.content_validator import _strip_html
         assert _strip_html('<a href="https://x.com">link</a>') == "link"
 
     def test_plain_text_unchanged(self):
-        from services.content_validator import _strip_html
+        from modules.content.content_validator import _strip_html
         assert _strip_html("plain text no tags") == "plain text no tags"
 
 
@@ -869,7 +869,7 @@ class TestKnownWrongHardwareFacts:
     @pytest.fixture(autouse=True)
     def _mock_fact_overrides(self, monkeypatch):
         """Inject test patterns without hitting the DB."""
-        import services.content_validator as cv
+        import modules.content.content_validator as cv
         monkeypatch.setattr(cv, "_load_fact_overrides_sync", lambda: self._TEST_OVERRIDES)
 
     def test_rtx_5090_24gb_detected(self):
@@ -1080,7 +1080,7 @@ class TestPrometheusCounterEmission:
 
     def _read_counter(self, rule: str) -> float:
         """Read the current value of the warnings counter for ``rule``."""
-        from services.content_validator import CONTENT_VALIDATOR_WARNINGS_TOTAL
+        from modules.content.content_validator import CONTENT_VALIDATOR_WARNINGS_TOTAL
 
         # prometheus_client Counter stores per-label data on the internal
         # metric. We read the value via the public `_metrics` dict. If
@@ -1336,7 +1336,7 @@ class TestHallucinatedReferenceDetection:
 
     def test_stdlib_and_pypi_lists_actually_loaded(self):
         """Guard against the data files going missing in deployment."""
-        from services.content_validator import (
+        from modules.content.content_validator import (
             _get_ollama_names,
             _get_pypi_names,
             _get_stdlib_names,

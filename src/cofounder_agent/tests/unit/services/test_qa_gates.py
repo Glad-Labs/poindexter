@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from services.content_validator import ValidationResult
+from modules.content.content_validator import ValidationResult
 from services.multi_model_qa import MultiModelQA
 from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 from services.site_config import SiteConfig

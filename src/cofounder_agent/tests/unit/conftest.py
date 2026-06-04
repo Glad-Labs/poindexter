@@ -151,7 +151,7 @@ _SHARED_TEST_MODULES = (
     # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
     # share. Tests pass ``site_config=`` to ``send_post_newsletter`` /
     # ``_build_html`` / ``_send_via_smtp`` directly.
-    # ``services.content_validator`` removed from _SHARED_TEST_MODULES
+    # ``modules.content.content_validator`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2g); the module global + ``set_site_config`` are
     # deleted. Tests pass ``site_config=`` to ``validate_content`` /
     # ``_check_code_block_density`` / ``verify_content_urls`` directly (and the

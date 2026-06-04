@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from services.content_validator import ValidationResult, validate_content
+from modules.content.content_validator import ValidationResult, validate_content
 from services.integrations.operator_notify import notify_operator
 from services.langfuse_shim import observe
 from services.llm_providers.dispatcher import resolve_tier_model
@@ -578,7 +578,7 @@ class MultiModelQA:
             logger.info("[MULTI_QA] Skipped gate 'url_verifier' (qa_gates.enabled=False)")
         else:
             try:
-                from services.content_validator import verify_content_urls
+                from modules.content.content_validator import verify_content_urls
                 url_issues = await verify_content_urls(
                     content, site_config=self._site_config,
                 )

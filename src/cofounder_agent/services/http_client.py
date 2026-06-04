@@ -119,7 +119,7 @@ async def get_http_client(request: "Request") -> httpx.AsyncClient:
 # loops over the list at startup and at shutdown.
 WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     "services.citation_verifier",
-    "services.content_validator",
+    "modules.content.content_validator",
     "services.image_decision_agent",
     "services.image_service",
     "services.image_providers.pexels",
