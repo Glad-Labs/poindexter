@@ -1,6 +1,6 @@
 """Migration 20260603_234500: seed voice host-brain keys (#1006).
 
-ISSUE: Glad-Labs/glad-labs-stack#1006
+ISSUE: Glad-Labs/poindexter#1006
 
 Host-brain mode for the always-on Claude-Code voice room. The voice container
 is a read-only slice of the repo (``/app`` mounted ``:ro``, no ``.git``, no

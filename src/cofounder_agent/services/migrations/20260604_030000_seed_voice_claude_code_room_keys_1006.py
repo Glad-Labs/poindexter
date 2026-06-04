@@ -1,6 +1,6 @@
 """Migration 20260604_030000: seed claude-code voice-room keys (#1006).
 
-ISSUE: Glad-Labs/glad-labs-stack#1006
+ISSUE: Glad-Labs/poindexter#1006
 
 The two-room split. The always-on voice surface now runs ONE container per
 room profile (``services.voice_agent_livekit --service --service-profile X``):

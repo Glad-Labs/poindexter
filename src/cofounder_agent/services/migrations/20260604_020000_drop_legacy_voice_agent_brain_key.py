@@ -1,6 +1,6 @@
 """Migration 20260604_020000: drop the retired legacy voice_agent_brain key.
 
-ISSUE: Glad-Labs/glad-labs-stack#1006 (voice settings cleanup)
+ISSUE: Glad-Labs/poindexter#1006 (voice settings cleanup)
 
 ``voice_agent_brain`` was the original brain-mode key (seeded 2026-05-05). It
 was superseded by ``voice_agent_brain_mode`` and kept only as a soft-transition

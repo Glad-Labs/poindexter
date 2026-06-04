@@ -36,7 +36,7 @@ A ``PipecatAudioMediaPlane`` will land in PR #2 once the always-on
 and we get the audio for free, no duplicated Whisper / Silero / Kokoro
 state in the MCP server process.
 
-## Process model — subprocess-spawned worker (Glad-Labs/glad-labs-stack#1010)
+## Process model — subprocess-spawned worker (Glad-Labs/poindexter#1010)
 
 The bridge worker runs as a **separate Python subprocess**, not as an
 ``asyncio.create_task`` inside the long-lived MCP server process. The MCP
@@ -376,7 +376,7 @@ class BridgeConfig:
     tts_voice: str = "af_bella"
     # Turn-detection cadence (operator-tunable via app_settings). Defaults
     # raised from the bring-up's 0.2/0.8 — that chopped sentences at every
-    # pause. See Glad-Labs/glad-labs-stack#1010 (voice hardening).
+    # pause. See Glad-Labs/poindexter#1010 (voice hardening).
     vad_stop_secs: float = 0.5
     user_speech_timeout: float = 1.5
 
@@ -768,7 +768,7 @@ async def stop_bridge(session_id: str, *, timeout: float = 5.0) -> bool:
 
 # ---------------------------------------------------------------------------
 # Subprocess launcher + leave-by-PID — the cross-process bridge lifecycle
-# (Glad-Labs/glad-labs-stack#1010)
+# (Glad-Labs/poindexter#1010)
 # ---------------------------------------------------------------------------
 
 
@@ -820,7 +820,7 @@ def spawn_bridge_subprocess(
     launcher spawns ``bridge_worker.py`` as a separate Python process that
     imports fresh on-disk code, so a Pipecat / STT migration takes effect
     on the next ``voice_join_room`` with no restart. See
-    Glad-Labs/glad-labs-stack#1010.
+    Glad-Labs/poindexter#1010.
 
     Blocking (``Popen`` + a readiness poll), so call it via
     ``asyncio.to_thread`` from async code.
