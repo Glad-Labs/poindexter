@@ -866,6 +866,98 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 50,
+      "type": "row",
+      "title": "Sensors — HWiNFO / AIDA64 (Prometheus)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 }
+    },
+    {
+      "id": 51,
+      "type": "timeseries",
+      "title": "Temperatures (HWiNFO)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 62 },
+      "targets": [
+        {
+          "expr": "hwinfo_temperature_celsius{label=~\"CPU Package|CPU .Tctl/Tdie.|GPU Temperature|GPU Memory Junction Temperature|PSU Temperature|Drive Temperature\"}",
+          "legendFormat": "{{label}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] }
+    },
+    {
+      "id": 52,
+      "type": "timeseries",
+      "title": "Fans (HWiNFO)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 62 },
+      "targets": [
+        {
+          "expr": "hwinfo_fan_rpm{label=~\"PSU Fan|GPU Fan1|GPU Fan2|Fan 2|Fan 3|Fan 4|Fan 5|Fan 6|Fan 7\"}",
+          "legendFormat": "{{label}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "rotrpm" }, "overrides": [] }
+    },
+    {
+      "id": 53,
+      "type": "timeseries",
+      "title": "Per-Core CPU Power (RAPL)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 70 },
+      "targets": [
+        {
+          "expr": "system_cpu_core_power_watts",
+          "legendFormat": "Core {{core}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] }
+    },
+    {
+      "id": 54,
+      "type": "timeseries",
+      "title": "PSU Power — live (HWiNFO)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 70 },
+      "targets": [
+        {
+          "expr": "hwinfo_power_watts{label=\"PSU Power In (est)\"}",
+          "legendFormat": "Wall In (est)",
+          "refId": "A"
+        },
+        {
+          "expr": "hwinfo_power_watts{label=\"PSU Power Out\"}",
+          "legendFormat": "DC Out",
+          "refId": "B"
+        },
+        {
+          "expr": "psu_total_power_watts",
+          "legendFormat": "Canonical (cost)",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] }
+    },
+    {
+      "id": 55,
+      "type": "timeseries",
+      "title": "Voltages (HWiNFO)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 78 },
+      "targets": [
+        {
+          "expr": "hwinfo_voltage_volts{label=~\"Vcore|.12V|.5V|.3.3V\"}",
+          "legendFormat": "{{label}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "volt" }, "overrides": [] }
     }
   ]
 }
