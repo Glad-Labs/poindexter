@@ -51,6 +51,18 @@ MODEL_SETTING_KEY = "image_generation_model"
 
 IDLE_TIMEOUT = 60  # seconds — unload after idle so Ollama can use VRAM
 
+# Self-heal watchdog bounds (see degraded_watchdog / next_retry_delay below).
+# reload_config() latches `degraded` on any failure and is otherwise only
+# re-run on an explicit POST /reload. On a host reboot Docker's restart policy
+# brings sdxl-server + postgres-local up in PARALLEL (compose `depends_on` is
+# honored only by `docker compose up`, NOT by restart-policy restarts), so SDXL
+# can read app_settings while Postgres is still in startup (57P03 "the database
+# system is starting up") and then stay degraded forever. The watchdog turns
+# that permanent latch into a few seconds of self-healing.
+DEGRADED_POLL_MIN_SECONDS = 5    # floor — heal fast after a boot race
+DEGRADED_POLL_MAX_SECONDS = 60   # ceiling — don't spam the DB/logs forever
+HEALTHY_POLL_SECONDS = 30        # cadence when not degraded (cheap idle check)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("sdxl-server")
 app = FastAPI(title="SDXL Image Server", version="2.0")
@@ -312,6 +324,64 @@ class GenerateResponse(BaseModel):
 
 
 # ============================================================================
+# SELF-HEAL WATCHDOG
+# ============================================================================
+
+def next_retry_delay(attempt: int) -> float:
+    """Seconds the watchdog waits before its next poll of reload_config().
+
+    `attempt` is the count of consecutive degraded polls so far:
+      * attempt == 0  -> server is healthy; idle keep-alive cadence
+      * attempt >= 1  -> server is degraded; the Nth recovery retry
+
+    >>> CONTRIBUTION POINT — implement the cadence/backoff policy here. <<<
+
+    Contract pinned by tests/unit/scripts/test_sdxl_self_heal.py:
+      * always return a positive float
+      * a degraded poll heals at least as fast as the idle cadence:
+        next_retry_delay(1) <= next_retry_delay(0)
+
+    Levers to weigh: heal latency after a boot race (Postgres is ready within
+    seconds) vs. opening a DB connection every poll; and that a *permanent*
+    misconfig (unknown model name) will keep retrying — pick a cadence that
+    recovers promptly without spamming the DB/logs for hours.
+
+    Bounds available: DEGRADED_POLL_MIN_SECONDS / DEGRADED_POLL_MAX_SECONDS /
+    HEALTHY_POLL_SECONDS.
+
+    Policy: exponential backoff while degraded — heals within ~5s after a boot
+    race, then slows toward the 60s cap if a permanent misconfig keeps it
+    degraded so we don't hammer the DB or spam the logs for hours.
+    """
+    if attempt <= 0:
+        return float(HEALTHY_POLL_SECONDS)
+    delay = DEGRADED_POLL_MIN_SECONDS * (2 ** (attempt - 1))
+    return float(min(delay, DEGRADED_POLL_MAX_SECONDS))
+
+
+async def degraded_watchdog() -> None:
+    """Background loop: while the server is degraded, re-run reload_config()
+    so a transient boot-time failure recovers on its own instead of latching
+    until the next manual /reload. Runs for the life of the process; mirrors
+    the idle_unloader() create_task pattern in startup()."""
+    attempt = 0
+    while True:
+        if state.degraded:
+            attempt += 1
+            logger.info(
+                "[WATCHDOG] degraded (attempt %d): %s — retrying reload_config()",
+                attempt, state.degraded_reason,
+            )
+            await reload_config()
+            if not state.degraded:
+                logger.info("[WATCHDOG] recovered after %d attempt(s)", attempt)
+                attempt = 0
+        else:
+            attempt = 0
+        await asyncio.sleep(next_retry_delay(attempt))
+
+
+# ============================================================================
 # LIFECYCLE
 # ============================================================================
 
@@ -334,6 +404,7 @@ async def startup():
             if state.pipeline is not None and (time.time() - state.last_used) > IDLE_TIMEOUT:
                 unload_pipeline()
     asyncio.create_task(idle_unloader())
+    asyncio.create_task(degraded_watchdog())
 
 
 # ============================================================================

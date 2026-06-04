@@ -211,6 +211,26 @@ curl http://localhost:9836/health  # should show "status":"idle"
 
 ---
 
+## SDXL server "degraded — the database system is starting up" (boot race)
+
+**Symptom.** `curl http://localhost:9836/health` returns `"status":"degraded"`, `"model":null`, and a `degraded_reason` of `DB read failed for 'image_generation_model': the database system is starting up`. Every `/generate` returns 503, so ALL SDXL image generation is down — blog posts silently fall back to Pexels, but **video generation hard-fails** (`[VIDEO] No images could be generated`) because it has no Pexels fallback for frames. `media_reconciliation` then reports `job_failure` with `media_drift: ... N missing video (regen failures)`. The Docker healthcheck still shows the container "healthy" because `/health` returns HTTP 200 even while degraded.
+
+**Root cause.** A startup race after a host reboot or Docker-daemon restart. `restart: unless-stopped` brings `sdxl-server` and `postgres-local` back up in parallel — compose `depends_on: condition: service_healthy` is honored only by `docker compose up`, NOT by restart-policy restarts. SDXL's `startup()` reads `app_settings.image_generation_model` while Postgres is still initialising (Postgres error `57P03`), calls `mark_degraded()`, and — historically — never retried, so it stayed degraded until a manual `POST /reload`. (Observed 2026-06-04: ~21h silent outage; podcasts reconciled to 0 while video stuck at 18 — the podcast-vs-video differential isolates SDXL, since only video depends on SDXL frames.)
+
+**Immediate fix.**
+
+```bash
+curl -X POST http://localhost:9836/reload      # re-reads DB config; clears degraded once Postgres is up
+curl http://localhost:9836/health              # should show "status":"idle", "model":"sdxl_lightning"
+# the missing-video backlog drains on the next media_reconciliation cycle (hourly)
+```
+
+`docker restart poindexter-sdxl-server` also works (re-runs `startup()`), but `/reload` is lighter — no model reload, no VRAM churn.
+
+**Prevention (self-heal).** `scripts/sdxl-server.py` now runs a `degraded_watchdog()` background task that re-runs `reload_config()` while degraded, with exponential backoff (`next_retry_delay`: 5s → 60s cap). A boot-race latch now clears itself within ~5s instead of waiting for a manual `/reload`. Covered by `src/cofounder_agent/tests/unit/scripts/test_sdxl_self_heal.py`. The compose `depends_on` health-gate is kept too, but it only covers `docker compose up`, not reboots — the watchdog is the reliable backstop.
+
+---
+
 ## Wan video server fails on RTX 5090 (Blackwell) with "no kernel image is available"
 
 **Symptom.** `docker logs poindexter-wan-server` shows the model loaded successfully ("Wan 2.1 1.3B ready on NVIDIA GeForce RTX 5090") but the first `/generate` call fails with:
