@@ -2122,8 +2122,11 @@ async def log_electricity_cost(pool):
         # real reading — keeps the steady-state cycle query-free.
         icue_watts = None
         if not psu_watts:
+            # 90 min default: the iCUE tap is ingested by the hourly
+            # run_taps job, so sensor_samples is up to ~60 min old between
+            # ingests (not the few minutes a naive read would assume).
             icue_max_age = await _setting_int(
-                pool, "psu_icue_fallback_max_age_minutes", 30
+                pool, "psu_icue_fallback_max_age_minutes", 90
             )
             icue_watts = await fetch_icue_psu_watts(pool, icue_max_age)
 

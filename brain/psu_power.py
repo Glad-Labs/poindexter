@@ -111,7 +111,7 @@ def psu_watchdog_transition(prev_source, new_source, watts):
     }]
 
 
-async def fetch_icue_psu_watts(pool, max_age_minutes: int = 30):
+async def fetch_icue_psu_watts(pool, max_age_minutes: int = 90):
     """Latest Corsair PSU input (wall) power from the always-on iCUE CSV
     tap, or ``None`` if no fresh sample within ``max_age_minutes``.
 
@@ -119,8 +119,16 @@ async def fetch_icue_psu_watts(pool, max_age_minutes: int = 30):
     source ``corsair_csv``) keeps logging while HWiNFO fights iCUE over the
     bus, so it is the reliable fallback. ``psu_power_in`` is the AC wall
     draw — the same quantity HWiNFO exposes as ``psu_total_power_watts``
-    (PSU Power In). Freshness-gated so a dead tap (iCUE itself down) falls
-    through to the software estimate rather than billing on stale watts.
+    (PSU Power In).
+
+    The window default is 90 min, NOT a few minutes: the tap is ingested by
+    the worker's ``run_taps`` job, which fires hourly, so ``sensor_samples``
+    is refreshed once an hour and a reading is up to ~60 min old between
+    ingests. 90 min spans a full cycle plus margin (a delayed/missed fire).
+    A stale-but-real wall-power reading still beats the CPU+GPU+overhead
+    software estimate for an idle-ish cost metric. Still freshness-gated so a
+    genuinely dead tap (iCUE down for hours) falls through to the estimate
+    rather than billing on hours-old watts.
     """
     try:
         row = await pool.fetchrow(
