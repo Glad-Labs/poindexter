@@ -124,7 +124,6 @@ _STRIP_FILES = (
     "docs/architecture/module-v1-phase-1-plan-2026-05-13.md",
     "docs/architecture/module-v1-phase-2-plan-2026-05-13.md",
     "docs/architecture/declarative-data-plane-rfc-2026-04-24.md",
-    "src/cofounder_agent/poindexter/cli/finance.py",
     "docs/operations/finance-module-operator.md",
     ".woodpecker.yml",
     "scripts/migrate-poindexter-rename.sh",
@@ -203,29 +202,22 @@ _LEAK_GUARD_ALLOW = (
 )
 
 
-# Line-level patches the sync filter applies to specific source files
-# (via ``grep -v -F`` in ``sync-to-github.sh``). Lines containing any of
-# these substrings get dropped before the file ships, so the lint should
-# ignore matches on them too — they never reach public.
+# Line-level rewrites the sync filter applies to specific files (the
+# docs.json URL rewrite + the CHANGELOG private-key redaction in
+# ``sync-to-github.sh``). Lines containing any of these substrings are
+# dropped/rewritten before the file ships, so the lint ignores matches on
+# them too — they never reach public.
 #
-# Keys: the file the patch is applied to.
-# Values: list of literal substrings; a matching line is filtered.
+# Keys: the file the rewrite is applied to.
+# Values: list of literal substrings; a matching line is treated as stripped.
 #
-# Mirror ``PRIVATE_MODULE_REGISTRY_PATTERNS`` + ``PRIVATE_MODULE_CLI_PATTERNS``
-# from ``sync-to-github.sh``. When a new private module ships, update both.
+# NOTE: as of Module v1 Phase 5 (2026-06-04) there are NO substrate
+# line-patches for private modules — module/job/CLI discovery is presence-
+# based, so a private module is stripped by deleting its directory alone (no
+# registry.py / cli/app.py surgery). The former PRIVATE_MODULE_REGISTRY_PATTERNS
+# / PRIVATE_MODULE_CLI_PATTERNS mirrors were removed here in lock-step with
+# sync-to-github.sh.
 _SUBSTRATE_LINE_STRIPS: dict[str, tuple[str, ...]] = {
-    "src/cofounder_agent/plugins/registry.py": (
-        '"modules.finance"',
-        '"modules.finance.jobs.poll_mercury"',
-        "# FinanceModule F1",
-        "# integration. visibility=private",
-        "# FinanceModule F2 polling job",
-        "# from Mercury hourly. Gated by mercury_enabled in app_settings.",
-    ),
-    "src/cofounder_agent/poindexter/cli/app.py": (
-        "from .finance import finance_group",
-        'main.add_command(finance_group, name="finance")',
-    ),
     # docs.json: the sync filter rewrites the two operator-branded gladlabs.io
     # URLs to poindexter-neutral equivalents before pushing (see docs.json
     # rewrite block in sync-to-github.sh, 2026-05-27 audit). The CI lint runs

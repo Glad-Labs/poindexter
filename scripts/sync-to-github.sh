@@ -89,52 +89,21 @@ git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || t
 git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # private operator MCP server
 
 # === Module v1 private business modules (Glad-Labs/poindexter#490) ===
-# Modules declared with visibility="private" in their ModuleManifest live
-# only in the glad-labs-stack operator overlay. Until Phase 5 ships a
-# manifest-aware filter, list each private module's surface explicitly.
-# - FinanceModule: Mercury banking integration (read-only). Contains no
-#   actual credentials (those live encrypted in app_settings.value) but
-#   the module structure, CLI subcommand, and DB schema are all
-#   operator-scoped and shouldn't ship to public OSS.
+# Modules declared visibility="private" live only in the glad-labs-stack
+# operator overlay. As of Module v1 Phase 5 (2026-06-04) a private module is
+# stripped by DELETING ITS PACKAGE DIRECTORY ALONE: in-tree module + job +
+# CLI discovery is presence-based (plugins/registry.py directory scan +
+# modules/<name>/jobs/JOBS + Module.register_cli), and the module is NOT
+# listed in pyproject.toml. So there is nothing to patch in the substrate —
+# no registry.py / cli/app.py line-surgery, no pyproject entry to strip, and
+# the module's CLI now lives at modules/finance/cli.py so it rides the
+# directory. See docs/architecture/2026-06-04-module-visibility-sync-design.md.
+# - FinanceModule: Mercury banking (read-only). No credentials live in the
+#   tree (they're encrypted in app_settings.value), but the module structure,
+#   CLI, and DB schema are operator-scoped and don't ship to public OSS.
 git rm -r --cached --quiet src/cofounder_agent/modules/finance/ 2>/dev/null || true
-git rm --cached --quiet src/cofounder_agent/poindexter/cli/finance.py 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/tests/unit/modules/finance/ 2>/dev/null || true
 git rm --cached --quiet docs/operations/finance-module-operator.md 2>/dev/null || true   # private operator-overlay setup doc (Mercury banking)
-
-# Patch the substrate registration + CLI wiring so the stripped tree is
-# internally consistent. Each pattern is a literal string; grep -v -F
-# drops the line(s) that contain it. The patches are idempotent (re-
-# running on an already-patched tree is a no-op).
-PRIVATE_MODULE_REGISTRY_PATTERNS=(
-  '"modules.finance"'
-  '"modules.finance.jobs.poll_mercury"'
-  '# FinanceModule F1'
-  '# integration. visibility=private'
-  '# FinanceModule F2 polling job'
-  '# from Mercury hourly. Gated by mercury_enabled in app_settings.'
-)
-PRIVATE_MODULE_CLI_PATTERNS=(
-  'from .finance import finance_group'
-  'main.add_command(finance_group, name="finance")'
-)
-for pat in "${PRIVATE_MODULE_REGISTRY_PATTERNS[@]}"; do
-  if [ -f src/cofounder_agent/plugins/registry.py ]; then
-    grep -v -F "$pat" src/cofounder_agent/plugins/registry.py \
-      > src/cofounder_agent/plugins/registry.py.tmp \
-      && mv src/cofounder_agent/plugins/registry.py.tmp \
-            src/cofounder_agent/plugins/registry.py
-    git add src/cofounder_agent/plugins/registry.py
-  fi
-done
-for pat in "${PRIVATE_MODULE_CLI_PATTERNS[@]}"; do
-  if [ -f src/cofounder_agent/poindexter/cli/app.py ]; then
-    grep -v -F "$pat" src/cofounder_agent/poindexter/cli/app.py \
-      > src/cofounder_agent/poindexter/cli/app.py.tmp \
-      && mv src/cofounder_agent/poindexter/cli/app.py.tmp \
-            src/cofounder_agent/poindexter/cli/app.py
-    git add src/cofounder_agent/poindexter/cli/app.py
-  fi
-done
 
 # === Private infrastructure (Matt's local setup, not useful publicly) ===
 git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # legacy Gitea CI config (unused post-decommission)

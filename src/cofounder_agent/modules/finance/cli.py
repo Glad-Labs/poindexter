@@ -25,7 +25,13 @@ from datetime import date, timedelta
 import asyncpg
 import click
 
-from ._bootstrap import ensure_secret_key, resolve_dsn
+# NOTE: the bootstrap helpers (``ensure_secret_key`` / ``resolve_dsn``) live in
+# the ``poindexter.cli`` package. They are imported LAZILY inside the functions
+# that use them — importing this module must NOT eagerly pull in
+# ``poindexter.cli`` (whose ``__init__`` imports ``app``, which runs module
+# discovery → ``register_cli`` → re-imports this module = circular). Module v1
+# Phase 5 relocated this file out of ``poindexter/cli/`` into the finance
+# package, so the dependency is now cross-package and must stay deferred.
 
 
 def _run(coro):
@@ -40,6 +46,7 @@ async def _read_token(dsn: str) -> str:
     already in the CLI shell's env (the worker has it; bare
     ``poindexter`` invocations don't by default)."""
     from plugins.secrets import get_secret
+    from poindexter.cli._bootstrap import ensure_secret_key
 
     ensure_secret_key()
     conn = await asyncpg.connect(dsn)
@@ -63,6 +70,7 @@ def finance_balance(json_output: bool) -> None:
         MercuryAuthError,
         MercuryClient,
     )
+    from poindexter.cli._bootstrap import resolve_dsn
 
     async def _go():
         dsn = resolve_dsn()
@@ -137,6 +145,7 @@ def finance_transactions(
         MercuryAuthError,
         MercuryClient,
     )
+    from poindexter.cli._bootstrap import resolve_dsn
 
     async def _go():
         dsn = resolve_dsn()

@@ -19,7 +19,6 @@ from .costs import costs_group
 from .dev_diary import dev_diary_group
 from .doctor import doctor_group
 from .experiments import experiments_group
-from .finance import finance_group
 from .integrations import integrations_group
 from .memory import memory_group
 from .migrate import migrate_group
@@ -80,7 +79,6 @@ main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
 main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")
-main.add_command(finance_group, name="finance")
 main.add_command(integrations_group, name="integrations")
 main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
@@ -118,6 +116,15 @@ main.add_command(approve_publish_command)
 main.add_command(reject_publish_command)
 main.add_command(list_pending_publish_command)
 main.add_command(show_pending_publish_command)
+
+# Module-contributed CLI groups (Module v1 Phase 5). Each registered module
+# mounts its own subcommands via register_cli, so a private module's CLI
+# travels with its package — there is no module-specific line to strip from
+# this shared bootstrap on the public mirror.
+from plugins.registry import get_modules  # noqa: E402 — after the static groups
+
+for _module in get_modules():
+    _module.register_cli(main)
 
 
 if __name__ == "__main__":
