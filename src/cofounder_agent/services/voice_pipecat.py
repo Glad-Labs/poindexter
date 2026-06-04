@@ -122,9 +122,10 @@ def resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, str
     2. ``LIVEKIT_URL`` env var.
     3. Hardcoded ``ws://localhost:7880`` dev fallback.
 
-    API key / secret stay in env vars (``LIVEKIT_API_KEY`` /
-    ``LIVEKIT_API_SECRET``) -- same plumbing the LiveKit container reads
-    from the compose env, one place to rotate.
+    API key / secret come from env here -- this SYNC variant is for contexts
+    with no DB pool (the ``--print-client-token`` CLI, first-boot). Async
+    minters should call :func:`resolve_livekit_creds_async`, which reads the
+    key/secret from ``app_settings`` first (#1000) so rotation is DB-first.
     """
     url = ""
     if site_config is not None:
@@ -141,6 +142,40 @@ def resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, str
         "devsecret_change_me_change_me_change_me",
     )
     return url, key, secret
+
+
+async def resolve_livekit_creds_async(
+    site_config: Any | None = None,
+) -> tuple[str, str, str]:
+    """DB-first LiveKit creds for the token minters (#1000).
+
+    Same URL resolution as :func:`resolve_livekit_creds`, but the API key +
+    HS256 secret are read from ``app_settings`` (``livekit_api_key`` /
+    ``livekit_api_secret``, ``is_secret``) via ``SiteConfig.get_secret`` and
+    fall back to the env vars when the rows are **empty** (the seeded default)
+    or unreadable. This collapses the scattered key/secret copies to "DB, then
+    env" so rotation updates one place -- closing the desync bug class where a
+    rotated ``.env`` left a stale ``~/.claude.json`` copy minting bad tokens.
+
+    The LiveKit *server* still reads its key from env (third-party binary), so
+    env stays as the irreducible fallback the minters share with it.
+    """
+    # Start from the env-based values (also gives us the resolved url).
+    url, key, secret = resolve_livekit_creds(site_config)
+    get_secret = getattr(site_config, "get_secret", None)
+    if get_secret is None:
+        return url, key, secret
+    try:
+        db_key = (await get_secret("livekit_api_key", "") or "").strip()
+        db_secret = (await get_secret("livekit_api_secret", "") or "").strip()
+    except Exception as e:  # noqa: BLE001 -- DB hiccup must not break minting
+        logger.warning(
+            "%s resolve_livekit_creds_async: app_settings read failed (%s); "
+            "using env fallback.", _LOG_PREFIX, e,
+        )
+        return url, key, secret
+    # Non-empty DB value wins; empty (the seeded default) keeps the env value.
+    return url, db_key or key, db_secret or secret
 
 
 # ---------------------------------------------------------------------------

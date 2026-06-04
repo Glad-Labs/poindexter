@@ -215,3 +215,57 @@ def test_resolve_voice_room_default_honours_env(monkeypatch):
     # Unknown -> the env default; an allow-listed room still wins.
     assert _resolve_voice_room("nope") == "poindexter"
     assert _resolve_voice_room("claude-code") == "claude-code"
+
+
+# ---------------------------------------------------------------------------
+# DB-first creds (#1000) — voice_join mints from app_settings, env fallback.
+# ---------------------------------------------------------------------------
+
+
+class _FakeSiteConfig:
+    """SiteConfig stand-in bound to app.state: async get_secret for creds."""
+
+    def __init__(self, secrets: dict):
+        self._secrets = secrets
+
+    def get(self, key, default=None):
+        return default
+
+    async def get_secret(self, key, default=""):
+        return self._secrets.get(key, default)
+
+
+def _build_app_with_site_config(site_config):
+    app = FastAPI()
+    app.include_router(router)
+    app.state.site_config = site_config
+    return app
+
+
+@pytest.mark.unit
+def test_voice_join_mints_from_app_settings_when_env_empty(monkeypatch):
+    """With NO LiveKit env vars but app_settings populated, the route mints
+    from the DB secret (#1000) — proving DB-first, not env-only."""
+    monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+    monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
+    cfg = _FakeSiteConfig(
+        {"livekit_api_key": "db-key", "livekit_api_secret": "db-secret-value"},
+    )
+    client = TestClient(_build_app_with_site_config(cfg))
+    resp = client.get("/voice/join", headers=_TAILNET)
+    assert resp.status_code == 200
+    assert "const TOKEN =" in resp.text
+
+
+@pytest.mark.unit
+def test_voice_join_503_when_db_and_env_both_empty(monkeypatch):
+    """Empty DB rows + no env -> the resolver's dev defaults -> fail-loud 503
+    (no forgeable token against the well-known placeholder)."""
+    monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+    monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
+    cfg = _FakeSiteConfig({"livekit_api_key": "", "livekit_api_secret": ""})
+    client = TestClient(
+        _build_app_with_site_config(cfg), raise_server_exceptions=False,
+    )
+    resp = client.get("/voice/join", headers=_TAILNET)
+    assert resp.status_code == 503

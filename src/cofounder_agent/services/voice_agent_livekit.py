@@ -81,6 +81,7 @@ from services.voice_agent import build_voice_pipeline_task
 from services.voice_pipecat import (
     mint_livekit_token as _shared_mint_livekit_token,
     resolve_livekit_creds as _shared_resolve_livekit_creds,
+    resolve_livekit_creds_async as _shared_resolve_livekit_creds_async,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -834,6 +835,15 @@ def _resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, st
     return _shared_resolve_livekit_creds(site_config)
 
 
+async def _resolve_livekit_creds_async(
+    site_config: Any | None = None,
+) -> tuple[str, str, str]:
+    """Async, DB-first creds (#1000) — key/secret from app_settings, env
+    fallback. Used by ``run_bot`` (which has a loaded SiteConfig pool). Kept
+    as a module-level name so tests can patch it."""
+    return await _shared_resolve_livekit_creds_async(site_config)
+
+
 # ---------------------------------------------------------------------------
 # Proactive JWT refresh (#564)
 # ---------------------------------------------------------------------------
@@ -1203,7 +1213,8 @@ async def run_bot(
     try:
         _bootstrap_cfg = SiteConfig()
         await _bootstrap_cfg.load(_bootstrap_pool)
-        url, key, secret = _resolve_livekit_creds(_bootstrap_cfg)
+        # DB-first (#1000): key/secret from app_settings, env fallback.
+        url, key, secret = await _resolve_livekit_creds_async(_bootstrap_cfg)
     finally:
         await _bootstrap_pool.close()
 

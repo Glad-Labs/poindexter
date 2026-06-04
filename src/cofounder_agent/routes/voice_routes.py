@@ -162,6 +162,7 @@ def _mint_livekit_token(
 
 @router.get("/join", response_class=HTMLResponse)
 async def voice_join(
+    request: Request,
     room: str | None = Query(
         default=None,
         description=(
@@ -173,10 +174,11 @@ async def voice_join(
 ) -> HTMLResponse:
     """Render the LiveKit web client with a freshly-minted JWT.
 
-    Reads LIVEKIT_API_KEY + LIVEKIT_API_SECRET from env (matches the
-    voice-agent-livekit container's env shape). LIVEKIT_WSS_URL points
-    at the Tailscale-funneled wss endpoint; default assumes the
-    standard /livekit-signal/ path on this funnel hostname.
+    Resolves LIVEKIT_API_KEY + LIVEKIT_API_SECRET **DB-first** (#1000): from
+    ``app_settings`` (``livekit_api_key`` / ``livekit_api_secret``) via the
+    lifespan-bound SiteConfig, falling back to the env vars when those rows are
+    empty — so rotation is one place instead of every minter copy.
+    ``LIVEKIT_PUBLIC_WSS_URL`` still points at the funneled wss endpoint.
 
     Requires a tailnet caller — the ``Tailscale-User-Login`` header set
     by Tailscale Serve, verified by ``require_tailnet`` (NOT an OAuth
@@ -184,9 +186,19 @@ async def voice_join(
     traffic never carries that header, so the voice room stays protected
     even if the route is accidentally re-exposed over a Funnel.
     """
-    api_key = os.environ.get("LIVEKIT_API_KEY", "")
-    api_secret = os.environ.get("LIVEKIT_API_SECRET", "")
-    if not api_secret or api_secret == _DEV_PLACEHOLDER_SECRET or not api_key:
+    # DB-first creds (#1000) — app_settings, then env. site_config is bound to
+    # app.state by main.py's lifespan; absent in router-only tests, where the
+    # resolver falls back to env (monkeypatched LIVEKIT_API_* there).
+    from services.voice_pipecat import resolve_livekit_creds_async
+
+    site_config = getattr(getattr(request.app, "state", None), "site_config", None)
+    _url, api_key, api_secret = await resolve_livekit_creds_async(site_config)
+    if (
+        not api_secret
+        or api_secret == _DEV_PLACEHOLDER_SECRET
+        or not api_key
+        or api_key == "devkey"  # the resolver's dev default == unconfigured
+    ):
         # Fail-loud per the no-silent-defaults rule. Pre-fix this branch
         # silently minted forgeable tokens against the well-known dev
         # placeholder; that's worse than a 503 because forged tokens

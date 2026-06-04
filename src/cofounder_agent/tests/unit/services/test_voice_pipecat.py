@@ -156,3 +156,82 @@ def test_bridge_settings_bad_float_falls_back_to_default() -> None:
         {"voice_bridge_user_speech_timeout": "not-a-number"},
     )
     assert settings["user_speech_timeout"] == 1.5  # loud warning + default
+
+
+# ---------------------------------------------------------------------------
+# resolve_livekit_creds_async — DB-first key/secret (#1000)
+# ---------------------------------------------------------------------------
+
+
+class _FakeCfg:
+    """SiteConfig stand-in: sync get() for url, async get_secret() for creds."""
+
+    def __init__(self, values: dict, secrets: dict):
+        self._values = values
+        self._secrets = secrets
+
+    def get(self, key: str, default=None):
+        return self._values.get(key, default)
+
+    async def get_secret(self, key: str, default: str = "") -> str:
+        return self._secrets.get(key, default)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_livekit_creds_async_db_value_wins(monkeypatch):
+    """Non-empty app_settings key/secret override the env vars."""
+    from services import voice_pipecat
+
+    monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
+    cfg = _FakeCfg(
+        {"voice_agent_livekit_url": "ws://livekit:7880"},
+        {"livekit_api_key": "db-key", "livekit_api_secret": "db-secret"},
+    )
+    url, key, secret = await voice_pipecat.resolve_livekit_creds_async(cfg)
+    assert (url, key, secret) == ("ws://livekit:7880", "db-key", "db-secret")
+
+
+@pytest.mark.asyncio
+async def test_livekit_creds_async_empty_db_falls_back_to_env(monkeypatch):
+    """Empty app_settings rows (the seeded default) keep the env values."""
+    from services import voice_pipecat
+
+    monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
+    cfg = _FakeCfg({}, {"livekit_api_key": "", "livekit_api_secret": ""})
+    _url, key, secret = await voice_pipecat.resolve_livekit_creds_async(cfg)
+    assert (key, secret) == ("env-key", "env-secret")
+
+
+@pytest.mark.asyncio
+async def test_livekit_creds_async_no_site_config_uses_env(monkeypatch):
+    """No SiteConfig (no DB pool) -> env only, no get_secret call."""
+    from services import voice_pipecat
+
+    monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
+    _url, key, secret = await voice_pipecat.resolve_livekit_creds_async(None)
+    assert (key, secret) == ("env-key", "env-secret")
+
+
+@pytest.mark.asyncio
+async def test_livekit_creds_async_db_error_falls_back_to_env(monkeypatch):
+    """A get_secret hiccup must not break minting — fall back to env."""
+    from services import voice_pipecat
+
+    monkeypatch.setenv("LIVEKIT_API_KEY", "env-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "env-secret")
+
+    class _BoomCfg:
+        def get(self, key, default=None):
+            return default
+
+        async def get_secret(self, key, default=""):
+            raise RuntimeError("db down")
+
+    _url, key, secret = await voice_pipecat.resolve_livekit_creds_async(_BoomCfg())
+    assert (key, secret) == ("env-key", "env-secret")
