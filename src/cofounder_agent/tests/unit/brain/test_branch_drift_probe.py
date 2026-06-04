@@ -174,9 +174,9 @@ async def test_behind_main_emits_one_alert_then_dedupes():
     assert summary["alert_emitted"] is True
     assert len(_executes_to(pool, "alert_events")) == 1
 
-    # Second cycle, same (head, main) pair, dedup row now fresh -> suppressed.
+    # Second cycle, same local HEAD, dedup row now fresh -> suppressed.
     bdp._reset_state()  # clear cadence gate so it re-runs immediately
-    fp = bdp._fingerprint_for("Test-Org/test-repo", _LOCAL_HEAD, _MAIN_SHA)
+    fp = bdp._fingerprint_for("Test-Org/test-repo", _LOCAL_HEAD)
     pool2 = _make_pool(deduped_fingerprints={fp})
     summary2 = await bdp.run_branch_drift_probe(
         pool2,
@@ -188,6 +188,49 @@ async def test_behind_main_emits_one_alert_then_dedupes():
     assert summary2["ok"] is False
     assert summary2["alert_emitted"] is False
     assert _executes_to(pool2, "alert_events") == []
+
+
+@pytest.mark.asyncio
+async def test_advancing_main_does_not_defeat_dedup():
+    """Regression for Glad-Labs/glad-labs-stack#1105.
+
+    While prod stays parked on a stale checkout, origin/main keeps advancing.
+    The dedup fingerprint must key on the local HEAD only, so a new main_sha
+    does NOT mint a fresh key and re-page. Previously main_sha[:12] was in the
+    key, so every commit to main bypassed alert_dedup_state (33 alerts/24h).
+    """
+    bdp._reset_state()
+    # Dedup row already recorded for this local HEAD (an earlier cycle paged).
+    fp = bdp._fingerprint_for("Test-Org/test-repo", _LOCAL_HEAD)
+    new_main_sha = "ffffffffffffffffffffffffffffffffffffffff"  # main advanced
+    assert new_main_sha != _MAIN_SHA
+    pool = _make_pool(deduped_fingerprints={fp})
+    routes = {
+        "/commits/main": _FakeResponse(200, {"sha": new_main_sha}),
+        "/compare/": _FakeResponse(200, {"status": "diverged", "ahead_by": 27}),
+    }
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(),  # same stale local HEAD
+        notify_fn=MagicMock(),
+    )
+    # Same drift event despite the advanced main_sha -> still deduped.
+    assert summary["ok"] is False
+    assert summary["alert_emitted"] is False
+    assert _executes_to(pool, "alert_events") == []
+
+
+@pytest.mark.asyncio
+async def test_fingerprint_independent_of_main_sha():
+    """The dedup fingerprint must depend only on (repo, local_head)."""
+    fp_a = bdp._fingerprint_for("Test-Org/test-repo", _LOCAL_HEAD)
+    fp_b = bdp._fingerprint_for("Test-Org/test-repo", _LOCAL_HEAD)
+    assert fp_a == fp_b
+    # A different local HEAD is a different drift identity (operator deployed).
+    fp_c = bdp._fingerprint_for("Test-Org/test-repo", "0123456789abcdef0123")
+    assert fp_c != fp_a
 
 
 @pytest.mark.asyncio
