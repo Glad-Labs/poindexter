@@ -1440,6 +1440,90 @@ services:
       livekit:
         condition: service_healthy
 
+  # ===========================================
+  # Claude-Code voice room — the dev-on-the-go twin (#1006 two-room split)
+  # ===========================================
+  # Same image + env + volumes + GPU as voice-agent-livekit above; the ONLY
+  # divergences are `container_name` and `command` (--service-profile
+  # claude-code instead of the default poindexter profile). The profile makes
+  # the bot read the voice_agent_claude_code_* app_settings namespace
+  # (enabled / room_name / identity, seeded by migration 20260604_030000) and
+  # PINS the brain to claude-code — so a flip of the global
+  # voice_agent_brain_mode (the poindexter room's Emma/GLM selector) can never
+  # silently turn this container into an ollama bot.
+  #
+  # Kept as a full sibling rather than a YAML anchor to match the dominant
+  # house style (only langfuse-* uses anchors). Two bots, two rooms: a LiveKit
+  # participant identity lives in exactly one room, so simultaneous presence
+  # in `poindexter` and `claude-code` needs two processes. Shares the
+  # voice-agent-cache volume (Whisper/Kokoro weights cached once) and the
+  # host's ~/.claude bind mount (session JSONLs are per-uuid; the poindexter
+  # bot runs ollama and never spawns `claude`, so no write contention).
+  voice-agent-claude-code:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.voice-agent
+    image: poindexter-voice-agent:latest
+    container_name: poindexter-voice-agent-claude-code
+    restart: unless-stopped
+    command: ["python", "-m", "services.voice_agent_livekit", "--service", "--service-profile", "claude-code"]
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # Symmetric key for pgcrypto-decrypted is_secret rows. The claude-code
+      # bot DOES read a secret (voice_agent_claude_code_host_brain_token) when
+      # host-brain mode is on, so the key must be present.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+      # LiveKit credentials. Same pair as the `livekit` service so the bot can
+      # mint a valid room-join JWT for the claude-code room.
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:?Run 'poindexter setup' — value generated in bootstrap.toml}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:?Run 'poindexter setup' — value generated in bootstrap.toml}"
+      LIVEKIT_URL: "ws://livekit:7880"
+      # Tell _ensure_brain_on_path() where brain/bootstrap.py lives, since
+      # /app:ro hides the parent-walk from finding it.
+      POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
+      # Voice tools call the worker's HTTP API; localhost would be this
+      # container. Use the compose service name on the shared network.
+      POINDEXTER_API_URL: "http://worker:8002"
+    volumes:
+      - ./src/cofounder_agent:/app:ro
+      # Mount brain alongside /app (which is :ro and can't host a child mount).
+      - ./brain:/opt/poindexter/brain:ro
+      # Share the model-weight cache with voice-agent-livekit (named volume,
+      # so Whisper / Silero / Kokoro weights download once for both bots).
+      - voice-agent-cache:/home/voiceagent/.cache
+      # Bind-mount the host's ~/.claude RW so the in-container (or, in
+      # host-brain mode, the host's) `claude` picks up the operator's OAuth
+      # tokens, skills, plugins, MCP servers, and memory — AND can write its
+      # per-uuid session JSONL files (poindexter#488 dropped privileges, so
+      # HOME=/home/voiceagent).
+      - ${USERPROFILE:-${HOME}}/.claude:/home/voiceagent/.claude
+    extra_hosts:
+      # Needed for host-brain mode: voice_agent_claude_code_host_brain_url
+      # points at http://host.docker.internal:8123/turn (the host daemon).
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Healthcheck: the bot has no HTTP listener, so we probe the python
+    # process. PID 1 alive == voice loop running. Same pattern as
+    # voice-agent-livekit + brain-daemon.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os,signal; os.kill(1, 0)' 2>/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+
   # voice-agent-webrtc retired 2026-05-08 — voice_agent_livekit is the
   # canonical voice surface. The WebRTC alternative transport carried
   # the same Whisper → Ollama → Kokoro pipeline as livekit but via

@@ -1049,6 +1049,45 @@ _VALID_BRAIN_MODES = ("ollama", "claude-code")
 _DEFAULT_BRAIN_MODE = "ollama"
 
 
+# Always-on service profiles (#1006 two-room split). Each profile maps a
+# ``--service`` invocation to the app_settings key namespace it reads for
+# its enabled-flag / room / identity, plus an optional pinned brain. The
+# two-room split runs ONE container per profile:
+#
+#   default      — the original poindexter room. Emma/GLM ops bot. Brain is
+#                  resolved from ``voice_agent_brain_mode`` at pipeline-build
+#                  time (``brain=None``) so the start_voice_call MCP tool can
+#                  still flip it mid-shift.
+#   claude-code  — the dev-on-the-go room. Brain is PINNED to ``claude-code``
+#                  (this container IS the dev brain — it must never silently
+#                  fall back to ollama if the global brain_mode changes), and
+#                  it reads its own ``voice_agent_claude_code_*`` namespace
+#                  (which already holds the session/host-brain keys).
+#
+# Keeping room/identity/enabled in the DB (not compose flags) preserves the
+# DB-first config posture: the operator turns the claude-code room on/off
+# from a phone via ``voice_agent_claude_code_enabled`` exactly like the
+# poindexter room's ``voice_agent_livekit_enabled``.
+_SERVICE_PROFILES: dict[str, dict[str, Any]] = {
+    "default": {
+        "enabled_key": "voice_agent_livekit_enabled",
+        "room_key": "voice_agent_room_name",
+        "room_default": "poindexter",
+        "identity_key": "voice_agent_identity",
+        "identity_default": "poindexter-bot",
+        "brain": None,  # resolve from voice_agent_brain_mode at build time
+    },
+    "claude-code": {
+        "enabled_key": "voice_agent_claude_code_enabled",
+        "room_key": "voice_agent_claude_code_room_name",
+        "room_default": "claude-code",
+        "identity_key": "voice_agent_claude_code_identity",
+        "identity_default": "claude-code-bot",
+        "brain": "claude-code",  # pinned — this container IS the dev brain
+    },
+}
+
+
 def _coerce_int(raw: Any, default: int) -> int:
     """Coerce an app_settings string to int, falling back to ``default``.
 
@@ -1401,64 +1440,80 @@ def _print_client_token(room: str, identity: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def run_service() -> int:
-    """Start the always-on LiveKit voice bot.
+async def run_service(profile: str = "default") -> int:
+    """Start the always-on LiveKit voice bot for one room ``profile``.
 
-    Reads room + identity + enabled flag from ``app_settings``; the
-    brain mode is intentionally NOT read here — it's resolved inside
-    :func:`run_bot` at pipeline-build time so the
-    ``start_voice_call`` MCP tool can flip it mid-shift without
-    bouncing the container (Half B runtime toggle).
+    The two-room split (#1006) runs one container per profile (see
+    :data:`_SERVICE_PROFILES`):
 
-    Settings read here:
-      - ``voice_agent_livekit_enabled`` — if false/0/no/off, exit 0 immediately
-      - ``voice_agent_room_name``      — LiveKit room to join
-      - ``voice_agent_identity``       — bot identity in the room
+      - ``default``     — the poindexter room. Brain resolved from
+        ``voice_agent_brain_mode`` inside :func:`run_bot` at
+        pipeline-build time so the ``start_voice_call`` MCP tool can flip
+        it mid-shift without bouncing the container (Half B runtime
+        toggle); ``brain`` stays ``None`` here.
+      - ``claude-code`` — the dev-on-the-go room. Brain is PINNED to
+        ``claude-code`` so a change to the global ``voice_agent_brain_mode``
+        (e.g. the poindexter room flipping to ollama) can never silently
+        turn this container into an ollama bot.
 
-    Settings read inside ``run_bot`` (per pipeline build):
-      - ``voice_agent_brain_mode`` (then ``voice_agent_brain`` legacy)
+    Settings read here (keys vary by profile — the ``claude-code`` profile
+    reads its own ``voice_agent_claude_code_*`` namespace):
+      - enabled flag — if false/0/no/off, exit 0 immediately so docker's
+        ``unless-stopped`` policy leaves us stopped without crash-looping
+      - room name    — LiveKit room to join
+      - identity     — bot identity in the room
 
     Returns the desired process exit code.
     """
+    spec = _SERVICE_PROFILES.get(profile)
+    if spec is None:
+        # No silent fallback to the default profile — a typo'd profile in
+        # the container command must fail loud (feedback_no_silent_defaults).
+        raise SystemExit(
+            f"--service-profile={profile!r} is invalid. "
+            f"Valid values: {', '.join(sorted(_SERVICE_PROFILES))}.",
+        )
+
     _ensure_brain_on_path()
     import asyncpg
     from brain.bootstrap import require_database_url
 
     from services.site_config import SiteConfig
 
-    dsn = require_database_url(source="voice_agent_livekit_service")
+    dsn = require_database_url(source=f"voice_agent_livekit_service[{profile}]")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
     try:
         site_config = SiteConfig()
         await site_config.load(pool)
 
         enabled = str(
-            site_config.get("voice_agent_livekit_enabled", "true"),
+            site_config.get(spec["enabled_key"], "true"),
         ).strip().lower()
         if enabled in {"false", "0", "no", "off"}:
             log.info(
-                "voice_agent_livekit_enabled=%s — surface disabled, "
-                "exiting 0 so docker leaves us stopped under unless-stopped.",
-                enabled,
+                "%s=%s — voice room %r disabled, exiting 0 so docker leaves "
+                "us stopped under unless-stopped.",
+                spec["enabled_key"], enabled, profile,
             )
             return 0
 
         room = str(
-            site_config.get("voice_agent_room_name", "poindexter"),
-        ).strip() or "poindexter"
+            site_config.get(spec["room_key"], spec["room_default"]),
+        ).strip() or spec["room_default"]
         identity = str(
-            site_config.get("voice_agent_identity", "poindexter-bot"),
-        ).strip() or "poindexter-bot"
+            site_config.get(spec["identity_key"], spec["identity_default"]),
+        ).strip() or spec["identity_default"]
     finally:
         # ``run_bot`` opens its own pool (it needs the lifecycle to
         # mirror the Pipecat task), so close this one and avoid double
         # use.
         await pool.close()
 
-    # brain=None signals "resolve from app_settings each pipeline build".
-    # Validation lives in `_resolve_brain_mode` and still raises SystemExit
-    # on an invalid value, so the loud-fail posture is preserved.
-    await run_bot(room, identity, brain=None)
+    # ``brain`` per profile: None ("default") = resolve from app_settings
+    # each pipeline build; "claude-code" = pinned. Either way validation
+    # lives in `_resolve_brain_mode`, which raises SystemExit on an invalid
+    # value, so the loud-fail posture is preserved.
+    await run_bot(room, identity, brain=spec["brain"])
     return 0
 
 
@@ -1471,8 +1526,18 @@ def main() -> None:
         help=(
             "Run as the always-on container daemon (#383). Reads room, "
             "identity, brain, and enabled-flag from app_settings; ignores "
-            "--room/--identity/--brain. Exits 0 if voice_agent_livekit_"
-            "enabled is false."
+            "--room/--identity/--brain. Exits 0 if the profile's enabled "
+            "flag is false. Pair with --service-profile to pick the room."
+        ),
+    )
+    parser.add_argument(
+        "--service-profile", default="default", choices=sorted(_SERVICE_PROFILES),
+        help=(
+            "Which always-on room profile to run under --service (#1006 "
+            "two-room split). 'default' = the poindexter room (brain from "
+            "voice_agent_brain_mode); 'claude-code' = the dev-on-the-go room "
+            "(brain pinned to claude-code, reads the voice_agent_claude_code_* "
+            "key namespace). Ignored without --service. Default: default."
         ),
     )
     parser.add_argument(
@@ -1523,7 +1588,7 @@ def main() -> None:
 
     if args.service:
         try:
-            rc = asyncio.run(run_service())
+            rc = asyncio.run(run_service(profile=args.service_profile))
         except KeyboardInterrupt:
             rc = 0
         sys.exit(rc)

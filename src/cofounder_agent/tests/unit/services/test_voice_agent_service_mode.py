@@ -354,6 +354,168 @@ async def test_run_service_uses_defaults_when_settings_absent(
 
 
 # ---------------------------------------------------------------------------
+# Two-room split (#1006) — the ``claude-code`` service profile.
+#
+# ``run_service(profile=...)`` selects which app_settings namespace drives
+# the always-on container. The ``claude-code`` profile reads the
+# ``voice_agent_claude_code_*`` keys and PINS brain="claude-code" (so a flip
+# of the global ``voice_agent_brain_mode`` — the poindexter room's selector —
+# can never turn the dev room into an ollama bot). One container per profile.
+# ---------------------------------------------------------------------------
+
+
+def test_service_profiles_table_shape():
+    """The profile table is the seam: default defers brain, claude-code pins it."""
+    profiles = voice_agent_livekit._SERVICE_PROFILES
+    assert set(profiles) == {"default", "claude-code"}
+    # default resolves brain from settings at build time (None = defer).
+    assert profiles["default"]["brain"] is None
+    assert profiles["default"]["enabled_key"] == "voice_agent_livekit_enabled"
+    # claude-code pins brain + reads its own namespace.
+    assert profiles["claude-code"]["brain"] == "claude-code"
+    assert profiles["claude-code"]["enabled_key"] == "voice_agent_claude_code_enabled"
+    assert profiles["claude-code"]["room_default"] == "claude-code"
+    assert profiles["claude-code"]["identity_default"] == "claude-code-bot"
+
+
+@pytest.mark.asyncio
+async def test_run_service_claude_code_profile_reads_namespaced_keys(
+    fake_pool_and_config, monkeypatch,
+):
+    """The claude-code profile reads voice_agent_claude_code_* and pins brain.
+
+    Critically, the pinned brain is "claude-code" REGARDLESS of the global
+    ``voice_agent_brain_mode`` (set to ollama here, as it is in prod for the
+    poindexter room) — the dev container must never silently become ollama.
+    """
+    fake_pool_and_config["cfg"] = _FakeSiteConfig(
+        {
+            "voice_agent_claude_code_enabled": "true",
+            "voice_agent_claude_code_room_name": "dev-room",
+            "voice_agent_claude_code_identity": "claude-on-call",
+            # The poindexter room's selector — must NOT leak into this profile.
+            "voice_agent_brain_mode": "ollama",
+        },
+    )
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_run_bot(room, identity, *, brain, **_kw):
+        captured["room"] = room
+        captured["identity"] = identity
+        captured["brain"] = brain
+
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
+
+    rc = await voice_agent_livekit.run_service(profile="claude-code")
+    assert rc == 0
+    assert captured == {
+        "room": "dev-room",
+        "identity": "claude-on-call",
+        "brain": "claude-code",  # pinned — not None, not ollama
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_service_claude_code_profile_defaults_when_absent(
+    fake_pool_and_config, monkeypatch,
+):
+    """No claude-code rows -> documented defaults + pinned brain."""
+    fake_pool_and_config["cfg"] = _FakeSiteConfig({})
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_run_bot(room, identity, *, brain, **_kw):
+        captured["room"] = room
+        captured["identity"] = identity
+        captured["brain"] = brain
+
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
+
+    rc = await voice_agent_livekit.run_service(profile="claude-code")
+    assert rc == 0
+    assert captured == {
+        "room": "claude-code",
+        "identity": "claude-code-bot",
+        "brain": "claude-code",
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_service_claude_code_profile_disabled_exits_zero(
+    fake_pool_and_config, monkeypatch,
+):
+    """voice_agent_claude_code_enabled=false -> exit 0, run_bot never called.
+
+    The dev room gets its OWN master switch (homeostasis), independent of the
+    poindexter room's voice_agent_livekit_enabled.
+    """
+    fake_pool_and_config["cfg"] = _FakeSiteConfig(
+        {
+            "voice_agent_claude_code_enabled": "false",
+            # The poindexter room is enabled — must not keep this one alive.
+            "voice_agent_livekit_enabled": "true",
+        },
+    )
+
+    called = {"run_bot": False}
+
+    async def _fake_run_bot(*_a, **_kw):
+        called["run_bot"] = True
+
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
+
+    rc = await voice_agent_livekit.run_service(profile="claude-code")
+    assert rc == 0
+    assert called["run_bot"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_service_default_profile_ignores_claude_code_namespace(
+    fake_pool_and_config, monkeypatch,
+):
+    """The default (poindexter) profile must not read claude-code keys.
+
+    Guards against cross-namespace leakage: with ONLY the claude-code keys
+    set, the default profile still falls back to its poindexter defaults.
+    """
+    fake_pool_and_config["cfg"] = _FakeSiteConfig(
+        {
+            "voice_agent_claude_code_room_name": "dev-room",
+            "voice_agent_claude_code_identity": "claude-on-call",
+        },
+    )
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_run_bot(room, identity, *, brain, **_kw):
+        captured["room"] = room
+        captured["identity"] = identity
+        captured["brain"] = brain
+
+    monkeypatch.setattr(voice_agent_livekit, "run_bot", _fake_run_bot)
+
+    rc = await voice_agent_livekit.run_service(profile="default")
+    assert rc == 0
+    assert captured == {
+        "room": "poindexter",
+        "identity": "poindexter-bot",
+        "brain": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_service_invalid_profile_raises(fake_pool_and_config):
+    """An unknown --service-profile fails loud (feedback_no_silent_defaults).
+
+    A typo in the container command must NOT silently fall back to the
+    poindexter room — that would put two bots in one room.
+    """
+    with pytest.raises(SystemExit):
+        await voice_agent_livekit.run_service(profile="bogus-room")
+
+
+# ---------------------------------------------------------------------------
 # Brain-mode resolution (Half B — runtime toggle).
 #
 # `_resolve_brain_mode` is the seam between the "set it at process start"
