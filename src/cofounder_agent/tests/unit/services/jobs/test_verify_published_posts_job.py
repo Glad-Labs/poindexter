@@ -47,16 +47,19 @@ def _make_pool(
 
 
 class _FakeResp:
-    def __init__(self, status_code: int = 200):
+    def __init__(self, status_code: int = 200, headers: dict | None = None):
         self.status_code = status_code
+        self.headers = headers or {}
 
 
 def _patched_client(status_map: dict[str, Any]):
-    """httpx client mock. status_map: URL → int or Exception."""
+    """httpx client mock. status_map: URL → int | _FakeResp | Exception."""
     async def _get(url: str, timeout: float = 10) -> _FakeResp:
         outcome = status_map.get(url, 200)
         if isinstance(outcome, Exception):
             raise outcome
+        if isinstance(outcome, _FakeResp):
+            return outcome
         return _FakeResp(status_code=outcome)
 
     client = MagicMock()
@@ -113,6 +116,7 @@ class TestRun:
         assert result.changes_made == 0
         assert result.metrics == {
             "posts_checked": 2, "posts_verified": 2, "posts_failed": 0,
+            "posts_edge_blocked": 0,
         }
 
     @pytest.mark.asyncio
@@ -213,3 +217,56 @@ class TestRun:
         result = await job.run(pool, {"_site_config": _sc()})
         assert result.ok is False
         assert "pool closed" in result.detail
+
+
+class TestEdgeChallenge:
+    """A Cloudflare bot challenge (403 + cf-mitigated) is NOT a content
+    outage — it must not fire the critical 'post not reachable' page."""
+
+    @pytest.mark.asyncio
+    async def test_cf_challenge_not_counted_as_failure(self):
+        pool, conn = _make_pool([{"id": "p1", "title": "T", "slug": "t1"}])
+        client = _patched_client({
+            "https://gladlabs.io/posts/t1": _FakeResp(
+                403, {"cf-mitigated": "challenge", "server": "cloudflare"},
+            ),
+        })
+        finds = MagicMock()
+        with patch(
+            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.verify_published_posts.emit_finding", new=finds,
+        ):
+            job = VerifyPublishedPostsJob()
+            result = await job.run(pool, {"_site_config": _sc()})
+        # Classified as edge-blocked, NOT a content failure.
+        assert result.metrics["posts_failed"] == 0
+        assert result.metrics["posts_edge_blocked"] == 1
+        # audit row uses the distinct event type, not publish_verify_failed.
+        assert conn.execute.await_args.args[1] == "publish_verify_edge_blocked"
+        # A warning finding fires — never the critical one.
+        kinds = [c.kwargs.get("kind") for c in finds.call_args_list]
+        assert "verify_blocked_by_edge" in kinds
+        assert "post_verification_failure" not in kinds
+
+    @pytest.mark.asyncio
+    async def test_plain_403_without_cf_header_is_real_failure(self):
+        """A 403 lacking cf-mitigated is a genuine failure (still pages)."""
+        pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "t1"}])
+        client = _patched_client({
+            "https://gladlabs.io/posts/t1": _FakeResp(403, {"server": "vercel"}),
+        })
+        finds = MagicMock()
+        with patch(
+            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.verify_published_posts.emit_finding", new=finds,
+        ):
+            job = VerifyPublishedPostsJob()
+            result = await job.run(pool, {"_site_config": _sc()})
+        assert result.metrics["posts_failed"] == 1
+        assert result.metrics["posts_edge_blocked"] == 0
+        kinds = [c.kwargs.get("kind") for c in finds.call_args_list]
+        assert "post_verification_failure" in kinds

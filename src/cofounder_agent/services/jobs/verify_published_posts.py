@@ -2,14 +2,33 @@
 
 Replaces ``IdleWorker._verify_published_posts``. Runs every 30 minutes
 by default (matches the legacy cadence). Fetches posts published in the
-last N hours, GETs each one on the live site, and records any non-200
-response to ``audit_log`` as a ``publish_verify_failed`` event.
+last N hours, GETs each one on the live site, and records any genuine
+non-200 response to ``audit_log`` as a ``publish_verify_failed`` event.
 
 This is the canary that catches:
 - Static export publishing to the wrong bucket
 - Revalidation webhook failures leaving stale 404 pages
 - Post published but slug collision makes it unreachable
 - CDN caching issues after slug changes
+
+## Edge-challenge ≠ content outage
+
+If the edge (Cloudflare) answers with a bot *challenge* — HTTP 403/429/503
+carrying a ``cf-mitigated`` header — the post is NOT unreachable to real
+readers; the edge blocked our automated request (a browser solves the
+challenge and gets 200). Those responses are recorded as a distinct,
+lower-severity ``publish_verify_edge_blocked`` audit event plus a
+``warning`` ``verify_blocked_by_edge`` finding (operator should check bot
+settings / allowlist the monitor), NOT the ``critical``
+``post_verification_failure`` page reserved for genuine 404/5xx outages.
+
+This is defense-in-depth: on 2026-06-04, manually-enabled Cloudflare Bot
+Fight Mode 403-challenged this canary (and `POST /api/revalidate`) from the
+worker's egress IP, paging ``critical`` every 30 min on a false positive
+while real readers saw 200. The challenge is IP-reputation + UA based, so a
+UA swap does NOT reliably bypass it — the correct fix is at the edge
+(disable BFM / Super-BFM verified-bots allow / IP allowlist). This guard
+just stops the monitor from mistaking that for a content outage.
 
 ## Config (``plugin.job.verify_published_posts``)
 
@@ -33,6 +52,27 @@ from plugins.job import JobResult
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+def _is_edge_challenge(resp: Any) -> bool:
+    """True when a non-200 is a CDN bot-challenge, not a content outage.
+
+    Cloudflare's Managed Challenge / Bot Fight Mode answers clients it
+    classifies as automated with HTTP 403/429/503 plus a ``cf-mitigated``
+    header (body: "Just a moment..."). That means the EDGE blocked our
+    monitor's request — the post itself is still reachable to a real
+    browser, which solves the challenge and gets 200. Treating it as a
+    content outage produces false "post not reachable" critical pages.
+
+    Keyed on the ``cf-mitigated`` header because it's the unambiguous
+    "Cloudflare challenged this request" signal — a plain origin 403
+    proxied through Cloudflare does NOT carry it, so genuine 403s still
+    surface as real failures.
+    """
+    if resp.status_code not in (403, 429, 503):
+        return False
+    headers = getattr(resp, "headers", None) or {}
+    return bool(headers.get("cf-mitigated"))
 
 
 class VerifyPublishedPostsJob:
@@ -78,6 +118,7 @@ class VerifyPublishedPostsJob:
 
         verified = 0
         failures: list[dict[str, Any]] = []
+        edge_blocked: list[dict[str, Any]] = []
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0),
@@ -89,6 +130,17 @@ class VerifyPublishedPostsJob:
                     resp = await client.get(url, timeout=10)
                     if resp.status_code == 200:
                         verified += 1
+                    elif _is_edge_challenge(resp):
+                        # CDN bot-challenge — NOT a content outage. Real
+                        # readers still reach the post; only our automated
+                        # request was blocked. Tracked separately so it
+                        # never feeds the critical "not reachable" page.
+                        edge_blocked.append({
+                            "slug": row["slug"],
+                            "title": (row["title"] or "")[:50],
+                            "status": resp.status_code,
+                            "reason": "edge_challenge",
+                        })
                     else:
                         failures.append({
                             "slug": row["slug"],
@@ -102,7 +154,7 @@ class VerifyPublishedPostsJob:
                         "status": f"error: {e}",
                     })
 
-        # Record each failure to audit_log (best-effort).
+        # Record genuine failures to audit_log (best-effort).
         for f in failures:
             try:
                 async with pool.acquire() as conn:
@@ -117,6 +169,25 @@ class VerifyPublishedPostsJob:
             except Exception as e:
                 logger.debug(
                     "VerifyPublishedPostsJob: audit_log insert failed for %s: %s",
+                    f.get("slug"), e,
+                )
+
+        # Record edge-challenges under a DISTINCT event type so they never
+        # feed the critical post_verification_failure path / Discord page.
+        for f in edge_blocked:
+            try:
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "INSERT INTO audit_log (event_type, source, details, severity) "
+                        "VALUES ($1, $2, $3, $4)",
+                        "publish_verify_edge_blocked",
+                        "verify_published_posts_job",
+                        json.dumps(f),
+                        "warning",
+                    )
+            except Exception as e:
+                logger.debug(
+                    "VerifyPublishedPostsJob: edge audit_log insert failed for %s: %s",
                     f.get("slug"), e,
                 )
 
@@ -135,19 +206,59 @@ class VerifyPublishedPostsJob:
                 extra={"failure_count": len(failures), "checked_count": len(rows)},
             )
 
+        if edge_blocked and file_issue:
+            edge_lines = [
+                f"- `/posts/{f['slug']}` ({f['title']}) → {f['status']}"
+                for f in edge_blocked[:10]
+            ]
+            emit_finding(
+                source="verify_published_posts",
+                kind="verify_blocked_by_edge",
+                severity="warning",
+                title=(
+                    f"publish-verify: CDN challenged {len(edge_blocked)}/{len(rows)} "
+                    "monitor request(s)"
+                ),
+                body=(
+                    "## Monitor challenged by the CDN — not a content outage\n\n"
+                    "Cloudflare returned a bot **managed challenge** (HTTP "
+                    "403/429/503 with `cf-mitigated`) to this monitor's request. "
+                    "Real readers (browsers) still reach these posts — only the "
+                    "automated check was blocked.\n\n"
+                    + "\n".join(edge_lines)
+                    + "\n\n## Remediation\n"
+                    "1. Allowlist this monitor at Cloudflare (skip Bot Fight Mode / "
+                    "managed challenge for UA `GladLabsMonitor`), **or**\n"
+                    "2. **Security → Bots → Verified bots: Allow** if a bot rule was "
+                    "recently enabled, **or**\n"
+                    "3. Override the UA via "
+                    "`app_settings.verify_published_posts_user_agent`.\n\n"
+                    "⚠️ If real crawlers (Googlebot/Bingbot) hit the same UA-based "
+                    "challenge, search indexing is at risk — check Cloudflare "
+                    "**Security → Events** for verified-bot challenges."
+                ),
+                dedup_key="verify_blocked_by_edge",
+                extra={
+                    "edge_blocked_count": len(edge_blocked),
+                    "checked_count": len(rows),
+                },
+            )
+
         detail = (
             f"checked {len(rows)} recently-published post(s), "
-            f"{verified} ok, {len(failures)} failed"
+            f"{verified} ok, {len(failures)} failed, "
+            f"{len(edge_blocked)} edge-challenged"
         )
         logger.info("VerifyPublishedPostsJob: %s", detail)
         return JobResult(
             # Non-200s are content-pipeline findings, not a job failure.
             ok=True,
             detail=detail,
-            changes_made=len(failures),
+            changes_made=len(failures) + len(edge_blocked),
             metrics={
                 "posts_checked": len(rows),
                 "posts_verified": verified,
                 "posts_failed": len(failures),
+                "posts_edge_blocked": len(edge_blocked),
             },
         )
