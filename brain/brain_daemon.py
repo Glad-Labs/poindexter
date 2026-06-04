@@ -176,6 +176,21 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_ALERT_DISPATCHER = False
 
 try:
+    # PSU wall-power source selection + watchdog transitions (pure logic
+    # plus the one iCUE-fallback DB read). See brain/psu_power.py.
+    from psu_power import (
+        fetch_icue_psu_watts,
+        psu_watchdog_transition,
+        select_power_source,
+    )
+except ImportError:  # pragma: no cover — package-qualified path
+    from brain.psu_power import (
+        fetch_icue_psu_watts,
+        psu_watchdog_transition,
+        select_power_source,
+    )
+
+try:
     # GH#388 — backup-watcher probe + auto-retry. Stats the host-side
     # bind-mount used by the in-stack backup tiers (#385); on staleness,
     # `docker restart`s the responsible container before letting the
@@ -2076,42 +2091,45 @@ async def update_system_metrics(pool):
 async def log_electricity_cost(pool):
     """Log electricity cost for this 5-minute cycle based on real power data or estimates."""
     try:
-        # Try to get real power data from nvidia-smi-exporter (local only)
-        watts = None
-        power_source = "default"
+        # Real wall power, in priority order (see brain/psu_power.py):
+        #   1. HWiNFO HX1500i read (psu_total_power_watts) — primary
+        #   2. always-on iCUE CSV tap — fallback when HWiNFO drops the PSU
+        #      over the contended SMBus/USB-HID (the monitors fight)
+        #   3. system software estimate (CPU+GPU+overhead)
+        #   4. static 150W floor
+        psu_watts = None
+        estimate_watts = None
         exporter_url = "http://host.docker.internal:9835/metrics" if IS_DOCKER else "http://localhost:9835/metrics"
         try:
             resp = urllib.request.urlopen(exporter_url, timeout=3)
             body = resp.read().decode()
-            psu_watts = None
-            estimate_watts = None
             for line in body.split("\n"):
                 if line.startswith("psu_total_power_watts"):
                     psu_watts = float(line.split()[-1])
                 elif line.startswith("system_total_power_estimate_watts"):
                     estimate_watts = float(line.split()[-1])
-            # HX1500i wall power is ground truth; fall back to software estimate
-            if psu_watts:
-                watts = psu_watts
-                power_source = "hx1500i"
-            elif estimate_watts:
-                watts = estimate_watts
-                power_source = "estimate"
         except Exception as exc:
-            # poindexter#455 — used to be silent. Exporter unreachable
-            # is normal during host reboots but a sustained outage
-            # means the cost dashboard's per-cycle watts come from a
-            # 150W static estimate. Debug-log keeps the cycle quiet
-            # in steady state but flags a transition operator-side.
+            # poindexter#455 — exporter unreachable is normal during host
+            # reboots, but a sustained outage means cost watts come from the
+            # iCUE fallback or, failing that, the software estimate.
             logger.debug(
-                "[BRAIN] PSU exporter unreachable (%s: %s) — using "
-                "software estimate / static fallback this cycle",
+                "[BRAIN] PSU exporter unreachable (%s: %s) — trying iCUE "
+                "fallback / software estimate this cycle",
                 type(exc).__name__, exc,
             )
 
-        if watts is None:
-            # Fallback estimate: local PC idles around 150W
-            watts = 150.0
+        # Only hit the DB for the iCUE fallback when HWiNFO didn't give us a
+        # real reading — keeps the steady-state cycle query-free.
+        icue_watts = None
+        if not psu_watts:
+            icue_max_age = await _setting_int(
+                pool, "psu_icue_fallback_max_age_minutes", 30
+            )
+            icue_watts = await fetch_icue_psu_watts(pool, icue_max_age)
+
+        watts, power_source = select_power_source(
+            psu_watts, icue_watts, estimate_watts
+        )
 
         # Load electricity rate from DB, fallback to default
         rate_per_kwh = 0.29  # $/kWh default
@@ -2159,21 +2177,20 @@ async def log_electricity_cost(pool):
         logger.debug("[BRAIN] Electricity: %.0fW (%s), %.4f kWh, $%.6f (%s)",
                      watts, power_source, kwh, cost_usd, cost_type)
 
-        # PSU sensor watchdog — alert if real PSU data isn't available
+        # PSU sensor watchdog — graduated alerting on power-source changes.
+        # primary (HWiNFO) -> fallback (iCUE) is a Discord heads-up; losing
+        # both real sources to the estimate pages Telegram. See psu_power.
         try:
             prev = await pool.fetchrow(
                 "SELECT value FROM brain_knowledge WHERE entity = 'psu_watchdog' AND attribute = 'last_source'"
             )
             prev_source = prev["value"] if prev else None
 
-            if power_source == "hx1500i" and prev_source != "hx1500i":
-                # PSU sensors recovered
-                await notify("PSU sensors recovered — using real HX1500i wall power data", pool=pool)
-                await send_discord("✅ PSU sensors recovered — using real HX1500i wall power data", pool=pool)
-            elif power_source != "hx1500i" and prev_source == "hx1500i":
-                # PSU sensors dropped
-                await notify(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.", pool=pool)
-                await send_discord(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.", pool=pool)
+            for _note in psu_watchdog_transition(prev_source, power_source, watts):
+                if _note["severity"] == "critical":
+                    await notify(_note["message"], pool=pool)        # Telegram + Discord
+                else:
+                    await send_discord(_note["message"], pool=pool)  # Discord-only heads-up
 
             await pool.execute("""
                 INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
