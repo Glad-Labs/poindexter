@@ -268,6 +268,20 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_GATE_AUTO_EXPIRE_PROBE = False
 
 try:
+    # #868 — iCUE corsair_csv sensor-feed freshness watchdog. The tap that
+    # backs PSU wall-power (psu_power.py) ingests hourly via run_taps; this
+    # probe emits a `finding` when sensor_samples goes stale past the
+    # threshold so a stopped feed pages instead of going unnoticed.
+    from corsair_feed_probe import run_corsair_feed_probe
+    _HAS_CORSAIR_FEED_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.corsair_feed_probe import run_corsair_feed_probe
+        _HAS_CORSAIR_FEED_PROBE = True
+    except ImportError:
+        _HAS_CORSAIR_FEED_PROBE = False
+
+try:
     # GH#338 — coalesced "N posts pending review" summary probe.
     # SELECTs count + oldest age from post_approval_gates each cycle and
     # sends ONE Telegram page per gate_pending_summary_telegram_dedup_minutes
@@ -395,6 +409,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_GATE_AUTO_EXPIRE_PROBE", "brain/gate_auto_expire_probe.py",
      "Stale pending approval gates stop auto-expiring — queue grows unboundedly"),
+    ("_HAS_CORSAIR_FEED_PROBE", "brain/corsair_feed_probe.py",
+     "iCUE corsair_csv sensor feed staleness goes unalerted (#868)"),
     ("_HAS_GATE_PENDING_SUMMARY_PROBE", "brain/gate_pending_summary_probe.py",
      "Pending-queue daily summary Telegram pages stop"),
     ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
@@ -2486,6 +2502,21 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] gate_auto_expire probe failed: %s", e)
+
+    # iCUE corsair_csv sensor-feed freshness watchdog (#868). Emits a
+    # `finding` when the feed goes stale past the threshold so the
+    # findings_alert_router pages the operator (a stopped feed used to go
+    # unnoticed). Transition-only emit; brain_knowledge tracks state.
+    if _HAS_CORSAIR_FEED_PROBE:
+        try:
+            cf_summary = await run_corsair_feed_probe(pool)
+            probe_results["corsair_feed"] = {
+                "ok": bool(cf_summary.get("ok", False)),
+                "detail": cf_summary.get("detail", ""),
+                "summary": cf_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] corsair_feed probe failed: %s", e)
 
     # Gate pending summary (#338). Coalesces the per-flip Telegram noise
     # from the HITL gate spine into ONE "N posts pending review" page per
