@@ -109,7 +109,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         if isinstance(r, dict)
     ]
 
-    from services.multi_model_qa import MultiModelQA
+    from modules.content.multi_model_qa import MultiModelQA
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
     gate_states = await resolve_gate_states(qa)

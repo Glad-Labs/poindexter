@@ -149,7 +149,7 @@ class TestGenerateSeoMetadata:
             "services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
-            "services.ai_content_generator.get_content_generator",
+            "modules.content.ai_content_generator.get_content_generator",
             MagicMock(),
         ):
             result = await GenerateSeoMetadataStage().execute(ctx, {})
@@ -175,7 +175,7 @@ class TestGenerateSeoMetadata:
             "services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
-            "services.ai_content_generator.get_content_generator",
+            "modules.content.ai_content_generator.get_content_generator",
             MagicMock(),
         ):
             with pytest.raises(ValueError, match="invalid result"):

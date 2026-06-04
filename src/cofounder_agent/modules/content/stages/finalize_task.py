@@ -130,7 +130,7 @@ class FinalizeTaskStage:
         # GH-86: format the multi-model QA reviewers' feedback into human-readable
         # text so approvers can see *why* a post scored Q85 vs Q88, from the
         # serialized qa_reviews list cross_model_qa writes to state.
-        from services.multi_model_qa import format_qa_feedback_from_reviews
+        from modules.content.multi_model_qa import format_qa_feedback_from_reviews
         qa_reviews = context.get("qa_reviews") or []
         qa_feedback_text = ""
         if qa_reviews:

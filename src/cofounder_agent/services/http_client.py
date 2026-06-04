@@ -128,7 +128,7 @@ WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     "services.integrations.operator_notify",
     "services.integrations.handlers.outbound_discord",
     "services.metrics_exporter",
-    "services.multi_model_qa",
+    "modules.content.multi_model_qa",
 )
 
 

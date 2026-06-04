@@ -280,7 +280,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
 
 
 async def _draft_node(state: _State) -> _State:
-    from services.ai_content_generator import generate_with_context
+    from modules.content.ai_content_generator import generate_with_context
     instruction = (
         "Write a first-draft blog post drawing ONLY from the provided internal "
         "snippets. Do NOT make up external facts, statistics, or quotes you cannot "

@@ -17,7 +17,7 @@ import pytest
 
 from modules.content.atoms import qa_programmatic
 from modules.content.content_validator import ValidationIssue, ValidationResult
-from services.multi_model_qa import MultiModelQA
+from modules.content.multi_model_qa import MultiModelQA
 
 
 class _Cfg:

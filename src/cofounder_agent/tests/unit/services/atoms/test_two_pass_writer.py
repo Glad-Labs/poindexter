@@ -62,7 +62,7 @@ async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "A clean first draft with no markers."
-    monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
@@ -90,7 +90,7 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     ])
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
-    monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_revise(prompt, **kwargs):
         return next(drafts)
     monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
@@ -116,7 +116,7 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
     async def always_needs_more(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         counter["n"] += 1
         return f"Draft with [EXTERNAL_NEEDED: thing {counter['n']}] inside."
-    monkeypatch.setattr("services.ai_content_generator.generate_with_context", always_needs_more, raising=False)
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", always_needs_more, raising=False)
     async def fake_revise(prompt, **kwargs):
         counter["n"] += 1
         return f"Revised with [EXTERNAL_NEEDED: another thing {counter['n']}]."
@@ -164,7 +164,7 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
     monkeypatch.setattr(
-        "services.ai_content_generator.generate_with_context",
+        "modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_revise(prompt, **kwargs):
@@ -201,7 +201,7 @@ async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
     failed: no content produced" on every task post-#355. Mirrors
     ``test_revise_uses_plain_text_helper_not_json_helper`` for the draft.
     """
-    import services.ai_content_generator as acg
+    import modules.content.ai_content_generator as acg
 
     async def forbidden_json_helper(prompt, **kwargs):
         raise AssertionError(
@@ -223,10 +223,10 @@ async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
     async def fake_resolve(*, site_config=None):
         return "glm-4.7-5090:latest"
     monkeypatch.setattr(
-        "services.ai_content_generator._resolve_rag_writer_model", fake_resolve,
+        "modules.content.ai_content_generator._resolve_rag_writer_model", fake_resolve,
     )
     monkeypatch.setattr(
-        "services.ai_content_generator.get_prompt_manager",
+        "modules.content.ai_content_generator.get_prompt_manager",
         lambda: MagicMock(get_prompt=MagicMock(return_value="PROMPT")),
     )
 
@@ -269,7 +269,7 @@ def _wire_one_revise(monkeypatch):
         return next(drafts)
 
     monkeypatch.setattr(
-        "services.ai_content_generator.generate_with_context",
+        "modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 

@@ -140,7 +140,7 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         assert data["seo_description"] == "The hidden costs of 128k context windows"
         assert data["seo_keywords"] == "context windows, LLM costs, inference"
         assert data["quality_score"] == 88
-        from services.multi_model_qa import format_qa_feedback_from_reviews
+        from modules.content.multi_model_qa import format_qa_feedback_from_reviews
         assert data["qa_feedback"] == format_qa_feedback_from_reviews(
             ctx["qa_reviews"], final_score=88, approved=True,
         )

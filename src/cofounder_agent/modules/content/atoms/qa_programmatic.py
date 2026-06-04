@@ -74,7 +74,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         return {}
 
     from modules.content.content_validator import validate_content
-    from services.multi_model_qa import MultiModelQA, ReviewerResult
+    from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
     title = state.get("seo_title") or state.get("title") or ""
     topic = state.get("topic") or ""

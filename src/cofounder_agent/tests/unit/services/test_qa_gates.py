@@ -5,7 +5,7 @@ Two surfaces under test:
 1. ``services.qa_gates_db.load_qa_gate_chain`` — DB read layer that
    materializes the table into ``QAGateSpec`` records, ordered by
    ``execution_order``. The runtime walks this chain.
-2. ``services.multi_model_qa.MultiModelQA`` — the consumer. We assert
+2. ``modules.content.multi_model_qa.MultiModelQA`` — the consumer. We assert
    that the loaded chain controls which gates run (enabled vs disabled)
    and that ``required_to_pass=False`` rows are advisory rather than
    hard vetoes.
@@ -20,7 +20,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from modules.content.content_validator import ValidationResult
-from services.multi_model_qa import MultiModelQA
+from modules.content.multi_model_qa import MultiModelQA
 from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 from services.site_config import SiteConfig
 
@@ -219,7 +219,7 @@ def _qa_with_chain(rows: list[dict[str, Any]]) -> MultiModelQA:
     the qa_gates fetch — used by the consumer-side tests."""
     conn = _StubConn(sorted(rows, key=lambda r: r["execution_order"]))
     pool = _StubPool(conn)
-    with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
+    with patch("modules.content.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
         # site_config is a required kwarg (#272 Phase-2): the module-global
         # singleton was deleted, so tests pass an explicit SiteConfig().
         qa = MultiModelQA(pool=pool, settings_service=None, site_config=SiteConfig())
@@ -297,7 +297,7 @@ class TestLegacyFallback:
         """``pool=None`` (the unit-test default for MultiModelQA) must
         load an empty chain → all gates default-enabled."""
         with patch(
-            "services.multi_model_qa.get_model_router", create=True, return_value=MagicMock(),
+            "modules.content.multi_model_qa.get_model_router", create=True, return_value=MagicMock(),
         ):
             qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         chain = await load_qa_gate_chain(qa.pool)

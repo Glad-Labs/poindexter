@@ -69,7 +69,7 @@ class GenerateContentStage:
         # form a cluster that's still being decomposed. Import-at-call
         # sidesteps any circular-import risk with content_router_service
         # during the Phase E transition.
-        from services.ai_content_generator import get_content_generator
+        from modules.content.ai_content_generator import get_content_generator
         from services.audit_log import audit_log_bg
         from services.model_preferences import parse_model_preferences as _parse_model_preferences
         from services.self_review import self_review_and_revise as _self_review_and_revise

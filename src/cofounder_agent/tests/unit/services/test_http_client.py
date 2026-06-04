@@ -33,7 +33,7 @@ import services.image_service as image_service
 import services.integrations.handlers.outbound_discord as outbound_discord
 import services.integrations.operator_notify as operator_notify
 import services.metrics_exporter as metrics_exporter
-import services.multi_model_qa as multi_model_qa
+import modules.content.multi_model_qa as multi_model_qa
 from services.http_client import (
     WIRED_HTTP_CLIENT_MODULES,
     get_shared_http_client,

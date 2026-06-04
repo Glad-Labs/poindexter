@@ -151,7 +151,7 @@ def _patch_everything():
     """Returns a tuple of patch context managers wrapping every external dep."""
     return [
         patch(
-            "services.ai_content_generator.get_content_generator",
+            "modules.content.ai_content_generator.get_content_generator",
             return_value=SimpleNamespace(
                 _internal_links_cache=[
                     '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
@@ -310,7 +310,7 @@ class TestGenerateContentStageExecute:
         try:
             # Replace the generator so it returns empty content
             with patch(
-                "services.ai_content_generator.get_content_generator",
+                "modules.content.ai_content_generator.get_content_generator",
                 return_value=SimpleNamespace(
                     _internal_links_cache=[],
                     generate_blog_post=AsyncMock(return_value=("", "model", {})),

@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.ai_content_generator import AIContentGenerator, ContentValidationResult
+from modules.content.ai_content_generator import AIContentGenerator, ContentValidationResult
 from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ class TestCheckOllamaAsync:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("services.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         assert gen.ollama_available is True
@@ -323,7 +323,7 @@ class TestCheckOllamaAsync:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("services.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         assert gen.ollama_available is False
@@ -337,7 +337,7 @@ class TestCheckOllamaAsync:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(side_effect=ConnectionRefusedError("Connection refused"))
 
-        with patch("services.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         assert gen.ollama_available is False
@@ -353,7 +353,7 @@ class TestCheckOllamaAsync:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock()
 
-        with patch("services.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         # Should not have made any HTTP request
@@ -511,17 +511,17 @@ class TestGenerateFallbackContentExpanded:
 
 class TestGetContentGenerator:
     def test_returns_ai_content_generator(self):
-        import services.ai_content_generator as mod
+        import modules.content.ai_content_generator as mod
         mod._generator = None
-        from services.ai_content_generator import get_content_generator
+        from modules.content.ai_content_generator import get_content_generator
         gen = get_content_generator(site_config=SiteConfig())
         assert isinstance(gen, AIContentGenerator)
         mod._generator = None
 
     def test_returns_same_instance(self):
-        import services.ai_content_generator as mod
+        import modules.content.ai_content_generator as mod
         mod._generator = None
-        from services.ai_content_generator import get_content_generator
+        from modules.content.ai_content_generator import get_content_generator
         g1 = get_content_generator(site_config=SiteConfig())
         g2 = get_content_generator(site_config=SiteConfig())
         assert g1 is g2
@@ -712,7 +712,7 @@ class TestLoadGenerationPrompts:
             "refinement prompt body",
         ])
 
-        with patch("services.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+        with patch("modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
             system, generation, refine_fn = gen._load_generation_prompts(
                 topic="FastAPI",
                 style="technical",
@@ -736,7 +736,7 @@ class TestLoadGenerationPrompts:
             "refined output",
         ])
 
-        with patch("services.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+        with patch("modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
             _, _, refine_fn = gen._load_generation_prompts(
                 topic="x", style="technical", tone="professional",
                 target_length=500, tags=[],
@@ -749,7 +749,7 @@ class TestLoadGenerationPrompts:
     def test_prompt_manager_failure_raises(self):
         gen = _make_generator()
 
-        with patch("services.ai_content_generator.get_prompt_manager",
+        with patch("modules.content.ai_content_generator.get_prompt_manager",
                    side_effect=RuntimeError("pm broken")):
             with pytest.raises(RuntimeError, match="pm broken"):
                 gen._load_generation_prompts(
@@ -764,7 +764,7 @@ class TestLoadGenerationPrompts:
         fake_pm = MagicMock()
         fake_pm.get_prompt = MagicMock(side_effect=["sys", "gen"])
 
-        with patch("services.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+        with patch("modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
             gen._load_generation_prompts(
                 topic="x", style="technical", tone="professional",
                 target_length=500, tags=[],
@@ -799,7 +799,7 @@ class TestLoadGenerationPrompts:
         real_pm = UnifiedPromptManager()
 
         with patch(
-            "services.ai_content_generator.get_prompt_manager",
+            "modules.content.ai_content_generator.get_prompt_manager",
             return_value=real_pm,
         ):
             system, generation, refine_fn = gen._load_generation_prompts(
@@ -835,7 +835,7 @@ class TestLoadGenerationPrompts:
         real_pm = UnifiedPromptManager()
 
         with patch(
-            "services.ai_content_generator.get_prompt_manager",
+            "modules.content.ai_content_generator.get_prompt_manager",
             return_value=real_pm,
         ):
             # Call without target_audience / domain — used to KeyError.

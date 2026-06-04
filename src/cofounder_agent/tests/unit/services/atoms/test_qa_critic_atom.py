@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from modules.content.atoms import qa_critic
-from services.multi_model_qa import MultiModelQA, ReviewerResult
+from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:

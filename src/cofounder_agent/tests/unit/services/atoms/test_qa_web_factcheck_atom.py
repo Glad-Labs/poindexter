@@ -22,7 +22,7 @@ from modules.content.atoms._qa_rail_common import (
     aggregate_rail_reviews,
     known_wrong_fact_rescued,
 )
-from services.multi_model_qa import MultiModelQA, ReviewerResult
+from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:

@@ -39,7 +39,7 @@ class GenerateSeoMetadataStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.ai_content_generator import get_content_generator
+        from modules.content.ai_content_generator import get_content_generator
         from services.seo_content_generator import get_seo_content_generator
 
         topic = context.get("topic", "")

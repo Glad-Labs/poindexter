@@ -40,7 +40,7 @@ import httpx
 
 from services.logger_config import get_logger
 
-from .prompt_manager import get_prompt_manager
+from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``

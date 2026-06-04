@@ -8,7 +8,7 @@ for the call sites migrated in batch 2 sweep #4:
 - ``services.task_executor._auto_retry_failed_tasks`` -> intent-based,
   reads ``task_executor_first_retry_writer_model`` directly (NOT a tier
   migration target).
-- ``services.ai_content_generator._resolve_rag_writer_model`` -> tier='standard'
+- ``modules.content.ai_content_generator._resolve_rag_writer_model`` -> tier='standard'
 - ``services.ragas_eval._resolve_judge_model`` -> tier='budget'
 
 Per ``feedback_no_silent_defaults.md``, a missing tier mapping must
@@ -165,7 +165,7 @@ class TestVideoServiceResolveModel:
 class TestAIContentGeneratorResolveRAGModel:
     @pytest.mark.asyncio
     async def test_returns_tier_model_on_success(self):
-        from services.ai_content_generator import _resolve_rag_writer_model
+        from modules.content.ai_content_generator import _resolve_rag_writer_model
 
         sc = MagicMock()
         sc._pool = MagicMock()
@@ -180,7 +180,7 @@ class TestAIContentGeneratorResolveRAGModel:
 
     @pytest.mark.asyncio
     async def test_falls_back_to_pipeline_writer_model(self):
-        from services.ai_content_generator import _resolve_rag_writer_model
+        from modules.content.ai_content_generator import _resolve_rag_writer_model
 
         notify = AsyncMock()
         sc = MagicMock()
@@ -198,7 +198,7 @@ class TestAIContentGeneratorResolveRAGModel:
 
     @pytest.mark.asyncio
     async def test_raises_when_both_missing(self):
-        from services.ai_content_generator import _resolve_rag_writer_model
+        from modules.content.ai_content_generator import _resolve_rag_writer_model
 
         notify = AsyncMock()
         sc = MagicMock()

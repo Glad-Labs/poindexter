@@ -12,7 +12,7 @@ Architecture:
   Arbiter:      Score aggregation — weighted average decides publish/reject
 
 Usage:
-    from services.multi_model_qa import MultiModelQA
+    from modules.content.multi_model_qa import MultiModelQA
     qa = MultiModelQA(pool, site_config=site_config)
     result = await qa.review(title, content, topic)
     if result.approved:
