@@ -527,6 +527,44 @@ class TestPublishHappyPath:
         db.create_post.assert_not_awaited()  # No new post created
 
     @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    async def test_promote_existing_approved_revalidates(self, mock_export):
+        """Glad-Labs/poindexter#575: promoting an existing *approved* post to
+        published must ISR-revalidate (not only static-export), so the post
+        appears in nav + sitemap — not just on its own URL. The 2026-05-27
+        fix added the inline export_post but missed the revalidate, leaving
+        index pages stale after a `tasks publish` promote.
+        """
+        mock_export.return_value = True
+        db = _make_db()
+        task_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        slug = f"great-title-{task_id[:8]}"
+        # status='approved' (vs the no-status row above) takes the PROMOTE
+        # branch rather than the skip-duplicate branch.
+        db.pool.fetchrow = AsyncMock(return_value={
+            "id": "existing-post-id", "slug": slug,
+            "title": "Great Title", "status": "approved",
+        })
+        task = _make_task()
+
+        reval_mod = MagicMock()
+        reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
+        with _LazyImportContext(overrides={"services.revalidation_service": reval_mod}):
+            result = await publish_post_from_task(
+                db_service=db, task=task, task_id=task_id, queue_social=False,
+                site_config=_TEST_SC,
+            )
+
+        assert result.success is True
+        assert result.post_id == "existing-post-id"
+        # The fix: promote path now reports + actually fires revalidation.
+        assert result.revalidation_success is True
+        reval_mod.trigger_isr_revalidate.assert_awaited_once()
+        assert reval_mod.trigger_isr_revalidate.await_args.args[0] == slug
+        mock_export.assert_awaited_once()  # static export still happens too
+        db.create_post.assert_not_awaited()
+
+    @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)

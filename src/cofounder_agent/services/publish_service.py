@@ -740,6 +740,17 @@ async def _promote_or_skip_existing(
                 "%s: %s",
                 existing["slug"], exc, exc_info=True,
             )
+        # Bust Vercel's cached index renders (/, /archive, /posts,
+        # /sitemap.xml, /feed.xml) + the slug page so the promoted post
+        # appears in navigation and the sitemap — not just on its own URL.
+        # The 2026-05-27 fix added the inline export_post above but missed
+        # the matching ISR revalidate the main publish path runs (#327), so
+        # `tasks publish` on an approved post pushed R2 yet left every index
+        # page stale (Glad-Labs/poindexter#575). _revalidate_isr is
+        # non-fatal — a revalidation failure must not undo the publish.
+        promote_revalidation_success = await _revalidate_isr(
+            existing["slug"], site_config,
+        )
         return PublishResult(
             success=True,
             post_id=str(existing["id"]),
@@ -747,6 +758,7 @@ async def _promote_or_skip_existing(
             published_url=f"/posts/{existing['slug']}",
             post_title=existing.get("title", topic),
             static_export_success=promote_export_success,
+            revalidation_success=promote_revalidation_success,
         )
 
     logger.warning(
