@@ -695,6 +695,31 @@ class TestQaRailSkipRatio:
         assert "created_at" not in sql
         assert "details->>'reviewer'" in sql
 
+    async def test_sql_excludes_master_flag_off_skips(self):
+        """The SQL WHERE clause must exclude skips whose reason contains
+        'master rail flag off' so intentionally-disabled rails (ragas_enabled=false,
+        deepeval_enabled=false, guardrails_enabled=false) don't drive
+        QaRailFullySkipped. The filter is in the SQL; this test confirms the
+        clause is present so it can't be accidentally removed.
+
+        The mock here simulates the DB returning 0 rows after the SQL
+        filter eliminates all master-flag-off skips for a disabled rail,
+        matching what prod returns for ragas_eval / guardrails_* today.
+        """
+        from services import metrics_exporter as mx
+
+        # DB returns nothing for a fully-disabled rail (all its skips had
+        # reason='ragas_enabled=false (master rail flag off ...)' — filtered by SQL).
+        pool, conn = _skip_pool([])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=20)
+        assert _skip_ratio_value(mx, "ragas_eval") is None
+
+        sql = conn.fetch.call_args.args[0]
+        assert "master rail flag off" in sql, (
+            "SQL must filter out master-flag-off skips to prevent "
+            "QaRailFullySkipped from firing on intentionally-disabled rails"
+        )
+
     async def test_appears_in_exposition(self):
         from services import metrics_exporter as mx
 

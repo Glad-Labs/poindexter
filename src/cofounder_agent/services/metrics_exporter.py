@@ -295,6 +295,7 @@ FROM audit_log s, win
 WHERE s.event_type = 'qa_reviewer_skipped'
   AND (SELECT n FROM win) > 0
   AND s."timestamp" >= win.start_ts
+  AND s.details->>'reason' NOT LIKE '%master rail flag off%'
 GROUP BY s.details->>'reviewer'
 """
 
@@ -840,6 +841,12 @@ async def refresh_qa_rail_skip_ratio(
     ``skips / passes`` (capped at 1.0). The gauge is CLEARED first, so a
     rail that has recovered loses its series and the alert resolves; a
     healthy rail never gets a series (no skip rows → no alert).
+
+    Skips with ``reason LIKE '%master rail flag off%'`` are excluded from
+    the count. These are intentional operator disables (``ragas_enabled=false``
+    etc.) — an alert for a rail the operator deliberately turned off is noise,
+    not signal. The alert should only fire for rails that are enabled but
+    failing to run (empty research_context, unresolvable judge model, etc.).
 
     ``window_passes`` defaults to ``app_settings.qa_rail_skip_window_passes``
     (then ``_QA_RAIL_SKIP_WINDOW_DEFAULT``). Best-effort: any failure leaves

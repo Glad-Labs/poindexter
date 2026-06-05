@@ -26,7 +26,7 @@ ARG DOCKER_SHA256=4f798b3ee1e0140eab5bf30b0edc4e84f4cdb53255a429dc3bbae9524845d6
 ARG DOCKER_COMPOSE_VERSION=v2.33.1
 ARG DOCKER_COMPOSE_SHA256=3efda1ad6caed49dedd5644cadbf7e0c9cc3d74d8844ca5237b6a43ac1ef1a46
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates git && \
+    curl ca-certificates git smartmontools && \
     curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" \
         -o /tmp/docker.tgz && \
     echo "${DOCKER_SHA256}  /tmp/docker.tgz" | sha256sum -c - && \
