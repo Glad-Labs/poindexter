@@ -42,6 +42,10 @@ async def test_podcast_script_preserved_when_scene_parsing_fails():
     must still flow into context_updates so the director can run."""
     gpu = SimpleNamespace(lock=_fake_lock)
     result_obj = SimpleNamespace(text="PART1\n\nSHORT:\nsummary")
+    # Seam 1 Wave 3d (#667): scenes go through the capability handle now.
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
     with patch("services.gpu_scheduler.gpu", gpu), \
          patch(
@@ -49,16 +53,12 @@ async def test_podcast_script_preserved_when_scene_parsing_fails():
              new=AsyncMock(return_value="A" * 500),
          ), \
          patch(
-             "services.llm_providers.dispatcher.dispatch_complete",
-             new=AsyncMock(return_value=result_obj),
-         ), \
-         patch(
              "modules.content.stages.generate_media_scripts._parse_scene_output",
              side_effect=RuntimeError(
                  "podcast_service requires a site_config",
              ),
          ):
-        result = await GenerateMediaScriptsStage().execute(_ctx(), {})
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
 
     # The scene parse raised, but the already-built script must survive.
     assert result.context_updates.get("podcast_script") == "A" * 500
@@ -70,17 +70,17 @@ async def test_happy_path_propagates_podcast_script_and_scenes():
     """Sanity: when nothing fails, podcast_script + scenes propagate."""
     gpu = SimpleNamespace(lock=_fake_lock)
     result_obj = SimpleNamespace(text="1. a scene\n2. another\n\nSHORT:\nsummary")
+    # Seam 1 Wave 3d (#667): scenes go through the capability handle now.
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
 
     with patch("services.gpu_scheduler.gpu", gpu), \
          patch(
              "services.podcast_service._build_script_with_llm",
              new=AsyncMock(return_value="B" * 500),
-         ), \
-         patch(
-             "services.llm_providers.dispatcher.dispatch_complete",
-             new=AsyncMock(return_value=result_obj),
          ):
-        result = await GenerateMediaScriptsStage().execute(_ctx(), {})
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
 
     assert result.ok is True
     assert result.context_updates["podcast_script"] == "B" * 500

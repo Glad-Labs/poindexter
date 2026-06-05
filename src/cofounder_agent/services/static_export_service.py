@@ -294,6 +294,82 @@ def _build_sitemap(posts: list[dict], categories: list[dict], site_url: str) -> 
     return {"urls": urls, "total": len(urls)}
 
 
+# ---------------------------------------------------------------------------
+# Takedown / orphan cleanup (Glad-Labs/glad-labs-stack#1146)
+#
+# When a post leaves the published set (rejected / archived / deleted), its
+# static/posts/<slug>.json on storage and its prerendered /posts/<slug> page
+# linger as a stale soft-404 (HTTP 200 + the framework's auto-noindex), which
+# Google files under "Excluded by 'noindex'" instead of dropping as a 404.
+# Retiring a slug deletes the R2 JSON and busts the ISR cache so the next
+# request renders fresh -> notFound() -> a true 404.
+# ---------------------------------------------------------------------------
+
+# static/posts/<slug>.json -> <slug>  (anchored so it won't match nested keys)
+_POST_JSON_KEY_RE = _re_markdown.compile(r"(?:^|/)posts/([^/]+)\.json$")
+
+
+async def _delete_json(key: str, *, site_config: SiteConfig) -> bool:
+    """Delete a static JSON object from storage. Mirror of ``_upload_json``."""
+    from services.r2_upload_service import R2UploadService
+
+    return await R2UploadService(site_config=site_config).delete_object(
+        f"{_STATIC_PREFIX}/{key}",
+    )
+
+
+async def _retire_slug(slug: str, *, site_config: SiteConfig) -> None:
+    """Remove a de-published post's static JSON and bust its ISR cache.
+
+    Order matters: delete the R2 JSON FIRST, then revalidate. The public
+    page reads its content from R2, so revalidating before removal would just
+    re-render the still-present content as a fresh 200. Never raises — a
+    cleanup failure must not break a rebuild/sweep.
+    """
+    await _delete_json(f"posts/{slug}.json", site_config=site_config)
+    try:
+        from services.revalidation_service import trigger_isr_revalidate
+
+        await trigger_isr_revalidate(slug, site_config=site_config)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[STATIC_EXPORT] revalidate after retiring %s failed: %s", slug, e,
+        )
+
+
+async def _list_exported_post_slugs(*, site_config: SiteConfig) -> list[str]:
+    """List slugs that currently have a ``static/posts/<slug>.json`` on
+    storage (excludes ``index.json``)."""
+    from services.r2_upload_service import R2UploadService
+
+    keys = await R2UploadService(site_config=site_config).list_keys(
+        f"{_STATIC_PREFIX}/posts/",
+    )
+    slugs: list[str] = []
+    for key in keys:
+        match = _POST_JSON_KEY_RE.search(key)
+        if match and match.group(1) != "index":
+            slugs.append(match.group(1))
+    return slugs
+
+
+async def _sweep_orphan_post_jsons(
+    published_slugs: set[str], *, site_config: SiteConfig,
+) -> list[str]:
+    """Retire every exported post slug NOT in ``published_slugs``.
+
+    Returns the list of retired slugs. Shared by ``export_full_rebuild`` and
+    the ``static_export_orphan_sweep`` janitor job.
+    """
+    exported = await _list_exported_post_slugs(site_config=site_config)
+    retired: list[str] = []
+    for slug in exported:
+        if slug not in published_slugs:
+            await _retire_slug(slug, site_config=site_config)
+            retired.append(slug)
+    return retired
+
+
 async def export_post(
     pool,
     slug: str,
@@ -320,8 +396,16 @@ async def export_post(
                 success = False
             logger.info("[STATIC_EXPORT] Exported post: %s", slug)
         else:
-            logger.warning("[STATIC_EXPORT] Post not found for slug: %s", slug)
-            return False
+            # Slug is no longer published (rejected / archived / deleted).
+            # Retire its static JSON + bust the ISR cache so /posts/<slug>
+            # returns a true 404 instead of a stale soft-404 ghost (#1146),
+            # then fall through to rebuild the index/feed/sitemap so the slug
+            # also drops from the listings.
+            logger.info(
+                "[STATIC_EXPORT] Slug %s no longer published — retiring its "
+                "static export", slug,
+            )
+            await _retire_slug(slug, site_config=_sc)
 
         # Single fetch WITH content — the index/sitemap derive content-stripped
         # summaries in-memory (_post_summary ignores the content column), and the
@@ -405,6 +489,21 @@ async def export_full_rebuild(
             key = f"posts/{post['slug']}.json"
             if not await _upload_json(key, _to_json(_post_full(post)), site_config=_sc):
                 errors.append(key)
+
+        # Retire any per-post JSON whose slug is no longer published — a
+        # leftover from a takedown that would otherwise serve a stale
+        # soft-404 (#1146). Best-effort: never let cleanup fail the rebuild.
+        try:
+            retired = await _sweep_orphan_post_jsons(
+                {p["slug"] for p in all_posts}, site_config=_sc,
+            )
+            if retired:
+                logger.info(
+                    "[STATIC_EXPORT] Retired %d orphaned post JSON(s): %s",
+                    len(retired), ", ".join(sorted(retired)[:20]),
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[STATIC_EXPORT] orphan sweep failed: %s", e)
 
         cat_data = [{"id": str(c["id"]), "name": c["name"], "slug": c["slug"],
                       "description": c.get("description")} for c in categories]

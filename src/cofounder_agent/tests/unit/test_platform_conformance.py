@@ -31,6 +31,23 @@ class _StubSiteConfig:
     def get(self, key: str, default: object = None) -> object:
         return self._values.get(key, default)
 
+    # Typed getters mirror services.site_config.SiteConfig — the kernel adapter
+    # delegates straight to these.
+    def get_int(self, key: str, default: int = 0) -> int:
+        try:
+            return int(str(self.get(key, str(default))))
+        except (ValueError, TypeError):
+            return default
+
+    def get_float(self, key: str, default: float = 0.0) -> float:
+        try:
+            return float(str(self.get(key, str(default))))
+        except (ValueError, TypeError):
+            return default
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        return str(self.get(key, str(default))).lower() in ("true", "1", "yes", "on")
+
     async def get_secret(self, key: str, default: str | None = None) -> str | None:
         return self._secrets.get(key, default)
 
@@ -71,7 +88,10 @@ def _make_kernel_platform() -> KernelPlatform:
         return None
 
     return KernelPlatform(
-        site_config=_StubSiteConfig({"k": "v"}, {"s": "sv"}),
+        site_config=_StubSiteConfig(
+            {"k": "v", "port": "8080", "flag": "true", "ratio": "1.5"},
+            {"s": "sv"},
+        ),
         pool=_StubPool(),
         dispatch=_dispatch,
         audit_write=_audit_write,
@@ -83,7 +103,9 @@ def _make_kernel_platform() -> KernelPlatform:
 def platform(request: pytest.FixtureRequest) -> Platform:
     if request.param == "fake":
         return FakePlatform(
-            config={"k": "v"}, secrets={"s": "sv"}, dispatch_response="completion"
+            config={"k": "v", "port": "8080", "flag": "true", "ratio": "1.5"},
+            secrets={"s": "sv"},
+            dispatch_response="completion",
         )
     return _make_kernel_platform()
 
@@ -98,6 +120,25 @@ def test_satisfies_platform_protocol(platform: Platform) -> None:
 def test_config_reads_value(platform: Platform) -> None:
     assert platform.config.get("k") == "v"
     assert platform.config.get("missing", "fallback") == "fallback"
+
+
+def test_config_get_int(platform: Platform) -> None:
+    # Typed getter (Wave 3e) — the gap that blocked content's config migration.
+    assert platform.config.get_int("port") == 8080
+    assert platform.config.get_int("missing", 42) == 42
+    # Non-int value falls back to the default, never raises.
+    assert platform.config.get_int("k", 7) == 7
+
+
+def test_config_get_bool(platform: Platform) -> None:
+    assert platform.config.get_bool("flag") is True
+    assert platform.config.get_bool("missing") is False
+    assert platform.config.get_bool("missing", True) is True
+
+
+def test_config_get_float(platform: Platform) -> None:
+    assert platform.config.get_float("ratio") == 1.5
+    assert platform.config.get_float("missing", 2.5) == 2.5
 
 
 async def test_secret_reads_value(platform: Platform) -> None:

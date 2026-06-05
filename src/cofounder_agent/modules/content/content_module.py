@@ -36,12 +36,18 @@ _MANIFEST = ModuleManifest(
     visibility="public",
     description="Blog publishing pipeline — Glad Labs reference module.",
     requires=(),
-    # Wave 3c of Seam 1 (Glad-Labs/poindexter#667): content's first declared
-    # capability. Grants the scoped handle an ``audit`` attribute so the
-    # migrated best-effort telemetry sites can reach the kernel audit log via
-    # ``platform.audit.write_bg`` instead of importing ``services.audit_log``
-    # directly. Grows as further capabilities migrate.
-    capabilities=(Capability.AUDIT,),
+    # Seam 1 (Glad-Labs/poindexter#667): content's declared capabilities — the
+    # scoped handle exposes exactly these. Grows as each is migrated:
+    #   AUDIT (Wave 3c): telemetry via ``platform.audit.write_bg`` instead of
+    #     importing ``services.audit_log``.
+    #   DISPATCH (Wave 3d): LLM completions via ``platform.dispatch.complete``
+    #     instead of importing ``services.llm_providers.dispatcher``.
+    #   CONFIG (Wave 3e): DB-backed ``app_settings`` reads via
+    #     ``platform.config.get`` instead of ``context.get("site_config")``.
+    #     The file sweep is chunked (3e-1+); reaching ``platform.config`` from
+    #     any content file requires this declaration (an undeclared access
+    #     raises ``CapabilityError``), so it lands with the first migrated chunk.
+    capabilities=(Capability.AUDIT, Capability.DISPATCH, Capability.CONFIG),
 )
 
 

@@ -27,16 +27,27 @@ describe('robots()', () => {
     expect(defaultRule.allow).toBe('/');
   });
 
-  it('should disallow /_next/, /api/, /admin/, /private/ for default UA', async () => {
+  it('should disallow /api/, /admin/, /private/ for default UA', async () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://example.com';
     const { default: robots } = await import('../../app/robots');
     const result = robots();
 
     const defaultRule = result.rules.find((r) => r.userAgent === '*');
-    expect(defaultRule.disallow).toContain('/_next/');
     expect(defaultRule.disallow).toContain('/api/');
     expect(defaultRule.disallow).toContain('/admin/');
     expect(defaultRule.disallow).toContain('/private/');
+  });
+
+  it('should NOT disallow /_next/ — Google needs the CSS/JS there to render', async () => {
+    // Blocking /_next/ walls Google off from the CSS/JS it uses to render
+    // pages, and those assets were the bulk of the "Blocked by robots.txt"
+    // entries in Search Console (SEO indexing audit, 2026-06-04).
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://example.com';
+    const { default: robots } = await import('../../app/robots');
+    const result = robots();
+
+    const defaultRule = result.rules.find((r) => r.userAgent === '*');
+    expect(defaultRule.disallow).not.toContain('/_next/');
   });
 
   it('should block DotBot and allow AhrefsBot/SemrushBot for SEO analysis', async () => {

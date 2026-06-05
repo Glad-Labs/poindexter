@@ -47,7 +47,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Lazy import — keeps module discovery cheap (multi_model_qa is heavy).
     from modules.content.multi_model_qa import MultiModelQA
 
-    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
+    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)
     brand = qa._check_deepeval_brand(content, topic)           # sync
     g_eval = await qa._check_deepeval_g_eval(content, topic)

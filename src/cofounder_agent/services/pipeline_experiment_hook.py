@@ -1,19 +1,32 @@
-"""pipeline_experiment_hook — wire ExperimentService into the content pipeline.
+"""pipeline_experiment_hook — wire the A/B experiment harness into the content pipeline.
 
-Glad-Labs/poindexter#27 follow-up: ``ExperimentService`` was fully built
-in :mod:`services.experiment_service` (migration 0097, full unit tests)
-but never instantiated outside its own test file. This module is the
-narrow integration seam — call :func:`assign_pipeline_variant` at the
+This module is the narrow integration seam between the content pipeline
+and the experiment harness: call :func:`assign_pipeline_variant` at the
 top of ``content_router_service.process_content_generation_task`` and
-:func:`record_pipeline_outcome` after the pipeline finalizes.
+:func:`record_pipeline_outcome` after the pipeline finalizes
+(Glad-Labs/poindexter#27 follow-up).
+
+**Backend: Langfuse, not SQL.** Despite the module's origins, the hook
+delegates to
+:class:`services.langfuse_experiments.LangfuseExperimentService` —
+content A/B was moved off the SQL ``experiment_service`` tables onto
+Langfuse Datasets/Traces/Scores in #202 (the legacy
+``services/experiment_service.py`` was deleted). ``assign`` /
+``record_outcome`` both hit Langfuse; variant config is read from the
+Langfuse Dataset metadata.
+
+  NOTE — do not confuse this with the ``capability_outcomes`` /
+  retained ``experiments`` SQL tables. Those are the *router/architect*
+  outcome-scoring substrate (per-(atom, tier, model)), a separate
+  system from this content-level A/B harness.
 
 Design notes:
 
 - **Active experiment is operator-declared via app_settings.**
   ``app_settings.active_pipeline_experiment_key`` (default empty/disabled)
-  controls which experiment, if any, the pipeline routes through. This
-  matches the project's "DB-first config" rule — no code changes to flip
-  experiments on/off.
+  selects which experiment, if any, the pipeline routes through. Empty =
+  no experiment (the common case) — matches the "DB-first config" rule,
+  no code change to flip experiments on/off.
 - **Variant config is opaque to the router.** The hook understands one
   config key — ``writer_model`` — which it merges into ``models_by_phase``
   so the writer stage picks up the variant's preferred model. Future
@@ -22,10 +35,10 @@ Design notes:
 - **Best-effort.** A misconfigured experiment must NEVER halt the pipeline
   — every helper logs and returns sentinel values rather than raising.
   Real production runs are too valuable to lose to an A/B harness bug.
-- **Sticky assignment + idempotent outcome write.** The service handles
-  this via UNIQUE(experiment_id, subject_id) and JSONB ``||`` merge.
-  Re-running a task after a crash records the same variant + accumulates
-  metrics on the same row, exactly what we want.
+- **Sticky assignment + idempotent outcome write.** Langfuse keys the
+  assignment on a deterministic trace id derived from the subject_id, so
+  re-running a task after a crash records the same variant and
+  accumulates metrics rather than double-counting.
 """
 
 from __future__ import annotations

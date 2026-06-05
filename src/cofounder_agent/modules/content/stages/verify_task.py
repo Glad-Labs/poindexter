@@ -42,17 +42,19 @@ def _mint_preview(context: dict[str, Any]) -> dict[str, Any]:
     the rendered page. Returns the two channels for ``context_updates``.
 
     Reuses an existing ``preview_token`` if a caller already seeded one (so a
-    retry / replay keeps a stable URL). The base URL comes from the wired
-    SiteConfig (``preview_base_url``) so the screenshot hits an address
-    reachable from inside the worker container.
+    retry / replay keeps a stable URL). The base URL comes from the kernel via
+    the capability handle (``platform.config.get("preview_base_url")``, Seam 1
+    Wave 3e #667) so the screenshot hits an address reachable from inside the
+    worker container. None-tolerant: a missing handle (tests / ad-hoc CLI) falls
+    back to the default, exactly as the prior ``site_config``-None seam did.
     """
     token = (context.get("preview_token") or "").strip() or secrets.token_hex(16)
 
     base = _DEFAULT_PREVIEW_BASE_URL
-    site_config = context.get("site_config")
-    if site_config is not None:
+    platform = context.get("platform")
+    if platform is not None:
         try:
-            base = site_config.get("preview_base_url", _DEFAULT_PREVIEW_BASE_URL)
+            base = platform.config.get("preview_base_url", _DEFAULT_PREVIEW_BASE_URL)
         except Exception:  # noqa: BLE001
             base = _DEFAULT_PREVIEW_BASE_URL
     return {

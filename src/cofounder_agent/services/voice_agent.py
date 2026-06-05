@@ -149,6 +149,44 @@ def _resolve_whisper_model(name: str) -> WhisperModel:
             ) from exc
 
 
+def _build_stt(site_config: Any) -> Any:
+    """Build the STT stage per ``voice_agent_stt_mode`` (#1088).
+
+    ``sidecar`` → a Pipecat ``OpenAISTTService`` (a SegmentedSTTService:
+    buffers a VAD-bounded turn, one batch POST to /v1/audio/transcriptions)
+    pointed at the warm Speaches container. ``inprocess`` → the legacy
+    in-process ``WhisperSTTService`` (GPU, ~12s first-load). No silent
+    default: an unknown mode, or sidecar with an empty url/model, fails
+    loud.
+    """
+    mode = (site_config.get("voice_agent_stt_mode", "inprocess") or "").strip().lower()
+    if mode == "sidecar":
+        base_url = (site_config.get("voice_agent_stt_base_url", "") or "").strip()
+        if not base_url:
+            raise ValueError(
+                "voice_agent_stt_mode=sidecar but voice_agent_stt_base_url "
+                "is empty — set it (e.g. http://speaches:8000/v1)."
+            )
+        model = (site_config.get("voice_agent_stt_model", "") or "").strip()
+        if not model:
+            raise ValueError(
+                "voice_agent_stt_mode=sidecar but voice_agent_stt_model is "
+                "empty — set the faster-whisper id (e.g. "
+                "Systran/faster-whisper-medium)."
+            )
+        from pipecat.services.openai.stt import OpenAISTTService
+        # Speaches ignores the key, but the OpenAI SDK requires a non-empty
+        # one at construction.
+        return OpenAISTTService(base_url=base_url, api_key="speaches", model=model)
+    if mode != "inprocess":
+        raise ValueError(
+            f"voice_agent_stt_mode={mode!r} is invalid — expected "
+            "'sidecar' or 'inprocess'."
+        )
+    whisper_model_name = site_config.get("voice_agent_whisper_model", "base")
+    return WhisperSTTService(model=_resolve_whisper_model(whisper_model_name))
+
+
 def _resolve_tts_voice(site_config: Any, override: str | None) -> str:
     """Resolve the Kokoro voice id for this surface.
 
@@ -163,6 +201,57 @@ def _resolve_tts_voice(site_config: Any, override: str | None) -> str:
     if chosen:
         return chosen
     return site_config.get("voice_agent_tts_voice", "bf_emma")
+
+
+def _build_tts(site_config: Any, tts_voice_override: str | None) -> Any:
+    """Build the TTS stage per ``voice_agent_tts_mode`` (#1088).
+
+    The voice id is resolved the same way in both modes (so a per-room
+    ``tts_voice_override`` like the claude-code room's bf_isabella keeps
+    working). ``sidecar`` → ``OpenAITTSService`` POSTing /v1/audio/speech
+    to Speaches (honors tts_speed). ``inprocess`` → in-process Kokoro
+    (ignores speed). No silent default.
+    """
+    voice = _resolve_tts_voice(site_config, tts_voice_override)
+    mode = (site_config.get("voice_agent_tts_mode", "inprocess") or "").strip().lower()
+    if mode == "sidecar":
+        base_url = (site_config.get("voice_agent_tts_base_url", "") or "").strip()
+        if not base_url:
+            raise ValueError(
+                "voice_agent_tts_mode=sidecar but voice_agent_tts_base_url "
+                "is empty — set it (e.g. http://speaches:8000/v1)."
+            )
+        model = (site_config.get("voice_agent_tts_model", "") or "").strip()
+        if not model:
+            raise ValueError(
+                "voice_agent_tts_mode=sidecar but voice_agent_tts_model is "
+                "empty — set the Kokoro id (e.g. "
+                "speaches-ai/Kokoro-82M-v1.0-ONNX)."
+            )
+        speed = float(site_config.get("voice_agent_tts_speed", 1.0))
+        from pipecat.services.openai.tts import OpenAITTSService
+        # Pipecat's OpenAITTSService gates `voice` through a hardcoded
+        # VALID_VOICES map of OpenAI's own catalog (alloy/nova/shimmer/…).
+        # Speaches serves Kokoro voices (bf_emma/bf_isabella/…) which aren't
+        # in that map, so the stock ``VALID_VOICES[voice]`` lookup raises
+        # KeyError and TTS dies on every turn — the #1088 sidecar cutover
+        # silently broke audio on BOTH rooms. Register the resolved Kokoro
+        # voice as an identity pass-through so the lookup yields the raw
+        # name Speaches expects. setdefault keeps OpenAI's real entries intact.
+        OpenAITTSService.VALID_VOICES.setdefault(voice, voice)
+        return OpenAITTSService(
+            base_url=base_url,
+            api_key="speaches",
+            model=model,
+            voice=voice,
+            speed=speed,
+        )
+    if mode != "inprocess":
+        raise ValueError(
+            f"voice_agent_tts_mode={mode!r} is invalid — expected "
+            "'sidecar' or 'inprocess'."
+        )
+    return KokoroTTSService(settings=KokoroTTSService.Settings(voice=voice))
 
 
 def build_voice_pipeline_task(
@@ -228,22 +317,23 @@ def build_voice_pipeline_task(
         "voice_agent_ollama_url", "http://localhost:11434/v1",
     )
     tts_voice = _resolve_tts_voice(site_config, tts_voice_override)
-    tts_speed = float(site_config.get("voice_agent_tts_speed", 1.0))
-    whisper_model_name = site_config.get(
-        "voice_agent_whisper_model", "base",
-    )
     vad_stop_secs = float(site_config.get("voice_agent_vad_stop_secs", 0.2))
     system_prompt = system_prompt_override or (
         site_config.get("voice_agent_system_prompt", "")
         or _DEFAULT_SYSTEM_PROMPT
     )
 
+    # STT/TTS are mode-aware (#1088): in-process (legacy) or thin clients of
+    # the warm Speaches sidecar, per voice_agent_{stt,tts}_mode. The helpers
+    # own the model/url reads; we read the modes here only for the log line.
+    stt_mode = (site_config.get("voice_agent_stt_mode", "inprocess") or "").strip()
+    tts_mode = (site_config.get("voice_agent_tts_mode", "inprocess") or "").strip()
     log.info(
-        "Voice pipeline — llm=%s voice=%s whisper=%s vad_stop=%.2fs",
-        llm_model, tts_voice, whisper_model_name, vad_stop_secs,
+        "Voice pipeline — llm=%s voice=%s stt_mode=%s tts_mode=%s vad_stop=%.2fs",
+        llm_model, tts_voice, stt_mode, tts_mode, vad_stop_secs,
     )
 
-    stt = WhisperSTTService(model=_resolve_whisper_model(whisper_model_name))
+    stt = _build_stt(site_config)
 
     # Build (or reuse) the LLM stage. Default is the local Ollama path;
     # callers can inject any Pipecat LLM service to swap brains — the
@@ -263,15 +353,10 @@ def build_voice_pipeline_task(
             llm.register_direct_function(fn)
         tool_schema = ToolsSchema(standard_tools=list(tools))
         log.info("Registered %d tool(s) on the LLM stage", len(tools))
-    # Pipecat 1.1 deprecated KokoroTTSService(voice_id=...) in favor of
-    # settings=Settings(voice=...). Passing voice= as a kwarg gets eaten
-    # by **kwargs and the underlying kokoro_onnx ends up with voice=None
-    # → crash on first synthesis. Pipecat hardcodes speed=1.0 internally
-    # so tts_speed isn't honored today; kept the setting for forward-compat.
-    _ = tts_speed  # noqa: F841 — pipecat doesn't accept speed yet
-    tts = KokoroTTSService(
-        settings=KokoroTTSService.Settings(voice=tts_voice),
-    )
+    # STT/TTS are mode-aware (#1088): in-process (legacy) or a thin client
+    # of the warm Speaches sidecar, per voice_agent_{stt,tts}_mode. The
+    # sidecar OpenAITTSService honors tts_speed (in-process Kokoro did not).
+    tts = _build_tts(site_config, tts_voice_override)
 
     # Pipecat 1.1 API: LLMContext (universal, not OpenAI-specific) + a
     # standalone LLMContextAggregatorPair (replaces the old

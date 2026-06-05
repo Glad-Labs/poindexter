@@ -982,6 +982,48 @@ services:
       retries: 3
 
   # ===========================================
+  # Speaches — warm STT + TTS sidecar (#1088)
+  # ONE GPU container serving BOTH OpenAI-compatible endpoints:
+  #   POST /v1/audio/transcriptions  (faster-whisper)
+  #   POST /v1/audio/speech          (Kokoro — same bf_emma/bf_isabella
+  #                                   voices the in-process path uses)
+  # Voice agents become thin clients (Pipecat OpenAISTTService /
+  # OpenAITTSService -> http://speaches:8000/v1) only when
+  # voice_agent_stt_mode / voice_agent_tts_mode = sidecar. WHISPER__TTL=-1
+  # keeps the model resident so a voice-container restart never reloads it
+  # (the whole point of #1088 — move the ~12s cold-start to Speaches' boot).
+  # ===========================================
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    container_name: poindexter-speaches
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      # -1 = never idle-offload, so the model stays resident and warm.
+      WHISPER__TTL: "-1"
+      # Pin the HF cache to an explicit mount (don't guess the image user's
+      # HOME); shares downloaded weights with sdxl/wan via the same host dir.
+      HF_HOME: /cache/huggingface
+    volumes:
+      - ${USERPROFILE:-.}/.cache/huggingface:/cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ===========================================
   # pgAdmin — PostgreSQL web UI
   # ===========================================
   pgadmin:

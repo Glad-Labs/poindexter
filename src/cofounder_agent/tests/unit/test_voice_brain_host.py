@@ -98,6 +98,31 @@ def test_run_turn_requires_text(cfg):
         vbh._run_turn({"session_id": _UUID, "first_turn": True})
 
 
+def test_run_turn_spawns_with_no_window_flags(cfg, monkeypatch):
+    """The per-turn claude subprocess is spawned with
+    creationflags=_NO_WINDOW_FLAGS (CREATE_NO_WINDOW on Windows, 0 elsewhere)
+    so a voice turn never pops a console window on the host — feedback_no_popups.
+    """
+    captured: dict = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = b"ok"
+        stderr = b""
+
+    def _fake_run(argv, **kwargs):
+        captured.update(kwargs)
+        return _Proc()
+
+    monkeypatch.setattr(vbh.subprocess, "run", _fake_run)
+    out = vbh._run_turn({"session_id": _UUID, "first_turn": True, "text": "hi"})
+
+    assert out["returncode"] == 0
+    assert captured.get("creationflags") == vbh._NO_WINDOW_FLAGS
+    # The injection-resistance guarantee must survive alongside the new kwarg.
+    assert captured.get("shell") is False
+
+
 # ---------------------------------------------------------------------------
 # token auth — start a real server, stub the turn runner, hit it over HTTP
 # ---------------------------------------------------------------------------

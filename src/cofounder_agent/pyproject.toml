@@ -314,7 +314,6 @@ crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:Crosspost
 update_utility_rates = "cofounder_agent.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
 auto_embed_posts = "cofounder_agent.services.jobs.auto_embed_posts:AutoEmbedPostsJob"
 analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
-sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_subscribers:SyncNewsletterSubscribersJob"
 backfill_videos = "cofounder_agent.services.jobs.backfill_videos:BackfillVideosJob"
 backfill_podcasts = "cofounder_agent.services.jobs.backfill_podcasts:BackfillPodcastsJob"
 run_niche_topic_sweep = "cofounder_agent.services.jobs.run_niche_topic_sweep:RunNicheTopicSweepJob"

@@ -74,9 +74,21 @@ class CapabilityError(RuntimeError):
 
 @runtime_checkable
 class ConfigCapability(Protocol):
-    """Read a DB-backed ``app_settings`` value (sync, cache-backed)."""
+    """Read a DB-backed ``app_settings`` value (sync, cache-backed).
+
+    Mirrors the sync getter surface of ``services.site_config.SiteConfig`` so a
+    module can drop the kernel ``SiteConfig`` type entirely and reach config
+    only through this capability (Wave 3e). ``get_secret`` (async) stays on the
+    separate ``SecretCapability`` — secrets are a distinct trust concern.
+    """
 
     def get(self, key: str, default: Any = None) -> Any: ...
+
+    def get_int(self, key: str, default: int = 0) -> int: ...
+
+    def get_float(self, key: str, default: float = 0.0) -> float: ...
+
+    def get_bool(self, key: str, default: bool = False) -> bool: ...
 
 
 @runtime_checkable

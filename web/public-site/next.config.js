@@ -107,6 +107,24 @@ const cspStaticOrigin = (() => {
   }
 })();
 
+// First-party page-view beacon (Cloudflare Worker). The browser blocks the
+// ViewTracker beacon unless the Worker's origin is in connect-src, so derive
+// it from the SAME env var ViewTracker POSTs to — keeping the allow-list and
+// the beacon target from drifting apart. (The 2026-06 page_views outage:
+// NEXT_PUBLIC_BEACON_URL pointed cross-origin but wasn't in connect-src, so
+// every beacon was CSP-blocked.) Tolerate a scheme-less value (prepend https)
+// so a bare-host env var resolves to a real origin instead of throwing.
+const cspBeaconOrigin = (() => {
+  const raw = process.env.NEXT_PUBLIC_BEACON_URL;
+  if (!raw) return '';
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    return new URL(withScheme).origin;
+  } catch {
+    return '';
+  }
+})();
+
 const nextConfig = {
   // Standalone output for Docker deployments — produces .next/standalone with a self-contained server.js
   output: 'standalone',
@@ -220,7 +238,7 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com`,
+                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
               ].join('; ') + ';',
           },
@@ -297,7 +315,11 @@ const nextConfig = {
       { source: '/contact-us', destination: '/about', permanent: true },
       { source: '/my-account', destination: '/', permanent: true },
       { source: '/sample-page', destination: '/', permanent: true },
-      { source: '/privacy-policy-2', destination: '/privacy', permanent: true },
+      // Legacy WordPress privacy URLs → the real page at /legal/privacy.
+      // (Both previously pointed at /privacy, which 404s — caught in the
+      // 2026-06-04 SEO indexing audit.)
+      { source: '/privacy-policy', destination: '/legal/privacy', permanent: true },
+      { source: '/privacy-policy-2', destination: '/legal/privacy', permanent: true },
       // WordPress artifacts — redirect to homepage
       { source: '/woocommerce-placeholder', destination: '/', permanent: true },
       { source: '/site-logo', destination: '/', permanent: true },

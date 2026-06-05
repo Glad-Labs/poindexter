@@ -15,7 +15,8 @@ shot list into actual video rendering. Design doc:
 
 - ``task_id`` (str), ``title`` (str), ``content`` (str)
 - ``podcast_script`` (str, produced by ``generate_media_scripts``)
-- ``site_config`` (DI seam)
+- ``platform`` (capability handle — ``config`` for model/site_name reads +
+  ``dispatch`` for the LLM call; Seam 1 Waves 3d/3e, #667)
 - ``database_service`` (DI seam — pool for the LLM dispatcher)
 
 ## Context writes
@@ -166,26 +167,32 @@ class GenerateVideoShotListStage:
                 metrics={"skipped": True},
             )
 
-        sc = context.get("site_config")
         database_service = context.get("database_service")
         pool = getattr(database_service, "pool", None) if database_service else None
+        # Seam 1 Wave 3d (#667): LLM completion via the capability handle.
+        platform = context.get("platform")
 
-        if pool is None:
-            # Tests / bootstrap path — no DB → no LLM call. The stage
-            # is non-critical so this is fine.
+        if pool is None or platform is None:
+            # Tests / bootstrap path — no DB / no kernel handle → no LLM call.
+            # The stage is non-critical so this is fine.
             return StageResult(
                 ok=True,
-                detail="no DB pool in context — director skipped",
+                detail="no DB pool / Platform handle in context — director skipped",
                 metrics={"skipped": True},
             )
+
+        # Seam 1 Wave 3e (#667): config reads go through the handle. The guard
+        # above guarantees ``platform`` is non-None here, so no None-tolerance
+        # dance is needed — ``platform.config`` is the only config seam now.
+        cfg = platform.config
 
         # Same model resolution as generate_media_scripts — operators
         # can pin a director model via ``video_director_model`` later
         # if they want it different from the default ollama model.
         model = (
-            (sc.get("video_director_model") if sc is not None else None)
-            or (sc.get("video_scene_model") if sc is not None else None)
-            or (sc.get("default_ollama_model") if sc is not None else None)
+            cfg.get("video_director_model")
+            or cfg.get("video_scene_model")
+            or cfg.get("default_ollama_model")
             or "llama3:latest"
         )
         if model == "auto":
@@ -209,7 +216,7 @@ class GenerateVideoShotListStage:
                 now_iso=now_iso,
                 # Operator brand templated into the director persona via
                 # {site_name} (migrated to skills/content/video-director).
-                site_name=(sc.get("site_name") if sc else "") or "",
+                site_name=cfg.get("site_name") or "",
             )
         except Exception as exc:
             logger.warning(
@@ -229,9 +236,8 @@ class GenerateVideoShotListStage:
                 metrics={"failed": True},
             )
 
-        # Dispatch the LLM call.
+        # Dispatch the LLM call (Seam 1 Wave 3d, #667 — via the handle).
         from services.gpu_scheduler import gpu
-        from services.llm_providers.dispatcher import dispatch_complete
 
         director_output = ""
         try:
@@ -239,7 +245,7 @@ class GenerateVideoShotListStage:
                 "ollama", model=model,
                 task_id=task_id, phase="video_director",
             ):
-                result = await dispatch_complete(
+                result = await platform.dispatch.complete(
                     pool=pool,
                     messages=[{"role": "user", "content": rendered_prompt}],
                     model=model,

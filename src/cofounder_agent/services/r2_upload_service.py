@@ -177,6 +177,84 @@ class R2UploadService:
             logger.exception("[STORAGE] Upload failed for %s: %s", r2_key, e)
             return None
 
+    async def _s3_client_and_bucket(self):
+        """Build a boto3 S3 client + bucket name from app_settings.
+
+        Returns ``(client, bucket)`` or ``(None, None)`` when credentials /
+        config are missing or boto3 isn't installed. Used by ``delete_object``
+        and ``list_keys``; ``upload_to_r2`` builds its own client inline and is
+        left untouched to keep the publish-critical path unchanged.
+        """
+        access_key = self._storage("access_key")
+        secret_key = await self._storage_secret("secret_key")
+        endpoint_url = self._storage("endpoint")
+        bucket = self._storage("bucket")
+        if not (access_key and secret_key and endpoint_url and bucket):
+            logger.warning(
+                "[STORAGE] object-store creds/config incomplete — skipping op",
+            )
+            return None, None
+        try:
+            import boto3
+        except ImportError:
+            logger.warning(
+                "[STORAGE] boto3 not installed — cannot reach object store",
+            )
+            return None, None
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name="auto",
+        )
+        return s3, bucket
+
+    async def delete_object(self, key: str) -> bool:
+        """Delete an object by key (e.g. ``static/posts/foo.json``).
+
+        Idempotent: S3 ``delete_object`` returns success even when the key is
+        already absent, so a double-delete is a no-op. Returns True on
+        success, False when creds/config are missing or the call raises.
+        """
+        s3, bucket = await self._s3_client_and_bucket()
+        if not s3:
+            return False
+        try:
+            s3.delete_object(Bucket=bucket, Key=key)
+            logger.info("[STORAGE] Deleted: %s", key)
+            return True
+        except Exception as e:
+            logger.exception("[STORAGE] Delete failed for %s: %s", key, e)
+            return False
+
+    async def list_keys(self, prefix: str) -> list[str]:
+        """List every object key under ``prefix`` (paginated via
+        ``ContinuationToken``). Returns [] on error or missing config."""
+        s3, bucket = await self._s3_client_and_bucket()
+        if not s3:
+            return []
+        keys: list[str] = []
+        try:
+            token: str | None = None
+            while True:
+                kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
+                if token:
+                    kwargs["ContinuationToken"] = token
+                resp = s3.list_objects_v2(**kwargs)
+                for obj in resp.get("Contents") or []:
+                    keys.append(obj["Key"])
+                if resp.get("IsTruncated") and resp.get("NextContinuationToken"):
+                    token = resp["NextContinuationToken"]
+                else:
+                    break
+            return keys
+        except Exception as e:
+            logger.exception(
+                "[STORAGE] list_keys failed for prefix %s: %s", prefix, e,
+            )
+            return []
+
     async def upload_podcast_episode(self, post_id: str) -> str | None:
         """Upload a podcast episode MP3 to R2. Returns public URL or None.
 
