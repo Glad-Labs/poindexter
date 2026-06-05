@@ -151,9 +151,11 @@ catalog: `bf_emma` (B-, default), `bf_isabella` (C), `bf_alice` (D),
 `bf_lily` (D). Many other languages / accents available — see the
 Kokoro docs.
 
-Switching to a different TTS engine entirely (Piper, Coqui, edge-tts)
-needs a code change in `build_voice_pipeline_task` — the TTS stage is
-hardcoded to `KokoroTTSService` today. Tracked as a follow-up of #383.
+STT and TTS are **mode-aware** as of #1088 (see "Warm STT/TTS sidecar"
+below): `voice_agent_{stt,tts}_mode = inprocess` runs the models in the
+voice container (the values above apply); `= sidecar` makes the voice
+agents thin clients of the warm Speaches container (faster-whisper +
+Kokoro), which is the path that kills the ~12s per-restart cold-start.
 
 ### Brain
 
@@ -167,6 +169,76 @@ incremental cost.
 ~10s cold first turn) but has full repo access, MCP tools, and
 edit/bash powers. Best for "dev on the go" — ask Claude to fix a bug
 and it reads the file, edits it, runs tests, commits.
+
+## Warm STT/TTS sidecar (Speaches, #1088)
+
+One GPU container (`poindexter-speaches`, `ghcr.io/speaches-ai/speaches:latest-cuda`,
+in-network `http://speaches:8000`, host port `8001`) serves **both** OpenAI-compatible
+endpoints: `POST /v1/audio/transcriptions` (faster-whisper) and `POST /v1/audio/speech`
+(Kokoro, the same `bf_emma` / `bf_isabella` voices). `WHISPER__TTL=-1` keeps the model
+resident, so a **voice-container restart no longer pays the ~12s in-process Whisper
+cold-start** — the model load moves to Speaches' own (rare) boot. Both rooms share the
+one container. Pipecat's `OpenAITTSService` requests `response_format=pcm` (24 kHz);
+Speaches returns `audio/pcm`, so no transcoding.
+
+`build_voice_pipeline_task` builds STT/TTS via the mode-aware `_build_stt` / `_build_tts`
+seams in `services/voice_agent.py`:
+
+| Key                        | Default                            | Notes                                                                                   |
+| -------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `voice_agent_stt_mode`     | `inprocess`                        | `sidecar` → Pipecat `OpenAISTTService` at the base url; else in-process Whisper         |
+| `voice_agent_stt_base_url` | `http://speaches:8000/v1`          |                                                                                         |
+| `voice_agent_stt_model`    | `Systran/faster-whisper-medium`    | HF id — **not** the in-process Pipecat enum (`voice_agent_whisper_model`)               |
+| `voice_agent_tts_mode`     | `inprocess`                        | `sidecar` → `OpenAITTSService` (honors `voice_agent_tts_speed`); else in-process Kokoro |
+| `voice_agent_tts_base_url` | `http://speaches:8000/v1`          | same Speaches service by default; separate key so STT/TTS can split later               |
+| `voice_agent_tts_model`    | `speaches-ai/Kokoro-82M-v1.0-ONNX` | voice id still comes from `voice_agent_tts_voice` / `voice_agent_claude_code_tts_voice` |
+
+### First-time setup per machine (IMPORTANT)
+
+Speaches' lazy model path downloads only the weight files, not the HF **model card** —
+and its `stt.py` has `assert model_card_data is not None`, so the _first_ transcription
+500s on a fresh cache. Pre-pull each model once (this fetches the card AND warms VRAM):
+
+```bash
+docker exec poindexter-speaches sh -c \
+  "curl -s -X POST http://localhost:8000/v1/models/Systran/faster-whisper-medium; echo; \
+   curl -s -X POST http://localhost:8000/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX; echo"
+```
+
+The card then persists in the bind-mounted HF cache, so **subsequent Speaches restarts
+read it from cache** — the pre-pull is one-time per machine, not per restart.
+
+### Cutover
+
+1. `docker compose -f docker-compose.local.yml up -d speaches`; wait for `(healthy)`.
+2. Pre-pull both models (above) — once per machine.
+3. Set `voice_agent_stt_mode` + `voice_agent_tts_mode` = `sidecar`.
+4. `docker restart poindexter-voice-agent-livekit poindexter-voice-agent-claude-code`.
+5. Confirm each bot logs `Voice pipeline — ... stt_mode=sidecar tts_mode=sidecar` and
+   `Connected to room '<room>'`, with **no** `Loading Whisper model...` line.
+
+### Pre-warm after a Speaches restart
+
+A Speaches restart clears VRAM; the first STT/TTS call reloads the model (~13–35s). To
+keep the first live turn snappy, warm both after any Speaches restart (voice-agent
+restarts do **not** need this — they never touch the model in VRAM):
+
+```bash
+docker exec poindexter-speaches python -c "import wave,struct;w=wave.open('/tmp/t.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(16000);w.writeframes(b'\\x00'*32000);w.close()"
+docker exec poindexter-speaches sh -c "curl -s -o /dev/null http://localhost:8000/v1/audio/transcriptions -F file=@/tmp/t.wav -F model=Systran/faster-whisper-medium"
+docker exec poindexter-speaches sh -c "curl -s -o /dev/null http://localhost:8000/v1/audio/speech -H 'Content-Type: application/json' -d '{\"model\":\"speaches-ai/Kokoro-82M-v1.0-ONNX\",\"voice\":\"bf_emma\",\"input\":\"warm\",\"response_format\":\"pcm\"}'"
+```
+
+### Rollback
+
+Set both `*_mode` back to `inprocess` and restart the two voice containers. Instant; no
+schema change — the bot reloads in-process Whisper exactly as before #1088.
+
+### VRAM
+
+Net new continuous VRAM ≈ 2 GB (faster-whisper medium + Kokoro). Confirm headroom on the
+**Hardware & Power** dashboard (`nvidia_gpu_*`). If VRAM-pressured, run Speaches' Kokoro
+on CPU (Speaches config) — the escape hatch for the exit-137/SIGKILL history.
 
 ## Debugging
 
