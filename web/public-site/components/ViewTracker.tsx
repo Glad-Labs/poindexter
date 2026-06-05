@@ -33,7 +33,18 @@ export function ViewTracker({ slug }: ViewTrackerProps) {
       referrer: document.referrer || '',
     });
 
-    const url = process.env.NEXT_PUBLIC_BEACON_URL || '/api/page-views';
+    let url = process.env.NEXT_PUBLIC_BEACON_URL || '/api/page-views';
+
+    // Guard the scheme footgun: a bare host (no scheme, not root-relative)
+    // is treated as a RELATIVE path by sendBeacon/fetch and silently POSTs to
+    // the current origin — the 2026-06 page_views outage, where
+    // NEXT_PUBLIC_BEACON_URL was "page-views-beacon.<acct>.workers.dev"
+    // (no https://) so every beacon hit /posts/<that> and the data was lost.
+    // Force https:// for host-like values; leave absolute URLs and the
+    // root-relative dev fallback untouched.
+    if (url && !/^https?:\/\//i.test(url) && !url.startsWith('/')) {
+      url = `https://${url}`;
+    }
 
     // Prefer sendBeacon (survives page unload during quick bounce-outs).
     try {
