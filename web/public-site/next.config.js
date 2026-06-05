@@ -315,7 +315,11 @@ const nextConfig = {
       { source: '/contact-us', destination: '/about', permanent: true },
       { source: '/my-account', destination: '/', permanent: true },
       { source: '/sample-page', destination: '/', permanent: true },
-      { source: '/privacy-policy-2', destination: '/privacy', permanent: true },
+      // Legacy WordPress privacy URLs → the real page at /legal/privacy.
+      // (Both previously pointed at /privacy, which 404s — caught in the
+      // 2026-06-04 SEO indexing audit.)
+      { source: '/privacy-policy', destination: '/legal/privacy', permanent: true },
+      { source: '/privacy-policy-2', destination: '/legal/privacy', permanent: true },
       // WordPress artifacts — redirect to homepage
       { source: '/woocommerce-placeholder', destination: '/', permanent: true },
       { source: '/site-logo', destination: '/', permanent: true },
