@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## [0.72.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.71.0...v0.72.0) (2026-06-05)
+
+
+### Features
+
+* **#673:** add cross-signal page-view capture liveness alert ([#1145](https://github.com/Glad-Labs/glad-labs-stack/issues/1145)) ([2e89ad4](https://github.com/Glad-Labs/glad-labs-stack/commit/2e89ad4eeb1d840c48af7a1e89e116e4e3d5c9f0))
+* **platform:** construct + bind the Platform handle at boot (Wave 3b-i, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1134](https://github.com/Glad-Labs/glad-labs-stack/issues/1134)) ([eaece43](https://github.com/Glad-Labs/glad-labs-stack/commit/eaece4348975599922e539a58cbabebd65dbfb5d))
+* **platform:** expand ConfigCapability with typed getters (Wave 3e-0, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1141](https://github.com/Glad-Labs/glad-labs-stack/issues/1141)) ([b3e1187](https://github.com/Glad-Labs/glad-labs-stack/commit/b3e1187a2b8e95d0e5d6b1a154cc05c5ef286226))
+* **platform:** migrate clean stage dispatch onto the handle (Wave 3d-i, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1140](https://github.com/Glad-Labs/glad-labs-stack/issues/1140)) ([1b78d78](https://github.com/Glad-Labs/glad-labs-stack/commit/1b78d78e944e4cef74f9cd875f1652e29d1480c5))
+* **platform:** migrate clean-stage config reads onto the handle (Wave 3e-1, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1147](https://github.com/Glad-Labs/glad-labs-stack/issues/1147)) ([6417721](https://github.com/Glad-Labs/glad-labs-stack/commit/6417721b785757f1b266d009c31140bc57a6f5dd))
+* **platform:** migrate content's audit sites onto the handle (Wave 3c, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1135](https://github.com/Glad-Labs/glad-labs-stack/issues/1135)) ([98e4202](https://github.com/Glad-Labs/glad-labs-stack/commit/98e42023c63e45a463bd6ac17e3da22befd4e027))
+* **platform:** migrate multi_model_qa audit onto the handle (Wave 3c-ii, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1137](https://github.com/Glad-Labs/glad-labs-stack/issues/1137)) ([ad079f5](https://github.com/Glad-Labs/glad-labs-stack/commit/ad079f5555cdd039db5cb6794cfcd51dfe4bbb14))
+* **platform:** migrate qa.aggregate config reads onto the handle (Wave 3e-2, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1156](https://github.com/Glad-Labs/glad-labs-stack/issues/1156)) ([2505279](https://github.com/Glad-Labs/glad-labs-stack/commit/2505279f6d0511e3354306ff9bd4d8228c982ca1))
+* **platform:** module&lt;-&gt;platform binding contract (Wave 2 contract, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1132](https://github.com/Glad-Labs/glad-labs-stack/issues/1132)) ([68c9588](https://github.com/Glad-Labs/glad-labs-stack/commit/68c9588450a1c0e9f9f8b40b4c47d9b9a382bc57))
+* **platform:** Platform handle — contract + concrete impls (Seam 1, Waves 0–1, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1130](https://github.com/Glad-Labs/glad-labs-stack/issues/1130)) ([8d281b8](https://github.com/Glad-Labs/glad-labs-stack/commit/8d281b82bb78ee899df88a9a711f6a49d7298f7d))
+* **voice:** host bridge resolves LiveKit creds DB-first ([#1000](https://github.com/Glad-Labs/glad-labs-stack/issues/1000)) ([#1148](https://github.com/Glad-Labs/glad-labs-stack/issues/1148)) ([f5047ab](https://github.com/Glad-Labs/glad-labs-stack/commit/f5047abdabb160289ffb217a554c2849c13e77df))
+* **voice:** warm Speaches STT/TTS sidecar — kill the ~12s cold-start ([#1088](https://github.com/Glad-Labs/glad-labs-stack/issues/1088)) ([#1138](https://github.com/Glad-Labs/glad-labs-stack/issues/1138)) ([584d777](https://github.com/Glad-Labs/glad-labs-stack/commit/584d777cfed16c12f8408dfe9b915dd07463e3db))
+
+
+### Bug Fixes
+
+* **#671:** add page-view beacon Worker origin to CSP connect-src ([#1142](https://github.com/Glad-Labs/glad-labs-stack/issues/1142)) ([6cc4bb9](https://github.com/Glad-Labs/glad-labs-stack/commit/6cc4bb9982a0212ffdb36e011d352efb7b39012e))
+* **#671:** send page-view beacon as text/plain to avoid CORS preflight ([#1143](https://github.com/Glad-Labs/glad-labs-stack/issues/1143)) ([f8c1c57](https://github.com/Glad-Labs/glad-labs-stack/commit/f8c1c574b44366874c7a5533f50fbc5c86f7d39f))
+* key branch-drift dedup on local HEAD only (closes Glad-Labs/glad-labs-stack[#1105](https://github.com/Glad-Labs/glad-labs-stack/issues/1105)) ([#1119](https://github.com/Glad-Labs/glad-labs-stack/issues/1119)) ([240787f](https://github.com/Glad-Labs/glad-labs-stack/commit/240787fe580cb9d0a01291811f05caa5e3212dba))
+* **seo:** retire de-published post exports so takedowns return a true 404 ([#1146](https://github.com/Glad-Labs/glad-labs-stack/issues/1146)) ([#1155](https://github.com/Glad-Labs/glad-labs-stack/issues/1155)) ([f6863ad](https://github.com/Glad-Labs/glad-labs-stack/commit/f6863ad49c914b908768223e0996c6bad0b215e2))
+* **seo:** stop robots.txt blocking /_next/ render assets; fix privacy redirects ([#1144](https://github.com/Glad-Labs/glad-labs-stack/issues/1144)) ([067c047](https://github.com/Glad-Labs/glad-labs-stack/commit/067c047759d2139d94f54c55f129a3ad1250fb37))
+* **sync:** rewrite pass now covers .ps1 — delegate to guard's _is_text_file ([0a196d7](https://github.com/Glad-Labs/glad-labs-stack/commit/0a196d73df964a99b5f6d7738ff2f70cb1b4dac7))
+* **voice:** access VALID_VOICES from class, not module ([#1153](https://github.com/Glad-Labs/glad-labs-stack/issues/1153)) ([#1157](https://github.com/Glad-Labs/glad-labs-stack/issues/1157)) ([f1d598f](https://github.com/Glad-Labs/glad-labs-stack/commit/f1d598f713de9ed60b67d7c678f5a27d35061f89))
+* **voice:** pass Kokoro voice through Speaches TTS, not OpenAI catalog ([#1088](https://github.com/Glad-Labs/glad-labs-stack/issues/1088)) ([#1153](https://github.com/Glad-Labs/glad-labs-stack/issues/1153)) ([5289fde](https://github.com/Glad-Labs/glad-labs-stack/commit/5289fdefc503f6352236d21d0c7f66ef314ddad6))
+* **voice:** spawn host-brain claude with CREATE_NO_WINDOW — no popup per turn ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1139](https://github.com/Glad-Labs/glad-labs-stack/issues/1139)) ([272d7cc](https://github.com/Glad-Labs/glad-labs-stack/commit/272d7cc380df08dbe8d27498f6c17295e435200a))
+* **voice:** unique LiveKit identity per device so phone + PC don't collide ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1125](https://github.com/Glad-Labs/glad-labs-stack/issues/1125)) ([1059604](https://github.com/Glad-Labs/glad-labs-stack/commit/105960413d18c70b0e0e8038e8882ebd7453a294))
+
 ## [0.71.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.8...v0.71.0) (2026-06-04)
 
 
