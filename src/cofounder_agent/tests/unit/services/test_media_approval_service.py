@@ -436,6 +436,88 @@ async def test_record_pending_notify_discord_swallows_dispatch_errors(
     mock_notify.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# record_dispatched — dispatch tracking (poindexter#558)
+# ---------------------------------------------------------------------------
+
+
+async def test_record_dispatched_success_sets_dispatched_at(
+    mock_db: MagicMock,
+) -> None:
+    """Successful dispatch stamps dispatched_at via COALESCE (first-write wins)."""
+    await media_approval_service.record_dispatched(
+        mock_db, "00000000-0000-0000-0000-000000000001", "video", success=True,
+    )
+    sql = mock_db.execute.call_args.args[0]
+    assert "dispatched_at" in sql
+    assert "COALESCE" in sql
+    assert "dispatch_success = true" in sql
+
+
+async def test_record_dispatched_failure_does_not_set_dispatched_at(
+    mock_db: MagicMock,
+) -> None:
+    """Failed dispatch must NOT stamp dispatched_at — row stays eligible for retry."""
+    await media_approval_service.record_dispatched(
+        mock_db, "00000000-0000-0000-0000-000000000001", "video", success=False,
+    )
+    sql = mock_db.execute.call_args.args[0]
+    assert "dispatch_success = false" in sql
+    # dispatched_at must NOT be written on failure
+    assert "dispatched_at" not in sql
+
+
+async def test_record_dispatched_rejects_unknown_medium(mock_db: MagicMock) -> None:
+    with pytest.raises(media_approval_service.InvalidMediumError):
+        await media_approval_service.record_dispatched(
+            mock_db, "00000000-0000-0000-0000-000000000001", "reel", success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# list_approved_undispatched — dispatch-only pass query (poindexter#558)
+# ---------------------------------------------------------------------------
+
+
+async def test_list_approved_undispatched_returns_rows(mock_db: MagicMock) -> None:
+    mock_db.fetch.return_value = [
+        {
+            "post_id": "abc",
+            "medium": "video",
+            "title": "GPU Frenzy",
+            "content": "...",
+            "excerpt": "Short",
+            "seo_keywords": "gpu, nvidia",
+            "slug": "gpu-frenzy",
+        },
+    ]
+    rows = await media_approval_service.list_approved_undispatched(
+        mock_db, medium="video",
+    )
+    assert len(rows) == 1
+    assert rows[0]["medium"] == "video"
+
+
+async def test_list_approved_undispatched_queries_approved_and_null_dispatched(
+    mock_db: MagicMock,
+) -> None:
+    """SQL must select approved rows with dispatched_at IS NULL."""
+    mock_db.fetch.return_value = []
+    await media_approval_service.list_approved_undispatched(mock_db)
+    sql = mock_db.fetch.call_args.args[0]
+    assert "status = 'approved'" in sql
+    assert "dispatched_at IS NULL" in sql
+
+
+async def test_list_approved_undispatched_medium_filter_validates(
+    mock_db: MagicMock,
+) -> None:
+    with pytest.raises(media_approval_service.InvalidMediumError):
+        await media_approval_service.list_approved_undispatched(
+            mock_db, medium="reel",
+        )
+
+
 async def test_record_pending_then_quality_eval_path_does_not_notify_when_auto_approved(
     mock_db: MagicMock,
 ) -> None:

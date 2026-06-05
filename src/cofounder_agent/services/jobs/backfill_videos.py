@@ -229,6 +229,62 @@ class BackfillVideosJob:
         finally:
             await cloud.close()
 
+        # --- DISPATCH-ONLY PASS (poindexter#558) -------------------------
+        # Find videos already on disk + approved but never dispatched.
+        # This rescues the 59 stranded videos created before dispatch
+        # tracking existed, and handles any future transient failures
+        # where generation succeeded but the YouTube upload didn't.
+        # Runs before generation so a freshly-approved video can make
+        # it out the same cycle without waiting for the next run.
+        dispatched = 0
+        if pool is not None:
+            try:
+                from services import media_approval_service as _mas
+                undispatched = await _mas.list_approved_undispatched(
+                    pool, medium="video", limit=100,
+                )
+                for _row in undispatched:
+                    _pid = _row["post_id"]
+                    _vpath = VIDEO_DIR / f"{_pid}.mp4"
+                    if not _vpath.exists():
+                        logger.debug(
+                            "[BACKFILL_VIDEOS] dispatch pass: video file "
+                            "missing for post %s — skipping", _pid[:8],
+                        )
+                        continue
+                    _ok = await _dispatch_video_publishers(
+                        pool=pool,
+                        site_config=sc,
+                        post_id=_pid,
+                        video_path=str(_vpath),
+                        title=_row.get("title") or "",
+                        content=_row.get("content") or "",
+                        seo_description=_row.get("excerpt") or "",
+                        seo_keywords=_row.get("seo_keywords") or "",
+                        slug=_row.get("slug") or "",
+                    )
+                    try:
+                        async with pool.acquire() as _conn:
+                            await _mas.record_dispatched(
+                                _conn, _pid, "video", success=_ok,
+                            )
+                    except Exception as _stamp_err:
+                        logger.warning(
+                            "[BACKFILL_VIDEOS] record_dispatched failed "
+                            "for %s: %s", _pid[:8], _stamp_err,
+                        )
+                    if _ok:
+                        dispatched += 1
+                        logger.info(
+                            "[BACKFILL_VIDEOS] dispatch pass: delivered "
+                            "post %s to video platforms", _pid[:8],
+                        )
+            except Exception as _dispatch_err:
+                logger.warning(
+                    "[BACKFILL_VIDEOS] dispatch-only pass error: %s",
+                    _dispatch_err,
+                )
+
         generated = 0
         for post in posts:
             post_id = post["id"]
@@ -289,7 +345,7 @@ class BackfillVideosJob:
                     # ``media_approvals.status='approved'`` before
                     # firing each adapter — un-approved videos sit on
                     # disk waiting for operator decision.
-                    await _dispatch_video_publishers(
+                    dispatch_ok = await _dispatch_video_publishers(
                         pool=pool,
                         site_config=sc,
                         post_id=post_id,
@@ -300,6 +356,19 @@ class BackfillVideosJob:
                         seo_keywords=post["seo_keywords"] or "",
                         slug=post["slug"] or "",
                     )
+                    if pool is not None:
+                        try:
+                            from services import media_approval_service as _mas2
+                            async with pool.acquire() as _dconn:
+                                await _mas2.record_dispatched(
+                                    _dconn, post_id, "video",
+                                    success=dispatch_ok,
+                                )
+                        except Exception as _derr:
+                            logger.warning(
+                                "[BACKFILL_VIDEOS] record_dispatched "
+                                "failed for %s: %s", post_id[:8], _derr,
+                            )
                 if generated >= max_per_cycle:
                     break
             except Exception as e:
@@ -308,13 +377,13 @@ class BackfillVideosJob:
                     post["title"][:30] if post.get("title") else post_id[:8], e,
                 )
 
-        detail = f"generated {generated} video(s)"
+        detail = f"generated {generated} video(s), dispatched {dispatched}"
         if skipped_niches:
             detail += f", skipped_niches={','.join(skipped_niches)}"
         return JobResult(
             ok=True,
             detail=detail,
-            changes_made=generated,
+            changes_made=generated + dispatched,
         )
 
 
@@ -335,7 +404,7 @@ async def _dispatch_video_publishers(
     seo_description: str = "",
     seo_keywords: str = "",
     slug: str = "",
-) -> None:
+) -> bool:
     """Fire enabled video-platform adapters with the freshly-generated MP4.
 
     Reads ``publishing_adapters`` for rows in ``_VIDEO_PLATFORMS`` with
@@ -363,10 +432,8 @@ async def _dispatch_video_publishers(
     """
     if pool is None:
         logger.debug("[BACKFILL_VIDEOS] no pool — skipping platform dispatch")
-        return
+        return False
     try:
-        import asyncpg  # noqa: F401  (caller already imported it)
-
         from services.integrations import registry
         from services.integrations.handlers import load_all
         load_all()  # idempotent — ensures publishing_youtube is registered
@@ -375,7 +442,7 @@ async def _dispatch_video_publishers(
             "[BACKFILL_VIDEOS] handler load failed (skipping platform "
             "dispatch): %s", exc,
         )
-        return
+        return False
 
     rows = []
     try:
@@ -405,14 +472,14 @@ async def _dispatch_video_publishers(
             "[BACKFILL_VIDEOS] publishing_adapters lookup failed "
             "(skipping platform dispatch): %s", exc,
         )
-        return
+        return False
 
     if not rows:
         logger.debug(
             "[BACKFILL_VIDEOS] no enabled video adapters in "
             "publishing_adapters — skipping",
         )
-        return
+        return False
 
     # Per-medium operator approval gate. The media file is generated
     # locally but won't reach the external surface (YouTube, etc.)
@@ -437,13 +504,13 @@ async def _dispatch_video_publishers(
             "(treating as NOT approved — operator must re-decide): %s",
             post_id, exc,
         )
-        return
+        return False
     if not approved:
         logger.info(
             "[BACKFILL_VIDEOS] video for %s awaiting operator approval "
             "— skipping platform dispatch", post_id,
         )
-        return
+        return False
 
     # Build the SEO-rich description + tags from the post's structured
     # fields (glad-labs-stack#275). Both stay under YouTube's documented
@@ -456,6 +523,7 @@ async def _dispatch_video_publishers(
     )
     tags = _parse_seo_keywords(seo_keywords)
 
+    any_success = False
     for row in rows:
         platform = row["platform"]
         payload = {
@@ -477,6 +545,7 @@ async def _dispatch_video_publishers(
             )
             success = bool(result.get("success")) if isinstance(result, dict) else False
             if success:
+                any_success = True
                 logger.info(
                     "[BACKFILL_VIDEOS] %s upload succeeded for post %s",
                     platform, post_id,
@@ -493,3 +562,4 @@ async def _dispatch_video_publishers(
                 "[BACKFILL_VIDEOS] %s upload raised for post %s: %s",
                 platform, post_id, exc,
             )
+    return any_success

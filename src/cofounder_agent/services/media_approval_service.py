@@ -362,6 +362,80 @@ async def decide(
     )
 
 
+async def record_dispatched(
+    db: Any, post_id: str, medium: str, *, success: bool,
+) -> None:
+    """Stamp a dispatch attempt on the media_approvals row.
+
+    ``dispatched_at`` is set to ``now()`` on the first successful call;
+    subsequent calls update ``dispatch_success`` but leave the original
+    timestamp intact (the column records when the FIRST successful
+    delivery happened, not the most recent attempt).
+
+    ``success=False`` records the failed attempt so operators can see
+    retry history, but does NOT set ``dispatched_at`` — the row remains
+    eligible for re-dispatch on the next BackfillVideosJob cycle.
+    """
+    _validate_medium(medium)
+    if success:
+        await db.execute(
+            """
+            UPDATE media_approvals
+               SET dispatched_at    = COALESCE(dispatched_at, now()),
+                   dispatch_success = true
+             WHERE post_id = $1::uuid AND medium = $2
+            """,
+            post_id, medium,
+        )
+    else:
+        await db.execute(
+            """
+            UPDATE media_approvals
+               SET dispatch_success = false
+             WHERE post_id = $1::uuid AND medium = $2
+            """,
+            post_id, medium,
+        )
+    logger.info(
+        "[media_approval] dispatch %s: %s for post %s",
+        "OK" if success else "FAILED", medium, post_id,
+    )
+
+
+async def list_approved_undispatched(
+    db: Any, *, medium: str | None = None, limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return approved rows that have never been successfully dispatched.
+
+    Used by BackfillVideosJob to find videos approved before dispatch
+    tracking was introduced (poindexter#558), or for any retry pass
+    on transiently-failed uploads.
+    """
+    if medium is not None:
+        _validate_medium(medium)
+    rows = await db.fetch(
+        """
+        SELECT
+            ma.post_id::text AS post_id,
+            ma.medium,
+            p.title,
+            p.content,
+            p.excerpt,
+            p.seo_keywords,
+            p.slug
+        FROM media_approvals ma
+        JOIN posts p ON p.id = ma.post_id
+        WHERE ma.status = 'approved'
+          AND ma.dispatched_at IS NULL
+          AND ($1::text IS NULL OR ma.medium = $1)
+        ORDER BY ma.created_at ASC
+        LIMIT $2
+        """,
+        medium, limit,
+    )
+    return [dict(r) for r in rows]
+
+
 async def list_pending(
     db: Any, *, medium: str | None = None, limit: int = 50,
 ) -> list[dict[str, Any]]:
