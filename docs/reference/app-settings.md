@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-04.**  
+> **Auto-generated from live `app_settings` table on 2026-06-05.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 734 active rows across 57 categories. 10 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 738 active rows across 57 categories. 10 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -65,7 +65,7 @@ The worker re-reads on every poll; no restart needed.
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (32 keys)
 - [plugins](#plugins) (8 keys)
-- [plugin_telemetry](#plugin-telemetry) (46 keys)
+- [plugin_telemetry](#plugin-telemetry) (44 keys)
 - [prometheus](#prometheus) (4 keys)
 - [publishing](#publishing) (4 keys)
 - [qa](#qa) (5 keys)
@@ -80,7 +80,7 @@ The worker re-reads on every poll; no restart needed.
 - [system](#system) (2 keys)
 - [tokens](#tokens) (5 keys)
 - [topic_discovery](#topic-discovery) (1 key)
-- [voice](#voice) (20 keys)
+- [voice](#voice) (26 keys)
 - [voice_agent](#voice-agent) (2 keys)
 - [webhooks](#webhooks) (1 key)
 - [writer_rag](#writer-rag) (5 keys)
@@ -916,7 +916,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_run_rollup_post_performance` | `0` |  | Unix epoch of last fire for plugin job 'rollup_post_performance' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_run_dev_diary_post` | `0` |  | Unix epoch of last fire for plugin job 'run_dev_diary_post' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_run_niche_topic_sweep` | `0` |  | Unix epoch of last fire for plugin job 'run_niche_topic_sweep' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_sync_newsletter_subscribers` | `0` |  | Unix epoch of last fire for plugin job 'sync_newsletter_subscribers' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_tune_publish_threshold` | `0` |  | Unix epoch of last fire for plugin job 'tune_publish_threshold' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_update_utility_rates` | `0` |  | Unix epoch of last fire for plugin job 'update_utility_rates' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_verify_published_posts` | `0` |  | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler) |
@@ -939,7 +938,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_status_rollup_post_performance` | `ok` |  | Outcome of last fire for plugin job 'rollup_post_performance': 'ok' or 'err' |
 | `plugin_job_last_status_run_dev_diary_post` | `ok` |  | Outcome of last fire for plugin job 'run_dev_diary_post': 'ok' or 'err' |
 | `plugin_job_last_status_run_niche_topic_sweep` | `ok` |  | Outcome of last fire for plugin job 'run_niche_topic_sweep': 'ok' or 'err' |
-| `plugin_job_last_status_sync_newsletter_subscribers` | `ok` |  | Outcome of last fire for plugin job 'sync_newsletter_subscribers': 'ok' or 'err' |
 | `plugin_job_last_status_tune_publish_threshold` | `ok` |  | Outcome of last fire for plugin job 'tune_publish_threshold': 'ok' or 'err' |
 | `plugin_job_last_status_update_utility_rates` | `ok` |  | Outcome of last fire for plugin job 'update_utility_rates': 'ok' or 'err' |
 | `plugin_job_last_status_verify_published_posts` | `ok` |  | Outcome of last fire for plugin job 'verify_published_posts': 'ok' or 'err' |
@@ -1073,6 +1071,12 @@ The worker re-reads on every poll; no restart needed.
 | `voice_agent_claude_code_transcript_enabled` | `true` |  | Master on/off for mirroring claude-code voice turns to Discord (#1006). false/0/no/off disables the mirror. |
 | `voice_agent_claude_code_tts_voice` | `` |  | Kokoro voice id for the claude-code voice room only (#1006). Empty = fall back to the shared voice_agent_tts_voice. L... |
 | `voice_agent_public_join_url` | `*(per-operator)*` | per-operator | Public URL the operator (or Claude, via the start_voice_call MCP tool) taps to join the always-on LiveKit voice room.... |
+| `voice_agent_stt_base_url` | `http://speaches:8000/v1` |  | Speaches STT endpoint (OpenAI-compatible) used when voice_agent_stt_mode=sidecar. Compose service name on the shared ... |
+| `voice_agent_stt_mode` | `inprocess` |  | STT backend for the voice pipeline (#1088): 'sidecar' = thin client of the warm Speaches container; 'inprocess' = loa... |
+| `voice_agent_stt_model` | `Systran/faster-whisper-medium` |  | faster-whisper model id passed to Speaches when voice_agent_stt_mode=sidecar. NOTE: an HF id, not the Pipecat Whisper... |
+| `voice_agent_tts_base_url` | `http://speaches:8000/v1` |  | Speaches TTS endpoint used when voice_agent_tts_mode=sidecar. Same Speaches service as STT by default; separate key s... |
+| `voice_agent_tts_mode` | `inprocess` |  | TTS backend for the voice pipeline (#1088): 'sidecar' = thin client of the warm Speaches container; 'inprocess' = run... |
+| `voice_agent_tts_model` | `speaches-ai/Kokoro-82M-v1.0-ONNX` |  | Kokoro model id passed to Speaches when voice_agent_tts_mode=sidecar. The voice id (bf_emma / bf_isabella) still come... |
 | `voice_bridge_chunk_max_chars` | `500` |  | Maximum characters per TTS chunk emitted by voice_speak. Long replies are split at sentence boundaries so the operato... |
 | `voice_bridge_enabled` | `true` |  | Master switch for the LiveKit MCP bridge — the architecturally-correct alternative to the subprocess-spawn voice_agen... |
 | `voice_bridge_max_session_seconds` | `1800` |  | Hard upper bound on a single bridge session, in seconds. The worker auto-leaves the LiveKit room after this many seco... |
