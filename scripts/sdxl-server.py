@@ -168,13 +168,24 @@ async def read_model_setting() -> Optional[str]:
 
 async def reload_config() -> None:
     """Read DB, resolve config, drop active pipeline so the next request
-    lazy-loads the new model. Enters degraded state on any failure."""
+    lazy-loads the new model. Enters degraded state on any failure.
+
+    DB-unreachable (exception) vs bad-config (wrong model name) are handled
+    differently (stack#1152): a transient DB failure preserves the current
+    config + pipeline — the model didn't change, only the DB went away.
+    Clearing them on a 30-second Postgres restart caused a 2-minute SDXL
+    model reload delay after recovery (the Postgres-restart cascade).
+    Bad config (unknown model, setting removed) still unloads because we
+    have definitive information the current config is wrong.
+    """
     try:
         friendly = await read_model_setting()
     except Exception as e:
+        # DB is temporarily unreachable. Mark degraded so /generate returns
+        # 503, but preserve state.config + pipeline — the model hasn't
+        # changed. When the DB recovers the pipeline is immediately available
+        # without a model reload. See stack#1152.
         state.mark_degraded(f"DB read failed for {MODEL_SETTING_KEY!r}: {e}")
-        state.config = None
-        unload_pipeline()
         return
 
     if friendly is None:

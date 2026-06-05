@@ -59,6 +59,44 @@ def test_next_retry_delay_contract():
     assert sdxl.next_retry_delay(1) <= sdxl.next_retry_delay(0)
 
 
+def test_reload_config_preserves_pipeline_on_transient_db_failure():
+    """Postgres-restart cascade regression (stack#1152).
+
+    When the DB is temporarily unreachable, reload_config() MUST NOT clear
+    state.config or unload the pipeline. The model hasn't changed — only the
+    DB went away. Unloading VRAM on a transient failure caused a 2-minute
+    model reload delay after Postgres recovered (the 2026-06-04 cascade).
+    """
+    async def body():
+        unloaded = {"n": 0}
+
+        def tracking_unload():
+            unloaded["n"] += 1
+
+        sdxl.unload_pipeline = tracking_unload
+
+        async def failing_read():
+            raise RuntimeError("connection refused")
+
+        sdxl.read_model_setting = failing_read
+        sdxl.state.degraded = False
+        # Simulate a previously-loaded config.
+        sdxl.state.config = sdxl.REGISTRY.get("sdxl_lightning")
+
+        await sdxl.reload_config()
+
+        assert sdxl.state.degraded is True, "should enter degraded on DB failure"
+        assert unloaded["n"] == 0, (
+            "pipeline must NOT be unloaded on a transient DB failure — "
+            "stack#1152: this caused a 2-min reload delay after Postgres restart"
+        )
+        assert sdxl.state.config is not None, (
+            "state.config must be preserved — we don't know the model changed"
+        )
+
+    asyncio.run(body())
+
+
 def test_reload_config_recovers_from_transient_db_failure():
     async def body():
         calls = {"n": 0}
