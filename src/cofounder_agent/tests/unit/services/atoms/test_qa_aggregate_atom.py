@@ -8,14 +8,6 @@ from modules.content.atoms import qa_aggregate
 from plugins.fake_platform import FakePlatform
 
 
-class _Cfg:
-    def __init__(self, vals=None):
-        self._vals = vals or {}
-
-    def get(self, key, default=None):
-        return self._vals.get(key, default)
-
-
 @pytest.mark.unit
 class TestQaAggregateAtom:
     def test_meta(self):
@@ -27,7 +19,7 @@ class TestQaAggregateAtom:
 
     async def test_approve_path(self):
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "qa_rail_reviews": [
                 {"reviewer": "ollama_qa", "approved": True, "score": 90.0, "provider": "ollama", "advisory": False},
             ],
@@ -39,7 +31,7 @@ class TestQaAggregateAtom:
 
     async def test_reject_halts(self):
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "qa_rail_reviews": [
                 {"reviewer": "ollama_qa", "approved": False, "score": 95.0, "provider": "ollama", "advisory": False},
             ],
@@ -49,10 +41,11 @@ class TestQaAggregateAtom:
         assert out["_halt"] is True
         assert "ollama_qa" in out["_halt_reason"]
 
-    async def test_reads_threshold_from_site_config(self):
+    async def test_reads_threshold_from_config_handle(self):
+        # Seam 1 Wave 3e (#667): the threshold is read via platform.config.
         # Threshold 95 → an 90-scoring all-pass run now REJECTS.
         state = {
-            "site_config": _Cfg({"qa_final_score_threshold": "95"}),
+            "platform": FakePlatform(config={"qa_final_score_threshold": "95"}),
             "qa_rail_reviews": [
                 {"reviewer": "ollama_qa", "approved": True, "score": 90.0, "provider": "ollama", "advisory": False},
             ],
@@ -60,8 +53,20 @@ class TestQaAggregateAtom:
         out = await qa_aggregate.run(state)
         assert out["qa_final_verdict"] == "reject"
 
+    async def test_weights_fall_back_to_defaults_without_platform(self):
+        # No handle (tests / ad-hoc CLI) → _weight returns its defaults, so the
+        # default 70.0 threshold applies: a 90-scoring all-pass run APPROVES.
+        # Mirrors the prior site_config-None seam — None-tolerant, no raise.
+        out = await qa_aggregate.run({
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_qa", "approved": True, "score": 90.0, "provider": "ollama", "advisory": False},
+            ],
+        })
+        assert out["qa_final_verdict"] == "approve"
+        assert out["qa_final_score"] == 90.0
+
     async def test_missing_reviews_key_rejects_at_zero(self):
-        out = await qa_aggregate.run({"site_config": _Cfg()})
+        out = await qa_aggregate.run({"platform": FakePlatform()})
         assert out["qa_final_score"] == 0.0
         assert out["_halt"] is True
 
@@ -71,7 +76,7 @@ class TestQaAggregateAtom:
         veto — qa.aggregate APPROVES instead of wrongly hard-rejecting legit
         post-cutoff content."""
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "qa_known_wrong_fact_only": True,
             "qa_rail_reviews": [
                 {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
@@ -91,7 +96,7 @@ class TestQaAggregateAtom:
         """Same flag, but the web check did NOT confirm → the validator veto
         STANDS and qa.aggregate rejects + halts (the genuinely-wrong case)."""
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "qa_known_wrong_fact_only": True,
             "qa_rail_reviews": [
                 {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
@@ -108,7 +113,7 @@ class TestQaAggregateAtom:
         """Without the flag (a normal fabrication), an approved web_factcheck does
         NOT rescue the validator veto — only stale-regex known_wrong_fact does."""
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "qa_rail_reviews": [
                 {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
                  "provider": "programmatic", "advisory": False, "feedback": "fake_person"},
@@ -146,7 +151,7 @@ class _DB2:
 class TestQaAggregateParity:
     async def test_approve_sets_downstream_keys(self):
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "quality_score": 60.0,
             "qa_rail_reviews": [
                 {"reviewer": "ollama_qa", "approved": True, "score": 90.0, "provider": "ollama", "advisory": False, "feedback": "good"},
@@ -160,7 +165,7 @@ class TestQaAggregateParity:
         assert "_halt" not in out
 
     async def test_approve_keeps_higher_early_score(self):
-        state = {"site_config": _Cfg(), "quality_score": 95.0,
+        state = {"platform": FakePlatform(), "quality_score": 95.0,
                  "qa_rail_reviews": [{"reviewer": "x", "approved": True, "score": 80.0, "provider": "ollama", "advisory": False, "feedback": ""}]}
         out = await qa_aggregate.run(state)
         assert out["quality_score"] == 95.0  # max(95, 80)
@@ -173,7 +178,7 @@ class TestQaAggregateParity:
         monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "task_id": "task-9",
             "content": "the body",
             "title": "A Title",
@@ -193,7 +198,7 @@ class TestQaAggregateParity:
         assert any("pipeline_gate_history" in sql for sql, _ in db.pool.execs)
 
     async def test_reject_without_db_service_still_halts(self):
-        state = {"site_config": _Cfg(), "task_id": "t",
+        state = {"platform": FakePlatform(), "task_id": "t",
                  "qa_rail_reviews": [{"reviewer": "x", "approved": False, "score": 10.0, "provider": "ollama", "advisory": False, "feedback": "no"}]}
         out = await qa_aggregate.run(state)  # no database_service
         assert out["_halt"] is True
@@ -263,7 +268,7 @@ class TestQaAggregateBumpsGateCounters:
     async def test_approve_bumps_per_rail_counters(self):
         db = _GateDB()
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "database_service": db,
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
@@ -285,7 +290,7 @@ class TestQaAggregateBumpsGateCounters:
         monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _GateDB()
         state = {
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "task_id": "task-553",
             "content": "body",
             "title": "T",
@@ -308,7 +313,7 @@ class TestQaAggregateBumpsGateCounters:
         # The counter bump is best-effort: with no database_service the
         # atom must still produce its decision without raising.
         out = await qa_aggregate.run({
-            "site_config": _Cfg(),
+            "platform": FakePlatform(),
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
                  "provider": "ollama", "advisory": False},
@@ -335,7 +340,6 @@ class TestQaAggregateEmitsPassAudit:
     async def test_approve_emits_qa_pass_completed(self):
         fake = FakePlatform()
         state = {
-            "site_config": _Cfg(),
             "platform": fake,
             "task_id": "task-abc",
             "qa_rail_reviews": [
@@ -361,7 +365,6 @@ class TestQaAggregateEmitsPassAudit:
     async def test_reject_emits_warning_severity_pass(self):
         fake = FakePlatform()
         state = {
-            "site_config": _Cfg(),
             "platform": fake,
             "task_id": "task-xyz",
             "qa_rail_reviews": [

@@ -47,19 +47,24 @@ ATOM_META = AtomMeta(
 )
 
 
-def _weight(site_config: Any, key: str, default: float) -> float:
-    if site_config is None:
+def _weight(config: Any, key: str, default: float) -> float:
+    if config is None:
         return default
     try:
-        return float(site_config.get(key, default))
+        return float(config.get(key, default))
     except (TypeError, ValueError):
         return default
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    site_config = state.get("site_config")
+    # Seam 1 Wave 3e (#667): QA-weight config reads go through the capability
+    # handle. ``platform`` is already threaded into atom state (Wave 3c, used
+    # for audit below); None-tolerant — a missing handle falls the weights back
+    # to their defaults, exactly as the prior ``site_config``-None seam did.
+    _platform = state.get("platform")
+    config = _platform.config if _platform is not None else None
     reviews = state.get("qa_rail_reviews") or []
-    threshold = _weight(site_config, "qa_final_score_threshold", 70.0)
+    threshold = _weight(config, "qa_final_score_threshold", 70.0)
     # #661: qa.programmatic sets this flag when its ONLY critical was a
     # known_wrong_fact (the stale-regex false-positive on a real post-cutoff
     # product). When set, an approved web_factcheck review suppresses the
@@ -69,9 +74,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     known_wrong_fact_only = bool(state.get("qa_known_wrong_fact_only"))
     result = aggregate_rail_reviews(
         reviews,
-        validator_weight=_weight(site_config, "qa_validator_weight", 0.4),
-        critic_weight=_weight(site_config, "qa_critic_weight", 0.6),
-        gate_weight=_weight(site_config, "qa_gate_weight", 0.3),
+        validator_weight=_weight(config, "qa_validator_weight", 0.4),
+        critic_weight=_weight(config, "qa_critic_weight", 0.6),
+        gate_weight=_weight(config, "qa_gate_weight", 0.3),
         threshold=threshold,
         known_wrong_fact_only=known_wrong_fact_only,
     )
