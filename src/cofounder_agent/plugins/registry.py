@@ -614,7 +614,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         # without a container restart (internal tracker).
         ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
-        ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),
         # Niche topic-discovery sweep — calls TopicBatchService.run_sweep
         # per active niche on a 30-min cadence. Per-niche cadence floor
         # (niches.discovery_cadence_minute_floor) gates the actual work.
