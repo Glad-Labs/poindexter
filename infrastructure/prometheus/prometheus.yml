@@ -98,3 +98,19 @@ scrape_configs:
     scrape_interval: 30s
     static_configs:
       - targets: ["pyroscope:4040"]
+
+  # Prometheus self-scrape — closes poindexter#649 (Prometheus self-monitoring
+  # gap). Exposes tsdb compaction, rule evaluation latency / errors,
+  # Alertmanager notification success/failure, and engine query throughput.
+  # Without this job, Grafana panels querying prometheus_* metrics return
+  # NoData and alert-routing failures are invisible.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  # Alertmanager self-metrics — alert routing rates, silences, inhibitions,
+  # and notification errors. Paired with the prometheus self-scrape so
+  # alert-routing failures surface in Grafana / can trigger their own alerts.
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]

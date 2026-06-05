@@ -1,0 +1,78 @@
+# Prometheus + Alertmanager self-monitoring alerts.
+# Closes poindexter#649 — without the prometheus + alertmanager scrape jobs
+# these rules could never fire. The scrape jobs were added to prometheus.yml
+# in the same commit.
+#
+# Key failure modes we're now catching:
+#   - Alertmanager unreachable   → alerts are queued but never routed
+#   - Rule evaluation errors      → alerts may silently stop firing
+#   - Notification send failures  → Telegram/Discord never gets the page
+#
+# All evaluated on the 30s group interval so they don't lag behind the
+# infrastructure.yml rules that share the same group cadence.
+
+groups:
+  - name: poindexter-prometheus
+    interval: 30s
+    rules:
+
+      # Prometheus can't scrape itself — almost certainly means the
+      # prometheus container restarted or TSDB is corrupt.
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Prometheus cannot scrape itself"
+          description: |
+            The prometheus self-scrape job has been failing for 2+ minutes.
+            All other scrape jobs + alerting are likely broken too.
+            Check: `docker logs poindexter-prometheus --tail 50`
+
+      # Alertmanager unreachable — alerts fire in Prometheus but routing
+      # to Telegram/Discord is silently broken.
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Alertmanager is unreachable — alert routing is broken"
+          description: |
+            Prometheus cannot scrape Alertmanager for 2+ minutes.
+            All fired alerts are queued internally but never routed.
+            Check: `docker logs poindexter-alertmanager --tail 50`
+
+      # Rule evaluation errors — Prometheus is evaluating alert rules but
+      # one or more rules are failing (bad PromQL, missing label, etc.).
+      # Even a single persistent failure means affected alerts can't fire.
+      - alert: PrometheusRuleEvaluationErrors
+        expr: rate(prometheus_rule_evaluation_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Prometheus rule evaluation errors detected"
+          description: |
+            {{ $value | humanize }} rule evaluation failures/s over the last 5 min.
+            One or more alert rules contain bad PromQL or reference missing
+            metrics. Check Prometheus UI → Status → Rules for the failing group.
+
+      # Alertmanager notification failures — routes are reachable but sends
+      # are failing (bad webhook URL, Telegram bot token revoked, etc.).
+      - alert: AlertmanagerNotificationErrors
+        expr: increase(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Alertmanager notification send failures"
+          description: |
+            {{ $value }} failed notification attempt(s) in the last 5 min.
+            Alerts are routing but receiver delivery is failing.
+            Check: Alertmanager UI → Status for the failing receiver config.
