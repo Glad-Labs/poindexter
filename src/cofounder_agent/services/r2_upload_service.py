@@ -255,6 +255,29 @@ class R2UploadService:
             )
             return []
 
+    async def get_json(self, r2_key: str) -> dict | None:
+        """Download an object from R2 via S3 API and return its parsed JSON.
+
+        Uses the same boto3/S3 transport as uploads so it works inside the
+        Docker container (the public ``pub-*.r2.dev`` CDN URL is not routable
+        from private Docker networks; the S3 ``storage_endpoint`` is).
+
+        Returns ``None`` when credentials/config are missing, boto3 isn't
+        installed, the key doesn't exist, or any error occurs.
+        """
+        import json as _json
+
+        s3, bucket = await self._s3_client_and_bucket()
+        if not s3:
+            return None
+        try:
+            response = s3.get_object(Bucket=bucket, Key=r2_key)
+            content = response["Body"].read().decode("utf-8")
+            return _json.loads(content)
+        except Exception as e:
+            logger.warning("[STORAGE] get_json failed for %s: %s", r2_key, e)
+            return None
+
     async def upload_podcast_episode(self, post_id: str) -> str | None:
         """Upload a podcast episode MP3 to R2. Returns public URL or None.
 

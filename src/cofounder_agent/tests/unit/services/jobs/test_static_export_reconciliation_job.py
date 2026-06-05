@@ -20,12 +20,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from services.jobs.static_export_reconciliation import (
     StaticExportReconciliationJob,
 )
+from services.r2_upload_service import R2UploadService
 from services.site_config import SiteConfig
 
 
@@ -43,20 +43,16 @@ def _make_pool(db_count: int, db_latest: datetime | None) -> Any:
     return pool
 
 
-def _patch_manifest(payload: dict | None, *, http_error: Exception | None = None):
-    """Patch httpx.AsyncClient so its GET returns ``payload`` as JSON, or
-    raises ``http_error`` if provided.
-    """
-    async def _stub_get(self, url, *a, **kw):  # noqa: ANN001, ARG001
-        if http_error is not None:
-            raise http_error
-        resp = MagicMock(spec=httpx.Response)
-        resp.status_code = 200
-        resp.json = MagicMock(return_value=payload)
-        resp.raise_for_status = MagicMock()
-        return resp
+def _patch_manifest(payload: dict | None):
+    """Patch R2UploadService.get_json to return ``payload``.
 
-    return patch.object(httpx.AsyncClient, "get", _stub_get)
+    Pass ``None`` to simulate an S3 fetch failure (returns None without
+    raising — consistent with how get_json swallows exceptions internally).
+    """
+    async def _stub(self, r2_key: str) -> dict | None:  # noqa: ARG001
+        return payload
+
+    return patch.object(R2UploadService, "get_json", _stub)
 
 
 @pytest.mark.unit
@@ -82,6 +78,7 @@ class TestStaticExportReconciliation:
                 config={
                     "alert_on_drift": False,
                     "r2_manifest_url": "https://example.test/static/manifest.json",
+                    "_site_config": SiteConfig(),
                 },
             )
 
@@ -132,7 +129,7 @@ class TestStaticExportReconciliation:
         """R2 unreachable → assume drift, rebuild + finding."""
         pool = _make_pool(db_count=42, db_latest=datetime.now(timezone.utc))
 
-        with _patch_manifest(None, http_error=httpx.ConnectError("dns")), patch(
+        with _patch_manifest(None), patch(
             "services.static_export_service.export_full_rebuild",
             new=AsyncMock(return_value={"success": False, "error": "boom"}),
         ) as rebuild_mock, patch(
@@ -239,7 +236,10 @@ class TestStaticExportReconciliation:
             new=AsyncMock(),
         ):
             job = StaticExportReconciliationJob()
-            result = await job.run(pool, config={"alert_on_drift": False})
+            result = await job.run(
+                pool,
+                config={"alert_on_drift": False, "_site_config": SiteConfig()},
+            )
 
         # Should have synthesized URL from app_settings + path suffix.
         assert result.ok is True

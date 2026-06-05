@@ -37,8 +37,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from plugins.job import JobResult
 from utils.findings import emit_finding
 
@@ -142,20 +140,22 @@ class StaticExportReconciliationJob:
         db_count = int(row["db_count"] or 0)
         db_latest = row["db_latest"]
 
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(15.0, connect=5.0),
-            ) as client:
-                resp = await client.get(manifest_url)
-                resp.raise_for_status()
-                manifest = resp.json()
-        except Exception as e:
-            logger.warning(
-                "static_export_reconciliation: manifest fetch failed (%s) — "
-                "treating as drift, will rebuild",
-                e,
+        # Fetch via S3 API — the public R2 dev URL (storage_public_url) is
+        # unreachable from inside the Docker container (Cloudflare CDN edge
+        # hostnames aren't routable from private networks), while the S3
+        # storage_endpoint is. Both use the same boto3 credentials as uploads.
+        _sc = config.get("_site_config")
+        manifest = None
+        if _sc is not None:
+            from services.r2_upload_service import R2UploadService
+            manifest = await R2UploadService(site_config=_sc).get_json(
+                "static/manifest.json"
             )
-            manifest = None
+        if manifest is None:
+            logger.warning(
+                "static_export_reconciliation: manifest S3 fetch returned None — "
+                "treating as drift, will rebuild",
+            )
 
         r2_count: int | None
         r2_exported_at: datetime | None
