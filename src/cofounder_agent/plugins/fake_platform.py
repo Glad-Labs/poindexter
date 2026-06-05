@@ -25,6 +25,23 @@ class _FakeConfig:
     def get(self, key: str, default: Any = None) -> Any:
         return self.values.get(key, default)
 
+    # Typed getters mirror SiteConfig's parse semantics so a module's test sees
+    # the same behavior against the fake as against the real kernel.
+    def get_int(self, key: str, default: int = 0) -> int:
+        try:
+            return int(str(self.values.get(key, default)))
+        except (ValueError, TypeError):
+            return default
+
+    def get_float(self, key: str, default: float = 0.0) -> float:
+        try:
+            return float(str(self.values.get(key, default)))
+        except (ValueError, TypeError):
+            return default
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        return str(self.values.get(key, default)).lower() in ("true", "1", "yes", "on")
+
 
 class _FakeSecret:
     def __init__(self, secrets: dict[str, str]) -> None:

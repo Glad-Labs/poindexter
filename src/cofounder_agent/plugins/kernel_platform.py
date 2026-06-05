@@ -52,6 +52,17 @@ class _ConfigAdapter:
     def get(self, key: str, default: Any = None) -> Any:
         return self._site_config.get(key, default)
 
+    # Typed getters delegate to SiteConfig's own (env-fallback + parse logic),
+    # so the capability is behaviorally identical to the kernel service.
+    def get_int(self, key: str, default: int = 0) -> int:
+        return self._site_config.get_int(key, default)
+
+    def get_float(self, key: str, default: float = 0.0) -> float:
+        return self._site_config.get_float(key, default)
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        return self._site_config.get_bool(key, default)
+
 
 class _SecretAdapter:
     """Maps the ``secret`` capability onto ``SiteConfig.get_secret`` (async)."""
