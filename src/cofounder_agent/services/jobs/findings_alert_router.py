@@ -282,8 +282,24 @@ async def _deliver_fallback(
 
     Returns True if the finding was actually routed to alert_events,
     False if the fallback was a no-op (fallback='log_only' — the finding
-    stays in audit_log only). Any fallback other than log_only routes."""
+    stays in audit_log only). Any fallback other than log_only routes.
+
+    Critical findings NEVER honor a log_only fallback — they route to
+    alert_events regardless (fail loud). This mirrors the same guard in
+    ``_delivery_for`` so the primary AND fallback paths share one
+    invariant: a misconfigured ``fallback=log_only`` paired with a
+    critical finding (whose primary auto_fix/github_issue couldn't act)
+    must never silently suppress the page."""
     if fallback == "log_only":
+        severity = _normalize_severity(finding.get("severity") or "info")
+        if severity == "critical":
+            logger.warning(
+                "[findings_alert_router] %s primary failed; fallback=log_only "
+                "REFUSED for critical audit_log.id=%s — routing to alert_events",
+                kind, finding.get("id"),
+            )
+            await _insert_alert_event(pool, finding)
+            return True
         logger.info(
             "[findings_alert_router] %s primary failed; fallback=log_only "
             "for audit_log.id=%s", kind, finding.get("id"),

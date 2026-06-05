@@ -759,3 +759,68 @@ async def test_deliver_fallback_telegram_carries_force_channel(monkeypatch):
     # First execute is the fallback alert_events insert.
     labels = _labels_of(conn.execute.await_args_list[0])
     assert labels["force_channel"] == "telegram"
+
+
+# ---- #548: fallback=log_only must never suppress a CRITICAL finding ----------
+# Mirror of _delivery_for's critical guard, extended into the fallback path:
+# a critical finding whose primary channel (auto_fix/github_issue) couldn't act
+# AND whose fallback is log_only must still route — fail loud, never drop.
+
+
+async def test_run_critical_auto_fix_log_only_fallback_still_routes(monkeypatch):
+    """A CRITICAL auto_fix finding whose job can't act and whose fallback is
+    log_only must route to alert_events anyway (defense-in-depth: a future
+    critical kind misconfigured with fallback=log_only is never silenced)."""
+    class _FailFixJob:
+        async def run(self, pool, config):
+            return JobResult(ok=False, detail="nothing", changes_made=0)
+
+    monkeypatch.setattr(
+        "services.jobs.findings_alert_router._AUTOFIX_JOBS",
+        {"broken_external_link": _FailFixJob},
+    )
+    rows = [{"id": 410, "source": "lc", "severity": "critical",
+             "details": json.dumps({"kind": "broken_external_link", "title": "boom"})}]
+    pool, conn = _pool_with(
+        fetchrow={"value": "0"},
+        fetch=rows,
+        policy_rows=[
+            {"key": "findings.broken_external_link.delivery", "value": "auto_fix"},
+            {"key": "findings.broken_external_link.fallback", "value": "log_only"},
+        ],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    # Routed despite fallback=log_only: alert_events insert + watermark upsert.
+    assert result.changes_made == 1
+    assert "routed 1" in result.detail
+    assert "suppressed 0" in result.detail
+    assert conn.execute.await_count == 2
+    insert_call = conn.execute.await_args_list[0]
+    assert "INSERT INTO alert_events" in insert_call.args[0]
+    assert insert_call.args[2] == "critical"
+    # Routed via the severity matrix (no forced channel) — the dispatcher
+    # decides; we only guarantee it isn't dropped.
+    assert "force_channel" not in _labels_of(insert_call)
+
+
+async def test_deliver_fallback_refuses_log_only_for_critical():
+    """Unit-level guard: _deliver_fallback routes a critical finding even
+    when fallback=log_only, and returns True (it was delivered)."""
+    pool, conn = _pool_with(execute=None)
+    finding = {"id": 411, "source": "anomaly_detector", "severity": "critical",
+               "details": json.dumps({"kind": "anomaly", "title": "spike"})}
+    routed = await router_mod._deliver_fallback(pool, finding, "anomaly", "log_only")
+    assert routed is True
+    assert conn.execute.await_count == 1  # the alert_events insert happened
+    assert "INSERT INTO alert_events" in conn.execute.await_args_list[0].args[0]
+
+
+async def test_deliver_fallback_log_only_still_suppresses_warn():
+    """The critical guard must NOT change warn behavior: a warn finding with
+    fallback=log_only is still a no-op (returns False, no insert)."""
+    pool, conn = _pool_with(execute=None)
+    finding = {"id": 412, "source": "s", "severity": "warn",
+               "details": json.dumps({"kind": "k", "title": "t"})}
+    routed = await router_mod._deliver_fallback(pool, finding, "k", "log_only")
+    assert routed is False
+    assert conn.execute.await_count == 0  # nothing inserted
