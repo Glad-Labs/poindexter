@@ -230,6 +230,15 @@ def _build_tts(site_config: Any, tts_voice_override: str | None) -> Any:
             )
         speed = float(site_config.get("voice_agent_tts_speed", 1.0))
         from pipecat.services.openai.tts import OpenAITTSService
+        # Pipecat's OpenAITTSService gates `voice` through a hardcoded
+        # VALID_VOICES map of OpenAI's own catalog (alloy/nova/shimmer/…).
+        # Speaches serves Kokoro voices (bf_emma/bf_isabella/…) which aren't
+        # in that map, so the stock ``VALID_VOICES[voice]`` lookup raises
+        # KeyError and TTS dies on every turn — the #1088 sidecar cutover
+        # silently broke audio on BOTH rooms. Register the resolved Kokoro
+        # voice as an identity pass-through so the lookup yields the raw
+        # name Speaches expects. setdefault keeps OpenAI's real entries intact.
+        OpenAITTSService.VALID_VOICES.setdefault(voice, voice)
         return OpenAITTSService(
             base_url=base_url,
             api_key="speaches",

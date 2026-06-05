@@ -29,7 +29,10 @@ def _stub_openai_services() -> tuple[type, type]:
     tts_cls = type(
         "OpenAITTSService",
         (),
-        {"__init__": lambda self, **kw: setattr(self, "kw", kw)},
+        {
+            "__init__": lambda self, **kw: setattr(self, "kw", kw),
+            "VALID_VOICES": {},  # Mock the class attribute
+        },
     )
     pkg = types.ModuleType("pipecat.services.openai")
     sys.modules["pipecat.services.openai"] = pkg
