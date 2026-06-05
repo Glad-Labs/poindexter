@@ -1,6 +1,6 @@
 """Migration 20260604_040000: seed LiveKit creds into app_settings (#1000).
 
-ISSUE: Glad-Labs/glad-labs-stack#1000
+ISSUE: Glad-Labs/poindexter#1000
 
 The LiveKit HS256 secret currently lives in several env/file copies that must
 stay in lockstep (`.env`, `bootstrap.toml`, `~/.claude.json`). On 2026-06-02 a

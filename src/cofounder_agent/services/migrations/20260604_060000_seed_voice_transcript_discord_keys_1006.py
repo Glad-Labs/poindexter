@@ -1,6 +1,6 @@
 """Migration 20260604_060000: seed Discord voice-transcript keys (#1006).
 
-ISSUE: Glad-Labs/glad-labs-stack#1006
+ISSUE: Glad-Labs/poindexter#1006
 
 The claude-code voice room mirrors each turn (you → reply) to a written
 transcript so the operator can scan it while listening. That mirror was on

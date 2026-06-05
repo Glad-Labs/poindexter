@@ -1,6 +1,6 @@
 """Migration 20260604_143000: seed warm Speaches STT/TTS sidecar keys.
 
-ISSUE: Glad-Labs/glad-labs-stack#1088 (move STT/TTS to a warm sidecar to
+ISSUE: Glad-Labs/poindexter#1088 (move STT/TTS to a warm sidecar to
 kill the ~12s Whisper cold-start; part of the #1006 always-on workstream).
 
 Seeds six keys that let ``build_voice_pipeline_task`` build STT/TTS as

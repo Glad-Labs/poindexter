@@ -41,7 +41,7 @@ import pytest
 # The session-scoped asyncio mark moved off the module level and onto the
 # three async DB tests below: applied module-wide it wrongly tagged the four
 # sync panel-structure tests, emitting a PytestWarning
-# (Glad-Labs/glad-labs-stack#997). ``asyncio_mode = "auto"`` still auto-marks
+# (Glad-Labs/poindexter#997). ``asyncio_mode = "auto"`` still auto-marks
 # the coroutine tests; the explicit per-test mark only sets the loop scope so
 # they share the session-scoped ``test_txn`` fixture loop.
 pytestmark = [

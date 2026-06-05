@@ -14,7 +14,7 @@ by adding it directly to the bash script will instead trip this test
 and be redirected to the Python module.
 
 The lone permitted inline check is the post-rewrite belt-and-suspenders
-for ``Glad-Labs/glad-labs-stack`` — that pattern is intentionally absent
+for ``Glad-Labs/poindexter`` — that pattern is intentionally absent
 from the Python module's list (would false-positive on release-please
 CHANGELOG entries in the source tree) and only makes sense after the
 cosmetic sed rewrite has already run.
@@ -75,19 +75,19 @@ def test_sync_script_has_no_inline_allowlist_array() -> None:
 
 
 def test_sync_script_keeps_post_rewrite_internal_repo_check() -> None:
-    """The Glad-Labs/glad-labs-stack belt-and-suspenders stays inline.
+    """The Glad-Labs/poindexter belt-and-suspenders stays inline.
 
     This pattern is intentionally NOT in the Python guard — it'd
     false-positive on every release-please CHANGELOG entry on the
     pre-rewrite source tree. It only makes sense at sync time, after
-    the cosmetic sed rewrite of ``Glad-Labs/glad-labs-stack`` →
+    the cosmetic sed rewrite of ``Glad-Labs/poindexter`` →
     ``Glad-Labs/poindexter`` has already run. Documented in the
     Python module's docstring as the lone permitted exception.
     """
     text = _read_sync_script()
-    assert "Glad-Labs/glad-labs-stack" in text, (
+    assert "Glad-Labs/poindexter" in text, (
         "scripts/sync-to-github.sh must keep the post-rewrite "
-        "belt-and-suspenders grep for Glad-Labs/glad-labs-stack — "
+        "belt-and-suspenders grep for Glad-Labs/poindexter — "
         "catches anything the sed rewrite missed."
     )
     assert "INTERNAL_REPO_HITS" in text, (
@@ -102,7 +102,7 @@ def test_sync_rewrite_delegates_text_detection_to_guard() -> None:
     Root cause of the 2026-06-04 sync abort: the rewrite kept its OWN
     inline ``text_exts`` set that had drifted from the guard's
     ``_TEXT_EXTS`` — it lacked ``.ps1``, so voice-brain-host.ps1's
-    internal-repo doc-comment link (Glad-Labs/glad-labs-stack#1006) was
+    internal-repo doc-comment link (Glad-Labs/poindexter#1006) was
     never normalized and tripped the post-rewrite belt-and-suspenders
     check. Sharing one predicate makes the rewrite's coverage track the
     guard's scan set automatically — the same single-source-of-truth move

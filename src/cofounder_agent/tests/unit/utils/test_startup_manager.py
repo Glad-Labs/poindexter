@@ -179,7 +179,7 @@ class TestInitializeDatabase:
         # A truthy pool starts the ConnectionPoolHealth monitor (an infinite
         # ``auto_health_check`` loop). Cancel it so it doesn't leak past the
         # event loop as "Task was destroyed but it is pending!"
-        # (Glad-Labs/glad-labs-stack#997).
+        # (Glad-Labs/poindexter#997).
         _run(mgr._cancel_background_tasks())
 
     def test_failure_raises_system_exit(self):
@@ -523,7 +523,7 @@ class TestShutdown:
         """The pool-health monitor (and any other long-running background
         task) must be cancelled on shutdown — a pending ``auto_health_check``
         loop that outlives the event loop is the leak fixed in
-        Glad-Labs/glad-labs-stack#997.
+        Glad-Labs/poindexter#997.
         """
 
         async def _scenario():

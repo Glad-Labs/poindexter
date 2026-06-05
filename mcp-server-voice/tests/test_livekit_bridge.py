@@ -573,7 +573,7 @@ class TestResolveDefaultAudioPlane:
 
 # ===========================================================================
 # .status readiness protocol — _bridge_main writes connecting → ready / error
-# (Glad-Labs/glad-labs-stack#1010)
+# (Glad-Labs/poindexter#1010)
 # ===========================================================================
 
 
@@ -654,7 +654,7 @@ async def _await_status(status_path: Path, want: str) -> None:
 
 # ===========================================================================
 # spawn_bridge_subprocess — launcher polls .status, returns pid / raises loud
-# (Glad-Labs/glad-labs-stack#1010)
+# (Glad-Labs/poindexter#1010)
 # ===========================================================================
 
 
@@ -799,7 +799,7 @@ class TestSpawnBridgeSubprocess:
 
 # ===========================================================================
 # terminate_bridge_process — leave-by-PID reads .lock, signals, cleans up
-# (Glad-Labs/glad-labs-stack#1010)
+# (Glad-Labs/poindexter#1010)
 # ===========================================================================
 
 

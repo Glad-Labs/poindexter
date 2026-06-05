@@ -192,7 +192,7 @@ async def test_behind_main_emits_one_alert_then_dedupes():
 
 @pytest.mark.asyncio
 async def test_advancing_main_does_not_defeat_dedup():
-    """Regression for Glad-Labs/glad-labs-stack#1105.
+    """Regression for Glad-Labs/poindexter#1105.
 
     While prod stays parked on a stale checkout, origin/main keeps advancing.
     The dedup fingerprint must key on the local HEAD only, so a new main_sha

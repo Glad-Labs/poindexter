@@ -1,6 +1,6 @@
 """Migration 20260604_051500: seed claude-code per-room TTS voice override.
 
-ISSUE: Glad-Labs/glad-labs-stack#1006 (two-room voice split follow-up)
+ISSUE: Glad-Labs/poindexter#1006 (two-room voice split follow-up)
 
 Before this, the ``claude-code`` dev room and the public ``poindexter`` room
 shared a single Kokoro voice key — ``voice_agent_tts_voice`` — because the

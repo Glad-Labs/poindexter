@@ -58,7 +58,7 @@ class TestRepoContract:
     # scripts under scripts/ and skills/) has since been renormalized to LF,
     # so this contract gates honestly again: the linter must exit 0 over the
     # live tree. The stale ``@pytest.mark.xfail`` was removed in
-    # Glad-Labs/glad-labs-stack#997 (it was xpassing). If CRLF drift returns,
+    # Glad-Labs/poindexter#997 (it was xpassing). If CRLF drift returns,
     # this test now fails loudly instead of silently tolerating it.
     def test_repo_passes_lint(self) -> None:
         # Invoke as a subprocess so we exercise the actual entry point

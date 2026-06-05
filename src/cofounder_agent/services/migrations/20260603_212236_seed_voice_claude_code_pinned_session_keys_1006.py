@@ -1,6 +1,6 @@
 """Migration 20260603_212236: seed voice claude-code pinned-session keys (#1006).
 
-ISSUE: Glad-Labs/glad-labs-stack#1006
+ISSUE: Glad-Labs/poindexter#1006
 
 Increment 1 of the always-on Claude-Code voice room. The LiveKit bot's
 claude-code brain pins a single ``claude -p`` session so context survives
