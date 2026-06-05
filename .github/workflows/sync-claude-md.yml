@@ -131,3 +131,8 @@ jobs:
           EOF
           )"
           fi
+
+          # Enable auto-merge so the PR lands as soon as CI passes.
+          # allow_auto_merge=true on the repo permits this, but each PR
+          # must opt in explicitly via --auto. Squash keeps linear history.
+          gh pr merge --auto --squash "$BRANCH" || true
