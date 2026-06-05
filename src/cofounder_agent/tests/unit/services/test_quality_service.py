@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.quality_service import (
+from modules.content.quality_service import (
     EvaluationMethod,
     QualityAssessment,
     QualityDimensions,
@@ -737,72 +737,72 @@ class TestFactoryFunctions:
 @pytest.mark.unit
 class TestDetectArtifacts:
     def test_no_artifacts_returns_empty(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         clean = "# Real Article\n\nThis is a clean article about Python programming."
         assert UnifiedQualityService._detect_artifacts(clean) == []
 
     def test_photo_attribution_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# Post\n\n*Photo by John Doe on Pexels*\n\nContent here."
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Photo metadata" in a for a in artifacts)
 
     def test_image_credit_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# Post\n\nImage credit: Shutterstock\n\nContent."
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Photo metadata" in a for a in artifacts)
 
     def test_sdxl_leak_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "Generate with stable diffusion. negative prompt: ugly, low quality."
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("image generation" in a for a in artifacts)
 
     def test_cinematic_image_prompt_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "cinematic lighting, no people, no text in the scene."
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("image generation" in a for a in artifacts)
 
     def test_image_placeholder_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "Intro text.\n\n[IMAGE-1: A futuristic city]\n\nMore text."
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Unresolved placeholders" in a for a in artifacts)
 
     def test_todo_placeholder_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "Real content. [TODO: add citation]. More content."
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Unresolved placeholders" in a for a in artifacts)
 
     def test_tbd_placeholder_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "Pricing: [TBD]"
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Unresolved placeholders" in a for a in artifacts)
 
     def test_raw_html_entity_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "A &amp; B &lt; C &gt; D"
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Raw HTML" in a for a in artifacts)
 
     def test_br_tag_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "Line 1<br/>Line 2<br>"
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Raw HTML" in a for a in artifacts)
 
     def test_empty_sections_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# Section A\n## Section B\n## Section C\n"
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Empty sections" in a for a in artifacts)
 
     def test_duplicate_sentences_detected(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         # Both instances must match after the split-and-strip that _detect_artifacts
         # performs — so pad the first with leading context that will get split off.
         sentence = "Docker is a containerization platform that makes deployment easy"
@@ -814,7 +814,7 @@ class TestDetectArtifacts:
         assert any("Duplicate sentences" in a for a in artifacts)
 
     def test_multiple_artifacts_stacked(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Post\n\n"
             "*Photo by Jane on Unsplash*\n\n"
@@ -833,7 +833,7 @@ class TestDetectArtifacts:
 @pytest.mark.unit
 class TestScoreLLMPatterns:
     def test_clean_content_zero_or_minimal_penalty(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Building a FastAPI Service\n\n"
             "FastAPI gives you a typed, async web framework in under 100 lines. "
@@ -849,7 +849,7 @@ class TestScoreLLMPatterns:
         assert penalty >= -2.0
 
     def test_cliche_opener_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# AI Development\n\n"
             "In today's digital landscape, AI is transforming everything. "
@@ -860,7 +860,7 @@ class TestScoreLLMPatterns:
         assert penalty < 0
 
     def test_heavy_buzzwords_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Post\n\n"
             "Leverage cutting-edge synergy to harness innovative paradigm shifts. "
@@ -872,7 +872,7 @@ class TestScoreLLMPatterns:
         assert penalty < -1.0
 
     def test_filler_phrases_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Post\n\n"
             "It's important to note that when it comes to databases, "
@@ -883,7 +883,7 @@ class TestScoreLLMPatterns:
         assert any("filler" in i.lower() for i in issues)
 
     def test_generic_transitions_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Post\n\n"
             "Real content about Python.\n\n"
@@ -895,7 +895,7 @@ class TestScoreLLMPatterns:
         assert any("transition" in i.lower() for i in issues)
 
     def test_repetitive_starters_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Post\n\n"
             "The system is fast. The system is reliable. The system is scalable. "
@@ -906,25 +906,25 @@ class TestScoreLLMPatterns:
         assert any("repetitive" in i.lower() for i in issues)
 
     def test_listicle_title_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# 10 Ways to Speed Up Your Python Code\n\nReal content."
         penalty, issues = UnifiedQualityService._score_llm_patterns(content, SiteConfig())
         assert any("listicle" in i.lower() or "guide" in i.lower() for i in issues)
 
     def test_ultimate_guide_title_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# The Ultimate Guide to Docker\n\nReal content."
         penalty, issues = UnifiedQualityService._score_llm_patterns(content, SiteConfig())
         assert any("listicle" in i.lower() or "guide" in i.lower() for i in issues)
 
     def test_exclamation_spam_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# Post\n\nThis is amazing! Really cool! Totally! Awesome! Incredible! Wow!"
         penalty, issues = UnifiedQualityService._score_llm_patterns(content, SiteConfig())
         assert any("exclamation" in i.lower() for i in issues)
 
     def test_over_hedging_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = (
             "# Post\n\n"
             "Python might be potentially useful and perhaps arguably could "
@@ -934,7 +934,7 @@ class TestScoreLLMPatterns:
         assert any("hedg" in i.lower() for i in issues)
 
     def test_formulaic_structure_penalized(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         section = "word " * 60
         content = (
             "# Post\n\n"
@@ -947,18 +947,18 @@ class TestScoreLLMPatterns:
         assert any("formulaic" in i.lower() for i in issues)
 
     def test_penalty_returns_tuple_of_two(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         result = UnifiedQualityService._score_llm_patterns("# Post\n\nClean content.", SiteConfig())
         assert isinstance(result, tuple)
         assert len(result) == 2
 
     def test_penalty_is_float(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         penalty, _ = UnifiedQualityService._score_llm_patterns("# Post\n\nClean.", SiteConfig())
         assert isinstance(penalty, float)
 
     def test_issues_is_list_of_strings(self):
-        from services.quality_service import UnifiedQualityService
+        from modules.content.quality_service import UnifiedQualityService
         content = "# Top 10 Ways to Leverage Synergy\n\nIn today's digital landscape."
         _, issues = UnifiedQualityService._score_llm_patterns(content, SiteConfig())
         assert isinstance(issues, list)

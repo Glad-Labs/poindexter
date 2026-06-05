@@ -158,7 +158,7 @@ class TestContentGeneration:
     @pytest.mark.asyncio
     async def test_generate_blog_post_with_ollama(self):
         """AIContentGenerator.generate_blog_post produces non-empty content via Ollama."""
-        from services.ai_content_generator import AIContentGenerator
+        from modules.content.ai_content_generator import AIContentGenerator
         from services.site_config import SiteConfig
 
         gen = AIContentGenerator(
@@ -244,7 +244,7 @@ class TestQAReview:
     @pytest.mark.asyncio
     async def test_multi_model_qa_review(self):
         """MultiModelQA.review() returns a scored result using Ollama."""
-        from services.multi_model_qa import MultiModelQA
+        from modules.content.multi_model_qa import MultiModelQA
         from services.site_config import SiteConfig
 
         qa = MultiModelQA(site_config=SiteConfig())
@@ -268,7 +268,7 @@ class TestQAReview:
     @pytest.mark.asyncio
     async def test_qa_ollama_critic_present(self):
         """When Ollama is running, the ollama_critic reviewer should participate."""
-        from services.multi_model_qa import MultiModelQA
+        from modules.content.multi_model_qa import MultiModelQA
         from services.site_config import SiteConfig
 
         qa = MultiModelQA(site_config=SiteConfig())

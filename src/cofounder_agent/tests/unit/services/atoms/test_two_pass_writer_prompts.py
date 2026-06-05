@@ -42,7 +42,7 @@ class TestTwoPassRevisePrompt:
         assert "atoms.two_pass_writer.revise_prompt" in pm.prompts
 
     def test_render_matches_inline_fallback(self, pm: UnifiedPromptManager):
-        from services.atoms.two_pass_writer import _REVISE_PROMPT_FALLBACK
+        from modules.content.atoms.two_pass_writer import _REVISE_PROMPT_FALLBACK
 
         kwargs = dict(
             draft="draft body with [EXTERNAL_NEEDED: timestamp]",

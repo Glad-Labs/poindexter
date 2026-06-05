@@ -96,7 +96,7 @@ class AtomMeta:
 
     Each atom module declares this as ``ATOM_META`` at module level.
     The startup walker collects them by importing modules under
-    ``services.atoms`` (and the existing plugin packages) and reading
+    ``modules.content.atoms`` (and the existing plugin packages) and reading
     the constant; the result lands in ``pipeline_atoms`` as a
     write-through cache.
 

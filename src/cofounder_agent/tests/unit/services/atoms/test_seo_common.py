@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.atoms import _seo_common as sc
+from modules.content.atoms import _seo_common as sc
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
 # already auto-marks coroutine tests. An explicit mark wrongly tagged the

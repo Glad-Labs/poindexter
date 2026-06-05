@@ -68,7 +68,7 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         This is the regression that #473 closed. Asserts every field a
         reader / operator UI needs is present in the upsert payload.
         """
-        from services.stages.finalize_task import FinalizeTaskStage
+        from modules.content.stages.finalize_task import FinalizeTaskStage
 
         db = _make_database_service()
 
@@ -140,7 +140,7 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         assert data["seo_description"] == "The hidden costs of 128k context windows"
         assert data["seo_keywords"] == "context windows, LLM costs, inference"
         assert data["quality_score"] == 88
-        from services.multi_model_qa import format_qa_feedback_from_reviews
+        from modules.content.multi_model_qa import format_qa_feedback_from_reviews
         assert data["qa_feedback"] == format_qa_feedback_from_reviews(
             ctx["qa_reviews"], final_score=88, approved=True,
         )
@@ -172,7 +172,7 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         via upsert_version). Both legacy and Prefect orchestrators
         get clickable links.
         """
-        from services.stages.finalize_task import FinalizeTaskStage
+        from modules.content.stages.finalize_task import FinalizeTaskStage
 
         db = _make_database_service()
         captured: dict = {}
@@ -228,7 +228,7 @@ class TestFinalizeTaskPersistsToPipelineVersions:
 
         Logged at WARNING so the regression is visible in Loki / Grafana.
         """
-        from services.stages.finalize_task import FinalizeTaskStage
+        from modules.content.stages.finalize_task import FinalizeTaskStage
 
         db = _make_database_service()
         fake_pipeline_db = MagicMock()
@@ -279,7 +279,7 @@ class TestFinalizeTaskPersistsToPipelineVersions:
         Pins that we don't accidentally persist a ghost draft for a
         task the sweeper already terminated.
         """
-        from services.stages.finalize_task import FinalizeTaskStage
+        from modules.content.stages.finalize_task import FinalizeTaskStage
 
         db = _make_database_service()
         # Status guard returns None = "task is no longer pending/in_progress"
@@ -338,7 +338,7 @@ class TestUpsertVersionHasProductionCallers:
         """The terminal stage must reference PipelineDB.upsert_version."""
         import inspect
 
-        from services.stages import finalize_task
+        from modules.content.stages import finalize_task
 
         source = inspect.getsource(finalize_task)
         assert "PipelineDB" in source, (
@@ -359,7 +359,7 @@ class TestUpsertVersionHasProductionCallers:
         """
         import inspect
 
-        from services.atoms import _qa_persist
+        from modules.content.atoms import _qa_persist
 
         source = inspect.getsource(_qa_persist)
         assert "PipelineDB" in source, (

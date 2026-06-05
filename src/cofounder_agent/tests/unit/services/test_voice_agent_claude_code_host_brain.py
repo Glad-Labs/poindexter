@@ -262,3 +262,45 @@ def test_host_mode_does_not_log_container_deprecation(caplog):
     assert not any(
         "CONTAINER mode (DEPRECATED" in r.message for r in caplog.records
     ), "host-brain mode should not warn about deprecated container mode"
+
+
+# ---------------------------------------------------------------------------
+# Discord transcript mirror (#1006) — turns post to the routine Discord
+# channel, not Telegram (which is reserved for critical alerts).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_discord_transcript_posts_content(monkeypatch):
+    """When a webhook resolves, each turn POSTs a You/Claude content payload."""
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    async def _webhook():
+        return "https://discord.test/webhook/abc"
+
+    monkeypatch.setattr(vac, "_transcript_discord_webhook", _webhook)
+    calls = _install_fake_httpx(monkeypatch, [_Resp(204, {})])
+
+    await vac._push_transcript_to_discord("how's the build", "all green")
+
+    assert len(calls) == 1
+    assert calls[0]["url"] == "https://discord.test/webhook/abc"
+    content = calls[0]["json"]["content"]
+    assert "You:" in content and "how's the build" in content
+    assert "Claude:" in content and "all green" in content
+
+
+@pytest.mark.asyncio
+async def test_discord_transcript_skips_when_disabled(monkeypatch):
+    """No webhook (disabled / unconfigured) -> no POST at all."""
+    from cofounder_agent.services import voice_agent_claude_code as vac
+
+    async def _no_webhook():
+        return None
+
+    monkeypatch.setattr(vac, "_transcript_discord_webhook", _no_webhook)
+    calls = _install_fake_httpx(monkeypatch, [])
+
+    await vac._push_transcript_to_discord("hi", "there")
+
+    assert calls == []  # mirror disabled -> the audio path posts nothing

@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.content_validator import ValidationIssue, ValidationResult
-from services.multi_model_qa import (
+from modules.content.content_validator import ValidationIssue, ValidationResult
+from modules.content.multi_model_qa import (
     MultiModelResult,
     ReviewerResult,
     format_qa_feedback_from_reviews,

@@ -264,12 +264,19 @@ def _classify_drift(local_head: str, main_sha: str, compare: Optional[dict[str, 
 
 
 # ---------------------------------------------------------------------------
-# Dedup (alert_dedup_state) — per (repo, local_head, main_sha) fingerprint.
+# Dedup (alert_dedup_state) — per (repo, local_head) fingerprint.
+#
+# main_sha is deliberately NOT in the key: the local checkout's HEAD is the
+# stable identity of the "still behind" condition. origin/main advancing means
+# prod is *further* behind, but it's the same drift event and must not reset
+# the dedup window — else every new commit to main re-pages (Glad-Labs/
+# glad-labs-stack#1105: 33 alerts/24h). The window resets naturally when the
+# operator deploys (local_head moves).
 # ---------------------------------------------------------------------------
 
 
-def _fingerprint_for(repo: str, local_head: str, main_sha: str) -> str:
-    return f"branch_drift_{repo}_{local_head[:12]}_{main_sha[:12]}"
+def _fingerprint_for(repo: str, local_head: str) -> str:
+    return f"branch_drift_{repo}_{local_head[:12]}"
 
 
 async def _is_deduped(pool: Any, *, fingerprint: str, now_utc: datetime, dedup_hours: int) -> bool:
@@ -350,7 +357,9 @@ async def _emit_drift_alert(pool: Any, *, repo: str, branch: str, local_head: st
         "local_head": local_head,
         "main_sha": main_sha,
     }
-    fingerprint = f"branch-drift-{alertname}-{local_head[:12]}-{main_sha[:12]}"
+    # main_sha intentionally omitted — see _fingerprint_for: the stale local
+    # HEAD is the drift identity; main advancing must not mint a new key.
+    fingerprint = f"branch-drift-{alertname}-{local_head[:12]}"
     try:
         await pool.execute(
             "INSERT INTO alert_events (alertname, severity, status, labels, "
@@ -465,7 +474,7 @@ async def run_branch_drift_probe(
     behind_txt = f"{behind} behind" if behind is not None else "behind (uncomputable)"
     detail = f"branch '{branch}' @ {local_head[:9]} is {behind_txt} origin/main @ {main_sha[:9]}"
 
-    fingerprint = _fingerprint_for(config["repo"], local_head, main_sha)
+    fingerprint = _fingerprint_for(config["repo"], local_head)
     if await _is_deduped(pool, fingerprint=fingerprint, now_utc=now_utc, dedup_hours=config["dedup_hours"]):
         logger.info("[BRANCH_DRIFT] drift unchanged (%s) — dedup-suppressed", fingerprint)
         return {"ok": False, "status": "drift_detected", "behind": behind, "alert_emitted": False,

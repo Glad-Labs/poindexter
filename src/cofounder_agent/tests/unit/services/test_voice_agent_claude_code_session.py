@@ -268,13 +268,13 @@ async def test_manual_phrase_rotates_before_send(monkeypatch):
 
     recorder = _SpawnRecorder([(0, _result_payload("fresh start"), b"")])
     monkeypatch.setattr(asyncio, "create_subprocess_exec", recorder)
-    # Keep the turn hermetic — the transcript mirror hits the DB/secret path
+    # Keep the turn hermetic — the transcript mirror hits the DB/webhook path
     # which isn't available in the unit venv (it's caught + logged in prod;
     # we stub it so the test doesn't depend on DB creds).
-    async def _no_telegram(*_a, **_kw):
+    async def _no_transcript(*_a, **_kw):
         return None
 
-    monkeypatch.setattr(vac, "_push_transcript_to_telegram", _no_telegram)
+    monkeypatch.setattr(vac, "_push_transcript_to_discord", _no_transcript)
 
     # Feed the user turn deterministically rather than constructing a real
     # pipecat ``LLMContext``. The stubbed-vs-real-pipecat context extraction

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.stages.generate_media_scripts import GenerateMediaScriptsStage
+from modules.content.stages.generate_media_scripts import GenerateMediaScriptsStage
 
 
 @contextlib.asynccontextmanager
@@ -53,7 +53,7 @@ async def test_podcast_script_preserved_when_scene_parsing_fails():
              new=AsyncMock(return_value=result_obj),
          ), \
          patch(
-             "services.stages.generate_media_scripts._parse_scene_output",
+             "modules.content.stages.generate_media_scripts._parse_scene_output",
              side_effect=RuntimeError(
                  "podcast_service requires a site_config",
              ),

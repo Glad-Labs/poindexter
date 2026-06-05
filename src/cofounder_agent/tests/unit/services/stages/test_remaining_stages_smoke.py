@@ -20,19 +20,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.stage import Stage
-from services.stages.capture_training_data import CaptureTrainingDataStage
-from services.stages.finalize_task import FinalizeTaskStage
-from services.stages.generate_media_scripts import (
+from modules.content.stages.capture_training_data import CaptureTrainingDataStage
+from modules.content.stages.finalize_task import FinalizeTaskStage
+from modules.content.stages.generate_media_scripts import (
     GenerateMediaScriptsStage,
     _build_scene_prompt,
     _parse_scene_output,
 )
-from services.stages.generate_seo_metadata import (
+from modules.content.stages.generate_seo_metadata import (
     GenerateSeoMetadataStage,
     _normalize_keywords,
 )
-from services.stages.replace_inline_images import ReplaceInlineImagesStage
-from services.stages.source_featured_image import SourceFeaturedImageStage
+from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
+from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
 # ---------------------------------------------------------------------------
 # Protocol conformance — all six new stages in one sweep.
@@ -149,7 +149,7 @@ class TestGenerateSeoMetadata:
             "services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
-            "services.ai_content_generator.get_content_generator",
+            "modules.content.ai_content_generator.get_content_generator",
             MagicMock(),
         ):
             result = await GenerateSeoMetadataStage().execute(ctx, {})
@@ -175,7 +175,7 @@ class TestGenerateSeoMetadata:
             "services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
-            "services.ai_content_generator.get_content_generator",
+            "modules.content.ai_content_generator.get_content_generator",
             MagicMock(),
         ):
             with pytest.raises(ValueError, match="invalid result"):
@@ -506,7 +506,7 @@ class TestReplaceInlineImagesAdapter:
 
         # Stage calls _normalize_text via lazy import into content_router_service
         with patch(
-            "services.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -531,7 +531,7 @@ class TestReplaceInlineImagesAdapter:
             "database_service": db, "image_service": image_service,
         }
         with patch(
-            "services.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -545,7 +545,7 @@ class TestReplaceInlineImagesAdapter:
 
 class TestReplaceInlineImagesPureHelpers:
     def test_cleanup_leaked_descriptions_strips_italic_scene(self):
-        from services.stages.replace_inline_images import _cleanup_leaked_descriptions
+        from modules.content.stages.replace_inline_images import _cleanup_leaked_descriptions
         body = (
             "<img src='x' />\n"
             "\n*An editorial illustration of a mountain range stretching into horizon*\n"
@@ -556,14 +556,14 @@ class TestReplaceInlineImagesPureHelpers:
         assert "Real paragraph." in out
 
     def test_cleanup_strips_photo_attribution_lines(self):
-        from services.stages.replace_inline_images import _cleanup_leaked_descriptions
+        from modules.content.stages.replace_inline_images import _cleanup_leaked_descriptions
         body = "Hi\n\n*Photo by Jane on Pexels*\n\nMore."
         out = _cleanup_leaked_descriptions(body)
         assert "Photo by Jane" not in out
         assert "More." in out
 
     def test_inject_html_image_substitutes_exactly_one(self):
-        from services.stages.replace_inline_images import _inject_html_image
+        from modules.content.stages.replace_inline_images import _inject_html_image
         body = "Start [IMAGE-1: desc] middle [IMAGE-1: other] end"
         out = _inject_html_image(body, "1", "http://img", "alt", width=100, height=100)
         # Only the first should be replaced
@@ -589,7 +589,7 @@ class TestReplaceInlineImagesAltTextScrub:
             "database_service": db, "image_service": image_service,
         }
         with patch(
-            "services.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -662,7 +662,7 @@ class TestSourceFeaturedImageAdapter:
         # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the SDXL path to miss so the Pexels fallback runs.
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -674,7 +674,7 @@ class TestSourceFeaturedImageAdapter:
         assert u["stages"]["3_image_source"] == "pexels"
 
     async def test_sdxl_succeeds_populates_sdxl_source(self):
-        from services.stages.source_featured_image import GeneratedImage
+        from modules.content.stages.source_featured_image import GeneratedImage
         image_service = SimpleNamespace(
             sdxl_available=True, sdxl_initialized=True,
             search_featured_image=AsyncMock(),
@@ -684,7 +684,7 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
         }
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=GeneratedImage(
                 url="https://r2.example/featured.jpg",
                 photographer="AI Generated (SDXL)",
@@ -709,7 +709,7 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
         }
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})

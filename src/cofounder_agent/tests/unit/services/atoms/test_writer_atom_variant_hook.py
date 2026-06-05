@@ -81,7 +81,7 @@ async def test_no_active_experiment_state_unchanged() -> None:
     """When pick_variant returns None, the writer's metrics dict must
     NOT contain variant_id / variant_label / experiment_*. The
     production path is byte-equivalent to pre-PR behavior."""
-    from services.stages.generate_content import GenerateContentStage
+    from modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -96,13 +96,13 @@ async def test_no_active_experiment_state_unchanged() -> None:
     # Stub the helper DB reads inside _generate_via_two_pass_atom so
     # they don't go to a real DB.
     with patch(
-        "services.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.atoms.two_pass_writer.run",
+        "modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
         "services.experiment_runner.pick_variant",
@@ -140,7 +140,7 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
     threads via ``writer_model_override=...`` kwarg into
     ``two_pass_writer.run``. The metrics dict carries the variant ids
     so capability_outcomes can stamp them."""
-    from services.stages.generate_content import GenerateContentStage
+    from modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -169,13 +169,13 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
         }
 
     with patch(
-        "services.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.atoms.two_pass_writer.run", new=fake_run,
+        "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),
@@ -214,7 +214,7 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
 
 
 async def test_active_experiment_no_overrides_preserves_defaults() -> None:
-    from services.stages.generate_content import GenerateContentStage
+    from modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -241,13 +241,13 @@ async def test_active_experiment_no_overrides_preserves_defaults() -> None:
         }
 
     with patch(
-        "services.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "services.atoms.two_pass_writer.run", new=fake_run,
+        "modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),

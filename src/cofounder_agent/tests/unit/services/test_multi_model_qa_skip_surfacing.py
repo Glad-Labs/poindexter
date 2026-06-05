@@ -1,4 +1,4 @@
-"""Tests for the silent-skip surfacing in services.multi_model_qa.
+"""Tests for the silent-skip surfacing in modules.content.multi_model_qa.
 
 Background: until 2026-05-27, the deepeval/guardrails/ragas reviewer
 wrappers in multi_model_qa.py silently returned None when a prerequisite
@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.multi_model_qa import (
+from modules.content.multi_model_qa import (
     MultiModelQA,
     _surface_reviewer_skip,
 )
@@ -75,7 +75,7 @@ class TestReviewerSkipWiredIntoRails:
         with patch(
             "services.deepeval_rails.is_enabled", return_value=False,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_skip",
+            "modules.content.multi_model_qa._surface_reviewer_skip",
         ) as surface_mock:
             result = qa._check_deepeval_brand("body", "topic")
         assert result is None
@@ -89,7 +89,7 @@ class TestReviewerSkipWiredIntoRails:
         with patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_skip",
+            "modules.content.multi_model_qa._surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_deepeval_faithfulness("body", None)
         assert result is None
@@ -103,7 +103,7 @@ class TestReviewerSkipWiredIntoRails:
         with patch(
             "services.guardrails_rails.is_enabled", return_value=False,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_skip",
+            "modules.content.multi_model_qa._surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_guardrails_brand("body")
         assert result is None
@@ -119,7 +119,7 @@ class TestReviewerSkipWiredIntoRails:
         ), patch(
             "services.guardrails_rails._resolve_competitors", return_value=[],
         ), patch(
-            "services.multi_model_qa._surface_reviewer_skip",
+            "modules.content.multi_model_qa._surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_guardrails_competitor("body")
         assert result is None
@@ -133,7 +133,7 @@ class TestReviewerSkipWiredIntoRails:
         with patch(
             "services.ragas_eval.is_enabled", return_value=False,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_skip",
+            "modules.content.multi_model_qa._surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_ragas_eval("body", "topic", "ctx")
         assert result is None
@@ -147,7 +147,7 @@ class TestReviewerSkipWiredIntoRails:
         with patch(
             "services.ragas_eval.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_skip",
+            "modules.content.multi_model_qa._surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_ragas_eval("body", "topic", None)
         assert result is None

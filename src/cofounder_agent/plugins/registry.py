@@ -38,11 +38,13 @@ need to re-discover.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import re
 from collections.abc import Iterable
 from functools import cache
 from importlib.metadata import EntryPoint, entry_points
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,128 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     # functions. See docs/architecture/module-v1.md.
     "modules": "poindexter.modules",
 }
+
+
+class ModuleDiscoveryError(RuntimeError):
+    """Raised when an in-tree module directory is present but fails to
+    load or validate. In-tree modules are first-party code, so a broken
+    one is a real bug that must fail loud (feedback_no_silent_defaults) —
+    unlike entry-point (third-party) modules, which are dropped-and-warned
+    by ``_validate_modules``."""
+
+
+_INTREE_MODULES_IMPORT_ROOT = "modules"
+"""Import root for in-tree business modules (e.g. ``modules.content``).
+The worker/CLI run with ``src/cofounder_agent`` on ``sys.path``, so this is
+a top-level package."""
+
+
+def _intree_modules_path() -> Path:
+    """Filesystem path of the in-tree ``modules`` package."""
+    pkg = importlib.import_module(_INTREE_MODULES_IMPORT_ROOT)
+    return Path(pkg.__path__[0])
+
+
+def _intree_module_names() -> list[str]:
+    """List in-tree module slugs — every ``modules/<name>/`` directory
+    that contains a ``<name>_module.py`` and whose name is a valid module
+    slug. This is the single presence signal: a name appears here iff its
+    package directory is on disk. Tests monkeypatch this to simulate a
+    stripped mirror.
+    """
+    base = _intree_modules_path()
+    names: list[str] = []
+    for entry in sorted(base.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith(("_", ".")):
+            continue
+        if not _MODULE_NAME_RE.match(entry.name):
+            continue
+        if not (entry / f"{entry.name}_module.py").exists():
+            continue
+        names.append(entry.name)
+    return names
+
+
+def _load_intree_module(name: str) -> Any:
+    """Import ``modules.<name>.<name>_module`` and instantiate its Module
+    class. The class is found via the module's ``__all__`` (both shipped
+    modules declare it) with a fallback to the first class defined in the
+    file that exposes a ``manifest`` method."""
+    mod = importlib.import_module(
+        f"{_INTREE_MODULES_IMPORT_ROOT}.{name}.{name}_module"
+    )
+    cls = None
+    exported = getattr(mod, "__all__", None)
+    if exported:
+        cls = getattr(mod, exported[0], None)
+    if cls is None or not hasattr(cls, "manifest"):
+        for obj in vars(mod).values():
+            if (
+                isinstance(obj, type)
+                and obj.__module__ == mod.__name__
+                and hasattr(obj, "manifest")
+            ):
+                cls = obj
+                break
+    if cls is None:
+        raise ModuleDiscoveryError(
+            f"in-tree module {name!r}: no Module class with a manifest() "
+            f"method found in {mod.__name__}"
+        )
+    return cls()
+
+
+def _load_intree_module_jobs(name: str) -> list[Any]:
+    """Return the module-owned jobs declared in
+    ``modules/<name>/jobs/__init__.py`` as a ``JOBS`` list. A module
+    without a ``jobs`` package contributes none.
+
+    Only the *absence* of the module's own ``jobs`` package is treated as
+    "no jobs" — a ``jobs`` package that IS present but whose import chain
+    is broken (e.g. a broken ``from .<job_module> import ...``) re-raises
+    so ``_scan_intree_modules`` wraps it into a loud ``ModuleDiscoveryError``
+    rather than silently dropping the job (feedback_no_silent_defaults)."""
+    jobs_pkg_path = f"{_INTREE_MODULES_IMPORT_ROOT}.{name}.jobs"
+    try:
+        jobs_pkg = importlib.import_module(jobs_pkg_path)
+    except ModuleNotFoundError as exc:
+        # The jobs package itself is absent → no jobs. A DIFFERENT missing
+        # name means a broken inner import → real bug, let it propagate.
+        if exc.name == jobs_pkg_path:
+            return []
+        raise
+    return [job_cls() for job_cls in getattr(jobs_pkg, "JOBS", [])]
+
+
+def _scan_intree_modules() -> dict[str, list[Any]]:
+    """Discover in-tree modules (and their owned jobs) by directory scan.
+
+    Returns ``{"modules": [...], "jobs": [...]}``. A directory listed by
+    ``_intree_module_names`` that fails to load raises
+    ``ModuleDiscoveryError`` (present-but-broken = loud); an absent
+    directory is simply never listed (expected-absent = silent, but the
+    final discovered set is logged)."""
+    modules_out: list[Any] = []
+    jobs_out: list[Any] = []
+    for name in _intree_module_names():
+        try:
+            modules_out.append(_load_intree_module(name))
+            jobs_out.extend(_load_intree_module_jobs(name))
+        except ModuleDiscoveryError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - re-raised as loud domain error
+            raise ModuleDiscoveryError(
+                f"in-tree module {name!r} is present but failed to load: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+    logger.info(
+        "module discovery: in-tree modules=%s jobs=%s",
+        [m.manifest().name for m in modules_out],
+        [getattr(j, "name", "?") for j in jobs_out],
+    )
+    return {"modules": modules_out, "jobs": jobs_out}
 
 
 def _load_group(group: str) -> list[Any]:
@@ -383,19 +507,17 @@ def get_core_samples() -> dict[str, list[Any]]:
     """
     samples: dict[str, list[Any]] = {k: [] for k in ENTRY_POINT_GROUPS}
 
+    # In-tree business modules + their owned jobs are discovered by
+    # directory scan (Module v1 Phase 5) — not hardcoded below — so a
+    # stripped private module disappears from every bucket by deleting its
+    # package directory alone. See ``_scan_intree_modules`` +
+    # ``docs/architecture/2026-06-04-module-visibility-sync-design.md``.
+    _scanned = _scan_intree_modules()
+    samples["modules"].extend(_scanned["modules"])
+    samples["jobs"].extend(_scanned["jobs"])
+
     _SAMPLES: list[tuple[str, str, str]] = [
         # (plugin_type, module_path, class_name)
-        # Module v1 Phase 3-lite — ContentModule is the first concrete
-        # business module. Lives in-tree at cofounder_agent.modules.content
-        # while we prove the shape; extracts to its own top-level package
-        # when 2+ modules give us a comparison point (see Phase 3.5).
-        ("modules", "modules.content", "ContentModule"),
-        # FinanceModule F1 (2026-05-13) — Mercury read-only banking
-        # integration. visibility=private (Matt's operator overlay).
-        ("modules", "modules.finance", "FinanceModule"),
-        # FinanceModule F2 polling job — pulls accounts + transactions
-        # from Mercury hourly. Gated by mercury_enabled in app_settings.
-        ("jobs", "modules.finance.jobs.poll_mercury", "PollMercuryJob"),
         ("taps", "plugins.samples.hello_tap", "HelloTap"),
         ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
         # NoopJob sample registration removed 2026-06-02 (#936 cleanup) — it
@@ -623,9 +745,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("llm_providers", "plugins.llm_providers.gemini", "GeminiProvider"),
         # Core Stages (Phase E migration — one per file, unblocks tearing
         # down content_router_service.py over a handful of commits).
-        ("stages", "services.stages.verify_task", "VerifyTaskStage"),
-        ("stages", "services.stages.generate_content", "GenerateContentStage"),
-        ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),
+        ("stages", "modules.content.stages.verify_task", "VerifyTaskStage"),
+        ("stages", "modules.content.stages.generate_content", "GenerateContentStage"),
+        ("stages", "modules.content.stages.writer_self_review", "WriterSelfReviewStage"),
         # Resolve ``[posts/<slug>]`` placeholders before validation. The
         # writer LLM emits these as hints to internal posts but NO code
         # ever resolved them; the validator (added 2026-05-12) catches
@@ -635,19 +757,19 @@ def get_core_samples() -> dict[str, list[Any]]:
         # markdown links, or strips unknown placeholders.
         (
             "stages",
-            "services.stages.resolve_internal_link_placeholders",
+            "modules.content.stages.resolve_internal_link_placeholders",
             "ResolveInternalLinkPlaceholdersStage",
         ),
-        ("stages", "services.stages.quality_evaluation", "QualityEvaluationStage"),
-        ("stages", "services.stages.url_validation", "UrlValidationStage"),
-        ("stages", "services.stages.replace_inline_images", "ReplaceInlineImagesStage"),
-        ("stages", "services.stages.source_featured_image", "SourceFeaturedImageStage"),
-        ("stages", "services.stages.caption_images", "CaptionImagesStage"),
-        ("stages", "services.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
-        ("stages", "services.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
-        ("stages", "services.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
-        ("stages", "services.stages.capture_training_data", "CaptureTrainingDataStage"),
-        ("stages", "services.stages.finalize_task", "FinalizeTaskStage"),
+        ("stages", "modules.content.stages.quality_evaluation", "QualityEvaluationStage"),
+        ("stages", "modules.content.stages.url_validation", "UrlValidationStage"),
+        ("stages", "modules.content.stages.replace_inline_images", "ReplaceInlineImagesStage"),
+        ("stages", "modules.content.stages.source_featured_image", "SourceFeaturedImageStage"),
+        ("stages", "modules.content.stages.caption_images", "CaptionImagesStage"),
+        ("stages", "modules.content.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
+        ("stages", "modules.content.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
+        ("stages", "modules.content.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
+        ("stages", "modules.content.stages.capture_training_data", "CaptureTrainingDataStage"),
+        ("stages", "modules.content.stages.finalize_task", "FinalizeTaskStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:

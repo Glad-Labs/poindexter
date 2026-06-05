@@ -20,8 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.stages.replace_inline_images import ReplaceInlineImagesStage
-from services.stages.source_featured_image import (
+from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
+from modules.content.stages.source_featured_image import (
     GeneratedImage,
     SourceFeaturedImageStage,
 )
@@ -67,7 +67,7 @@ class TestSourceFeaturedImageRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-row-1")
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=GeneratedImage(
                 url="https://r2.example/featured.png",
                 photographer="AI Generated (SDXL)",
@@ -118,7 +118,7 @@ class TestSourceFeaturedImageRecordsAsset:
         # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the SDXL path to miss so the Pexels fallback runs.
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=None),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -155,7 +155,7 @@ class TestSourceFeaturedImageRecordsAsset:
         # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the SDXL path to miss so search_featured_image is reached.
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=None),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -212,7 +212,7 @@ class TestFeaturedImageDataContextUpdates:
             },
         )
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=sdxl_img),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -269,7 +269,7 @@ class TestFeaturedImageDataContextUpdates:
         )
         recorder = AsyncMock(return_value="row")
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=sdxl_img),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -311,7 +311,7 @@ class TestFeaturedImageDataContextUpdates:
         # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the SDXL path to miss so the Pexels branch populates featured_image_data.
         with patch(
-            "services.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_sdxl_featured",
             AsyncMock(return_value=None),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -379,7 +379,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-uuid")
         with patch(
-            "services.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value="https://r2.example/inline-1.png"),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -417,7 +417,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-uuid")
         with patch(
-            "services.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value=None),  # SDXL fails → falls through to Pexels
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -450,7 +450,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock()
         with patch(
-            "services.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value="https://r2.example/x.png"),
         ), patch(
             "services.media_asset_recorder.record_media_asset",

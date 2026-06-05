@@ -143,7 +143,7 @@ async def build_rag_context(
         # forwarded to InternalLinkCoherenceFilter.
         if pool and source_tags:
             try:
-                from services.internal_link_coherence import (
+                from modules.content.internal_link_coherence import (
                     InternalLinkCoherenceFilter,
                     LinkCandidate,
                 )

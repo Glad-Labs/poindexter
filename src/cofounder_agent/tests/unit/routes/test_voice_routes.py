@@ -269,3 +269,46 @@ def test_voice_join_503_when_db_and_env_both_empty(monkeypatch):
     )
     resp = client.get("/voice/join", headers=_TAILNET)
     assert resp.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Unique identity per device (#1006) — two clients must not collide on one
+# identity (LiveKit kicks duplicates, causing phone+PC to flap).
+# ---------------------------------------------------------------------------
+
+
+def _token_payload(token: str) -> dict:
+    _h, p, _s = token.split(".")
+    return json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))
+
+
+def _token_from_page(body: str) -> str:
+    return body.split('const TOKEN = "', 1)[1].split('"', 1)[0]
+
+
+@pytest.mark.unit
+def test_each_join_gets_unique_identity(monkeypatch):
+    """Two /voice/join requests must mint DIFFERENT identities (so a phone +
+    PC can coexist), both keeping the human-facing display name."""
+    _set_livekit_env(monkeypatch, key="lk_api_key", secret="real-secret-value")
+    monkeypatch.setenv("LIVEKIT_DEFAULT_IDENTITY", "matt")
+    client = TestClient(_build_app())
+
+    p1 = _token_payload(_token_from_page(client.get("/voice/join", headers=_TAILNET).text))
+    p2 = _token_payload(_token_from_page(client.get("/voice/join", headers=_TAILNET).text))
+
+    assert p1["sub"] != p2["sub"], "two joins must get distinct LiveKit identities"
+    assert p1["sub"].startswith("matt-") and p2["sub"].startswith("matt-")
+    assert p1["name"] == "matt" and p2["name"] == "matt"  # clean display label
+
+
+@pytest.mark.unit
+def test_mint_token_name_distinct_from_unique_identity():
+    """The minter signs the unique identity into ``sub`` but a clean ``name``."""
+    token = _mint_livekit_token(
+        api_key="lk_api_key", api_secret="s", identity="matt-a1b2c3",
+        room="claude-code", name="matt",
+    )
+    payload = _token_payload(token)
+    assert payload["sub"] == "matt-a1b2c3"  # unique per device
+    assert payload["name"] == "matt"        # human-facing

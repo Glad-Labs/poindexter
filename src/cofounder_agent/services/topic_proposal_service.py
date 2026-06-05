@@ -49,7 +49,7 @@ from services.approval_service import (
 )
 from services.audit_log import audit_log_bg
 from services.logger_config import get_logger
-from services.stages.topic_decision_gate import build_topic_decision_artifact
+from modules.content.stages.topic_decision_gate import build_topic_decision_artifact
 
 logger = get_logger(__name__)
 

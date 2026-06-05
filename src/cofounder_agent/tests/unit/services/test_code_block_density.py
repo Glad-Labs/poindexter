@@ -1,6 +1,6 @@
 """Unit tests for the code-block density quality gate (GH-234).
 
-Verifies that ``services.content_validator.validate_content`` emits a
+Verifies that ``modules.content.content_validator.validate_content`` emits a
 ``code_block_density`` warning when:
 
 * The post is tagged with one of the configured tech tags, AND
@@ -9,7 +9,7 @@ Verifies that ``services.content_validator.validate_content`` emits a
 Also verifies the negative cases — non-tech posts, posts with enough
 code, and the global kill-switch — all skip the gate cleanly.
 
-Tests mutate ``services.content_validator.site_config._config`` directly. The
+Tests mutate ``modules.content.content_validator.site_config._config`` directly. The
 unit-test conftest snapshots + restores that dict between tests
 (layer 3 of ``tests/unit/conftest.py``), so per-test seeds don't leak.
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.content_validator import (
+from modules.content.content_validator import (
     _check_code_block_density,
     _count_code_blocks_and_lines,
     _is_tech_post,

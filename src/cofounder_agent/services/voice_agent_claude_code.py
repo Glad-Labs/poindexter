@@ -327,13 +327,14 @@ class ClaudeCodeBridgeLLMService(LLMService):
         if reply:
             spoken = _strip_markdown_for_speech(reply)
             await self.push_frame(LLMTextFrame(spoken))
-            # Best-effort transcript mirror to Telegram. Fire-and-forget;
-            # never let a Telegram failure interrupt the audio path.
+            # Best-effort transcript mirror to Discord (the routine channel;
+            # Telegram is reserved for critical alerts). Fire-and-forget —
+            # never let a Discord failure interrupt the audio path.
             try:
-                await _push_transcript_to_telegram(user_text, reply)
+                await _push_transcript_to_discord(user_text, reply)
             except Exception as e:  # noqa: BLE001
                 logger.warning(
-                    "Telegram transcript push failed (audio unaffected): %s: %s",
+                    "Discord transcript push failed (audio unaffected): %s: %s",
                     type(e).__name__, e,
                 )
         await self.push_frame(LLMFullResponseEndFrame())
@@ -748,32 +749,41 @@ def _strip_markdown_for_speech(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Telegram transcript mirror — pushes each turn (user → reply) to Matt's
-# Telegram chat so he can scan a written transcript while listening.
-# Bot token is stored encrypted in app_settings; chat_id is plaintext.
+# Discord transcript mirror — posts each turn (user → reply) to the routine
+# Discord channel so Matt can scan a written transcript while listening.
+# Telegram is reserved for CRITICAL alerts, so the transcript goes to Discord
+# (the routine channel). Gated by ``voice_agent_claude_code_transcript_enabled``
+# (default on); the webhook is ``voice_transcript_discord_webhook_url``, falling
+# back to the already-configured ``discord_ops_webhook_url`` so it works out of
+# the box without extra setup.
 # ---------------------------------------------------------------------------
 
 
-_TG_BOT_TOKEN_CACHE: str | None = None
-_TG_CHAT_ID_CACHE: str | None = None
+_DISCORD_WEBHOOK_CACHE: str | None = None
+_TRANSCRIPT_DISABLED_CACHE: bool = False
 
 
-async def _telegram_creds() -> tuple[str, str] | None:
-    """Load + cache the Telegram transcript-push credentials.
+async def _transcript_discord_webhook() -> str | None:
+    """Resolve + cache the Discord transcript webhook, or None if disabled.
 
-    Reads ``telegram_bot_token`` (encrypted) and ``telegram_chat_id``
-    (plaintext) from app_settings via the centralized
-    ``SiteConfig.get_secret`` path. That delegates decryption to
-    ``plugins.secrets.get_secret``, which is the single owner of the
-    ``enc:v1:`` Fernet handling — inlined decryption here was a sharp
-    edge that could drift from the canonical scheme. The voice agent's
-    bot-startup path can absorb the extra ~5ms of the get_secret call
-    (one DB round-trip per cred, after which both are cached on this
-    module).
+    Reads via the centralized ``SiteConfig.get_secret`` path (which also reads
+    non-secret rows, returning their plain value):
+
+      - ``voice_agent_claude_code_transcript_enabled`` — ``false/0/no/off``
+        disables the mirror entirely.
+      - ``voice_transcript_discord_webhook_url`` — the dedicated webhook; when
+        empty it falls back to ``discord_ops_webhook_url`` (already configured)
+        so an operator can split the transcript to its own channel later by
+        setting the dedicated key, or leave it on the ops channel.
+
+    Returns ``None`` (and latches ``_TRANSCRIPT_DISABLED_CACHE``) when disabled
+    or no webhook is configured, so we don't re-hit the DB every turn.
     """
-    global _TG_BOT_TOKEN_CACHE, _TG_CHAT_ID_CACHE
-    if _TG_BOT_TOKEN_CACHE and _TG_CHAT_ID_CACHE:
-        return _TG_BOT_TOKEN_CACHE, _TG_CHAT_ID_CACHE
+    global _DISCORD_WEBHOOK_CACHE, _TRANSCRIPT_DISABLED_CACHE
+    if _TRANSCRIPT_DISABLED_CACHE:
+        return None
+    if _DISCORD_WEBHOOK_CACHE:
+        return _DISCORD_WEBHOOK_CACHE
 
     import asyncpg
     from brain.bootstrap import resolve_database_url
@@ -782,82 +792,66 @@ async def _telegram_creds() -> tuple[str, str] | None:
     db_url = resolve_database_url()
     if not db_url:
         logger.warning(
-            "Telegram transcript: no DATABASE_URL resolvable; "
-            "transcript push disabled.",
+            "Discord transcript: no DATABASE_URL resolvable; mirror disabled.",
         )
+        _TRANSCRIPT_DISABLED_CACHE = True
         return None
 
-    # Pool sized at min=1/max=1 because get_secret runs at most twice on
-    # this path and the bot never re-uses the pool elsewhere.
+    # Pool sized min=1/max=1 — get_secret runs at most a few times on this
+    # cold path, after which the webhook is cached on this module.
     pool = await asyncpg.create_pool(
         db_url, min_size=1, max_size=1, timeout=2.0, command_timeout=5.0,
     )
     try:
         site_config = SiteConfig(pool=pool)
-        telegram_bot_token = await site_config.get_secret(
-            "telegram_bot_token", "",
+        enabled = await site_config.get_secret(
+            "voice_agent_claude_code_transcript_enabled", "true",
         )
-        telegram_chat_id = await site_config.get_secret(
-            "telegram_chat_id", "",
-        )
-
-        if not telegram_bot_token or not telegram_chat_id:
-            logger.warning(
-                "Telegram transcript: missing creds "
-                "(token_present=%s, chat_id_present=%s). "
-                "Transcript push disabled.",
-                bool(telegram_bot_token), bool(telegram_chat_id),
-            )
+        if str(enabled).strip().lower() in {"false", "0", "no", "off"}:
+            logger.info("Discord transcript: disabled via setting.")
+            _TRANSCRIPT_DISABLED_CACHE = True
             return None
-
-        _TG_BOT_TOKEN_CACHE = str(telegram_bot_token)
-        _TG_CHAT_ID_CACHE = str(telegram_chat_id)
-        logger.info(
-            "Telegram transcript: creds loaded for chat_id=%s",
-            _TG_CHAT_ID_CACHE,
+        webhook = await site_config.get_secret(
+            "voice_transcript_discord_webhook_url", "",
         )
-        return _TG_BOT_TOKEN_CACHE, _TG_CHAT_ID_CACHE
+        if not webhook:
+            webhook = await site_config.get_secret("discord_ops_webhook_url", "")
+        if not webhook:
+            logger.warning(
+                "Discord transcript: no webhook configured "
+                "(voice_transcript_discord_webhook_url / "
+                "discord_ops_webhook_url); mirror disabled.",
+            )
+            _TRANSCRIPT_DISABLED_CACHE = True
+            return None
+        _DISCORD_WEBHOOK_CACHE = str(webhook)
+        logger.info("Discord transcript: webhook loaded.")
+        return _DISCORD_WEBHOOK_CACHE
     finally:
         await pool.close()
 
 
-async def _push_transcript_to_telegram(user_text: str, reply: str) -> None:
-    creds = await _telegram_creds()
-    if not creds:
+async def _push_transcript_to_discord(user_text: str, reply: str) -> None:
+    webhook = await _transcript_discord_webhook()
+    if not webhook:
         return
-    token, chat_id = creds
     import httpx
 
-    user_block = user_text if len(user_text) <= 800 else user_text[:780] + "…"
-    reply_block = reply if len(reply) <= 3000 else reply[:2900] + "…"
-    # HTML mode — only <, >, & need escaping. MarkdownV2's "every period
-    # must be backslash-escaped" rule was a footgun; HTML is the calm path.
-    body = (
-        "🎙 <b>You</b>\n"
-        f"<i>{_html_escape(user_block)}</i>\n\n"
-        "🤖 <b>Claude</b>\n"
-        f"{_html_escape(reply_block)}"
-    )
+    # Discord's message content cap is 2000 chars — budget the two blocks
+    # under it (markdown renders natively; no escaping needed for a webhook
+    # to the operator's own channel).
+    user_block = user_text if len(user_text) <= 500 else user_text[:480] + "…"
+    reply_block = reply if len(reply) <= 1300 else reply[:1280] + "…"
+    content = f"🎙 **You:** {user_block}\n🤖 **Claude:** {reply_block}"
+    if len(content) > 1990:
+        content = content[:1990] + "…"
     async with httpx.AsyncClient(timeout=4.0) as client:
-        resp = await client.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": body,
-                "parse_mode": "HTML",
-                "disable_notification": True,  # don't ping the phone for every turn
-            },
-        )
+        resp = await client.post(webhook, json={"content": content})
         if resp.status_code >= 400:
             logger.warning(
-                "Telegram transcript: sendMessage returned %s — body: %s",
-                resp.status_code, resp.text[:300],
+                "Discord transcript: webhook returned %s — body: %s",
+                resp.status_code, resp.text[:200],
             )
-
-
-def _html_escape(text: str) -> str:
-    """Escape the three chars Telegram's HTML parser cares about."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _latest_user_text_impl(context: LLMContext) -> str:

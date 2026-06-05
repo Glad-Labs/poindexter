@@ -132,7 +132,7 @@ _SHARED_TEST_MODULES = (
     # construct ``ContentMetadataGenerator(site_config=...)`` /
     # ``SEOOptimizedContentGenerator(ai, site_config=...)`` directly.
     # ``services.image_decision_agent`` + ``services.quality_scorers`` +
-    # ``services.pipeline_architect`` + ``services.ai_content_generator``
+    # ``services.pipeline_architect`` + ``modules.content.ai_content_generator``
     # migrated to required-keyword DI 2026-05-29 (#272 Phase-2c); no
     # module-level site_config attr to share. Tests pass ``site_config=``
     # to ``plan_images`` / ``qa_cfg`` + ``score_*`` / ``compose`` /
@@ -151,13 +151,13 @@ _SHARED_TEST_MODULES = (
     # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
     # share. Tests pass ``site_config=`` to ``send_post_newsletter`` /
     # ``_build_html`` / ``_send_via_smtp`` directly.
-    # ``services.content_validator`` removed from _SHARED_TEST_MODULES
+    # ``modules.content.content_validator`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2g); the module global + ``set_site_config`` are
     # deleted. Tests pass ``site_config=`` to ``validate_content`` /
     # ``_check_code_block_density`` / ``verify_content_urls`` directly (and the
     # import-time ``GLAD_LABS_FACTS`` derives from a fresh env-fallback
     # SiteConfig, identical to before).
-    # ``services.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
+    # ``modules.content.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the MultiModelQA constructor.
     # ``services.research_service`` migrated to required-keyword DI
@@ -198,7 +198,7 @@ _SHARED_TEST_MODULES = (
     # ``services.quality_models`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests
     # pass ``site_config=`` to the QualityDimensions dataclass.
-    # ``services.quality_service`` + ``services.validator_config`` removed from
+    # ``modules.content.quality_service`` + ``services.validator_config`` removed from
     # _SHARED_TEST_MODULES 2026-05-29 (#272 Phase-2d); no module-level
     # site_config attr to share. Tests construct
     # ``UnifiedQualityService(site_config=...)`` and pass ``site_config=`` to
@@ -219,7 +219,7 @@ _SHARED_TEST_MODULES = (
     # ``services.retention_janitor`` migrated to constructor DI 2026-05-29
     # (#272 leaf batch 3); no module-level site_config attr to share. Tests
     # construct ``RetentionJanitor(site_config=...)`` directly.
-    # ``services.ai_content_generator`` removed from _SHARED_TEST_MODULES
+    # ``modules.content.ai_content_generator`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2c) — see the batch note above.
     # ``services.social_poster`` removed from _SHARED_TEST_MODULES 2026-05-29
     # (#272 Phase-2e); no module-level site_config attr to share. Tests pass

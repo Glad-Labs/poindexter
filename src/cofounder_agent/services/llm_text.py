@@ -18,7 +18,7 @@ writer paths):
 
 This module is the single source of truth for plain-text LLM chat. The
 three private ``_ollama_chat_text`` helpers that previously lived in
-:mod:`services.atoms.narrate_bundle`,
+:mod:`modules.content.atoms.narrate_bundle`,
 :mod:`services.writer_rag_modes.deterministic_compositor`, and
 :mod:`services.pipeline_architect` were deleted in favor of this
 helper. Callers in those modules now import :func:`ollama_chat_text`

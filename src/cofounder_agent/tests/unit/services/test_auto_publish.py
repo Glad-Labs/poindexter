@@ -108,7 +108,7 @@ def _publish_result(success=True):
 class TestGetAutoPublishThreshold:
     @pytest.mark.asyncio
     async def test_reads_threshold_from_settings(self):
-        from services.auto_publish import get_auto_publish_threshold
+        from modules.content.auto_publish import get_auto_publish_threshold
 
         db = MagicMock()
         db.get_setting_value = AsyncMock(return_value="80")
@@ -116,7 +116,7 @@ class TestGetAutoPublishThreshold:
 
     @pytest.mark.asyncio
     async def test_default_zero_means_disabled(self):
-        from services.auto_publish import get_auto_publish_threshold
+        from modules.content.auto_publish import get_auto_publish_threshold
 
         db = MagicMock()
         db.get_setting_value = AsyncMock(return_value="0")
@@ -133,7 +133,7 @@ class TestAutoPublishBails:
     @pytest.mark.asyncio
     async def test_bails_when_daily_limit_reached(self):
         """published_today >= daily_limit ⇒ returns False, never publishes."""
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         db = _make_db(published_today=1, daily_limit="1")
         pub_mock = AsyncMock(return_value=_publish_result())
@@ -152,7 +152,7 @@ class TestAutoPublishBails:
     @pytest.mark.asyncio
     async def test_bails_when_featured_image_missing(self):
         """A task without a featured_image_url is not auto-published."""
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         task = {"task_id": "t-noimg", "featured_image_url": None}
         db = _make_db(published_today=0, daily_limit="1", task=task)
@@ -172,7 +172,7 @@ class TestAutoPublishBails:
     @pytest.mark.asyncio
     async def test_bails_when_task_not_found(self):
         """get_task returns None ⇒ return False, no publish."""
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         db = _make_db(published_today=0, daily_limit="1", task=None)
         pub_mock = AsyncMock(return_value=_publish_result())
@@ -188,7 +188,7 @@ class TestAutoPublishBails:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_database_service_none(self):
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         result = await auto_publish_task(
             database_service=None,
@@ -209,7 +209,7 @@ class TestAutoPublishBails:
         incident; a fail-open daily-limit check could let a DB blip auto-publish
         an unbounded number of posts in a day.
         """
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         task = {
             "task_id": "t-dberr",
@@ -246,7 +246,7 @@ class TestAutoPublishHappyPath:
         """Clears the gates ⇒ flips status → approved, stamps
         publish_mode='auto' + auto_published metadata, calls
         publish_post_from_task, returns True."""
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         task = {
             "task_id": "t-ok",
@@ -293,7 +293,7 @@ class TestAutoPublishHappyPath:
     async def test_returns_false_when_publish_fails(self):
         """publish_post_from_task returns success=False ⇒ auto_publish
         returns False (post lands in awaiting_approval)."""
-        from services.auto_publish import auto_publish_task
+        from modules.content.auto_publish import auto_publish_task
 
         task = {
             "task_id": "t-pubfail",

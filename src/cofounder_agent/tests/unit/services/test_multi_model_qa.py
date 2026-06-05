@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.content_validator import ValidationIssue, ValidationResult
-from services.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
+from modules.content.content_validator import ValidationIssue, ValidationResult
+from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
 from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ def _stub_resolve_tier_model():
     fixed string for every test.
     """
     with patch(
-        "services.multi_model_qa.resolve_tier_model",
+        "modules.content.multi_model_qa.resolve_tier_model",
         AsyncMock(return_value="ollama/gemma3:27b"),
     ):
         yield
@@ -127,7 +127,7 @@ def qa():
 class TestValidatorPasses:
     async def test_passes_validator_runs_cloud_review(self, qa):
         """When programmatic validator passes, cloud review should execute."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -139,7 +139,7 @@ class TestValidatorPasses:
 
     async def test_all_pass_approved(self, qa):
         """When all reviewers pass and score >= 70, result is approved."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=85.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -155,7 +155,7 @@ class TestValidatorPasses:
 class TestValidatorFails:
     async def test_critical_issues_reject_immediately(self, qa):
         """Content with critical validator issues should be rejected without cloud review."""
-        with patch("services.multi_model_qa.validate_content", return_value=_failing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_failing_validation()):
             result = await qa.review(BAD_TITLE, BAD_CONTENT, "revenue")
 
         assert result.approved is False
@@ -167,7 +167,7 @@ class TestValidatorFails:
     async def test_rejected_score_reflects_penalty(self, qa):
         """Rejected content should have score reduced by penalty."""
         failing = _failing_validation()
-        with patch("services.multi_model_qa.validate_content", return_value=failing):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=failing):
             result = await qa.review(BAD_TITLE, BAD_CONTENT, "revenue")
 
         assert result.final_score == max(0, 100 - failing.score_penalty)
@@ -175,7 +175,7 @@ class TestValidatorFails:
     async def test_validation_result_included(self, qa):
         """The ValidationResult should be attached to the MultiModelResult."""
         failing = _failing_validation()
-        with patch("services.multi_model_qa.validate_content", return_value=failing):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=failing):
             result = await qa.review(BAD_TITLE, BAD_CONTENT, "revenue")
 
         assert result.validation is not None
@@ -190,7 +190,7 @@ class TestValidatorFails:
 class TestWeightedScore:
     async def test_weighted_average_programmatic_40_cloud_60(self, qa):
         """Score should be 40% programmatic + 60% cloud reviewer."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=80.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -201,7 +201,7 @@ class TestWeightedScore:
 
     async def test_low_cloud_score_can_block_approval(self, qa):
         """Even if validator passes, a low cloud score (<70) blocks approval."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=False, score=30.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -216,7 +216,7 @@ class TestWeightedScore:
 
 class TestAllReviewersPass:
     async def test_high_scores_approved(self, qa):
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=95.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -224,7 +224,7 @@ class TestAllReviewersPass:
         assert all(r.approved for r in result.reviews)
 
     async def test_result_has_summary(self, qa):
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -241,7 +241,7 @@ class TestAllReviewersPass:
 class TestOllamaDown:
     async def test_ollama_unhealthy_skips_to_fallback(self, qa):
         """When Ollama is down, review should still complete (fallback or skip)."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client_down()):
                 # Also patch Gemini to be unavailable (no API key)
                 with patch.dict("os.environ", {}, clear=False):
@@ -258,7 +258,7 @@ class TestOllamaDown:
 
     async def test_ollama_exception_handled_gracefully(self, qa):
         """If OllamaClient raises, the review should still complete."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             mock_client = AsyncMock()
             mock_client.check_health = AsyncMock(side_effect=Exception("connection refused"))
             mock_client.close = AsyncMock()
@@ -275,7 +275,7 @@ class TestOllamaDown:
 
     async def test_only_validator_when_no_cloud(self, qa):
         """With no cloud reviewers, approval is based on validator + score threshold."""
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client_down()):
                 with patch.dict("os.environ", {}, clear=False):
                     import os
@@ -477,7 +477,7 @@ class TestConsistencyGateVetoPolicy:
     async def test_moderate_inconsistency_does_not_veto(self, qa):
         """A consistency gate with approved=False but score 60 should NOT
         reject an article that otherwise scores high."""
-        from services.multi_model_qa import ReviewerResult
+        from modules.content.multi_model_qa import ReviewerResult
 
         async def _consistency_moderate(_content):
             return ReviewerResult(
@@ -490,7 +490,7 @@ class TestConsistencyGateVetoPolicy:
 
         qa._check_internal_consistency = _consistency_moderate  # type: ignore[method-assign]
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=90.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -501,7 +501,7 @@ class TestConsistencyGateVetoPolicy:
     async def test_unambiguous_inconsistency_still_vetoes(self, qa):
         """A consistency gate with a clearly low score (< 50) should still
         veto — real contradictions should manifest in the gate's own score."""
-        from services.multi_model_qa import ReviewerResult
+        from modules.content.multi_model_qa import ReviewerResult
 
         async def _consistency_low(_content):
             return ReviewerResult(
@@ -514,7 +514,7 @@ class TestConsistencyGateVetoPolicy:
 
         qa._check_internal_consistency = _consistency_low  # type: ignore[method-assign]
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=90.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -554,7 +554,7 @@ class TestSettingsOverrides:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=80.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -577,7 +577,7 @@ class TestSettingsOverrides:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=75.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -600,7 +600,7 @@ class TestSettingsOverrides:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=60.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -631,7 +631,7 @@ class TestSettingsOverrides:
 
         qa._review_with_cloud_model = _capture_review
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Lane B contract: review() no longer threads pipeline_critic_model
@@ -655,7 +655,7 @@ class TestResearchSourcesThreading:
 
         qa._review_with_cloud_model = _capture
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(
                 GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC,
                 research_sources="Source 1: github.com/example\nSource 2: arxiv.org/abs/1234",
@@ -673,7 +673,7 @@ class TestResearchSourcesThreading:
 
         qa._review_with_cloud_model = _capture
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert captured["research_sources"] is None
@@ -697,7 +697,7 @@ class TestCriticSkippedFinalScore:
             passed=True, issues=[], score_penalty=0,
         )
 
-        with patch("services.multi_model_qa.validate_content", return_value=validator_passing_high):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=validator_passing_high):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Validator score is 100 - 0 = 100
@@ -723,7 +723,7 @@ class TestCriticSkippedFinalScore:
             score_penalty=15,
         )
 
-        with patch("services.multi_model_qa.validate_content", return_value=validator_with_warnings):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=validator_with_warnings):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.final_score == 85.0  # 100 - 15
@@ -748,7 +748,7 @@ class TestCriticSkippedFinalScore:
             score_penalty=40,  # 100 - 40 = 60, below 70 threshold
         )
 
-        with patch("services.multi_model_qa.validate_content", return_value=heavy_penalty):
+        with patch("modules.content.multi_model_qa.validate_content", return_value=heavy_penalty):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.final_score == 60.0
@@ -897,7 +897,7 @@ class TestWarningQAPenalty:
         qa._check_internal_consistency = _skip_gate
 
         validation = _validation_with_warnings(9)
-        with patch("services.multi_model_qa.validate_content", return_value=validation), \
+        with patch("modules.content.multi_model_qa.validate_content", return_value=validation), \
              patch(
                  "services.ollama_client.OllamaClient",
                  return_value=_mock_ollama_client(approved=True, score=85.0),
@@ -928,7 +928,7 @@ class TestWarningQAPenalty:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch(
                  "services.ollama_client.OllamaClient",
                  return_value=_mock_ollama_client(approved=True, score=85.0),
@@ -959,7 +959,7 @@ class TestWarningQAPenalty:
 
         # Only 4 warnings but 5 pt penalty = 20 pt drop. Base ~80 → ~60.
         validation = _validation_with_warnings(4)
-        with patch("services.multi_model_qa.validate_content", return_value=validation), \
+        with patch("modules.content.multi_model_qa.validate_content", return_value=validation), \
              patch(
                  "services.ollama_client.OllamaClient",
                  return_value=_mock_ollama_client(approved=True, score=85.0),
@@ -1063,7 +1063,7 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
         ollama_mock = _mock_ollama_client(approved=True, score=90.0)
 
         with patch(
-            "services.multi_model_qa.validate_content",
+            "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch(
@@ -1113,7 +1113,7 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
         )
 
         with patch(
-            "services.multi_model_qa.validate_content",
+            "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch(
@@ -1157,7 +1157,7 @@ class TestQAGatesAdvisoryDoesNotVeto:
         # must still come back approved=True (validator score 100,
         # weighted final score >= 70 threshold).
         with patch(
-            "services.multi_model_qa.validate_content",
+            "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch(
@@ -1207,7 +1207,7 @@ class TestQAGatesAdvisoryDoesNotVeto:
         # Run twice — once with critic score 90, once with 30. Final
         # scores must differ (advisory still affects the weighted avg).
         with patch(
-            "services.multi_model_qa.validate_content",
+            "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch(
@@ -1849,14 +1849,14 @@ class TestSurfaceReviewerFailure:
     page Discord too often)."""
 
     def test_logs_warning_with_traceback(self, caplog):
-        from services.multi_model_qa import _surface_reviewer_failure
+        from modules.content.multi_model_qa import _surface_reviewer_failure
         with caplog.at_level("WARNING"):
             _surface_reviewer_failure("deepeval_g_eval", RuntimeError("boom"))
         assert any("deepeval_g_eval" in r.message for r in caplog.records)
         assert any("RuntimeError" in r.message for r in caplog.records)
 
     def test_emits_audit_log_row(self):
-        from services.multi_model_qa import _surface_reviewer_failure
+        from modules.content.multi_model_qa import _surface_reviewer_failure
         with patch("services.audit_log.audit_log_bg") as audit_mock:
             _surface_reviewer_failure(
                 "ragas_eval", ValueError("threshold parse error"),
@@ -1874,7 +1874,7 @@ class TestSurfaceReviewerFailure:
         """`audit_log_bg` already silently drops when the global isn't
         bound; if its module fails to import for some reason, the helper
         must still complete without raising."""
-        from services.multi_model_qa import _surface_reviewer_failure
+        from modules.content.multi_model_qa import _surface_reviewer_failure
         with patch(
             "services.audit_log.audit_log_bg",
             side_effect=RuntimeError("audit not initialised"),
@@ -1912,7 +1912,7 @@ class TestReviewerFailureWiredIntoRails:
         ), patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_failure",
+            "modules.content.multi_model_qa._surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_deepeval_g_eval("body", "topic")
 
@@ -1929,7 +1929,7 @@ class TestReviewerFailureWiredIntoRails:
         ), patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_failure",
+            "modules.content.multi_model_qa._surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_deepeval_faithfulness("body", "ctx text")
 
@@ -1946,7 +1946,7 @@ class TestReviewerFailureWiredIntoRails:
         ), patch(
             "services.guardrails_rails.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_failure",
+            "modules.content.multi_model_qa._surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_guardrails_brand("body")
 
@@ -1966,7 +1966,7 @@ class TestReviewerFailureWiredIntoRails:
         ), patch(
             "services.guardrails_rails.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_failure",
+            "modules.content.multi_model_qa._surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_guardrails_competitor("body")
 
@@ -1983,7 +1983,7 @@ class TestReviewerFailureWiredIntoRails:
         ), patch(
             "services.ragas_eval.is_enabled", return_value=True,
         ), patch(
-            "services.multi_model_qa._surface_reviewer_failure",
+            "modules.content.multi_model_qa._surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_ragas_eval("body", "topic", "ctx")
 

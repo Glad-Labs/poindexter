@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms._qa_rail_common import aggregate_rail_reviews, reviewer_to_dict
+from modules.content.atoms._qa_rail_common import aggregate_rail_reviews, reviewer_to_dict
 
 
 class _R:

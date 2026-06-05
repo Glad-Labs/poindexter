@@ -79,10 +79,26 @@ class FinanceModule:
         app.include_router(finance_router)
 
     def register_cli(self, parser: object) -> None:
-        """Phase 4 — ``poindexter finance <subcommand>`` subparsers
-        will register here. F1 wires the CLI inline via
-        ``cli/finance_commands.py`` until Phase 4 generalizes this."""
-        del parser
+        """Mount ``poindexter finance <subcommand>`` on the host CLI group.
+
+        ``parser`` is the click root group. The worker lifespan invokes this
+        with ``None`` (the worker process hosts no CLI), which is a no-op. A
+        non-None host that isn't a click group fails loud per
+        ``feedback_no_silent_defaults`` rather than silently dropping the
+        finance commands. The CLI module lives inside this package
+        (``modules/finance/cli.py``), so it is stripped from the public
+        mirror together with the module directory (Module v1 Phase 5).
+        """
+        if parser is None:
+            return
+        if not hasattr(parser, "add_command"):
+            raise RuntimeError(
+                "FinanceModule.register_cli: expected a click Group with "
+                f".add_command, got {type(parser).__name__}"
+            )
+        from modules.finance.cli import finance_group
+
+        parser.add_command(finance_group, name="finance")
 
     def register_dashboards(self, grafana: object) -> None:
         """Phase 4 — finance dashboards (balance trend, burn rate)
@@ -147,6 +163,16 @@ class FinanceModule:
         from modules.finance.metrics import refresh_finance_metrics
 
         return refresh_finance_metrics(pool)
+
+    def bind_platform(self, platform: object) -> None:
+        """Receive this module's capability-scoped kernel handle (Wave 2 of
+        Seam 1, Glad-Labs/poindexter#667).
+
+        Stored for the module's own code to reach the kernel through; finance
+        grows ``_MANIFEST.capabilities`` as it routes its own kernel access
+        through the handle. ``platform`` is a ``plugins.platform.Platform``
+        (typed ``object`` to match this module's cheap-import convention)."""
+        self._platform = platform
 
     async def healthcheck(self, pool: object) -> object:
         """Phase 4 — aggregate finance sub-probe results."""

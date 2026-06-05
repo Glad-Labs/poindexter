@@ -3,12 +3,12 @@
 Pins the ``cost_tier="standard"`` resolution path for the four call
 sites migrated in the QA / critic batch:
 
-- ``services.multi_model_qa.MultiModelQA._resolve_critic_model``
+- ``modules.content.multi_model_qa.MultiModelQA._resolve_critic_model``
   (used by ``_review_with_ollama`` + ``_run_gate_prompt`` +
   ``_review_with_cloud_model`` fallback)
 - ``services.self_review._resolve_self_review_model`` +
   ``self_review_and_revise``
-- ``services.stages.cross_model_qa._resolve_writer_model``
+- ``modules.content.stages.cross_model_qa._resolve_writer_model``
 
 Per ``feedback_no_silent_defaults.md``, a missing tier mapping must
 fail loudly (``notify_operator``) before falling back to the per-
@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.multi_model_qa import MultiModelQA
+from modules.content.multi_model_qa import MultiModelQA
 from services.site_config import SiteConfig
 
 
@@ -35,7 +35,7 @@ class TestMultiModelQAResolveCriticModel:
     async def test_returns_tier_model_on_success(self):
         qa = MultiModelQA(pool=MagicMock(), settings_service=AsyncMock(), site_config=SiteConfig())
         with patch(
-            "services.multi_model_qa.resolve_tier_model",
+            "modules.content.multi_model_qa.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
         ):
             model = await qa._resolve_critic_model(
@@ -50,9 +50,9 @@ class TestMultiModelQAResolveCriticModel:
         qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(
-            "services.multi_model_qa.resolve_tier_model",
+            "modules.content.multi_model_qa.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.multi_model_qa.notify_operator", notify):
+        ), patch("modules.content.multi_model_qa.notify_operator", notify):
             model = await qa._resolve_critic_model(
                 setting_key="qa_fallback_critic_model", site="critic",
             )
@@ -68,9 +68,9 @@ class TestMultiModelQAResolveCriticModel:
         qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(
-            "services.multi_model_qa.resolve_tier_model",
+            "modules.content.multi_model_qa.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.multi_model_qa.notify_operator", notify):
+        ), patch("modules.content.multi_model_qa.notify_operator", notify):
             with pytest.raises(RuntimeError, match="no model configured"):
                 await qa._resolve_critic_model(
                     setting_key="qa_fallback_critic_model", site="critic",
@@ -84,9 +84,9 @@ class TestMultiModelQAResolveCriticModel:
         qa = MultiModelQA(pool=MagicMock(), settings_service=None, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(
-            "services.multi_model_qa.resolve_tier_model",
+            "modules.content.multi_model_qa.resolve_tier_model",
             AsyncMock(side_effect=RuntimeError("no model configured")),
-        ), patch("services.multi_model_qa.notify_operator", notify):
+        ), patch("modules.content.multi_model_qa.notify_operator", notify):
             with pytest.raises(RuntimeError):
                 await qa._resolve_critic_model(
                     setting_key="qa_fallback_critic_model", site="critic",

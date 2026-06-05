@@ -45,6 +45,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
 from typing import Any
 
@@ -129,8 +130,14 @@ def _mint_livekit_token(
     identity: str,
     room: str,
     ttl_seconds: int = 7 * 24 * 3600,
+    name: str | None = None,
 ) -> str:
-    """LiveKit JWT shape per https://docs.livekit.io/realtime/concepts/authentication/."""
+    """LiveKit JWT shape per https://docs.livekit.io/realtime/concepts/authentication/.
+
+    ``identity`` must be UNIQUE per room (LiveKit kicks a duplicate-identity
+    participant), so it carries a per-device suffix; ``name`` is the
+    human-facing display label (defaults to ``identity``).
+    """
     now = int(time.time())
     header = {"alg": "HS256", "typ": "JWT"}
     payload: dict[str, Any] = {
@@ -139,7 +146,7 @@ def _mint_livekit_token(
         "iat": now,
         "exp": now + ttl_seconds,
         "nbf": now,
-        "name": identity,
+        "name": name or identity,
         "video": {
             "roomJoin": True,
             "room": room,
@@ -215,7 +222,17 @@ async def voice_join(
 
     # Room routing (#1006 two-room split): the phone picks via ?room=.
     room = _resolve_voice_room(room)
-    identity = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "operator")
+    # UNIQUE identity per device/page-load (#1006). LiveKit requires a unique
+    # identity per room — two clients sharing one identity collide
+    # (DUPLICATE_IDENTITY) and flap, each kicking the other every few seconds
+    # (observed 2026-06-04: phone + idle PC both joined as "operator"/"matt"
+    # and booted each other, so neither heard replies). Appending a random
+    # suffix lets multiple devices coexist; the bot keys on speech (VAD), not
+    # identity, so this is transparent to it. A LiveKit auto-reconnect reuses
+    # the same minted token (same suffix → resumes); only a fresh page-load
+    # gets a new identity. ``name`` keeps a clean human-facing label.
+    display_name = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "operator")
+    identity = f"{display_name}-{secrets.token_hex(3)}"
     # Default to the local LiveKit signal endpoint. Operators exposing
     # voice over a Tailscale Funnel or other public hostname override
     # with their wss URL via the ``LIVEKIT_PUBLIC_WSS_URL`` env var.
@@ -226,7 +243,7 @@ async def voice_join(
 
     secret_warn = ""
 
-    token = _mint_livekit_token(api_key, api_secret, identity, room)
+    token = _mint_livekit_token(api_key, api_secret, identity, room, name=display_name)
 
     html = f"""<!doctype html>
 <html lang="en"><head>

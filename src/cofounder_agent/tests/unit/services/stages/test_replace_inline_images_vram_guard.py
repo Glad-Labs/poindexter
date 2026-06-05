@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.stages.replace_inline_images import ReplaceInlineImagesStage
+from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 
 
 def _site_config(unload_enabled: bool = True) -> Any:
@@ -72,7 +72,7 @@ async def test_stage_invokes_writer_unload_at_entry():
         "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
         new=unload_mock,
     ), patch(
-        "services.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_sdxl",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -112,7 +112,7 @@ async def test_stage_unloads_before_calling_try_sdxl():
         "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
         new=AsyncMock(side_effect=record_unload),
     ), patch(
-        "services.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_sdxl",
         new=AsyncMock(side_effect=record_sdxl),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -161,7 +161,7 @@ async def test_stage_threads_site_config_with_gate_off():
         "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
         new=unload_mock,
     ), patch(
-        "services.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_sdxl",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,

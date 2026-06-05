@@ -27,7 +27,14 @@ call site in turn.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    # Type-only import: keeps the widely-imported manifest free of a runtime
+    # dependency on ``plugins.platform`` (annotations are strings under
+    # ``from __future__ import annotations``). The module that *declares*
+    # capabilities imports ``Capability`` at runtime; this file only names it.
+    from plugins.platform import Capability, Platform
 
 Visibility = Literal["public", "private"]
 """Whether a module ships in the OSS sync (`public`) or stays in the
@@ -70,6 +77,17 @@ class ModuleManifest:
     """Dependency specifiers, e.g. ``("substrate>=1.0",
     "module:memory>=0.3")``. Phase 1 stores them; resolution lands
     in a later phase if it proves load-bearing."""
+
+    capabilities: tuple[Capability, ...] = field(default_factory=tuple)
+    """The kernel capabilities this module's ``Platform`` handle exposes
+    (Wave 2 of Seam 1 — the Platform handle, Glad-Labs/poindexter#667). The
+    kernel injects a ``plugins.platform.ScopedPlatform`` granting exactly
+    these; reaching for an undeclared capability fails loud.
+
+    Distinct from ``requires`` (inter-module/substrate *dependency*
+    specifiers) — this is the module's least-privilege *grant* on the kernel.
+    Empty by default: a module that declares nothing gets a handle that
+    exposes nothing (untrusted-by-default)."""
 
 
 @runtime_checkable
@@ -123,6 +141,17 @@ class Module(Protocol):
     def register_probes(self, brain: object) -> None:
         """Register this module's brain probes for inclusion in the
         brain daemon's monitoring loop. Phase 4."""
+        ...
+
+    def bind_platform(self, platform: Platform) -> None:
+        """Receive this module's capability-scoped kernel handle.
+
+        Wave 2 of Seam 1 (Glad-Labs/poindexter#667). The kernel constructs the
+        full ``Platform`` once, wraps it per-module via
+        ``plugins.platform.scope_for_module`` (narrowing to this module's
+        declared ``capabilities``), and hands the scoped handle here. The
+        module stores it and reaches the kernel only through it. Called once
+        at startup, after discovery."""
         ...
 
     async def healthcheck(self, pool: object) -> object:

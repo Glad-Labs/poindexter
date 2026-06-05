@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-03.**  
+> **Auto-generated from live `app_settings` table on 2026-06-04.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 722 active rows across 57 categories. 6 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 734 active rows across 57 categories. 10 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (10 keys)
-- [general](#general) (326 keys)
+- [general](#general) (325 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -80,7 +80,7 @@ The worker re-reads on every poll; no restart needed.
 - [system](#system) (2 keys)
 - [tokens](#tokens) (5 keys)
 - [topic_discovery](#topic-discovery) (1 key)
-- [voice](#voice) (7 keys)
+- [voice](#voice) (20 keys)
 - [voice_agent](#voice-agent) (2 keys)
 - [webhooks](#webhooks) (1 key)
 - [writer_rag](#writer-rag) (5 keys)
@@ -376,7 +376,7 @@ The worker re-reads on every poll; no restart needed.
 | `gpu_name` | `` |  | GPU model name (auto-detected by detect-hardware.py) |
 | `gpu_vram_gb` | `0` |  | GPU VRAM in GB (auto-detected by detect-hardware.py) |
 | `grafana_user` | `admin` |  | Grafana admin username |
-| `guardrails_enabled` | `false` |  |  |
+| `guardrails_enabled` | `true` |  |  |
 | `hardware_cost_total` | `*(per-operator)*` | per-operator | Total PC build cost for depreciation calculation. Set per-operator via `poindexter set hardware_cost_total <amount>`;... |
 | `hn_min_score` | `50` |  |  |
 | `hn_top_stories` | `20` |  |  |
@@ -578,7 +578,6 @@ The worker re-reads on every poll; no restart needed.
 | `vision_alt_enabled` | `true` |  |  |
 | `vision_alt_max_tokens` | `2048` |  |  |
 | `vision_alt_model` | `qwen3-vl:30b` |  |  |
-| `voice_agent_brain` | `ollama` |  | LLM stage the always-on voice agent uses. 'ollama' (default) wires the local glm-4.7-5090 + three read-only Poindexte... |
 | `voice_agent_brain_mode` | `claude-code` |  |  |
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
 | `voice_agent_livekit_enabled` | `true` |  | Toggle for the always-on voice-agent-livekit container. 'true' (default) keeps the bot joined to the configured room.... |
@@ -1061,6 +1060,18 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `livekit_api_key` | `*(encrypted)*` | encrypted | LiveKit API key the token minters use (#1000). Empty = fall back to the LIVEKIT_API_KEY env var. DB-first lets rotati... |
+| `livekit_api_secret` | `*(encrypted)*` | encrypted | LiveKit HS256 API secret the token minters sign JWTs with (#1000). Empty = fall back to the LIVEKIT_API_SECRET env va... |
+| `voice_agent_claude_code_enabled` | `true` |  | Master on/off for the claude-code voice room container (#1006). false/0/no/off = the container exits 0 and docker lea... |
+| `voice_agent_claude_code_host_brain_token` | `*(encrypted)*` | encrypted | Bearer token shared with the host-brain daemon (#1006). Required when host_brain_url is set. |
+| `voice_agent_claude_code_host_brain_url` | `` |  | Host-brain daemon URL for the voice room (#1006), e.g. http://host.docker.internal:8123/turn. Empty = run claude in-c... |
+| `voice_agent_claude_code_identity` | `claude-code-bot` |  | Participant identity for the claude-code voice bot (#1006). Distinct from the poindexter bot so both can coexist. |
+| `voice_agent_claude_code_room_name` | `claude-code` |  | LiveKit room the claude-code voice bot joins (#1006). Must match an allowed room in routes/voice_routes.py so /voice/... |
+| `voice_agent_claude_code_session_id` | `` |  | Pinned claude -p voice session for the always-on claude-code room (#1006). Empty = unset; the bot mints and persists ... |
+| `voice_agent_claude_code_session_max_age_seconds` | `14400` |  | Rotate the pinned claude -p voice session once it is older than this many seconds (#1006). 14400 = 4h. |
+| `voice_agent_claude_code_session_token_budget` | `200000` |  | Rotate the pinned claude -p voice session once cumulative input+output tokens exceed this (#1006). |
+| `voice_agent_claude_code_transcript_enabled` | `true` |  | Master on/off for mirroring claude-code voice turns to Discord (#1006). false/0/no/off disables the mirror. |
+| `voice_agent_claude_code_tts_voice` | `` |  | Kokoro voice id for the claude-code voice room only (#1006). Empty = fall back to the shared voice_agent_tts_voice. L... |
 | `voice_agent_public_join_url` | `*(per-operator)*` | per-operator | Public URL the operator (or Claude, via the start_voice_call MCP tool) taps to join the always-on LiveKit voice room.... |
 | `voice_bridge_chunk_max_chars` | `500` |  | Maximum characters per TTS chunk emitted by voice_speak. Long replies are split at sentence boundaries so the operato... |
 | `voice_bridge_enabled` | `true` |  | Master switch for the LiveKit MCP bridge — the architecturally-correct alternative to the subprocess-spawn voice_agen... |
@@ -1068,6 +1079,7 @@ The worker re-reads on every poll; no restart needed.
 | `voice_bridge_stt_model` | `base.en` |  | faster-whisper model id loaded by the future Pipecat audio plane in the bridge worker. Defaults to base.en (CPU-frien... |
 | `voice_bridge_tts_voice` | `af_bella` |  | Kokoro voice id used by the bridge worker's TTS path. Matches the always-on voice-agent-livekit container default so ... |
 | `voice_default_room` | `poindexter` |  | Default LiveKit room name when voice_join_room is called without an explicit channel_id. Distinct from voice_agent_ro... |
+| `voice_transcript_discord_webhook_url` | `*(encrypted)*` | encrypted | Dedicated Discord webhook for the voice transcript (#1006). Empty = fall back to discord_ops_webhook_url so it works ... |
 
 ## voice_agent
 

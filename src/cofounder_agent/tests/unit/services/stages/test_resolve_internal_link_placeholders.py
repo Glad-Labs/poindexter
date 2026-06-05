@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.stages.resolve_internal_link_placeholders import (
+from modules.content.stages.resolve_internal_link_placeholders import (
     ResolveInternalLinkPlaceholdersStage,
     _PLACEHOLDER_RE,
     _resolve_all_placeholders,

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from services.atoms import qa_topic_delivery
-from services.multi_model_qa import MultiModelQA, ReviewerResult
+from modules.content.atoms import qa_topic_delivery
+from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:
@@ -84,7 +84,7 @@ class TestQaTopicDeliveryAtom:
 
     async def test_advisory_first_does_not_veto(self, monkeypatch):
         """Seeded advisory → a failing bait-and-switch scores but does NOT veto."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         async def chk(self, topic, content):
             return ReviewerResult("topic_delivery", False, 20.0, "no hackers named", "consistency_gate")
@@ -98,7 +98,7 @@ class TestQaTopicDeliveryAtom:
 
     async def test_graduated_to_hard_veto(self, monkeypatch):
         """required_to_pass=true → the legacy binary bait-and-switch veto bites."""
-        from services.atoms._qa_rail_common import aggregate_rail_reviews
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         async def chk(self, topic, content):
             return ReviewerResult("topic_delivery", False, 10.0, "no hackers named", "consistency_gate")

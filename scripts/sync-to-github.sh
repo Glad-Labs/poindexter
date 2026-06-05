@@ -89,52 +89,21 @@ git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || t
 git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # private operator MCP server
 
 # === Module v1 private business modules (Glad-Labs/poindexter#490) ===
-# Modules declared with visibility="private" in their ModuleManifest live
-# only in the glad-labs-stack operator overlay. Until Phase 5 ships a
-# manifest-aware filter, list each private module's surface explicitly.
-# - FinanceModule: Mercury banking integration (read-only). Contains no
-#   actual credentials (those live encrypted in app_settings.value) but
-#   the module structure, CLI subcommand, and DB schema are all
-#   operator-scoped and shouldn't ship to public OSS.
+# Modules declared visibility="private" live only in the glad-labs-stack
+# operator overlay. As of Module v1 Phase 5 (2026-06-04) a private module is
+# stripped by DELETING ITS PACKAGE DIRECTORY ALONE: in-tree module + job +
+# CLI discovery is presence-based (plugins/registry.py directory scan +
+# modules/<name>/jobs/JOBS + Module.register_cli), and the module is NOT
+# listed in pyproject.toml. So there is nothing to patch in the substrate —
+# no registry.py / cli/app.py line-surgery, no pyproject entry to strip, and
+# the module's CLI now lives at modules/finance/cli.py so it rides the
+# directory. See docs/architecture/2026-06-04-module-visibility-sync-design.md.
+# - FinanceModule: Mercury banking (read-only). No credentials live in the
+#   tree (they're encrypted in app_settings.value), but the module structure,
+#   CLI, and DB schema are operator-scoped and don't ship to public OSS.
 git rm -r --cached --quiet src/cofounder_agent/modules/finance/ 2>/dev/null || true
-git rm --cached --quiet src/cofounder_agent/poindexter/cli/finance.py 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/tests/unit/modules/finance/ 2>/dev/null || true
 git rm --cached --quiet docs/operations/finance-module-operator.md 2>/dev/null || true   # private operator-overlay setup doc (Mercury banking)
-
-# Patch the substrate registration + CLI wiring so the stripped tree is
-# internally consistent. Each pattern is a literal string; grep -v -F
-# drops the line(s) that contain it. The patches are idempotent (re-
-# running on an already-patched tree is a no-op).
-PRIVATE_MODULE_REGISTRY_PATTERNS=(
-  '"modules.finance"'
-  '"modules.finance.jobs.poll_mercury"'
-  '# FinanceModule F1'
-  '# integration. visibility=private'
-  '# FinanceModule F2 polling job'
-  '# from Mercury hourly. Gated by mercury_enabled in app_settings.'
-)
-PRIVATE_MODULE_CLI_PATTERNS=(
-  'from .finance import finance_group'
-  'main.add_command(finance_group, name="finance")'
-)
-for pat in "${PRIVATE_MODULE_REGISTRY_PATTERNS[@]}"; do
-  if [ -f src/cofounder_agent/plugins/registry.py ]; then
-    grep -v -F "$pat" src/cofounder_agent/plugins/registry.py \
-      > src/cofounder_agent/plugins/registry.py.tmp \
-      && mv src/cofounder_agent/plugins/registry.py.tmp \
-            src/cofounder_agent/plugins/registry.py
-    git add src/cofounder_agent/plugins/registry.py
-  fi
-done
-for pat in "${PRIVATE_MODULE_CLI_PATTERNS[@]}"; do
-  if [ -f src/cofounder_agent/poindexter/cli/app.py ]; then
-    grep -v -F "$pat" src/cofounder_agent/poindexter/cli/app.py \
-      > src/cofounder_agent/poindexter/cli/app.py.tmp \
-      && mv src/cofounder_agent/poindexter/cli/app.py.tmp \
-            src/cofounder_agent/poindexter/cli/app.py
-    git add src/cofounder_agent/poindexter/cli/app.py
-  fi
-done
 
 # === Private infrastructure (Matt's local setup, not useful publicly) ===
 git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # legacy Gitea CI config (unused post-decommission)
@@ -244,29 +213,42 @@ git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2
 # behavior.
 
 python3 - <<'PYSUB'
-import pathlib, subprocess
+import pathlib, subprocess, sys
+
+# "Is this a rewritable text file?" is delegated to the leak guard's
+# canonical ``_is_text_file`` predicate (scripts/ci/check_public_mirror_safety.py)
+# rather than a second inline extension list. The guard SCANS a file set;
+# the rewrite must NORMALIZE the same set — keeping two hand-maintained
+# lists is exactly the drift class that already took the sync down once
+# (the LEAK_PATTERNS/allowlist consolidation, 2026-05-27). It drifted
+# again on the extension axis: ``.ps1`` was in the guard's _TEXT_EXTS but
+# NOT this rewrite's old inline allowlist, so voice-brain-host.ps1's
+# internal-repo doc-comment link sailed past the rewrite and tripped the
+# post-rewrite belt-and-suspenders check below. One predicate, no drift.
+sys.path.insert(0, "scripts/ci")
+from check_public_mirror_safety import _is_text_file
+
+OLD = b"Glad-Labs/glad-labs-stack"
+NEW = b"Glad-Labs/poindexter"
+
 tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
 changed = 0
 for rel in tracked:
     p = pathlib.Path(rel)
     if not p.is_file():
         continue
-    # Skip binary types — only rewrite text we know we wrote.
-    # Allowlist: known text extensions PLUS Dockerfile* and dotfiles
-    # (.gitignore, .githooks/*) which don't have a regular suffix.
-    text_exts = {".py", ".md", ".json", ".yml", ".yaml", ".toml", ".sh", ".sql", ".txt", ".cfg", ".ini"}
-    name = p.name
-    is_dockerfile = name.startswith("Dockerfile")
-    is_dotfile = name.startswith(".") and "." not in name[1:]  # .gitignore etc.
-    if p.suffix.lower() not in text_exts and not is_dockerfile and not is_dotfile:
+    if not _is_text_file(rel):
         continue
-    try:
-        txt = p.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        continue
-    new = txt.replace("Glad-Labs/glad-labs-stack", "Glad-Labs/poindexter")
-    if new != txt:
-        p.write_text(new, encoding="utf-8", newline="\n")
+    # Byte-level substitution so line endings are preserved verbatim. The
+    # previous text-mode write forced newline="\n", which would silently
+    # convert CRLF files (.ps1/.cmd/.bat are eol=crlf per .gitattributes)
+    # to LF on rewrite — the real reason .ps1 had been excluded from the
+    # old inline allowlist. The literal never spans a line boundary, so a
+    # raw bytes .replace() is safe and ending-agnostic.
+    raw = p.read_bytes()
+    new = raw.replace(OLD, NEW)
+    if new != raw:
+        p.write_bytes(new)
         subprocess.run(["git", "add", rel], check=False)
         changed += 1
 print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files")

@@ -7,7 +7,7 @@ Four inline prompts migrated to YAML+Langfuse per
   ``social.twitter_promote``
 * ``services.social_poster._build_linkedin_prompt`` →
   ``social.linkedin_promote``
-* ``services.quality_service._resolve_quality_prompt`` →
+* ``modules.content.quality_service._resolve_quality_prompt`` →
   ``qa.quality_evaluation_llm_rubric``
 * ``services.jobs.collapse_old_embeddings._resolve_summary_prompt_template`` →
   ``memory.collapse_old_embeddings.summary``
@@ -91,7 +91,7 @@ def test_social_linkedin_resolver_falls_back_on_pm_failure():
 
 @pytest.mark.unit
 def test_quality_resolver_uses_prompt_manager():
-    from services import quality_service
+    from modules.content import quality_service
 
     with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
         mock_pm.return_value.get_prompt.return_value = "PM rubric"
@@ -105,7 +105,7 @@ def test_quality_resolver_uses_prompt_manager():
 
 @pytest.mark.unit
 def test_quality_resolver_falls_back_on_pm_failure():
-    from services import quality_service
+    from modules.content import quality_service
 
     with patch(
         "services.prompt_manager.get_prompt_manager",

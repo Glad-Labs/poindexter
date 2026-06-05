@@ -311,7 +311,7 @@ class PipelineState(TypedDict, total=False):
     # (Glad-Labs/poindexter#553).
     research_context: str
     research_results: list
-    quality_result: object  # services.quality_service.QualityResult
+    quality_result: object  # modules.content.quality_service.QualityResult
     quality_passing: bool
     quality_details_initial: dict
     # qa_reviews uses operator.add as its reducer so parallel critic

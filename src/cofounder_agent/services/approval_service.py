@@ -181,7 +181,7 @@ async def pause_at_gate(
 ) -> dict[str, Any]:
     """Persist the gate state and (optionally) notify the operator.
 
-    Called by :class:`services.stages.approval_gate.ApprovalGateStage`.
+    Called by :class:`modules.content.stages.approval_gate.ApprovalGateStage`.
     Idempotent — re-pausing at the same gate just refreshes the
     artifact and timestamp, doesn't insert a duplicate row anywhere.
 

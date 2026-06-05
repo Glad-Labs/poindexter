@@ -43,7 +43,7 @@ async def test_uses_lifespan_pool_when_available() -> None:
     set, the helper MUST acquire from it instead of opening a fresh
     connection. Pre-fix this opened a raw ``asyncpg.connect`` on every
     run — pool exhaustion at modest concurrency."""
-    from services.stages.source_featured_image import (
+    from modules.content.stages.source_featured_image import (
         _load_recent_published_styles,
     )
 
@@ -74,7 +74,7 @@ async def test_falls_back_to_raw_connect_when_no_pool() -> None:
     """Tests / early-boot CLI may not have a pool wired. The helper
     must still fetch via the legacy raw connect path so single-shot
     callers don't regress."""
-    from services.stages.source_featured_image import (
+    from modules.content.stages.source_featured_image import (
         _load_recent_published_styles,
     )
 
@@ -102,7 +102,7 @@ async def test_pool_error_falls_back_gracefully() -> None:
     """If the pool ``acquire()`` raises, the helper falls back to the
     raw connect path rather than failing the stage. Defensive — pool
     hiccup shouldn't take down image generation."""
-    from services.stages.source_featured_image import (
+    from modules.content.stages.source_featured_image import (
         _load_recent_published_styles,
     )
 
@@ -137,7 +137,7 @@ async def test_pool_error_falls_back_gracefully() -> None:
 async def test_no_site_config_returns_empty() -> None:
     """Stages running outside DI return empty — no surprise database
     activity from the inline-style picker."""
-    from services.stages.source_featured_image import (
+    from modules.content.stages.source_featured_image import (
         _load_recent_published_styles,
     )
 
