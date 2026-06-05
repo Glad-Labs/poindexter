@@ -180,11 +180,15 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def _resolve_creds(_site_config: Any) -> tuple[str, str, str]:
         return ("ws://livekit:7880", "key", "secret")
 
+    async def _resolve_creds_async(_site_config: Any) -> tuple[str, str, str]:
+        return ("ws://livekit:7880", "key", "secret")
+
     voice_pipecat.build_livekit_bridge_transport = _build_transport
     voice_pipecat.build_whisper_stt = _build_whisper_stt
     voice_pipecat.build_kokoro_tts = _build_kokoro_tts
     voice_pipecat.mint_livekit_token = _mint_token
     voice_pipecat.resolve_livekit_creds = _resolve_creds
+    voice_pipecat.resolve_livekit_creds_async = _resolve_creds_async
 
     monkeypatch.setitem(sys.modules, "services", services_pkg)
     monkeypatch.setitem(sys.modules, "services.voice_pipecat", voice_pipecat)
@@ -386,6 +390,11 @@ class TestConnect:
             return ("", "", "")
 
         monkeypatch.setattr(vp, "resolve_livekit_creds", _empty)
+        # The DB-first helper (#1000) must fall back to the env-only resolver
+        # here: blank the bootstrap read + DATABASE_URL so it can't reach a
+        # real DB and instead returns the empty creds above -> loud failure.
+        monkeypatch.setattr(plane_module, "_bootstrap_value", lambda _k: "")
+        monkeypatch.delenv("DATABASE_URL", raising=False)
         plane = plane_module.PipecatAudioMediaPlane()
         with pytest.raises(RuntimeError, match=r"missing LiveKit creds"):
             await plane.connect(room="r", identity="me")
@@ -625,3 +634,45 @@ class TestResolveAudioPlane:
             env={"VOICE_BRIDGE_AUDIO_PLANE": "pipecat"},
         )
         assert isinstance(plane, plane_module.PipecatAudioMediaPlane)
+
+
+# ===========================================================================
+# _bootstrap_value() -- genesis-file read for DB-first creds (#1000)
+# ===========================================================================
+
+
+class TestBootstrapValue:
+    """The MCP-spawned bridge resolves POINDEXTER_SECRET_KEY / database_url
+    from bootstrap.toml when its env is bare, so it no longer needs a
+    LIVEKIT_API_* copy in ~/.claude.json. Pins the genesis-file read.
+    """
+
+    @staticmethod
+    def _point_home(tmp_path: Any, monkeypatch: Any) -> Any:
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+        monkeypatch.setenv("HOME", str(tmp_path))  # POSIX
+        cfg = tmp_path / ".poindexter"
+        cfg.mkdir(parents=True, exist_ok=True)
+        return cfg
+
+    def test_reads_top_level_string_key(
+        self, plane_module: Any, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        cfg = self._point_home(tmp_path, monkeypatch)
+        (cfg / "bootstrap.toml").write_text(
+            'poindexter_secret_key = "sk-abc-123"\n', encoding="utf-8"
+        )
+        assert plane_module._bootstrap_value("poindexter_secret_key") == "sk-abc-123"
+
+    def test_missing_key_returns_empty(
+        self, plane_module: Any, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        cfg = self._point_home(tmp_path, monkeypatch)
+        (cfg / "bootstrap.toml").write_text("other = 1\n", encoding="utf-8")
+        assert plane_module._bootstrap_value("poindexter_secret_key") == ""
+
+    def test_missing_file_returns_empty(
+        self, plane_module: Any, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        self._point_home(tmp_path, monkeypatch)
+        assert plane_module._bootstrap_value("poindexter_secret_key") == ""

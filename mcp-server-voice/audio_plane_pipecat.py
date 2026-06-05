@@ -45,6 +45,81 @@ logger = logging.getLogger("livekit-bridge.audio.pipecat")
 _LOG_PREFIX = "[VOICE_BRIDGE]"
 
 
+def _bootstrap_value(key: str) -> str:
+    """Best-effort read of a top-level string key from bootstrap.toml.
+
+    The MCP-spawned bridge subprocess doesn't inherit the worker's
+    ``POINDEXTER_SECRET_KEY`` / ``DATABASE_URL`` env, so it falls back to
+    the genesis secret file (``~/.poindexter/bootstrap.toml``) the rest of
+    the stack already reads. Returns ``""`` on any miss.
+    """
+    import pathlib
+
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # py<3.11
+        import tomli as tomllib  # type: ignore
+
+    bt = pathlib.Path.home() / ".poindexter" / "bootstrap.toml"
+    if not bt.is_file():
+        return ""
+    try:
+        data = tomllib.loads(bt.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 -- a malformed file must not crash minting
+        return ""
+    val = data.get(key)
+    return val if isinstance(val, str) else ""
+
+
+async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
+    """DB-first LiveKit creds for the host bridge (#1000).
+
+    Reads ``livekit_api_key`` / ``livekit_api_secret`` from ``app_settings``
+    (encrypted) so the bridge no longer needs a ``LIVEKIT_API_*`` copy in
+    ``~/.claude.json``. The bridge runs as an MCP-spawned subprocess that
+    doesn't inherit ``POINDEXTER_SECRET_KEY`` / ``DATABASE_URL``, so both are
+    resolved from ``bootstrap.toml`` when the env is bare.
+
+    Falls back to the env-only sync resolver on ANY failure (DB down, key
+    missing, etc.), so the bridge is never worse off than before #1000.
+    """
+    import os
+
+    _ensure_services_on_path()
+    from services.voice_pipecat import (  # noqa: PLC0415 -- path set above
+        resolve_livekit_creds,
+        resolve_livekit_creds_async,
+    )
+
+    try:
+        if not os.getenv("POINDEXTER_SECRET_KEY"):
+            sk = _bootstrap_value("poindexter_secret_key")
+            if sk:
+                os.environ["POINDEXTER_SECRET_KEY"] = sk
+        dsn = os.getenv("DATABASE_URL") or _bootstrap_value("database_url")
+        if not dsn:
+            raise RuntimeError("no DATABASE_URL (env or bootstrap.toml)")
+
+        import asyncpg
+
+        from services.site_config import SiteConfig
+
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1)
+        try:
+            cfg = SiteConfig()
+            await cfg.load(pool)
+            return await resolve_livekit_creds_async(cfg)
+        finally:
+            await pool.close()
+    except Exception as e:  # noqa: BLE001 -- never break minting; env fallback
+        logger.warning(
+            "%s DB-first LiveKit cred resolve failed (%s); env-only fallback",
+            _LOG_PREFIX,
+            e,
+        )
+        return resolve_livekit_creds(None)
+
+
 # ---------------------------------------------------------------------------
 # Repo-root resolution -- shared services/voice_pipecat.py lives outside
 # this MCP server's directory.
@@ -195,14 +270,15 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
             build_livekit_bridge_transport,
             build_whisper_stt,
             mint_livekit_token,
-            resolve_livekit_creds,
         )
 
         url = self._livekit_url
         api_key = self._livekit_api_key
         api_secret = self._livekit_api_secret
         if not (url and api_key and api_secret):
-            res_url, res_key, res_secret = resolve_livekit_creds(None)
+            # DB-first (#1000): app_settings (encrypted) then env fallback,
+            # so no LIVEKIT_API_* copy is needed in ~/.claude.json.
+            res_url, res_key, res_secret = await _resolve_livekit_creds_db_first()
             url = url or res_url
             api_key = api_key or res_key
             api_secret = api_secret or res_secret
