@@ -384,7 +384,6 @@ class FinalizeTaskStage:
         gate_decision = None
         try:
             from modules.content.auto_publish_gate import evaluate as _gate_check
-            from services.audit_log import audit_log_bg
             db_pool = getattr(database_service, "pool", None)
             gate_decision = await _gate_check(
                 db_pool,
@@ -394,22 +393,25 @@ class FinalizeTaskStage:
                 quality_score=float(final_quality_score or 0),
                 site_config=context.get("site_config"),
             )
-            audit_log_bg(
-                "auto_publish_gate",
-                "finalize_task",
-                {
-                    "would_fire": gate_decision.would_fire,
-                    "dry_run": gate_decision.dry_run,
-                    "gate_state": gate_decision.gate_state,
-                    "reason": gate_decision.reason,
-                    "quality_score": gate_decision.quality_score,
-                    "threshold": gate_decision.threshold,
-                    "trailing_clean_runs": gate_decision.trailing_clean_runs,
-                    "required_clean_runs": gate_decision.required_clean_runs,
-                },
-                task_id=task_id,
-                severity="info",
-            )
+            # Seam 1 Wave 3c (#667) — audit through the capability handle.
+            _platform = context.get("platform")
+            if _platform is not None:
+                _platform.audit.write_bg(
+                    "auto_publish_gate",
+                    source="finalize_task",
+                    details={
+                        "would_fire": gate_decision.would_fire,
+                        "dry_run": gate_decision.dry_run,
+                        "gate_state": gate_decision.gate_state,
+                        "reason": gate_decision.reason,
+                        "quality_score": gate_decision.quality_score,
+                        "threshold": gate_decision.threshold,
+                        "trailing_clean_runs": gate_decision.trailing_clean_runs,
+                        "required_clean_runs": gate_decision.required_clean_runs,
+                    },
+                    task_id=task_id,
+                    severity="info",
+                )
             logger.info(
                 "[finalize_task] auto-publish gate: state=%s would_fire=%s "
                 "dry_run=%s reason=%s",

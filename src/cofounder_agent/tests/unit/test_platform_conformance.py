@@ -11,6 +11,8 @@ tests are collected without an explicit marker.)
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from plugins.fake_platform import FakePlatform
@@ -155,3 +157,45 @@ async def test_fake_audit_records_production_fields() -> None:
             "severity": "info",
         }
     ]
+
+
+async def test_audit_write_bg_is_non_blocking(platform: Platform) -> None:
+    # Fire-and-forget audit (Wave 3c): write_bg returns None *synchronously*
+    # (it is not a coroutine) and must never raise on either backing — a
+    # telemetry write must never slow or break the pipeline.
+    result = platform.audit.write_bg(
+        "bg_event", source="conformance_test", details={"detail": 1}
+    )
+    assert result is None
+    # Let the kernel backing's scheduled task run to completion so it doesn't
+    # linger as a pending task when the test loop closes.
+    await asyncio.sleep(0)
+
+
+async def test_fake_audit_write_bg_records_production_fields() -> None:
+    # FakePlatform records fire-and-forget writes separately so a migrated
+    # best-effort site can assert on ``fake.audit.writes_bg``.
+    fake = FakePlatform()
+    fake.audit.write_bg(
+        "qa_pass_completed",
+        source="qa.aggregate",
+        details={"approved": True},
+        task_id="task-2",
+        severity="info",
+    )
+    assert fake.audit.writes_bg == [
+        {
+            "event_type": "qa_pass_completed",
+            "source": "qa.aggregate",
+            "details": {"approved": True},
+            "task_id": "task-2",
+            "severity": "info",
+        }
+    ]
+
+
+def test_audit_write_bg_drops_without_event_loop(platform: Platform) -> None:
+    # Called outside an event loop (sync context), the kernel backing can't
+    # schedule the task — it must drop quietly (return None), never raise,
+    # mirroring audit_log_bg's no-running-loop drop.
+    assert platform.audit.write_bg("no_loop", source="sync_ctx") is None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from modules.content.atoms import qa_aggregate
+from plugins.fake_platform import FakePlatform
 
 
 class _Cfg:
@@ -324,22 +325,18 @@ class TestQaAggregateEmitsPassAudit:
     alert. qa.aggregate must re-emit it (one row per QA pass, full
     reviewer breakdown), mirroring the legacy stage."""
 
-    def _spy(self, monkeypatch):
-        calls = []
+    @staticmethod
+    def _passes(fake: FakePlatform) -> list[dict]:
+        # Seam 1 Wave 3c (#667): the atom now emits through the capability
+        # handle (``state['platform'].audit.write_bg``), recorded on the fake's
+        # ``writes_bg``, rather than the global ``audit_log_bg``.
+        return [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
 
-        def _fake(event_type, source, details=None, task_id=None, severity="info"):
-            calls.append({
-                "event_type": event_type, "source": source,
-                "details": details or {}, "task_id": task_id, "severity": severity,
-            })
-
-        monkeypatch.setattr("services.audit_log.audit_log_bg", _fake)
-        return calls
-
-    async def test_approve_emits_qa_pass_completed(self, monkeypatch):
-        calls = self._spy(monkeypatch)
+    async def test_approve_emits_qa_pass_completed(self):
+        fake = FakePlatform()
         state = {
             "site_config": _Cfg(),
+            "platform": fake,
             "task_id": "task-abc",
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
@@ -350,7 +347,7 @@ class TestQaAggregateEmitsPassAudit:
         }
         out = await qa_aggregate.run(state)
         assert out["qa_final_verdict"] == "approve"
-        passes = [c for c in calls if c["event_type"] == "qa_pass_completed"]
+        passes = self._passes(fake)
         assert len(passes) == 1
         d = passes[0]["details"]
         assert d["approved"] is True
@@ -361,10 +358,11 @@ class TestQaAggregateEmitsPassAudit:
         assert reviewers == {"ollama_critic", "ragas_eval"}
         assert all({"provider", "approved", "score", "advisory"} <= set(r) for r in d["reviews"])
 
-    async def test_reject_emits_warning_severity_pass(self, monkeypatch):
-        calls = self._spy(monkeypatch)
+    async def test_reject_emits_warning_severity_pass(self):
+        fake = FakePlatform()
         state = {
             "site_config": _Cfg(),
+            "platform": fake,
             "task_id": "task-xyz",
             "qa_rail_reviews": [
                 {"reviewer": "guardrails_brand", "approved": False, "score": 20.0,
@@ -373,7 +371,7 @@ class TestQaAggregateEmitsPassAudit:
         }
         out = await qa_aggregate.run(state)
         assert out["qa_final_verdict"] == "reject"
-        passes = [c for c in calls if c["event_type"] == "qa_pass_completed"]
+        passes = self._passes(fake)
         assert len(passes) == 1
         assert passes[0]["details"]["approved"] is False
         # Rejected passes are severity=warning (mirrors the legacy stage).

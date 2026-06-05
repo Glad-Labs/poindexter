@@ -171,6 +171,7 @@ async def process_content_generation_task(
     target_audience: str | None = None,
     *,
     site_config: SiteConfig,
+    platform: Any = None,
 ) -> dict[str, Any]:
     """Dispatch one ``pipeline_tasks`` row through its LangGraph template.
 
@@ -281,6 +282,14 @@ async def process_content_generation_task(
         # context.get('site_config') and forward it into services that
         # need DB-backed settings or secrets (poindexter#381).
         "site_config": _sc,
+        # Seam 1 Wave 3c (Glad-Labs/poindexter#667) — content's
+        # capability-scoped kernel handle. Stages/atoms reach the kernel
+        # through ``context.get('platform')`` (e.g. ``platform.audit.write_bg``)
+        # instead of importing kernel internals. ``None`` when the caller
+        # didn't build one (tests / ad-hoc CLI) — sites treat that as "skip
+        # this best-effort telemetry," mirroring ``site_config``'s None-tolerant
+        # seam.
+        "platform": platform,
         "models_by_phase": _models_by_phase,
         "quality_preference": quality_preference,
         "target_audience": target_audience,

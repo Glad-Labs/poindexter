@@ -248,3 +248,78 @@ def test_bind_fails_loud_when_backing_cannot_supply_capability() -> None:
         # _PartialBacking deliberately does not satisfy Platform — that is the
         # condition under test (the kernel can't supply ``audit``).
         bind_platform_to_modules([module], _PartialBacking())  # type: ignore[arg-type]
+
+
+# --- content declares the audit capability (Wave 3c) --------------------------
+
+
+def test_content_module_declares_audit_capability() -> None:
+    # Content's first capability migration: its manifest must declare AUDIT so
+    # the scoped handle exposes ``audit`` to the migrated stage/atom sites.
+    from modules.content.content_module import ContentModule
+
+    assert Capability.AUDIT in ContentModule().manifest().capabilities
+
+
+# --- build_platform_for_subprocess (Prefect flow seam, Wave 3c) ---------------
+
+
+def test_build_platform_for_subprocess_scopes_to_content(monkeypatch) -> None:
+    # The Prefect subprocess never runs main.py's lifespan, so it builds + scopes
+    # its own handle. The helper returns content's *scoped* handle (audit only),
+    # mirroring how the subprocess rebuilds site_config.
+    from plugins.module import ModuleManifest
+    from services import di_wiring
+
+    class _AuditLogger:
+        async def log(self, *a: Any, **k: Any) -> None: ...
+
+    class _ContentLike:
+        def manifest(self) -> ModuleManifest:
+            return ModuleManifest(
+                name="content",
+                version="1.0.0",
+                visibility="public",
+                capabilities=(Capability.AUDIT,),
+            )
+
+        def bind_platform(self, platform: object) -> None: ...
+
+    monkeypatch.setattr(
+        "services.audit_log.get_audit_logger", lambda: _AuditLogger()
+    )
+    monkeypatch.setattr(
+        "services.llm_providers.dispatcher.dispatch_complete", _dispatch
+    )
+    monkeypatch.setattr(
+        "plugins.registry.get_modules", lambda: [_ContentLike()]
+    )
+
+    scoped = di_wiring.build_platform_for_subprocess(
+        pool=_StubPool(), site_config=_StubSiteConfig({"k": "v"})
+    )
+
+    assert scoped is not None
+    # audit is granted — reachable without raising.
+    assert scoped.audit is not None
+    # an undeclared capability fails loud (scoping holds over the real handle).
+    with pytest.raises(CapabilityError):
+        _ = scoped.config
+
+
+def test_build_platform_for_subprocess_returns_none_without_audit_logger(
+    monkeypatch,
+) -> None:
+    # Best-effort: if the subprocess has no global AuditLogger, the helper
+    # returns None (audit telemetry quietly drops) rather than raising — a
+    # telemetry seam must never break content generation.
+    from services import di_wiring
+
+    monkeypatch.setattr("services.audit_log.get_audit_logger", lambda: None)
+
+    assert (
+        di_wiring.build_platform_for_subprocess(
+            pool=_StubPool(), site_config=_StubSiteConfig()
+        )
+        is None
+    )

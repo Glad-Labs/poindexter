@@ -14,7 +14,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -193,7 +193,6 @@ def _patch_everything():
               SimpleNamespace(lock=_no_gpu_lock)),
         patch("services.research_service.ResearchService",
               return_value=SimpleNamespace(build_context=AsyncMock(return_value="auto research"))),
-        patch("services.audit_log.audit_log_bg", MagicMock()),
     ]
 
 

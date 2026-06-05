@@ -153,31 +153,35 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # needs (poindexter#553). Re-emit it here. Best-effort — a telemetry
     # write must never break the pipeline.
     try:
-        from services.audit_log import audit_log_bg
-        audit_log_bg(
-            "qa_pass_completed",
-            "qa.aggregate",
-            {
-                "approved": approved,
-                "final_score": round(float(final_score), 2),
-                "approval_threshold": float(threshold),
-                "reviewer_count": len(reviews),
-                "reviews": [
-                    {
-                        "reviewer": r.get("reviewer"),
-                        "provider": r.get("provider"),
-                        "approved": bool(r.get("approved")),
-                        "score": round(float(r.get("score") or 0.0), 2),
-                        "advisory": bool(r.get("advisory")),
-                        # First 200 chars for debugging; full text stays in logs.
-                        "feedback_preview": (str(r.get("feedback") or ""))[:200],
-                    }
-                    for r in reviews
-                ],
-            },
-            task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
-            severity="info" if approved else "warning",
-        )
+        # Seam 1 Wave 3c (#667) — audit through the capability handle. The
+        # handle's write_bg preserves the fire-and-forget + #303 loud-on-reject
+        # (severity='warning') behavior the raw audit_log_bg call had.
+        _platform = state.get("platform")
+        if _platform is not None:
+            _platform.audit.write_bg(
+                "qa_pass_completed",
+                source="qa.aggregate",
+                details={
+                    "approved": approved,
+                    "final_score": round(float(final_score), 2),
+                    "approval_threshold": float(threshold),
+                    "reviewer_count": len(reviews),
+                    "reviews": [
+                        {
+                            "reviewer": r.get("reviewer"),
+                            "provider": r.get("provider"),
+                            "approved": bool(r.get("approved")),
+                            "score": round(float(r.get("score") or 0.0), 2),
+                            "advisory": bool(r.get("advisory")),
+                            # First 200 chars for debugging; full text in logs.
+                            "feedback_preview": (str(r.get("feedback") or ""))[:200],
+                        }
+                        for r in reviews
+                    ],
+                },
+                task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
+                severity="info" if approved else "warning",
+            )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[qa.aggregate] qa_pass_completed audit skipped: %s", exc)
 

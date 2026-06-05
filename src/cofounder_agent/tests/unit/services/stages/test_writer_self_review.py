@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -34,7 +34,7 @@ class TestExecute:
         with patch(
             "services.self_review.self_review_and_revise",
             AsyncMock(return_value=("Revised content.", stats)),
-        ), patch("services.audit_log.audit_log_bg", MagicMock()):
+        ):
             result = await WriterSelfReviewStage().execute(ctx, {})
         assert result.ok is True
         assert result.context_updates["content"] == "Revised content."
@@ -53,7 +53,7 @@ class TestExecute:
         with patch(
             "services.self_review.self_review_and_revise",
             AsyncMock(return_value=("ignored", stats)),
-        ), patch("services.audit_log.audit_log_bg", MagicMock()):
+        ):
             result = await WriterSelfReviewStage().execute(ctx, {})
         assert "content" not in result.context_updates
         assert result.detail == "no changes"

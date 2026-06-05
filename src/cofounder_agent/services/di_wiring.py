@@ -200,3 +200,77 @@ async def build_and_wire_subprocess_with_container(
         wired,
     )
     return site_cfg, container
+
+
+def build_platform_for_subprocess(
+    pool: Any, site_config: Any, *, module_name: str = "content"
+) -> Any:
+    """Build a Prefect-subprocess copy of a module's capability-scoped Platform.
+
+    Wave 3c of Seam 1 (Glad-Labs/poindexter#667). The Prefect flow runs in a
+    fresh subprocess that never executes ``main.py``'s lifespan, so the handle
+    bound there (Wave 3b) is out of reach — the subprocess must build its own,
+    exactly as it rebuilds ``site_config`` via
+    :func:`build_and_wire_subprocess_with_container`.
+
+    Constructs the full ``KernelPlatform`` from the subprocess's already-built
+    ``site_config`` + ``pool`` + the LLM dispatch router + the global
+    ``AuditLogger`` (init'd by the subprocess's ``DatabaseService``), then
+    narrows it to ``module_name``'s declared capabilities via
+    ``scope_for_module`` and returns that scoped handle.
+
+    Best-effort by design: returns ``None`` (logged, never raised) if any
+    dependency is missing or the build fails. The handle currently backs only
+    best-effort audit telemetry, and a telemetry seam must never break content
+    generation — mirroring ``audit_log_bg``'s own drop-and-continue posture.
+    The migrated call sites treat a ``None`` handle as "drop this telemetry
+    row." Imports are local so ``di_wiring`` stays import-cheap.
+    """
+    try:
+        from plugins.kernel_platform import build_kernel_platform
+        from plugins.platform import scope_for_module
+        from plugins.registry import get_modules
+        from services.audit_log import get_audit_logger
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        audit_logger = get_audit_logger()
+        if audit_logger is None:
+            logger.warning(
+                "[di_wiring] no global AuditLogger in subprocess — skipping "
+                "Platform build (audit telemetry drops this run)",
+            )
+            return None
+
+        module = next(
+            (m for m in get_modules() if m.manifest().name == module_name), None
+        )
+        if module is None:
+            logger.warning(
+                "[di_wiring] module %r not discovered in subprocess — "
+                "skipping Platform build",
+                module_name,
+            )
+            return None
+
+        full = build_kernel_platform(
+            site_config=site_config,
+            pool=pool,
+            dispatch=dispatch_complete,
+            audit_logger=audit_logger,
+        )
+        scoped = scope_for_module(module, full)
+        logger.info(
+            "[di_wiring] subprocess Platform built + scoped to module %r "
+            "(capabilities: %s)",
+            module_name,
+            ", ".join(c.value for c in module.manifest().capabilities)
+            or "(none)",
+        )
+        return scoped
+    except Exception:
+        logger.warning(
+            "[di_wiring] subprocess Platform build failed — running without a "
+            "handle (audit telemetry drops this run)",
+            exc_info=True,
+        )
+        return None

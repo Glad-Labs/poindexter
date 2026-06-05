@@ -28,6 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from plugins.module import ModuleManifest
+from plugins.platform import Capability
 
 _MANIFEST = ModuleManifest(
     name="content",
@@ -35,6 +36,12 @@ _MANIFEST = ModuleManifest(
     visibility="public",
     description="Blog publishing pipeline — Glad Labs reference module.",
     requires=(),
+    # Wave 3c of Seam 1 (Glad-Labs/poindexter#667): content's first declared
+    # capability. Grants the scoped handle an ``audit`` attribute so the
+    # migrated best-effort telemetry sites can reach the kernel audit log via
+    # ``platform.audit.write_bg`` instead of importing ``services.audit_log``
+    # directly. Grows as further capabilities migrate.
+    capabilities=(Capability.AUDIT,),
 )
 
 

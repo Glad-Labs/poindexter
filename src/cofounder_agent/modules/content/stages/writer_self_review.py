@@ -58,7 +58,6 @@ class WriterSelfReviewStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.audit_log import audit_log_bg
         from services.self_review import self_review_and_revise as _self_review_and_revise
 
         task_id = context.get("task_id")
@@ -97,13 +96,17 @@ class WriterSelfReviewStage:
             updates["content_length"] = len(revised_text)
 
         try:
-            audit_log_bg(
-                "writer_self_review_pass", "content_router",
-                stats,
-                task_id=task_id,
-            )
+            # Seam 1 Wave 3c (#667) — audit through the capability handle.
+            _platform = context.get("platform")
+            if _platform is not None:
+                _platform.audit.write_bg(
+                    "writer_self_review_pass",
+                    source="content_router",
+                    details=stats,
+                    task_id=task_id,
+                )
         except Exception as e:
-            logger.debug("audit_log_bg failed: %s", e)
+            logger.debug("audit.write_bg failed: %s", e)
 
         return StageResult(
             ok=True,
