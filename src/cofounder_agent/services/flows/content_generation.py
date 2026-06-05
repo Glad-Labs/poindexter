@@ -219,6 +219,17 @@ async def content_generation_flow(
                 exc_info=True,
             )
 
+    # Seam 1 Wave 3c (Glad-Labs/poindexter#667) — build content's
+    # capability-scoped Platform handle for THIS subprocess. The handle bound
+    # in main.py's lifespan (Wave 3b) lives in the FastAPI worker, not here, so
+    # the pipeline rebuilds its own — exactly as it rebuilt site_config above.
+    # Best-effort: ``None`` when deps are missing (the migrated audit sites then
+    # quietly drop their telemetry, never breaking generation).
+    _platform: Any = None
+    if _wired_site_config is not None and _pool is not None:
+        from services.di_wiring import build_platform_for_subprocess
+        _platform = build_platform_for_subprocess(_pool, _wired_site_config)
+
     # Schedule-driven: no task_id → claim from queue.
     if task_id is None and topic is None:
         claimed = await claim_pending_task(database_service)
@@ -296,6 +307,9 @@ async def content_generation_flow(
             # the degenerate no-pool branch, which already logged a
             # warning and is a real misconfiguration we surface loudly).
             site_config=_wired_site_config,
+            # Seam 1 Wave 3c: content's scoped handle for this run (None-tolerant
+            # — best-effort audit telemetry only).
+            platform=_platform,
         )
     except Exception as exc:
         await _mark_task_failed_on_flow_crash(

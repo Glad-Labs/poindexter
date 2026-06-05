@@ -20,8 +20,10 @@ access *through the handle*, not to redesign those services.
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Coroutine
 
 from plugins.platform import (
     AuditCapability,
@@ -34,6 +36,11 @@ from plugins.platform import (
 )
 
 _DEFAULT_LOGGER = logging.getLogger("poindexter.platform")
+
+# Severities whose audit row IS the signal a downstream alert reads (#303): a
+# dropped warn/critical row silently kills the alert, so a dropped *background*
+# write of one escalates to error-level (Sentry-visible) instead of debug.
+_LOUD_BG_SEVERITIES = frozenset({"warn", "warning", "critical"})
 
 
 class _ConfigAdapter:
@@ -109,8 +116,13 @@ class _AuditAdapter:
     signature these keywords map straight onto.
     """
 
-    def __init__(self, audit_write: Callable[..., Awaitable[None]]) -> None:
+    def __init__(
+        self,
+        audit_write: Callable[..., Coroutine[Any, Any, None]],
+        logger: logging.Logger | None = None,
+    ) -> None:
         self._audit_write = audit_write
+        self._logger = logger or _DEFAULT_LOGGER
 
     async def write(
         self,
@@ -128,6 +140,76 @@ class _AuditAdapter:
             task_id=task_id,
             severity=severity,
         )
+
+    def write_bg(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
+        """Fire-and-forget audit write — schedule the durable write, never block.
+
+        Mirrors the semantics of ``services.audit_log.audit_log_bg`` (which the
+        migrating call sites used directly): the row is written on a background
+        task and any failure is swallowed so a telemetry write never breaks the
+        pipeline — loudly for warn/critical (a dropped finding row silently
+        kills the downstream alert, #303), quietly otherwise. This adapter is
+        the forward home of that behavior; ``audit_log_bg`` retires once every
+        content site reaches audit through the handle.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._drop_bg(event_type, source, severity, "no running event loop")
+            return
+        task = loop.create_task(
+            self._audit_write(
+                event_type,
+                source=source,
+                details=details,
+                task_id=task_id,
+                severity=severity,
+            )
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_bg_done,
+                event_type=event_type,
+                source=source,
+                severity=severity,
+            )
+        )
+
+    def _on_bg_done(
+        self,
+        task: "asyncio.Task[Any]",
+        *,
+        event_type: str,
+        source: str,
+        severity: str,
+    ) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self._drop_bg(event_type, source, severity, f"task failed: {exc!r}")
+
+    def _drop_bg(
+        self, event_type: str, source: str, severity: str, reason: str
+    ) -> None:
+        if (severity or "").lower() in _LOUD_BG_SEVERITIES:
+            self._logger.error(
+                "DROPPED %s audit (%s): event=%s source=%s — will NOT reach "
+                "the alert pipeline",
+                severity, reason, event_type, source,
+            )
+        else:
+            self._logger.debug(
+                "audit.write_bg dropped %s (%s)", event_type, reason
+            )
 
 
 def _make_log_metric_emit(logger: logging.Logger) -> Callable[..., None]:
@@ -169,7 +251,7 @@ class KernelPlatform:
         site_config: Any,
         pool: Any,
         dispatch: Callable[..., Awaitable[Any]],
-        audit_write: Callable[..., Awaitable[None]],
+        audit_write: Callable[..., Coroutine[Any, Any, None]],
         metric_emit: Callable[..., None] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -182,7 +264,7 @@ class KernelPlatform:
         # No Prometheus push seam yet — default the metric sink to the
         # structured log (see ``_make_log_metric_emit``).
         self._metric = _MetricAdapter(metric_emit or _make_log_metric_emit(_logger))
-        self._audit = _AuditAdapter(audit_write)
+        self._audit = _AuditAdapter(audit_write, logger=_logger)
 
     @property
     def config(self) -> ConfigCapability:

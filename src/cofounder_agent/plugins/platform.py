@@ -142,6 +142,26 @@ class AuditCapability(Protocol):
         severity: str = "info",
     ) -> None: ...
 
+    def write_bg(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
+        """Fire-and-forget audit write — schedules the row, never blocks or raises.
+
+        The non-blocking sibling of ``write``. Use it at *best-effort telemetry*
+        sites — the pipeline's "a telemetry write must never slow or break the
+        chain" rule — where blocking a stage on a DB round-trip (or letting an
+        audit failure surface) is worse than dropping the occasional row. Use
+        ``write`` when the caller must await durability. Same field shape as
+        ``write``; returns ``None`` synchronously (it is not a coroutine).
+        """
+        ...
+
 
 # --- the handle ---------------------------------------------------------------
 

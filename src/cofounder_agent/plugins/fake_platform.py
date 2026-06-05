@@ -99,6 +99,7 @@ class _FakeMetric:
 class _FakeAudit:
     def __init__(self) -> None:
         self.writes: list[dict[str, Any]] = []
+        self.writes_bg: list[dict[str, Any]] = []
 
     async def write(
         self,
@@ -110,6 +111,27 @@ class _FakeAudit:
         severity: str = "info",
     ) -> None:
         self.writes.append(
+            {
+                "event_type": event_type,
+                "source": source,
+                "details": details or {},
+                "task_id": task_id,
+                "severity": severity,
+            }
+        )
+
+    def write_bg(
+        self,
+        event_type: str,
+        *,
+        source: str,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        severity: str = "info",
+    ) -> None:
+        # Fire-and-forget on the real kernel; the fake records it synchronously
+        # into a separate list so a migrated best-effort site can assert on it.
+        self.writes_bg.append(
             {
                 "event_type": event_type,
                 "source": source,
