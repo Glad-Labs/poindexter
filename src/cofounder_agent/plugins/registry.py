@@ -585,6 +585,16 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.static_export_reconciliation",
             "StaticExportReconciliationJob",
         ),
+        # Static-export orphan sweep — retires per-post JSONs whose slug is no
+        # longer published (rejected/archived/deleted) by deleting the R2 JSON
+        # and busting the /posts/<slug> ISR cache. Without it a takedown leaves
+        # a stale soft-404 (HTTP 200 + framework noindex) that Search Console
+        # files under "Excluded by noindex" instead of dropping (#1146).
+        (
+            "jobs",
+            "services.jobs.static_export_orphan_sweep",
+            "StaticExportOrphanSweepJob",
+        ),
         # Media-generation reconciliation — sibling watchdog for podcast +
         # video MP3/MP4 assets on R2. Catches the same fire-and-forget
         # anti-pattern that froze the static index, but for media files:

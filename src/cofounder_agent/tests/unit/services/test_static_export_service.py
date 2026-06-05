@@ -274,16 +274,26 @@ class TestExportPost:
             assert mock_upload.call_count == 5
 
     @pytest.mark.asyncio
-    async def test_export_post_returns_false_on_missing_post(self):
+    async def test_export_post_retires_unpublished_slug(self):
+        """A slug whose post is no longer published (rejected/archived/deleted)
+        is retired — R2 JSON deleted + ISR cache busted — and dropped from the
+        index, instead of being left as a stale soft-404 (#1146). export_post
+        returns True (the retire + index rebuild succeeded)."""
         mock_pool = _make_mock_pool(fetchrow_result=None)
 
-        with patch("services.static_export_service._upload_json", new_callable=AsyncMock):
+        with patch(
+            "services.static_export_service._upload_json", new_callable=AsyncMock
+        ), patch(
+            "services.static_export_service._retire_slug", new_callable=AsyncMock
+        ) as retire:
             from services.static_export_service import export_post
             result = await export_post(
                 mock_pool, "nonexistent-slug", site_config=_seeded_sc(),
             )
 
-            assert result is False
+        retire.assert_awaited_once()
+        assert retire.await_args_list[0].args[0] == "nonexistent-slug"
+        assert result is True
 
 
 # ---------------------------------------------------------------------------
