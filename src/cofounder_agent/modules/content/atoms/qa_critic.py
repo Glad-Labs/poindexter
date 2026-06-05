@@ -46,7 +46,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     from modules.content.multi_model_qa import MultiModelQA
 
-    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
+    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)
     result = await qa._review_with_cloud_model(title, content, topic, research_sources=research)
     if result is None:

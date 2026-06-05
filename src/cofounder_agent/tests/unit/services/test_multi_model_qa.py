@@ -13,6 +13,7 @@ import pytest
 
 from modules.content.content_validator import ValidationIssue, ValidationResult
 from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
+from plugins.fake_platform import FakePlatform
 from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -1844,43 +1845,55 @@ class TestRagasEvalGate:
 @pytest.mark.unit
 class TestSurfaceReviewerFailure:
     """`_surface_reviewer_failure` is the loud-skip helper every QA-rail
-    wrapper calls when its underlying call raises. Two surfaces fire:
-    WARNING log + audit_log row. No notify_operator (six rails would
-    page Discord too often)."""
+    wrapper calls when its underlying call raises. Two surfaces fire: WARNING
+    log + audit_log row. Wave 3c-ii (#667): now a MultiModelQA method that
+    audits through the capability handle (``platform.audit.write_bg``)."""
+
+    @staticmethod
+    def _qa_with_fake() -> tuple[MultiModelQA, FakePlatform]:
+        fake = FakePlatform()
+        qa = MultiModelQA(pool=None, settings_service=None,
+                          site_config=SiteConfig(), platform=fake)
+        return qa, fake
 
     def test_logs_warning_with_traceback(self, caplog):
-        from modules.content.multi_model_qa import _surface_reviewer_failure
+        qa, _ = self._qa_with_fake()
         with caplog.at_level("WARNING"):
-            _surface_reviewer_failure("deepeval_g_eval", RuntimeError("boom"))
+            qa._surface_reviewer_failure("deepeval_g_eval", RuntimeError("boom"))
         assert any("deepeval_g_eval" in r.message for r in caplog.records)
         assert any("RuntimeError" in r.message for r in caplog.records)
 
     def test_emits_audit_log_row(self):
-        from modules.content.multi_model_qa import _surface_reviewer_failure
-        with patch("services.audit_log.audit_log_bg") as audit_mock:
-            _surface_reviewer_failure(
-                "ragas_eval", ValueError("threshold parse error"),
-            )
-        audit_mock.assert_called_once()
-        args, kwargs = audit_mock.call_args
-        assert args[0] == "qa_reviewer_failure"
-        assert args[1] == "multi_model_qa"
-        assert args[2]["reviewer"] == "ragas_eval"
-        assert args[2]["exception_type"] == "ValueError"
-        assert "threshold parse error" in args[2]["exception_message"]
-        assert kwargs.get("severity") == "warning"
+        qa, fake = self._qa_with_fake()
+        qa._surface_reviewer_failure("ragas_eval", ValueError("threshold parse error"))
+        assert len(fake.audit.writes_bg) == 1
+        w = fake.audit.writes_bg[0]
+        assert w["event_type"] == "qa_reviewer_failure"
+        assert w["source"] == "multi_model_qa"
+        assert w["details"]["reviewer"] == "ragas_eval"
+        assert w["details"]["exception_type"] == "ValueError"
+        assert "threshold parse error" in w["details"]["exception_message"]
+        assert w["severity"] == "warning"
 
-    def test_audit_logger_uninitialised_swallowed(self):
-        """`audit_log_bg` already silently drops when the global isn't
-        bound; if its module fails to import for some reason, the helper
-        must still complete without raising."""
-        from modules.content.multi_model_qa import _surface_reviewer_failure
-        with patch(
-            "services.audit_log.audit_log_bg",
-            side_effect=RuntimeError("audit not initialised"),
-        ):
-            # Must not raise.
-            _surface_reviewer_failure("guardrails_brand", IOError("disk full"))
+    def test_no_platform_is_quiet_noop(self):
+        # No handle (tests / substrate preview-QA): drops quietly, never raises.
+        qa = MultiModelQA(pool=None, settings_service=None,
+                          site_config=SiteConfig(), platform=None)
+        qa._surface_reviewer_failure("guardrails_brand", IOError("disk full"))
+
+    def test_audit_failure_swallowed(self):
+        # Observability must never break the QA chain: a raising handle is
+        # swallowed by _surface_reviewer_failure's guard.
+        class _BoomAudit:
+            def write_bg(self, *a, **k):
+                raise RuntimeError("audit boom")
+
+        class _BoomPlatform:
+            audit = _BoomAudit()
+
+        qa = MultiModelQA(pool=None, settings_service=None,
+                          site_config=SiteConfig(), platform=_BoomPlatform())
+        qa._surface_reviewer_failure("guardrails_brand", IOError("disk full"))
 
 
 @pytest.mark.unit
@@ -1911,8 +1924,8 @@ class TestReviewerFailureWiredIntoRails:
             side_effect=RuntimeError("judge unreachable"),
         ), patch(
             "services.deepeval_rails.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_failure",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_deepeval_g_eval("body", "topic")
 
@@ -1928,8 +1941,8 @@ class TestReviewerFailureWiredIntoRails:
             side_effect=RuntimeError("judge unreachable"),
         ), patch(
             "services.deepeval_rails.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_failure",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_deepeval_faithfulness("body", "ctx text")
 
@@ -1945,8 +1958,8 @@ class TestReviewerFailureWiredIntoRails:
             side_effect=RuntimeError("validator import failure"),
         ), patch(
             "services.guardrails_rails.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_failure",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_guardrails_brand("body")
 
@@ -1965,8 +1978,8 @@ class TestReviewerFailureWiredIntoRails:
             side_effect=RuntimeError("validator threw"),
         ), patch(
             "services.guardrails_rails.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_failure",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_guardrails_competitor("body")
 
@@ -1982,8 +1995,8 @@ class TestReviewerFailureWiredIntoRails:
             new=AsyncMock(side_effect=RuntimeError("ragas exploded")),
         ), patch(
             "services.ragas_eval.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_failure",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_failure",
         ) as surface_mock:
             result = await qa._check_ragas_eval("body", "topic", "ctx")
 

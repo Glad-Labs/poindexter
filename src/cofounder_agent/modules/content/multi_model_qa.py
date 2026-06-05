@@ -23,7 +23,7 @@ import asyncio
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modules.content.content_validator import ValidationResult, validate_content
 from services.integrations.operator_notify import notify_operator
@@ -163,104 +163,6 @@ def format_qa_feedback_from_reviews(
     return text
 
 
-def _surface_reviewer_failure(reviewer: str, exc: Exception) -> None:
-    """Loud-skip helper for QA-rail reviewers per ``feedback_no_silent_defaults``.
-
-    Used by every reviewer wrapper that catches ``Exception`` and
-    returns ``None`` (skip). The QA chain is intentionally tolerant
-    to per-reviewer failures — the chain still completes without
-    that rail's signal — but a silent skip masks regressions
-    (a removed dep, a judge model that 502'd, a graph-wiring bug).
-
-    Two surfaces fire on every reviewer skip:
-
-    1. ``WARNING`` log with full traceback (``exc_info=exc``) plus
-       a one-line repair instruction.
-    2. ``audit_log`` row — ``event_type='qa_reviewer_failure'``,
-       ``severity='warning'``. The QA Rails dashboard's "Reviewer
-       Skips (24h)" panel projects this so the operator can see
-       which rails are flaking.
-
-    No ``notify_operator`` call — six rails throwing periodically
-    would page Discord too often. The dashboard threshold alert
-    handles the "is something genuinely broken vs. a one-off blip"
-    decision via volume-based rules.
-    """
-    logger.warning(
-        "[MULTI_QA] reviewer=%s skipped due to %s: %s — failure is "
-        "loudly logged + audit_log'd; QA chain continues without "
-        "this rail's signal. Investigate or set "
-        "qa_gates.<name>.enabled=false until repaired.",
-        reviewer, type(exc).__name__, exc,
-        exc_info=exc,
-    )
-    try:
-        from services.audit_log import audit_log_bg
-        audit_log_bg(
-            "qa_reviewer_failure",
-            "multi_model_qa",
-            {
-                "reviewer": reviewer,
-                "exception_type": type(exc).__name__,
-                "exception_message": str(exc)[:500],
-            },
-            severity="warning",
-        )
-    except Exception:
-        # audit_log_bg already silently drops when the global isn't
-        # initialised. Wrap defensively in case the import itself
-        # fails — never let an observability call break the chain.
-        pass
-
-
-def _surface_reviewer_skip(reviewer: str, reason: str, details: dict | None = None) -> None:
-    """Loud-skip helper for non-exception silent skips per ``feedback_no_silent_defaults``.
-
-    Used by every reviewer wrapper that returns ``None`` without raising
-    — typically because a prerequisite is missing (no research_sources,
-    empty competitor list, judge model unresolvable, master rail flag
-    off). Until 2026-05-27 these skips were invisible: the QA Rails
-    dashboard panel showed last_run_at=NEVER for ``deepeval_faithfulness``
-    and ``ragas_eval`` and the operator couldn't tell whether the rails
-    were broken or just had nothing to grade against.
-
-    Emits ``audit_log.event_type='qa_reviewer_skipped'`` with
-    ``severity='info'`` so the operator can see the skip volume on
-    the QA Rails dashboard without paging anyone. Tone-matched to
-    ``_surface_reviewer_failure`` (which is severity='warning' because
-    a thrown exception is genuinely broken, vs. a structural skip
-    which is "behaving as designed but you should know").
-
-    No ``notify_operator`` call — skip volume is high-by-design
-    (faithfulness skips every post without research_sources). The
-    dashboard surfaces volume; alerts live on the failure path.
-    """
-    # Log at DEBUG so high-volume skips don't drown out warnings, but
-    # do log — silent drops are forbidden under `feedback_no_silent_defaults`.
-    logger.debug(
-        "[MULTI_QA] reviewer=%s skipped: %s — audit_log'd as "
-        "qa_reviewer_skipped so the operator dashboard can show "
-        "the skip rate", reviewer, reason,
-    )
-    try:
-        from services.audit_log import audit_log_bg
-        audit_log_bg(
-            "qa_reviewer_skipped",
-            "multi_model_qa",
-            {
-                "reviewer": reviewer,
-                "reason": reason[:200],
-                **(details or {}),
-            },
-            severity="info",
-        )
-    except Exception:
-        # audit_log_bg already silently drops when the global isn't
-        # initialised. Wrap defensively — observability must never
-        # break the chain.
-        pass
-
-
 class MultiModelQA:
     """Multi-model quality assurance for content pipeline.
 
@@ -276,6 +178,7 @@ class MultiModelQA:
         settings_service=None,
         *,
         site_config: SiteConfig,
+        platform: Any = None,
     ):
         self.pool = pool
         self.settings = settings_service
@@ -283,6 +186,88 @@ class MultiModelQA:
         # singleton + lifespan-rebind shim were deleted in Phase 2. Every
         # construction site threads a real, populated instance.
         self._site_config = site_config
+        # Seam 1 Wave 3c-ii (Glad-Labs/poindexter#667): content's
+        # capability-scoped kernel handle, threaded from the qa.* atoms'
+        # ``state['platform']``. The reviewer-skip/failure surfacing + the
+        # qa_pass/critic-fallback audit rows route through ``platform.audit``
+        # instead of importing ``services.audit_log``. ``None`` when the
+        # constructing path didn't supply one (substrate preview-QA, tests) —
+        # the surfacing then drops quietly, mirroring the old best-effort
+        # ``audit_log_bg`` no-global-logger drop.
+        self._platform = platform
+
+    def _surface_reviewer_failure(self, reviewer: str, exc: Exception) -> None:
+        """Loud-skip helper for QA-rail reviewers per ``feedback_no_silent_defaults``.
+
+        Used by every reviewer wrapper that catches ``Exception`` and returns
+        ``None`` (skip). The QA chain is intentionally tolerant to per-reviewer
+        failures — it still completes without that rail's signal — but a silent
+        skip masks regressions (a removed dep, a judge model that 502'd, a
+        graph-wiring bug). Two surfaces fire: a ``WARNING`` log with traceback,
+        and an ``audit_log`` row (``event_type='qa_reviewer_failure'``,
+        ``severity='warning'``) the QA Rails dashboard's "Reviewer Skips" panel
+        projects. No ``notify_operator`` — six rails throwing periodically would
+        page Discord too often; the dashboard's volume threshold handles that.
+        """
+        logger.warning(
+            "[MULTI_QA] reviewer=%s skipped due to %s: %s — failure is "
+            "loudly logged + audit_log'd; QA chain continues without "
+            "this rail's signal. Investigate or set "
+            "qa_gates.<name>.enabled=false until repaired.",
+            reviewer, type(exc).__name__, exc,
+            exc_info=exc,
+        )
+        try:
+            if self._platform is not None:
+                self._platform.audit.write_bg(
+                    "qa_reviewer_failure",
+                    source="multi_model_qa",
+                    details={
+                        "reviewer": reviewer,
+                        "exception_type": type(exc).__name__,
+                        "exception_message": str(exc)[:500],
+                    },
+                    severity="warning",
+                )
+        except Exception:
+            # Observability must never break the QA chain; write_bg is itself
+            # fire-and-forget, this guards the handle access too.
+            pass
+
+    def _surface_reviewer_skip(
+        self, reviewer: str, reason: str, details: dict | None = None
+    ) -> None:
+        """Loud-skip helper for non-exception silent skips per ``feedback_no_silent_defaults``.
+
+        Used by every reviewer wrapper that returns ``None`` without raising —
+        typically a missing prerequisite (no research_sources, empty competitor
+        list, judge model unresolvable, master rail flag off). Emits
+        ``audit_log.event_type='qa_reviewer_skipped'`` (``severity='info'``) so
+        the operator sees skip volume on the QA Rails dashboard without paging.
+        Tone-matched to ``_surface_reviewer_failure`` (warning, because a thrown
+        exception is genuinely broken vs. a structural skip behaving as
+        designed). Logged at DEBUG so high-volume skips don't drown out warnings
+        — but never silent (``feedback_no_silent_defaults``).
+        """
+        logger.debug(
+            "[MULTI_QA] reviewer=%s skipped: %s — audit_log'd as "
+            "qa_reviewer_skipped so the operator dashboard can show "
+            "the skip rate", reviewer, reason,
+        )
+        try:
+            if self._platform is not None:
+                self._platform.audit.write_bg(
+                    "qa_reviewer_skipped",
+                    source="multi_model_qa",
+                    details={
+                        "reviewer": reviewer,
+                        "reason": reason[:200],
+                        **(details or {}),
+                    },
+                    severity="info",
+                )
+        except Exception:
+            pass
 
     async def _load_gate_states(self) -> dict[str, tuple[bool, bool]]:
         """Return ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates``.
@@ -883,31 +868,32 @@ class MultiModelQA:
         # the JSON details column). Best-effort — telemetry writes
         # never break the chain.
         try:
-            from services.audit_log import audit_log_bg
-            audit_log_bg(
-                "qa_pass_completed",
-                "multi_model_qa",
-                {
-                    "approved": bool(approved),
-                    "final_score": round(float(final_score), 2),
-                    "approval_threshold": float(approval_threshold),
-                    "reviewer_count": len(reviews),
-                    "reviews": [
-                        {
-                            "reviewer": r.reviewer,
-                            "provider": r.provider,
-                            "approved": bool(r.approved),
-                            "score": round(float(r.score), 2),
-                            "advisory": bool(getattr(r, "advisory", False)),
-                            # First 200 chars of feedback for debugging;
-                            # full feedback stays in process logs.
-                            "feedback_preview": (r.feedback or "")[:200],
-                        }
-                        for r in reviews
-                    ],
-                },
-                severity="info" if approved else "warning",
-            )
+            # Seam 1 Wave 3c-ii (#667) — audit through the capability handle.
+            if self._platform is not None:
+                self._platform.audit.write_bg(
+                    "qa_pass_completed",
+                    source="multi_model_qa",
+                    details={
+                        "approved": bool(approved),
+                        "final_score": round(float(final_score), 2),
+                        "approval_threshold": float(approval_threshold),
+                        "reviewer_count": len(reviews),
+                        "reviews": [
+                            {
+                                "reviewer": r.reviewer,
+                                "provider": r.provider,
+                                "approved": bool(r.approved),
+                                "score": round(float(r.score), 2),
+                                "advisory": bool(getattr(r, "advisory", False)),
+                                # First 200 chars of feedback for debugging;
+                                # full feedback stays in process logs.
+                                "feedback_preview": (r.feedback or "")[:200],
+                            }
+                            for r in reviews
+                        ],
+                    },
+                    severity="info" if approved else "warning",
+                )
         except Exception as exc:  # noqa: BLE001
             logger.debug("[MULTI_QA] qa_pass_completed audit skipped: %s", exc)
 
@@ -951,17 +937,19 @@ class MultiModelQA:
             # that eats its own token budget silently degrades every
             # run and nobody notices.
             try:
-                from services.audit_log import audit_log_bg
-                audit_log_bg(
-                    "critic_fallback", "multi_model_qa",
-                    {
-                        "configured_critic": model_override or "default",
-                        "fallback_critic": fallback_model,
-                        "reason": "primary_returned_empty_or_errored",
-                        "stage": "cross_model_qa",
-                    },
-                    severity="warning",
-                )
+                # Seam 1 Wave 3c-ii (#667) — audit through the capability handle.
+                if self._platform is not None:
+                    self._platform.audit.write_bg(
+                        "critic_fallback",
+                        source="multi_model_qa",
+                        details={
+                            "configured_critic": model_override or "default",
+                            "fallback_critic": fallback_model,
+                            "reason": "primary_returned_empty_or_errored",
+                            "stage": "cross_model_qa",
+                        },
+                        severity="warning",
+                    )
             except Exception as _exc:
                 logger.debug("critic_fallback audit failed: %s", _exc)
             fallback_result = await self._review_with_ollama(
@@ -1302,7 +1290,7 @@ class MultiModelQA:
         except ImportError as exc:
             # Module itself missing — should never happen since
             # services/deepeval_rails.py ships with the worker.
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_brand_fabrication",
                 "services.deepeval_rails import failed — module missing",
                 {"exception_type": type(exc).__name__},
@@ -1314,7 +1302,7 @@ class MultiModelQA:
         # this is on out-of-the-box. If the operator turns it off, skip.
         try:
             if not deepeval_rails.is_enabled(self._site_config):
-                _surface_reviewer_skip(
+                self._surface_reviewer_skip(
                     "deepeval_brand_fabrication",
                     "deepeval_enabled=false (master rail flag off)",
                 )
@@ -1322,7 +1310,7 @@ class MultiModelQA:
         except Exception as exc:
             # site_config missing is fine — the rail's is_enabled
             # already returns False in that case, but we double-check.
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_brand_fabrication",
                 "is_enabled(site_config) raised — SiteConfig wrapper broken",
                 {"exception_type": type(exc).__name__,
@@ -1362,7 +1350,7 @@ class MultiModelQA:
         try:
             from services import deepeval_rails
         except ImportError as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_g_eval",
                 "services.deepeval_rails import failed — module missing",
                 {"exception_type": type(exc).__name__},
@@ -1370,13 +1358,13 @@ class MultiModelQA:
             return None
         try:
             if not deepeval_rails.is_enabled(self._site_config):
-                _surface_reviewer_skip(
+                self._surface_reviewer_skip(
                     "deepeval_g_eval",
                     "deepeval_enabled=false (master rail flag off)",
                 )
                 return None
         except Exception as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_g_eval",
                 "is_enabled(site_config) raised — SiteConfig wrapper broken",
                 {"exception_type": type(exc).__name__,
@@ -1401,7 +1389,7 @@ class MultiModelQA:
                 "[deepeval_g_eval] judge model unresolvable, skipping rail: %s",
                 e,
             )
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_g_eval",
                 "judge_model unresolvable — fix deepeval_judge_model OR "
                 "cost_tier.standard.model OR pipeline_writer_model",
@@ -1444,7 +1432,7 @@ class MultiModelQA:
                 site_config=self.settings,
             )
         except Exception as exc:
-            _surface_reviewer_failure("deepeval_g_eval", exc)
+            self._surface_reviewer_failure("deepeval_g_eval", exc)
             return None
 
         score_100 = round(float(score_unit) * 100.0, 1)
@@ -1470,7 +1458,7 @@ class MultiModelQA:
         try:
             from services import deepeval_rails
         except ImportError as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "services.deepeval_rails import failed — module missing",
                 {"exception_type": type(exc).__name__},
@@ -1478,13 +1466,13 @@ class MultiModelQA:
             return None
         try:
             if not deepeval_rails.is_enabled(self._site_config):
-                _surface_reviewer_skip(
+                self._surface_reviewer_skip(
                     "deepeval_faithfulness",
                     "deepeval_enabled=false (master rail flag off)",
                 )
                 return None
         except Exception as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "is_enabled(site_config) raised — SiteConfig wrapper broken",
                 {"exception_type": type(exc).__name__,
@@ -1500,7 +1488,7 @@ class MultiModelQA:
             # the dominant silent-skip path (the dev_diary niche never
             # populates research_sources, so faithfulness was effectively
             # off for half the pipeline without anyone noticing).
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "research_sources empty — faithfulness needs a corpus "
                 "to ground claims against",
@@ -1519,7 +1507,7 @@ class MultiModelQA:
                 "[deepeval_faithfulness] judge model unresolvable, "
                 "skipping rail: %s", e,
             )
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "judge_model unresolvable — fix deepeval_judge_model OR "
                 "cost_tier.standard.model OR pipeline_writer_model",
@@ -1548,7 +1536,7 @@ class MultiModelQA:
             p.strip() for p in research_sources.split("\n\n") if p.strip()
         ]
         if not chunks:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "research_sources contained no non-empty paragraph chunks",
             )
@@ -1564,7 +1552,7 @@ class MultiModelQA:
                 site_config=self.settings,
             )
         except Exception as exc:
-            _surface_reviewer_failure("deepeval_faithfulness", exc)
+            self._surface_reviewer_failure("deepeval_faithfulness", exc)
             return None
 
         score_100 = round(float(score_unit) * 100.0, 1)
@@ -1596,13 +1584,13 @@ class MultiModelQA:
         from services import guardrails_rails
         try:
             if not guardrails_rails.is_enabled(self._site_config):
-                _surface_reviewer_skip(
+                self._surface_reviewer_skip(
                     "guardrails_brand",
                     "guardrails_enabled=false (master rail flag off)",
                 )
                 return None
         except Exception as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "guardrails_brand",
                 "is_enabled(site_config) raised — SiteConfig wrapper broken",
                 {"exception_type": type(exc).__name__,
@@ -1615,7 +1603,7 @@ class MultiModelQA:
                 guardrails_rails.run_brand_guard, content,
             )
         except Exception as exc:
-            _surface_reviewer_failure("guardrails_brand", exc)
+            self._surface_reviewer_failure("guardrails_brand", exc)
             return None
 
         return ReviewerResult(
@@ -1649,7 +1637,7 @@ class MultiModelQA:
         try:
             from services import ragas_eval
         except ImportError as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "ragas_eval",
                 "services.ragas_eval import failed — module missing",
                 {"exception_type": type(exc).__name__},
@@ -1657,14 +1645,14 @@ class MultiModelQA:
             return None
         try:
             if not ragas_eval.is_enabled(self._site_config):
-                _surface_reviewer_skip(
+                self._surface_reviewer_skip(
                     "ragas_eval",
                     "ragas_enabled=false (master rail flag off — opt-in "
                     "because each call costs ~6K judge tokens)",
                 )
                 return None
         except Exception as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "ragas_eval",
                 "is_enabled(site_config) raised — SiteConfig wrapper broken",
                 {"exception_type": type(exc).__name__,
@@ -1673,7 +1661,7 @@ class MultiModelQA:
             return None
 
         if not research_sources or not research_sources.strip():
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "ragas_eval",
                 "research_sources empty — Ragas needs a corpus to "
                 "compute faithfulness + context_precision",
@@ -1684,7 +1672,7 @@ class MultiModelQA:
             p.strip() for p in research_sources.split("\n\n") if p.strip()
         ]
         if not chunks:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "ragas_eval",
                 "research_sources contained no non-empty paragraph chunks",
             )
@@ -1698,7 +1686,7 @@ class MultiModelQA:
                 site_config=self._site_config,
             )
         except Exception as exc:
-            _surface_reviewer_failure("ragas_eval", exc)
+            self._surface_reviewer_failure("ragas_eval", exc)
             return None
 
         # Drop any -1.0 sentinels (per-metric Ragas failure) before
@@ -1711,7 +1699,7 @@ class MultiModelQA:
             # backend failed. ragas_eval already logs a WARNING with
             # the exc; surface the skip event so the dashboard panel
             # shows the rate.
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "ragas_eval",
                 "all Ragas sub-metrics returned -1.0 — judge or "
                 "embedding backend likely unreachable",
@@ -1750,13 +1738,13 @@ class MultiModelQA:
         from services import guardrails_rails
         try:
             if not guardrails_rails.is_enabled(self._site_config):
-                _surface_reviewer_skip(
+                self._surface_reviewer_skip(
                     "guardrails_competitor",
                     "guardrails_enabled=false (master rail flag off)",
                 )
                 return None
         except Exception as exc:
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "guardrails_competitor",
                 "is_enabled(site_config) raised — SiteConfig wrapper broken",
                 {"exception_type": type(exc).__name__,
@@ -1771,7 +1759,7 @@ class MultiModelQA:
             # surface the skip so the operator notices they haven't
             # seeded `guardrails_competitor_list` yet — the rail is
             # effectively dormant until they do.
-            _surface_reviewer_skip(
+            self._surface_reviewer_skip(
                 "guardrails_competitor",
                 "guardrails_competitor_list empty — no competitors to "
                 "enforce against. Seed the CSV in app_settings to enable.",
@@ -1783,7 +1771,7 @@ class MultiModelQA:
                 guardrails_rails.run_competitor_guard, content, competitors,
             )
         except Exception as exc:
-            _surface_reviewer_failure("guardrails_competitor", exc)
+            self._surface_reviewer_failure("guardrails_competitor", exc)
             return None
 
         return ReviewerResult(

@@ -133,7 +133,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     pool = getattr(state.get("database_service"), "pool", None)
     settings_service = state.get("settings_service")
-    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
+    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)
     # Advisory is DB-driven: required_to_pass=True (prod) → stays a real veto;
     # False → advisory; absent → stays required (fail-closed).

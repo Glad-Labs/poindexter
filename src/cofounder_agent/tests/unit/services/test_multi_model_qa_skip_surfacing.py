@@ -21,47 +21,65 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.content.multi_model_qa import (
-    MultiModelQA,
-    _surface_reviewer_skip,
-)
+from modules.content.multi_model_qa import MultiModelQA
+from plugins.fake_platform import FakePlatform
 from services.site_config import SiteConfig
 
 
 @pytest.mark.unit
 class TestSurfaceReviewerSkip:
     """`_surface_reviewer_skip` is the non-exception loud-skip helper for
-    structural skips."""
+    structural skips. Wave 3c-ii (#667): it is now a MultiModelQA method that
+    audits through the capability handle (``platform.audit.write_bg``)."""
+
+    @staticmethod
+    def _qa_with_fake() -> tuple[MultiModelQA, FakePlatform]:
+        fake = FakePlatform()
+        qa = MultiModelQA(pool=None, settings_service=None,
+                          site_config=SiteConfig(), platform=fake)
+        return qa, fake
 
     def test_emits_audit_log_row_with_info_severity(self):
-        with patch("services.audit_log.audit_log_bg") as audit_mock:
-            _surface_reviewer_skip(
-                "deepeval_faithfulness",
-                "research_sources empty",
-                {"extra": "value"},
-            )
-        audit_mock.assert_called_once()
-        args, kwargs = audit_mock.call_args
-        assert args[0] == "qa_reviewer_skipped"
-        assert args[1] == "multi_model_qa"
-        assert args[2]["reviewer"] == "deepeval_faithfulness"
-        assert "research_sources empty" in args[2]["reason"]
-        assert args[2]["extra"] == "value"
-        assert kwargs.get("severity") == "info"
+        qa, fake = self._qa_with_fake()
+        qa._surface_reviewer_skip(
+            "deepeval_faithfulness",
+            "research_sources empty",
+            {"extra": "value"},
+        )
+        assert len(fake.audit.writes_bg) == 1
+        w = fake.audit.writes_bg[0]
+        assert w["event_type"] == "qa_reviewer_skipped"
+        assert w["source"] == "multi_model_qa"
+        assert w["details"]["reviewer"] == "deepeval_faithfulness"
+        assert "research_sources empty" in w["details"]["reason"]
+        assert w["details"]["extra"] == "value"
+        assert w["severity"] == "info"
 
     def test_works_without_details(self):
-        with patch("services.audit_log.audit_log_bg") as audit_mock:
-            _surface_reviewer_skip("ragas_eval", "master rail off")
-        audit_mock.assert_called_once()
-        args, _ = audit_mock.call_args
-        assert args[2]["reviewer"] == "ragas_eval"
+        qa, fake = self._qa_with_fake()
+        qa._surface_reviewer_skip("ragas_eval", "master rail off")
+        assert fake.audit.writes_bg[0]["details"]["reviewer"] == "ragas_eval"
 
-    def test_audit_logger_uninitialised_swallowed(self):
-        with patch(
-            "services.audit_log.audit_log_bg",
-            side_effect=RuntimeError("audit not initialised"),
-        ):
-            _surface_reviewer_skip("guardrails_brand", "master rail off")
+    def test_no_platform_is_quiet_noop(self):
+        # No handle (substrate preview-QA / tests): the skip surfacing drops
+        # quietly, mirroring audit_log_bg's no-global-logger drop. Must not raise.
+        qa = MultiModelQA(pool=None, settings_service=None,
+                          site_config=SiteConfig(), platform=None)
+        qa._surface_reviewer_skip("guardrails_brand", "master rail off")
+
+    def test_audit_failure_swallowed(self):
+        # Observability must never break the QA chain: if the handle's write_bg
+        # raises, _surface_reviewer_skip swallows it.
+        class _BoomAudit:
+            def write_bg(self, *a, **k):
+                raise RuntimeError("audit boom")
+
+        class _BoomPlatform:
+            audit = _BoomAudit()
+
+        qa = MultiModelQA(pool=None, settings_service=None,
+                          site_config=SiteConfig(), platform=_BoomPlatform())
+        qa._surface_reviewer_skip("guardrails_brand", "master rail off")
 
 
 @pytest.mark.unit
@@ -74,8 +92,8 @@ class TestReviewerSkipWiredIntoRails:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=False,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_skip",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
             result = qa._check_deepeval_brand("body", "topic")
         assert result is None
@@ -88,8 +106,8 @@ class TestReviewerSkipWiredIntoRails:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_skip",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_deepeval_faithfulness("body", None)
         assert result is None
@@ -102,8 +120,8 @@ class TestReviewerSkipWiredIntoRails:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.guardrails_rails.is_enabled", return_value=False,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_skip",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_guardrails_brand("body")
         assert result is None
@@ -118,8 +136,8 @@ class TestReviewerSkipWiredIntoRails:
             "services.guardrails_rails.is_enabled", return_value=True,
         ), patch(
             "services.guardrails_rails._resolve_competitors", return_value=[],
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_skip",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_guardrails_competitor("body")
         assert result is None
@@ -132,8 +150,8 @@ class TestReviewerSkipWiredIntoRails:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.is_enabled", return_value=False,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_skip",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_ragas_eval("body", "topic", "ctx")
         assert result is None
@@ -146,8 +164,8 @@ class TestReviewerSkipWiredIntoRails:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.ragas_eval.is_enabled", return_value=True,
-        ), patch(
-            "modules.content.multi_model_qa._surface_reviewer_skip",
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
         ) as surface_mock:
             result = await qa._check_ragas_eval("body", "topic", None)
         assert result is None

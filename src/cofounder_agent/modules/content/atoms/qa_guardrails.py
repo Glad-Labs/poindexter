@@ -41,7 +41,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     from modules.content.multi_model_qa import MultiModelQA
 
-    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config)
+    qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)
     brand = await qa._check_guardrails_brand(content)
     competitor = await qa._check_guardrails_competitor(content)
