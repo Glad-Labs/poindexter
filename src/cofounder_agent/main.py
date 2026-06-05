@@ -612,6 +612,57 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 e, exc_info=True,
             )
 
+        # Seam 1 Wave 3b — construct the kernel Platform handle and bind a
+        # capability-scoped view of it to each discovered module
+        # (Glad-Labs/poindexter#667). This is the first time the handle (built
+        # + tested across Waves 0-3a) is constructed from live services and
+        # reaches the modules. It is *additive*: every module declares zero
+        # capabilities today, so each receives an empty handle and keeps its
+        # existing kernel access untouched until Wave 3c migrates them onto the
+        # handle one capability at a time.
+        #
+        # Unlike the lifecycle hooks above (catch-and-continue, non-fatal),
+        # platform wiring is FAIL-LOUD: a module declaring a capability the
+        # kernel cannot supply is a real mis-wiring that must block boot, not
+        # silently degrade (no-silent-defaults). The re-raise propagates to the
+        # lifespan's outer handler (logged as a critical startup failure).
+        try:
+            from plugins.kernel_platform import build_kernel_platform
+            from plugins.platform import bind_platform_to_modules
+            from plugins.registry import get_modules as _get_modules_for_platform
+            from services.audit_log import get_audit_logger
+            from services.llm_providers.dispatcher import dispatch_complete
+
+            _audit_logger = get_audit_logger()
+            if _audit_logger is None:
+                raise RuntimeError(
+                    "the kernel AuditLogger is not initialised — it must come "
+                    "up with the database service before the Platform handle is "
+                    "constructed."
+                )
+            _kernel_platform = build_kernel_platform(
+                site_config=_site_cfg,
+                pool=services["database"].pool,
+                dispatch=dispatch_complete,
+                audit_logger=_audit_logger,
+            )
+            app.state.kernel_platform = _kernel_platform
+            _bound_count = bind_platform_to_modules(
+                _get_modules_for_platform(), _kernel_platform
+            )
+            logger.info(
+                "[LIFESPAN] Seam 1: Platform handle constructed + bound to "
+                "%d module(s)",
+                _bound_count,
+            )
+        except Exception as e:
+            logger.error(
+                "[LIFESPAN] Seam 1 platform wiring failed — aborting boot "
+                "(fail-loud): %s",
+                e, exc_info=True,
+            )
+            raise
+
         # Cross-encoder warmup (#210 Phase C). Pre-load the rerank
         # model at boot so the first query that hits hybrid+rerank
         # doesn't pay the 3-5s lazy-load latency. Skipped silently

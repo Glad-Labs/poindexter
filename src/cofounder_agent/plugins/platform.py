@@ -251,12 +251,50 @@ def scope_for_module(module: Any, platform: Platform) -> ScopedPlatform:
     return ScopedPlatform(platform, module.manifest().capabilities)
 
 
+def bind_platform_to_modules(modules: Iterable[Any], platform: Platform) -> int:
+    """Bind a capability-scoped handle to each module; return how many were bound.
+
+    The boot-time loop (called from ``main.py``'s lifespan, Wave 3b of Seam 1)
+    that turns "the kernel has a ``Platform``" into "every module holds its own
+    least-privilege view of it." For each module it builds a ``ScopedPlatform``
+    exposing only that module's declared capabilities (via ``scope_for_module``)
+    and hands it to ``module.bind_platform(...)``.
+
+    Fails loud (``CapabilityError``) if a module declares a capability the
+    backing ``platform`` does not supply — a real mis-wiring (a typo'd or
+    not-yet-built capability) that should block boot, not silently degrade
+    (no-silent-defaults). Today every declared capability resolves on the live
+    ``KernelPlatform``, so this guard never trips in prod; it exists so the day
+    it would, boot fails with a precise message instead of an ``AttributeError``
+    deep inside a stage.
+
+    Duck-typed on ``module`` (``manifest()`` + ``bind_platform()``) so this
+    stays free of a ``plugins.module`` import — the one-directional dependency
+    holds: ``module`` names ``platform``, never the reverse.
+    """
+    bound = 0
+    for module in modules:
+        manifest = module.manifest()
+        for capability in manifest.capabilities:
+            if not hasattr(platform, capability.value):
+                raise CapabilityError(
+                    f"module '{manifest.name}' declared the "
+                    f"'{capability.value}' capability but the kernel platform "
+                    f"does not supply it — the kernel cannot grant a capability "
+                    f"it has no backing for."
+                )
+        module.bind_platform(scope_for_module(module, platform))
+        bound += 1
+    return bound
+
+
 __all__ = [
     "Capability",
     "CapabilityError",
     "Platform",
     "ScopedPlatform",
     "scope_for_module",
+    "bind_platform_to_modules",
     "ConfigCapability",
     "SecretCapability",
     "DispatchCapability",

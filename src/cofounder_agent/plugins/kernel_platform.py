@@ -130,6 +130,31 @@ class _AuditAdapter:
         )
 
 
+def _make_log_metric_emit(logger: logging.Logger) -> Callable[..., None]:
+    """A ``metric`` backing that routes samples to the structured log.
+
+    The v1 sink for the ``metric`` capability. The kernel has no Prometheus
+    *push* seam yet — ``services/metrics_exporter.py`` is pull-based predefined
+    gauges — and a generic dynamic-label emitter would trip the
+    metric-cardinality governance hard-edge (Glad-Labs/poindexter#666). Until
+    that seam exists, metric samples go to the structured log (Loki-queryable),
+    so the capability is *real and non-raising* rather than a silent no-op or a
+    fail-loud stub. When the push seam lands, ``build_kernel_platform`` passes a
+    real ``metric_emit`` and this default is no longer used — rent the
+    implementation, keep the interface.
+    """
+
+    def _emit(name: str, value: float = 1.0, /, **labels: str) -> None:
+        logger.debug(
+            "metric %s=%s",
+            name,
+            value,
+            extra={"platform_metric": {"name": name, "value": value, "labels": labels}},
+        )
+
+    return _emit
+
+
 class KernelPlatform:
     """The full ``Platform`` (all capabilities) for the running kernel.
 
@@ -145,15 +170,18 @@ class KernelPlatform:
         pool: Any,
         dispatch: Callable[..., Awaitable[Any]],
         audit_write: Callable[..., Awaitable[None]],
-        metric_emit: Callable[..., None],
+        metric_emit: Callable[..., None] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
+        _logger = logger or _DEFAULT_LOGGER
         self._config = _ConfigAdapter(site_config)
         self._secret = _SecretAdapter(site_config)
         self._dispatch = _DispatchAdapter(dispatch)
         self._db = _DbAdapter(pool)
-        self._log = _LogAdapter(logger or _DEFAULT_LOGGER)
-        self._metric = _MetricAdapter(metric_emit)
+        self._log = _LogAdapter(_logger)
+        # No Prometheus push seam yet — default the metric sink to the
+        # structured log (see ``_make_log_metric_emit``).
+        self._metric = _MetricAdapter(metric_emit or _make_log_metric_emit(_logger))
         self._audit = _AuditAdapter(audit_write)
 
     @property
@@ -185,4 +213,36 @@ class KernelPlatform:
         return self._audit
 
 
-__all__ = ["KernelPlatform"]
+def build_kernel_platform(
+    *,
+    site_config: Any,
+    pool: Any,
+    dispatch: Callable[..., Awaitable[Any]],
+    audit_logger: Any,
+    logger: logging.Logger | None = None,
+) -> KernelPlatform:
+    """Construct the live ``KernelPlatform`` from already-initialised services.
+
+    The boot-time factory called by ``main.py``'s lifespan (Wave 3b of Seam 1,
+    Glad-Labs/poindexter#667). It adapts the kernel services the lifespan has
+    already brought up — the loaded ``SiteConfig``, the asyncpg ``pool``, the
+    ``dispatch_complete`` router callable, and the kernel ``AuditLogger`` — into
+    the capability interfaces of ``plugins.platform``.
+
+    ``audit`` binds to ``audit_logger.log`` (the kernel's
+    ``AuditLogger.log(event_type, source, details, task_id, severity)``, which
+    the ``AuditCapability.write`` keywords map straight onto). ``metric`` is
+    left to the ``KernelPlatform`` default (structured-log sink) — there is no
+    Prometheus push seam yet. Services are passed in (not imported here) so this
+    factory stays import-cheap and unit-testable without the worker's heavy deps.
+    """
+    return KernelPlatform(
+        site_config=site_config,
+        pool=pool,
+        dispatch=dispatch,
+        audit_write=audit_logger.log,
+        logger=logger,
+    )
+
+
+__all__ = ["KernelPlatform", "build_kernel_platform"]
