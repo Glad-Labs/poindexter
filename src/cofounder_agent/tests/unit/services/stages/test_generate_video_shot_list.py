@@ -151,16 +151,22 @@ def _make_db_service() -> MagicMock:
     return db
 
 
-def _platform_with_dispatch(*, returns=None, raises=None) -> MagicMock:
+def _platform_with_dispatch(
+    *, returns=None, raises=None, model: str = "test-model",
+) -> MagicMock:
     """A stand-in Platform handle whose ``dispatch.complete`` is an AsyncMock.
 
-    Seam 1 Wave 3d (#667): the stage now reaches the LLM router via
+    Seam 1 Wave 3d (#667): the stage reaches the LLM router via
     ``context['platform'].dispatch.complete`` instead of importing
-    ``dispatch_complete``, so tests seed the handle instead of patching the
-    module function.
+    ``dispatch_complete``. Wave 3e (#667): it also resolves the director model
+    via ``context['platform'].config.get`` instead of ``site_config``, so the
+    handle stubs ``config.get`` to return ``model`` for every key (the stage's
+    ``video_director_model or video_scene_model or default_ollama_model``
+    chain resolves to it).
     """
     p = MagicMock()
     p.dispatch.complete = AsyncMock(return_value=returns, side_effect=raises)
+    p.config.get = MagicMock(return_value=model)
     return p
 
 
@@ -173,9 +179,9 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
         "podcast_script": "script " * 40,
         "task_id": "task-1",
         "database_service": db_service,
-        "site_config": MagicMock(get=MagicMock(return_value="test-model")),
         "platform": _platform_with_dispatch(
             returns=MagicMock(text=_make_valid_director_output()),
+            model="director-model-x",
         ),
     }
 
@@ -192,6 +198,10 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
     assert result.ok
     assert "video_shot_list" in context
     assert len(context["video_shot_list"]["shots"]) == 3
+    # Wave 3e (#667): the model is resolved from the capability handle's
+    # config, not a context['site_config'] object — pin that seam by asserting
+    # dispatch received the model the handle's config returned.
+    assert context["platform"].dispatch.complete.call_args.kwargs["model"] == "director-model-x"
     # Audit log got the success event.
     audit_call = db_service.pool.execute.call_args
     assert "video_director.shot_list_produced" in audit_call.args[1]

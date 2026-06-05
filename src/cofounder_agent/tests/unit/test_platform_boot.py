@@ -269,6 +269,15 @@ def test_content_module_declares_dispatch_capability() -> None:
     assert Capability.DISPATCH in ContentModule().manifest().capabilities
 
 
+def test_content_module_declares_config_capability() -> None:
+    # Wave 3e: the config file sweep reads DB-backed app_settings via
+    # ``platform.config.get``, so the manifest must declare CONFIG — without it
+    # the scoped handle raises ``CapabilityError`` on ``platform.config`` access.
+    from modules.content.content_module import ContentModule
+
+    assert Capability.CONFIG in ContentModule().manifest().capabilities
+
+
 # --- build_platform_for_subprocess (Prefect flow seam, Wave 3c) ---------------
 
 

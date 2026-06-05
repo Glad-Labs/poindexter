@@ -42,7 +42,12 @@ _MANIFEST = ModuleManifest(
     #     importing ``services.audit_log``.
     #   DISPATCH (Wave 3d): LLM completions via ``platform.dispatch.complete``
     #     instead of importing ``services.llm_providers.dispatcher``.
-    capabilities=(Capability.AUDIT, Capability.DISPATCH),
+    #   CONFIG (Wave 3e): DB-backed ``app_settings`` reads via
+    #     ``platform.config.get`` instead of ``context.get("site_config")``.
+    #     The file sweep is chunked (3e-1+); reaching ``platform.config`` from
+    #     any content file requires this declaration (an undeclared access
+    #     raises ``CapabilityError``), so it lands with the first migrated chunk.
+    capabilities=(Capability.AUDIT, Capability.DISPATCH, Capability.CONFIG),
 )
 
 
