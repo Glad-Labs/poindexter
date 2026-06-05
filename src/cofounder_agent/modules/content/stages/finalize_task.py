@@ -67,6 +67,9 @@ class FinalizeTaskStage:
         content_text = context.get("content", "")
         category = context.get("category", "")
         target_audience = context.get("target_audience")
+        # Seam 1 Wave 3e (#667): config reads go through the capability handle.
+        # None-tolerant — fallback behaviour matches the prior site_config-None seam.
+        platform = context.get("platform")
 
         # Legacy: stage 5 (posts record creation) is INTENTIONALLY skipped here.
         logger.info("STAGE 5: Posts record creation SKIPPED")
@@ -93,16 +96,15 @@ class FinalizeTaskStage:
                 append_sources_section,
                 extract_urls,
             )
-            # DI seam (glad-labs-stack#330) — stages read site_config from
-            # context per content_router_service.process_content_generation_task.
-            _sc_sources = context.get("site_config")
+            # Seam 1 Wave 3e (#667): config via capability handle (platform already
+            # extracted above). None-tolerant: missing handle falls back to defaults.
             _flag = (
-                _sc_sources.get("auto_append_sources_section", "true")
-                if _sc_sources is not None else "true"
+                platform.config.get("auto_append_sources_section", "true")
+                if platform is not None else "true"
             )
             if (_flag or "true").lower() not in ("false", "0", "no"):
                 _site_url = (
-                    _sc_sources.get("site_url") if _sc_sources is not None else None
+                    platform.config.get("site_url") if platform is not None else None
                 ) or None
                 _urls = extract_urls(content_text, site_url=_site_url)
                 if _urls:
@@ -391,10 +393,11 @@ class FinalizeTaskStage:
                 niche_slug=context.get("niche_slug") or context.get("niche"),
                 category=category,
                 quality_score=float(final_quality_score or 0),
-                site_config=context.get("site_config"),
+                platform=platform,
             )
             # Seam 1 Wave 3c (#667) — audit through the capability handle.
-            _platform = context.get("platform")
+            # platform is already extracted above (Wave 3e).
+            _platform = platform
             if _platform is not None:
                 _platform.audit.write_bg(
                     "auto_publish_gate",

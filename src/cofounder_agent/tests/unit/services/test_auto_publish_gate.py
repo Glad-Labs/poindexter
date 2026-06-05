@@ -27,13 +27,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-def _make_site_config(settings: dict[str, Any]) -> Any:
-    """Minimal SiteConfig double — only ``get(key, default)`` is read."""
-    sc = MagicMock()
-    sc.get = MagicMock(
+def _make_platform(settings: dict[str, Any]) -> Any:
+    """Minimal platform handle double — only ``config.get(key, default)`` is read.
+
+    Seam 1 Wave 3e (#667): auto_publish_gate now reads config via
+    ``platform.config.get`` instead of ``site_config.get``.
+    """
+    p = MagicMock()
+    p.config.get = MagicMock(
         side_effect=lambda key, default=None: settings.get(key, default)
     )
-    return sc
+    return p
 
 
 def _make_pool(rows: list[dict[str, Any]] | None = None) -> Any:
@@ -65,7 +69,7 @@ async def test_dev_diary_opt_in_does_not_leak_to_other_niches() -> None:
     so the gate must return ``disabled``."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "false",
         # NOTE: zero glad-labs_* keys — glad-labs has not opted in.
@@ -77,7 +81,7 @@ async def test_dev_diary_opt_in_does_not_leak_to_other_niches() -> None:
         niche_slug="glad-labs",
         category="technology",
         quality_score=92.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False, (
@@ -99,7 +103,7 @@ async def test_dev_diary_opt_in_still_works_for_dev_diary_niche() -> None:
     posts. The niche-leak fix doesn't break the niche it was named after."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "false",
         "dev_diary_auto_publish_min_clean_runs": "3",
@@ -119,7 +123,7 @@ async def test_dev_diary_opt_in_still_works_for_dev_diary_niche() -> None:
         niche_slug="dev_diary",
         category="dev",
         quality_score=92.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is True, (
@@ -137,7 +141,7 @@ async def test_glad_labs_opts_in_via_its_own_keys() -> None:
     the gate fires for glad-labs (independent of dev_diary)."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "glad-labs_auto_publish_threshold": "70",
         "glad-labs_auto_publish_dry_run": "false",
         "glad-labs_auto_publish_min_clean_runs": "3",
@@ -157,7 +161,7 @@ async def test_glad_labs_opts_in_via_its_own_keys() -> None:
         niche_slug="glad-labs",
         category="technology",
         quality_score=92.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is True
@@ -175,7 +179,7 @@ async def test_missing_niche_slug_returns_disabled() -> None:
     auto-publish. The gate must NOT pick an arbitrary fallback niche."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "false",
     })
@@ -186,7 +190,7 @@ async def test_missing_niche_slug_returns_disabled() -> None:
         niche_slug=None,
         category="technology",
         quality_score=92.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False
@@ -199,7 +203,7 @@ async def test_empty_niche_slug_returns_disabled() -> None:
     """Whitespace-only niche slug is treated the same as None."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({})
+    site_config = _make_platform({})
 
     decision = await evaluate(
         _make_pool(),
@@ -207,7 +211,7 @@ async def test_empty_niche_slug_returns_disabled() -> None:
         niche_slug="   ",
         category="x",
         quality_score=99.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False
@@ -215,8 +219,8 @@ async def test_empty_niche_slug_returns_disabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_site_config_returns_disabled() -> None:
-    """Stages running outside the DI seam (e.g. legacy callers) must not
+async def test_no_platform_returns_disabled() -> None:
+    """Stages running without a platform handle (e.g. legacy callers) must not
     auto-publish — they have no operator-tuned settings to read."""
     from modules.content.auto_publish_gate import evaluate
 
@@ -226,7 +230,7 @@ async def test_no_site_config_returns_disabled() -> None:
         niche_slug="dev_diary",
         category="dev",
         quality_score=99.0,
-        site_config=None,
+        platform=None,
     )
 
     assert decision.would_fire is False
@@ -239,7 +243,7 @@ async def test_threshold_negative_returns_disabled() -> None:
     even on a perfect score."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "-1",
         "dev_diary_auto_publish_dry_run": "false",
     })
@@ -250,7 +254,7 @@ async def test_threshold_negative_returns_disabled() -> None:
         niche_slug="dev_diary",
         category="dev",
         quality_score=100.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False
@@ -267,7 +271,7 @@ async def test_threshold_negative_returns_disabled() -> None:
 async def test_score_below_threshold_returns_block_threshold() -> None:
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "80",
         "dev_diary_auto_publish_dry_run": "false",
     })
@@ -278,7 +282,7 @@ async def test_score_below_threshold_returns_block_threshold() -> None:
         niche_slug="dev_diary",
         category="dev",
         quality_score=70.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False
@@ -291,7 +295,7 @@ async def test_insufficient_history_returns_no_history() -> None:
     clean-run baseline — return ``no_history``."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "false",
         "dev_diary_auto_publish_min_clean_runs": "3",
@@ -306,7 +310,7 @@ async def test_insufficient_history_returns_no_history() -> None:
         niche_slug="dev_diary",
         category="dev",
         quality_score=90.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False
@@ -318,7 +322,7 @@ async def test_unclean_history_returns_block_unclean() -> None:
     """Enough history, but too many were heavily edited — block."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "false",
         "dev_diary_auto_publish_min_clean_runs": "3",
@@ -338,7 +342,7 @@ async def test_unclean_history_returns_block_unclean() -> None:
         niche_slug="dev_diary",
         category="dev",
         quality_score=90.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is False
@@ -358,7 +362,7 @@ async def test_dry_run_true_marks_decision_dry_run_even_when_would_fire() -> Non
     caller must NOT approve the task."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "true",  # observe-only
         "dev_diary_auto_publish_min_clean_runs": "3",
@@ -377,7 +381,7 @@ async def test_dry_run_true_marks_decision_dry_run_even_when_would_fire() -> Non
         niche_slug="dev_diary",
         category="dev",
         quality_score=92.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     assert decision.would_fire is True
@@ -427,7 +431,7 @@ async def test_history_query_filters_on_niche_OR_category() -> None:
     confirms BOTH niche_slug ($1) and category ($2) are bound."""
     from modules.content.auto_publish_gate import evaluate
 
-    site_config = _make_site_config({
+    site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
         "dev_diary_auto_publish_dry_run": "false",
         "dev_diary_auto_publish_min_clean_runs": "3",
@@ -446,7 +450,7 @@ async def test_history_query_filters_on_niche_OR_category() -> None:
         niche_slug="dev_diary",
         category="engineering",
         quality_score=92.0,
-        site_config=site_config,
+        platform=site_config,
     )
 
     sql = " ".join(captured["sql"].split())  # collapse whitespace

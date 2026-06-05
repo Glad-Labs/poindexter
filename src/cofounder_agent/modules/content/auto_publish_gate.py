@@ -99,22 +99,24 @@ async def evaluate(
     niche_slug: str | None,
     category: str | None,
     quality_score: float,
-    site_config: Any = None,
+    platform: Any = None,
 ) -> AutoPublishDecision:
     """Evaluate the auto-publish gate for a task. Best-effort —
     exceptions return a 'disabled' decision rather than blocking
     the caller's main flow.
 
-    site_config is the DI seam (glad-labs-stack#330) — passed by the
-    caller (typically from a stage's context). When None, returns the
-    'disabled' decision because every threshold defaults to "off"
-    without operator-tuned settings.
+    Seam 1 Wave 3e (#667): ``platform`` is the capability handle
+    (``context['platform']`` threaded from the caller stage). Config
+    reads go through ``platform.config.get(key, default)``. When
+    None, returns the 'disabled' decision because every threshold
+    defaults to "off" without operator-tuned settings — preserving
+    the prior ``site_config``-None seam behaviour.
     """
-    if site_config is None:
-        logger.debug("[auto_publish_gate] no site_config provided — gate disabled")
+    if platform is None:
+        logger.debug("[auto_publish_gate] no platform handle — gate disabled")
         return AutoPublishDecision(
             would_fire=False, dry_run=True, gate_state="disabled",
-            reason="site_config not provided",
+            reason="platform not provided",
             quality_score=quality_score,
         )
 
@@ -137,22 +139,22 @@ async def evaluate(
     min_clean_key = f"{niche}_auto_publish_min_clean_runs"
     max_edit_key = f"{niche}_auto_publish_max_edit_distance"
 
-    threshold_raw = site_config.get(threshold_key, "-1")
+    threshold_raw = platform.config.get(threshold_key, "-1")
     try:
         threshold = float(threshold_raw)
     except (TypeError, ValueError):
         threshold = -1.0
 
-    dry_run_raw = site_config.get(dry_run_key, "true")
+    dry_run_raw = platform.config.get(dry_run_key, "true")
     dry_run = str(dry_run_raw).strip().lower() in ("true", "1", "yes", "on")
 
-    min_clean_raw = site_config.get(min_clean_key, "3")
+    min_clean_raw = platform.config.get(min_clean_key, "3")
     try:
         min_clean = int(float(min_clean_raw))
     except (TypeError, ValueError):
         min_clean = 3
 
-    max_edit_raw = site_config.get(max_edit_key, "50")
+    max_edit_raw = platform.config.get(max_edit_key, "50")
     try:
         max_edit_distance = int(float(max_edit_raw))
     except (TypeError, ValueError):
