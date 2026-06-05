@@ -62,6 +62,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("voice_brain_host")
 
+# Windows: spawn the per-turn ``claude`` subprocess with NO console window, so a
+# voice turn doesn't pop a terminal on the host. The daemon itself runs hidden
+# under ``pythonw``, but a child console app (``claude.cmd`` via ``cmd /c``)
+# would otherwise get a fresh console allocated and flash a window every turn.
+# 0 on POSIX (no such flag there; ``creationflags`` is simply ignored).
+# See feedback_no_popups: background jobs run hidden.
+_NO_WINDOW_FLAGS = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+)
+
 # claude's --permission-mode accepts a small fixed vocabulary; allow-list it
 # so a malformed/hostile body can't smuggle an arbitrary flag value through.
 _PERMISSION_MODES = frozenset(
@@ -200,6 +210,8 @@ def _run_turn(body: dict) -> dict:
             cwd=CFG.cwd,
             timeout=CFG.timeout,
             shell=False,
+            # No console-window popup on Windows (hidden background daemon).
+            creationflags=_NO_WINDOW_FLAGS,
         )
     except subprocess.TimeoutExpired:
         return {
