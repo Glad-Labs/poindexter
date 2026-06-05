@@ -151,6 +151,19 @@ def _make_db_service() -> MagicMock:
     return db
 
 
+def _platform_with_dispatch(*, returns=None, raises=None) -> MagicMock:
+    """A stand-in Platform handle whose ``dispatch.complete`` is an AsyncMock.
+
+    Seam 1 Wave 3d (#667): the stage now reaches the LLM router via
+    ``context['platform'].dispatch.complete`` instead of importing
+    ``dispatch_complete``, so tests seed the handle instead of patching the
+    module function.
+    """
+    p = MagicMock()
+    p.dispatch.complete = AsyncMock(return_value=returns, side_effect=raises)
+    return p
+
+
 @pytest.mark.asyncio
 async def test_happy_path_persists_shot_list_to_context() -> None:
     db_service = _make_db_service()
@@ -161,13 +174,14 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
         "task_id": "task-1",
         "database_service": db_service,
         "site_config": MagicMock(get=MagicMock(return_value="test-model")),
+        "platform": _platform_with_dispatch(
+            returns=MagicMock(text=_make_valid_director_output()),
+        ),
     }
 
     with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.llm_providers.dispatcher.dispatch_complete") as mock_dispatch, \
          patch("services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
-        mock_dispatch.return_value = MagicMock(text=_make_valid_director_output())
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
         ))
@@ -191,13 +205,14 @@ async def test_llm_failure_logs_audit_does_not_raise() -> None:
         "title": "t", "content": "c body " * 50,
         "podcast_script": "script " * 40,
         "task_id": "task-1", "database_service": db_service,
+        "platform": _platform_with_dispatch(
+            raises=RuntimeError("model unavailable"),
+        ),
     }
 
     with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.llm_providers.dispatcher.dispatch_complete") as mock_dispatch, \
          patch("services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
-        mock_dispatch.side_effect = RuntimeError("model unavailable")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
         ))
@@ -224,13 +239,14 @@ async def test_invalid_json_output_records_failure() -> None:
         "title": "t", "content": "c body " * 50,
         "podcast_script": "script " * 40,
         "task_id": "task-1", "database_service": db_service,
+        "platform": _platform_with_dispatch(
+            returns=MagicMock(text="I refuse to output JSON."),
+        ),
     }
 
     with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.llm_providers.dispatcher.dispatch_complete") as mock_dispatch, \
          patch("services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
-        mock_dispatch.return_value = MagicMock(text="I refuse to output JSON.")
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
         ))
@@ -265,13 +281,12 @@ async def test_invalid_schema_output_records_failure() -> None:
         "title": "t", "content": "c body " * 50,
         "podcast_script": "script " * 40,
         "task_id": "task-1", "database_service": db_service,
+        "platform": _platform_with_dispatch(returns=MagicMock(text=bad_output)),
     }
 
     with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
-         patch("services.llm_providers.dispatcher.dispatch_complete") as mock_dispatch, \
          patch("services.gpu_scheduler.gpu") as mock_gpu:
         mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
-        mock_dispatch.return_value = MagicMock(text=bad_output)
         mock_gpu.lock = MagicMock(return_value=AsyncMock(
             __aenter__=AsyncMock(), __aexit__=AsyncMock(),
         ))

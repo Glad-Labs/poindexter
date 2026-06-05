@@ -261,6 +261,14 @@ def test_content_module_declares_audit_capability() -> None:
     assert Capability.AUDIT in ContentModule().manifest().capabilities
 
 
+def test_content_module_declares_dispatch_capability() -> None:
+    # Wave 3d: the migrated stages reach the LLM router via
+    # ``platform.dispatch.complete``, so the manifest must declare DISPATCH.
+    from modules.content.content_module import ContentModule
+
+    assert Capability.DISPATCH in ContentModule().manifest().capabilities
+
+
 # --- build_platform_for_subprocess (Prefect flow seam, Wave 3c) ---------------
 
 

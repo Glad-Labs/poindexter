@@ -169,13 +169,15 @@ class GenerateVideoShotListStage:
         sc = context.get("site_config")
         database_service = context.get("database_service")
         pool = getattr(database_service, "pool", None) if database_service else None
+        # Seam 1 Wave 3d (#667): LLM completion via the capability handle.
+        platform = context.get("platform")
 
-        if pool is None:
-            # Tests / bootstrap path — no DB → no LLM call. The stage
-            # is non-critical so this is fine.
+        if pool is None or platform is None:
+            # Tests / bootstrap path — no DB / no kernel handle → no LLM call.
+            # The stage is non-critical so this is fine.
             return StageResult(
                 ok=True,
-                detail="no DB pool in context — director skipped",
+                detail="no DB pool / Platform handle in context — director skipped",
                 metrics={"skipped": True},
             )
 
@@ -229,9 +231,8 @@ class GenerateVideoShotListStage:
                 metrics={"failed": True},
             )
 
-        # Dispatch the LLM call.
+        # Dispatch the LLM call (Seam 1 Wave 3d, #667 — via the handle).
         from services.gpu_scheduler import gpu
-        from services.llm_providers.dispatcher import dispatch_complete
 
         director_output = ""
         try:
@@ -239,7 +240,7 @@ class GenerateVideoShotListStage:
                 "ollama", model=model,
                 task_id=task_id, phase="video_director",
             ):
-                result = await dispatch_complete(
+                result = await platform.dispatch.complete(
                     pool=pool,
                     messages=[{"role": "user", "content": rendered_prompt}],
                     model=model,

@@ -76,6 +76,10 @@ class GenerateMediaScriptsStage:
         # stages run inside the pipeline runner which seeds this for us.
         database_service = context.get("database_service")
         pool = getattr(database_service, "pool", None) if database_service else None
+        # Seam 1 Wave 3d (#667): LLM completions go through the capability
+        # handle. This non-critical stage already degrades without a DB pool;
+        # a missing handle degrades the same way (logged, never silent).
+        platform = context.get("platform")
 
         clean_content = _strip_markdown(content_text)
 
@@ -106,21 +110,21 @@ class GenerateMediaScriptsStage:
             )
 
             scene_output = ""
-            if pool is None:
+            if pool is None or platform is None:
                 # Tests / bootstrap path — skip the LLM call gracefully.
                 # The stage is marked non-critical (halts_on_failure=False),
-                # so an empty scenes payload is fine for non-prod runs.
+                # so an empty scenes payload is fine for non-prod runs. A
+                # missing Platform handle (no kernel access) degrades the same.
                 logger.warning(
-                    "[MEDIA] no DB pool in context — skipping video-scenes LLM call",
+                    "[MEDIA] no DB pool / Platform handle in context — "
+                    "skipping video-scenes LLM call",
                 )
             else:
-                from services.llm_providers.dispatcher import dispatch_complete
-
                 async with gpu.lock(
                     "ollama", model=model,
                     task_id=context.get("task_id"), phase="media_scripts",
                 ):
-                    result = await dispatch_complete(
+                    result = await platform.dispatch.complete(
                         pool=pool,
                         messages=[{"role": "user", "content": scene_prompt}],
                         model=model,
