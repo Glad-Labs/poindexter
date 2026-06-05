@@ -736,3 +736,113 @@ class TestProbeUrlsHonorsOverrides:
                 concurrency=1,
             )
         assert results[0]["ok"] is False  # 404 fails strict check
+
+
+# ---------------------------------------------------------------------------
+# probe_url redirect — health-endpoint remapping
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestProbeUrlRedirect:
+    """``probe_url`` in the override dict lets operators redirect health
+    checks to a dedicated endpoint (e.g. /health) when the setting value
+    itself is a POST-only path or a bare base URL.
+
+    The original setting URL must remain in the result for alert messages
+    so operators know which setting is broken, not just which health
+    endpoint was checked.
+    """
+
+    @pytest.mark.asyncio
+    async def test_probe_url_used_for_request_setting_url_in_result(self):
+        """When override has probe_url, the HTTP call goes to probe_url
+        but result.url stays as the original setting value."""
+        probed_urls: list[str] = []
+
+        async def fake_probe_one(client, sem, surface, url, override=None):
+            probe_url = (override or {}).get("probe_url") or url
+            probed_urls.append(probe_url)
+            return {
+                "surface": surface,
+                "url": url,  # original setting URL
+                "ok": True,
+                "status": 200,
+                "detail": "HTTP 200",
+                "override_applied": bool(override),
+                "override_reason": (override or {}).get("reason", ""),
+            }
+
+        targets = [
+            {
+                "surface": "app_settings.voice_agent_stt_base_url",
+                "key": "voice_agent_stt_base_url",
+                "url": "http://speaches:8000/v1",
+            }
+        ]
+        overrides = {
+            "voice_agent_stt_base_url": {
+                "probe_url": "http://speaches:8000/health",
+                "reason": "speaches /v1 is the OpenAI-compat base path; /health is the liveness endpoint",
+            }
+        }
+
+        with patch.object(oup, "_probe_one_url", new=fake_probe_one):
+            results = await oup.probe_urls(targets, concurrency=1, overrides=overrides)
+
+        assert results[0]["ok"] is True
+        assert results[0]["url"] == "http://speaches:8000/v1"  # original preserved
+        assert probed_urls == ["http://speaches:8000/health"]  # health endpoint used
+
+    @pytest.mark.asyncio
+    async def test_empty_probe_url_falls_back_to_setting_url(self):
+        """Empty string probe_url must behave as if probe_url were absent."""
+        probed_urls: list[str] = []
+
+        async def fake_probe_one(client, sem, surface, url, override=None):
+            probe_url = (override or {}).get("probe_url") or url
+            probed_urls.append(probe_url)
+            return {"surface": surface, "url": url, "ok": True, "status": 200,
+                    "detail": "HTTP 200", "override_applied": bool(override),
+                    "override_reason": ""}
+
+        targets = [{"surface": "s", "key": "k", "url": "http://real.local/v1"}]
+        overrides = {"k": {"probe_url": ""}}  # empty → fall back
+
+        with patch.object(oup, "_probe_one_url", new=fake_probe_one):
+            await oup.probe_urls(targets, concurrency=1, overrides=overrides)
+
+        assert probed_urls == ["http://real.local/v1"]
+
+    @pytest.mark.asyncio
+    async def test_probe_url_integration_hits_correct_url(self):
+        """End-to-end: _probe_one_url itself uses probe_url for the HTTP
+        call when the override supplies one, keeping url in the result."""
+        import asyncio
+        import httpx
+
+        response_map: dict[str, int] = {
+            "http://speaches:8000/health": 200,
+            "http://speaches:8000/v1": 404,
+        }
+        transport = httpx.MockTransport(
+            handler=lambda req: httpx.Response(
+                response_map.get(str(req.url).split("?")[0], 500)
+            )
+        )
+
+        async with httpx.AsyncClient(transport=transport) as client:
+            sem = asyncio.Semaphore(1)
+            result = await oup._probe_one_url(
+                client, sem,
+                surface="app_settings.voice_agent_stt_base_url",
+                url="http://speaches:8000/v1",
+                override={
+                    "probe_url": "http://speaches:8000/health",
+                    "method": "GET",
+                },
+            )
+
+        assert result["ok"] is True
+        assert result["status"] == 200
+        assert result["url"] == "http://speaches:8000/v1"  # original preserved

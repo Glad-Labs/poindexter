@@ -479,24 +479,32 @@ async def _probe_one_url(
     dict, never raises — surface name is preserved for downstream notify.
 
     ``override`` is a per-URL probe-config dict from
-    ``operator_url_probe_target_overrides``. When supplied it can widen
-    the ``alive_codes`` range (e.g. include 4xx for outbound-only APIs)
-    and/or change the request method. The override is preserved in the
-    result dict so downstream notify formatting can show why a 4xx
-    was treated as alive.
+    ``operator_url_probe_target_overrides``. When supplied it can:
+      - ``probe_url`` — redirect the actual HTTP request to a dedicated health
+        endpoint (e.g. ``/health``) when the setting value is a POST-only path
+        or a base URL with no handler. The original ``url`` is preserved in the
+        result for alert messages so the operator sees which setting is broken,
+        not just which health endpoint was probed.
+      - ``alive_codes`` — widen the alive range (e.g. include 4xx for
+        outbound-only APIs).
+      - ``method`` — override the HTTP verb.
     """
     method = (override or {}).get("method", "HEAD").upper()
+    # Use probe_url when the setting value points at a non-probeable path
+    # (POST-only, base path with no handler) but a separate health endpoint
+    # exists. Result keeps url=url (the original setting) for alert messages.
+    probe_url = (override or {}).get("probe_url") or url
     async with semaphore:
         try:
             if method == "GET":
                 resp = await client.get(
-                    url, follow_redirects=True,
+                    probe_url, follow_redirects=True,
                     headers={"Range": "bytes=0-64"},
                 )
             elif method == "OPTIONS":
-                resp = await client.options(url, follow_redirects=True)
+                resp = await client.options(probe_url, follow_redirects=True)
             else:
-                resp = await client.head(url, follow_redirects=True)
+                resp = await client.head(probe_url, follow_redirects=True)
                 # Some servers return 405 for HEAD even when GET works. Retry
                 # once with a small range request to avoid pulling a full body.
                 # Skip the retry when the operator's override already
@@ -504,7 +512,7 @@ async def _probe_one_url(
                 if resp.status_code in (405, 501):
                     if not _is_alive_per_override(resp.status_code, override):
                         resp = await client.get(
-                            url, headers={"Range": "bytes=0-64"},
+                            probe_url, headers={"Range": "bytes=0-64"},
                         )
             return {
                 "surface": surface,
