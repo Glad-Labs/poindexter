@@ -424,6 +424,82 @@ groups:
                   reducer:
                     type: last
 
+      # 7b. PAGE-VIEW CAPTURE DEAD — first-party page_views ~0 while GSC shows real traffic.
+      #     Robust complement to brain-traffic-anomaly (#7): that rule is a relative-drop
+      #     detector and self-reports healthy once page_views flatlines (yesterday=0 →
+      #     ratio 1.0), so it stays green through a sustained outage — the 2026-04→06
+      #     beacon blackout (poindexter#671) it was meant to catch. This cross-signal
+      #     check fires ON the zero state, using GSC clicks as independent proof traffic
+      #     exists. Closes poindexter#673.
+      - uid: brain-page-views-capture-dead
+        title: Page-View Capture Dead
+        condition: C
+        for: 0s
+        # rawSql always returns one row when healthy; no-data means page_views or
+        # external_metrics was dropped/repointed or the datasource is down — a dark
+        # subsystem, surface it (fail-loud). See #581.
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "First-party page-view capture is dark despite real search traffic"
+          description: "0 page_views in the last 3 days while Google Search Console shows {{ $values.B.Value }} clicks over the last 14 days — the CF beacon → Analytics Engine → page_views pipeline is almost certainly broken. Check NEXT_PUBLIC_BEACON_URL (scheme), the CSP connect-src allow-list, and the beacon CORS content-type. See poindexter#671."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 1209600
+              to: 0
+            model:
+              rawSql: >
+                WITH pv AS (
+                  SELECT COUNT(*) AS cnt FROM page_views
+                  WHERE created_at > NOW() - INTERVAL '3 days'
+                ), gsc AS (
+                  SELECT COALESCE(SUM(metric_value), 0) AS clicks
+                  FROM external_metrics
+                  WHERE source = 'google_search_console'
+                    AND metric_name = 'clicks'
+                    AND date > (NOW() - INTERVAL '14 days')::date
+                )
+                SELECT CASE
+                         WHEN gsc.clicks > 20 AND pv.cnt = 0 THEN gsc.clicks
+                         ELSE 0
+                       END AS capture_dead_clicks
+                FROM pv, gsc
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
       # 8. PIPELINE STALLED — zero new pipeline_tasks_view in last 48h
       - uid: brain-pipeline-stalled
         title: Pipeline Stalled
