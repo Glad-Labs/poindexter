@@ -117,7 +117,7 @@ class ContentTaskStore:
     ) -> dict[str, Any] | None:
         """Update task data in persistent storage (async, non-blocking)."""
         if not self.database_service:
-            return False  # type: ignore[return-value] — legacy return shape
+            return False  # type: ignore[return-value]  # legacy return shape
 
         if "metadata" in updates:
             updates["task_metadata"] = json.dumps(updates.pop("metadata"))
@@ -143,7 +143,7 @@ class ContentTaskStore:
     async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
         """Get list of drafts from persistent storage (async, non-blocking)."""
         if not self.database_service:
-            return []  # type: ignore[return-value] — legacy return shape
+            return []  # type: ignore[return-value]  # legacy return shape
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 

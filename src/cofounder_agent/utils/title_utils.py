@@ -39,7 +39,7 @@ import re
 # Source: https://unicode.org/Public/emoji/15.0/emoji-data.txt (blocks, not
 # the full code point list — blocks are good enough for titles).
 _EMOJI_PATTERN = re.compile(
-    "["                                   # noqa: E128 (keep vertical for readability)
+    "["
     "\U0001F300-\U0001F5FF"               # symbols & pictographs
     "\U0001F600-\U0001F64F"               # emoticons
     "\U0001F680-\U0001F6FF"               # transport & map

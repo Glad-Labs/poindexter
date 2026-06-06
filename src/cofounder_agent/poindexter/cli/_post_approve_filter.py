@@ -137,7 +137,7 @@ def _canonical_gate_names() -> tuple[str, ...]:
     imported from a script outside the package).
     """
     try:
-        from services.gates.post_approval_gates import (  # noqa: WPS433
+        from services.gates.post_approval_gates import (
             CANONICAL_GATE_NAMES,
         )
         return CANONICAL_GATE_NAMES
