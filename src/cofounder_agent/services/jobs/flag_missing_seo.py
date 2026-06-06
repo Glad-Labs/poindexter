@@ -32,18 +32,25 @@ class FlagMissingSeoJob:
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         limit = int(config.get("limit", 10))
         file_issue = bool(config.get("file_gitea_issue", True))
+        excluded_templates: list[str] = list(
+            config.get("excluded_templates", ["dev_diary"])
+        )
 
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT id, title FROM posts
-                    WHERE status = 'published'
-                      AND (seo_title IS NULL OR seo_title = ''
-                           OR seo_description IS NULL OR seo_description = '')
+                    SELECT p.id, p.title FROM posts p
+                    LEFT JOIN pipeline_tasks pt
+                           ON pt.task_id::text = p.metadata->>'pipeline_task_id'
+                    WHERE p.status = 'published'
+                      AND COALESCE(pt.template_slug, '') != ALL($2::text[])
+                      AND (p.seo_title IS NULL OR p.seo_title = ''
+                           OR p.seo_description IS NULL OR p.seo_description = '')
                     LIMIT $1
                     """,
                     limit,
+                    excluded_templates,
                 )
         except Exception as e:
             logger.exception("FlagMissingSeoJob: query failed: %s", e)

@@ -45,11 +45,15 @@ class RunTapsJob:
             return JobResult(ok=False, detail=str(exc), changes_made=0)
 
         if summary.total_failed:
+            failed_names = [t.name for t in summary.taps if not t.ok]
+            failed_errors = "; ".join(
+                f"{t.name}: {t.error}" for t in summary.taps if not t.ok
+            )
             return JobResult(
                 ok=False,
                 detail=(
-                    f"{summary.total_failed} tap(s) failed; "
-                    f"records collected={summary.total_records}"
+                    f"{summary.total_failed} tap(s) failed ({', '.join(failed_names)}): "
+                    f"{failed_errors}; records collected={summary.total_records}"
                 ),
                 changes_made=summary.total_records,
             )

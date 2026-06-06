@@ -140,6 +140,19 @@ AUTO_CRASH_DEFAULT = "true"
 QUEUE_DEPTH_THRESHOLD_SETTING_KEY = "prefect_stuck_flow_queue_depth_threshold"
 QUEUE_DEPTH_THRESHOLD_DEFAULT = 3
 
+# Minimum overdue duration before a SCHEDULED run counts toward the
+# queue-backlog threshold. With a 2-minute cron interval and each run
+# completing in ~5-9 seconds, Prefect can have several SCHEDULED runs
+# whose scheduled_time is in the past by 1-2 minutes — this is normal
+# scheduling jitter, NOT a real backlog. Setting a floor of 5 minutes
+# ensures we only count runs that have genuinely been waiting, i.e.
+# ones that would have dispatched by now if the concurrency slot were
+# free. (Default 5 matches the PENDING stuck threshold — a run overdue
+# by less than 5 minutes is noise; one overdue by 5+ minutes is a
+# strong signal of a held slot.)
+QUEUE_OVERDUE_MIN_MINUTES_SETTING_KEY = "prefect_stuck_flow_queue_overdue_min_minutes"
+QUEUE_OVERDUE_MIN_MINUTES_DEFAULT = 5
+
 # Probe interval — same 5-minute brain cycle as siblings. Internal
 # behaviour: the probe is cheap (one POST + maybe one set_state per
 # stuck run), so per-cycle is fine.
@@ -469,6 +482,9 @@ async def run_prefect_stuck_flow_probe(
     queue_depth_threshold = await _read_int(
         pool, QUEUE_DEPTH_THRESHOLD_SETTING_KEY, QUEUE_DEPTH_THRESHOLD_DEFAULT,
     )
+    queue_overdue_min_minutes = await _read_int(
+        pool, QUEUE_OVERDUE_MIN_MINUTES_SETTING_KEY, QUEUE_OVERDUE_MIN_MINUTES_DEFAULT,
+    )
 
     timeout = httpx.Timeout(HTTP_READ_TIMEOUT_S, connect=HTTP_CONNECT_TIMEOUT_S)
     headers = {
@@ -582,7 +598,7 @@ async def run_prefect_stuck_flow_probe(
                 )
                 for srun in scheduled:
                     overdue = _scheduled_overdue_minutes(srun)
-                    if overdue is not None and overdue > 0:
+                    if overdue is not None and overdue >= queue_overdue_min_minutes:
                         overdue_scheduled_count += 1
 
                 if overdue_scheduled_count > queue_depth_threshold:
@@ -644,7 +660,8 @@ async def run_prefect_stuck_flow_probe(
             f"{len(crashed_runs)} auto-crashed; "
             f"{len(crash_failed)} crash failed; "
             f"{overdue_scheduled_count} overdue scheduled "
-            f"(queue threshold {queue_depth_threshold}, "
+            f"(min_overdue={queue_overdue_min_minutes}m, "
+            f"depth_threshold={queue_depth_threshold}, "
             f"backlog={queue_backlog_detected})"
         ),
         "running_seen": seen,
@@ -653,6 +670,7 @@ async def run_prefect_stuck_flow_probe(
         "crash_failed_count": len(crash_failed),
         "stuck_runs": stuck_runs,
         "overdue_scheduled_count": overdue_scheduled_count,
+        "queue_overdue_min_minutes": queue_overdue_min_minutes,
         "queue_depth_threshold": queue_depth_threshold,
         "queue_backlog_detected": queue_backlog_detected,
         "elapsed_ms": elapsed_ms,

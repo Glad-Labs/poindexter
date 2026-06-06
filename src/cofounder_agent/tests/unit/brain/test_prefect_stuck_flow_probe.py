@@ -629,10 +629,10 @@ async def test_stranded_pending_auto_crashes_when_opted_in():
 @pytest.mark.asyncio
 async def test_queue_backlog_pages_only_when_overdue_exceeds_threshold():
     """The #526 backlog symptom: scheduled runs piled up behind a held
-    slot. With the default threshold of 3, a queue of 5 OVERDUE + 2 FUTURE
-    scheduled runs (5 overdue > 3) fires the DISTINCT backlog page + audit
-    event. Only the overdue runs count — future-scheduled runs are normal
-    cron lookahead, not a backlog."""
+    slot. With the default threshold of 3 and min_overdue=5m, a queue of
+    5 runs overdue by >= 5 minutes fires the DISTINCT backlog page + audit
+    event. Runs overdue by < 5 minutes (scheduling jitter) and future-
+    scheduled runs do NOT count."""
     pool = _make_pool()
     notify = MagicMock()
     client = _MockHttpClient({
@@ -640,14 +640,16 @@ async def test_queue_backlog_pages_only_when_overdue_exceeds_threshold():
         # been crashed; the backlog is the standalone signal here.
         "/flow_runs/filter": _MockResponse(200, json_data=[]),
         "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
-            _scheduled_run(run_id="s1", name="content_generation", minutes=10),
-            _scheduled_run(run_id="s2", name="content_generation", minutes=8),
-            _scheduled_run(run_id="s3", name="content_generation", minutes=6),
-            _scheduled_run(run_id="s4", name="content_generation", minutes=4),
-            _scheduled_run(run_id="s5", name="content_generation", minutes=2),
+            _scheduled_run(run_id="s1", name="content_generation", minutes=30),
+            _scheduled_run(run_id="s2", name="content_generation", minutes=20),
+            _scheduled_run(run_id="s3", name="content_generation", minutes=15),
+            _scheduled_run(run_id="s4", name="content_generation", minutes=10),
+            _scheduled_run(run_id="s5", name="content_generation", minutes=6),
+            # Below the 5-minute minimum — scheduling jitter, not a backlog.
+            _scheduled_run(run_id="s6", name="content_generation", minutes=3),
+            _scheduled_run(run_id="s7", name="content_generation", minutes=1),
             # Future-scheduled (negative = in the future) → NOT overdue.
-            _scheduled_run(run_id="s6", name="content_generation", minutes=-5),
-            _scheduled_run(run_id="s7", name="content_generation", minutes=-10),
+            _scheduled_run(run_id="s8", name="content_generation", minutes=-5),
         ]),
     })
     summary = await psfp.run_prefect_stuck_flow_probe(
@@ -705,17 +707,17 @@ async def test_queue_backlog_silent_at_or_below_threshold():
 @pytest.mark.asyncio
 async def test_queue_backlog_uses_state_details_fallback():
     """When ``next_scheduled_start_time`` is absent the probe reads the
-    nested ``state.state_details.scheduled_time``. Four overdue via the
-    fallback field still trips the default threshold of 3."""
+    nested ``state.state_details.scheduled_time``. Four runs overdue by
+    >= 5 minutes via the fallback field still trips the default threshold of 3."""
     pool = _make_pool()
     notify = MagicMock()
     client = _MockHttpClient({
         "/flow_runs/filter": _MockResponse(200, json_data=[]),
         "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
-            _scheduled_run(run_id="s1", name="content_generation", minutes=10, use_state_details=True),
-            _scheduled_run(run_id="s2", name="content_generation", minutes=8, use_state_details=True),
-            _scheduled_run(run_id="s3", name="content_generation", minutes=6, use_state_details=True),
-            _scheduled_run(run_id="s4", name="content_generation", minutes=4, use_state_details=True),
+            _scheduled_run(run_id="s1", name="content_generation", minutes=30, use_state_details=True),
+            _scheduled_run(run_id="s2", name="content_generation", minutes=20, use_state_details=True),
+            _scheduled_run(run_id="s3", name="content_generation", minutes=10, use_state_details=True),
+            _scheduled_run(run_id="s4", name="content_generation", minutes=6, use_state_details=True),
         ]),
     })
     summary = await psfp.run_prefect_stuck_flow_probe(
@@ -780,3 +782,79 @@ async def test_queue_backlog_check_failure_does_not_abort_stuck_detection():
     ]
     assert "probe.prefect_stuck_flow_detected" in audit_event_types
     assert "probe.prefect_queue_backlog_detected" not in audit_event_types
+
+
+@pytest.mark.asyncio
+async def test_queue_backlog_jitter_below_min_overdue_does_not_page():
+    """Regression for the 2026-06-05 false positive.
+
+    With a 2-minute Prefect cron and each content_generation run completing
+    in ~5-9 seconds, Prefect's scheduler queues several SCHEDULED runs whose
+    expected start time has passed by only 1-4 minutes — normal scheduling
+    jitter, not a real backlog. Before the fix the probe counted any run with
+    overdue > 0 and fired on 10 such runs. The fix adds a minimum overdue
+    duration (default 5 minutes); runs overdue by less than that don't count.
+
+    This test simulates the exact false-positive scenario: 10 SCHEDULED runs
+    that are 1-4 minutes overdue and no RUNNING/PENDING stuck run. No alert
+    should fire.
+    """
+    pool = _make_pool()  # default queue_overdue_min_minutes=5
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),  # no stuck runs
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            # These simulate normal scheduling jitter — all < 5 min overdue.
+            _scheduled_run(run_id="s1", name="content_generation", minutes=4),
+            _scheduled_run(run_id="s2", name="content_generation", minutes=4),
+            _scheduled_run(run_id="s3", name="content_generation", minutes=3),
+            _scheduled_run(run_id="s4", name="content_generation", minutes=3),
+            _scheduled_run(run_id="s5", name="content_generation", minutes=2),
+            _scheduled_run(run_id="s6", name="content_generation", minutes=2),
+            _scheduled_run(run_id="s7", name="content_generation", minutes=2),
+            _scheduled_run(run_id="s8", name="content_generation", minutes=1),
+            _scheduled_run(run_id="s9", name="content_generation", minutes=1),
+            _scheduled_run(run_id="s10", name="content_generation", minutes=1),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    # None of the runs reach the 5-minute minimum — none count as overdue.
+    assert summary["overdue_scheduled_count"] == 0
+    assert summary["queue_backlog_detected"] is False
+    assert summary["queue_overdue_min_minutes"] == 5
+    notify.assert_not_called()
+    audit_event_types = [
+        args[0] for query, args in pool._audit_rows if "audit_log" in query
+    ]
+    assert "probe.prefect_queue_backlog_detected" not in audit_event_types
+
+
+@pytest.mark.asyncio
+async def test_queue_overdue_min_minutes_setting_respected():
+    """Operator can lower ``prefect_stuck_flow_queue_overdue_min_minutes``
+    to catch backlogs sooner. Setting it to 2 means a 3-minute overdue run
+    counts — so 4 such runs exceed the depth threshold of 3 and page."""
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_queue_overdue_min_minutes": "2",
+    })
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            _scheduled_run(run_id="s1", name="content_generation", minutes=8),
+            _scheduled_run(run_id="s2", name="content_generation", minutes=6),
+            _scheduled_run(run_id="s3", name="content_generation", minutes=4),
+            _scheduled_run(run_id="s4", name="content_generation", minutes=3),
+            # Below the custom 2-minute minimum — not counted.
+            _scheduled_run(run_id="s5", name="content_generation", minutes=1),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["overdue_scheduled_count"] == 4
+    assert summary["queue_overdue_min_minutes"] == 2
+    assert summary["queue_backlog_detected"] is True
+    notify.assert_called_once()

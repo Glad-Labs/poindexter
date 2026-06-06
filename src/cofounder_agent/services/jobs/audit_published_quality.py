@@ -42,6 +42,9 @@ class AuditPublishedQualityJob:
         cooldown_days = int(config.get("cooldown_days", 7))
         min_words = int(config.get("min_words", 500))
         file_issue = bool(config.get("file_gitea_issue", True))
+        excluded_templates: list[str] = list(
+            config.get("excluded_templates", ["dev_diary"])
+        )
 
         # posts.id is UUID, audit_log.task_id is VARCHAR — cast on compare.
         # ``content_preview`` keeps the first 3000 chars (enough to spot
@@ -52,12 +55,18 @@ class AuditPublishedQualityJob:
         # ~500 words and caused false-positive quality-regression
         # findings — fixed alongside Glad-Labs/glad-labs-stack#484
         # populating posts.word_count at INSERT + backfill.
+        # LEFT JOIN pipeline_tasks so short-form templates (e.g. dev_diary)
+        # can be excluded via the excluded_templates config key — they have
+        # intentionally low word counts and no headings.
         query = """
             SELECT p.id, p.title, p.slug,
                    LEFT(p.content, 3000) as content_preview,
                    p.word_count
             FROM posts p
+            LEFT JOIN pipeline_tasks pt
+                   ON pt.task_id::text = p.metadata->>'pipeline_task_id'
             WHERE p.status = 'published'
+              AND COALESCE(pt.template_slug, '') != ALL($3::text[])
               AND p.id::text NOT IN (
                   SELECT DISTINCT task_id FROM audit_log
                   WHERE event_type = 'idle_quality_audit'
@@ -70,7 +79,7 @@ class AuditPublishedQualityJob:
 
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch(query, cooldown_days, batch_size)
+                rows = await conn.fetch(query, cooldown_days, batch_size, excluded_templates)
         except Exception as e:
             logger.exception("AuditPublishedQualityJob: fetch failed: %s", e)
             return JobResult(ok=False, detail=f"fetch failed: {e}", changes_made=0)
