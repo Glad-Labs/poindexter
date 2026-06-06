@@ -150,7 +150,9 @@ class BackfillVideosJob:
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         # DI seam (glad-labs-stack#330)
         sc = config.get("_site_config")
-        cloud_url = sc.get("database_url", "") if sc is not None else ""
+        if sc is None:
+            return JobResult(ok=True, detail="no site_config — skipping", changes_made=0)
+        cloud_url = sc.get("database_url", "")
         if not cloud_url:
             return JobResult(ok=True, detail="no database_url — skipping", changes_made=0)
 
