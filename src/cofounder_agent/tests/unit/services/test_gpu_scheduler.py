@@ -302,6 +302,29 @@ class TestWaitForGamingClear:
         # Pause duration was added to total
         assert scheduler._total_gaming_paused_s >= 60.0
 
+    @pytest.mark.asyncio
+    async def test_skips_detection_when_pipeline_holds_lock(self):
+        """poindexter#579 regression guard.
+
+        When _current_owner is set the pipeline holds the GPU lock — any
+        high utilization is ours (Ollama inference), not a game.  The
+        guard must return immediately without querying GPU utilization.
+        """
+        from unittest.mock import AsyncMock
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._current_owner = "ollama"  # simulate lock held
+        scheduler._get_gpu_utilization = AsyncMock(return_value=95.0)  # would be gaming
+
+        await scheduler._wait_for_gaming_clear()
+
+        # Never queried GPU — returned before any IO
+        scheduler._get_gpu_utilization.assert_not_awaited()
+        # Gaming flag must not have been set by a false positive
+        assert scheduler._gaming_detected is False
+
 
 # ===========================================================================
 # prepare_mode

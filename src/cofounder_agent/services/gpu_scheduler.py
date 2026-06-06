@@ -429,7 +429,15 @@ class GPUScheduler:
 
         Uses consecutive checks to avoid false positives from brief GPU spikes.
         All thresholds are DB-configurable via app_settings.
+
+        Guard: if the pipeline already holds the GPU lock (self._current_owner
+        is set), any high utilization is ours — not a game.  Without this check
+        a queued task would see the running task's Ollama inference as "gaming"
+        and stall for confirm_checks + clear_checks intervals (poindexter#579).
         """
+        if self._current_owner is not None:
+            return
+
         threshold = _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD)
         check_interval = _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
         confirm_checks = _cfg_int("gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS)
