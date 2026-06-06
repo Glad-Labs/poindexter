@@ -130,7 +130,7 @@ The worker re-reads on every poll; no restart needed.
 | `discord_bot_probe_timeout_seconds` | `5` |  | httpx timeout for the Discord /users/@me round-trip. |
 | `mcp_http_probe_base_url` | `http://127.0.0.1:8004` |  | Base URL of the Poindexter MCP HTTP server. Probe appends the discovery path. Default http://127.0.0.1:8004. |
 | `mcp_http_probe_dedup_hours` | `1` |  | Minimum hours between repeat alert_events writes while the MCP server stays unreachable. Default 1h. |
-| `mcp_http_probe_discovery_path` | `/.well-known/oauth-protected-resource` |  | Discovery endpoint path the probe GETs. Returns 200 when the MCP server is alive. |
+| `mcp_http_probe_discovery_path` | `/healthz` |  | Discovery endpoint path the probe GETs. Returns 200 when the MCP server is alive. |
 | `mcp_http_probe_enabled` | `true` |  | Master switch for brain/mcp_http_probe.py (poindexter#434). |
 | `mcp_http_probe_interval_minutes` | `5` |  | Minutes between real probe round-trips. Default 5. |
 | `mcp_http_probe_launcher_path` | `` |  | Absolute path to a launcher script (.cmd on Windows, .sh on POSIX) that restarts the MCP HTTP server. Empty (default)... |
