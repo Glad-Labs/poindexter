@@ -403,6 +403,12 @@ services:
       LIVEKIT_ROOM: "${LIVEKIT_ROOM:-poindexter}"
       LIVEKIT_DEFAULT_IDENTITY: "${LIVEKIT_DEFAULT_IDENTITY:-matt}"
       LIVEKIT_PUBLIC_WSS_URL: "${LIVEKIT_PUBLIC_WSS_URL:-wss://nightrider.taild4f626.ts.net/livekit-signal/}"
+      # GH_TOKEN — GitHub PAT with `repo` scope. Read by the `gh` CLI when
+      # findings_alert_router._dispatch_github_issue files issues. Empty default:
+      # without a token the delivery falls back to the page channel (Discord/Telegram)
+      # rather than failing. Set in bootstrap.toml or .env; rotated via GitHub PAT UI.
+      # Closes poindexter#550.
+      GH_TOKEN: "${GH_TOKEN:-}"
     volumes:
       # The worker Dockerfile runs the FastAPI process as user `appuser`
       # (UID 1001), so the in-container HOME is /home/appuser. Code paths
@@ -1236,6 +1242,54 @@ services:
     # silent "unhealthy" would hide real outages behind cosmetic green.
     healthcheck:
       disable: true
+
+  # ===========================================
+  # cAdvisor — per-container CPU/memory/network/IO metrics (poindexter#648)
+  # ===========================================
+  # Exports container_* metrics scraped by Prometheus (job: cadvisor).
+  # No host port — only Prometheus needs to reach it on the Docker network.
+  # Runs privileged so it can read cgroup v2 stats from the Docker VM.
+  # On Docker Desktop for Windows the mounts resolve inside the Linux VM,
+  # not on the Windows host filesystem — this is correct behaviour.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: poindexter-cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ===========================================
+  # postgres_exporter — deep Postgres metrics (poindexter#650)
+  # ===========================================
+  # Exports pg_stat_* family metrics (locks, slow queries, cache-hit ratio,
+  # bloat, index usage) scraped by Prometheus (job: postgres-exporter).
+  # Points at poindexter_brain — the primary OLTP database.
+  # No host port — only Prometheus needs to reach it on the Docker network.
+  # Natural home for its panels: the Database dashboard (/d/database).
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: poindexter-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}?sslmode=disable"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9187/metrics 2>/dev/null | head -1 | grep -q '#' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # ===========================================
   # GlitchTip — Sentry-compatible error tracking (OSS)

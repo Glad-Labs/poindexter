@@ -114,3 +114,21 @@ scrape_configs:
   - job_name: alertmanager
     static_configs:
       - targets: ["alertmanager:9093"]
+
+  # cAdvisor — per-container CPU/memory/network/IO metrics (poindexter#648).
+  # Exposes container_* series keyed by container_label_com_docker_compose_service.
+  # Use in Grafana with: container_cpu_usage_seconds_total{job="cadvisor"}
+  # and container_memory_usage_bytes{job="cadvisor"}.
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # postgres_exporter — deep Postgres metrics (poindexter#650).
+  # Exposes pg_stat_activity, pg_stat_bgwriter, pg_stat_database (cache-hit,
+  # xact counts, deadlocks), pg_locks, pg_stat_user_tables (seq/idx scans,
+  # dead tuples), and pg_database_size. Natural home: Database dashboard.
+  - job_name: postgres-exporter
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
