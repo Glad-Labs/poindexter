@@ -100,7 +100,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail — this is a belt+suspenders sanity check.",
+      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail \u2014 this is a belt+suspenders sanity check.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -533,7 +533,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline — bump to 40% green once topic-discovery dedup (GH-101) ships.",
+      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline \u2014 bump to 40% green once topic-discovery dedup (GH-101) ships.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -673,7 +673,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung — see docs/operations/troubleshooting.md.",
+      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung \u2014 see docs/operations/troubleshooting.md.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -867,7 +867,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job — see GH-106.",
+      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job \u2014 see GH-106.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1065,7 +1065,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "24h cost across cost_logs — electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
+      "description": "24h cost across cost_logs \u2014 electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1261,7 +1261,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 \u2014 any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1323,7 +1323,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline \u2014 expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1490,12 +1490,12 @@
           "refId": "A"
         }
       ],
-      "title": "Scheduled jobs — last run times",
+      "title": "Scheduled jobs \u2014 last run times",
       "type": "table"
     },
     {
       "type": "row",
-      "title": "Audit Log · GlitchTip · Publish Queues",
+      "title": "Audit Log \u00b7 GlitchTip \u00b7 Publish Queues",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1836,7 +1836,7 @@
       "id": 31,
       "type": "stat",
       "title": "GT resolved",
-      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing — operator's noise rules absorbing known-flapping issues.",
+      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing \u2014 operator's noise rules absorbing known-flapping issues.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1893,7 +1893,7 @@
       "id": 32,
       "type": "stat",
       "title": "GT probe",
-      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating — check `docker logs poindexter-brain`.",
+      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating \u2014 check `docker logs poindexter-brain`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2080,7 +2080,7 @@
       "id": 35,
       "type": "stat",
       "title": "Sched overdue",
-      "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 — the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
+      "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 \u2014 the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2141,7 +2141,7 @@
       "id": 36,
       "type": "stat",
       "title": "Approved q",
-      "description": "Count of pipeline_tasks in 'approved' status — posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) — these will not publish themselves. See the 'Approved — awaiting publish' table below for the per-task detail.",
+      "description": "Count of pipeline_tasks in 'approved' status \u2014 posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) \u2014 these will not publish themselves. See the 'Approved \u2014 awaiting publish' table below for the per-task detail.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2516,8 +2516,8 @@
     {
       "id": 42,
       "type": "table",
-      "title": "Approved — awaiting publish",
-      "description": "Tasks the operator has approved (pipeline_tasks.status='approved') that have not yet been published. The post-approval, pre-publish queue — distinct from the awaiting_approval review queue surfaced elsewhere. Empty when nothing is waiting. Each row stays here until published (`poindexter publish <task>` / go-live), after which media generation runs via the 4h backfill jobs. Ordered most-recently-approved first.",
+      "title": "Approved \u2014 awaiting publish",
+      "description": "Tasks the operator has approved (pipeline_tasks.status='approved') that have not yet been published. The post-approval, pre-publish queue \u2014 distinct from the awaiting_approval review queue surfaced elsewhere. Empty when nothing is waiting. Each row stays here until published (`poindexter publish <task>` / go-live), after which media generation runs via the 4h backfill jobs. Ordered most-recently-approved first.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2576,7 +2576,7 @@
     },
     {
       "type": "row",
-      "title": "Exporter Signals — LLM Engine · Embeddings · Schema · Brain · Prometheus",
+      "title": "Exporter Signals \u2014 LLM Engine \u00b7 Embeddings \u00b7 Schema \u00b7 Brain \u00b7 Prometheus",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2592,7 +2592,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_ollama_reachable — 1 if Ollama /api/tags returned 200 on the last scrape. Ollama is the local LLM engine the whole pipeline runs on, yet it had no health tile anywhere until now.",
+      "description": "poindexter_ollama_reachable \u2014 1 if Ollama /api/tags returned 200 on the last scrape. Ollama is the local LLM engine the whole pipeline runs on, yet it had no health tile anywhere until now.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2604,11 +2604,11 @@
               "options": {
                 "0": {
                   "color": "red",
-                  "text": "✗ DOWN"
+                  "text": "\u2717 DOWN"
                 },
                 "1": {
                   "color": "green",
-                  "text": "✓ up"
+                  "text": "\u2713 up"
                 }
               }
             }
@@ -2670,7 +2670,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_ollama_model_count — number of models Ollama reports. 0 while reachable=1 is the 'up but no models pulled' failure the plain up-check misses — every generation would fail with that state.",
+      "description": "poindexter_ollama_model_count \u2014 number of models Ollama reports. 0 while reachable=1 is the 'up but no models pulled' failure the plain up-check misses \u2014 every generation would fail with that state.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2734,7 +2734,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_embeddings_missing_posts — published posts with no embeddings row. Catches 'new posts stopped getting embedded' even when overall embedding throughput looks fine. 0 is healthy; any positive value means RAG/search coverage is silently degrading.",
+      "description": "poindexter_embeddings_missing_posts \u2014 published posts with no embeddings row. Catches 'new posts stopped getting embedded' even when overall embedding throughput looks fine. 0 is healthy; any positive value means RAG/search coverage is silently degrading.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2746,7 +2746,7 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "✓ 0"
+                  "text": "\u2713 0"
                 }
               }
             }
@@ -2811,7 +2811,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_unapplied_migrations_count — migration .py files on disk not yet recorded in schema_migrations. >0 means the running worker is on a stale schema (container updated, process not restarted). Surfaced by /api/health but never on a dashboard until now.",
+      "description": "poindexter_unapplied_migrations_count \u2014 migration .py files on disk not yet recorded in schema_migrations. >0 means the running worker is on a stale schema (container updated, process not restarted). Surfaced by /api/health but never on a dashboard until now.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2823,7 +2823,7 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "✓ current"
+                  "text": "\u2713 current"
                 }
               }
             }
@@ -2884,7 +2884,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "Age of the most recent brain.cycle_heartbeat (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds). The brain writes one heartbeat per ~5-min cycle; this is the delivery-plane dead-man's switch. 'No data' or red (>15m) means the brain has stopped — the same condition the BrainDeliveryDeadMansSwitch alert fires on, now visible on the dashboard.",
+      "description": "Age of the most recent brain.cycle_heartbeat (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds). The brain writes one heartbeat per ~5-min cycle; this is the delivery-plane dead-man's switch. 'No data' or red (>15m) means the brain has stopped \u2014 the same condition the BrainDeliveryDeadMansSwitch alert fires on, now visible on the dashboard.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2946,6 +2946,190 @@
       ],
       "title": "Brain heartbeat age",
       "type": "stat"
+    },
+    {
+      "id": 49,
+      "type": "row",
+      "title": "Containers (cAdvisor)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 72
+      },
+      "panels": []
+    },
+    {
+      "id": 50,
+      "title": "CPU Usage by Container",
+      "type": "timeseries",
+      "description": "Per-container CPU usage (cores) from cAdvisor. Each line is one container (name label).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 73
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "rate(container_cpu_usage_seconds_total{job=\"cadvisor\",image!=\"\"}[$__rate_interval])",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "title": "Memory Usage by Container",
+      "type": "timeseries",
+      "description": "Per-container RSS memory usage in bytes from cAdvisor. Each line is one container (name label).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 73
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          },
+          "unit": "decbytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "container_memory_usage_bytes{job=\"cadvisor\",image!=\"\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "title": "Container Restarts (24h)",
+      "type": "bargauge",
+      "description": "Number of container restarts in the last 24 hours from cAdvisor. Non-zero values warrant investigation.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 81
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "text": {}
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "increase(container_restart_count{job=\"cadvisor\",image!=\"\"}[24h])",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
