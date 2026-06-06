@@ -3,7 +3,7 @@
 **A plug-and-play AI/ML content creation OSS stack.** Your PC is the factory: Poindexter researches, writes, reviews, and publishes — autonomously. Local-first, Ollama-powered, zero API costs. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-8%2C400%2B_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-8%2C700%2B_passing-brightgreen)]()
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
