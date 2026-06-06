@@ -21,7 +21,12 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.content.multi_model_qa import MultiModelQA
+from modules.content.multi_model_qa import (
+    SKIP_TYPE_CONDITIONAL,
+    SKIP_TYPE_MASTER_FLAG_OFF,
+    SKIP_TYPE_MISCONFIG,
+    MultiModelQA,
+)
 from plugins.fake_platform import FakePlatform
 from services.site_config import SiteConfig
 
@@ -59,6 +64,23 @@ class TestSurfaceReviewerSkip:
         qa, fake = self._qa_with_fake()
         qa._surface_reviewer_skip("ragas_eval", "master rail off")
         assert fake.audit.writes_bg[0]["details"]["reviewer"] == "ragas_eval"
+
+    def test_default_skip_type_is_misconfig(self):
+        # #1181: an unclassified skip defaults to 'misconfig' (counts toward
+        # the QaRailFullySkipped ratio) — the conservative fail-loud default.
+        qa, fake = self._qa_with_fake()
+        qa._surface_reviewer_skip("deepeval_g_eval", "judge unresolvable")
+        assert fake.audit.writes_bg[0]["details"]["skip_type"] == SKIP_TYPE_MISCONFIG
+
+    def test_skip_type_recorded_in_audit_details(self):
+        # #1181: intentional skips are classified so the skip-ratio SQL can
+        # exclude them structurally instead of substring-matching prose.
+        qa, fake = self._qa_with_fake()
+        qa._surface_reviewer_skip(
+            "deepeval_faithfulness", "research_sources empty",
+            skip_type=SKIP_TYPE_CONDITIONAL,
+        )
+        assert fake.audit.writes_bg[0]["details"]["skip_type"] == SKIP_TYPE_CONDITIONAL
 
     def test_no_platform_is_quiet_noop(self):
         # No handle (substrate preview-QA / tests): the skip surfacing drops
@@ -100,6 +122,8 @@ class TestReviewerSkipWiredIntoRails:
         surface_mock.assert_called_once()
         assert surface_mock.call_args.args[0] == "deepeval_brand_fabrication"
         assert "deepeval_enabled=false" in surface_mock.call_args.args[1]
+        # #1181: master-flag-off is an intentional skip → excluded from ratio.
+        assert surface_mock.call_args.kwargs["skip_type"] == SKIP_TYPE_MASTER_FLAG_OFF
 
     @pytest.mark.asyncio
     async def test_deepeval_faithfulness_empty_research_surfaces_skip(self):
@@ -114,6 +138,10 @@ class TestReviewerSkipWiredIntoRails:
         surface_mock.assert_called_once()
         assert surface_mock.call_args.args[0] == "deepeval_faithfulness"
         assert "research_sources empty" in surface_mock.call_args.args[1]
+        # #1181: this is the false-positive the issue is about — an empty
+        # research corpus is a structural conditional skip, not breakage, so
+        # it must be excluded from the QaRailFullySkipped ratio.
+        assert surface_mock.call_args.kwargs["skip_type"] == SKIP_TYPE_CONDITIONAL
 
     @pytest.mark.asyncio
     async def test_guardrails_brand_master_rail_off_surfaces_skip(self):
@@ -144,6 +172,8 @@ class TestReviewerSkipWiredIntoRails:
         surface_mock.assert_called_once()
         assert surface_mock.call_args.args[0] == "guardrails_competitor"
         assert "guardrails_competitor_list empty" in surface_mock.call_args.args[1]
+        # #1181: no competitor list configured is a conditional skip.
+        assert surface_mock.call_args.kwargs["skip_type"] == SKIP_TYPE_CONDITIONAL
 
     @pytest.mark.asyncio
     async def test_ragas_master_rail_off_surfaces_skip(self):

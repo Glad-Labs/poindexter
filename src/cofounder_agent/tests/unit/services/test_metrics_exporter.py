@@ -720,6 +720,28 @@ class TestQaRailSkipRatio:
             "QaRailFullySkipped from firing on intentionally-disabled rails"
         )
 
+    async def test_sql_excludes_structured_skip_types(self):
+        """#1181 drift guard: the skip-ratio SQL must exclude every skip_type
+        in modules.content.multi_model_qa.SKIP_TYPES_EXCLUDED_FROM_RATIO via a
+        structured ``details->>'skip_type'`` filter — not a prose substring
+        match. If a new intentional skip_type is added there but the SQL isn't
+        updated, that rail's intentional skips would drive QaRailFullySkipped.
+        """
+        from modules.content.multi_model_qa import (
+            SKIP_TYPES_EXCLUDED_FROM_RATIO,
+        )
+        from services import metrics_exporter as mx
+
+        pool, conn = _skip_pool([{"reviewer": "ragas_eval", "skips": 1.0, "passes": 1}])
+        await mx.refresh_qa_rail_skip_ratio(pool, window_passes=10)
+        sql = conn.fetch.call_args.args[0]
+        assert "skip_type" in sql
+        for skip_type in SKIP_TYPES_EXCLUDED_FROM_RATIO:
+            assert f"'{skip_type}'" in sql, (
+                f"skip-ratio SQL must exclude skip_type={skip_type!r} "
+                "(SKIP_TYPES_EXCLUDED_FROM_RATIO drifted from the SQL literals)"
+            )
+
     async def test_appears_in_exposition(self):
         from services import metrics_exporter as mx
 

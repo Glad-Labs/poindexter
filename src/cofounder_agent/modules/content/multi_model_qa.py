@@ -53,6 +53,38 @@ def set_http_client(client: "httpx.AsyncClient | None") -> None:
 logger = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Skip-type taxonomy for ``qa_reviewer_skipped`` audit events (#1181).
+#
+# The QaRailFullySkipped alert (driven by metrics_exporter's
+# ``_QA_RAIL_SKIP_SQL`` skip-ratio gauge) exists to catch a rail that has
+# silently stopped running. Two skip categories are *intentional* and must
+# NOT count toward that ratio, or the alert fires on rails behaving exactly
+# as designed:
+#   - MASTER_FLAG_OFF: operator disabled the rail at its master flag
+#     (deepeval_enabled=false etc.) — a deliberate off switch.
+#   - CONDITIONAL: a structural prerequisite is absent (no research_sources,
+#     empty competitor list) so the rail is non-applicable for this pass.
+# Genuine breakage (MISCONFIG: import failed, judge unresolvable, SiteConfig
+# wrapper raised) DOES count — that is precisely what the alert should catch,
+# so it is the conservative default for any unclassified skip.
+#
+# This replaces the previous substring-match-on-prose filter
+# (``reason NOT LIKE '%master rail flag off%'``), which was brittle: a new
+# conditional skip reason string ("research_sources empty") slipped past the
+# filter and drove a false-positive alert. The skip-ratio SQL filters on
+# these structured values instead — see SKIP_TYPES_EXCLUDED_FROM_RATIO and
+# the matching literals in services/metrics_exporter.py::_QA_RAIL_SKIP_SQL.
+SKIP_TYPE_MASTER_FLAG_OFF = "master_flag_off"
+SKIP_TYPE_CONDITIONAL = "conditional_skip"
+SKIP_TYPE_MISCONFIG = "misconfig"
+
+# The skip types excluded from the QA-rail skip ratio. MUST stay in sync with
+# the IN (...) literals in metrics_exporter._QA_RAIL_SKIP_SQL — the drift guard
+# in test_metrics_exporter asserts that SQL contains each value here.
+SKIP_TYPES_EXCLUDED_FROM_RATIO = (SKIP_TYPE_MASTER_FLAG_OFF, SKIP_TYPE_CONDITIONAL)
+
+
 @dataclass
 class ReviewerResult:
     """Result from a single reviewer.
@@ -235,7 +267,8 @@ class MultiModelQA:
             pass
 
     def _surface_reviewer_skip(
-        self, reviewer: str, reason: str, details: dict | None = None
+        self, reviewer: str, reason: str, details: dict | None = None,
+        *, skip_type: str = SKIP_TYPE_MISCONFIG,
     ) -> None:
         """Loud-skip helper for non-exception silent skips per ``feedback_no_silent_defaults``.
 
@@ -248,11 +281,18 @@ class MultiModelQA:
         exception is genuinely broken vs. a structural skip behaving as
         designed). Logged at DEBUG so high-volume skips don't drown out warnings
         — but never silent (``feedback_no_silent_defaults``).
+
+        ``skip_type`` classifies the skip for the QaRailFullySkipped alert
+        (#1181). ``SKIP_TYPE_MASTER_FLAG_OFF`` and ``SKIP_TYPE_CONDITIONAL`` are
+        intentional skips excluded from the skip-ratio gauge; the default
+        ``SKIP_TYPE_MISCONFIG`` (genuine breakage) counts so the alert can fire.
+        Emitted as a structured ``details['skip_type']`` so the skip-ratio SQL
+        filters on a stable field, not on prose substrings that drift.
         """
         logger.debug(
-            "[MULTI_QA] reviewer=%s skipped: %s — audit_log'd as "
+            "[MULTI_QA] reviewer=%s skipped (%s): %s — audit_log'd as "
             "qa_reviewer_skipped so the operator dashboard can show "
-            "the skip rate", reviewer, reason,
+            "the skip rate", reviewer, skip_type, reason,
         )
         try:
             if self._platform is not None:
@@ -262,6 +302,7 @@ class MultiModelQA:
                     details={
                         "reviewer": reviewer,
                         "reason": reason[:200],
+                        "skip_type": skip_type,
                         **(details or {}),
                     },
                     severity="info",
@@ -1309,6 +1350,7 @@ class MultiModelQA:
                 self._surface_reviewer_skip(
                     "deepeval_brand_fabrication",
                     "deepeval_enabled=false (master rail flag off)",
+                    skip_type=SKIP_TYPE_MASTER_FLAG_OFF,
                 )
                 return None
         except Exception as exc:
@@ -1365,6 +1407,7 @@ class MultiModelQA:
                 self._surface_reviewer_skip(
                     "deepeval_g_eval",
                     "deepeval_enabled=false (master rail flag off)",
+                    skip_type=SKIP_TYPE_MASTER_FLAG_OFF,
                 )
                 return None
         except Exception as exc:
@@ -1473,6 +1516,7 @@ class MultiModelQA:
                 self._surface_reviewer_skip(
                     "deepeval_faithfulness",
                     "deepeval_enabled=false (master rail flag off)",
+                    skip_type=SKIP_TYPE_MASTER_FLAG_OFF,
                 )
                 return None
         except Exception as exc:
@@ -1496,6 +1540,7 @@ class MultiModelQA:
                 "deepeval_faithfulness",
                 "research_sources empty — faithfulness needs a corpus "
                 "to ground claims against",
+                skip_type=SKIP_TYPE_CONDITIONAL,
             )
             return None
 
@@ -1543,6 +1588,7 @@ class MultiModelQA:
             self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "research_sources contained no non-empty paragraph chunks",
+                skip_type=SKIP_TYPE_CONDITIONAL,
             )
             return None
 
@@ -1591,6 +1637,7 @@ class MultiModelQA:
                 self._surface_reviewer_skip(
                     "guardrails_brand",
                     "guardrails_enabled=false (master rail flag off)",
+                    skip_type=SKIP_TYPE_MASTER_FLAG_OFF,
                 )
                 return None
         except Exception as exc:
@@ -1653,6 +1700,7 @@ class MultiModelQA:
                     "ragas_eval",
                     "ragas_enabled=false (master rail flag off — opt-in "
                     "because each call costs ~6K judge tokens)",
+                    skip_type=SKIP_TYPE_MASTER_FLAG_OFF,
                 )
                 return None
         except Exception as exc:
@@ -1669,6 +1717,7 @@ class MultiModelQA:
                 "ragas_eval",
                 "research_sources empty — Ragas needs a corpus to "
                 "compute faithfulness + context_precision",
+                skip_type=SKIP_TYPE_CONDITIONAL,
             )
             return None
 
@@ -1679,6 +1728,7 @@ class MultiModelQA:
             self._surface_reviewer_skip(
                 "ragas_eval",
                 "research_sources contained no non-empty paragraph chunks",
+                skip_type=SKIP_TYPE_CONDITIONAL,
             )
             return None
 
@@ -1745,6 +1795,7 @@ class MultiModelQA:
                 self._surface_reviewer_skip(
                     "guardrails_competitor",
                     "guardrails_enabled=false (master rail flag off)",
+                    skip_type=SKIP_TYPE_MASTER_FLAG_OFF,
                 )
                 return None
         except Exception as exc:
@@ -1767,6 +1818,7 @@ class MultiModelQA:
                 "guardrails_competitor",
                 "guardrails_competitor_list empty — no competitors to "
                 "enforce against. Seed the CSV in app_settings to enable.",
+                skip_type=SKIP_TYPE_CONDITIONAL,
             )
             return None
 

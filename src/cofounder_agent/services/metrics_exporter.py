@@ -303,6 +303,20 @@ FROM audit_log s, win
 WHERE s.event_type = 'qa_reviewer_skipped'
   AND (SELECT n FROM win) > 0
   AND s."timestamp" >= win.start_ts
+  -- Exclude intentional skips so a rail that is deliberately off
+  -- (master_flag_off) or structurally non-applicable for this pass
+  -- (conditional_skip — e.g. no research_sources) does not read as a
+  -- silently-broken rail and drive QaRailFullySkipped (#1181). Filters on
+  -- the structured ``skip_type`` field emitted by
+  -- modules.content.multi_model_qa._surface_reviewer_skip — the literals
+  -- here MUST match SKIP_TYPES_EXCLUDED_FROM_RATIO there (drift-guarded by
+  -- test_metrics_exporter). COALESCE keeps legacy rows (no skip_type) in
+  -- the count; genuine breakage (misconfig, the default) still counts so
+  -- the alert can fire. The legacy prose LIKE remains as a transitional
+  -- fallback for pre-taxonomy master-flag-off events still inside the
+  -- trailing-N window — it ages out as those events leave the window.
+  AND COALESCE(s.details->>'skip_type', '')
+      NOT IN ('master_flag_off', 'conditional_skip')
   AND s.details->>'reason' NOT LIKE '%master rail flag off%'
 GROUP BY s.details->>'reviewer'
 """
