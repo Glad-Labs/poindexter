@@ -111,20 +111,32 @@ class TestVideoServiceResolveModel:
         assert model == "ollama/gemma3:27b"
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_setting_when_tier_missing(self):
+    async def test_override_wins_over_tier(self):
+        """``video_slideshow_prompt_model`` override short-circuits resolution.
+
+        Unlike the tier-first sibling resolvers, this call site is
+        **override-first** (stack#1151): an explicit
+        ``video_slideshow_prompt_model`` setting must beat the
+        ``cost_tier.standard`` mapping, because thinking models pinned at
+        that tier emit empty completions on the structured-list slideshow
+        prompt. When the override is set we return it immediately — the
+        tier resolver and ``notify_operator`` are never reached.
+        """
         from services.video_service import _resolve_slideshow_prompt_model
 
         notify = AsyncMock()
+        tier = AsyncMock(return_value="ollama/gemma3:27b")
         sc = MagicMock()
         sc._pool = MagicMock()
         sc.get = MagicMock(return_value="ollama/llama3:latest")
         with patch(
-            "services.video_service.resolve_tier_model",
-            AsyncMock(side_effect=RuntimeError("no model configured")),
+            "services.video_service.resolve_tier_model", tier
         ), patch("services.video_service.notify_operator", notify):
             model = await _resolve_slideshow_prompt_model(site_config=sc)
         assert model == "ollama/llama3:latest"
-        assert notify.await_count == 1
+        # Override-first: neither the tier resolver nor the operator notice fire.
+        assert tier.await_count == 0
+        assert notify.await_count == 0
 
     @pytest.mark.asyncio
     async def test_raises_when_both_missing(self):
