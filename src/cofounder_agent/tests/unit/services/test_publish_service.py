@@ -977,11 +977,10 @@ class TestRevalidation:
     """ISR revalidation behavior."""
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=False)
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
-    async def test_revalidation_success_reflected_in_result(self, mock_sched, mock_ping, mock_hooks, mock_gates):
+    async def test_revalidation_success_reflected_in_result(self, mock_sched, mock_ping, mock_hooks):
         db = _make_db()
         task = _make_task()
 
@@ -989,9 +988,6 @@ class TestRevalidation:
         # services.revalidation_service (not the legacy
         # trigger_nextjs_revalidation). Stub both so this test stays
         # valid regardless of which symbol is referenced inside.
-        # #24 strict-mode: also stub _post_has_pending_gates → False so
-        # the test asserts the no-gate path (revalidation fires). The
-        # gate-defer path is tested separately in TestGateDeferral.
         reval_mod = MagicMock()
         reval_mod.trigger_nextjs_revalidation = AsyncMock(return_value=True)
         reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
@@ -1032,62 +1028,9 @@ class TestRevalidation:
 # Targets the 277 uncovered lines reported by:
 #   pytest --cov=services.publish_service ... → 48% baseline
 # Specifically:
-#   - 132-137: _post_has_pending_gates DB-error fallback
 #   - 142-154: _sync_published_post local-only / failure handling
 #   - 203-224: _embed_published_post happy path + provider-missing skip
 #   - 1066-1236: fire_post_distribution_hooks (entire function)
-#   - Gate-deferral branch in publish_post_from_task (line 685+)
-
-
-# ---------------------------------------------------------------------------
-# _post_has_pending_gates
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestPostHasPendingGates:
-    """The probe used by both publish + fire_post_distribution_hooks to
-    decide whether to defer distribution."""
-
-    @pytest.mark.asyncio
-    async def test_returns_true_when_pending_row_exists(self):
-        from services.publish_service import _post_has_pending_gates
-        conn = AsyncMock()
-        conn.fetchrow = AsyncMock(return_value={"?column?": 1})
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        pool = MagicMock()
-        pool.acquire = MagicMock(return_value=ctx)
-
-        assert await _post_has_pending_gates(pool, "post-1") is True
-
-    @pytest.mark.asyncio
-    async def test_returns_false_when_no_pending_rows(self):
-        from services.publish_service import _post_has_pending_gates
-        conn = AsyncMock()
-        conn.fetchrow = AsyncMock(return_value=None)
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        pool = MagicMock()
-        pool.acquire = MagicMock(return_value=ctx)
-
-        assert await _post_has_pending_gates(pool, "post-1") is False
-
-    @pytest.mark.asyncio
-    async def test_returns_false_on_db_error(self):
-        """DB error → False (publish-friendly default; better to ship than block)."""
-        from services.publish_service import _post_has_pending_gates
-        conn = AsyncMock()
-        conn.fetchrow = AsyncMock(side_effect=RuntimeError("DB blip"))
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        pool = MagicMock()
-        pool.acquire = MagicMock(return_value=ctx)
-
-        assert await _post_has_pending_gates(pool, "post-1") is False
 
 
 # ---------------------------------------------------------------------------
@@ -1237,66 +1180,7 @@ class TestEmbedPublishedPost:
 
 
 # ---------------------------------------------------------------------------
-# Gate-deferral branch in publish_post_from_task (#24)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestPublishGateDeferral:
-    """When the post has pending approval gates, distribution hooks
-    (social/devto/podcast/video/short/RSS/ISR/static-export) are skipped.
-
-    Coverage target: branches around line 685+ in publish_post_from_task.
-    """
-
-    @pytest.mark.asyncio
-    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=True)
-    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
-    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
-    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
-    async def test_pending_gates_skips_devto_social_isr(
-        self, _sched, _ping, _hooks, mock_gates,
-    ):
-        """When gates are pending, social + devto + ISR + static-export are NOT fired."""
-        db = _make_db()
-        task = _make_task()
-
-        # Devto module — track whether the service was instantiated
-        devto_instance = AsyncMock()
-        devto_instance.cross_post_by_post_id = AsyncMock()
-        devto_mod = MagicMock()
-        devto_mod.DevToCrossPostService = MagicMock(return_value=devto_instance)
-
-        # Social module — track the call
-        social_mod = MagicMock()
-        social_mod.generate_and_distribute_social_posts = AsyncMock()
-
-        # Reval module
-        reval_mod = MagicMock()
-        reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
-
-        with _LazyImportContext(overrides={
-            "services.devto_service": devto_mod,
-            "services.social_poster": social_mod,
-            "services.revalidation_service": reval_mod,
-        }):
-            result = await publish_post_from_task(
-                db_service=db, task=task, task_id="tid-gated",
-                queue_social=True, trigger_revalidation=True,
-                site_config=_TEST_SC,
-            )
-
-        assert result.success is True
-        # NEITHER distribution path should have been triggered
-        social_mod.generate_and_distribute_social_posts.assert_not_called()
-        devto_mod.DevToCrossPostService.assert_not_called()
-        reval_mod.trigger_isr_revalidate.assert_not_called()
-        # ISR result reflects the deferral
-        assert result.revalidation_success is False
-
-
-# ---------------------------------------------------------------------------
-# fire_post_distribution_hooks — gate-engine re-trigger
+# fire_post_distribution_hooks — distribution re-trigger
 # ---------------------------------------------------------------------------
 
 
@@ -1318,17 +1202,18 @@ def _make_post_row(
 
 def _make_pool_for_fire(post_row, pending_gates: bool = False, status_flip: bool = True):
     """Build a pool that:
-    - First acquire(): _post_has_pending_gates query → returns 1 row if pending_gates else None
-    - Second acquire(): SELECT post by id → returns post_row
-    - Third acquire(): UPDATE posts SET status='published' → returns 'UPDATE 1' or 'UPDATE 0'
+    - First acquire(): SELECT post by id → returns post_row
+    - Second acquire(): UPDATE posts SET status='published' → returns 'UPDATE 1' or 'UPDATE 0'
       AND in the same conn.transaction(), a second execute for the
       pipeline_tasks status sync (2026-05-28 fix).
+
+    Note: ``pending_gates`` parameter is retained for call-site compatibility
+    but ignored — gate checks were removed in poindexter#559.
     """
     # Connections for each acquire() — same conn instance, but separate
     # fetchrow / execute return values per call.
     conn = AsyncMock()
-    pending_value = {"?column?": 1} if pending_gates else None
-    conn.fetchrow = AsyncMock(side_effect=[pending_value, post_row])
+    conn.fetchrow = AsyncMock(side_effect=[post_row])
     # The status-flip UPDATE returns "UPDATE 1"/"UPDATE 0" depending on
     # whether the row was at awaiting_gates. The pipeline_tasks sync
     # UPDATE inside the same transaction returns a benign default — the
@@ -1353,30 +1238,17 @@ def _make_pool_for_fire(post_row, pending_gates: bool = False, status_flip: bool
 
 @pytest.mark.unit
 class TestFirePostDistributionHooks:
-    """fire_post_distribution_hooks re-fires distribution when approval gates clear.
+    """fire_post_distribution_hooks re-fires distribution hooks.
 
     Coverage target: lines 1051-1236 (the entire function).
     """
 
     @pytest.mark.asyncio
-    async def test_refuses_when_gates_still_pending(self):
-        from services.publish_service import fire_post_distribution_hooks
-        # Pool returns a pending row → refusal
-        post_row = _make_post_row()
-        pool, _conn = _make_pool_for_fire(post_row, pending_gates=True)
-        db = MagicMock()
-        db.pool = pool
-        db.cloud_pool = None
-
-        result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
-        assert result == {"fired": False, "reason": "pending_gates"}
-
-    @pytest.mark.asyncio
     async def test_returns_post_not_found_when_select_returns_none(self):
         from services.publish_service import fire_post_distribution_hooks
-        # First fetchrow (pending) → None, second (post lookup) → None
+        # fetchrow (post lookup) → None
         conn = AsyncMock()
-        conn.fetchrow = AsyncMock(side_effect=[None, None])
+        conn.fetchrow = AsyncMock(side_effect=[None])
         ctx = AsyncMock()
         ctx.__aenter__ = AsyncMock(return_value=conn)
         ctx.__aexit__ = AsyncMock(return_value=False)
@@ -1465,9 +1337,9 @@ class TestFirePostDistributionHooks:
 
     @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
-    async def test_does_not_fire_media_generation_on_gate_clear(self, _hooks):
-        """Media generation is the gate driver's job now (poindexter#24) —
-        the gate-clear re-fire must NOT (re)generate podcast/video/short,
+    async def test_does_not_fire_media_generation_on_distribution_trigger(self, _hooks):
+        """Media generation is the gate driver's job (poindexter#24) —
+        fire_post_distribution_hooks must NOT (re)generate podcast/video/short,
         only re-fire distribution (social/devto/static)."""
         from services.publish_service import fire_post_distribution_hooks
 
@@ -1614,7 +1486,6 @@ class TestMediaSpawnRespectsPolicy:
 
     @pytest.mark.asyncio
     @patch("services.static_export_service.export_post", new_callable=AsyncMock)
-    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=False)
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
@@ -1625,7 +1496,7 @@ class TestMediaSpawnRespectsPolicy:
     async def test_dev_diary_post_skips_all_media_spawns(
         self,
         mock_short, mock_video, mock_podcast, mock_spawn,
-        mock_sched, mock_ping, mock_hooks, mock_export, mock_gates,
+        mock_sched, mock_ping, mock_hooks, mock_export,
     ):
         """A dev_diary task (niche_slug='dev_diary') should produce a
         post whose policy is ``[]`` (per niche seed) and trigger NO
@@ -1680,14 +1551,13 @@ class TestMediaSpawnRespectsPolicy:
             assert "short_video" not in nm
 
     @pytest.mark.asyncio
-    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=False)
     @patch("services.static_export_service.export_post", new_callable=AsyncMock)
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     @patch("services.publish_service._spawn_background")
     async def test_glad_labs_post_resolves_media_but_spawns_none(
-        self, mock_spawn, mock_sched, mock_ping, mock_hooks, mock_export, mock_gates,
+        self, mock_spawn, mock_sched, mock_ping, mock_hooks, mock_export,
     ):
         """Glad-labs niche policy is ``{podcast,video,video_short}`` — the
         media policy is resolved ONTO the post (the driver reads it to know

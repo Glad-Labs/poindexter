@@ -21,10 +21,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services.gates.post_approval_gates import (
-    create_gates_for_post,
-    media_gate_sequence,
-)
 from services.logger_config import get_logger
 from services.media_policy import resolve_media_to_generate
 from services.site_config import SiteConfig
@@ -160,43 +156,6 @@ def _should_run_post_publish_hooks() -> bool:
     distribution-paths regression fixed in commit ``<this commit>``.
     """
     return os.getenv("DEPLOYMENT_MODE", "coordinator").lower() == "worker"
-
-
-async def _post_has_pending_gates(pool, post_id: str) -> bool:
-    """Return True iff the post has any unresolved gate row.
-
-    Used by the publish path to decide whether to fire the
-    distribution + media-generation hooks immediately or defer them
-    until the operator clears the gates (Glad-Labs/poindexter#24).
-
-    Back-compat: posts that pre-date the gate engine (no rows in
-    ``post_approval_gates``) have zero pending gates and so the
-    distribution hooks fire as before.
-
-    Defensive: any DB error returns False so we err on the side of
-    publishing — the alternative (silently swallowing distribution
-    for every post on a transient DB blip) is worse.
-    """
-    try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT 1
-                  FROM post_approval_gates
-                 WHERE post_id::text = $1
-                   AND state = 'pending'
-                 LIMIT 1
-                """,
-                str(post_id),
-            )
-        return row is not None
-    except Exception as exc:
-        logger.debug(
-            "[publish_service] _post_has_pending_gates probe failed "
-            "for %s (treating as no gates): %s",
-            post_id, exc,
-        )
-        return False
 
 
 async def _sync_published_post(post_id: str) -> None:
@@ -1038,31 +997,6 @@ async def _backstamp_media_assets(db_service, task_id: str, post_id: str) -> Non
         )
 
 
-async def _create_media_gate_sequence(
-    db_service, post_id: str, media_to_generate: list[str], status: Any
-) -> None:
-    """Phase 5b — create the per-medium approval gate sequence (#24).
-
-    Only fires when the post parks at status='approved' (the approve/stage
-    path); published/draft posts stay gate-less (back-compat). Best-effort — a
-    failure logs loudly but must not strand the already-created post."""
-    if status != "approved":
-        return
-    _gate_pool = getattr(db_service, "pool", None)
-    if _gate_pool is None:
-        return
-    try:
-        await create_gates_for_post(
-            _gate_pool, post_id, media_gate_sequence(media_to_generate),
-        )
-    except Exception as gate_exc:  # noqa: BLE001 — never strand the post
-        logger.error(
-            "[publish_service] failed to create media gate sequence "
-            "for post %s (media=%s): %s",
-            post_id, media_to_generate, gate_exc, exc_info=True,
-        )
-
-
 async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> None:
     """Phase 7 — emit the ``post.published`` webhook event (best-effort)."""
     try:
@@ -1364,21 +1298,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 5. Insert into posts table
     # ---------------------------------------------------------------
-    # Strict-mode gate enforcement (#24): if this post will have
-    # approval gates, it must NOT land at status='published' on initial
-    # insert — that would make the URL live + index it on the static
-    # export before the operator approves. Instead we land at
-    # 'awaiting_gates'. fire_post_distribution_hooks (called after the
-    # last gate clears) flips it to 'published'.
-    #
-    # The gate ROWS may not exist yet at this exact moment (some flows
-    # create them just after the post insert), so we use the planned
-    # gate list passed in via task['gates'] OR check existing rows. If
-    # neither is present, we treat it as a no-gate autonomous publish.
-    _planned_gates = task.get("gates") or []
-    _strict_mode_status = (
-        "awaiting_gates" if (_planned_gates and not draft_mode) else "published"
-    )
+    _strict_mode_status = "published"
     # stage_only overrides the normal status decision — see the function
     # docstring. The status flips to 'approved' so services.scheduling_service
     # (schedule batch CLI) treats it as a staged candidate; published_at
@@ -1462,13 +1382,6 @@ async def publish_post_from_task(
     await _backstamp_media_assets(db_service, task_id, post_id)
 
     # ---------------------------------------------------------------
-    # 5b. Create the per-medium approval gate sequence (#24) — phase 5b
-    # ---------------------------------------------------------------
-    await _create_media_gate_sequence(
-        db_service, post_id, media_to_generate, post_data.get("status")
-    )
-
-    # ---------------------------------------------------------------
     # 6. Update task result with post info
     # ---------------------------------------------------------------
     merged["post_id"] = post_id
@@ -1534,31 +1447,9 @@ async def publish_post_from_task(
     )
 
     # ---------------------------------------------------------------
-    # 8b. Gate engine — defer distribution if any approval gate is pending
-    # ---------------------------------------------------------------
-    # Glad-Labs/poindexter#24: the per-medium gate machinery can pause
-    # the workflow at a `final` (or earlier) checkpoint between content
-    # creation and distribution. When any gate row for this post is
-    # still ``pending``, skip the social/devto/podcast/video/short/RSS
-    # hooks and let ``fire_post_distribution_hooks`` re-run them once
-    # the gate is approved.
-    #
-    # Posts that pre-date the gate engine (or were created without any
-    # ``--gates``) have zero pending rows, so this is a no-op for the
-    # autonomous path (back-compat preserved).
-    _gate_pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-    _gates_block_distribution = await _post_has_pending_gates(_gate_pool, post_id)
-    if _gates_block_distribution:
-        logger.info(
-            "[publish_service] Post %s has pending approval gates — "
-            "deferring distribution hooks until gates clear (#24)",
-            post_id,
-        )
-
-    # ---------------------------------------------------------------
     # 9. Queue social media post generation — phase 9
     # ---------------------------------------------------------------
-    if queue_social and not _gates_block_distribution:
+    if queue_social:
         _queue_social_distribution(
             background_tasks,
             task=task,
@@ -1573,56 +1464,45 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 9b. Queue Dev.to cross-posting (fire-and-forget) — phase 9b
     # ---------------------------------------------------------------
-    if not _gates_block_distribution:
-        _queue_devto_crosspost(db_service, background_tasks, post_id, _sc)
+    _queue_devto_crosspost(db_service, background_tasks, post_id, _sc)
 
     # ---------------------------------------------------------------
     # 10. ISR revalidation — phase 10
     # ---------------------------------------------------------------
-    # Strict-mode gate (#24): a post with pending gates is at
-    # 'awaiting_gates', so revalidating would just expose a 404 —
-    # fire_post_distribution_hooks revalidates after gates clear.
     revalidation_success = False
-    if trigger_revalidation and not _gates_block_distribution:
+    if trigger_revalidation:
         revalidation_success = await _revalidate_isr(slug, _sc)
 
     # ---------------------------------------------------------------
     # 10b. Static JSON export to CDN (inline) — phase 10b
     # ---------------------------------------------------------------
-    # Same strict-mode gate as ISR. The export is awaited inline (see the
-    # helper docstring for why fire-and-forget froze R2).
+    # The export is awaited inline (see the helper docstring for why
+    # fire-and-forget froze R2).
     static_export_success = False
-    if not _gates_block_distribution:
-        static_export_success = await _export_static_post(db_service, slug, _sc)
+    static_export_success = await _export_static_post(db_service, slug, _sc)
 
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
     # ---------------------------------------------------------------
     site_url = _sc.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
-    if not _gates_block_distribution:
-        _spawn_background(
-            _ping_search_engines(site_url, published_url_full, site_config=_sc),
-            name=f"ping_search_engines({slug})",
-        )
+    _spawn_background(
+        _ping_search_engines(site_url, published_url_full, site_config=_sc),
+        name=f"ping_search_engines({slug})",
+    )
 
     # ---------------------------------------------------------------
     # 11b/c/d. Derived media (podcast / video / short) — REMOVED.
     # ---------------------------------------------------------------
-    # Media generation no longer fires from the publish path
-    # (Glad-Labs/poindexter#24). It is now the gate driver's job
-    # (services/jobs/drive_media_gates.py): the driver generates each
-    # medium PRE-publish, the operator reviews the per-medium gate, and
-    # publish fires only once the final gate clears — so by the time a
-    # post publishes its media already exists. Legacy gate-less posts
-    # still pick up media via the 4h backfill_* jobs. The 11e R2-upload
+    # Media generation no longer fires from the publish path.
+    # It is now the backfill jobs' responsibility. The 11e R2-upload
     # hook below remains (it uploads whatever media files exist; a no-op
     # when none are present).
 
     # ---------------------------------------------------------------
     # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks() and not _gates_block_distribution:
+    if _should_run_post_publish_hooks():
         _spawn_background(
             _upload_media_to_r2_bg(_sc, post_id), name=f"upload_media_r2({post_id})"
         )
@@ -1630,7 +1510,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11f. Newsletter to subscribers (fire-and-forget)
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks() and not _gates_block_distribution:
+    if _should_run_post_publish_hooks():
         _spawn_background(
             _send_post_newsletter_bg(
                 db_service, _sc, post_title, seo_description, slug
@@ -1702,17 +1582,6 @@ async def fire_post_distribution_hooks(
     # #272 Phase-2g: site_config is REQUIRED — read/thread via _sc below.
     _sc = site_config
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-
-    # Defensive: don't fire if there are still pending gates. Concurrent
-    # operators or callers re-triggering speculatively shouldn't be
-    # able to bypass a subsequent ``revise``.
-    if await _post_has_pending_gates(pool, post_id):
-        logger.info(
-            "[publish_service] fire_post_distribution_hooks: post %s "
-            "still has pending gates — refusing to fire distribution",
-            post_id,
-        )
-        return {"fired": False, "reason": "pending_gates"}
 
     async with pool.acquire() as conn:
         post_row = await conn.fetchrow(
@@ -1878,43 +1747,28 @@ async def publish_now(
     *,
     site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
-    """Publish a gates-cleared ``approved`` post + fire distribution.
+    """Publish an ``approved`` post + fire distribution.
 
-    The explicit publish+distribute entrypoint the media-gate driver
-    (services/jobs/drive_media_gates.py) and the ``tasks publish`` path use.
+    The explicit publish+distribute entrypoint for the ``tasks publish`` path.
     Flips ``status`` ``approved``/``awaiting_gates`` → ``published`` (+
     ``published_at`` / ``distributed_at`` / ``pipeline_tasks`` status sync,
     one transaction), then re-fires distribution (static export / ISR /
     social / dev.to / search-engine ping).
 
-    Does NOT generate media — by the time gates clear the driver has already
-    produced + gate-reviewed the media pre-publish (Glad-Labs/poindexter#24).
-
-    Refuses (idempotent no-op) when any approval gate is still ``pending``,
-    or when the post isn't in a publishable state (already published / wrong
-    status). ``site_config`` is resolved from the process container when not
-    injected, so the driver can call ``publish_now(pool, post_id)`` without
-    threading one through.
+    Refuses (idempotent no-op) when the post isn't in a publishable state
+    (already published / wrong status). ``site_config`` is resolved from
+    the process container when not injected.
     """
     if site_config is None:
         try:
             from services.container_registry import get_container
-            site_config = get_container().site_config
+            _c = get_container()
+            site_config = _c.site_config if _c is not None else SiteConfig()
         except Exception:
             site_config = SiteConfig()
     _sc = site_config
 
     fired: dict[str, Any] = {"published": False, "post_id": post_id, "hooks": []}
-
-    # Defensive: never publish past a pending gate (mirrors
-    # fire_post_distribution_hooks — a concurrent revise must win).
-    if await _post_has_pending_gates(pool, post_id):
-        logger.info(
-            "[publish_service] publish_now: post %s still has pending gates "
-            "— refusing to publish", post_id,
-        )
-        fired["reason"] = "pending_gates"
-        return fired
 
     async with pool.acquire() as conn:
         post_row = await conn.fetchrow(

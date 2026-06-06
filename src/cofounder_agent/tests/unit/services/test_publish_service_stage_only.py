@@ -479,44 +479,6 @@ def test_should_run_post_publish_hooks_unset_defaults_off(monkeypatch) -> None:
     assert publish_service._should_run_post_publish_hooks() is False
 
 
-@pytest.mark.asyncio
-async def test_post_has_pending_gates_db_error_returns_false() -> None:
-    """Any DB error in the gate probe must return False (err on the
-    side of publishing). The alternative — silently swallowing
-    distribution on a transient DB blip for every post — is worse.
-    This pins the defensive contract documented in the helper's
-    docstring."""
-    from services.publish_service import _post_has_pending_gates
-
-    pool = MagicMock()
-    bad_acq_cm = MagicMock()
-    bad_acq_cm.__aenter__ = AsyncMock(side_effect=RuntimeError("connection lost"))
-    bad_acq_cm.__aexit__ = AsyncMock(return_value=None)
-    pool.acquire = MagicMock(return_value=bad_acq_cm)
-
-    result = await _post_has_pending_gates(pool, "post-id-123")
-    assert result is False
-
-
-@pytest.mark.asyncio
-async def test_post_has_pending_gates_returns_true_when_row_present() -> None:
-    """The happy path: a pending gate row means the publish path must
-    defer distribution hooks until the operator clears the gate
-    (Glad-Labs/poindexter#24). Pinned here so a future refactor that
-    accidentally inverts the boolean fails loud."""
-    from services.publish_service import _post_has_pending_gates
-
-    pool = MagicMock()
-    conn = MagicMock()
-    conn.fetchrow = AsyncMock(return_value={"?column?": 1})
-    acq_cm = MagicMock()
-    acq_cm.__aenter__ = AsyncMock(return_value=conn)
-    acq_cm.__aexit__ = AsyncMock(return_value=None)
-    pool.acquire = MagicMock(return_value=acq_cm)
-
-    assert await _post_has_pending_gates(pool, "post-id-123") is True
-
-
 def test_publish_result_to_dict_carries_failure_payload() -> None:
     """PublishResult.to_dict() is the wire format the operator API +
     Discord notify use. On failure, the error field MUST round-trip so

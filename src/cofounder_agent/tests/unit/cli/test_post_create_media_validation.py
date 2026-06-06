@@ -88,15 +88,6 @@ def _patch_site_config(initial: dict[str, str] | None = None):
     return patch("services.site_config.SiteConfig", _StubSiteConfig)
 
 
-def _patch_gate_helpers():
-    return patch.multiple(
-        "services.gates.post_approval_gates",
-        create_gates_for_post=AsyncMock(return_value=[]),
-        get_gates_for_post=AsyncMock(return_value=[]),
-        notify_gate_pending=AsyncMock(return_value=None),
-    )
-
-
 def _run_create(runner, fake_asyncpg, media_arg: str):
     """Invoke ``post create --media <media_arg>`` against a scripted INSERT.
 
@@ -117,7 +108,7 @@ def _run_create(runner, fake_asyncpg, media_arg: str):
     site_patch = _patch_site_config(
         initial={"cli_post_create_idempotency_enabled": "false"}
     )
-    with site_patch, _patch_gate_helpers():
+    with site_patch:
         result = runner.invoke(
             post_group,
             ["create", "--topic", "x", "--media", media_arg, "--json"],

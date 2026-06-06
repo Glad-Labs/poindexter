@@ -1904,19 +1904,6 @@ ALTER SEQUENCE public.pipeline_versions_id_seq OWNED BY public.pipeline_versions
 --
 --
 
-CREATE TABLE IF NOT EXISTS public.post_approval_gates (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    post_id uuid NOT NULL,
-    gate_name text NOT NULL,
-    ordinal integer NOT NULL,
-    state text DEFAULT 'pending'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    decided_at timestamp with time zone,
-    approver text,
-    notes text,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL
-);
-
 --
 --
 
@@ -2974,14 +2961,6 @@ ALTER TABLE ONLY public.pipeline_versions
 --
 --
 
-ALTER TABLE ONLY public.post_approval_gates
-    ADD CONSTRAINT post_approval_gates_pkey PRIMARY KEY (id);
-
---
---
-
-ALTER TABLE ONLY public.post_approval_gates
-    ADD CONSTRAINT post_approval_gates_post_id_gate_name_ordinal_key UNIQUE (post_id, gate_name, ordinal);
 
 --
 --
@@ -3700,12 +3679,6 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_templates_created_by ON public.pipeline_
 --
 --
 
-CREATE INDEX IF NOT EXISTS idx_post_approval_gates_pending ON public.post_approval_gates USING btree (post_id, ordinal) WHERE (state = 'pending'::text);
-
---
---
-
-CREATE INDEX IF NOT EXISTS idx_post_approval_gates_post_id ON public.post_approval_gates USING btree (post_id);
 
 --
 --
@@ -4142,9 +4115,6 @@ ALTER TABLE ONLY public.pipeline_versions
 
 --
 --
-
-ALTER TABLE ONLY public.post_approval_gates
-    ADD CONSTRAINT post_approval_gates_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE CASCADE;
 
 --
 --

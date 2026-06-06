@@ -28,6 +28,7 @@ import signal
 import subprocess
 import sys
 import time
+from typing import Literal
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -250,23 +251,6 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_DOCKER_PORT_FORWARD_PROBE = False
 
 try:
-    # GH#338 — auto-expire stale pending approval gates. Pulls every
-    # post_approval_gates row in state='pending' older than
-    # gate_pending_max_age_hours (default 168 = 7d), transitions them
-    # to rejected with the sentinel ``auto_rejected_after_<N>_hours``
-    # reason, writes one pipeline_gate_history + one audit_log row per
-    # cycle, and sends a single coalesced Telegram notification when
-    # the batch meets the configurable threshold.
-    from gate_auto_expire_probe import run_gate_auto_expire_probe
-    _HAS_GATE_AUTO_EXPIRE_PROBE = True
-except ImportError:  # pragma: no cover — package-qualified path
-    try:
-        from brain.gate_auto_expire_probe import run_gate_auto_expire_probe
-        _HAS_GATE_AUTO_EXPIRE_PROBE = True
-    except ImportError:
-        _HAS_GATE_AUTO_EXPIRE_PROBE = False
-
-try:
     # #868 — iCUE corsair_csv sensor-feed freshness watchdog. The tap that
     # backs PSU wall-power (psu_power.py) ingests hourly via run_taps; this
     # probe emits a `finding` when sensor_samples goes stale past the
@@ -279,27 +263,6 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_CORSAIR_FEED_PROBE = True
     except ImportError:
         _HAS_CORSAIR_FEED_PROBE = False
-
-try:
-    # GH#338 — coalesced "N posts pending review" summary probe.
-    # SELECTs count + oldest age from post_approval_gates each cycle and
-    # sends ONE Telegram page per gate_pending_summary_telegram_dedup_minutes
-    # window (default 60 min) when the queue is non-empty AND the oldest
-    # gate is older than gate_pending_summary_min_age_minutes (default 60).
-    # Inside the dedup window it re-pages only when the queue grew by
-    # strictly more than gate_pending_summary_telegram_growth_threshold
-    # (default 3) new gates. Optional low-noise Discord queue-status fires
-    # every cycle (gate_pending_summary_discord_per_cycle, default true).
-    # Pairs with the per-flip Telegram demotion in
-    # services/gates/post_approval_gates.notify_gate_pending.
-    from gate_pending_summary_probe import run_gate_pending_summary_probe
-    _HAS_GATE_PENDING_SUMMARY_PROBE = True
-except ImportError:  # pragma: no cover — package-qualified path
-    try:
-        from brain.gate_pending_summary_probe import run_gate_pending_summary_probe
-        _HAS_GATE_PENDING_SUMMARY_PROBE = True
-    except ImportError:
-        _HAS_GATE_PENDING_SUMMARY_PROBE = False
 
 try:
     # PR staleness probe — every cycle, pull open PRs from GitHub and
@@ -406,12 +369,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Backup RESTORE verification offline — a corrupt dump goes unnoticed (#441)"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
-    ("_HAS_GATE_AUTO_EXPIRE_PROBE", "brain/gate_auto_expire_probe.py",
-     "Stale pending approval gates stop auto-expiring — queue grows unboundedly"),
     ("_HAS_CORSAIR_FEED_PROBE", "brain/corsair_feed_probe.py",
      "iCUE corsair_csv sensor feed staleness goes unalerted (#868)"),
-    ("_HAS_GATE_PENDING_SUMMARY_PROBE", "brain/gate_pending_summary_probe.py",
-     "Pending-queue daily summary Telegram pages stop"),
     ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
      "Stale PR detection offline — agent PRs sit unmerged forever"),
     ("_HAS_DISCORD_BOT_PROBE", "brain/discord_bot_probe.py",
@@ -533,7 +492,8 @@ def _alert_dispatch_died(task) -> tuple[bool, BaseException | None]:
 
 
 def _page_operator_failsafe(
-    title: str, detail: str, *, source: str, severity: str = "critical"
+    title: str, detail: str, *, source: str,
+    severity: Literal["info", "warning", "error", "critical"] = "critical",
 ) -> bool:
     """Page the operator through the DB-independent operator_notifier failsafe.
 
@@ -2493,21 +2453,6 @@ async def run_cycle(pool):
         except Exception as e:
             logger.warning("[BRAIN] docker_port_forward probe failed: %s", e)
 
-    # Gate auto-expire (#338). Sweeps post_approval_gates for pending
-    # rows older than gate_pending_max_age_hours (default 168 = 7d),
-    # transitions them to rejected with the sentinel reason
-    # ``auto_rejected_after_<N>_hours``.
-    if _HAS_GATE_AUTO_EXPIRE_PROBE:
-        try:
-            ge_summary = await run_gate_auto_expire_probe(pool)
-            probe_results["gate_auto_expire"] = {
-                "ok": bool(ge_summary.get("ok", False)),
-                "detail": ge_summary.get("detail", ""),
-                "summary": ge_summary,
-            }
-        except Exception as e:
-            logger.warning("[BRAIN] gate_auto_expire probe failed: %s", e)
-
     # iCUE corsair_csv sensor-feed freshness watchdog (#868). Emits a
     # `finding` when the feed goes stale past the threshold so the
     # findings_alert_router pages the operator (a stopped feed used to go
@@ -2522,21 +2467,6 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] corsair_feed probe failed: %s", e)
-
-    # Gate pending summary (#338). Coalesces the per-flip Telegram noise
-    # from the HITL gate spine into ONE "N posts pending review" page per
-    # dedup window. Pairs with the per-flip Telegram demotion in
-    # services/gates/post_approval_gates.notify_gate_pending.
-    if _HAS_GATE_PENDING_SUMMARY_PROBE:
-        try:
-            gps_summary = await run_gate_pending_summary_probe(pool)
-            probe_results["gate_pending_summary"] = {
-                "ok": bool(gps_summary.get("ok", False)),
-                "detail": gps_summary.get("detail", ""),
-                "summary": gps_summary,
-            }
-        except Exception as e:
-            logger.warning("[BRAIN] gate_pending_summary probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on
@@ -2674,7 +2604,7 @@ async def run_cycle(pool):
     # heartbeat audit_log row so operators can detect dead probes via
     # "no recent heartbeat in N minutes" rather than waiting for the
     # absence-of-noise to be noticed. Pre-fix, the silent probes
-    # (gate_auto_expire, gate_pending_summary, prefect_stuck_flow,
+    # (prefect_stuck_flow,
     # discord_bot, mcp_http, docker_port_forward, business_probes,
     # backup_watcher) only wrote audit_log rows on issue — 8 days
     # without a row looked identical to "all clean" and "probe dead."

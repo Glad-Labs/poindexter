@@ -199,7 +199,7 @@ def _scan_intree_modules() -> dict[str, list[Any]]:
                 f"in-tree module {name!r} is present but failed to load: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
-    logger.info(
+    logger.debug(
         "module discovery: in-tree modules=%s jobs=%s",
         [m.manifest().name for m in modules_out],
         [getattr(j, "name", "?") for j in jobs_out],
@@ -692,13 +692,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 0 audit_log rows from either job, ever.
         ("jobs", "services.jobs.backfill_podcasts", "BackfillPodcastsJob"),
         ("jobs", "services.jobs.backfill_videos", "BackfillVideosJob"),
-        # Media-gate driver (Glad-Labs/poindexter#24) — walks each approved
-        # post's per-medium approval gates: generates media PRE-publish,
-        # waits for operator review, auto-advances the final gate, then
-        # publishes via publish_service.publish_now. Replaces the retired
-        # IdleWorker tick; cadence via the class schedule (every 5 minutes),
-        # operator-tunable through the plugin.job.drive_media_gates row.
-        ("jobs", "services.jobs.drive_media_gates", "DriveMediaGatesJob"),
         # Anomaly detection — z-score outlier detection across failure
         # rate, quality, cost, and error-log rate (every 4h). Emits a
         # finding via utils.findings (routes through notify_operator
