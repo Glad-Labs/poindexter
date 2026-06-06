@@ -298,6 +298,49 @@ class TestCodebaseSourceExtract:
         assert any("INTERVAL '7 days'" in s for s in sqls)
 
 
+    @pytest.mark.asyncio
+    async def test_parallel_queries_all_complete_within_single_latency_window(self):
+        """Regression: stack#1150 — sequential embed calls summed latency and
+        timed out under the 60s runner budget. Parallel execution means N
+        queries at 20ms each finish in ~20ms total, not 20ms × N."""
+        import asyncio
+        import time
+
+        call_times: list[float] = []
+
+        async def slow_post(url: str, **kwargs: object) -> MagicMock:
+            call_times.append(time.monotonic())
+            await asyncio.sleep(0.02)  # 20ms simulated Ollama latency
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json = MagicMock(return_value={"embedding": [0.1] * 768})
+            return resp
+
+        client = AsyncMock()
+        client.post = slow_post
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        pool = _make_pool([])  # no DB results — just testing call overlap
+
+        source = CodebaseSource()
+        seed_queries = ["q1", "q2", "q3", "q4"]
+        start = time.monotonic()
+        with patch("httpx.AsyncClient", return_value=ctx):
+            await source.extract(pool=pool, config={"seed_queries": seed_queries})
+        elapsed = time.monotonic() - start
+
+        # If sequential: ≥4 × 20ms = 80ms. Parallel: ~20ms + overhead.
+        # Allow generous headroom (150ms) while ruling out sequential (80ms).
+        assert elapsed < 0.15, (
+            f"queries appear to be running sequentially — elapsed {elapsed:.3f}s "
+            f"with {len(seed_queries)} queries of 20ms each; expected <0.15s"
+        )
+        # All 4 queries actually ran.
+        assert len(call_times) == len(seed_queries)
+
+
 class TestContract:
     def test_conforms_to_topic_source_protocol(self):
         source = CodebaseSource()

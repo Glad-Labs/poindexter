@@ -34,6 +34,7 @@ Config (``plugin.topic_source.codebase`` in app_settings):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -171,71 +172,90 @@ class CodebaseSource:
         topic_max_chars = int(config.get("topic_max_chars", 80) or 80)
 
         topics: list[DiscoveredTopic] = []
-        seen_sources: set[str] = set()
+        seen_source_ids: set[str] = set()
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            for query in seed_queries:
-                # Per-query isolation: one seed failing shouldn't abort the
-                # rest. Narrow except on network/HTTP layer failures only.
-                try:
-                    resp = await client.post(
-                        f"{ollama_url}/api/embeddings",
-                        json={"model": embed_model, "prompt": query},
-                        timeout=15,
-                    )
-                except (httpx.HTTPError, httpx.TimeoutException) as e:
-                    logger.debug("CodebaseSource: embed request failed for %r: %s", query[:30], e)
-                    continue
-
-                if resp.status_code != 200:
-                    continue
-
-                embedding = resp.json().get("embedding", [])
-                if not embedding:
-                    continue
-
-                vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-                rows = await pool.fetch(
-                    f"""
-                    SELECT source_table, source_id, text_preview,
-                           1 - (embedding <=> $1::vector) as similarity
-                    FROM embeddings
-                    WHERE source_table != 'posts_authored'
-                      AND created_at > NOW() - INTERVAL '{int(lookback_days)} days'
-                    ORDER BY embedding <=> $1::vector
-                    LIMIT $2
-                    """,  # nosec B608  # lookback_days int-cast inline; values use $N params
-                    vec_str, per_query_limit,
+        async def _run_query(
+            client: httpx.AsyncClient, query: str,
+        ) -> list[tuple[str, DiscoveredTopic]]:
+            """Embed one seed query and return (source_id, topic) pairs."""
+            try:
+                resp = await client.post(
+                    f"{ollama_url}/api/embeddings",
+                    json={"model": embed_model, "prompt": query},
+                    timeout=15,
                 )
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                logger.debug(
+                    "CodebaseSource: embed request failed for %r: %s", query[:30], e,
+                )
+                return []
 
-                for row in rows:
-                    sim = float(row["similarity"])
-                    source_id = row["source_id"]
-                    if sim < similarity_threshold or source_id in seen_sources:
-                        continue
-                    seen_sources.add(source_id)
+            if resp.status_code != 200:
+                return []
 
-                    preview = (row["text_preview"] or "")[:300].strip()
-                    if len(preview) < 30:
-                        continue
+            embedding = resp.json().get("embedding", [])
+            if not embedding:
+                return []
 
-                    topic_title = _extract_topic_from_row(
-                        preview, row["source_table"], topic_max_chars,
-                    )
-                    if not topic_title:
-                        continue
+            vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
+            rows = await pool.fetch(
+                f"""
+                SELECT source_table, source_id, text_preview,
+                       1 - (embedding <=> $1::vector) as similarity
+                FROM embeddings
+                WHERE source_table != 'posts_authored'
+                  AND created_at > NOW() - INTERVAL '{int(lookback_days)} days'
+                ORDER BY embedding <=> $1::vector
+                LIMIT $2
+                """,  # nosec B608  # lookback_days int-cast inline; values use $N params
+                vec_str, per_query_limit,
+            )
 
-                    topics.append(
-                        DiscoveredTopic(
-                            title=topic_title,
-                            category="technology",
-                            source=f"embeddings:{row['source_table']}",
-                            source_url="",
-                            # Shift [threshold, 1.0] → [threshold+0.3, 1.3]
-                            # then cap at 0.9 for mid-range-tier scoring.
-                            relevance_score=min(0.9, sim + 0.3),
-                        )
-                    )
+            result: list[tuple[str, DiscoveredTopic]] = []
+            for row in rows:
+                sim = float(row["similarity"])
+                if sim < similarity_threshold:
+                    continue
+                preview = (row["text_preview"] or "")[:300].strip()
+                if len(preview) < 30:
+                    continue
+                topic_title = _extract_topic_from_row(
+                    preview, row["source_table"], topic_max_chars,
+                )
+                if not topic_title:
+                    continue
+                result.append((
+                    str(row["source_id"]),
+                    DiscoveredTopic(
+                        title=topic_title,
+                        category="technology",
+                        source=f"embeddings:{row['source_table']}",
+                        source_url="",
+                        # Shift [threshold, 1.0] → [threshold+0.3, 1.3]
+                        # then cap at 0.9 for mid-range-tier scoring.
+                        relevance_score=min(0.9, sim + 0.3),
+                    ),
+                ))
+            return result
+
+        # Run all seed queries in parallel — the prior sequential loop meant
+        # 8 × (embed latency + pgvector query) could exceed the 60s runner
+        # timeout when Ollama was slow (stack#1150). Dedup by source_id after
+        # gathering so a document that matches multiple queries is included once.
+        async with httpx.AsyncClient(timeout=30) as client:
+            query_results = await asyncio.gather(
+                *[_run_query(client, q) for q in seed_queries],
+                return_exceptions=True,
+            )
+
+        for batch in query_results:
+            if isinstance(batch, BaseException):
+                logger.warning("CodebaseSource: seed query raised: %s", batch)
+                continue
+            for source_id, topic in batch:
+                if source_id not in seen_source_ids:
+                    seen_source_ids.add(source_id)
+                    topics.append(topic)
 
         logger.info(
             "CodebaseSource: %d topics from %d seed queries (threshold=%.2f)",
