@@ -1429,3 +1429,64 @@ class TestJsonEnvelopeLeakDetection:
         cats = [i.category for i in result.issues]
         assert "truncated_content" not in cats
         assert "json_envelope_leak" not in cats
+
+
+# ---------------------------------------------------------------------------
+# Markdown-emphasis truncation false-positive — 2026-06-06
+# ---------------------------------------------------------------------------
+#
+# Captured live: task b9aab2fe ("Eliminating Technical Debt…", quality 97)
+# was hard-rejected with ``truncated_content`` because the body's final
+# line was a complete sentence wrapped in italics —
+# ``*Read more on AI Health and monitoring.*`` — and the truncation rule
+# only accepted a final char in ``.!?"”)’``. The closing ``*`` is not in
+# that set, so a finished sentence read as a token-limit cutoff and the
+# restored programmatic hard-gate (qa.programmatic) vetoed the post. These
+# "*Read more …*"/"**…**" emphasis-wrapped CTA/closer lines are a normal,
+# legitimate way to end a post.
+#
+# The fix peels a trailing run of markdown emphasis/format markers
+# (``* _ ``` ``) before the terminal-punctuation check. It must NOT mask a
+# genuine cutoff: a sentence cut off *inside* emphasis (no terminal punct
+# before the markers) still fires.
+
+
+class TestMarkdownEmphasisTruncationFalsePositive:
+    """A complete sentence wrapped in markdown emphasis is finished, not
+    truncated. Peeling trailing ``* _ ``` `` before the terminal-punctuation
+    check must not weaken genuine-truncation detection."""
+
+    _BODY = (
+        "Technical debt in AI-generated codebases compounds quietly. "
+        "Each prompt adds plausible-looking code that nobody fully owns. "
+        "The fix is a retrieval pipeline backed by a real schema, not flat files. "
+    ) * 3  # ~600 chars, well past the 200-char minimum for rule #10
+
+    def test_italic_closer_sentence_not_truncated(self):
+        """``*Read more on AI Health and monitoring.*`` — the exact b9aab2fe
+        ending — is a finished sentence, not a truncation."""
+        content = self._BODY + "\n\n*Read more on AI Health and monitoring.*"
+        result = validate_content(
+            "Eliminating Technical Debt", content, "AI", site_config=_SC
+        )
+        cats = [i.category for i in result.issues]
+        assert "truncated_content" not in cats
+
+    def test_bold_closer_sentence_not_truncated(self):
+        """``**…point.**`` — bold wrapper, same principle."""
+        content = self._BODY + "\n\n**That is the entire point.**"
+        result = validate_content(
+            "Eliminating Technical Debt", content, "AI", site_config=_SC
+        )
+        cats = [i.category for i in result.issues]
+        assert "truncated_content" not in cats
+
+    def test_genuine_truncation_inside_emphasis_still_flagged(self):
+        """Regression guard: a sentence cut off *inside* italics (no terminal
+        punctuation before the marker) is still a real truncation."""
+        content = self._BODY + "\n\n*the migration script will*"
+        result = validate_content(
+            "Eliminating Technical Debt", content, "AI", site_config=_SC
+        )
+        cats = [i.category for i in result.issues]
+        assert "truncated_content" in cats

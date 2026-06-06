@@ -1681,8 +1681,17 @@ def validate_content(
     if _enabled("truncated_content"):
         stripped_content = content.rstrip()
         if stripped_content and len(stripped_content) > 200:
-            # Check if content ends with a sentence-ending character
-            last_char = stripped_content[-1]
+            # A finished sentence wrapped in markdown emphasis ends with the
+            # emphasis marker, not terminal punctuation — e.g. an italic CTA
+            # closer "*Read more on X.*" or a bold takeaway "**The point.**".
+            # Peel a trailing run of * _ ` before the terminal-punctuation
+            # check so a complete-but-emphasized final line isn't misread as a
+            # token-limit cutoff (captured live 2026-06-06: task b9aab2fe,
+            # quality 97, hard-rejected on "*Read more on AI Health and
+            # monitoring.*"). A sentence cut off *inside* emphasis still fails:
+            # peeling the markers leaves a non-terminal char, so it still fires.
+            _deemphasized_tail = stripped_content.rstrip("*_`")
+            last_char = _deemphasized_tail[-1] if _deemphasized_tail else ""
             if last_char not in '.!?"”)’':
                 # Check it's not a code block or list that legitimately ends without punctuation
                 last_line = stripped_content.split('\n')[-1].strip()
