@@ -93,6 +93,13 @@ from services.social_poster import (  # noqa: F401 — imported for metric regis
     SOCIAL_ADAPTER_ERRORS_TOTAL,
     SOCIAL_ADAPTER_POSTS_TOTAL,
 )
+# Imported for its side effect: template_runner registers NODE_DURATION_SECONDS
+# (poindexter#652) at module import. Without this, the histogram only lands on
+# the default prometheus registry after the first pipeline run — leaving the
+# Pipeline dashboard panels "No Data" on a fresh worker restart.
+from services.template_runner import (  # noqa: F401 — imported for metric registration
+    NODE_DURATION_SECONDS as _PIPELINE_NODE_DURATION_SECONDS,
+)
 
 logger = logging.getLogger(__name__)
 

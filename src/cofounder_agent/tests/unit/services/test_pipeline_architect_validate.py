@@ -78,6 +78,62 @@ def test_default_seed_keys_come_from_pipeline_state():
     assert ok is True, errors
 
 
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_wrap_atom_observes_node_duration_seconds():
+    """_wrap_atom must observe NODE_DURATION_SECONDS so atom durations appear
+    in the Pipeline dashboard (poindexter#652 regression guard).
+
+    The histogram is labeled by (node, outcome). Both the success and error
+    branches must call .labels(...).observe(elapsed_seconds).
+    """
+    from unittest.mock import MagicMock, patch
+
+    import services.template_runner as _tr
+    from services.pipeline_architect import _wrap_atom
+
+    mock_histogram = MagicMock()
+
+    async def _fast_atom(state):
+        return {"out_key": "done"}
+
+    with patch.object(_tr, "NODE_DURATION_SECONDS", mock_histogram):
+        node_fn = _wrap_atom(_fast_atom, "atoms.test_atom", "node_ok", record_sink=None)
+        await node_fn({}, None)
+
+    mock_histogram.labels.assert_called_once()
+    call_kwargs = mock_histogram.labels.call_args
+    assert call_kwargs.kwargs.get("node") == "atoms.test_atom"
+    assert call_kwargs.kwargs.get("outcome") in ("ok", "halted")
+    mock_histogram.labels.return_value.observe.assert_called_once()
+    elapsed = mock_histogram.labels.return_value.observe.call_args.args[0]
+    assert elapsed >= 0
+
+
+@pytest.mark.asyncio
+async def test_wrap_atom_observes_error_outcome():
+    """Exceptions from the atom fn must emit outcome='error' to NODE_DURATION_SECONDS."""
+    from unittest.mock import MagicMock, patch
+
+    import services.template_runner as _tr
+    from services.pipeline_architect import _wrap_atom
+
+    mock_histogram = MagicMock()
+
+    async def _failing_atom(state):
+        raise ValueError("test failure")
+
+    with patch.object(_tr, "NODE_DURATION_SECONDS", mock_histogram):
+        node_fn = _wrap_atom(_failing_atom, "atoms.fail_atom", "node_err", record_sink=None)
+        result = await node_fn({}, None)
+
+    assert result.get("_halt") is True
+    mock_histogram.labels.assert_called_once_with(node="atoms.fail_atom", outcome="error")
+    mock_histogram.labels.return_value.observe.assert_called_once()
+
+
 def test_real_registered_atoms_validate_with_defaults():
     """A spec of real registered atoms whose requires are seed/config/upstream
     satisfied must pass with default seed_keys — the new check must not break

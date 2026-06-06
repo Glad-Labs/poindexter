@@ -711,7 +711,7 @@ def _wrap_atom(
 
     from langchain_core.runnables import RunnableConfig
     from services.atom_runs import digest_keys
-    from services.template_runner import TemplateRunRecord, _services_from_config
+    from services.template_runner import NODE_DURATION_SECONDS as _node_duration, TemplateRunRecord, _services_from_config
 
     async def node(
         state: PipelineState,
@@ -727,6 +727,10 @@ def _wrap_atom(
             result = await run_fn(atom_input)
             elapsed_ms = int((_time.time() - t0) * 1000)
             out = result if isinstance(result, dict) else {}
+            halted = bool(out.get("_halt"))
+            _node_duration.labels(
+                node=atom_name, outcome="halted" if halted else "ok",
+            ).observe(elapsed_ms / 1000.0)
             output_keys = sorted(str(k) for k in out.keys())
             if record_sink is not None:
                 record_sink.append(
@@ -747,6 +751,7 @@ def _wrap_atom(
         except Exception as exc:
             elapsed_ms = int((_time.time() - t0) * 1000)
             logger.exception("[architect] atom %s raised: %s", atom_name, exc)
+            _node_duration.labels(node=atom_name, outcome="error").observe(elapsed_ms / 1000.0)
             if record_sink is not None:
                 record_sink.append(
                     TemplateRunRecord(
