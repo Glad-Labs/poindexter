@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## [0.73.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.72.0...v0.73.0) (2026-06-06)
+
+
+### Features
+
+* **platform:** migrate auto_publish_gate + finalize_task config reads onto the handle (Wave 3e-3, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1167](https://github.com/Glad-Labs/glad-labs-stack/issues/1167)) ([d7429ff](https://github.com/Glad-Labs/glad-labs-stack/commit/d7429ff246985e41457997f5e8a1c7917bc82ce8))
+
+
+### Bug Fixes
+
+* **backfill_videos:** dispatch stranded approved videos (poindexter[#558](https://github.com/Glad-Labs/glad-labs-stack/issues/558)) ([#1169](https://github.com/Glad-Labs/glad-labs-stack/issues/1169)) ([d1a892a](https://github.com/Glad-Labs/glad-labs-stack/commit/d1a892ab4ea5e1b547bf7e053692a9ddf57390ac))
+* **backfill:** handle missing site_config gracefully in run method ([f8ec275](https://github.com/Glad-Labs/glad-labs-stack/commit/f8ec2754c86f9006af8e92858940e491765698f1))
+* **ci:** enable auto-merge on nightly docs PRs ([1c5f26d](https://github.com/Glad-Labs/glad-labs-stack/commit/1c5f26d0449296259bbf22ee5e64b5a8ae2fd3cc))
+* fetch R2 manifest via S3 API to resolve recurring drift alerts ([771c867](https://github.com/Glad-Labs/glad-labs-stack/commit/771c8677e9adb1c590c5a3bf2741abccc15ca180))
+* **gpu:** skip gaming detection when pipeline holds the lock (poindexter[#579](https://github.com/Glad-Labs/glad-labs-stack/issues/579)) ([ffbb204](https://github.com/Glad-Labs/glad-labs-stack/commit/ffbb204f77c71e931e746445dcfb4efc1d521a6e))
+* linter/type-checker correctness sweep ([0144c8a](https://github.com/Glad-Labs/glad-labs-stack/commit/0144c8a2ae1ea923c75b627b679036d2f1a2cacf))
+* **metrics:** emit NODE_DURATION_SECONDS for graph_def atom path (poindexter[#652](https://github.com/Glad-Labs/glad-labs-stack/issues/652)) ([cd3670c](https://github.com/Glad-Labs/glad-labs-stack/commit/cd3670c6c010331cb118dc1d93c58d375ea6b897))
+* **monitoring:** exclude master-flag-off skips from QaRailFullySkipped; add smartmontools to brain ([2a6e91c](https://github.com/Glad-Labs/glad-labs-stack/commit/2a6e91cc63dcbd35a88552497e033db4fe62fe80))
+* **pipeline:** propagate resolved [posts/] placeholders via context_updates ([102e0e4](https://github.com/Glad-Labs/glad-labs-stack/commit/102e0e42442a2d0afc5de8bf4e63ba6c591a8323))
+* **probe:** mcp_http_probe discovery path /healthz, re-enable (poindexter[#670](https://github.com/Glad-Labs/glad-labs-stack/issues/670)) ([9dd1987](https://github.com/Glad-Labs/glad-labs-stack/commit/9dd1987c1407b41d5d4c29edbe8cc700eddd16f1))
+* **prometheus:** add self-scrape + Alertmanager scrape jobs (poindexter[#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#1168](https://github.com/Glad-Labs/glad-labs-stack/issues/1168)) ([b37a805](https://github.com/Glad-Labs/glad-labs-stack/commit/b37a80587519b9401cb214f9a5d415509a35d0c8))
+* refuse log_only fallback for critical findings (closes Glad-Labs/poindexter[#548](https://github.com/Glad-Labs/glad-labs-stack/issues/548)) ([#1163](https://github.com/Glad-Labs/glad-labs-stack/issues/1163)) ([0788550](https://github.com/Glad-Labs/glad-labs-stack/commit/0788550ab3d88da5f03650a475a740fc91264f8b))
+* **sdxl-server:** preserve pipeline on transient Postgres restart (stack[#1152](https://github.com/Glad-Labs/glad-labs-stack/issues/1152)) ([#1170](https://github.com/Glad-Labs/glad-labs-stack/issues/1170)) ([e340514](https://github.com/Glad-Labs/glad-labs-stack/commit/e34051493e51709afadc828b0ee1f7555be60d06))
+* **taps:** parallelize CodebaseSource embed queries to avoid 60s timeout ([ec6ded3](https://github.com/Glad-Labs/glad-labs-stack/commit/ec6ded322fbc741498bddb9c8f8121cb660ddfa1))
+* **tests:** re-point phase1 Grafana panel tests at experiments-dryrun.json (stack[#1082](https://github.com/Glad-Labs/glad-labs-stack/issues/1082)) ([654e9c0](https://github.com/Glad-Labs/glad-labs-stack/commit/654e9c0740f2a995ccf5ebf0d63cdfa5a44cbfa2))
+* **validator:** don't flag emphasis-wrapped final sentences as truncated ([ed77a43](https://github.com/Glad-Labs/glad-labs-stack/commit/ed77a4349d1c69358e4fee6f8d5966c2b914dcd9))
+* **video:** video_slideshow_prompt_model now overrides cost_tier.standard ([0ab7c15](https://github.com/Glad-Labs/glad-labs-stack/commit/0ab7c15a9922b9ac2c18932de960136fb699eb71))
+* **youtube:** strip bare angle brackets from video descriptions (invalidDescription 400) ([a947e9c](https://github.com/Glad-Labs/glad-labs-stack/commit/a947e9c4f3d24902de358532dc4dae04feec2f78))
+
 ## [0.72.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.71.0...v0.72.0) (2026-06-05)
 
 
