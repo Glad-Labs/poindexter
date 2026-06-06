@@ -74,7 +74,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 - 918 app_settings keys (66 secret) plus 4 cost_tier mappings (`cost_tier.{free,budget,standard,premium}.model`) wired 2026-05-09 — the baseline seeds the non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml. (Cost-guard key rename 2026-05-27 closed a silent fallthrough on `daily_spend_limit_usd` / `monthly_spend_limit_usd` — see #598.)
 - PluginScheduler boots 39 jobs (taps + retention + memory hygiene + content surfaces) — see `plugins/registry.py:_SAMPLES`
 - 5 declarative-data-plane tables (`external_taps` / `retention_policies` / `webhook_endpoints` / `publishing_adapters` / `qa_gates`) feeding the integrations handler registry's 14 handlers across 5 surfaces (`tap` / `retention` / `webhook` / `outbound` / `publishing`)
-- 17,307 embeddings across posts / issues / audit / memory / brain / claude_sessions
+- 17,391 embeddings across posts / issues / audit / memory / brain / claude_sessions
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
