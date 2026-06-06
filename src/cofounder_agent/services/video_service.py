@@ -91,55 +91,48 @@ async def _resolve_slideshow_prompt_model(
 ) -> str:
     """Bridge ``cost_tier='standard'`` -> concrete model id for SDXL prompt-gen.
 
-    Lane B batch 2 sweep migration. Order:
+    Resolution order (highest priority first):
 
-    1. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier mapping
+    1. ``app_settings[video_slideshow_prompt_model]`` — explicit per-call-site
+       override. Checked first so operators can pin a non-thinking writer even
+       when cost_tier.standard.model points at a thinking model (glm-4, qwen3,
+       etc.). Thinking variants return empty completions on the structured-list
+       prompt below (stack#1151).
+    2. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier mapping
        (``app_settings.cost_tier.standard.model``).
-    2. ``app_settings[video_slideshow_prompt_model]`` — per-call-site backstop
-       (seeded with ``ollama/llama3:latest`` by migration
-       ``20260509_220000_seed_lane_b_misc_keys``).
     3. Operator-notify + raise — per ``feedback_no_silent_defaults.md``.
 
-    The standard tier maps to a non-thinking model (``gemma3:27b``);
-    that's deliberate. Some thinking-model variants (qwen3, glm-4) return
-    empty completions on the structured-list prompt this helper feeds,
-    so the cost-tier bridge MUST stay on a non-thinking writer. Operators
-    pinning ``cost_tier.standard.model`` to a thinking model should also
-    set ``video_slideshow_prompt_model`` to override per-call.
+    ``video_slideshow_prompt_model`` is seeded to ``ollama/llama3:latest`` by
+    migration ``20260509_220000_seed_lane_b_misc_keys`` so fresh installs have
+    a safe non-thinking default regardless of what the standard tier resolves to.
     """
     _sc = site_config
+
+    # Per-call-site override wins over cost-tier — thinking models produce
+    # empty completions on the structured-list prompt (stack#1151).
+    override = _sc.get("video_slideshow_prompt_model")
+    if override:
+        return str(override)
+
     pool = getattr(_sc, "_pool", None)
     if pool is not None:
         try:
             return await resolve_tier_model(pool, "standard")
         except (RuntimeError, ValueError, AttributeError) as exc:
             tier_exc: Exception | None = exc
-        else:
-            tier_exc = None
     else:
         tier_exc = RuntimeError("no asyncpg pool available")
 
-    fallback = _sc.get("video_slideshow_prompt_model")
-    if fallback:
-        await notify_operator(
-            f"video_service: cost_tier='standard' resolution failed "
-            f"({tier_exc}); falling back to "
-            f"video_slideshow_prompt_model={fallback!r}",
-            critical=False,
-            site_config=_sc,
-        )
-        return str(fallback)
-
     await notify_operator(
-        f"video_service: cost_tier='standard' has no model AND "
-        f"video_slideshow_prompt_model is empty — slideshow prompt generation "
+        f"video_service: video_slideshow_prompt_model is empty AND "
+        f"cost_tier='standard' resolution failed — slideshow prompt generation "
         f"will use deterministic fallback prompts: {tier_exc}",
         critical=True,
         site_config=_sc,
     )
     raise RuntimeError(
-        "video_service: no model resolvable via tier or "
-        "video_slideshow_prompt_model setting"
+        "video_service: no model resolvable via video_slideshow_prompt_model "
+        "or cost_tier.standard.model"
     ) from tier_exc
 
 

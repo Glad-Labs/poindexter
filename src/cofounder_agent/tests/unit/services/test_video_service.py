@@ -15,6 +15,7 @@ from services.video_service import (
     _generate_images_for_video,
     _generate_images_from_scenes,
     _generate_short_summary_audio,
+    _resolve_slideshow_prompt_model,
     generate_short_video_for_post,
     generate_video_episode,
     generate_video_for_post,
@@ -63,6 +64,57 @@ def _seed_host_home():
         "sdxl_server_url": "http://sdxl:9836",
         "ollama_base_url": "http://ollama:11434",
     }.get(key, default))})()
+
+# ---------------------------------------------------------------------------
+# _resolve_slideshow_prompt_model — resolution order (stack#1151 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveSlideshowPromptModel:
+    """Resolution order: video_slideshow_prompt_model > cost_tier.standard.
+
+    Regression guard for stack#1151: glm-4.7 (a thinking model) was
+    resolved via cost_tier.standard and returned 0-char output.
+    video_slideshow_prompt_model must take priority so operators can
+    pin a non-thinking writer per-call-site.
+    """
+
+    @pytest.mark.asyncio
+    async def test_explicit_setting_beats_cost_tier(self):
+        """video_slideshow_prompt_model overrides cost_tier even when tier resolves fine."""
+        sc = MagicMock()
+        sc._pool = AsyncMock()
+        sc.get = MagicMock(return_value="ollama/llama3:latest")
+
+        with patch(
+            "services.video_service.resolve_tier_model",
+            AsyncMock(return_value="ollama/glm-4.7-5090:latest"),
+        ):
+            # autouse fixture patches _resolve_slideshow_prompt_model globally —
+            # call the real function directly with the autouse patch deactivated.
+            pass
+
+        # Call without the autouse patch.
+        with patch("services.video_service._autopatch_resolve_slideshow_prompt_model", create=True):
+            with patch("services.video_service.resolve_tier_model", AsyncMock(return_value="ollama/glm-4.7")):
+                result = await _resolve_slideshow_prompt_model(site_config=sc)
+
+        # The explicit setting must win — NOT the thinking-model tier value.
+        assert result == "ollama/llama3:latest"
+        sc.get.assert_called_with("video_slideshow_prompt_model")
+
+    @pytest.mark.asyncio
+    async def test_falls_through_to_cost_tier_when_setting_empty(self):
+        """When video_slideshow_prompt_model is empty, cost_tier.standard is used."""
+        sc = MagicMock()
+        sc._pool = AsyncMock()
+        sc.get = MagicMock(return_value="")  # explicit setting is empty
+
+        with patch("services.video_service.resolve_tier_model", AsyncMock(return_value="ollama/gemma3:27b")):
+            result = await _resolve_slideshow_prompt_model(site_config=sc)
+
+        assert result == "ollama/gemma3:27b"
+
 
 # ---------------------------------------------------------------------------
 # VideoResult dataclass
