@@ -56,7 +56,8 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -573,7 +574,7 @@ async def _emit_audit_event(
     event: str,
     detail: str,
     *,
-    extra: Optional[dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     """Same shape as backup_watcher's audit emitter so the timeline
     shows port-forward activity beside the rest of the brain's probes.
@@ -892,12 +893,12 @@ async def _check_one_service(
 async def run_docker_port_forward_probe(
     pool: Any,
     *,
-    http_probe_fn: Optional[Callable[[str, float], bool]] = None,
-    container_exists_fn: Optional[Callable[[str], bool]] = None,
-    restart_fn: Optional[Callable[[str], tuple[bool, str]]] = None,
-    sleep_fn: Optional[Callable[[float], None]] = None,
-    notify_fn: Optional[Callable[..., None]] = None,
-    now_fn: Optional[Callable[[], float]] = None,
+    http_probe_fn: Callable[[str, float], bool] | None = None,
+    container_exists_fn: Callable[[str], bool] | None = None,
+    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    sleep_fn: Callable[[float], None] | None = None,
+    notify_fn: Callable[..., None] | None = None,
+    now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the Docker port-forward probe.
 

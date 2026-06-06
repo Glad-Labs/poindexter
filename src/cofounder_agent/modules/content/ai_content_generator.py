@@ -39,7 +39,6 @@ from typing import Any
 import httpx
 
 from services.logger_config import get_logger
-
 from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
 
@@ -861,6 +860,8 @@ class AIContentGenerator:
         from services.llm_providers.dispatcher import dispatch_complete
         from services.llm_providers.thinking_models import (
             is_thinking_model as _is_thinking_model,
+        )
+        from services.llm_providers.thinking_models import (
             resolve_thinking_substrings as _resolve_thinking_substrings,
         )
 

@@ -54,8 +54,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx
@@ -301,7 +302,7 @@ async def _emit_audit_event(
     event: str,
     detail: str,
     *,
-    extra: Optional[dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
     severity: str = "info",
 ) -> None:
     """Write a single audit_log row; never raises."""
@@ -388,7 +389,7 @@ async def _emit_stale_alert(
 
 
 async def _fetch_open_prs(
-    client: "httpx.AsyncClient",
+    client: httpx.AsyncClient,
     repo: str,
 ) -> list[dict[str, Any]]:
     """Return the open-PR list for ``owner/name`` (one page, capped at 50)."""
@@ -410,7 +411,7 @@ async def _fetch_open_prs(
 
 
 async def _fetch_check_runs(
-    client: "httpx.AsyncClient",
+    client: httpx.AsyncClient,
     repo: str,
     sha: str,
 ) -> list[dict[str, Any]]:
@@ -454,7 +455,7 @@ def _ci_all_green(check_runs: list[dict[str, Any]]) -> bool:
     return True
 
 
-def _parse_iso8601_utc(raw: Any) -> Optional[datetime]:
+def _parse_iso8601_utc(raw: Any) -> datetime | None:
     """Parse an ISO-8601 timestamp into a UTC-aware datetime; None on failure."""
     if not raw:
         return None
@@ -521,9 +522,9 @@ HttpClientFactory = Callable[..., Any]
 async def run_pr_staleness_probe(
     pool: Any,
     *,
-    now_fn: Optional[Callable[[], datetime]] = None,
-    notify_fn: Optional[NotifyFn] = None,
-    http_client_factory: Optional[HttpClientFactory] = None,
+    now_fn: Callable[[], datetime] | None = None,
+    notify_fn: NotifyFn | None = None,
+    http_client_factory: HttpClientFactory | None = None,
 ) -> dict[str, Any]:
     """Single execution of the PR-staleness probe; returns a structured summary.
 

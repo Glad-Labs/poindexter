@@ -30,7 +30,6 @@ import pytest
 # resolves the same way the backup_watcher tests import it.
 from brain import smart_monitor as sm
 
-
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned smartctl payloads
 # ---------------------------------------------------------------------------
@@ -49,7 +48,7 @@ def _default_settings() -> dict[str, str]:
     }
 
 
-def _make_pool(*, setting_values: Optional[dict[str, Optional[str]]] = None):
+def _make_pool(*, setting_values: dict[str, str | None] | None = None):
     """Build an asyncpg-style mock pool that:
 
     - returns ``setting_values[key]`` for ``SELECT value FROM app_settings``

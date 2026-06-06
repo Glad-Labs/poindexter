@@ -31,7 +31,6 @@ import pytest
 
 from services.prompt_manager import PromptCategory, UnifiedPromptManager
 
-
 # (key, expected category) pairs — categories must match the original YAML.
 _OPS_KEYS = (
     ("ops.triage.system_prompt", PromptCategory.UTILITY),

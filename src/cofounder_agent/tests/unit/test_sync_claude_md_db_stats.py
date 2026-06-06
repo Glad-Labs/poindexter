@@ -15,9 +15,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 import pytest
-
 import scripts.sync_claude_md_db_stats as dbsync  # type: ignore[import-not-found]  # repo-root namespace pkg via pytest pythonpath
-
 
 # A minimal CLAUDE.md fragment carrying every claim the script syncs, plus
 # decoy numbers that MUST survive untouched.

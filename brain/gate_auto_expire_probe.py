@@ -55,8 +55,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -230,7 +231,7 @@ async def _emit_audit_event(
     *,
     expired_count: int,
     max_age_hours: int,
-    oldest_age_seconds: Optional[float],
+    oldest_age_seconds: float | None,
     sentinel_reason: str,
     expired_post_ids: list[str],
 ) -> None:
@@ -372,8 +373,8 @@ async def _expire_one_gate(
 async def run_gate_auto_expire_probe(
     pool: Any,
     *,
-    now_fn: Optional[Callable[[], datetime]] = None,
-    notify_fn: Optional[Callable[..., None]] = None,
+    now_fn: Callable[[], datetime] | None = None,
+    notify_fn: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the gate auto-expire probe.
 
@@ -447,7 +448,7 @@ async def run_gate_auto_expire_probe(
     # pipeline_gate_history row.
     expired: list[dict[str, Any]] = []
     skipped_races: list[str] = []
-    oldest_age_seconds: Optional[float] = None
+    oldest_age_seconds: float | None = None
     oldest_post_title: str = ""
 
     for gate in stale:

@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph

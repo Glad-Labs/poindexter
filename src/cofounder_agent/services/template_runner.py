@@ -43,10 +43,10 @@ import asyncio
 import logging
 import operator
 import time
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Annotated, Any, Callable, TypedDict
+from typing import Annotated, Any, TypedDict
 
 import ormsgpack
 from langchain_core.runnables import RunnableConfig
@@ -54,6 +54,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from prometheus_client import Histogram
+
 from services.site_config import SiteConfig
 
 # SiteConfig is now injected exclusively via constructor DI (#272

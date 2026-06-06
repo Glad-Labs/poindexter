@@ -43,13 +43,13 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
+from modules.content.stages.topic_decision_gate import build_topic_decision_artifact
 from services.approval_service import (
     is_gate_enabled,
     pause_at_gate,
 )
 from services.audit_log import audit_log_bg
 from services.logger_config import get_logger
-from modules.content.stages.topic_decision_gate import build_topic_decision_artifact
 
 logger = get_logger(__name__)
 
@@ -162,11 +162,11 @@ async def queue_at_capacity(*, pool: Any, site_config: Any) -> bool:
 async def propose_topic(
     *,
     topic: str,
-    primary_keyword: Optional[str] = None,
-    tags: Optional[list[str]] = None,
-    category: Optional[str] = None,
+    primary_keyword: str | None = None,
+    tags: list[str] | None = None,
+    category: str | None = None,
     source: str = "manual",
-    target_length: Optional[int] = None,
+    target_length: int | None = None,
     style: str = "technical",
     tone: str = "professional",
     site_config: Any,

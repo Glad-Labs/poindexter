@@ -33,9 +33,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import AnyHttpUrl
-from starlette.responses import JSONResponse
-
 from mcp.server.auth.provider import TokenError
 from mcp.server.auth.routes import (
     create_auth_routes,
@@ -45,6 +42,8 @@ from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
+from pydantic import AnyHttpUrl
+from starlette.responses import JSONResponse
 
 from services.auth.oauth_issuer import (
     ALLOWED_SCOPES,

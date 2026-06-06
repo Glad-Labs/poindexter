@@ -19,16 +19,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.jobs.run_dev_diary_post import (
-    RunDevDiaryPostJob,
     _LAST_RUN_KEY,
     _NICHE_SLUG,
+    RunDevDiaryPostJob,
     _create_dev_diary_task,
     _format_draft_landed_message,
     _get_last_run_date,
     _set_last_run_date,
 )
 from services.topic_sources.dev_diary_source import DevDiaryContext
-
 
 # ---------------------------------------------------------------------------
 # Metadata

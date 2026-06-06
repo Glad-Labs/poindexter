@@ -14,8 +14,8 @@ import json
 import pathlib
 import sys
 import threading
-import urllib.request
 import urllib.error
+import urllib.request
 
 import pytest
 

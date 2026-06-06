@@ -25,7 +25,6 @@ from plugins.tracing import (
     traced_span,
 )
 
-
 # ---------------------------------------------------------------------------
 # Recording fakes — capture span lifecycle without depending on the OTel SDK
 # ---------------------------------------------------------------------------

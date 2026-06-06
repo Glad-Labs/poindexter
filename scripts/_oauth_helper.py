@@ -229,7 +229,7 @@ class ScriptsOAuthClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> "ScriptsOAuthClient":
+    async def __aenter__(self) -> ScriptsOAuthClient:
         self._ensure_http()
         return self
 

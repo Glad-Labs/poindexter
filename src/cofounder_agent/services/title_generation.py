@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from difflib import SequenceMatcher
+
 from services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)

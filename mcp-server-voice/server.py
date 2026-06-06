@@ -45,7 +45,6 @@ import uuid as _uuid
 from pathlib import Path
 
 import asyncpg
-
 from mcp.server.fastmcp import FastMCP
 
 logging.basicConfig(level=logging.INFO)

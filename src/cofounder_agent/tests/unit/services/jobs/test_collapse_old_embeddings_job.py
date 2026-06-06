@@ -527,6 +527,7 @@ class TestLLMSummary:
 
     async def test_llm_summary_calls_ollama_with_joined_excerpts(self):
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
 
         fake_client = AsyncMock()
@@ -554,6 +555,7 @@ class TestLLMSummary:
     async def test_llm_summary_returns_none_on_ollama_exception(self):
         """LLM failure must not raise — caller falls back to joined-preview."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
 
         fake_client = AsyncMock()
@@ -569,6 +571,7 @@ class TestLLMSummary:
 
     async def test_llm_summary_strips_wrapping_quotes(self):
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
 
         fake_client = AsyncMock()
@@ -584,6 +587,7 @@ class TestLLMSummary:
 
     async def test_llm_summary_returns_none_when_ollama_returns_empty(self):
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
 
         fake_client = AsyncMock()

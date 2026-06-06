@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from modules.content.atoms import _seo_common as sc
+from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 ATOM_META = AtomMeta(
     name="seo.generate_description",

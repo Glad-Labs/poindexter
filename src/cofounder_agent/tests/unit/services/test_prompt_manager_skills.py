@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from services.prompt_manager import UnifiedPromptManager
 
-
 _RESEARCH_KEYS = (
     "research.analyze_search_results",
     "topic.ranking",

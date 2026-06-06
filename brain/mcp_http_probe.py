@@ -37,7 +37,8 @@ import logging
 import os
 import subprocess
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx
@@ -253,9 +254,9 @@ def _try_launcher(launcher_path: str) -> tuple[bool, str]:
 async def run_mcp_http_probe(
     pool,
     *,
-    now_fn: Optional[Callable[[], float]] = None,
-    http_client_factory: Optional[Callable[..., Any]] = None,
-    launcher_fn: Optional[Callable[[str], tuple[bool, str]]] = None,
+    now_fn: Callable[[], float] | None = None,
+    http_client_factory: Callable[..., Any] | None = None,
+    launcher_fn: Callable[[str], tuple[bool, str]] | None = None,
 ) -> dict[str, Any]:
     """Single probe cycle. Returns a summary dict."""
     global _last_real_check_at, _last_alert_at
@@ -361,7 +362,7 @@ async def _handle_failure(
     title: str,
     body: str,
     status_code: int | None = None,
-    launcher_fn: Optional[Callable[[str], tuple[bool, str]]] = None,
+    launcher_fn: Callable[[str], tuple[bool, str]] | None = None,
 ) -> dict[str, Any]:
     """Common failure path: alert (deduped) + optional auto-recover."""
     global _last_alert_at

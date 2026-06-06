@@ -246,6 +246,7 @@ class TestPodcastFeed:
         either no filter at all OR slug-based filter.
         """
         import inspect
+
         from routes.podcast_routes import podcast_feed
 
         source = inspect.getsource(podcast_feed)
@@ -279,6 +280,7 @@ class TestPodcastFeed:
         there. The right fix is approve the row, not strip the filter.
         """
         import inspect
+
         from routes.podcast_routes import podcast_feed
 
         source = inspect.getsource(podcast_feed)

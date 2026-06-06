@@ -13,7 +13,6 @@ import pytest
 
 from poindexter.memory import MemoryClient
 
-
 _FAKE_DSN = "postgresql://test:test@localhost/memory_resolution_test"
 
 

@@ -16,10 +16,10 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Stub the tiny slice of pipecat that voice_agent_claude_code imports at

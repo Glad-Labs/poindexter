@@ -20,7 +20,6 @@ import pytest
 from services.retention_janitor import _JANITOR_TARGETS, RetentionJanitor
 from services.site_config import SiteConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

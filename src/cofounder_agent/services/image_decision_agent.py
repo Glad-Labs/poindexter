@@ -232,6 +232,8 @@ async def plan_images(
             # Use /nothink prefix for qwen3 thinking models to get direct JSON output.
             from services.llm_providers.thinking_models import (
                 is_thinking_model as _is_thinking_model,
+            )
+            from services.llm_providers.thinking_models import (
                 resolve_thinking_substrings,
             )
             _is_thinking = _is_thinking_model(

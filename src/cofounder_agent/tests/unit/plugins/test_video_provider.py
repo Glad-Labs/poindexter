@@ -20,7 +20,6 @@ import pytest
 from plugins import VideoProvider, VideoResult, get_video_providers
 from plugins.registry import ENTRY_POINT_GROUPS, clear_registry_cache
 
-
 # ---------------------------------------------------------------------------
 # VideoResult dataclass
 # ---------------------------------------------------------------------------

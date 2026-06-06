@@ -135,8 +135,8 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
     so the budget tier is correct.
     """
     from langchain_ollama import ChatOllama, OllamaEmbeddings
-    from ragas.llms import LangchainLLMWrapper
     from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.llms import LangchainLLMWrapper
 
     # local_llm_api_url is the canonical Ollama base-URL setting (same
     # key topic_ranking.py / llm_text.py use). Reading OLLAMA_BASE_URL

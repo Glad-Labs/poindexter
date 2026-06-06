@@ -38,7 +38,6 @@ from poindexter.cli.approval import (
     reject_command,
 )
 
-
 # ---------------------------------------------------------------------------
 # _resolve_task_id_prefix — the helper itself
 # ---------------------------------------------------------------------------

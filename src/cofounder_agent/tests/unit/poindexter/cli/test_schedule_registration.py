@@ -18,9 +18,9 @@ from click.testing import CliRunner
 def test_schedule_group_is_registered():
     """`poindexter schedule batch/list/show/shift/clear` are reachable
     through the main CLI."""
-    from poindexter.cli.app import main
-
     import click
+
+    from poindexter.cli.app import main
     assert isinstance(main, click.Group)
     assert "schedule" in main.commands
     schedule = main.commands["schedule"]
@@ -40,6 +40,7 @@ def test_publish_at_shortcut_is_registered():
     before that the import existed but the `main.add_command` call was
     missing, so the command was unreachable from the CLI surface."""
     import click
+
     from poindexter.cli.app import main
 
     assert isinstance(main, click.Group)

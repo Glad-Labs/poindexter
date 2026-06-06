@@ -22,10 +22,10 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Stub the tiny slice of pipecat that voice_agent_claude_code imports at
@@ -430,12 +430,12 @@ def test_run_bot_lazy_import_symbols_resolve():
         "the method moved or was renamed."
     )
     # The brain service the block constructs with the resolved session.
+    # The auto-reset ctor params run_bot threads in must still exist.
+    import inspect
+
     from cofounder_agent.services.voice_agent_claude_code import (
         ClaudeCodeBridgeLLMService,
     )
-
-    # The auto-reset ctor params run_bot threads in must still exist.
-    import inspect
 
     params = inspect.signature(ClaudeCodeBridgeLLMService.__init__).parameters
     for required in ("session_id", "token_budget", "max_age_seconds", "persist_session_id"):

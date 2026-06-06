@@ -30,7 +30,6 @@ from plugins.kernel_platform import KernelPlatform, build_kernel_platform
 from plugins.module import ModuleManifest
 from plugins.platform import Capability, CapabilityError
 
-
 # --- stub kernel services -----------------------------------------------------
 
 

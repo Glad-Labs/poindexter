@@ -20,8 +20,8 @@ sys.path.insert(0, str(_project_root))
 
 async def main():
     import asyncpg
-    from brain.bootstrap import resolve_database_url
     import httpx
+    from brain.bootstrap import resolve_database_url
 
     db_url = os.getenv("DATABASE_URL") or resolve_database_url()
     conn = await asyncpg.connect(db_url)

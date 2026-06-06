@@ -23,7 +23,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-from typing import Any, Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 from plugins.platform import (
     AuditCapability,
@@ -196,7 +197,7 @@ class _AuditAdapter:
 
     def _on_bg_done(
         self,
-        task: "asyncio.Task[Any]",
+        task: asyncio.Task[Any],
         *,
         event_type: str,
         source: str,

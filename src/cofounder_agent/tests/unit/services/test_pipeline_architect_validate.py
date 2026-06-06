@@ -138,7 +138,8 @@ def test_real_registered_atoms_validate_with_defaults():
     """A spec of real registered atoms whose requires are seed/config/upstream
     satisfied must pass with default seed_keys — the new check must not break
     the architect's compose() path."""
-    from services.atom_registry import discover, get_atom_meta as real_get
+    from services.atom_registry import discover
+    from services.atom_registry import get_atom_meta as real_get
 
     discover()  # idempotent
     gate = real_get("atoms.approval_gate")

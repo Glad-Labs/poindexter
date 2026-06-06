@@ -35,7 +35,6 @@ from typing import Any
 
 import httpx
 
-
 # Default app_settings keys for the CLI's OAuth client. The migration
 # helper (``poindexter auth migrate-cli``) writes here.
 CLI_CLIENT_ID_KEY = "cli_oauth_client_id"
@@ -152,7 +151,7 @@ class WorkerClient:
         # callers that introspect it for logging keep working.
         self.token: str = ""
 
-    async def __aenter__(self) -> "WorkerClient":
+    async def __aenter__(self) -> WorkerClient:
         # Resolve credentials. Explicit args (for tests) win over
         # app_settings.
         if self._explicit_client_id is not None or self._explicit_client_secret is not None:

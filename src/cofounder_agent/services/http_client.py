@@ -86,7 +86,7 @@ def get_shared_http_client() -> httpx.AsyncClient:
     return http_client
 
 
-async def get_http_client(request: "Request") -> httpx.AsyncClient:
+async def get_http_client(request: Request) -> httpx.AsyncClient:
     """FastAPI dependency exposing the lifespan-bound shared client.
 
     Usage in a route handler::

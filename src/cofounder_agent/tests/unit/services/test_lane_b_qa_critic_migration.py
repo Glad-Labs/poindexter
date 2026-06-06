@@ -24,7 +24,6 @@ import pytest
 from modules.content.multi_model_qa import MultiModelQA
 from services.site_config import SiteConfig
 
-
 # ---------------------------------------------------------------------------
 # multi_model_qa._resolve_critic_model
 # ---------------------------------------------------------------------------

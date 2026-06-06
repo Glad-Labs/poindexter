@@ -27,14 +27,13 @@ import os
 import signal
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
-import time
 from datetime import datetime, timezone
 
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
-
 from health_probes import run_health_probes
 from seed_loader import seed_app_settings
 
@@ -68,11 +67,11 @@ except ImportError:
 # imports above (and the brain still boots if httpx is somehow
 # unavailable — every other call path here uses urllib).
 try:
-    from oauth_client import oauth_client_from_pool, BRAIN_DEFAULT_SCOPES
+    from oauth_client import BRAIN_DEFAULT_SCOPES, oauth_client_from_pool
     _HAS_OAUTH_CLIENT = True
 except ImportError:  # pragma: no cover — package-qualified path for tests
     try:
-        from brain.oauth_client import oauth_client_from_pool, BRAIN_DEFAULT_SCOPES
+        from brain.oauth_client import BRAIN_DEFAULT_SCOPES, oauth_client_from_pool
         _HAS_OAUTH_CLIENT = True
     except ImportError:
         _HAS_OAUTH_CLIENT = False
@@ -461,7 +460,9 @@ def _audit_brain_module_imports() -> None:
         from operator_notifier import notify_operator
     except ImportError:
         try:
-            from brain.operator_notifier import notify_operator  # type: ignore[no-redef]
+            from brain.operator_notifier import (
+                notify_operator,  # type: ignore[no-redef]
+            )
         except ImportError:
             logger.warning(
                 "[BRAIN] operator_notifier unavailable — %d packaging "
@@ -545,7 +546,9 @@ def _page_operator_failsafe(
         from operator_notifier import notify_operator
     except ImportError:
         try:
-            from brain.operator_notifier import notify_operator  # type: ignore[no-redef]
+            from brain.operator_notifier import (
+                notify_operator,  # type: ignore[no-redef]
+            )
         except ImportError:
             logger.error(
                 "[BRAIN] operator_notifier failsafe unavailable — cannot page "
@@ -741,7 +744,9 @@ async def _hydrate_notify_env_from_settings(pool) -> None:
     duplicate brain_daemon imports.
     """
     try:
-        from brain.secret_reader import read_app_setting  # type: ignore[import-not-found]
+        from brain.secret_reader import (
+            read_app_setting,  # type: ignore[import-not-found]
+        )
     except ImportError:
         try:
             from secret_reader import read_app_setting  # type: ignore[no-redef]
@@ -2861,10 +2866,14 @@ async def main():
     # the watchdog only saw alert_events rows (Grafana → webhook path)
     # and treated direct-to-Telegram brain notifications as silent.
     try:
-        from operator_notifier import set_notify_audit_sink  # type: ignore[import-not-found]
+        from operator_notifier import (
+            set_notify_audit_sink,  # type: ignore[import-not-found]
+        )
     except ImportError:
         try:
-            from brain.operator_notifier import set_notify_audit_sink  # type: ignore[import-not-found]
+            from brain.operator_notifier import (
+                set_notify_audit_sink,  # type: ignore[import-not-found]
+            )
         except ImportError:
             set_notify_audit_sink = None
 

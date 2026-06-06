@@ -29,7 +29,6 @@ from click.testing import CliRunner
 
 from poindexter.cli.posts import post_group
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

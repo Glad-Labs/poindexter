@@ -19,7 +19,6 @@ from starlette.testclient import TestClient
 from middleware.prometheus_metrics import PrometheusMetricsMiddleware
 from services.metrics_exporter import http_route_label
 
-
 # ---------------------------------------------------------------------------
 # http_route_label — pure unit tests on synthetic ASGI scopes
 # ---------------------------------------------------------------------------

@@ -20,8 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.stage import Stage, StageResult
 from modules.content.stages.approval_gate import ApprovalGateStage
+from plugins.stage import Stage, StageResult
 
 
 def _make_site_config(values: dict[str, str] | None = None) -> Any:

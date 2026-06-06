@@ -24,7 +24,6 @@ from services.jobs.topic_discovery_signals import (
     _evaluate_signals,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fake pool — same minimal shape used by the prune-job tests.
 # ---------------------------------------------------------------------------

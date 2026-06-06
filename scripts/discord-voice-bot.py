@@ -50,8 +50,6 @@ sys.path.insert(0, str(_project_root / "scripts"))
 import asyncpg
 import discord
 import soundfile as sf
-from faster_whisper import WhisperModel
-from kokoro_onnx import Kokoro
 
 # OAuth helper for the Poindexter worker API (Glad-Labs/poindexter#248).
 # Picks OAuth client_credentials when configured, else legacy Bearer.
@@ -59,6 +57,7 @@ from _oauth_helper import (  # noqa: E402
     oauth_client_from_pool,
     read_app_setting,
 )
+
 # Slice 3 (poindexter#390): semantic recall helpers — embed-on-save +
 # pgvector cosine search over voice_messages. Best-effort by design;
 # any failure logs WARNING and the conversation continues.
@@ -67,6 +66,8 @@ from _voice_memory import (  # noqa: E402
     recall_similar_turns,
     save_message_with_embedding,
 )
+from faster_whisper import WhisperModel
+from kokoro_onnx import Kokoro
 
 try:
     import webrtcvad

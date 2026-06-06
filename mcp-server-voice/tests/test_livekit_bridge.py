@@ -33,7 +33,6 @@ if str(MCP_SERVER_DIR) not in sys.path:
 import livekit_bridge  # noqa: E402
 import server  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: temp pipe dir, fake pool, tool callable resolution
 # ---------------------------------------------------------------------------

@@ -6,7 +6,6 @@ from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import mcp_http_probe as mhp
 
 
@@ -24,7 +23,7 @@ def _default_settings() -> dict[str, str]:
     }
 
 
-def _make_pool(*, setting_values: Optional[dict[str, str]] = None):
+def _make_pool(*, setting_values: dict[str, str] | None = None):
     settings = {**_default_settings(), **(setting_values or {})}
     pool = MagicMock()
 

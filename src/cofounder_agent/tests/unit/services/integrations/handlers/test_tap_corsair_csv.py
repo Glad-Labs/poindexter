@@ -36,7 +36,6 @@ from services.integrations.handlers.tap_corsair_csv import (
     corsair_csv,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -224,7 +223,7 @@ class TestDeriveOffsetHoursFromMtime:
 
     def test_unparseable_last_row_returns_none(self, tmp_path: Path):
         path = tmp_path / "cue.csv"
-        path.write_bytes(("﻿Timestamp,Metric\nnot-a-timestamp,123\n").encode("utf-8"))
+        path.write_bytes(("﻿Timestamp,Metric\nnot-a-timestamp,123\n").encode())
         assert _derive_offset_hours_from_mtime(path) is None
 
     def test_empty_file_returns_none(self, tmp_path: Path):

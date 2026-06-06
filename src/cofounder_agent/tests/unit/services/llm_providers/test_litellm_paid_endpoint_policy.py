@@ -30,11 +30,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.llm_providers.litellm_provider import (
-    LiteLLMProvider,
     _LOCAL_MODEL_PREFIXES,
+    LiteLLMProvider,
     _coerce_bool,
 )
-
 
 # ---------------------------------------------------------------------------
 # _coerce_bool — TEXT app_settings.value rows. Pins the parsing surface so

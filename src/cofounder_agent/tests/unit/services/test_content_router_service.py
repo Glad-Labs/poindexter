@@ -397,8 +397,8 @@ class TestScrubFabricatedLinks:
     def test_keeps_own_domain_links(self):
         # Use the conftest-seeded shared SiteConfig (post-#330 sweep —
         # text_utils takes ``site_config`` as a function arg, no module attr).
-        from tests.unit.conftest import site_config as sc
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        from tests.unit.conftest import site_config as sc
         domain = sc.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
         assert domain in _scrub_fabricated_links(content, site_config=sc)

@@ -47,7 +47,6 @@ from services.di_wiring import (
     wire_site_config_modules,
 )
 
-
 # ---------------------------------------------------------------------------
 # WIRED_MODULES: now empty (the per-module wiring loop is retired)
 # ---------------------------------------------------------------------------

@@ -57,7 +57,7 @@ IMAGE_STYLES = [
 ]
 
 
-def extract_r2_key(url: str) -> Optional[str]:
+def extract_r2_key(url: str) -> str | None:
     """Pull the object key out of an R2 public URL.
 
     Example:
@@ -84,7 +84,7 @@ async def fetch_settings(conn) -> dict:
     return {r["key"]: r["value"] for r in rows}
 
 
-async def fetch_target_posts(conn, limit: Optional[int], one_post_id: Optional[str]):
+async def fetch_target_posts(conn, limit: int | None, one_post_id: str | None):
     if one_post_id:
         rows = await conn.fetch(
             """
@@ -108,7 +108,7 @@ async def fetch_target_posts(conn, limit: Optional[int], one_post_id: Optional[s
     return rows
 
 
-async def craft_prompt(title: str, _category: Optional[str]) -> tuple[str, str]:
+async def craft_prompt(title: str, _category: str | None) -> tuple[str, str]:
     """Use Ollama to write an editorial SDXL prompt for this post.
 
     Falls back to a templated prompt if Ollama is unreachable.
@@ -149,7 +149,7 @@ async def craft_prompt(title: str, _category: Optional[str]) -> tuple[str, str]:
     return fallback, style_name
 
 
-async def generate_image(prompt: str, negative: str) -> Optional[str]:
+async def generate_image(prompt: str, negative: str) -> str | None:
     """Call the host SDXL server. Returns local image_path or None on failure."""
     async with httpx.AsyncClient(timeout=180) as c:
         r = await c.post(

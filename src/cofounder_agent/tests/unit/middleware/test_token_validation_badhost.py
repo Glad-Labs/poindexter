@@ -21,7 +21,6 @@ from fastapi.testclient import TestClient
 
 from middleware.token_validation import TokenValidationMiddleware
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

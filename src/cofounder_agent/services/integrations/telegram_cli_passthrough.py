@@ -59,8 +59,9 @@ import logging
 import shlex
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -144,8 +145,8 @@ async def handle_cli_message(
     *,
     site_config: Any,
     audit_logger: Any | None = None,
-    runner: Optional[Callable[[list[str], int], Awaitable["_RunResult"]]] = None,
-) -> Optional[CliReply]:
+    runner: Callable[[list[str], int], Awaitable[_RunResult]] | None = None,
+) -> CliReply | None:
     """Process one incoming Telegram message; return a reply or None.
 
     Args:

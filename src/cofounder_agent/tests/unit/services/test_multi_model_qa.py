@@ -1879,7 +1879,7 @@ class TestSurfaceReviewerFailure:
         # No handle (tests / substrate preview-QA): drops quietly, never raises.
         qa = MultiModelQA(pool=None, settings_service=None,
                           site_config=SiteConfig(), platform=None)
-        qa._surface_reviewer_failure("guardrails_brand", IOError("disk full"))
+        qa._surface_reviewer_failure("guardrails_brand", OSError("disk full"))
 
     def test_audit_failure_swallowed(self):
         # Observability must never break the QA chain: a raising handle is
@@ -1893,7 +1893,7 @@ class TestSurfaceReviewerFailure:
 
         qa = MultiModelQA(pool=None, settings_service=None,
                           site_config=SiteConfig(), platform=_BoomPlatform())
-        qa._surface_reviewer_failure("guardrails_brand", IOError("disk full"))
+        qa._surface_reviewer_failure("guardrails_brand", OSError("disk full"))
 
 
 @pytest.mark.unit

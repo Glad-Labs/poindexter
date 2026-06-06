@@ -45,7 +45,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx
@@ -169,8 +170,8 @@ async def _write_alert(
 async def run_discord_bot_probe(
     pool,
     *,
-    now_fn: Optional[Callable[[], float]] = None,
-    http_client_factory: Optional[Callable[..., Any]] = None,
+    now_fn: Callable[[], float] | None = None,
+    http_client_factory: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Run one cycle of the probe. Returns a summary dict.
 

@@ -128,7 +128,7 @@ async def verify_alertmanager_token(
     # speaking to this endpoint.
     if _looks_like_jwt(submitted):
         try:
-            from services.auth.oauth_issuer import verify_token, InvalidToken
+            from services.auth.oauth_issuer import InvalidToken, verify_token
             try:
                 verify_token(submitted)
                 return  # OAuth JWT accepted.

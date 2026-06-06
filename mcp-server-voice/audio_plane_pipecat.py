@@ -35,8 +35,9 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from livekit_bridge import AudioMediaPlane
 
@@ -101,7 +102,6 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
             raise RuntimeError("no DATABASE_URL (env or bootstrap.toml)")
 
         import asyncpg
-
         from services.site_config import SiteConfig
 
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1)
@@ -243,18 +243,20 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
         # Lazy imports -- defer the heavy pipecat / livekit closure until
         # actually connecting so unit tests can patch boundaries without
         # paying the import cost on collection.
+        from pipecat.audio.vad.silero import SileroVADAnalyzer
+        from pipecat.audio.vad.vad_analyzer import VADParams
+        from pipecat.frames.frames import TranscriptionFrame, TTSSpeakFrame
         from pipecat.pipeline.pipeline import Pipeline
         from pipecat.pipeline.runner import PipelineRunner
         from pipecat.pipeline.task import PipelineParams, PipelineTask
-        from pipecat.frames.frames import TTSSpeakFrame, TranscriptionFrame
-        from pipecat.processors.frame_processor import (
-            FrameDirection,
-            FrameProcessor,
-        )
         from pipecat.processors.aggregators.llm_context import LLMContext
         from pipecat.processors.aggregators.llm_response_universal import (
             LLMContextAggregatorPair,
             LLMUserAggregatorParams,
+        )
+        from pipecat.processors.frame_processor import (
+            FrameDirection,
+            FrameProcessor,
         )
         from pipecat.turns.user_start.vad_user_turn_start_strategy import (
             VADUserTurnStartStrategy,
@@ -263,8 +265,6 @@ class PipecatAudioMediaPlane(AudioMediaPlane):
             SpeechTimeoutUserTurnStopStrategy,
         )
         from pipecat.turns.user_turn_strategies import UserTurnStrategies
-        from pipecat.audio.vad.silero import SileroVADAnalyzer
-        from pipecat.audio.vad.vad_analyzer import VADParams
         from services.voice_pipecat import (
             build_kokoro_tts,
             build_livekit_bridge_transport,

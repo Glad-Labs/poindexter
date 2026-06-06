@@ -31,7 +31,6 @@ from routes.triage_routes import router, set_model_router_for_tests
 from services.site_config import SiteConfig
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
-
 # ---------------------------------------------------------------------------
 # Pool / DB mocks
 # ---------------------------------------------------------------------------

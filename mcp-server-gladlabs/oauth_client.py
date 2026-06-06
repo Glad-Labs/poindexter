@@ -159,7 +159,7 @@ class GladlabsMcpOAuthClient:
         self._mint_lock = asyncio.Lock()
         self._http: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "GladlabsMcpOAuthClient":
+    async def __aenter__(self) -> GladlabsMcpOAuthClient:
         self._ensure_http()
         return self
 

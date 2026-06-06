@@ -102,7 +102,7 @@ async def _publish_clip_to_room(
     api_secret: str,
     room_name: str,
     clip_path: Path,
-) -> tuple["object", "object"]:
+) -> tuple[object, object]:
     """Join ``room_name`` as a harness participant and publish ``clip_path``.
 
     Returns the (room, audio_source) handles so the caller can keep

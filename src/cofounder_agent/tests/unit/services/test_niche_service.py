@@ -10,7 +10,8 @@ from uuid import uuid4
 
 import asyncpg
 import pytest
-from services.niche_service import NicheService, Niche, NicheGoal, NicheSource
+
+from services.niche_service import Niche, NicheGoal, NicheService, NicheSource
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

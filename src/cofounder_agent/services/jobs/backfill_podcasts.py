@@ -240,8 +240,8 @@ class BackfillPodcastsJob:
             try:
                 import httpx
 
-                from services.r2_upload_service import R2UploadService
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+                from services.r2_upload_service import R2UploadService
                 api_base = (
                     sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                     if sc is not None else DEFAULT_WORKER_API_URL

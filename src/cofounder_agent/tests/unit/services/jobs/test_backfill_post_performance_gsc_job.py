@@ -22,7 +22,6 @@ from services.jobs.backfill_post_performance_gsc import (
     BackfillPostPerformanceGscJob,
 )
 
-
 # ---------------------------------------------------------------------------
 # Metadata
 # ---------------------------------------------------------------------------

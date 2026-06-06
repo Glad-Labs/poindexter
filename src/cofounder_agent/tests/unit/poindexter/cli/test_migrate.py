@@ -20,7 +20,6 @@ from click.testing import CliRunner
 
 from poindexter.cli.migrate import migrate_group
 
-
 # ---------------------------------------------------------------------------
 # Helpers — fake pool + on-disk file list
 # ---------------------------------------------------------------------------

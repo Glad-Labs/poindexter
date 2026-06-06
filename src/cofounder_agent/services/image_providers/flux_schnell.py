@@ -48,7 +48,6 @@ import httpx
 
 from plugins.image_provider import ImageResult
 
-
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
 # set_http_client() at startup. ``_generate`` prefers it so the
 # connection pool to the FLUX inference server stays warm across

@@ -452,7 +452,8 @@ class TopicDiscovery:
         # raises, the discovery sweep aborts cleanly with a queue=0
         # rather than producing a stack of pre-failed tasks.
         from services.template_slug_resolver import (
-            TemplateSlugUnresolvable, resolve_template_slug,
+            TemplateSlugUnresolvable,
+            resolve_template_slug,
         )
         try:
             template_slug = await resolve_template_slug(

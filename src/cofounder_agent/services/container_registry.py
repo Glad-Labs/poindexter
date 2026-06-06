@@ -34,10 +34,10 @@ if TYPE_CHECKING:
 # ``set_container`` (which ``bootstrap.build_container`` does for every
 # entry point). Deliberately a plain module global — there is exactly one
 # AppContainer per process.
-_active_container: "AppContainer | None" = None
+_active_container: AppContainer | None = None
 
 
-def set_container(container: "AppContainer | None") -> None:
+def set_container(container: AppContainer | None) -> None:
     """Register the process-wide built ``AppContainer``.
 
     Called by ``services.bootstrap.build_container`` right after the
@@ -48,7 +48,7 @@ def set_container(container: "AppContainer | None") -> None:
     _active_container = container
 
 
-def get_container() -> "AppContainer | None":
+def get_container() -> AppContainer | None:
     """Return the process-wide ``AppContainer``, or ``None`` if unset.
 
     Crash-safe by design: callers MUST handle ``None`` (the early-boot /

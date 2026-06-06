@@ -37,8 +37,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from langgraph.graph import END, StateGraph
 
@@ -499,7 +500,7 @@ def _validate_spec(
             from services.template_runner import PipelineState
             seed_keys = set(PipelineState.__annotations__)
 
-        indeg = {nid: 0 for nid in seen_ids}
+        indeg = dict.fromkeys(seen_ids, 0)
         adj2: dict[str, list[str]] = {nid: [] for nid in seen_ids}
         for e in edges:
             if e.get("to") != "END" and e.get("from") in seen_ids and e.get("to") in seen_ids:
@@ -544,7 +545,7 @@ def _validate_spec(
 def _has_cycle(adj: dict[str, list[str]]) -> bool:
     """Tarjan-ish DFS cycle detection. White/gray/black coloring."""
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[str, int] = {n: WHITE for n in adj}
+    color: dict[str, int] = dict.fromkeys(adj, WHITE)
 
     def dfs(node: str) -> bool:
         color[node] = GRAY
@@ -710,8 +711,10 @@ def _wrap_atom(
     """
 
     from langchain_core.runnables import RunnableConfig
+
     from services.atom_runs import digest_keys
-    from services.template_runner import NODE_DURATION_SECONDS as _node_duration, TemplateRunRecord, _services_from_config
+    from services.template_runner import NODE_DURATION_SECONDS as _node_duration
+    from services.template_runner import TemplateRunRecord, _services_from_config
 
     async def node(
         state: PipelineState,
@@ -783,7 +786,6 @@ def _wrap_atom(
 # the writer paths. The module-level alias keeps test patches at the
 # historical name working.
 from services.llm_text import ollama_chat_text as _ollama_chat_text  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Cache: persist successful compositions as named templates

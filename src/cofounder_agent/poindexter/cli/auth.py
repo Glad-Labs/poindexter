@@ -189,6 +189,7 @@ def register_client(
     async def _impl():
         from mcp.shared.auth import OAuthClientInformationFull
         from pydantic import AnyUrl
+
         from services.auth.oauth_issuer import generate_client_id, generate_client_secret
         from services.auth.oauth_provider import PoindexterOAuthProvider
 
@@ -376,7 +377,8 @@ def mint_token(client_id: str, client_secret: str, scopes: str) -> None:
 
     async def _impl():
         import hmac
-        from services.auth.oauth_issuer import issue_token, InvalidScope
+
+        from services.auth.oauth_issuer import InvalidScope, issue_token
         from services.auth.oauth_provider import PoindexterOAuthProvider
 
         pool = await _pool()
@@ -441,9 +443,10 @@ async def _provision_consumer_client(
     """
     from mcp.shared.auth import OAuthClientInformationFull
     from pydantic import AnyUrl
+
+    from plugins.secrets import set_secret
     from services.auth.oauth_issuer import generate_client_id, generate_client_secret
     from services.auth.oauth_provider import PoindexterOAuthProvider
-    from plugins.secrets import set_secret
 
     client_id = generate_client_id()
     client_secret = generate_client_secret()

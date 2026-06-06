@@ -36,7 +36,6 @@ from modules.finance.mercury_client import (
 from modules.finance.routes import router as finance_router
 from utils.route_utils import get_database_dependency
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

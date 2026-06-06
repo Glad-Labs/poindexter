@@ -43,7 +43,6 @@ from services.approval_service import (
     show_pending,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool — a tiny in-memory store keyed on the SQL fragment we
 # expect approval_service to issue. Keeping it dumb on purpose: the goal is
@@ -52,7 +51,7 @@ from services.approval_service import (
 
 
 class FakeConnection:
-    def __init__(self, store: "FakeStore") -> None:
+    def __init__(self, store: FakeStore) -> None:
         self._store = store
 
     async def __aenter__(self):  # used for `async with pool.acquire() as conn`

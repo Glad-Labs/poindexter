@@ -31,7 +31,6 @@ import argparse
 import json
 import sys
 
-
 SCOPES = [
     "https://www.googleapis.com/auth/webmasters.readonly",
     "https://www.googleapis.com/auth/analytics.readonly",

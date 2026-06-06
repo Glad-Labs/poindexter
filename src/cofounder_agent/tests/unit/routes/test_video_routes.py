@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from services.site_config import SiteConfig
 from routes.video_routes import _rfc2822, router
+from services.site_config import SiteConfig
 
 # storage_* cutover (#731): video routes read storage_public_url (was
 # r2_public_url). Build a dedicated SiteConfig for the feed tests rather

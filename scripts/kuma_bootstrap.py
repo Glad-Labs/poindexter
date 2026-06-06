@@ -32,7 +32,6 @@ from typing import Any
 import asyncpg
 import socketio
 
-
 KUMA_URL = "http://uptime-kuma:3001"
 ADMIN_USERNAME = "admin"
 API_KEY_NAME = "prometheus"

@@ -19,7 +19,6 @@ import pytest
 
 from schemas.database_response_models import PostResponse
 
-
 # The full state machine the posts table actually carries — every value
 # here must round-trip through PostResponse validation without raising.
 _REQUIRED_STATUSES = [

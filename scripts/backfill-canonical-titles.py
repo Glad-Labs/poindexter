@@ -57,14 +57,12 @@ if os.path.isdir(_AGENT_SRC):
     sys.path.insert(0, os.path.abspath(_AGENT_SRC))
 
 import asyncpg  # noqa: E402
-
 from utils.title_utils import (  # noqa: E402
     DEFAULT_SEO_TITLE_MAX_LEN,
     derive_seo_title,
     extract_body_h1,
     strip_emoji,
 )
-
 
 DEFAULT_DB_URL = (
     os.getenv("POINDEXTER_BRAIN_URL")
@@ -77,9 +75,9 @@ DEFAULT_DB_URL = (
 class BackfillDiff:
     table: str
     row_id: str
-    old_title: Optional[str]
+    old_title: str | None
     new_title: str
-    old_seo_title: Optional[str]
+    old_seo_title: str | None
     new_seo_title: str
     body_h1: str
 
@@ -99,7 +97,7 @@ def _derive_from_h1(body_h1: str) -> Tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _pick_canonical(body: Optional[str], existing_title: Optional[str]) -> Tuple[Optional[str], str]:
+def _pick_canonical(body: str | None, existing_title: str | None) -> Tuple[str | None, str]:
     """Pick canonical title: body H1 preferred, else existing title column.
 
     Returns ``(canonical, source_label)`` where source_label is 'h1' or
@@ -114,7 +112,7 @@ def _pick_canonical(body: Optional[str], existing_title: Optional[str]) -> Tuple
     return None, "none"
 
 
-async def _scan_posts(conn, limit: Optional[int]) -> Tuple[List[BackfillDiff], int, int]:
+async def _scan_posts(conn, limit: int | None) -> Tuple[List[BackfillDiff], int, int]:
     """Scan the ``posts`` table. Returns (diffs, skipped_no_canonical, skipped_no_body)."""
     diffs: List[BackfillDiff] = []
     skipped_no_canonical = 0
@@ -149,7 +147,7 @@ async def _scan_posts(conn, limit: Optional[int]) -> Tuple[List[BackfillDiff], i
 
 
 async def _scan_content_tasks(
-    conn, limit: Optional[int]
+    conn, limit: int | None
 ) -> Tuple[List[BackfillDiff], int, int]:
     diffs: List[BackfillDiff] = []
     skipped_no_canonical = 0
@@ -192,7 +190,7 @@ async def _scan_content_tasks(
 
 
 async def _scan_pipeline_versions(
-    conn, limit: Optional[int]
+    conn, limit: int | None
 ) -> Tuple[List[BackfillDiff], int, int]:
     diffs: List[BackfillDiff] = []
     skipped_no_canonical = 0

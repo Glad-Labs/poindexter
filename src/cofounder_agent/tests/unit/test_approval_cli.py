@@ -29,7 +29,6 @@ from services.approval_service import (
     TaskNotPausedError,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared fixture — patches DSN resolution + pool factory + site_config
 # ---------------------------------------------------------------------------

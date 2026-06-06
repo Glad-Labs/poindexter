@@ -63,7 +63,8 @@ import os
 import re
 import subprocess
 import time
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 # Compose env-var interpolation: ${VAR}, ${VAR:-default}, $VAR.
 # Matches Docker Compose's variable substitution rules — see

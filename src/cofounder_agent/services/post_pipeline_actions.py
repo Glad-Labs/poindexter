@@ -519,8 +519,8 @@ async def _maybe_run_preview_qa(
         # The container lookup matches the inline block's pattern;
         # MultiModelQA needs a settings_service kwarg so we resolve
         # one if the caller didn't pass it in.
-        from services.container import get_service
         from modules.content.multi_model_qa import MultiModelQA
+        from services.container import get_service
 
         _settings_svc = settings_service or get_service("settings")
         # Resolve preview URL to one reachable from inside the worker

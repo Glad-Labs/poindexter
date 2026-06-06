@@ -325,7 +325,7 @@ def _is_fresh(last_seen_iso: str | None, max_age_hours: int) -> bool:
     if not last_seen_iso:
         return True
     try:
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         # GlitchTip returns ISO 8601 with "Z" or "+00:00"; Python 3.11+
         # handles both via fromisoformat. Older Pythons need a Z→+00:00
         # swap; the brain image is 3.13 so fromisoformat alone is fine.
@@ -368,7 +368,7 @@ def _parse_next_cursor(link_header: str) -> str | None:
 
 
 async def _fetch_open_issues(
-    client: "httpx.AsyncClient",
+    client: httpx.AsyncClient,
     base_url: str,
     org_slug: str,
     *,
@@ -421,7 +421,7 @@ async def _fetch_open_issues(
 
 
 async def _resolve_issue(
-    client: "httpx.AsyncClient",
+    client: httpx.AsyncClient,
     base_url: str,
     issue_id: str,
 ) -> bool:

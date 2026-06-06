@@ -37,10 +37,10 @@ logger = logging.getLogger(__name__)
 # set_http_client() at startup. ``_build_sdxl_prompt`` prefers it so
 # the Ollama connection pool stays warm across per-task image
 # generations.
-http_client: "httpx.AsyncClient | None" = None
+http_client: httpx.AsyncClient | None = None
 
 
-def set_http_client(client: "httpx.AsyncClient | None") -> None:
+def set_http_client(client: httpx.AsyncClient | None) -> None:
     """Wire the lifespan-bound shared httpx.AsyncClient."""
     global http_client
     http_client = client

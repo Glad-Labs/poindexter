@@ -25,7 +25,6 @@ from services.image_providers.flux_schnell import (
     _resolve_server_url,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers — mirror the SDXL test fixtures so failure modes match.
 # ---------------------------------------------------------------------------

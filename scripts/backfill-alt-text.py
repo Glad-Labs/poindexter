@@ -33,8 +33,8 @@ import argparse
 import asyncio
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import asyncpg
 
@@ -49,7 +49,6 @@ from services.alt_text import (  # noqa: E402  (sys.path munge above)
     iter_img_alts,
     strip_tokens_from_img_tags,
 )
-
 
 DEFAULT_DB_URL = (
     "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"

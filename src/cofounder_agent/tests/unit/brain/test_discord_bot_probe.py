@@ -20,9 +20,7 @@ from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import discord_bot_probe as dbp
-
 
 # ---------------------------------------------------------------------------
 # Mock builders
@@ -39,7 +37,7 @@ def _default_settings() -> dict[str, str]:
     }
 
 
-def _make_pool(*, setting_values: Optional[dict[str, str]] = None):
+def _make_pool(*, setting_values: dict[str, str] | None = None):
     """Mock asyncpg pool. ``fetchrow`` returns rows matching the
     brain.secret_reader contract: ``{"value": ..., "is_secret": False}``."""
     settings = {**_default_settings(), **(setting_values or {})}

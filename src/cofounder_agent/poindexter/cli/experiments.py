@@ -56,7 +56,6 @@ import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 
-
 # ---------------------------------------------------------------------------
 # Status / objective constants — kept in lockstep with the CHECK constraints
 # in migration 20260529_000342_phase1_experiments_harness_foundation.py
@@ -222,6 +221,7 @@ def experiments_create(
     """
     async def _impl():
         import asyncpg
+
         from services.niche_service import NicheService
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)

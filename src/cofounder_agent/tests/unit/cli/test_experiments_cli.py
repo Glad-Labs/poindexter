@@ -33,7 +33,6 @@ from click.testing import CliRunner
 
 from poindexter.cli.experiments import experiments_group
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

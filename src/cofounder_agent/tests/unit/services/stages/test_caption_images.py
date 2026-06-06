@@ -1,6 +1,7 @@
 """Unit tests for CaptionImagesStage — vision alt for inline + featured."""
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from modules.content.stages.caption_images import CaptionImagesStage
 

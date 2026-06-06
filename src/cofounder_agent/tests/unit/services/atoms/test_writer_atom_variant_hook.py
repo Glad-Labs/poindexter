@@ -36,7 +36,6 @@ import pytest
 
 from services.experiment_runner import ExperimentVariant
 
-
 pytestmark = pytest.mark.asyncio
 
 

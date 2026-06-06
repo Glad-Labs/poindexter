@@ -170,7 +170,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 content="body",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -215,7 +215,7 @@ class TestGenerateVideoForPost:
                 content="body",
                 podcast_path=str(podcast_file),
                 force=True,
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -235,7 +235,7 @@ class TestGenerateVideoForPost:
                 title="Test",
                 content="body",
                 podcast_path="/nonexistent/podcast.mp3",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -258,7 +258,7 @@ class TestGenerateVideoForPost:
                 title="Test",
                 content="body",
                 podcast_path=str(podcast_file),
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -299,7 +299,7 @@ class TestGenerateVideoForPost:
                 title="Test Post",
                 content="Some content",
                 podcast_path=str(podcast_file),
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -336,7 +336,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path=str(podcast_file),
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -364,7 +364,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path=str(podcast_file),
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -391,7 +391,7 @@ class TestGenerateVideoForPost:
                 title="Test",
                 content="body",
                 # podcast_path intentionally omitted
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -443,7 +443,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path="/home/appuser/.poindexter/podcast/post123.mp3",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -501,7 +501,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path="/root/.poindexter/podcast/post123.mp3",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -903,7 +903,7 @@ class TestToHostPath:
                 post_id="p1",
                 title="T",
                 podcast_path="/root/.poindexter/podcast/p1.mp3",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -944,7 +944,7 @@ class TestToHostPath:
                 post_id="p2",
                 title="T",
                 podcast_path="/tmp/other/podcast.mp3",
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -1298,7 +1298,7 @@ class TestGenerateShortVideoForPost:
         with patch("services.video_service.VIDEO_DIR", video_dir):
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -1317,7 +1317,7 @@ class TestGenerateShortVideoForPost:
             mock_summary.return_value = None
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -1344,7 +1344,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = []
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -1385,7 +1385,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -1426,7 +1426,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            
+
                 site_config=_seed_host_home,
             )
 
@@ -1467,7 +1467,7 @@ class TestGenerateShortVideoForPost:
             await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
                 pre_generated_scenes=["scene a", "scene b"],
-            
+
                 site_config=_TEST_SC,
             )
 
@@ -1514,7 +1514,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            
+
                 site_config=_seed_host_home,
             )
 

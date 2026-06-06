@@ -215,7 +215,7 @@ class McpOAuthClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> "McpOAuthClient":
+    async def __aenter__(self) -> McpOAuthClient:
         self._ensure_http()
         return self
 

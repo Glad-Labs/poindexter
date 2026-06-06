@@ -359,7 +359,7 @@ class TestGpuTemperatureProbe:
 
     @staticmethod
     def _row(temp, age_min):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         return {
             "temperature": temp,
             "timestamp": datetime.now(timezone.utc) - timedelta(minutes=age_min),

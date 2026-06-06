@@ -141,10 +141,11 @@ class TestPostgresCheckpointerSmoke:
         would land in the checkpoints table.
         """
         import asyncio
-        import sys
-        import asyncpg
         import secrets
+        import sys
         from urllib.parse import urlparse, urlunparse
+
+        import asyncpg
 
         # psycopg async cannot run on Windows' default ProactorEventLoop —
         # it needs SelectorEventLoop. The production worker is started

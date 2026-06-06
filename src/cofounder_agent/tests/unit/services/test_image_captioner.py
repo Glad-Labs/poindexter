@@ -1,8 +1,8 @@
 """Unit tests for services.image_captioner — vision-based alt text."""
 import base64
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from services.image_captioner import caption_image
 

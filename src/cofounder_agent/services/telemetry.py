@@ -213,7 +213,8 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
 
 import functools
 import inspect
-from typing import Any, Awaitable, Callable, ParamSpec, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, ParamSpec, TypeVar
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")

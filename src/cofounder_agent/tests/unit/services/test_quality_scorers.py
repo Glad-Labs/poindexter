@@ -8,7 +8,6 @@ No DB or LLM calls — all functions are stateless heuristics.
 
 import pytest
 
-from services.site_config import SiteConfig
 from services.quality_scorers import (
     check_keywords,
     count_syllables,
@@ -24,6 +23,7 @@ from services.quality_scorers import (
     score_relevance,
     score_seo,
 )
+from services.site_config import SiteConfig
 
 # Default config for testing (avoids DB calls)
 _CFG = {

@@ -38,8 +38,9 @@ import re
 import secrets
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -91,7 +92,7 @@ _DOCKER_CMD_TIMEOUT = 60
 
 # Module-level last verdict so a recovery (fail -> pass) emits one notify.
 # None = unknown (first run since boot). True = last run passed.
-_last_passed: Optional[bool] = None
+_last_passed: bool | None = None
 
 
 def _reset_module_state() -> None:
@@ -176,7 +177,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
 
 
 # --- dump discovery + daily gate --------------------------------------------
-def _find_latest_dump(backup_dir: str, tier: str) -> Optional[str]:
+def _find_latest_dump(backup_dir: str, tier: str) -> str | None:
     """Newest ``poindexter_brain_*.dump`` under ``<backup_dir>/<tier>/``.
 
     Falls back to any ``*.dump`` if none match the prefix. Skips ``.tmp``
@@ -185,9 +186,9 @@ def _find_latest_dump(backup_dir: str, tier: str) -> Optional[str]:
     tier_dir = Path(backup_dir) / tier
     if not tier_dir.is_dir():
         return None
-    best_path: Optional[str] = None
+    best_path: str | None = None
     best_mtime = -1.0
-    fallback_path: Optional[str] = None
+    fallback_path: str | None = None
     fallback_mtime = -1.0
     try:
         with os.scandir(tier_dir) as it:
@@ -210,7 +211,7 @@ def _find_latest_dump(backup_dir: str, tier: str) -> Optional[str]:
     return best_path or fallback_path
 
 
-async def _seconds_since_last_run(pool: Any) -> Optional[float]:
+async def _seconds_since_last_run(pool: Any) -> float | None:
     """Seconds since the newest terminal restore-test audit event, or None.
 
     Gating lives in the DB (not module memory) so a brain restart doesn't
@@ -261,7 +262,7 @@ def _run_cmd(cmd: list[str], timeout: int) -> tuple[int, str, str]:
         return -1, "", f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
-def _discover_network(worker: str = WORKER_CONTAINER) -> Optional[str]:
+def _discover_network(worker: str = WORKER_CONTAINER) -> str | None:
     """First docker network attached to the worker, or None."""
     rc, out, _ = _run_cmd(
         ["docker", "inspect", "-f",
@@ -282,7 +283,7 @@ def _remove_container(name: str) -> None:
     _run_cmd(["docker", "rm", "-f", name], _DOCKER_CMD_TIMEOUT)
 
 
-def _start_container(name: str, image: str, network: Optional[str],
+def _start_container(name: str, image: str, network: str | None,
                      password: str) -> tuple[bool, str]:
     cmd = ["docker", "run", "-d", "--name", name,
            "-e", f"POSTGRES_PASSWORD={password}",
@@ -325,7 +326,7 @@ def _restore(name: str, timeout: int) -> tuple[int, str]:
     return rc, err.strip()
 
 
-def _table_count(name: str, db: str, table: str) -> Optional[int]:
+def _table_count(name: str, db: str, table: str) -> int | None:
     """Row count for ``table`` via psql, or None on bad name / query error."""
     if not _TABLE_NAME_RE.match(table):
         logger.warning("[RESTORE_TEST] rejecting non-identifier table %r", table)
@@ -365,7 +366,7 @@ def _run_smoke(throwaway: str, db: str, password: str, timeout: int) -> tuple[bo
 
 async def _emit_audit(pool: Any, event: str, detail: str,
                       *, severity: str = "info",
-                      extra: Optional[dict[str, Any]] = None) -> None:
+                      extra: dict[str, Any] | None = None) -> None:
     payload: dict[str, Any] = {"detail": detail}
     if extra:
         payload.update(extra)
@@ -382,8 +383,8 @@ async def _emit_audit(pool: Any, event: str, detail: str,
 
 # --- verdict policy ---------------------------------------------------------
 def _decide_verdict(*, restore_rc: int, restore_stderr: str,
-                    row_counts: dict[str, Optional[int]],
-                    schema_migrations_count: Optional[int], min_count: int,
+                    row_counts: dict[str, int | None],
+                    schema_migrations_count: int | None, min_count: int,
                     smoke_enabled: bool, smoke_ok: bool,
                     smoke_detail: str) -> tuple[bool, str, str]:
     """Combine the three signals into (passed, severity, detail).
@@ -447,16 +448,16 @@ async def _infra_fail(pool: Any, notify_fn: Callable[..., Any],
 
 async def run_restore_test_probe(
     pool: Any, *,
-    find_dump_fn: Optional[Callable[[str, str], Optional[str]]] = None,
-    discover_network_fn: Optional[Callable[[], Optional[str]]] = None,
-    start_fn: Optional[Callable[..., tuple[bool, str]]] = None,
-    wait_ready_fn: Optional[Callable[[str, int], bool]] = None,
-    copy_fn: Optional[Callable[[str, str], tuple[bool, str]]] = None,
-    restore_fn: Optional[Callable[[str, int], tuple[int, str]]] = None,
-    count_fn: Optional[Callable[[str, str, str], Optional[int]]] = None,
-    smoke_fn: Optional[Callable[..., tuple[bool, str]]] = None,
-    teardown_fn: Optional[Callable[[str], None]] = None,
-    notify_fn: Optional[Callable[..., Any]] = None,
+    find_dump_fn: Callable[[str, str], str | None] | None = None,
+    discover_network_fn: Callable[[], str | None] | None = None,
+    start_fn: Callable[..., tuple[bool, str]] | None = None,
+    wait_ready_fn: Callable[[str, int], bool] | None = None,
+    copy_fn: Callable[[str, str], tuple[bool, str]] | None = None,
+    restore_fn: Callable[[str, int], tuple[int, str]] | None = None,
+    count_fn: Callable[[str, str, str], int | None] | None = None,
+    smoke_fn: Callable[..., tuple[bool, str]] | None = None,
+    teardown_fn: Callable[[str], None] | None = None,
+    notify_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """One execution of the restore-test probe. Seams default to the real
     docker impls; tests inject stubs so no container ever runs. Blocking
@@ -526,7 +527,7 @@ async def run_restore_test_probe(
         restore_rc, restore_err = await asyncio.to_thread(
             restore_fn, THROWAWAY_CONTAINER, cfg["restore_timeout"])
 
-        row_counts: dict[str, Optional[int]] = {}
+        row_counts: dict[str, int | None] = {}
         for table in cfg["critical_tables"]:
             row_counts[table] = await asyncio.to_thread(
                 count_fn, THROWAWAY_CONTAINER, TARGET_DB, table)

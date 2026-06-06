@@ -30,7 +30,6 @@ from modules.finance.probes import (
     run_finance_poll_staleness_probe,
 )
 
-
 _NOW = 1_780_000_000.0
 
 

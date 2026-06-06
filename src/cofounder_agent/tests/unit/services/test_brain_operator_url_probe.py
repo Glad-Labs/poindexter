@@ -12,7 +12,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from brain import operator_url_probe as oup
 
 
@@ -819,6 +818,7 @@ class TestProbeUrlRedirect:
         """End-to-end: _probe_one_url itself uses probe_url for the HTTP
         call when the override supplies one, keeping url in the result."""
         import asyncio
+
         import httpx
 
         response_map: dict[str, int] = {

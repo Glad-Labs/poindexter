@@ -57,7 +57,8 @@ import os
 import re
 import time
 import uuid as _uuid
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +184,8 @@ class ClaudeCodeBridgeLLMService(LLMService):
         extra_args: list[str] | None = None,
         token_budget: int | None = None,
         max_age_seconds: int | None = None,
-        persist_session_id: "Callable[[str], Any] | None" = None,
-        monotonic: "Callable[[], float]" = time.monotonic,
+        persist_session_id: Callable[[str], Any] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
         host_brain_url: str | None = None,
         host_brain_token: str | None = None,
         **kwargs,
@@ -787,6 +788,7 @@ async def _transcript_discord_webhook() -> str | None:
 
     import asyncpg
     from brain.bootstrap import resolve_database_url
+
     from services.site_config import SiteConfig
 
     db_url = resolve_database_url()

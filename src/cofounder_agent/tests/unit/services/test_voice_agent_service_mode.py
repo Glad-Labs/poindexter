@@ -19,7 +19,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Lightweight Pipecat / LiveKit stubs so ``import services.voice_agent_*``
 # resolves without the heavy dependencies actually being installed.

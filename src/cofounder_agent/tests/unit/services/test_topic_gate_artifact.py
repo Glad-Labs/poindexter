@@ -14,13 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.stage import StageResult
 from modules.content.stages.topic_decision_gate import (
     TopicDecisionGateStage,
     _summarize_research,
     build_topic_decision_artifact,
 )
-
+from plugins.stage import StageResult
 
 # ---------------------------------------------------------------------------
 # build_topic_decision_artifact — shape contract

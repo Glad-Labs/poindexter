@@ -51,9 +51,13 @@ import httpx
 from plugins import llm_resilience as _llm_resilience  # noqa: F401 — re-export anchor
 from plugins.llm_resilience import (
     CircuitBreaker as _GenericCircuitBreaker,
+)
+from plugins.llm_resilience import (
     CircuitOpenError,
     LLMResilienceManager,
     RetryDecision,
+)
+from plugins.llm_resilience import (
     compute_backoff as _compute_backoff,
 )
 from services.audit_log import audit_log_bg as _audit_log_bg  # noqa: F401

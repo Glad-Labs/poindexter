@@ -33,14 +33,13 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from services.template_runner import (
+    _CONFIG_SERVICES_KEY,
     PipelineState,
     TemplateRunner,
-    _CONFIG_SERVICES_KEY,
     _is_msgpack_serializable,
     _partition_state_and_services,
     _services_from_config,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test doubles — small unserializable handle that mimics DatabaseService

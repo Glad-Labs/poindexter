@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain.corsair_feed_probe import run_corsair_feed_probe
 
 _LATEST = datetime(2026, 6, 4, 1, 0, tzinfo=timezone.utc)

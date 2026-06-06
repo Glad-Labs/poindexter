@@ -133,6 +133,7 @@ def main():
     if "--write-db" in sys.argv:
         try:
             import asyncio
+
             import asyncpg
 
             async def write():

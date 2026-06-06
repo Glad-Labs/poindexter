@@ -19,7 +19,6 @@ import pytest
 
 from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 
-
 # ---------------------------------------------------------------------------
 # QAGateSpec.applies_to_style
 # ---------------------------------------------------------------------------

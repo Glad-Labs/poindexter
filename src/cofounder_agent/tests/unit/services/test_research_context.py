@@ -25,7 +25,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Test doubles — MemoryClient stub + asyncpg pool double
 # ---------------------------------------------------------------------------

@@ -17,9 +17,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import prefect_stuck_flow_probe as psfp
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -30,7 +30,6 @@ from click.testing import CliRunner
 
 from poindexter.cli.posts import _compute_idempotency_key, post_group
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

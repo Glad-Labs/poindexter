@@ -189,7 +189,7 @@ class LangfuseExperimentService:
     def _hash_subject(experiment_key: str, subject_id: str) -> int:
         """Deterministic 0..99 bucket via blake2b. Same math as the SQL
         service — keeps assignments stable across the cutover."""
-        raw = f"{experiment_key}:{subject_id}".encode("utf-8")
+        raw = f"{experiment_key}:{subject_id}".encode()
         digest = hashlib.blake2b(raw, digest_size=4).digest()
         return int.from_bytes(digest, "big") % 100
 

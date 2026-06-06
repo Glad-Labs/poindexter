@@ -28,7 +28,6 @@ import pytest
 # resolves the same way the other brain probe tests import it.
 from brain import pr_staleness_probe as psp
 
-
 # ---------------------------------------------------------------------------
 # Helpers — fixed clock, pool builder, fake httpx client
 # ---------------------------------------------------------------------------
@@ -59,8 +58,8 @@ def _default_settings() -> dict[str, str]:
 
 def _make_pool(
     *,
-    setting_values: Optional[dict[str, str]] = None,
-    deduped_fingerprints: Optional[set[str]] = None,
+    setting_values: dict[str, str] | None = None,
+    deduped_fingerprints: set[str] | None = None,
 ):
     """Build an asyncpg-style mock pool that:
 
@@ -198,7 +197,7 @@ class _FakeAsyncClient:
     async def __aexit__(self, *args):
         return False
 
-    async def get(self, url: str, params: Optional[dict] = None):
+    async def get(self, url: str, params: dict | None = None):
         self.calls.append(url)
         if "/pulls" in url:
             return _FakeResponse(200, self._prs)
@@ -215,7 +214,7 @@ class _FakeAsyncClient:
 def _factory_for(
     *,
     prs: list[dict[str, Any]],
-    check_runs_by_sha: Optional[dict[str, dict[str, Any]]] = None,
+    check_runs_by_sha: dict[str, dict[str, Any]] | None = None,
 ):
     """Build an http_client_factory that returns one canned client."""
     crs = check_runs_by_sha or {}

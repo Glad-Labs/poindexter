@@ -494,7 +494,9 @@ async def _fire_empty_token_alarm(pool: Any, skip_count: int) -> None:
         notify_fn = _notify
     except ImportError:
         try:
-            from brain.brain_daemon import notify as _notify  # type: ignore[import-not-found]
+            from brain.brain_daemon import (
+                notify as _notify,  # type: ignore[import-not-found]
+            )
 
             notify_fn = _notify
         except ImportError:

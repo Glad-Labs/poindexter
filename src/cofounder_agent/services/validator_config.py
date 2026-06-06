@@ -144,6 +144,7 @@ def _load_rules_sync() -> dict[str, _ValidatorRule]:
         return {}
 
     import asyncio
+
     import asyncpg  # type: ignore[import-not-found]
 
     async def _fetch() -> list[dict]:

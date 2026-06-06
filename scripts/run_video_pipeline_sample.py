@@ -29,7 +29,6 @@ from typing import Any
 
 import asyncpg
 
-
 # Make src/cofounder_agent importable when invoked from the repo root.
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO, "src", "cofounder_agent"))
@@ -109,11 +108,11 @@ async def _run_stages(
     Stage, which left all the upstream long-form generation running —
     a 30-min waste on Wan. Caught by Matt during the b6ekoqn5t run.
     """
-    from services.stages.script_for_video import ScriptForVideoStage
     from services.stages.scene_visuals import SceneVisualsStage
-    from services.stages.tts_for_video import TtsForVideoStage
+    from services.stages.script_for_video import ScriptForVideoStage
     from services.stages.stitch_long_form import StitchLongFormStage
     from services.stages.stitch_short_form import StitchShortFormStage
+    from services.stages.tts_for_video import TtsForVideoStage
     from services.stages.upload_to_platform import UploadToPlatformStage
 
     stages: list[Any] = [

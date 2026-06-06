@@ -25,16 +25,14 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import compose_drift_probe as cd
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_pool(*, setting_values: Optional[dict[str, str]] = None):
+def _make_pool(*, setting_values: dict[str, str] | None = None):
     """asyncpg-style mock pool that returns canned settings + records writes."""
     pool = MagicMock()
     settings = dict(setting_values or {})

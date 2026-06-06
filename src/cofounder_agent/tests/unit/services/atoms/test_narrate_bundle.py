@@ -24,7 +24,6 @@ from modules.content.atoms.narrate_bundle import (
     run,
 )
 
-
 # ---------------------------------------------------------------------------
 # Repro fixture: the actual PR that triggered #354.
 # ---------------------------------------------------------------------------

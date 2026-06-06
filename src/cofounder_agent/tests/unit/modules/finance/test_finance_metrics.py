@@ -31,7 +31,6 @@ from modules.finance.metrics import (
     refresh_finance_metrics,
 )
 
-
 # A fixed "now" so age math is deterministic. 2026-06-03T00:00:00Z-ish.
 _NOW = 1_780_000_000.0
 

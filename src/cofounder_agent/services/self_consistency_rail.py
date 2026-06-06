@@ -217,8 +217,9 @@ async def _pairwise_mean_cosine(
         )
         return -1.0
 
-    from services.llm_providers.dispatcher import dispatch_embed
     import numpy as np
+
+    from services.llm_providers.dispatcher import dispatch_embed
 
     embeddings: list[list[float]] = []
     for s in samples:

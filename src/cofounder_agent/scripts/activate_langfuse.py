@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-import tomllib
 from pathlib import Path
 
 import asyncpg
+import tomllib
 
 
 def _read_init_env() -> dict[str, str]:

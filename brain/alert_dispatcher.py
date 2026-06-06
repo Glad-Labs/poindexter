@@ -89,8 +89,9 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("brain.alert_dispatcher")
 
@@ -333,7 +334,7 @@ def _channels_for(
 
 async def _fetch_dedup_state(
     pool: Any, fingerprint: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Return the current dedup-state row, or None if no prior fire.
 
     Treated as "no prior fire" on any DB error (table missing,
@@ -529,10 +530,10 @@ def _row_to_alert_dict(row: dict[str, Any]) -> dict[str, Any]:
 # legacy (worker-side) notifiers that don't surface message ids. Defined
 # as a Callable so tests can inject their own without monkeypatching the
 # import path.
-NotifyFn = Callable[..., Awaitable[Optional[dict[str, Any]]]]
+NotifyFn = Callable[..., Awaitable[dict[str, Any] | None]]
 
 
-async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
+async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
     """Return a coroutine notify function, or None if nothing is reachable.
 
     Order:
@@ -554,7 +555,9 @@ async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
     back to the cross-instance pool registry inside ``brain.notify``.
     """
     try:
-        from services.integrations.operator_notify import notify_operator  # type: ignore
+        from services.integrations.operator_notify import (
+            notify_operator,  # type: ignore
+        )
         return notify_operator
     except Exception as e:  # noqa: BLE001 — narrow imports later
         logger.debug(
@@ -572,14 +575,16 @@ async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
             import brain_daemon as brain_daemon_mod  # type: ignore  # noqa: F811
         except ImportError:
             try:
-                from brain import brain_daemon as brain_daemon_mod  # type: ignore  # noqa: F811
+                from brain import (
+                    brain_daemon as brain_daemon_mod,  # type: ignore  # noqa: F811
+                )
             except ImportError:
                 brain_daemon_mod = None
 
     if brain_daemon_mod is not None and hasattr(brain_daemon_mod, "notify"):
         notify_callable = brain_daemon_mod.notify
 
-        async def _adapter(message: str, *, critical: bool = False) -> Optional[dict[str, Any]]:
+        async def _adapter(message: str, *, critical: bool = False) -> dict[str, Any] | None:
             # critical is a no-op for the brain helper — it always sends
             # to both Telegram and Discord ops. Severity is encoded in
             # the message header itself, which is enough for Matt to
@@ -664,7 +669,7 @@ async def poll_and_dispatch(
     pool: Any,
     *,
     batch_size: int = 50,
-    notify_fn: Optional[NotifyFn] = None,
+    notify_fn: NotifyFn | None = None,
 ) -> dict[str, int]:
     """Poll undispatched ``alert_events`` rows and notify the operator.
 
@@ -1639,7 +1644,7 @@ async def _read_api_base_url(pool: Any) -> str:
     return (value or "").strip().rstrip("/")
 
 
-async def _mint_oauth_token(pool: Any, base_url: str) -> Optional[str]:
+async def _mint_oauth_token(pool: Any, base_url: str) -> str | None:
     """Mint a brain OAuth JWT via the existing brain.oauth_client helper.
 
     The helper does its own caching (~30 s skew) so calling per-triage
@@ -1723,7 +1728,9 @@ async def _send_triage_followup(
             import brain_daemon as brain_daemon_mod  # type: ignore  # noqa: F811
         except ImportError:
             try:
-                from brain import brain_daemon as brain_daemon_mod  # type: ignore  # noqa: F811
+                from brain import (
+                    brain_daemon as brain_daemon_mod,  # type: ignore  # noqa: F811
+                )
             except ImportError:
                 logger.warning(
                     "[alert_dispatcher] brain_daemon unavailable — "
@@ -1755,8 +1762,8 @@ async def _triage_one(
     row: Any,
     notify_result: dict[str, Any],
     *,
-    sleep_fn: Optional[Callable[[float], Awaitable[None]]] = None,
-) -> Optional[dict[str, Any]]:
+    sleep_fn: Callable[[float], Awaitable[None]] | None = None,
+) -> dict[str, Any] | None:
     """Run firefighter triage for ONE alert row in the background.
 
     Posts to the worker's ``/api/triage`` endpoint, retries transient

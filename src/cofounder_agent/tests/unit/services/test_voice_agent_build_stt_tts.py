@@ -37,10 +37,10 @@ def _stub_openai_services() -> tuple[type, type]:
     pkg = types.ModuleType("pipecat.services.openai")
     sys.modules["pipecat.services.openai"] = pkg
     stt_mod = types.ModuleType("pipecat.services.openai.stt")
-    setattr(stt_mod, "OpenAISTTService", stt_cls)
+    stt_mod.OpenAISTTService = stt_cls
     sys.modules["pipecat.services.openai.stt"] = stt_mod
     tts_mod = types.ModuleType("pipecat.services.openai.tts")
-    setattr(tts_mod, "OpenAITTSService", tts_cls)
+    tts_mod.OpenAITTSService = tts_cls
     sys.modules["pipecat.services.openai.tts"] = tts_mod
     return stt_cls, tts_cls
 

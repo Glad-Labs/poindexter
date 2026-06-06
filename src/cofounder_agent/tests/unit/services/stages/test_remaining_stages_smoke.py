@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.stage import Stage
 from modules.content.stages.capture_training_data import CaptureTrainingDataStage
 from modules.content.stages.finalize_task import FinalizeTaskStage
 from modules.content.stages.generate_media_scripts import (
@@ -33,6 +32,7 @@ from modules.content.stages.generate_seo_metadata import (
 )
 from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+from plugins.stage import Stage
 
 # ---------------------------------------------------------------------------
 # Protocol conformance — all six new stages in one sweep.

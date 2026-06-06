@@ -814,7 +814,7 @@ _HALLUCINATION_WHITELIST_BASE = {
     "yarn", "pnpm", "bundler", "maven", "gradle",
     "kubectl", "helmfile", "skaffold", "kustomize",
     "make", "cmake", "ninja", "bazel", "buck",
-    "vim", "nvim", "emacs", "vscode", "cursor", "zed", "sublime",
+    "vim", "nvim", "emacs", "vscode", "zed", "sublime",
     "tmux", "zsh", "bash", "fish", "powershell",
     "ssh", "scp", "rsync", "curl", "wget", "jq", "yq",
     "ffmpeg", "imagemagick", "graphviz", "pandoc",
@@ -837,10 +837,10 @@ _HALLUCINATION_WHITELIST_BASE = {
     "ml", "ai", "nlp", "cv", "ar", "vr", "xr",
     # ---- Common English nouns the writer uses narratively (NOT libraries)
     "blog", "photo", "reports", "impact", "level", "library",
-    "action", "bridge", "length", "result", "system", "text",
+    "action", "bridge", "length", "system", "text",
     "main.py", "requirements.txt", "read_file", "content_status",
     # ---- File-extensions + common script names
-    "py", "js", "ts", "tsx", "jsx", "go", "rs", "rb", "sh", "ps1",
+    "py", "js", "ts", "tsx", "jsx", "rs", "rb", "sh", "ps1",
 }
 
 
