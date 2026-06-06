@@ -189,7 +189,7 @@ async def _dispatch_auto_fix(
     return result.ok
 
 
-_FINDINGS_ISSUE_REPO = "Glad-Labs/glad-labs-stack"  # private — operator findings
+_FINDINGS_ISSUE_REPO = "Glad-Labs/poindexter"  # private — operator findings
 
 
 async def _dispatch_github_issue(

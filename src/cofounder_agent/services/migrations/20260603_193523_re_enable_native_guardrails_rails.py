@@ -1,6 +1,6 @@
 """Migration 20260603_193523_re_enable_native_guardrails_rails: re-enable native guardrails rails
 
-ISSUE: Glad-Labs/glad-labs-stack#996
+ISSUE: Glad-Labs/poindexter#996
 
 Background — what is this migration for? Why is it being added?
 
