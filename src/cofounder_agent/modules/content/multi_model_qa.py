@@ -592,7 +592,9 @@ class MultiModelQA:
                     from urllib.parse import urlparse as _urlparse
                     _internal_domains: set[str] = {"localhost"}
                     try:
-                        _site_domain = (self._site_config.get("site_domain", "") or "").lower().strip()
+                        _site_domain = (
+                        self._platform.config.get("site_domain", "") if self._platform else ""
+                    ).lower().strip()
                         if _site_domain:
                             _internal_domains.add(_site_domain)
                             _internal_domains.add(f"www.{_site_domain}")
@@ -1203,8 +1205,8 @@ class MultiModelQA:
             )
             ollama_model = resolved_model.removeprefix("ollama/")
 
-            _gate_max = self._site_config.get_int("qa_gate_max_tokens", 600)
-            _gate_timeout = self._site_config.get_int("qa_gate_timeout_seconds", 60)
+            _gate_max = self._platform.config.get_int("qa_gate_max_tokens", 600) if self._platform else 600
+            _gate_timeout = self._platform.config.get_int("qa_gate_timeout_seconds", 60) if self._platform else 60
             try:
                 result = await asyncio.wait_for(
                     client.generate(
@@ -2073,8 +2075,9 @@ class MultiModelQA:
             ],
             "options": {"temperature": 0.2, "num_predict": 400},
         }
-        _ollama_url = self._site_config.get(
-            "ollama_base_url", "http://host.docker.internal:11434",
+        _ollama_url = (
+            self._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
+            if self._platform else "http://host.docker.internal:11434"
         ) + "/api/chat"
         _vision_timeout = httpx.Timeout(120.0, connect=5.0)
 
@@ -2265,8 +2268,9 @@ class MultiModelQA:
             ],
             "options": {"temperature": 0.2, "num_predict": 500},
         }
-        _ollama_url = self._site_config.get(
-            "ollama_base_url", "http://host.docker.internal:11434",
+        _ollama_url = (
+            self._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
+            if self._platform else "http://host.docker.internal:11434"
         ) + "/api/chat"
         _preview_timeout = httpx.Timeout(180.0, connect=5.0)
 

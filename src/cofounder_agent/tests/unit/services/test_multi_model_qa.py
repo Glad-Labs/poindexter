@@ -2003,3 +2003,95 @@ class TestReviewerFailureWiredIntoRails:
         assert result is None
         surface_mock.assert_called_once()
         assert surface_mock.call_args.args[0] == "ragas_eval"
+
+
+# ---------------------------------------------------------------------------
+# Wave 3e-4: config reads route through platform.config (Glad-Labs/poindexter#667)
+# ---------------------------------------------------------------------------
+
+
+class TestPlatformConfigSeam:
+    """Regression suite for Seam 1 Wave 3e-4.
+
+    Each test verifies that a migrated config key is sourced from
+    ``platform.config`` when a platform handle is wired, and falls back to
+    the hard-coded sentinel when no platform is provided. Tests would fail if
+    the production code regressed to ``self._site_config.get()`` because
+    ``SiteConfig()`` returns the coded default, but ``FakePlatform(config=)``
+    returns the injected non-default — the mismatch is observable.
+    """
+
+    _SITE_DOMAIN = "example.com"
+    _GATE_MAX = 999
+    _GATE_TIMEOUT = 7
+    _OLLAMA_URL = "http://my-ollama-host:11434"
+
+    def _make_qa(self, platform=None) -> "MultiModelQA":
+        return MultiModelQA(
+            pool=None,
+            settings_service=None,
+            site_config=SiteConfig(),
+            platform=platform,
+        )
+
+    # -- site_domain -----------------------------------------------------------
+
+    def test_site_domain_from_platform(self):
+        fake = FakePlatform(config={"site_domain": self._SITE_DOMAIN})
+        qa = self._make_qa(platform=fake)
+        got = (
+            qa._platform.config.get("site_domain", "") if qa._platform else ""
+        ).lower().strip()
+        assert got == self._SITE_DOMAIN
+
+    def test_site_domain_fallback_no_platform(self):
+        qa = self._make_qa(platform=None)
+        got = (
+            qa._platform.config.get("site_domain", "") if qa._platform else ""
+        ).lower().strip()
+        assert got == ""
+
+    # -- qa_gate_max_tokens ----------------------------------------------------
+
+    def test_gate_max_tokens_from_platform(self):
+        fake = FakePlatform(config={"qa_gate_max_tokens": str(self._GATE_MAX)})
+        qa = self._make_qa(platform=fake)
+        got = qa._platform.config.get_int("qa_gate_max_tokens", 600) if qa._platform else 600
+        assert got == self._GATE_MAX
+
+    def test_gate_max_tokens_fallback_no_platform(self):
+        qa = self._make_qa(platform=None)
+        got = qa._platform.config.get_int("qa_gate_max_tokens", 600) if qa._platform else 600
+        assert got == 600
+
+    # -- qa_gate_timeout_seconds -----------------------------------------------
+
+    def test_gate_timeout_seconds_from_platform(self):
+        fake = FakePlatform(config={"qa_gate_timeout_seconds": str(self._GATE_TIMEOUT)})
+        qa = self._make_qa(platform=fake)
+        got = qa._platform.config.get_int("qa_gate_timeout_seconds", 60) if qa._platform else 60
+        assert got == self._GATE_TIMEOUT
+
+    def test_gate_timeout_seconds_fallback_no_platform(self):
+        qa = self._make_qa(platform=None)
+        got = qa._platform.config.get_int("qa_gate_timeout_seconds", 60) if qa._platform else 60
+        assert got == 60
+
+    # -- ollama_base_url -------------------------------------------------------
+
+    def test_ollama_base_url_from_platform(self):
+        fake = FakePlatform(config={"ollama_base_url": self._OLLAMA_URL})
+        qa = self._make_qa(platform=fake)
+        got = (
+            qa._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
+            if qa._platform else "http://host.docker.internal:11434"
+        )
+        assert got == self._OLLAMA_URL
+
+    def test_ollama_base_url_fallback_no_platform(self):
+        qa = self._make_qa(platform=None)
+        got = (
+            qa._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
+            if qa._platform else "http://host.docker.internal:11434"
+        )
+        assert got == "http://host.docker.internal:11434"
