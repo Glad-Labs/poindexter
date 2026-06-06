@@ -46,12 +46,6 @@ import pytest
 # they share the session-scoped ``test_txn`` fixture loop.
 pytestmark = [
     pytest.mark.integration_db,
-    # Quarantined 2026-06-03 (#1078): all panels below were relocated off
-    # pipeline-merged.json by the #654 dashboard restructure (folded into the
-    # Experiments & Dry-Run board), so the hard-coded panel ids now resolve to
-    # unrelated panels. Re-pointing at the new board + re-enabling is tracked
-    # in #1082. Skipped (not deleted) so the guard is restored, not lost.
-    pytest.mark.skip(reason="panels relocated by #654 restructure; re-point tracked in #1082"),
 ]
 
 
@@ -69,7 +63,7 @@ pytestmark = [
 #   parents[4] = repo root  (where infrastructure/ lives)
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DASHBOARD_PATH = (
-    REPO_ROOT / "infrastructure" / "grafana" / "dashboards" / "pipeline-merged.json"
+    REPO_ROOT / "infrastructure" / "grafana" / "dashboards" / "experiments-dryrun.json"
 )
 
 
@@ -104,13 +98,12 @@ def _panel_sql(panel: dict) -> str:
     )
 
 
-# Panel IDs introduced by PR 4. Keep the constants here so the test fails
-# loud (KeyError on the lookup below) if the dashboard removes or renames
-# one — backcompat-mandatory per ``feedback_backcompat_now_required``.
-PANEL_ID_LAB_ROW = 55
-PANEL_ID_ACTIVE_COUNT = 56
-PANEL_ID_SCORECARD_TABLE = 57
-PANEL_ID_APPROVAL_RATE_TIMESERIES = 58
+# Panel IDs in experiments-dryrun.json (relocated from pipeline-merged.json
+# by the #654 dashboard restructure; re-pointed by #1082).
+PANEL_ID_LAB_ROW = 15
+PANEL_ID_ACTIVE_COUNT = 16
+PANEL_ID_SCORECARD_TABLE = 17
+PANEL_ID_APPROVAL_RATE_TIMESERIES = 18
 
 
 # ---------------------------------------------------------------------------

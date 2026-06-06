@@ -683,7 +683,6 @@ class CollapseOldEmbeddingsJob:
 
             previews = [m["text_preview"] for m in members]
             summary_text: str | None = None
-            summary_method = "joined_preview"
             if summary_provider == "ollama":
                 summary_text = await build_summary_text_via_llm(
                     previews,
@@ -691,8 +690,6 @@ class CollapseOldEmbeddingsJob:
                     model=summary_model,
                     timeout_s=summary_timeout_s,
                 )
-                if summary_text:
-                    summary_method = "ollama"
             if not summary_text:
                 # Fallback path — either the operator picked joined_preview
                 # explicitly, or the LLM call returned empty/raised.

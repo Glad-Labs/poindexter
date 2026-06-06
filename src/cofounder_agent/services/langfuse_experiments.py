@@ -167,10 +167,10 @@ class LangfuseExperimentService:
                 raise ValueError(f"variant[{i}].weight is required")
             try:
                 weight = int(raw_weight)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as e:
                 raise ValueError(
                     f"variant[{i}].weight must be an int (got {raw_weight!r})"
-                )
+                ) from e
             if weight < 0:
                 raise ValueError(f"variant[{i}].weight must be >= 0")
             cfg = raw.get("config") or {}

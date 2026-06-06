@@ -269,7 +269,7 @@ def cmd_open(post_id: str, medium: str):
         raise click.BadParameter(
             f"post_id must be a UUID; got {post_id!r} ({e})",
             param_hint="post_id",
-        )
+        ) from e
 
     path = _resolve_media_path(post_id, medium)
 

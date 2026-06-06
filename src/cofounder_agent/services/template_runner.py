@@ -547,7 +547,7 @@ def make_stage_node(
                 stage.execute(context, cfg.config),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as te:
             elapsed = int((time.time() - t0) * 1000)
             NODE_DURATION_SECONDS.labels(node=name, outcome="timeout").observe(elapsed / 1000.0)
             logger.exception("template_runner: stage %r timed out after %ds", name, timeout)
@@ -573,7 +573,7 @@ def make_stage_node(
                 site_config=node_site_config,
             )
             if halts:
-                raise RuntimeError(f"stage {name!r} timed out after {timeout}s")
+                raise RuntimeError(f"stage {name!r} timed out after {timeout}s") from te
             return {}
         except Exception as exc:
             elapsed = int((time.time() - t0) * 1000)

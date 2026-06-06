@@ -328,7 +328,7 @@ def experiments_add_variant(
         try:
             parsed = json.loads(rag_config)
         except json.JSONDecodeError as exc:
-            raise click.ClickException(f"invalid --rag-config JSON: {exc}")
+            raise click.ClickException(f"invalid --rag-config JSON: {exc}") from exc
         if not isinstance(parsed, dict):
             raise click.ClickException(
                 "--rag-config must be a JSON object, got "

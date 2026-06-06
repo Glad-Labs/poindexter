@@ -514,9 +514,10 @@ class StartupManager:
             import tempfile
 
             from services.image_service import ImageService
+            from services.site_config import SiteConfig
 
             # Create image service
-            image_service = ImageService()
+            image_service = ImageService(sc or SiteConfig())
 
             # Generate a minimal test image just to load the models
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:

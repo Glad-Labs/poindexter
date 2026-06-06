@@ -223,7 +223,7 @@ async def singer_subprocess(
                     ),
                     timeout=timeout_s,
                 )
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as consume_timeout:
                 proc.terminate()
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=5.0)
@@ -231,7 +231,7 @@ async def singer_subprocess(
                     proc.kill()
                 raise RuntimeError(
                     f"tap.singer_subprocess: {row.get('name')} timed out after {timeout_s}s"
-                )
+                ) from consume_timeout
 
             return_code = await proc.wait()
         finally:
