@@ -191,6 +191,7 @@ class SourceFeaturedImageStage:
         # DI seam (glad-labs-stack#330) — content_router_service seeds
         # site_config into the stage context.
         site_config = context.get("site_config")
+        platform = context.get("platform")
 
         stages = context.setdefault("stages", {})
 
@@ -512,6 +513,7 @@ async def _try_sdxl_featured(
     style_tracker: Any,    # ImageStyleTracker instance
     *,
     site_config: Any = None,
+    platform: Any = None,
 ) -> GeneratedImage | None:
     """Full SDXL path: pick style → build prompt → render → upload to R2.
 
@@ -531,7 +533,8 @@ async def _try_sdxl_featured(
         sdxl_prompt = existing_prompt
         if not sdxl_prompt:
             sdxl_prompt = await _build_sdxl_prompt(
-                topic, on_style_picked, style_tracker, site_config=site_config,
+                topic, on_style_picked, style_tracker,
+                site_config=site_config, platform=platform,
             )
 
         sdxl_url = (
@@ -574,6 +577,7 @@ async def _build_sdxl_prompt(
     style_tracker: Any,
     *,
     site_config: Any = None,
+    platform: Any = None,
 ) -> str:
     """Pick a rotation style + ask Ollama for an editorial prompt."""
     styles = _load_styles_from_settings(site_config) or list(DEFAULT_STYLES)
@@ -612,17 +616,28 @@ async def _build_sdxl_prompt(
         return f"{chosen_style}, {style_tags}, no text, no faces"
 
     try:
-        from services.llm_providers.dispatcher import dispatch_complete
+        if platform is not None:
+            result = await platform.dispatch.complete(
+                pool=pool,
+                messages=[{"role": "user", "content": img_prompt}],
+                model=prompt_model,
+                tier="standard",
+                timeout_s=30,
+                temperature=0.7,
+                max_tokens=150,
+            )
+        else:
+            from services.llm_providers.dispatcher import dispatch_complete
 
-        result = await dispatch_complete(
-            pool=pool,
-            messages=[{"role": "user", "content": img_prompt}],
-            model=prompt_model,
-            tier="standard",
-            timeout_s=30,
-            temperature=0.7,
-            max_tokens=150,
-        )
+            result = await dispatch_complete(
+                pool=pool,
+                messages=[{"role": "user", "content": img_prompt}],
+                model=prompt_model,
+                tier="standard",
+                timeout_s=30,
+                temperature=0.7,
+                max_tokens=150,
+            )
         prompt_text = (getattr(result, "text", "") or "").strip().strip('"')
         logger.info(
             "[IMAGE] Style: %s | SDXL prompt: %s", chosen_style, prompt_text[:80],

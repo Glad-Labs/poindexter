@@ -116,6 +116,7 @@ class ReplaceInlineImagesStage:
         # DI seam (glad-labs-stack#330) — content_router_service seeds
         # site_config into the stage context. Tests pass a mock SiteConfig.
         site_config = context.get("site_config")
+        platform = context.get("platform")
 
         if not content_text:
             return StageResult(
@@ -199,6 +200,7 @@ class ReplaceInlineImagesStage:
                 site_config=site_config,
                 task_id=task_id,
                 post_id=post_id,
+                platform=platform,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -353,6 +355,7 @@ async def _resolve_one_placeholder(
     site_config: Any,
     task_id: str | None,
     post_id: Any = None,
+    platform: Any = None,
 ) -> str:
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
 
@@ -387,6 +390,7 @@ async def _resolve_one_placeholder(
     # Strategy 1: SDXL.
     img_url = await _try_sdxl(
         num, search_query, topic, site_config=site_config, task_id=task_id,
+        platform=platform,
     )
     if img_url and img_url not in used_image_ids:
         used_image_ids.add(img_url)
@@ -506,6 +510,7 @@ async def _try_sdxl(
     *,
     site_config: Any,
     task_id: str | None,
+    platform: Any = None,
 ) -> str | None:
     """Generate an SDXL image and return its final URL (R2 or local).
 
@@ -538,20 +543,31 @@ async def _try_sdxl(
             )
             return None
 
-        from services.llm_providers.dispatcher import dispatch_complete
-
         async with gpu.lock(
             "ollama", model=model, task_id=task_id, phase="inline_image_prompt",
         ):
-            result = await dispatch_complete(
-                pool=pool,
-                messages=[{"role": "user", "content": img_prompt_req}],
-                model=model,
-                tier="standard",
-                timeout_s=90,
-                temperature=0.8,
-                max_tokens=100,
-            )
+            if platform is not None:
+                result = await platform.dispatch.complete(
+                    pool=pool,
+                    messages=[{"role": "user", "content": img_prompt_req}],
+                    model=model,
+                    tier="standard",
+                    timeout_s=90,
+                    temperature=0.8,
+                    max_tokens=100,
+                )
+            else:
+                from services.llm_providers.dispatcher import dispatch_complete
+
+                result = await dispatch_complete(
+                    pool=pool,
+                    messages=[{"role": "user", "content": img_prompt_req}],
+                    model=model,
+                    tier="standard",
+                    timeout_s=90,
+                    temperature=0.8,
+                    max_tokens=100,
+                )
             sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
 
         if not sdxl_prompt or len(sdxl_prompt) <= 20:

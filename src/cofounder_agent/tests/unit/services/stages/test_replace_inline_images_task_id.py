@@ -128,7 +128,7 @@ async def test_stage_propagates_task_id_into_try_sdxl():
     """End-to-end through the Stage: task_id from context reaches _try_sdxl."""
     captured: dict[str, Any] = {}
 
-    async def fake_try_sdxl(num, search_query, topic, *, site_config, task_id):
+    async def fake_try_sdxl(num, search_query, topic, *, site_config, task_id, platform=None):
         captured["task_id"] = task_id
         captured["num"] = num
         return None  # force Pexels fallback so the rest of the stage runs
