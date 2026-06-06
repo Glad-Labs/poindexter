@@ -344,6 +344,34 @@ async def test_stage_execute_writes_resolved_content_back_to_context():
 
 
 @pytest.mark.asyncio
+async def test_stage_execute_returns_cleaned_content_in_context_updates():
+    """REGRESSION (2026-06-06): on the graph_def path ``make_stage_node`` runs
+    the stage on a COPY of the LangGraph state and merges back ONLY
+    ``StageResult.context_updates`` — a stage that merely mutates its local
+    ``context`` has its changes silently discarded. So the stage MUST RETURN
+    the cleaned content via ``context_updates``; otherwise the strip happens
+    in a thrown-away copy and ``[posts/<uuid>]`` placeholders reach
+    ``qa.programmatic`` (the unresolved_placeholder rejections that resumed
+    after the #355 atom-cutover — prod logs showed ``stripped=9`` for task
+    5979b399 yet the validator still vetoed 7 leaked placeholders because the
+    cleaned content never propagated)."""
+    stage = ResolveInternalLinkPlaceholdersStage()
+    pool = _pool_returning([])  # no posts -> hallucinated id gets stripped
+    ctx: dict = {"content": "Hello [posts/hallucinated-id] world", "pool": pool}
+
+    result = await stage.execute(ctx, {})
+
+    assert result.ok is True
+    assert result.context_updates is not None, (
+        "stage must RETURN cleaned content via context_updates — make_stage_node "
+        "discards the mutated local context on the graph_def path"
+    )
+    cleaned = result.context_updates.get("content")
+    assert cleaned is not None and "[posts/" not in cleaned
+    assert result.context_updates["internal_link_placeholders_stripped"] == 1
+
+
+@pytest.mark.asyncio
 async def test_stage_execute_returns_ok_on_empty_content():
     """No content — stage is a clean no-op. Don't crash the pipeline
     if generate_content somehow produced an empty string."""

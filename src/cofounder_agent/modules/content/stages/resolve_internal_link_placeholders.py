@@ -354,8 +354,24 @@ class ResolveInternalLinkPlaceholdersStage:
         context["empty_brackets_stripped"] = empty_bracket_count
         context.setdefault("stages", {})["resolve_internal_link_placeholders"] = True
 
+        # Return the mutations via context_updates so they propagate on the
+        # graph_def atom path. ``make_stage_node`` runs this stage on a COPY of
+        # the LangGraph state and merges back ONLY ``StageResult.context_updates``
+        # — a stage that merely mutates its local ``context`` has its changes
+        # discarded. Without this the strip ran in a thrown-away copy and the
+        # ``[posts/<id>]`` placeholders still reached qa.programmatic, re-opening
+        # the ~95% canonical_blog rejection this stage exists to prevent (the
+        # stage logged ``stripped=N`` but the cleaned content never propagated
+        # after the #355 cutover). Every other content stage already returns
+        # context_updates; this was the lone in-place outlier.
         return StageResult(
             ok=True,
             detail=f"resolved {resolved}, stripped {stripped}",
             continue_workflow=True,
+            context_updates={
+                "content": context.get("content", ""),
+                "internal_link_placeholders_resolved": resolved,
+                "internal_link_placeholders_stripped": stripped,
+                "empty_brackets_stripped": empty_bracket_count,
+            },
         )
