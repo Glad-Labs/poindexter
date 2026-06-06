@@ -89,7 +89,10 @@ def _build_youtube_description(
     post" line is omitted gracefully (logged at info) when ``site_url``
     can't be resolved or ``slug`` is missing — never raises.
     """
-    seo_description = (seo_description or "").strip()
+    # Strip HTML from the excerpt — posts.excerpt occasionally contains
+    # inline <img> tags from the pipeline. YouTube rejects any angle bracket
+    # in the description body (HTTP 400 invalidDescription).
+    seo_description = _strip_markup(seo_description or "")
 
     # Resolve the canonical back-link. Missing site_url / slug → omit the
     # line (the only deliberate graceful fallback here, per the #275
@@ -121,17 +124,21 @@ def _build_youtube_description(
 
     if not header:
         # No SEO desc and no back-link — description is just the body.
-        return body_excerpt[:_YOUTUBE_DESCRIPTION_BUDGET]
+        return body_excerpt[:_YOUTUBE_DESCRIPTION_BUDGET].replace("<", "").replace(">", "")
 
     if not body_excerpt:
-        return header[:_YOUTUBE_DESCRIPTION_BUDGET]
+        return header[:_YOUTUBE_DESCRIPTION_BUDGET].replace("<", "").replace(">", "")
 
     # Reserve room for the header + the "\n\n" joining it to the body,
     # then trim the body to fit the remaining budget.
     remaining = _YOUTUBE_DESCRIPTION_BUDGET - len(header) - 2
     if remaining <= 0:
-        return header[:_YOUTUBE_DESCRIPTION_BUDGET]
-    return f"{header}\n\n{body_excerpt[:remaining]}"
+        composed = header[:_YOUTUBE_DESCRIPTION_BUDGET]
+    else:
+        composed = f"{header}\n\n{body_excerpt[:remaining]}"
+    # YouTube rejects any bare < or > (e.g. SQL WHERE x > 0, markdown arrows).
+    # Strip them so the upload never 400s on invalidDescription.
+    return composed.replace("<", "").replace(">", "")
 
 
 class BackfillVideosJob:
