@@ -24,7 +24,6 @@ from services.llm_providers.openai_compat import (
     _coerce_bool,
 )
 
-
 # ---------------------------------------------------------------------------
 # _coerce_bool — TEXT app_settings.value rows can be 'true', 'True', '1',
 # 'yes', 'on'. Pins the parsing surface so future ops/tests aren't

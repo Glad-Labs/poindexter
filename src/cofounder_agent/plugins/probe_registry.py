@@ -37,8 +37,9 @@ What this is NOT
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 ProbeCallable = Callable[..., Awaitable[Any]]
 """A registered probe's callable. Awaits to a dict-shaped result the

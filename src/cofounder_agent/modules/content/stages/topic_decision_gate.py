@@ -47,9 +47,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from modules.content.stages.approval_gate import ApprovalGateStage
 from plugins.stage import StageResult
 from services.logger_config import get_logger
-from modules.content.stages.approval_gate import ApprovalGateStage
 
 logger = get_logger(__name__)
 

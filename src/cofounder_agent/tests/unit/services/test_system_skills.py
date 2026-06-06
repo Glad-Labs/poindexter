@@ -26,7 +26,6 @@ import pytest
 
 from services.prompt_manager import PromptCategory, UnifiedPromptManager
 
-
 # (key, expected category) pairs — categories must match the original YAML.
 _CONTENT_KEYS = (
     ("task.creative_blog_generation", PromptCategory.BLOG_GENERATION),

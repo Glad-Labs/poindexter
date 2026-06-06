@@ -27,14 +27,13 @@ from services.rejection_handlers import (
     topic_decision_handler,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fake pool — minimal in-memory store for the SQL the handlers use
 # ---------------------------------------------------------------------------
 
 
 class FakeConnection:
-    def __init__(self, store: "FakeStore") -> None:
+    def __init__(self, store: FakeStore) -> None:
         self._store = store
 
     async def __aenter__(self):

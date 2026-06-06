@@ -17,7 +17,6 @@ from services.newsletter_service import (  # noqa: E402
 )
 from services.site_config import SiteConfig
 
-
 # #272 Phase-2b: newsletter_service no longer carries a lifespan-bound
 # module global — every entry point takes a keyword-required
 # ``site_config``. This module-level instance seeds the brand keys the

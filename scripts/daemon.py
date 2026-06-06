@@ -42,8 +42,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "cofound
 
 # Import content_validator early — its import chain triggers configure_standard_logging()
 # which reconfigures the root logger. We must let that run BEFORE setting up our own handler.
-from services.content_validator import validate_content  # noqa: E402
 from _oauth_helper import oauth_client_from_bootstrap_only  # noqa: E402
+from services.content_validator import validate_content  # noqa: E402
 
 LOG_FILE = os.path.join(os.path.expanduser("~"), ".poindexter", "daemon.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)

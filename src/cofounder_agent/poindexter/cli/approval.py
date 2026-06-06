@@ -34,7 +34,6 @@ from typing import Any
 
 import click
 
-
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
 
@@ -196,6 +195,8 @@ def approve_command(
         ApprovalServiceError,
         TaskNotFoundError,
         TaskNotPausedError,
+    )
+    from services.approval_service import (
         approve as approve_service,
     )
 
@@ -275,6 +276,8 @@ def reject_command(
         ApprovalServiceError,
         TaskNotFoundError,
         TaskNotPausedError,
+    )
+    from services.approval_service import (
         reject as reject_service,
     )
 

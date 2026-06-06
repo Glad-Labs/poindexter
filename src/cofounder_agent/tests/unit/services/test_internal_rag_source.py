@@ -1,14 +1,15 @@
 """Tests for InternalRagSource — generate candidates from internal corpus."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
+
 from services.internal_rag_source import (
-    InternalRagSource,
-    InternalCandidate,
     VALID_SOURCE_KINDS,
+    InternalCandidate,
+    InternalRagSource,
 )
 from services.site_config import SiteConfig
-
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -298,9 +299,9 @@ async def test_distill_returns_none_on_empty_response(monkeypatch):
     # The exact 2026-05-28 failure: a reasoning model returns "" under
     # json mode. _distill_topic_angle must return None, not crash on
     # json.loads("").
-    import services.topic_ranking as tr
     import services.llm_text as llm_text
     import services.prompt_manager as pm
+    import services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -313,9 +314,9 @@ async def test_distill_returns_none_on_empty_response(monkeypatch):
 
 
 async def test_distill_returns_none_on_invalid_json(monkeypatch):
-    import services.topic_ranking as tr
     import services.llm_text as llm_text
     import services.prompt_manager as pm
+    import services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
@@ -328,9 +329,9 @@ async def test_distill_returns_none_on_invalid_json(monkeypatch):
 
 
 async def test_distill_parses_valid_json(monkeypatch):
-    import services.topic_ranking as tr
     import services.llm_text as llm_text
     import services.prompt_manager as pm
+    import services.topic_ranking as tr
 
     src = InternalRagSource(_FakePool(), site_config=SiteConfig())
     monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")

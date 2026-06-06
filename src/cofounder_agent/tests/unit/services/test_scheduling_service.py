@@ -29,7 +29,6 @@ from services.scheduling_service import (
 )
 from services.site_config import SiteConfig
 
-
 # ---------------------------------------------------------------------------
 # Mock pool — captures every call site
 # ---------------------------------------------------------------------------

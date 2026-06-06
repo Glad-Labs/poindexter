@@ -22,15 +22,14 @@ import pytest
 
 from services import doctor
 from services.doctor import (
-    CheckResult,
     DEPENDS_ON,
     ROOTS,
+    CheckResult,
     apply_root_cause,
     correlate,
     run_doctor,
     score,
 )
-
 
 # ---------------------------------------------------------------------------
 # Strict fake row + pool.

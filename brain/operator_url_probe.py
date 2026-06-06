@@ -43,8 +43,9 @@ import json
 import logging
 import os
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx
@@ -62,11 +63,17 @@ except ImportError:  # pragma: no cover — package-qualified path for tests
 # the package-qualified module — having the reference here pinned to
 # the same module makes the test deterministic across local + CI.
 try:
+    from docker_utils import (
+        IN_DOCKER as _IN_DOCKER,  # noqa: F401 — re-export for clarity
+    )
     from docker_utils import localize_url as _localize_url_impl
-    from docker_utils import IN_DOCKER as _IN_DOCKER  # noqa: F401 — re-export for clarity
 except ImportError:  # pragma: no cover — package-qualified path
-    from brain.docker_utils import localize_url as _localize_url_impl  # type: ignore[no-redef]
-    from brain.docker_utils import IN_DOCKER as _IN_DOCKER  # type: ignore[no-redef] # noqa: F401
+    from brain.docker_utils import (
+        IN_DOCKER as _IN_DOCKER,  # type: ignore[no-redef] # noqa: F401
+    )
+    from brain.docker_utils import (
+        localize_url as _localize_url_impl,  # type: ignore[no-redef]
+    )
 
 
 def _localize(url: str) -> str:
@@ -469,7 +476,7 @@ def _is_alive_per_override(
 
 
 async def _probe_one_url(
-    client: "httpx.AsyncClient",
+    client: httpx.AsyncClient,
     semaphore: asyncio.Semaphore,
     surface: str,
     url: str,

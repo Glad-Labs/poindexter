@@ -42,7 +42,6 @@ from services.quality_models import (
     QualityScore,
     RefinementType,
 )
-from services.site_config import SiteConfig
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
 # setter were removed. ``UnifiedQualityService`` now REQUIRES a ``site_config``
@@ -92,6 +91,7 @@ from services.quality_scorers import (
 from services.quality_scorers import (
     score_seo as _score_seo_fn,
 )
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 

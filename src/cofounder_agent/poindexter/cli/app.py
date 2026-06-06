@@ -20,6 +20,7 @@ from .dev_diary import dev_diary_group
 from .doctor import doctor_group
 from .experiments import experiments_group
 from .integrations import integrations_group
+from .media import media_group
 from .memory import memory_group
 from .migrate import migrate_group
 from .posts import post_group, posts_group
@@ -30,7 +31,6 @@ from .publish_approval import (
     reject_publish_command,
     show_pending_publish_command,
 )
-from .media import media_group
 from .publishers import publishers_group
 from .qa_gates import qa_gates_group
 from .retention import retention_group

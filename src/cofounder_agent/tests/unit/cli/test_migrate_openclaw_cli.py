@@ -27,7 +27,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 # The bash helper lives under skills/poindexter/_lib (the OpenClaw
 # skill bundle reuses the poindexter skills tree); the docstring at

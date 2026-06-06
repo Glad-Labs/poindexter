@@ -177,7 +177,6 @@ class _FakeCfg:
         return self._secrets.get(key, default)
 
 
-import pytest  # noqa: E402
 
 
 @pytest.mark.asyncio

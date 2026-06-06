@@ -59,8 +59,9 @@ state machine.
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from services.audit_log import audit_log_bg
 from services.logger_config import get_logger

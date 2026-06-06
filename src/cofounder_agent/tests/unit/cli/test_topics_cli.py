@@ -28,7 +28,6 @@ from click.testing import CliRunner
 
 from poindexter.cli.topics import topics_group
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

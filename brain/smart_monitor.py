@@ -67,7 +67,8 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -94,12 +95,12 @@ ALERT_DEDUP_MINUTES_KEY = "smart_monitor_alert_dedup_minutes"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_HOURS = 6
-DEFAULT_DRIVE_FILTER: Optional[str] = None
+DEFAULT_DRIVE_FILTER: str | None = None
 DEFAULT_REALLOCATED_THRESHOLD = 0
 DEFAULT_CURRENT_PENDING_THRESHOLD = 0
 DEFAULT_WEAR_LEVELING_WARN_PERCENT = 90
 DEFAULT_POWER_ON_HOURS_INFO_THRESHOLD = 50000
-DEFAULT_SMARTCTL_PATH: Optional[str] = None
+DEFAULT_SMARTCTL_PATH: str | None = None
 DEFAULT_ALERT_DEDUP_MINUTES = 360
 
 # Subprocess timeout for smartctl invocations. ``smartctl --scan-open``
@@ -200,7 +201,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
     )
     drive_filter_raw = await _read_setting(pool, DRIVE_FILTER_KEY, DEFAULT_DRIVE_FILTER)
     if drive_filter_raw is None or str(drive_filter_raw).strip() == "":
-        drive_filter: Optional[list[str]] = None
+        drive_filter: list[str] | None = None
     else:
         drive_filter = [
             piece.strip() for piece in str(drive_filter_raw).split(",")
@@ -224,7 +225,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
     )
     smartctl_path_raw = await _read_setting(pool, SMARTCTL_PATH_KEY, DEFAULT_SMARTCTL_PATH)
     if smartctl_path_raw is None or str(smartctl_path_raw).strip() == "":
-        smartctl_path: Optional[str] = None
+        smartctl_path: str | None = None
     else:
         smartctl_path = str(smartctl_path_raw).strip()
     alert_dedup_minutes = _coerce_int(
@@ -251,7 +252,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_smartctl_path(override: Optional[str]) -> Optional[str]:
+def _resolve_smartctl_path(override: str | None) -> str | None:
     """Return the smartctl binary path or ``None`` if not installed.
 
     Honours the operator's ``smart_monitor_smartctl_path`` override
@@ -271,7 +272,7 @@ def _resolve_smartctl_path(override: Optional[str]) -> Optional[str]:
 def _run_smartctl(
     binary: str,
     args: list[str],
-) -> tuple[int, Optional[dict[str, Any]], str]:
+) -> tuple[int, dict[str, Any] | None, str]:
     """Invoke ``smartctl`` and parse the JSON payload.
 
     smartctl returns non-zero on any concerning attribute (that's its
@@ -292,7 +293,7 @@ def _run_smartctl(
         result = subprocess.run([binary, *args], **kwargs)
         stdout = result.stdout or ""
         stderr_tail = (result.stderr or "").strip()[:200]
-        parsed: Optional[dict[str, Any]] = None
+        parsed: dict[str, Any] | None = None
         if stdout.strip():
             try:
                 parsed = json.loads(stdout)
@@ -310,7 +311,7 @@ def _run_smartctl(
 def _scan_drives(
     binary: str,
     *,
-    run_fn: Callable[[str, list[str]], tuple[int, Optional[dict[str, Any]], str]],
+    run_fn: Callable[[str, list[str]], tuple[int, dict[str, Any] | None, str]],
 ) -> list[dict[str, Any]]:
     """Enumerate drives via ``smartctl --scan-open --json``.
 
@@ -645,7 +646,7 @@ async def _emit_audit_event(
     event: str,
     detail: str,
     *,
-    extra: Optional[dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {"detail": detail}
     if extra:
@@ -683,7 +684,7 @@ async def _check_one_drive(
     drive_meta: dict[str, Any],
     binary: str,
     config: dict[str, Any],
-    run_fn: Callable[[str, list[str]], tuple[int, Optional[dict[str, Any]], str]],
+    run_fn: Callable[[str, list[str]], tuple[int, dict[str, Any] | None, str]],
     now: float,
 ) -> dict[str, Any]:
     """Run smartctl -a against one drive and process the output.
@@ -811,12 +812,10 @@ async def _check_one_drive(
 async def run_smart_monitor_probe(
     pool: Any,
     *,
-    run_fn: Optional[
-        Callable[[str, list[str]], tuple[int, Optional[dict[str, Any]], str]]
-    ] = None,
-    which_fn: Optional[Callable[[str], Optional[str]]] = None,
-    notify_fn: Optional[Callable[..., None]] = None,
-    now_fn: Optional[Callable[[], float]] = None,
+    run_fn: Callable[[str, list[str]], tuple[int, dict[str, Any] | None, str]] | None = None,
+    which_fn: Callable[[str], str | None] | None = None,
+    notify_fn: Callable[..., None] | None = None,
+    now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the SMART monitor probe.
 

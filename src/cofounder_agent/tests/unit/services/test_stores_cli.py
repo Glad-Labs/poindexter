@@ -25,7 +25,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-
 # ---------------------------------------------------------------------------
 # Stub plugins.secrets so the CLI's late import works without dragging
 # in the full plugins/__init__.py side-effects (apscheduler, etc.).

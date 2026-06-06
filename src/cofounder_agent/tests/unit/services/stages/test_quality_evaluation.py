@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.stage import Stage
 from modules.content.stages.quality_evaluation import QualityEvaluationStage
+from plugins.stage import Stage
 
 
 def _fake_quality_result(score: float = 82.5, passing: bool = True, truncated: bool = False):

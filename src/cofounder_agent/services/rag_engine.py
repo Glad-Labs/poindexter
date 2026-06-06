@@ -40,7 +40,8 @@ from __future__ import annotations
 import asyncio
 import json
 import random
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from services.logger_config import get_logger
 

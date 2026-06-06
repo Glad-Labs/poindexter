@@ -40,7 +40,6 @@ import pytest
 # resolves the same way the backup_watcher tests import it.
 from brain import docker_port_forward_probe as pf
 
-
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
 # ---------------------------------------------------------------------------
@@ -65,7 +64,7 @@ def _default_settings() -> dict[str, str]:
     }
 
 
-def _make_pool(*, setting_values: Optional[dict[str, str]] = None):
+def _make_pool(*, setting_values: dict[str, str] | None = None):
     """Build an asyncpg-style mock pool that:
 
     - returns ``setting_values[key]`` for ``SELECT value FROM app_settings``

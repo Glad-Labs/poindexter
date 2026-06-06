@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 # the worker's RAM. 4096 distinct (task_id, error_hash) pairs is
 # generous: the operator will have triaged the storm long before that.
 _LRU_MAX = 4096
-_LRU: "OrderedDict[tuple[str, str], float]" = OrderedDict()
+_LRU: OrderedDict[tuple[str, str], float] = OrderedDict()
 _LRU_LOCK = asyncio.Lock()
 
 

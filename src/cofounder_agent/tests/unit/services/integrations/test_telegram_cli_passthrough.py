@@ -24,7 +24,6 @@ import pytest
 
 from services.integrations import telegram_cli_passthrough as tcp
 
-
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------

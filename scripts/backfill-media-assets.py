@@ -43,7 +43,6 @@ from typing import Any
 
 import asyncpg
 
-
 DEFAULT_DB_URL = (
     "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
 )

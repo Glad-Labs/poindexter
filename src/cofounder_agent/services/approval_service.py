@@ -334,8 +334,8 @@ def _summarize_artifact(artifact: dict[str, Any]) -> str:
 async def approve(
     *,
     task_id: str,
-    gate_name: Optional[str] = None,
-    feedback: Optional[str] = None,
+    gate_name: str | None = None,
+    feedback: str | None = None,
     site_config: Any,
     pool: Any,
 ) -> dict[str, Any]:
@@ -442,8 +442,8 @@ async def approve(
 async def reject(
     *,
     task_id: str,
-    gate_name: Optional[str] = None,
-    reason: Optional[str] = None,
+    gate_name: str | None = None,
+    reason: str | None = None,
     site_config: Any,
     pool: Any,
 ) -> dict[str, Any]:
@@ -563,7 +563,7 @@ async def reject(
 async def list_pending(
     *,
     pool: Any,
-    gate_name: Optional[str] = None,
+    gate_name: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """Return every task currently paused at any gate (or one gate).

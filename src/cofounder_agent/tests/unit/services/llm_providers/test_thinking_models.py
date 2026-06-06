@@ -24,7 +24,6 @@ from services.llm_providers.thinking_models import (
     strip_think_blocks,
 )
 
-
 # ---- strip_think_blocks (added 2026-05-26 to defend brain triage) ----------
 
 

@@ -45,7 +45,6 @@ sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 # instead of minting per request.
 from _oauth_helper import oauth_client_from_pool  # noqa: E402
 
-
 API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
 
 
@@ -164,7 +163,8 @@ class _BotSiteConfig:
         # Lazy DB lookup for keys not in initial seed — best-effort.
         try:
             import asyncpg  # noqa: F401  # imported here so a missing dep
-                                          # doesn't break the simple paths
+
+            # doesn't break the simple paths
             from brain.bootstrap import resolve_database_url
             dsn = os.getenv("DATABASE_URL") or resolve_database_url()
             if dsn:

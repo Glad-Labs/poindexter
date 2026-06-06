@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Exceptions — shared root so a caller can ``except GateServiceError`` and
 # catch a failure from either the task-entity or post-entity service. Each

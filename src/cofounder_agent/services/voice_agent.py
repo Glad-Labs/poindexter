@@ -92,6 +92,15 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
+from pipecat.services.kokoro.tts import KokoroTTSService
+from pipecat.services.ollama.llm import OLLamaLLMService
+from pipecat.services.whisper.stt import (
+    Model as WhisperModel,
+)
+from pipecat.services.whisper.stt import (
+    WhisperSTTService,
+)
+from pipecat.transports.base_transport import BaseTransport
 from pipecat.turns.user_start.vad_user_turn_start_strategy import (
     VADUserTurnStartStrategy,
 )
@@ -99,13 +108,6 @@ from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
     SpeechTimeoutUserTurnStopStrategy,
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
-from pipecat.services.kokoro.tts import KokoroTTSService
-from pipecat.services.ollama.llm import OLLamaLLMService
-from pipecat.services.whisper.stt import (
-    Model as WhisperModel,
-    WhisperSTTService,
-)
-from pipecat.transports.base_transport import BaseTransport
 
 # pipecat.transports.local.audio imports sounddevice / PortAudio at
 # module load. In a headless container (the always-on voice-agent-livekit
@@ -551,6 +553,7 @@ async def _bootstrap_and_run(brain: str, project_dir: str | None) -> None:
 
     _ensure_brain_on_path()
     from brain.bootstrap import require_database_url
+
     from services.site_config import SiteConfig
 
     dsn = require_database_url(source="voice_agent")

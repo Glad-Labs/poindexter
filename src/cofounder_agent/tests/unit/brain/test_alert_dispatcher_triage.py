@@ -26,9 +26,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from brain import alert_dispatcher as ad
-
 
 # ---------------------------------------------------------------------------
 # Pool builder + canned settings

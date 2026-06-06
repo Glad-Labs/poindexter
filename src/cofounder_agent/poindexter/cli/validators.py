@@ -32,7 +32,6 @@ from typing import Any
 
 import click
 
-
 _VALID_SEVERITIES = ("info", "warning", "error")
 
 

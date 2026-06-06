@@ -38,8 +38,9 @@ import json
 import logging
 import os
 import subprocess
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx
@@ -228,7 +229,7 @@ async def _fetch_main_sha(client: Any, repo: str) -> str:
     return str(sha)
 
 
-async def _compare_commits(client: Any, repo: str, base: str, head: str) -> Optional[dict[str, Any]]:
+async def _compare_commits(client: Any, repo: str, base: str, head: str) -> dict[str, Any] | None:
     """Return the compare payload, or None when GitHub can't resolve the
     pair (404 — typically an unpushed local HEAD). Raise on other errors."""
     r = await client.get(f"https://api.github.com/repos/{repo}/compare/{base}...{head}")
@@ -242,7 +243,7 @@ async def _compare_commits(client: Any, repo: str, base: str, head: str) -> Opti
     return data if isinstance(data, dict) else None
 
 
-def _classify_drift(local_head: str, main_sha: str, compare: Optional[dict[str, Any]]) -> dict[str, Any]:
+def _classify_drift(local_head: str, main_sha: str, compare: dict[str, Any] | None) -> dict[str, Any]:
     """Decide whether prod is behind origin/main.
 
     compare is GET /compare/{local_head}...{main_sha}: its ``ahead_by`` is
@@ -323,7 +324,7 @@ async def _record_dedup(pool: Any, *, fingerprint: str, now_utc: datetime, messa
 # ---------------------------------------------------------------------------
 
 
-async def _emit_audit_event(pool: Any, event: str, detail: str, *, extra: Optional[dict[str, Any]] = None, severity: str = "info") -> None:
+async def _emit_audit_event(pool: Any, event: str, detail: str, *, extra: dict[str, Any] | None = None, severity: str = "info") -> None:
     payload: dict[str, Any] = {"detail": detail}
     if extra:
         payload.update(extra)
@@ -337,7 +338,7 @@ async def _emit_audit_event(pool: Any, event: str, detail: str, *, extra: Option
         logger.debug("[BRANCH_DRIFT] audit_log insert failed: %s", exc)
 
 
-async def _emit_drift_alert(pool: Any, *, repo: str, branch: str, local_head: str, main_sha: str, behind: Optional[int]) -> bool:
+async def _emit_drift_alert(pool: Any, *, repo: str, branch: str, local_head: str, main_sha: str, behind: int | None) -> bool:
     behind_txt = f"{behind} commit(s) behind" if behind is not None else "behind (count unknown — HEAD not on origin)"
     alertname = f"branch_drift_{repo.replace('/', '_')}"
     labels = {
@@ -381,10 +382,10 @@ async def _emit_drift_alert(pool: Any, *, repo: str, branch: str, local_head: st
 async def run_branch_drift_probe(
     pool: Any,
     *,
-    now_fn: Optional[Callable[[], datetime]] = None,
-    notify_fn: Optional[Callable[..., Any]] = None,
-    http_client_factory: Optional[Callable[..., Any]] = None,
-    git_runner: Optional[Callable[[str], tuple[str, str]]] = None,
+    now_fn: Callable[[], datetime] | None = None,
+    notify_fn: Callable[..., Any] | None = None,
+    http_client_factory: Callable[..., Any] | None = None,
+    git_runner: Callable[[str], tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     """One execution of the branch-drift canary; returns a structured summary."""
     now_fn = now_fn or (lambda: datetime.now(timezone.utc))

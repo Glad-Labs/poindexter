@@ -28,7 +28,6 @@ Reference: glad-labs-stack #201 (top-5 helper typing pass).
 from datetime import datetime
 from typing import Any, TypedDict
 
-
 # ============================================================================
 # TASK RECORD
 # ============================================================================

@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from services.site_config import SiteConfig
 
 from services.jobs.run_niche_topic_sweep import RunNicheTopicSweepJob
+from services.site_config import SiteConfig
 
 
 def _niche(slug: str = "glad-labs"):

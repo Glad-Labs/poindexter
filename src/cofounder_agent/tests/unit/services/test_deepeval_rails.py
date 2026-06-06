@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import services.deepeval_rails as _de_mod
 from services.deepeval_rails import (
     evaluate_brand_fabrication,
     evaluate_faithfulness,
@@ -24,7 +25,6 @@ from services.deepeval_rails import (
     is_enabled,
     make_test_case,
 )
-import services.deepeval_rails as _de_mod
 
 requires_deepeval = pytest.mark.skipif(
     find_spec("deepeval") is None,

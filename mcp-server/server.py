@@ -28,7 +28,6 @@ from typing import Any
 
 import asyncpg
 import httpx
-
 from mcp.server.fastmcp import FastMCP
 
 # OAuth helper — local mirror of services.auth.oauth_client. See

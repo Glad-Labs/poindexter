@@ -29,7 +29,6 @@ import pytest
 # resolves the same way the migration_drift_probe tests import it.
 from brain import backup_watcher as bw
 
-
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + canned config
 # ---------------------------------------------------------------------------
@@ -50,9 +49,9 @@ def _default_settings() -> dict[str, str]:
 
 def _make_pool(
     *,
-    setting_values: Optional[dict[str, str]] = None,
-    firing_alertnames: Optional[set[str]] = None,
-    existing_fingerprints: Optional[set[str]] = None,
+    setting_values: dict[str, str] | None = None,
+    firing_alertnames: set[str] | None = None,
+    existing_fingerprints: set[str] | None = None,
 ):
     """Build an asyncpg-style mock pool that:
 
@@ -169,7 +168,7 @@ class TestKillRestartResolves:
         # → fresh.
         stat_calls: list[str] = []
         # Use distinct iterators per tier so calls are independent.
-        per_tier_responses: dict[str, list[Optional[float]]] = {
+        per_tier_responses: dict[str, list[float | None]] = {
             "hourly": [10_000.0, 30.0],   # stale (>5400s threshold), then fresh
             "daily":  [200_000.0, 60.0],  # stale (>93600s threshold), then fresh
         }
@@ -248,7 +247,7 @@ class TestKillRestartResolves:
             firing_alertnames=set(),  # nothing firing
         )
 
-        per_tier_responses: dict[str, list[Optional[float]]] = {
+        per_tier_responses: dict[str, list[float | None]] = {
             "hourly": [10_000.0, 30.0],
             "daily":  [60.0, 60.0],  # was already fresh
         }
@@ -608,7 +607,7 @@ def _write_sentinel(
     *,
     rc: int = 1,
     ts: str = "2026-05-09T03:00:00Z",
-    host: Optional[str] = "test-host",
+    host: str | None = "test-host",
     log_path: str = "/var/log/dr-backup/dr-backup.log",
     tail: str = "restic: error\nwhich tier: hourly",
 ) -> None:

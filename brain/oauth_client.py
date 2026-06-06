@@ -137,7 +137,7 @@ class BrainOAuthClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> "BrainOAuthClient":
+    async def __aenter__(self) -> BrainOAuthClient:
         self._ensure_http()
         return self
 

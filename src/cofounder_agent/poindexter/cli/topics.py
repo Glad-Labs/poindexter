@@ -31,7 +31,6 @@ import click
 
 from poindexter.cli._lifecycle import container_for_cli
 
-
 _MARKER_RE = re.compile(r"^(sys)?#(\d+)$")
 
 
@@ -72,7 +71,6 @@ def _resolve_order_tokens(tokens, candidates):
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Group root
 # ---------------------------------------------------------------------------
@@ -110,6 +108,7 @@ def sweep(niche: str) -> None:
     """
     async def _impl():
         import asyncpg
+
         from services.niche_service import NicheService
         from services.topic_batch_service import TopicBatchService
 
@@ -237,6 +236,7 @@ def show_batch(niche: str) -> None:
     """Show the current open batch for a niche."""
     async def _impl():
         import asyncpg
+
         from services.niche_service import NicheService
         from services.topic_batch_service import TopicBatchService
 
@@ -297,6 +297,7 @@ def rank_batch(batch_id: UUID, order: str) -> None:
     """Set operator ranking for a batch's candidates."""
     async def _impl():
         import asyncpg
+
         from services.topic_batch_service import TopicBatchService
 
         tokens = [s.strip() for s in order.split(",") if s.strip()]
@@ -333,6 +334,7 @@ def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
 
     async def _impl():
         import asyncpg
+
         from services.topic_batch_service import TopicBatchService
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
@@ -362,6 +364,7 @@ def resolve_batch(batch_id: UUID) -> None:
     """Resolve a batch — advance the rank-1 candidate to the pipeline."""
     async def _impl():
         import asyncpg
+
         from services.topic_batch_service import TopicBatchService
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
@@ -390,6 +393,7 @@ def reject_batch(batch_id: UUID, reason: str) -> None:
     """Reject a batch — discard candidates, allow a fresh sweep."""
     async def _impl():
         import asyncpg
+
         from services.topic_batch_service import TopicBatchService
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
@@ -424,6 +428,7 @@ def niche_list() -> None:
     """List every active niche."""
     async def _impl():
         import asyncpg
+
         from services.niche_service import NicheService
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
@@ -442,6 +447,7 @@ def niche_show(slug: str) -> None:
     """Print full niche config (slug, goals, sources) as JSON."""
     async def _impl():
         import asyncpg
+
         from services.niche_service import NicheService
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)

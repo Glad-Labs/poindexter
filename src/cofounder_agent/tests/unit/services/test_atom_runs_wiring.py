@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from langgraph.graph import END, StateGraph
 
 import services.atom_runs as atom_runs
 from modules.content.auto_publish_gate import record_post_approve_metrics
@@ -31,8 +32,6 @@ from services.template_runner import (
     TemplateRunner,
     TemplateRunRecord,
 )
-from langgraph.graph import END, StateGraph
-
 
 # ---------------------------------------------------------------------------
 # Part A — TemplateRunner.run drains records into persist_atom_runs

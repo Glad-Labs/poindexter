@@ -126,6 +126,7 @@ class TestParseTTL:
 
     def test_garbage_raises(self):
         import click
+
         from poindexter.cli.auth import _parse_ttl
         with pytest.raises(click.UsageError):
             _parse_ttl("ninety days")

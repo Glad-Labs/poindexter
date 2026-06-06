@@ -20,14 +20,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.video_provider import VideoProvider, VideoResult
 from plugins.registry import clear_registry_cache, get_video_providers
+from plugins.video_provider import VideoProvider, VideoResult
 from services.video_providers.wan2_1 import (
     Wan21Provider,
     _resolve_negative,
     _resolve_server_url,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — mirror the FluxSchnell test fixtures.

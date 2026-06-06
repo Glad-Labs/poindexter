@@ -53,7 +53,7 @@ class _FakeConn:
 
 
 class _FakeAcquire:
-    async def __aenter__(self) -> "_FakeConn":
+    async def __aenter__(self) -> _FakeConn:
         return _FakeConn()
 
     async def __aexit__(self, *_e: Any) -> None:
@@ -64,7 +64,7 @@ class _FakePool(_FakeConn):
     """Acts as both a bare connection (fetchval/execute) and a pool with
     ``acquire()`` — covers both call shapes in make_stage_node's helpers."""
 
-    def acquire(self) -> "_FakeAcquire":
+    def acquire(self) -> _FakeAcquire:
         return _FakeAcquire()
 
 
@@ -120,14 +120,14 @@ async def test_generate_content_stage_returns_research_context_in_updates():
             return []
 
     class _Ctx:
-        async def __aenter__(self) -> "_Conn":
+        async def __aenter__(self) -> _Conn:
             return _Conn()
 
         async def __aexit__(self, *_e: Any) -> None:
             return None
 
     class _Pool:
-        def acquire(self) -> "_Ctx":
+        def acquire(self) -> _Ctx:
             return _Ctx()
 
     class _Db:

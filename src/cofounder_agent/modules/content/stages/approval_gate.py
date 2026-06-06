@@ -55,7 +55,8 @@ into a content_router_service phase chain) and pointing this Stage's
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from plugins.stage import StageResult
 from services.approval_service import is_gate_enabled, pause_at_gate

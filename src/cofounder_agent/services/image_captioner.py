@@ -56,10 +56,10 @@ _IMAGE_OF_PREFIX_RE = re.compile(
 def _prompt(budget: int) -> str:
     return (
         "Write alt text for this image. Describe ONLY what is actually visible "
-        "— factual, concise, one sentence, under {b} characters. Do NOT begin "
+        f"— factual, concise, one sentence, under {budget} characters. Do NOT begin "
         "with 'image of' or 'photo of'. Do NOT invent details that aren't "
         "visible."
-    ).format(b=budget)
+    )
 
 
 async def _fetch_b64(image_url: str) -> str | None:

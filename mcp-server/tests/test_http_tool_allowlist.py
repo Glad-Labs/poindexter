@@ -35,7 +35,6 @@ if str(MCP_SERVER_DIR) not in sys.path:
 
 import http_server  # noqa: E402 — sys.path adjustment above
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

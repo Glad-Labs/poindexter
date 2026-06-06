@@ -31,7 +31,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 # Cost classes — coarse buckets that the architect uses for budget
 # projection. The real cost lookup happens via ``cost_logs`` after the
 # fact; this is just the "expect cheap / expect expensive" hint.

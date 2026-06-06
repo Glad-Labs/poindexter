@@ -23,8 +23,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
-import services.citation_verifier as citation_verifier
 import modules.content.content_validator as content_validator
+import modules.content.multi_model_qa as multi_model_qa
+import services.citation_verifier as citation_verifier
 import services.image_decision_agent as image_decision_agent
 import services.image_providers.ai_generation as ai_generation
 import services.image_providers.flux_schnell as flux_schnell
@@ -33,7 +34,6 @@ import services.image_service as image_service
 import services.integrations.handlers.outbound_discord as outbound_discord
 import services.integrations.operator_notify as operator_notify
 import services.metrics_exporter as metrics_exporter
-import modules.content.multi_model_qa as multi_model_qa
 from services.http_client import (
     WIRED_HTTP_CLIENT_MODULES,
     get_shared_http_client,

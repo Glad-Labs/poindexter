@@ -81,8 +81,8 @@ class ModelConfig:
     model_id: str
     default_steps: int
     default_guidance_scale: float
-    lora_repo: Optional[str] = None
-    lora_weight_name: Optional[str] = None
+    lora_repo: str | None = None
+    lora_weight_name: str | None = None
     scheduler_trailing: bool = False
     notes: str = ""
 
@@ -124,11 +124,11 @@ REGISTRY: Dict[str, ModelConfig] = {
 
 class ServerState:
     def __init__(self):
-        self.pipeline: Optional[Any] = None
-        self.config: Optional[ModelConfig] = None
+        self.pipeline: Any | None = None
+        self.config: ModelConfig | None = None
         self.last_used: float = 0.0
         self.degraded: bool = False
-        self.degraded_reason: Optional[str] = None
+        self.degraded_reason: str | None = None
 
     def mark_degraded(self, reason: str):
         self.degraded = True
@@ -149,7 +149,7 @@ state = ServerState()
 # CONFIG LOADING
 # ============================================================================
 
-async def read_model_setting() -> Optional[str]:
+async def read_model_setting() -> str | None:
     """Read the configured model friendly name from app_settings.
 
     Returns None if the row exists but is empty. Raises on connection failure.
@@ -319,8 +319,8 @@ class GenerateRequest(BaseModel):
     )
     width: int = Field(default=1024, ge=256, le=2048)
     height: int = Field(default=1024, ge=256, le=2048)
-    steps: Optional[int] = Field(default=None, ge=1, le=50)
-    guidance_scale: Optional[float] = Field(default=None, ge=0, le=20)
+    steps: int | None = Field(default=None, ge=1, le=50)
+    guidance_scale: float | None = Field(default=None, ge=0, le=20)
     seed: int = Field(default=-1)
 
 

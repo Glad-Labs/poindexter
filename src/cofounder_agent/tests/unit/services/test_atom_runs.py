@@ -15,7 +15,6 @@ import pytest
 from services import atom_runs
 from services.atom_runs import persist_atom_runs
 
-
 # --- asyncpg pool stub ------------------------------------------------------
 
 

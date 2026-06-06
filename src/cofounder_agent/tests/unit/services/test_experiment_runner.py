@@ -29,7 +29,6 @@ from services.experiment_runner import (
     pick_variant,
 )
 
-
 # ---------------------------------------------------------------------------
 # Minimal asyncpg-shaped stubs
 #
@@ -52,7 +51,7 @@ class _FakeConn:
         self.queries.append((sql, args))
         return list(self._rows)
 
-    async def __aenter__(self) -> "_FakeConn":
+    async def __aenter__(self) -> _FakeConn:
         return self
 
     async def __aexit__(self, *_a: Any) -> bool:

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from plugins.atom import AtomMeta, FieldSpec
 
 ATOM_META = AtomMeta(
     name="qa.ragas",

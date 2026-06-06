@@ -36,14 +36,13 @@ from services.posts_approval_service import (
     show_pending_publish,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool — in-memory ``posts`` store keyed on the SQL prefix.
 # ---------------------------------------------------------------------------
 
 
 class FakeConnection:
-    def __init__(self, store: "FakeStore") -> None:
+    def __init__(self, store: FakeStore) -> None:
         self._store = store
 
     async def __aenter__(self):

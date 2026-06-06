@@ -25,7 +25,6 @@ import pytest
 
 from services.jobs.rollup_post_performance import RollupPostPerformanceJob
 
-
 # ---------------------------------------------------------------------------
 # Metadata (no DB needed)
 # ---------------------------------------------------------------------------

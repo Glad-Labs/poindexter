@@ -45,13 +45,13 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from services.auth.oauth_issuer import (
     ALLOWED_SCOPES,
+    InvalidToken,
     generate_authorization_code,
     generate_client_id,
     generate_client_secret,
     issue_token,
     signing_key,
     verify_token,
-    InvalidToken,
 )
 from services.logger_config import get_logger
 

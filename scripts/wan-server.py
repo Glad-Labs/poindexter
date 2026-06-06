@@ -47,7 +47,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-
 OUTPUT_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "generated-videos"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -80,10 +79,10 @@ class ServerState:
     """Mutable singleton state — pipeline cache, idle clock, degraded flag."""
 
     def __init__(self) -> None:
-        self.pipeline: Optional[Any] = None
+        self.pipeline: Any | None = None
         self.last_used: float = 0.0
         self.degraded: bool = False
-        self.degraded_reason: Optional[str] = None
+        self.degraded_reason: str | None = None
         # Single GPU lock — concurrent /generate calls would compete
         # for VRAM and produce torch CUDA OOMs. Serialize at the
         # server level rather than relying on every caller to.

@@ -19,7 +19,6 @@ from modules.content.stages.generate_video_shot_list import (
     _extract_json_object,
 )
 
-
 # ---------------------------------------------------------------------------
 # Pure helpers — _estimate_target_duration + _extract_json_object
 # ---------------------------------------------------------------------------

@@ -29,7 +29,6 @@ import pytest
 # resolves the same way the backup_watcher tests import it.
 from brain import gate_pending_summary_probe as gps
 
-
 # ---------------------------------------------------------------------------
 # Helpers — fixed clock + pool builder
 # ---------------------------------------------------------------------------
@@ -56,10 +55,10 @@ def _default_settings() -> dict[str, str]:
 
 def _make_pool(
     *,
-    setting_values: Optional[dict[str, str]] = None,
+    setting_values: dict[str, str] | None = None,
     pending_count: int = 0,
-    oldest_age_hours: Optional[float] = None,
-    select_raises: Optional[Exception] = None,
+    oldest_age_hours: float | None = None,
+    select_raises: Exception | None = None,
 ):
     """Build an asyncpg-style mock pool that:
 
@@ -72,7 +71,7 @@ def _make_pool(
     settings = {**_default_settings(), **(setting_values or {})}
 
     if oldest_age_hours is None or pending_count == 0:
-        oldest_ts: Optional[datetime] = None
+        oldest_ts: datetime | None = None
     else:
         oldest_ts = _FIXED_NOW - timedelta(hours=oldest_age_hours)
 

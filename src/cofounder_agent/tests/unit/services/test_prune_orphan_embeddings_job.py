@@ -14,11 +14,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services.jobs.prune_orphan_embeddings import (
-    PruneOrphanEmbeddingsJob,
     _DEFAULT_BATCH_SIZE,
+    PruneOrphanEmbeddingsJob,
     _truthy,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake pool — only fetch + fetchval for app_settings reads
@@ -26,7 +25,7 @@ from services.jobs.prune_orphan_embeddings import (
 
 
 class FakeConnection:
-    def __init__(self, store: "FakeStore") -> None:
+    def __init__(self, store: FakeStore) -> None:
         self._store = store
 
     async def __aenter__(self):

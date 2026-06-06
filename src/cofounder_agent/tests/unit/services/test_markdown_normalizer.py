@@ -7,7 +7,6 @@ import pytest
 
 from services.markdown_normalizer import normalize_markdown
 
-
 # ---------------------------------------------------------------------------
 # Repro from the issue body
 # ---------------------------------------------------------------------------

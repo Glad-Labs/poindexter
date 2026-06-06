@@ -20,8 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec
 from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+from plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
 

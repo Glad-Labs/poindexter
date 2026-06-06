@@ -53,8 +53,9 @@ import logging
 import os
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -149,7 +150,7 @@ _SENTINEL_ALERTNAME_BY_TIER: dict[str, str] = {
 # escalation fires *across* cycles. Reset to 0 when a fresh dump appears.
 # ---------------------------------------------------------------------------
 
-_retry_state: dict[str, int] = {tier: 0 for tier in _CONTAINERS_BY_TIER}
+_retry_state: dict[str, int] = dict.fromkeys(_CONTAINERS_BY_TIER, 0)
 
 
 def _reset_retry_state() -> None:
@@ -258,8 +259,8 @@ def _latest_dump_age_seconds(
     backup_dir: str,
     tier: str,
     *,
-    now: Optional[float] = None,
-) -> Optional[float]:
+    now: float | None = None,
+) -> float | None:
     """Return age (in seconds) of the newest ``poindexter_brain_*.dump``
     file under ``<backup_dir>/<tier>/``. ``None`` when the directory is
     missing or empty (treated as stale by the caller).
@@ -444,7 +445,7 @@ async def _emit_audit_event(
     event: str,
     detail: str,
     *,
-    extra: Optional[dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {"detail": detail}
     if extra:
@@ -762,7 +763,7 @@ async def _check_one_tier(
     *,
     tier: str,
     config: dict[str, Any],
-    stat_fn: Callable[[str, str], Optional[float]],
+    stat_fn: Callable[[str, str], float | None],
     restart_fn: Callable[[str], tuple[bool, str]],
     sleep_fn: Callable[[float], None],
     notify_fn: Callable[..., None],
@@ -998,13 +999,11 @@ async def _check_one_tier(
 async def run_backup_watcher_probe(
     pool: Any,
     *,
-    stat_fn: Optional[Callable[[str, str], Optional[float]]] = None,
-    restart_fn: Optional[Callable[[str], tuple[bool, str]]] = None,
-    sleep_fn: Optional[Callable[[float], None]] = None,
-    notify_fn: Optional[Callable[..., None]] = None,
-    scan_sentinels_fn: Optional[
-        Callable[[str], list[tuple[str, Path, dict[str, str]]]]
-    ] = None,
+    stat_fn: Callable[[str, str], float | None] | None = None,
+    restart_fn: Callable[[str], tuple[bool, str]] | None = None,
+    sleep_fn: Callable[[float], None] | None = None,
+    notify_fn: Callable[..., None] | None = None,
+    scan_sentinels_fn: Callable[[str], list[tuple[str, Path, dict[str, str]]]] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the backup-watcher probe.
 

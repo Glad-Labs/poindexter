@@ -16,7 +16,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import migration_drift_probe as mdp
 
 

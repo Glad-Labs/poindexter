@@ -30,7 +30,6 @@ if str(MCP_SERVER_DIR) not in sys.path:
 
 import server  # noqa: E402 — sys.path adjustment above
 
-
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool
 #

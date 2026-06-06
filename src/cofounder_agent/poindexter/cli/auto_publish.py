@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 async def _open_pool() -> Any:
     import asyncpg
+
     from ._bootstrap import resolve_dsn
     dsn = resolve_dsn()
     return await asyncpg.create_pool(dsn, min_size=1, max_size=2)

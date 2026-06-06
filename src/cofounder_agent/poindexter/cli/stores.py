@@ -20,7 +20,6 @@ from typing import Any
 
 import click
 
-
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
 

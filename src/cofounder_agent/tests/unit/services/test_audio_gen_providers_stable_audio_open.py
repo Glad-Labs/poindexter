@@ -28,7 +28,6 @@ from services.audio_gen_providers.stable_audio_open import (
     _resolve_server_url,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers — mirror the SDXL/FLUX test fixtures so failure modes match.
 # ---------------------------------------------------------------------------

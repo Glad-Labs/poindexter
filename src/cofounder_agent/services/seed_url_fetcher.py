@@ -49,8 +49,8 @@ from typing import Final
 from urllib.parse import urlparse
 
 import httpx
-from services.site_config import SiteConfig
 
+from services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 

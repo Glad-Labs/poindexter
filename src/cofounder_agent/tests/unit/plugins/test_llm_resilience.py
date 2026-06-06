@@ -43,7 +43,6 @@ from services.ollama_resilience import (
 )
 from services.site_config import SiteConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

@@ -57,8 +57,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -228,7 +229,7 @@ async def _select_pending_summary(
         return {"count": 0, "oldest_created_at": None, "oldest_age_seconds": None}
     count = int(row["count"] or 0)
     oldest = row["oldest_created_at"]
-    oldest_age_seconds: Optional[float] = None
+    oldest_age_seconds: float | None = None
     if isinstance(oldest, datetime) and count > 0:
         try:
             oldest_age_seconds = max(0.0, (now_utc - oldest).total_seconds())
@@ -262,7 +263,10 @@ async def _default_discord_send(message: str, *, pool: Any) -> None:
         from brain_daemon import _read_app_setting, send_discord  # type: ignore
     except ImportError:  # pragma: no cover — package-qualified for tests
         try:
-            from brain.brain_daemon import _read_app_setting, send_discord  # type: ignore
+            from brain.brain_daemon import (  # type: ignore
+                _read_app_setting,
+                send_discord,
+            )
         except ImportError:
             logger.debug(
                 "[GATE_SUMMARY] brain_daemon helpers unavailable — "
@@ -309,9 +313,9 @@ DiscordFn = Callable[[str], Awaitable[None]]
 async def run_gate_pending_summary_probe(
     pool: Any,
     *,
-    now_fn: Optional[Callable[[], datetime]] = None,
-    notify_fn: Optional[NotifyFn] = None,
-    discord_fn: Optional[DiscordFn] = None,
+    now_fn: Callable[[], datetime] | None = None,
+    notify_fn: NotifyFn | None = None,
+    discord_fn: DiscordFn | None = None,
 ) -> dict[str, Any]:
     """Single execution of the gate-pending-summary probe.
 
@@ -403,7 +407,7 @@ async def run_gate_pending_summary_probe(
         }
 
     count = int(summary["count"])
-    oldest_age_seconds: Optional[float] = summary["oldest_age_seconds"]
+    oldest_age_seconds: float | None = summary["oldest_age_seconds"]
 
     # ----- Discord per-cycle status ping (low-noise) -----
     discord_sent = False

@@ -18,14 +18,13 @@ from services.jobs.prune_stale_embeddings import (
     _parse_days,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fake pool — minimal in-memory store for embeddings + app_settings
 # ---------------------------------------------------------------------------
 
 
 class FakeConnection:
-    def __init__(self, store: "FakeStore") -> None:
+    def __init__(self, store: FakeStore) -> None:
         self._store = store
 
     async def __aenter__(self):

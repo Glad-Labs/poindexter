@@ -121,7 +121,6 @@ async def _resolve_setting(key: str, default: str) -> str:
     the heavier ``DatabaseService`` plumbing.
     """
     import asyncpg
-
     from brain.bootstrap import resolve_database_url
 
     try:

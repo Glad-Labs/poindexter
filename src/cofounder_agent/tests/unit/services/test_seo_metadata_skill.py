@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from services.prompt_manager import UnifiedPromptManager
 
-
 # (key, required placeholders) — byte-fidelity guard against silent drift.
 _SEO_KEYS = (
     ("seo.generate_title", ("{topic}",)),

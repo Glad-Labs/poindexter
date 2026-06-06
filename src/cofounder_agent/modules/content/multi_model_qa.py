@@ -1062,6 +1062,8 @@ class MultiModelQA:
             ollama_model = resolved_model.removeprefix("ollama/")
             from services.llm_providers.thinking_models import (
                 is_thinking_model as _is_thinking_model,
+            )
+            from services.llm_providers.thinking_models import (
                 resolve_thinking_substrings,
             )
             _is_thinking = _is_thinking_model(

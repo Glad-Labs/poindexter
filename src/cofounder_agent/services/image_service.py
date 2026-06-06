@@ -1005,8 +1005,9 @@ class ImageService:
         _sc = self._site_config
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
-            import httpx
             from contextlib import AsyncExitStack
+
+            import httpx
 
             # 60s per-call cap — Lightning generates in ~1-2s, cold-load
             # takes ~10s, allow headroom for network latency and retries.

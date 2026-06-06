@@ -47,7 +47,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 logger = logging.getLogger("finance.poll_staleness_probe")
 
@@ -149,7 +150,7 @@ async def _emit_audit_event(
 NotifyFn = Callable[..., Any]
 
 
-def _default_notify_fn() -> Optional[NotifyFn]:
+def _default_notify_fn() -> NotifyFn | None:
     """Resolve ``brain.operator_notifier.notify_operator`` lazily.
 
     The dual flat / package import mirrors the brain probes' container vs.
@@ -174,8 +175,8 @@ def _default_notify_fn() -> Optional[NotifyFn]:
 async def run_finance_poll_staleness_probe(
     pool: Any,
     *,
-    notify_fn: Optional[NotifyFn] = None,
-    now_epoch_fn: Optional[Callable[[], float]] = None,
+    notify_fn: NotifyFn | None = None,
+    now_epoch_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the finance poll-staleness probe.
 
@@ -264,7 +265,7 @@ async def run_finance_poll_staleness_probe(
         # from the operator's point of view — they turned it on and it has
         # produced nothing.
         stale = True
-        age_seconds: Optional[float] = None
+        age_seconds: float | None = None
     else:
         age_seconds = max(0.0, now - float(last_success_epoch))
         stale = age_seconds > stale_threshold_seconds

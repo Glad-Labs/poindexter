@@ -12,8 +12,8 @@ from uuid import uuid4
 
 import pytest
 
-from services.niche_service import Niche, NicheService, NicheGoal, NicheSource
 from services.internal_rag_source import InternalCandidate
+from services.niche_service import Niche, NicheGoal, NicheService, NicheSource
 from services.site_config import SiteConfig
 from services.topic_batch_service import CandidateView, TopicBatchService
 

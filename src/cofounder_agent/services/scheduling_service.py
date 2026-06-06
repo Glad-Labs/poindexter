@@ -50,9 +50,10 @@ no consumer was reading those event types.)
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from services.audit_log import audit_log_bg
 from services.logger_config import get_logger

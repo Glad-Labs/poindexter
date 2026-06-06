@@ -95,9 +95,10 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 logger = logging.getLogger("livekit-bridge")
 
@@ -278,7 +279,7 @@ class AudioMediaPlane:
         raise NotImplementedError
 
     def set_utterance_callback(
-        self, callback: Callable[[str], "asyncio.Future | None"]
+        self, callback: Callable[[str], asyncio.Future | None]
     ) -> None:
         """Register the callback the STT pipeline fires on each utterance end.
 
@@ -302,7 +303,7 @@ class NoopAudioMediaPlane(AudioMediaPlane):
 
     def __init__(self) -> None:
         self._connected = False
-        self._on_utterance: Callable[[str], "asyncio.Future | None"] | None = None
+        self._on_utterance: Callable[[str], asyncio.Future | None] | None = None
         self._room: str | None = None
         self._identity: str | None = None
 
@@ -331,7 +332,7 @@ class NoopAudioMediaPlane(AudioMediaPlane):
                     preview, "..." if len(text) > 80 else "")
 
     def set_utterance_callback(
-        self, callback: Callable[[str], "asyncio.Future | None"]
+        self, callback: Callable[[str], asyncio.Future | None]
     ) -> None:
         self._on_utterance = callback
 
@@ -393,7 +394,7 @@ class BridgeState:
     speak_count: int = 0
     utterance_count: int = 0
     leave_event: asyncio.Event = field(default_factory=asyncio.Event)
-    task: Optional["asyncio.Task[None]"] = None
+    task: asyncio.Task[None] | None = None
 
 
 class _BridgeRegistry:
@@ -652,7 +653,9 @@ def _resolve_default_audio_plane(config: BridgeConfig) -> AudioMediaPlane:
             f"testing."
         )
     try:
-        from audio_plane_pipecat import resolve_audio_plane  # type: ignore[import-not-found]
+        from audio_plane_pipecat import (
+            resolve_audio_plane,  # type: ignore[import-not-found]
+        )
     except ImportError as exc:
         raise RuntimeError(
             f"[VOICE_BRIDGE] audio_plane_pipecat import failed even "

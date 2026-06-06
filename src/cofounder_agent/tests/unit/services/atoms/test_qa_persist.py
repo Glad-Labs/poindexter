@@ -7,7 +7,11 @@ from typing import Any
 
 import pytest
 
-from modules.content.atoms._qa_persist import build_qa_feedback, build_reject_reason, persist_qa_reject
+from modules.content.atoms._qa_persist import (
+    build_qa_feedback,
+    build_reject_reason,
+    persist_qa_reject,
+)
 
 
 class _Pool:

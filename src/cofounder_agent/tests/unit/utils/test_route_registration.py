@@ -11,9 +11,9 @@ Covers:
 """
 
 import importlib.util
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from utils.route_registration import (
     _COORDINATOR_ROUTES,
@@ -21,7 +21,6 @@ from utils.route_registration import (
     _WORKER_ROUTES,
     register_all_routes,
 )
-
 
 # Marker — FinanceModule is private (Glad Labs operator overlay). The
 # sync filter strips ``src/cofounder_agent/modules/finance/`` from the

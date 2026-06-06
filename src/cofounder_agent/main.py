@@ -19,11 +19,11 @@ from pydantic import BaseModel, field_validator
 # Import configuration
 from config import get_config
 from middleware.api_token_auth import verify_api_token
+from modules.content.quality_service import UnifiedQualityService
 from services.container import service_container
 
 # Import services
 from services.logger_config import get_logger
-from modules.content.quality_service import UnifiedQualityService
 
 try:
     from services.sentry_integration import setup_sentry
@@ -251,6 +251,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # See ``services/http_client.py`` for the wiring contract.
         try:
             import httpx as _httpx
+
             from services.http_client import wire_http_client_modules
 
             _shared_http_timeout = _site_cfg.get_float(
@@ -682,8 +683,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 async def _warm_reranker():
                     try:
                         from services.rag_engine import (
-                            _build_rerank_retriever_class,
                             _RERANKER_CACHE,
+                            _build_rerank_retriever_class,
                         )
                         cls = _build_rerank_retriever_class()
                         # Synthesize a stub inner retriever so we can
@@ -814,6 +815,7 @@ _is_production = config.environment == "production"
 # on this same instance to pull DB values and then attaches it to
 # ``app.state.site_config`` for route handlers + DI.
 from services.site_config import SiteConfig  # noqa: E402
+
 _site_cfg = SiteConfig()
 
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
@@ -905,6 +907,7 @@ middleware_config.register_all_middleware(app, site_config=_site_cfg)
 # Must run before route registration so the catch-all webhooks_router has
 # every handler available when the first request lands.
 from services.integrations.handlers import load_all as _load_integration_handlers
+
 _load_integration_handlers()
 
 # ===== ROUTE REGISTRATION =====

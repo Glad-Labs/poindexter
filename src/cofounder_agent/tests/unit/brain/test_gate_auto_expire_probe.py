@@ -26,7 +26,6 @@ import pytest
 # resolves the same way the backup_watcher tests import it.
 from brain import gate_auto_expire_probe as ge
 
-
 # ---------------------------------------------------------------------------
 # Helpers — pool builder + fixed clock
 # ---------------------------------------------------------------------------
@@ -70,10 +69,10 @@ def _make_stale_gate(
 
 def _make_pool(
     *,
-    setting_values: Optional[dict[str, str]] = None,
-    stale_rows: Optional[list[dict[str, Any]]] = None,
-    update_returns: Optional[dict[str, bool]] = None,
-    select_raises: Optional[Exception] = None,
+    setting_values: dict[str, str] | None = None,
+    stale_rows: list[dict[str, Any]] | None = None,
+    update_returns: dict[str, bool] | None = None,
+    select_raises: Exception | None = None,
 ):
     """Build an asyncpg-style mock pool that:
 

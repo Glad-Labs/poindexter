@@ -21,7 +21,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import glitchtip_triage_probe as gt
 
 
@@ -188,7 +187,7 @@ def _issue(
     pass a specific timestamp.
     """
     if last_seen is None:
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         last_seen = (
             datetime.now(timezone.utc) - timedelta(hours=1)
         ).isoformat().replace("+00:00", "Z")
@@ -712,18 +711,18 @@ def test_parse_next_cursor_extracts_real_cursor():
 @pytest.mark.unit
 class TestIsFresh:
     def test_recent_iso_is_fresh(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         recent = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         assert gt._is_fresh(recent, max_age_hours=24) is True
 
     def test_stale_iso_is_not_fresh(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         stale = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
         assert gt._is_fresh(stale, max_age_hours=24) is False
 
     def test_z_suffix_iso_parses(self):
         """GlitchTip emits ``lastSeen`` ending in ``Z`` — must parse."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         z_form = recent.replace("+00:00", "Z")
         assert gt._is_fresh(z_form, max_age_hours=24) is True
@@ -731,7 +730,7 @@ class TestIsFresh:
     def test_naive_iso_treated_as_utc(self):
         """A naive (no-tzinfo) ISO string is treated as UTC so we don't
         accidentally flag fresh issues as stale because of local time."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         recent_naive = (
             datetime.now(timezone.utc) - timedelta(hours=2)
         ).replace(tzinfo=None).isoformat()
@@ -748,7 +747,7 @@ class TestIsFresh:
     def test_zero_max_age_disables_gate(self):
         """Operators who want every restart to re-page everything can
         set freshness=0 — gate degrades to always-fresh."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         ancient = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
         assert gt._is_fresh(ancient, max_age_hours=0) is True
 
@@ -760,7 +759,7 @@ async def test_stale_unresolved_issue_is_not_alerted():
     stale (``lastSeen`` older than 24h) does NOT page the operator.
     Captured 2026-05-16: a brain restart turned the empty in-memory
     ``_alerted_ids`` set into a "re-page every stale issue" loop."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     stale_iso = (
         datetime.now(timezone.utc) - timedelta(hours=48)
     ).isoformat().replace("+00:00", "Z")
@@ -806,7 +805,7 @@ async def test_stale_unresolved_issue_is_not_alerted():
 async def test_fresh_issue_still_alerted_when_threshold_crossed():
     """Mirror test — a fresh issue above the threshold DOES page.
     Confirms the gate isn't accidentally silencing real signal."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     fresh_iso = (
         datetime.now(timezone.utc) - timedelta(hours=2)
     ).isoformat().replace("+00:00", "Z")

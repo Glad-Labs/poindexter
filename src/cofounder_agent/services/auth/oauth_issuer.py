@@ -36,8 +36,8 @@ import os
 import secrets
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import jwt  # PyJWT, already pinned in pyproject
 

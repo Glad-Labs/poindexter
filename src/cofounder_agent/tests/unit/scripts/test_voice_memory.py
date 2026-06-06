@@ -40,7 +40,6 @@ from _voice_memory import (  # noqa: E402
     vector_to_pg_text,
 )
 
-
 # ---------------------------------------------------------------------------
 # Mock conn helper — minimal asyncpg.Connection look-alike
 # ---------------------------------------------------------------------------

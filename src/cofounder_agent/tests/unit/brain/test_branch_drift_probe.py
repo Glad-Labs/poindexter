@@ -21,9 +21,7 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from brain import branch_drift_probe as bdp
-
 
 _FIXED_NOW = datetime(2026, 6, 2, 12, 0, 0, tzinfo=timezone.utc)
 _LOCAL_HEAD = "abbad234cfa31863c8c43b4587784771d9a76612"
@@ -47,8 +45,8 @@ def _default_settings() -> dict[str, str]:
 
 def _make_pool(
     *,
-    setting_values: Optional[dict[str, str]] = None,
-    deduped_fingerprints: Optional[set[str]] = None,
+    setting_values: dict[str, str] | None = None,
+    deduped_fingerprints: set[str] | None = None,
 ):
     """asyncpg-style mock pool. Records every execute() in pool.executes."""
     pool = MagicMock()

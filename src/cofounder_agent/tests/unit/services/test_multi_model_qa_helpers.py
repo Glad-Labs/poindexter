@@ -24,7 +24,6 @@ from modules.content.multi_model_qa import (
     format_qa_feedback_from_reviews,
 )
 
-
 # ---------------------------------------------------------------------------
 # MultiModelResult.format_feedback_text
 # ---------------------------------------------------------------------------

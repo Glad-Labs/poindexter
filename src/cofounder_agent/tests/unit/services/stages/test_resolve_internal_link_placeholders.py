@@ -13,14 +13,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from modules.content.stages.resolve_internal_link_placeholders import (
-    ResolveInternalLinkPlaceholdersStage,
     _PLACEHOLDER_RE,
+    ResolveInternalLinkPlaceholdersStage,
     _resolve_all_placeholders,
     _resolve_one,
     _strip_empty_brackets,
     scrub_unresolved_placeholders,
 )
-
 
 # ---- scrub_unresolved_placeholders (safety-net helper) ---------------------
 # Pins the rewrite-loop-poisoning fix captured 2026-05-25 — the QA

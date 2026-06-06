@@ -25,7 +25,7 @@ import re
 import subprocess
 import sys
 import time
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

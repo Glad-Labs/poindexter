@@ -59,7 +59,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # Every value is stored as `str` because `app_settings.value` is a TEXT
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
 # `get_float()`, `get_bool()` etc.

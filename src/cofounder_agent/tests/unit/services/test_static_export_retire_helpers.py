@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
 from services import static_export_service as ses
+from services.site_config import SiteConfig
 
 
 @pytest.mark.unit

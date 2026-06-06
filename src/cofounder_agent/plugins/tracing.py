@@ -60,9 +60,9 @@ from __future__ import annotations
 
 import functools
 import inspect
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Iterator, Sequence, TypeVar
-
+from typing import Any, TypeVar
 
 # ---------------------------------------------------------------------------
 # No-op fallback — same surface as opentelemetry.trace.Tracer

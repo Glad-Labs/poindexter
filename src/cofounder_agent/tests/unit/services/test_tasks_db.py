@@ -1599,6 +1599,7 @@ class TestAddTaskAgainstRealDb:
         cannot insert into view "content_tasks"``.
         """
         import asyncpg
+
         from services.tasks_db import TasksDatabase
 
         db = TasksDatabase(pool=db_pool)

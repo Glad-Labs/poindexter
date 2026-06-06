@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 PORT = 9837

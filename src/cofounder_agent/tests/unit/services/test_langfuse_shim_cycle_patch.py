@@ -16,7 +16,6 @@ import sys
 
 import pytest
 
-
 # Skip the whole file if langfuse isn't installed (CI containers don't
 # always have it; production worker always does).
 langfuse = pytest.importorskip("langfuse")

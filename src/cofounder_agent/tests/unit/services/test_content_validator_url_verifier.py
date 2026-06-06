@@ -33,7 +33,6 @@ from modules.content.content_validator import (
     verify_content_urls,
 )
 
-
 # ---------------------------------------------------------------------------
 # verify_content_urls — the largest uncovered block (lines 1321-1396)
 # ---------------------------------------------------------------------------

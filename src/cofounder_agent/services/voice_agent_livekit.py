@@ -80,7 +80,11 @@ from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
 from services.voice_agent import build_voice_pipeline_task
 from services.voice_pipecat import (
     mint_livekit_token as _shared_mint_livekit_token,
+)
+from services.voice_pipecat import (
     resolve_livekit_creds as _shared_resolve_livekit_creds,
+)
+from services.voice_pipecat import (
     resolve_livekit_creds_async as _shared_resolve_livekit_creds_async,
 )
 

@@ -31,13 +31,13 @@ from uuid import UUID
 
 from services.logger_config import get_logger
 from services.niche_service import Niche, NicheService
+from services.site_config import SiteConfig
 from services.topic_ranking import (
     ScoredCandidate,
     apply_decay,
     goal_vector_for,
     weighted_cosine_score,
 )
-from services.site_config import SiteConfig
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
 # setter were removed. ``TopicBatchService`` now REQUIRES a keyword-only

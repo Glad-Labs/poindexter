@@ -93,6 +93,7 @@ from services.social_poster import (  # noqa: F401 — imported for metric regis
     SOCIAL_ADAPTER_ERRORS_TOTAL,
     SOCIAL_ADAPTER_POSTS_TOTAL,
 )
+
 # Imported for its side effect: template_runner registers NODE_DURATION_SECONDS
 # (poindexter#652) at module import. Without this, the histogram only lands on
 # the default prometheus registry after the first pipeline run — leaving the

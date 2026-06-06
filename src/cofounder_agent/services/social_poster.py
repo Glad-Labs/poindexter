@@ -42,7 +42,6 @@ from services.telegram_config import TelegramConfig
 # take a required ``site_config=`` kwarg and thread it into every internal
 # helper. Callers pass the run-bound instance (``publish_service``'s ``_sc``;
 # the ``poindexter publishers fire`` CLI builds one from the lifespan pool).
-
 from .ollama_client import OllamaClient
 
 logger = get_logger(__name__)

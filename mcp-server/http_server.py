@@ -83,8 +83,9 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Awaitable, Callable, MutableMapping
 from pathlib import Path
-from typing import Any, Awaitable, Callable, MutableMapping
+from typing import Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("poindexter-mcp-http")
@@ -360,9 +361,8 @@ def build_app():
     """
     from contextlib import asynccontextmanager
 
-    from fastapi import FastAPI
-
     import server as poindexter_mcp  # type: ignore[import-not-found]
+    from fastapi import FastAPI
 
     # FastMCP defaults its internal route to ``/mcp``. We're already
     # FastAPI-mounting at ``/mcp`` — if we leave the inner path at

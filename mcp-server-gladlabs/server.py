@@ -35,7 +35,6 @@ import os
 
 import asyncpg
 import httpx
-
 from mcp.server.fastmcp import FastMCP
 
 # OAuth helper — local mirror, see oauth_client.py for why

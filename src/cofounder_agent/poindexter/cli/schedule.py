@@ -25,12 +25,9 @@ from typing import Any
 
 import click
 
-
 # ---------------------------------------------------------------------------
 # DSN + asyncpg helpers (mirror the qa-gates / taps CLI patterns)
 # ---------------------------------------------------------------------------
-
-
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
 

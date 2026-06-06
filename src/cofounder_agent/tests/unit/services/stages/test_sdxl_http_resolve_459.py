@@ -37,7 +37,6 @@ from modules.content.stages.source_featured_image import (
     _resolve_sdxl_featured_response,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

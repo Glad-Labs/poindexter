@@ -29,7 +29,6 @@ import pytest
 
 from services.prompt_manager import PromptCategory, UnifiedPromptManager
 
-
 _BLOG_KEYS = (
     "blog_generation.initial_draft",
     "blog_generation.seo_and_social",

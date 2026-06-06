@@ -155,7 +155,7 @@ class WorkflowAdvance:
       needed.
     """
 
-    next_gate: Optional[dict[str, Any]] = None
+    next_gate: dict[str, Any] | None = None
     ready_to_distribute: bool = False
     finished: bool = False
     reason: str = ""
@@ -189,7 +189,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     return d
 
 
-async def _fetch_post_status(pool: Any, post_id: str) -> Optional[str]:
+async def _fetch_post_status(pool: Any, post_id: str) -> str | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT status FROM posts WHERE id::text = $1", str(post_id)
@@ -199,7 +199,7 @@ async def _fetch_post_status(pool: Any, post_id: str) -> Optional[str]:
 
 async def _find_gate_row(
     pool: Any, post_id: str, gate_name: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Return the LATEST row for (post_id, gate_name) by ordinal.
 
     A given gate name appears at most once in a normal sequence, but the
@@ -332,7 +332,7 @@ async def get_gates_for_post(
 
 async def get_next_pending_gate(
     pool: Any, post_id: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Return the first (lowest-ordinal) pending gate, or None.
 
     "First pending" is the canonical "what's the workflow waiting on"
@@ -360,7 +360,7 @@ async def approve_gate(
     post_id: str,
     gate_name: str,
     approver: str,
-    notes: Optional[str] = None,
+    notes: str | None = None,
 ) -> dict[str, Any]:
     """Mark the named gate as approved.
 
@@ -430,7 +430,7 @@ async def reject_gate(
     post_id: str,
     gate_name: str,
     approver: str,
-    reason: Optional[str] = None,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """Mark the gate rejected and flip ``posts.status='rejected'``.
 
@@ -755,7 +755,7 @@ async def record_media_failure(
     metadata["attempts"] = attempts
 
     escalated = False
-    escalation_id: Optional[str] = None
+    escalation_id: str | None = None
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -821,7 +821,7 @@ async def notify_gate_pending(
     *,
     post_id: str,
     gate_name: str,
-    site_config: Optional[Any] = None,
+    site_config: Any | None = None,
 ) -> None:
     """Send the operator a "gate is waiting on you" notification.
 

@@ -138,7 +138,7 @@ def _append_alerts_log(text: str) -> tuple[bool, str]:
 #
 # Kept as an injectable callable so this module stays stdlib-only;
 # the wiring happens in brain_daemon where asyncpg is already imported.
-_NOTIFY_AUDIT_SINK: "_NotifyAuditSink | None" = None
+_NOTIFY_AUDIT_SINK: _NotifyAuditSink | None = None
 
 
 def set_notify_audit_sink(sink) -> None:
