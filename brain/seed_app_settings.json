@@ -1,7 +1,7 @@
 {
   "_meta": {
     "name": "Poindexter core seed",
-    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable — docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see the premium Quick Start Guide product on Lemon Squeezy.",
+    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable \u00e2\u20ac\u201d docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see the premium Quick Start Guide product on Lemon Squeezy.",
     "version": "1",
     "tier": "free",
     "last_updated": "2026-04-18"
@@ -37,7 +37,6 @@
       "category": "identity",
       "description": "Short tagline used in metadata"
     },
-
     {
       "key": "company_name",
       "value": "My Company",
@@ -62,7 +61,6 @@
       "category": "identity",
       "description": "Comma-separated real products (for hallucination checks)"
     },
-
     {
       "key": "support_email",
       "value": "support@example.com",
@@ -87,7 +85,6 @@
       "category": "identity",
       "description": "Site owner display name"
     },
-
     {
       "key": "api_base_url",
       "value": "http://worker:8002",
@@ -100,14 +97,18 @@
       "category": "site",
       "description": "Customer-facing site URL"
     },
-
     {
       "key": "ollama_base_url",
       "value": "http://host.docker.internal:11434",
       "category": "infrastructure",
       "description": "Ollama API endpoint (uses host.docker.internal so containers can reach host Ollama)"
     },
-
+    {
+      "key": "compose_project_name",
+      "value": "",
+      "category": "infrastructure",
+      "description": "Docker Compose project name used by the brain's compose drift auto-recover when calling docker compose up from inside the container. Set to the basename of the host directory that launched the stack (e.g. \"glad-labs-website\" if you cloned into ~/glad-labs-website/). Leave empty to let docker compose infer the name from the compose file path, which works when the brain container and host share the same working directory."
+    },
     {
       "key": "pipeline_writer_model",
       "value": "ollama/gemma3:27b",
@@ -156,7 +157,6 @@
       "category": "pipeline",
       "description": "Fact-checking mode: 'programmatic' or an LLM provider"
     },
-
     {
       "key": "model_role_writer",
       "value": "ollama/gemma3:27b",
@@ -193,7 +193,6 @@
       "category": "model_roles",
       "description": "Fast summaries, short-form copy"
     },
-
     {
       "key": "default_model_tier",
       "value": "budget",
@@ -212,7 +211,6 @@
       "category": "models",
       "description": "Hard cap on cloud API calls per day in emergency mode"
     },
-
     {
       "key": "qa_overall_score_threshold",
       "value": "70",
@@ -255,7 +253,6 @@
       "category": "quality",
       "description": "Points subtracted from final QA score per validator warning (GH-91)"
     },
-
     {
       "key": "auto_publish_threshold",
       "value": "0",
@@ -352,7 +349,6 @@
       "category": "pipeline",
       "description": "Seconds between stale-task sweeps"
     },
-
     {
       "key": "daily_spend_limit_usd",
       "value": "1.00",
@@ -371,7 +367,6 @@
       "category": "cost",
       "description": "Alert when spend exceeds this % of limit"
     },
-
     {
       "key": "enable_memory_system",
       "value": "true",
@@ -396,7 +391,6 @@
       "category": "features",
       "description": "Enable Redis for caching and pub/sub"
     },
-
     {
       "key": "content_min_word_count",
       "value": "800",
@@ -427,7 +421,6 @@
       "category": "tokens",
       "description": "Temperature for QA review"
     },
-
     {
       "key": "image_primary_source",
       "value": "ai_generation",
@@ -458,7 +451,6 @@
       "category": "image",
       "description": "Default SDXL style for uncategorized posts"
     },
-
     {
       "key": "prometheus.threshold.embeddings_stale_seconds",
       "value": "21600",
@@ -475,7 +467,7 @@
       "key": "prometheus.threshold.daily_spend_critical_usd",
       "value": "5.0",
       "category": "prometheus",
-      "description": "Daily LLM spend (USD) that triggers a critical alert — pipeline should have already stopped"
+      "description": "Daily LLM spend (USD) that triggers a critical alert \u00e2\u20ac\u201d pipeline should have already stopped"
     },
     {
       "key": "prometheus.threshold.monthly_spend_warning_usd",
@@ -483,40 +475,36 @@
       "category": "prometheus",
       "description": "Monthly LLM spend (USD) that triggers a warning alert"
     },
-
     {
       "key": "prometheus.threshold.qa_rail_skip_ratio",
       "value": "1",
       "category": "prometheus",
-      "description": "Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page earlier) — poindexter#553"
+      "description": "Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page earlier) \u00e2\u20ac\u201d poindexter#553"
     },
     {
       "key": "qa_rail_skip_window_passes",
       "value": "20",
       "category": "qa",
-      "description": "How many recent QA passes the poindexter_qa_rail_skip_ratio gauge measures a rail's skip rate over — poindexter#553"
+      "description": "How many recent QA passes the poindexter_qa_rail_skip_ratio gauge measures a rail's skip rate over \u00e2\u20ac\u201d poindexter#553"
     },
     {
       "key": "plugin.job.render_prometheus_rules",
       "value": "{\"enabled\": true, \"interval_seconds\": 300, \"config\": {\"output_path\": \"/etc/prometheus/rules/dynamic.yml\", \"prometheus_url\": \"http://prometheus:9090\", \"reload_on_change\": true}}",
       "category": "plugins",
-      "description": "Config for RenderPrometheusRulesJob — renders app_settings rules into the Prometheus rules dir and hits /-/reload on change"
+      "description": "Config for RenderPrometheusRulesJob \u00e2\u20ac\u201d renders app_settings rules into the Prometheus rules dir and hits /-/reload on change"
     },
-
     {
       "key": "plugin.job.render_alertmanager_config",
       "value": "{\"enabled\": true, \"interval_seconds\": 300, \"config\": {\"template_path\": \"/etc/alertmanager/alertmanager.yml.tmpl\", \"output_path\": \"/etc/alertmanager/config/alertmanager.yml\", \"alertmanager_url\": \"http://alertmanager:9093\", \"reload_on_change\": true}}",
       "category": "plugins",
-      "description": "Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and hits /-/reload on change (delivery-plane dead-man's switch)"
+      "description": "Config for RenderAlertmanagerConfigJob (#524) \u00e2\u20ac\u201d renders alertmanager.yml.tmpl with telegram_chat_id and hits /-/reload on change (delivery-plane dead-man's switch)"
     },
-
     {
       "key": "pipeline.stages.order",
       "value": "[\"verify_task\", \"generate_content\", \"writer_self_review\", \"quality_evaluation\", \"url_validation\", \"replace_inline_images\", \"source_featured_image\", \"cross_model_qa\", \"generate_seo_metadata\", \"generate_media_scripts\", \"capture_training_data\", \"finalize_task\"]",
       "category": "pipeline",
       "description": "Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert third-party stages without a code deploy. Falls back to DEFAULT_STAGE_ORDER if missing."
     },
-
     {
       "key": "enable_tracing",
       "value": "true",

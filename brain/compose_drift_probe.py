@@ -164,6 +164,17 @@ COMPOSE_PATH_DEFAULT = "/app/docker-compose.local.yml"
 # place during a migration). Empty by default.
 SKIP_SERVICES_SETTING_KEY = "compose_drift_skip_services"
 
+# Docker Compose project name used when running ``docker compose up`` during
+# auto-recovery. When the brain container's working directory differs from the
+# host directory that owns the compose file (e.g. brain CWD=/app but the host
+# project lives in ~/glad-labs-website/), compose infers the wrong project name
+# and creates orphan networks instead of joining the real one. Set this to the
+# basename of the host directory that launched the stack (the value docker
+# compose would infer on the host, often the repo/folder name). Leave empty to
+# let compose infer from the compose-file path, which works when the file is in
+# the same directory on both host and brain.
+COMPOSE_PROJECT_NAME_SETTING_KEY = "compose_project_name"
+
 # Comma-separated list of services that legitimately run on-demand
 # (spun up only when needed, then shut down to free GPU/CPU resources).
 # When such a service is missing, we suppress the `container_missing`
@@ -644,6 +655,11 @@ async def _read_on_demand_services(pool) -> set[str]:
     return {s.strip() for s in val.split(",") if s.strip()}
 
 
+async def _read_compose_project_name(pool) -> str:
+    val = await _read_setting(pool, COMPOSE_PROJECT_NAME_SETTING_KEY, default="")
+    return val.strip()
+
+
 async def _emit_audit_event(
     pool,
     event: str,
@@ -679,7 +695,10 @@ async def _emit_audit_event(
 
 
 def _recreate_services(
-    compose_path: str, services: Iterable[str]
+    compose_path: str,
+    services: Iterable[str],
+    *,
+    project_name: str = "",
 ) -> tuple[bool, str]:
     """Run ``docker compose -f <path> up -d <services>``.
 
@@ -701,11 +720,12 @@ def _recreate_services(
         # `:?` sentinels for services we're NOT recreating. Build an env that
         # satisfies every required variable without polluting the target service.
         env = dict(os.environ)
-        # The brain container's cwd is /app, so docker compose would infer
-        # project name "app" and create a new network instead of joining the
-        # existing glad-labs-website_default network. Pin the project name to
-        # match the host-side deployment.
-        env.setdefault("COMPOSE_PROJECT_NAME", "glad-labs-website")
+        # When the brain container's cwd differs from the host directory that
+        # owns the compose file, docker compose infers the wrong project name
+        # and creates orphan networks. The operator sets compose_project_name
+        # in app_settings to pin the correct value (e.g. the host folder name).
+        if project_name:
+            env["COMPOSE_PROJECT_NAME"] = project_name
         # Pull real env values from each running target container so the
         # recreated service gets the correct values, not stubs.
         for svc in svc_list:
@@ -790,7 +810,6 @@ async def run_compose_drift_probe(
 
     notify_fn = notify_fn or notify_operator
     inspect_fn = inspect_fn or _docker_inspect
-    recreate_fn = recreate_fn or _recreate_services
     yaml_loader = yaml_loader or _load_compose_yaml
     docker_reachable_fn = docker_reachable_fn or _docker_reachable
 
@@ -798,6 +817,14 @@ async def run_compose_drift_probe(
     skip_services = await _read_skip_services(pool)
     on_demand_services = await _read_on_demand_services(pool)
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
+    project_name = await _read_compose_project_name(pool)
+
+    # Bind project_name into the default recreate_fn. Injected fns (tests)
+    # keep their own signature — they don't call real docker compose.
+    _pn = project_name
+    _effective_recreate_fn = recreate_fn if recreate_fn is not None else (
+        lambda path, svcs: _recreate_services(path, svcs, project_name=_pn)
+    )
 
     # ---- 0) Pre-flight: docker daemon reachable? ----------------------------
     # Without this, an unreachable docker daemon (socket bind-mounted but
@@ -1013,7 +1040,7 @@ async def run_compose_drift_probe(
         "[COMPOSE_DRIFT] Auto-recover enabled — recreating %s",
         ", ".join(sorted(drifted)),
     )
-    recreate_ok, recreate_msg = recreate_fn(compose_path, sorted(drifted))
+    recreate_ok, recreate_msg = _effective_recreate_fn(compose_path, sorted(drifted))
     if not recreate_ok:
         try:
             notify_fn(
