@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-05.**  
+> **Auto-generated from live `app_settings` table on 2026-06-06.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 738 active rows across 57 categories. 10 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 827 active rows across 60 categories. 1 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -37,50 +37,53 @@ The worker re-reads on every poll; no restart needed.
 - [content](#content) (20 keys)
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
-- [cost](#cost) (6 keys)
+- [cost](#cost) (8 keys)
 - [experiments](#experiments) (2 keys)
-- [features](#features) (4 keys)
+- [features](#features) (7 keys)
+- [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (8 keys)
-- [gates](#gates) (10 keys)
-- [general](#general) (325 keys)
+- [gates](#gates) (3 keys)
+- [general](#general) (323 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
+- [infrastructure](#infrastructure) (1 key)
 - [integration](#integration) (2 keys)
-- [integrations](#integrations) (10 keys)
+- [integrations](#integrations) (8 keys)
 - [llm_routing](#llm-routing) (7 keys)
 - [logging](#logging) (2 keys)
+- [media](#media) (9 keys)
 - [memory](#memory) (4 keys)
 - [memory_alerts](#memory-alerts) (4 keys)
 - [memory_compression](#memory-compression) (6 keys)
 - [model_roles](#model-roles) (10 keys)
 - [models](#models) (6 keys)
-- [monitoring](#monitoring) (48 keys)
+- [monitoring](#monitoring) (45 keys)
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
-- [notifications](#notifications) (4 keys)
-- [observability](#observability) (8 keys)
+- [notifications](#notifications) (3 keys)
+- [observability](#observability) (10 keys)
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (32 keys)
-- [plugins](#plugins) (8 keys)
-- [plugin_telemetry](#plugin-telemetry) (44 keys)
-- [prometheus](#prometheus) (4 keys)
-- [publishing](#publishing) (4 keys)
-- [qa](#qa) (5 keys)
+- [pipeline](#pipeline) (34 keys)
+- [plugins](#plugins) (48 keys)
+- [plugin_telemetry](#plugin-telemetry) (83 keys)
+- [podcast](#podcast) (2 keys)
+- [prometheus](#prometheus) (5 keys)
+- [publishing](#publishing) (5 keys)
+- [qa](#qa) (8 keys)
 - [qa_workflows](#qa-workflows) (3 keys)
 - [quality](#quality) (7 keys)
 - [rag](#rag) (1 key)
 - [scheduling](#scheduling) (1 key)
 - [security](#security) (1 key)
-- [seo](#seo) (1 key)
 - [site](#site) (2 keys)
 - [social](#social) (5 keys)
 - [system](#system) (2 keys)
 - [tokens](#tokens) (5 keys)
 - [topic_discovery](#topic-discovery) (1 key)
-- [voice](#voice) (26 keys)
+- [voice](#voice) (22 keys)
 - [voice_agent](#voice-agent) (2 keys)
 - [webhooks](#webhooks) (1 key)
 - [writer_rag](#writer-rag) (5 keys)
@@ -99,7 +102,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `sentry_dsn` | `` |  | Sentry DSN for error tracking (set via poindexter setup) |
+| `sentry_dsn` | `http://31fbc77a-4ad1-4b9a-8bf9-a13548...` |  | Sentry DSN for error tracking |
 
 ## backup
 
@@ -128,7 +131,7 @@ The worker re-reads on every poll; no restart needed.
 | `discord_bot_probe_enabled` | `true` |  | Master switch for brain/discord_bot_probe.py (poindexter#435). When false, the probe is skipped entirely. |
 | `discord_bot_probe_interval_minutes` | `5` |  | Minutes between real Discord /users/@me round-trips. Probe is dispatched every brain cycle but skips inside the inter... |
 | `discord_bot_probe_timeout_seconds` | `5` |  | httpx timeout for the Discord /users/@me round-trip. |
-| `mcp_http_probe_base_url` | `http://127.0.0.1:8004` |  | Base URL of the Poindexter MCP HTTP server. Probe appends the discovery path. Default http://127.0.0.1:8004. |
+| `mcp_http_probe_base_url` | `http://host.docker.internal:8004` |  | Base URL of the Poindexter MCP HTTP server. Probe appends the discovery path. Default http://127.0.0.1:8004. |
 | `mcp_http_probe_dedup_hours` | `1` |  | Minimum hours between repeat alert_events writes while the MCP server stays unreachable. Default 1h. |
 | `mcp_http_probe_discovery_path` | `/healthz` |  | Discovery endpoint path the probe GETs. Returns 200 when the MCP server is alive. |
 | `mcp_http_probe_enabled` | `true` |  | Master switch for brain/mcp_http_probe.py (poindexter#434). |
@@ -164,7 +167,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `cloudflare_analytics_api_token` | `*(encrypted)*` | encrypted | Cloudflare API token scoped to Account → Account Analytics → Read. Consumed by the sync_cloudflare_analytics job to p... |
+| `cloudflare_analytics_api_token` | `*(encrypted)*` | encrypted | Cloudflare API token scoped to Account Analytics Read. Consumed by the sync_cloudflare_analytics job. Operator fills ... |
 | `cloudflare_analytics_last_sync` | `1970-01-01T00:00:00Z` |  | High-water mark (ISO-8601 UTC) for the sync_cloudflare_analytics job. Advanced atomically after each successful batch... |
 
 ## content
@@ -189,7 +192,7 @@ The worker re-reads on every poll; no restart needed.
 | `title_originality_external_penalty` | `-50` |  | GH-87: points subtracted from the QA score when the post title appears verbatim in external search results. Stored as... |
 | `topic_discovery_category_searches` | `{}` |  | JSON object mapping category name -> list of keyword search strings. Used by TopicDiscovery._classify_category to buc... |
 | `topic_discovery_news_patterns` | `[]` |  | JSON array of regex strings (case-insensitive). When non-empty, TopicDiscovery uses these patterns to reject titles a... |
-| `writing_style_reference` | `*(per-operator)*` | per-operator | Operator's personal writing-style brief — short prose describing the desired voice (e.g. "Short punchy sentences mixe... |
+| `writing_style_reference` | `*(per-operator)*` | per-operator | Operator-specific writing style traits injected into content-generation prompts. Set via `poindexter set writing_styl... |
 | `writing_styles` | `[{"name": "technical", "voice": "prec...` |  | Configurable writing styles for content generation. Same pattern as image_styles. |
 
 ## content_qa
@@ -205,16 +208,18 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `allowed_origins` | `` |  | Comma-separated allowed CORS origins; operator sets to their public-site URL(s) |
+| `allowed_origins` | `` |  | Comma-separated allowed CORS origins |
 
 ## cost
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `cost_alert_threshold_pct` | `80` |  | Alert when spend exceeds this % of limit |
+| `daily_spend_limit` | `1.00` |  | Hard cap on daily AI spend in USD |
 | `daily_spend_limit_usd` | `2.0` |  | Maximum daily AI spend in USD (read by services/cost_guard.py) |
-| `electricity_rate_kwh` | `0.16` |  | Operator electricity rate (USD per kWh); used by the cost dashboard's energy column. US national average ~$0.16 (EIA ... |
+| `electricity_rate_kwh` | `0.2579` |  | RI Energy Last Resort Service rate $0.14770/kWh (verified by Matt) |
 | `gpu_inference_watts` | `400` |  | GPU average inference power draw in watts |
+| `monthly_spend_limit` | `20.00` |  | Hard cap on monthly AI spend in USD |
 | `monthly_spend_limit_usd` | `10.0` |  | Maximum monthly AI spend in USD (read by services/cost_guard.py) |
 | `ollama_electricity_cost_per_1k_tokens` | `0.000256` |  | Ollama electricity cost per 1K tokens (USD) |
 
@@ -231,8 +236,20 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `enable_mcp_server` | `true` |  | Enable Model Context Protocol server |
 | `enable_memory_system` | `true` |  | Enable agent memory system |
-| `enable_training_capture` | `false` |  | Enable training data capture from pipeline runs |
+| `enable_training_capture` | `true` |  | Enable training data capture from pipeline runs |
 | `redis_enabled` | `false` |  | Enable Redis for caching and pub/sub |
+| `topic_auto_resolve_enabled` | `true` |  | Master switch for topic_auto_resolve job (poindexter#504 follow-up). When true, the job auto-resolves open topic_batc... |
+| `topic_auto_resolve_max_per_cycle` | `1` |  | Max number of topic_batches the auto-resolver promotes per cycle (every 2h). Default 1 — one new pipeline task every ... |
+| `topic_auto_resolve_niche_cooldown_hours` | `12` |  | Minimum hours between auto-resolutions for the same niche. Prevents one niche from monopolizing the pipeline if its b... |
+
+## finance
+
+| Key | Default | Classification | Description |
+| --- | --- | --- | --- |
+| `finance_poll_interval_seconds` | `3600` |  | Expected Mercury poll cadence in seconds (matches PollMercuryJob hourly schedule). Staleness window = this × finance_... |
+| `finance_poll_stale_multiplier` | `3` |  | How many missed poll intervals to tolerate before the finance brain probe pages. Window = finance_poll_interval_secon... |
+| `prometheus.rule.FinanceMercuryPollStale` | `{"enabled": true, "group": "poindexte...` |  | DB-sourced Prometheus alert rule for a stalled Mercury poll (Glad-Labs/poindexter#565). Rendered into rules/*.yml by ... |
+| `prometheus.threshold.finance_poll_stale_seconds` | `10800` |  | Prometheus staleness threshold (seconds) for the FinanceMercuryPollStale alert. Default 10800 = 3h. Referenced as {th... |
 
 ## firefighter
 
@@ -254,13 +271,6 @@ The worker re-reads on every poll; no restart needed.
 | `gate_auto_expire_batch_size` | `50` |  | Cap per-cycle expiry to this many gates to avoid huge batches. Excess rolls over to the next cycle. |
 | `gate_auto_expire_enabled` | `true` |  | Master switch for the brain gate auto-expire probe (#338). When false, the probe short-circuits without scanning gates. |
 | `gate_auto_expire_notify_threshold` | `1` |  | Only ping the operator (Telegram coalesced) when batch size >= this. Default 1 = always notify on any expiry. |
-| `gate_auto_expire_poll_interval_minutes` | `30` |  | Cadence at which the brain runs the auto-expire probe. Stale gates aren't time-sensitive, so 30-min default is sparse... |
-| `gate_pending_max_age_hours` | `168` |  | Pending gates older than this many hours get auto-rejected with a sentinel reason. Default 168h = 7 days, per the #33... |
-| `gate_pending_summary_enabled` | `true` |  | Master switch for the brain gate-pending-summary probe (#338). When false, the probe short-circuits without scanning ... |
-| `gate_pending_summary_min_age_minutes` | `60` |  | Grace window after the OLDEST pending gate's creation before the first Telegram page fires. Prevents paging the opera... |
-| `gate_pending_summary_poll_interval_minutes` | `60` |  | Cadence at which the probe re-scans the pending queue. Hourly per #338 spec. Brain cycle is 5 min so the probe intern... |
-| `gate_pending_summary_telegram_dedup_minutes` | `60` |  | Suppress duplicate Telegram pings within this window when the queue size has not grown past gate_pending_summary_tele... |
-| `gate_pending_summary_telegram_growth_threshold` | `3` |  | Re-fire the coalesced Telegram ping inside the dedup window if the pending queue grew by STRICTLY MORE than this many... |
 
 ## general
 
@@ -280,6 +290,7 @@ The worker re-reads on every poll; no restart needed.
 | `cadence_slo_shortfall_ratio` | `0.5` |  |  |
 | `cadence_slo_window_hours` | `24` |  |  |
 | `cloudflare_account_id` | `` |  |  |
+| `compose_drift_auto_recover_enabled` | `true` |  |  |
 | `content_flow_max_concurrency` | `3` |  |  |
 | `content_router_contradiction_review_max_tokens` | `1500` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_revise_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -310,8 +321,8 @@ The worker re-reads on every poll; no restart needed.
 | `embedding_retention_days.posts` | `` |  | Empty = no TTL. Post embeddings are never auto-pruned — feed live RAG retrieval. |
 | `embed_model` | `nomic-embed-text` |  | Auto-seeded by services.settings_defaults (#379) |
 | `enabled_topic_sources` | `knowledge,codebase,hackernews,devto,w...` |  |  |
-| `enable_sdxl_warmup` | `false` |  | Warm up SDXL models on startup |
-| `enable_writer_self_review` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
+| `enable_sdxl_warmup` | `true` |  | Warm up SDXL models on startup |
+| `enable_writer_self_review` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `environment` | `development` |  | Auto-seeded by services.settings_defaults (#379) |
 | `findings.anomaly.cooldown_minutes` | `60` |  |  |
 | `findings.anomaly.delivery` | `telegram` |  |  |
@@ -344,6 +355,7 @@ The worker re-reads on every poll; no restart needed.
 | `findings.missing_seo.cooldown_minutes` | `1440` |  |  |
 | `findings.missing_seo.delivery` | `auto_fix` |  |  |
 | `findings.missing_seo.fallback` | `github_issue` |  |  |
+| `findings.missing_seo.labels` | `bug,pipeline` |  | Auto-seeded by services.settings_defaults (#379) |
 | `findings.missing_seo.min_severity` | `warn` |  |  |
 | `findings.post_verification_failure.cooldown_minutes` | `360` |  |  |
 | `findings.post_verification_failure.delivery` | `discord` |  |  |
@@ -352,6 +364,7 @@ The worker re-reads on every poll; no restart needed.
 | `findings.quality_regression.cooldown_minutes` | `1440` |  |  |
 | `findings.quality_regression.delivery` | `github_issue` |  |  |
 | `findings.quality_regression.fallback` | `discord` |  |  |
+| `findings.quality_regression.labels` | `bug,pipeline` |  | Auto-seeded by services.settings_defaults (#379) |
 | `findings.quality_regression.min_severity` | `warn` |  |  |
 | `findings.r2_static_drift.cooldown_minutes` | `360` |  |  |
 | `findings.r2_static_drift.delivery` | `discord` |  |  |
@@ -364,7 +377,7 @@ The worker re-reads on every poll; no restart needed.
 | `findings.topic_gap.min_severity` | `info` |  |  |
 | `findings.uncategorized_post_autofixed.delivery` | `log_only` |  |  |
 | `flux_schnell_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `gate_pending_summary_discord_per_cycle` | `false` |  |  |
+| `glitchtip_api_token` | `` |  |  |
 | `glitchtip_triage_alert_freshness_hours` | `24` |  |  |
 | `glitchtip_triage_default_resolve_max_count` | `50` |  |  |
 | `google_sitemap_ping_url` | `https://www.google.com/ping` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -375,36 +388,13 @@ The worker re-reads on every poll; no restart needed.
 | `gpu_metrics_staleness_threshold_minutes` | `15` |  |  |
 | `gpu_name` | `` |  | GPU model name (auto-detected by detect-hardware.py) |
 | `gpu_vram_gb` | `0` |  | GPU VRAM in GB (auto-detected by detect-hardware.py) |
+| `grafana_alert_sync_interval_cycles` | `3` |  |  |
 | `grafana_user` | `admin` |  | Grafana admin username |
 | `guardrails_enabled` | `true` |  |  |
-| `hardware_cost_total` | `*(per-operator)*` | per-operator | Total PC build cost for depreciation calculation. Set per-operator via `poindexter set hardware_cost_total <amount>`;... |
+| `hardware_cost_total` | `*(per-operator)*` | per-operator | Total PC build cost for depreciation calculation |
 | `hn_min_score` | `50` |  |  |
 | `hn_top_stories` | `20` |  |  |
 | `host_home` | `` |  | Host home directory for Docker volume mounts |
-| `idle_last_run_anomaly_detect` | `1776710530.609785` |  |  |
-| `idle_last_run_auto_embed` | `1776714304.5822833` |  |  |
-| `idle_last_run_context_sync` | `1776717772.9571455` |  |  |
-| `idle_last_run_db_backup` | `1776707134.489248` |  |  |
-| `idle_last_run_devto_crosspost` | `1776698746.4172635` |  |  |
-| `idle_last_run_embedding_refresh` | `1776706187.2627528` |  |  |
-| `idle_last_run_expire_stale_approvals` | `1776702655.306583` |  |  |
-| `idle_last_run_fix_categories` | `1776707103.448257` |  |  |
-| `idle_last_run_fix_duplicates` | `1776707098.4368908` |  |  |
-| `idle_last_run_fix_external_links` | `1776707098.428116` |  |  |
-| `idle_last_run_fix_internal_links` | `1776707092.7177281` |  |  |
-| `idle_last_run_fix_seo` | `1776707103.454733` |  |  |
-| `idle_last_run_image_regen` | `1776698252.6993651` |  |  |
-| `idle_last_run_link_check` | `1776706157.2373133` |  |  |
-| `idle_last_run_memory_stale_check` | `1776717741.557769` |  |  |
-| `idle_last_run_podcast_backfill` | `1776710530.59738` |  |  |
-| `idle_last_run_publish_verify` | `1776713267.676449` |  |  |
-| `idle_last_run_quality_audit` | `1776708464.8465457` |  |  |
-| `idle_last_run_sync_newsletter_subscribers` | `1776717741.527152` |  |  |
-| `idle_last_run_threshold_tune` | `1776706157.2429378` |  |  |
-| `idle_last_run_topic_discovery` | `1778293818.8411338` |  |  |
-| `idle_last_run_topic_gaps` | `1776662209.1690526` |  |  |
-| `idle_last_run_utility_rates` | `1775425727.9157252` |  |  |
-| `idle_last_run_video_backfill` | `1776698745.4924042` |  |  |
 | `image_model` | `sdxl_lightning` |  | Default image generation model (legacy) |
 | `indexnow_ping_url` | `https://api.indexnow.org/indexnow` |  | Auto-seeded by services.settings_defaults (#379) |
 | `internal_api_base_url` | `http://localhost:8002` |  | Base URL for the internal worker API (used for self-calls like the podcast feed regen) |
@@ -413,11 +403,12 @@ The worker re-reads on every poll; no restart needed.
 | `memory_stale_last_alerts` | `{"shared-context": "2026-04-15T22:13:...` |  |  |
 | `memory_stale_threshold_seconds_openclaw` | `2592000` |  |  |
 | `memory_stale_threshold_seconds_shared-context` | `2592000` |  |  |
+| `migration_drift_auto_recover_enabled` | `true` |  |  |
 | `model_role_image_decision` | `ollama/phi4:14b` |  |  |
 | `newsletter_batch_delay_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_batch_size` | `50` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_email` | `` |  | Newsletter sender email (legacy) |
-| `nvidia_exporter_url` | `http://host.docker.internal:9835/metrics` |  | nvidia-smi metrics exporter |
+| `nvidia_exporter_url` | `http://poindexter-gpu-exporter:9835/m...` |  | nvidia-smi metrics exporter |
 | `ollama_base_url` | `http://host.docker.internal:11434` |  | Ollama API endpoint |
 | `ollama_client_timeout_seconds` | `1500` |  |  |
 | `openclaw_gateway_url` | `http://localhost:18789` |  | OpenClaw gateway URL |
@@ -427,21 +418,28 @@ The worker re-reads on every poll; no restart needed.
 | `owner_name` | `*(per-operator)*` | per-operator | Site owner display name |
 | `pexels_api_base` | `https://api.pexels.com/v1` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_dry_run_mode` | `false` |  |  |
+| `pipeline_explicit_writer_unload_before_sdxl` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_gate_final_publish_approval` | `off` |  | HITL approval gate 'final_publish_approval': on/off (auto-managed by approval_service) |
 | `pipeline_use_graph_def` | `true` |  |  |
 | `pipeline_writer_model` | `ollama/glm-4.7-5090:latest` |  |  |
+| `pipeline_writer_unload_grace_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.default_duration_s` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.output_format` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.sample_rate` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.image_provider.flux_schnell.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `plugin.job.media_reconciliation` | `{"enabled": true, "interval_seconds":...` |  |  |
 | `plugin.job.run_dev_diary_post.enabled` | `true` |  |  |
+| `plugin.job.verify_published_posts` | `{"enabled":true,"interval_seconds":0,...` |  |  |
 | `plugin.llm_provider.gemini.enabled` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
+| `plugin.llm_provider.litellm.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
+| `plugin.llm_provider.openai_compat.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.video_provider.wan2.1-1.3b.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `podcast_description` | `AI-development audio essays from Glad...` |  | Podcast RSS description |
 | `podcast_name` | `Glad Labs Podcast` |  | Podcast title for RSS feeds |
 | `podcast_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `prefect_content_flow_concurrency` | `3` |  |  |
+| `prefect_stuck_flow_queue_overdue_min_minutes` | `5` |  | Minimum minutes a SCHEDULED Prefect run must be overdue before it counts toward the queue-depth backlog threshold. Pr... |
 | `preferred_ollama_model` | `gemma3:27b` |  |  |
 | `publish_quiet_hours` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_accuracy_bad_link_max_penalty` | `2.0` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -518,15 +516,18 @@ The worker re-reads on every poll; no restart needed.
 | `qa_title_similarity_threshold` | `0.6` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_topic_dedup_hours` | `48` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_vision_check_enabled` | `true` |  |  |
-| `ragas_enabled` | `false` |  |  |
-| `ragas_judge_model` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `ragas_enabled` | `true` |  |  |
+| `ragas_judge_model` | `ollama/glm-4.7-5090:latest` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_default_top_k` | `5` |  | Auto-seeded by services.settings_defaults (#379) |
+| `rag_embed_retry_attempts` | `3` |  | Auto-seeded by services.settings_defaults (#379) |
+| `rag_embed_retry_base_delay_seconds` | `0.25` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_hybrid_enabled` | `true` |  |  |
 | `rag_min_similarity` | `0.3` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rerank_enabled` | `true` |  |  |
 | `rag_rerank_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_source_filter` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `resend_audience_id` | `33b1580d-cfda-4428-9890-d52f443b023b` |  |  |
 | `restore_test_backup_dir` | `/host-backups/auto` |  |  |
 | `restore_test_critical_tables` | `posts,app_settings,audit_log` |  |  |
 | `restore_test_enabled` | `true` |  |  |
@@ -539,10 +540,14 @@ The worker re-reads on every poll; no restart needed.
 | `restore_test_smoke_timeout_seconds` | `180` |  |  |
 | `restore_test_tier` | `daily` |  |  |
 | `scheduled_publisher_poll_seconds` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
+| `scheduler_alert_on_job_failure` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `sdxl_enabled` | `true` |  | Master toggle for the SDXL featured/inline image pipeline. When false, source_featured_image skips the SDXL HTTP serv... |
 | `sdxl_server_url` | `http://host.docker.internal:9836` |  | SDXL image generation server |
 | `self_consistency_enabled` | `true` |  |  |
 | `sentry_enabled` | `true` |  | Enable Sentry error tracking |
+| `shared_http_client_max_connections` | `100` |  | Auto-seeded by services.settings_defaults (#379) |
+| `shared_http_client_max_keepalive` | `20` |  | Auto-seeded by services.settings_defaults (#379) |
+| `shared_http_client_timeout_seconds` | `30.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `short_video_post_publish_delay_seconds` | `180` |  | Wait this many seconds after a post publishes before kicking off short-video generation (lets podcast finish first) |
 | `site_description` | `AI-powered content platform` |  | Longer site description |
 | `site_tagline` | `Technology & Innovation` |  | Short tagline used in metadata |
@@ -552,7 +557,7 @@ The worker re-reads on every poll; no restart needed.
 | `stable_audio_open_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `stage_timeout_draft` | `1700` |  |  |
 | `storage_access_key` | `*(redacted — looks secret-shaped but not classified `is_secret=true` in DB)*` | look-secret |  |
-| `storage_bucket` | `` |  | Default S3/R2-compatible bucket name |
+| `storage_bucket` | `gladlabs-media` |  |  |
 | `storage_endpoint` | `` |  |  |
 | `storage_public_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  |  |
 | `structured_extraction_model` | `gemma3:27b` |  |  |
@@ -568,17 +573,18 @@ The worker re-reads on every poll; no restart needed.
 | `topic_discovery_style_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `trusted_source_domains` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `tts_acronym_replacements` | `{"SOC":"security operations","CRM":"c...` |  |  |
-| `tts_pronunciations` | `{"GitFlow":"git flow","GitHub":"git h...` |  |  |
+| `tts_pronunciations` | `{"I/O": "I O", "CI/CD": "CI CD", "Dev...` |  |  |
 | `use_ollama` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_compositor` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_feed_name` | `Glad Labs Video` |  | Video RSS feed title |
 | `video_negative_prompt` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `video_server_url` | `http://host.docker.internal:9837` |  | Slideshow video generation server (Ken Burns assembly via ffmpeg, exposes port 9837). The wan-server (Wan2.1 T2V mode... |
+| `video_server_url` | `http://host.docker.internal:9837` |  | Video generation server |
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `vision_alt_enabled` | `true` |  |  |
 | `vision_alt_max_tokens` | `2048` |  |  |
 | `vision_alt_model` | `qwen3-vl:30b` |  |  |
-| `voice_agent_brain_mode` | `claude-code` |  |  |
+| `voice_agent_brain` | `ollama` |  | Auto-seeded by services.settings_defaults (#379) |
+| `voice_agent_brain_mode` | `ollama` |  |  |
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
 | `voice_agent_livekit_enabled` | `true` |  | Toggle for the always-on voice-agent-livekit container. 'true' (default) keeps the bot joined to the configured room.... |
 | `voice_agent_livekit_url` | `ws://livekit:7880` |  | WebSocket URL the in-network voice bot uses to reach the LiveKit SFU. 'livekit' is the docker-compose service name; o... |
@@ -589,8 +595,10 @@ The worker re-reads on every poll; no restart needed.
 | `voice_agent_room_name` | `poindexter` |  | LiveKit room the always-on voice-agent-livekit container joins on boot. Operator clients (https://meet.livekit.io, mo... |
 | `voice_agent_tts_speed` | `1.0` |  | Kokoro playback speed multiplier. 1.0 = natural; 0.95 = slightly slower (helpful for technical content); 1.1 = brisker. |
 | `voice_agent_tts_voice` | `bf_emma` |  | Kokoro voice id. bf_emma is the top-graded British female in the Kokoro-82M catalog (B-). Other UK female options: bf... |
-| `voice_agent_vad_stop_secs` | `0.2` |  | Silero VAD end-of-speech silence window in seconds. Lower = snappier turn-taking but more risk of cutting the user of... |
+| `voice_agent_user_speech_timeout` | `1.3` |  |  |
+| `voice_agent_vad_stop_secs` | `0.4` |  | Silero VAD end-of-speech silence window in seconds. Lower = snappier turn-taking but more risk of cutting the user of... |
 | `wan_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `webhook_freshness_revenue_threshold_days` | `90` |  |  |
 
 ## gpu
 
@@ -606,17 +614,17 @@ The worker re-reads on every poll; no restart needed.
 | `company_age_months` | `6` |  | Company age in months (update periodically) |
 | `company_founded_date` | `2025-09-25` |  | Company founding date |
 | `company_founded_year` | `2025` |  | Company founding year |
-| `company_founder_name` | `*(per-operator)*` | per-operator | Founder name (operator sets via `poindexter setup`) |
-| `company_name` | `` |  | Legal company name (operator sets via `poindexter setup`) |
-| `company_products` | `` |  | Known real products (for hallucination checks); operator's product list, comma-separated |
+| `company_founder_name` | `*(per-operator)*` | per-operator | Founder name |
+| `company_name` | `Glad Labs` |  | Legal company name |
+| `company_products` | `` |  | Known real products (for hallucination checks) |
 | `company_team_size` | `1` |  | Team size for content validation |
 | `discord_ops_channel_id` | `` |  | Discord channel for ops notifications |
-| `gpu_model` | `` |  | GPU model string for operator brain-knowledge (e.g. 'NVIDIA RTX 4090'); leave blank if no GPU |
+| `gpu_model` | `NVIDIA RTX 5090 (32GB VRAM)` |  | GPU model for brain knowledge |
 | `newsletter_from_email` | `` |  | Newsletter sender address |
 | `privacy_email` | `` |  | Privacy/GDPR contact email |
-| `site_domain` | `` |  | Production domain (no protocol) — operator sets via `poindexter setup` |
+| `site_domain` | `` |  | Production domain (no protocol) |
 | `site_name` | `Glad Labs` |  | Brand/site name used across all services |
-| `site_url` | `` |  | Full production URL with protocol — operator sets via `poindexter setup` |
+| `site_url` | `` |  | Full production URL with protocol |
 | `support_email` | `` |  | Support contact email |
 
 ## image
@@ -628,7 +636,13 @@ The worker re-reads on every poll; no restart needed.
 | `image_negative_prompt` | `text, words, letters, numbers, waterm...` |  | Negative prompt for all SDXL generations |
 | `image_primary_source` | `ai_generation` |  | Primary image source: pexels or ai_generation |
 | `image_style_default` | `professional digital art, abstract te...` |  | Default SDXL style for uncategorized posts |
-| `image_styles` | `[\n    {"name": "flat_vector", "scene...` |  | JSON array of image styles for SDXL featured/inline image generation. Each has name, scene, and tags. |
+| `image_styles` | `[     {"name": "flat_vector", "scene"...` |  | JSON array of image styles for SDXL featured/inline image generation. Each has name, scene, and tags. |
+
+## infrastructure
+
+| Key | Default | Classification | Description |
+| --- | --- | --- | --- |
+| `compose_project_name` | `glad-labs-website` |  | Docker Compose project name used by compose drift auto-recover |
 
 ## integration
 
@@ -641,11 +655,9 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `discord_bot_token` | `*(encrypted)*` | encrypted | Discord bot token (the same one Discord posts to channels with). Encrypted at rest via plugins.secrets. Used by the D... |
 | `gh_repo` | `Glad-Labs/glad-labs-stack` |  | GitHub repository (``owner/name``) the dev_diary topic source queries for merged PRs and notable commits when assembl... |
 | `google_oauth_client_id` | `206722606964-lt75101b5surs28ede8t7d3j...` |  | Google OAuth client ID — shared by GSC + GA4 Singer taps |
 | `igdb_twitch_client_id` | `` |  | Twitch app client ID for IGDB access. Get it from https://dev.twitch.tv/console/apps. Public — not a secret. Used by ... |
-| `igdb_twitch_client_secret` | `*(encrypted)*` | encrypted | Twitch app client SECRET for IGDB access. is_secret=true → encrypted at rest via plugins.secrets. Get it from https:/... |
 | `telegram_cli_audit_logged` | `true` |  | When 'true' (default), every /cli invocation writes one row to the audit_log table (event_type='telegram_cli_invoked'... |
 | `telegram_cli_enabled` | `true` |  | Global kill-switch for the Telegram /cli passthrough. When 'true' (default), '/cli <args>' messages from the configur... |
 | `telegram_cli_max_output_chars` | `3500` |  | Maximum characters of combined stdout+stderr the Telegram /cli passthrough will reply with. Telegram's hard per-messa... |
@@ -659,7 +671,7 @@ The worker re-reads on every poll; no restart needed.
 | `cost_tier.budget.model` | `ollama/gemma3:27b-it-qat` |  | Model resolved when callers pass cost_tier=budget. Quantized 27B; offline retention work. |
 | `cost_tier.free.model` | `ollama/qwen3:8b` |  | Model resolved when callers pass cost_tier=free. Smallest local; image-decision tier. |
 | `cost_tier.premium.model` | `anthropic/claude-haiku-4-5` |  | Model resolved when callers pass cost_tier=premium. Cloud cross-model QA; cost_guard-gated. |
-| `cost_tier.standard.model` | `ollama/gemma3:27b` |  | Model resolved when callers pass cost_tier=standard. Default writer + critic. |
+| `cost_tier.standard.model` | `ollama/glm-4.7-5090:latest` |  | Model resolved when callers pass cost_tier=standard. Default writer + critic. |
 | `social_poster_fallback_model` | `ollama/llama3:latest` |  | Per-call-site backstop for services.social_poster when cost_tier='standard' resolution fails (Lane B batch 2 sweep). |
 | `thinking_model_substrings` | `["qwen3","qwen3.5","glm-4","glm-4.7",...` |  | JSON array of substring needles used by services.llm_providers.thinking_models.is_thinking_model() to classify a mode... |
 | `video_slideshow_prompt_model` | `ollama/llama3:latest` |  | Per-call-site backstop for services.video_service SDXL prompt-gen. Deliberately non-thinking — qwen3/glm-4 thinking v... |
@@ -670,6 +682,20 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `max_log_backup_count` | `3` |  | Number of rotated log backups to retain. Default 3 matches the historical env-var fallback. Ref: GH-175. |
 | `max_log_size_mb` | `5` |  | Maximum size in MB of a rotating log file before it's rolled over. Default 5 MB matches the historical env-var fallba... |
+
+## media
+
+| Key | Default | Classification | Description |
+| --- | --- | --- | --- |
+| `podcast_cover_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px) |
+| `podcast_tts_base_url` | `http://speaches:8000/v1` |  | Speaches OpenAI-compatible base URL for podcast TTS. Compose-internal URL by default. Use http://host.docker.internal... |
+| `podcast_tts_enabled` | `false` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
+| `podcast_tts_format` | `wav` |  | Output audio format for podcast narration files. Options: wav, mp3, opus, flac. wav is lossless and universally playa... |
+| `podcast_tts_model` | `speaches-ai/Kokoro-82M-v1.0-ONNX` |  | Kokoro model id passed to Speaches for podcast TTS. Keep in sync with voice_agent_tts_model unless a different model ... |
+| `podcast_tts_voice` | `bf_emma` |  | Kokoro voice id for podcast narration. Options: bf_emma, bf_isabella, am_michael, etc. (matches voice_agent_tts_voice... |
+| `preferred_ai_video_style` | `flat_vector,isometric,isometric_voxel...` |  | Comma-list of stylized AI-video shot styles (drawn from image_styles pool). Director rotates per-shot. Matt 2026-05-2... |
+| `stable_audio_open_default_duration_s` | `5.0` |  | Default audio clip duration in seconds for Stable Audio Open. Capped at 47s (model maximum). 5s is typical for intro ... |
+| `stable_audio_open_output_format` | `wav` |  | Output format for Stable Audio Open clips: wav, mp3, ogg, flac. wav is lossless and preferred for video muxing. |
 
 ## memory
 
@@ -735,25 +761,23 @@ The worker re-reads on every poll; no restart needed.
 | `branch_drift_poll_interval_minutes` | `15` |  | Internal cadence gate (minutes) for the branch-drift canary's GitHub round-trip. The probe is dispatched every brain ... |
 | `branch_drift_probe_enabled` | `true` |  | Master switch for the brain branch-drift deploy canary (#942). When true, the brain pages the operator if the bind-mo... |
 | `branch_drift_repo` | `Glad-Labs/glad-labs-stack` |  | owner/name of the source-of-truth repo the branch-drift canary compares against. Paired with the gh_token secret for ... |
-| `compose_drift_auto_recover_enabled` | `false` |  | Brain compose-drift probe auto-recover toggle (#213). When 'false' (default, safe), the probe only notifies the opera... |
 | `compose_drift_skip_services` | `` |  | Comma-separated list of compose service names the brain drift probe (#213) should skip. Useful for services with inte... |
 | `compose_spec_path` | `/app/docker-compose.local.yml` |  | Path to the docker-compose.yml the brain compose-drift probe (#213) reads. The brain container bind-mounts the host's... |
 | `docker_port_forward_poll_interval_minutes` | `5` |  | Cadence at which the brain runs the port-forward probe. Default 5 min matches the brain cycle so it runs every cycle. |
 | `docker_port_forward_probe_enabled` | `true` |  | Master switch for the brain Docker port-forward stuck-state probe (#222). When false the probe short-circuits without... |
 | `docker_port_forward_probe_timeout_seconds` | `3` |  | Per-HTTP-probe timeout in seconds. Kept tight (3s) so a stuck service can't block the brain cycle on probes. |
-| `docker_port_forward_recovery_wait_seconds` | `5` |  | How long the probe waits after a docker restart before re-probing to confirm recovery. Default 5s lets Docker Desktop... |
+| `docker_port_forward_recovery_wait_seconds` | `45` |  | How long the probe waits after a docker restart before re-probing to confirm recovery. Default 5s lets Docker Desktop... |
 | `docker_port_forward_restart_cap_per_window` | `3` |  | Maximum number of times a single container may be restarted within the rolling window. Prevents runaway restart loops... |
 | `docker_port_forward_restart_cap_window_minutes` | `60` |  | Rolling window length in minutes for the per-container restart cap. Default 60 min — combined with the cap of 3 means... |
 | `glitchtip_base_url` | `http://glitchtip-web:8000` |  | Base URL for the GlitchTip API the brain triage probe queries. Default is the compose-internal hostname; brain.docker... |
 | `glitchtip_triage_alert_threshold_count` | `10` |  | Brain triage probe pages via notify_operator() when a GlitchTip issue has count >= this AND matches no entry in glitc... |
-| `glitchtip_triage_auto_resolve_patterns` | `[{"title_pattern": "Failed to export ...` |  | JSONB array of triage rules for the brain GlitchTip probe. Each entry: {title_pattern: <regex>, action: 'resolve' or ... |
+| `glitchtip_triage_auto_resolve_patterns` | `[{"title_pattern": "Error while fetch...` |  | JSONB array of triage rules for the brain GlitchTip probe. Each entry: {title_pattern: <regex>, action: 'resolve' or ... |
 | `glitchtip_triage_enabled` | `true` |  | Master enable for the brain GlitchTip triage probe. When 'true' (default), the probe runs every cycle (5-min), pulls ... |
 | `glitchtip_triage_org_slug` | `glad-labs` |  | GlitchTip organization slug the brain triage probe queries. Default 'glad-labs' matches the org the bootstrap install... |
-| `gpu_temperature_high_threshold_c` | `85` |  | GPU core temperature (C) above which the brain `gpu_temperature` probe alerts. Most consumer-grade NVIDIA GPUs hard-t... |
+| `gpu_temperature_high_threshold_c` | `85` |  | GPU core temperature (C) above which the brain `gpu_temperature` probe alerts. RTX 5090 hard-throttles around 90C; 85... |
+| `grafana_alert_folder_uid` | `cfl5ofidejh8ge` |  | Grafana folder UID under which brain alert_sync pushes alert rules. Per-install — get yours from the folder URL in Gr... |
 | `grafana_alert_sync_enabled` | `true` |  | Master switch for the brain daemon's Grafana alert sync loop. Set to 'false' to disable the loop entirely without rem... |
-| `grafana_alert_sync_interval_cycles` | `3` |  | How many brain cycles (5 min each) between Grafana alert syncs. Default 3 = 15 min. Lowering this makes alert rule ch... |
 | `grafana_api_base_url` | `http://poindexter-grafana:3000` |  | Grafana base URL the brain daemon uses to push alert rules and contact points. Defaults to the docker-compose service... |
-| `migration_drift_auto_recover_enabled` | `false` |  | Brain migration-drift probe behavior (#228). When 'false' (default, safe), the probe ONLY notifies the operator when ... |
 | `morning_brief_enabled` | `true` |  | Master switch for the morning_brief scheduled job. When false the job short-circuits and never queries Postgres. |
 | `morning_brief_hour_local` | `7` |  | Local-time hour the morning_brief job fires (informational; the active schedule lives in the Job class cron expressio... |
 | `morning_brief_lookback_hours` | `24` |  | Lookback window in hours used to roll up published posts, awaiting_approval entries, failed tasks, alert counts, cost... |
@@ -776,7 +800,6 @@ The worker re-reads on every poll; no restart needed.
 | `smart_monitor_smartctl_path` | `` |  | Absolute path to the smartctl binary. Empty = use shutil.which("smartctl"). Override when smartmontools is installed ... |
 | `smart_monitor_wear_leveling_warn_percent` | `90` |  | Used-life percentage for SSD Wear_Leveling_Count above which the probe fires a warning. Computed as (100 - normalized... |
 | `uptime_kuma_admin_username` | `admin` |  | Kuma admin username (set by scripts/kuma_bootstrap.py) |
-| `webhook_freshness_revenue_threshold_days` | `30` |  | Notify operator if no row has been added to revenue_events in this many days. Default 30 because Lemon Squeezy is int... |
 | `webhook_freshness_subscriber_threshold_days` | `7` |  | Notify operator if no row has been added to subscriber_events in this many days. Default 7 because Resend should see ... |
 
 ## newsletter
@@ -784,7 +807,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `newsletter_enabled` | `true` |  | Enable newsletter sending on publish |
-| `newsletter_from_name` | `` |  | Newsletter sender display name |
+| `newsletter_from_name` | `Glad Labs` |  | Newsletter sender display name |
 | `newsletter_provider` | `resend` |  | Email provider: resend or smtp |
 
 ## niche_pivot
@@ -797,17 +820,16 @@ The worker re-reads on every poll; no restart needed.
 | `niche_goal_descriptions` | `{"TRAFFIC": "Topic likely to attract ...` |  | JSON blob mapping each goal_type (TRAFFIC, EDUCATION, BRAND, AUTHORITY, REVENUE, COMMUNITY, NICHE_DEPTH) to the prose... |
 | `niche_internal_rag_per_kind_limit` | `4` |  | Per-source-kind limit passed to InternalRagSource.generate by TopicBatchService._discover_internal. Default 4 matches... |
 | `niche_internal_rag_snippet_max_chars` | `600` |  | Per-snippet character cap when joining raw snippets into the topic/angle distillation prompt in InternalRagSource._di... |
-| `niche_ollama_chat_timeout_seconds` | `60` |  | HTTP timeout (seconds) for direct Ollama /api/chat calls made by topic_ranking._ollama_chat_json — used by the LLM sc... |
+| `niche_ollama_chat_timeout_seconds` | `300` |  | HTTP timeout (seconds) for direct Ollama /api/chat calls made by topic_ranking._ollama_chat_json — used by the LLM sc... |
 | `niche_top_n_per_pool` | `5` |  | Top N candidates per pool (external + internal) carried forward from the embedding pre-rank into the LLM final-score ... |
 
 ## notifications
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `discord_ops_webhook_url` | `*(encrypted)*` | encrypted | Discord webhook URL for ops notifications. SECRET (the URL embeds the bearer token). Set via `poindexter settings set... |
-| `preview_base_url` | `*(per-operator)*` | per-operator | Base URL used in operator preview/approval links sent to Telegram/Discord. Defaults to localhost; operators reachable... |
+| `preview_base_url` | `*(per-operator)*` | per-operator |  |
 | `telegram_alerts_enabled` | `true` |  | Telegram is for severity=critical infra alerts only. Discord receives all routine pipeline events (awaiting approval,... |
-| `telegram_chat_id` | `` |  | Telegram chat ID for operator alerts (set per-install) |
+| `telegram_chat_id` | `` |  | Telegram chat ID for all alerts |
 
 ## observability
 
@@ -815,12 +837,14 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `enable_pyroscope` | `true` |  | When true, services/profiling.py:setup_pyroscope() configures the pyroscope-io agent at worker / brain / voice-agent ... |
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
-| `langfuse_host` | `http://localhost:3010` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
-| `langfuse_public_key` | `*(encrypted)*` | encrypted | Langfuse project public key (pk-lf-...). Paired with langfuse_secret_key (already is_secret=true). Marked is_secret=t... |
+| `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
 | `operator_url_probe_target_overrides` | `{"video_server_url": {"method": "HEAD...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
-| `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP HTTP endpoint the worker pushes spans to. Matches the exporter we import (opentelemetry.exporter.otlp.proto.http... |
+| `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP gRPC endpoint that the worker pushes spans to. Default points at the docker-compose tempo service on its OTLP gR... |
 | `pyroscope_server_url` | `http://pyroscope:4040` |  | Pyroscope ingestion URL for worker agent |
+| `sentry_profiles_sample_rate` | `0.1` |  | Fraction of transactions to capture as CPU profiles. Default 0.1. Same hardcoding bug as traces sample rate. |
+| `sentry_sdk_debug` | `false` |  | Forces Sentry SDK to log internal debug messages to stderr. Default false — was hardcoded true in dev which flooded l... |
+| `sentry_traces_sample_rate` | `0.1` |  | Fraction of FastAPI requests sampled as Sentry traces (0.0-1.0). Default 0.1 (10%). Previously hardcoded to 1.0 in de... |
 
 ## ops-triage
 
@@ -832,7 +856,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `use_prefect_orchestration` | `false` |  | Prefect orchestration cutover flag (#410 Stage 4 complete 2026-05-16). Permanently true — services/task_executor.py w... |
+| `use_prefect_orchestration` | `true` |  | Prefect orchestration cutover flag (#410 Stage 4 complete 2026-05-16). Permanently true — services/task_executor.py w... |
 
 ## performance
 
@@ -851,12 +875,13 @@ The worker re-reads on every poll; no restart needed.
 | `auto_publish_threshold` | `0` |  | Quality score threshold for auto-publishing (0=disabled) |
 | `brain_auto_cancel_grace_minutes` | `10` |  | Extra grace period the brain daemon adds on top of stale_task_timeout_minutes before flipping a stuck task to failed.... |
 | `content_quality_minimum` | `75` |  | Minimum quality score to even queue for approval. Below this = auto-reject. |
-| `content_weekly_cap` | `3` |  | Maximum new posts per week (0=unlimited). Topic discovery respects this. |
-| `daily_post_limit` | `1` |  | Maximum posts to generate per day |
+| `content_weekly_cap` | `50` |  | Maximum new posts per week (0=unlimited). Topic discovery respects this. |
+| `daily_budget_usd` | `1.00` |  | Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled) |
+| `daily_post_limit` | `4` |  | Maximum posts to generate per day |
 | `default_model_tier` | `budget` |  | Default model cost tier (free/budget/standard/premium/flagship) |
-| `default_template_slug` | `` |  | Lane C cutover switch: when set, every new pipeline_tasks row without an explicit caller-supplied template_slug gets ... |
+| `default_template_slug` | `canonical_blog` |  | Lane C cutover switch: when set, every new pipeline_tasks row without an explicit caller-supplied template_slug gets ... |
 | `max_approval_queue` | `100` |  | Restored 2026-04-24 after backlog cleared |
-| `max_posts_per_day` | `3` |  | Maximum posts to publish per day |
+| `max_posts_per_day` | `8` |  | Maximum posts to publish per day |
 | `max_task_retries` | `3` |  | Maximum retry attempts for failed tasks |
 | `max_tokens_per_request` | `4000` |  | Maximum output tokens per LLM request |
 | `max_tokens_per_task` | `16000` |  | Maximum total tokens (input+output) per content task |
@@ -866,6 +891,7 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_factcheck_model` | `programmatic` |  | Model for fact-checking -- programmatic or LLM provider |
 | `pipeline_refinement_model` | `ollama/glm-4.7-5090:latest` |  | Model for content refinement (stage 5) |
 | `pipeline_research_model` | `ollama/glm-4.7-5090:latest` |  | Model for research stage (stage 1) |
+| `pipeline.stages.order` | `["verify_task", "generate_content", "...` |  | Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert thi... |
 | `publish_spacing_hours` | `4` |  | Minimum hours between published posts |
 | `require_human_approval` | `true` |  | When true, all content requires human approval before publishing |
 | `seed_url_fetch_timeout_seconds` | `10` |  | URL-based topic seeding: total HTTP timeout (seconds) for the seed_url fetch on POST /api/tasks. Short by design — if... |
@@ -877,15 +903,55 @@ The worker re-reads on every poll; no restart needed.
 | `template_runner_progress_streaming` | `true` |  | When on, TemplateRunner emits per-node progress to Discord (NOT Telegram) via notify_operator(critical=False). Defaul... |
 | `template_runner_use_postgres_checkpointer` | `true` |  | When true, services/template_runner.py compiles each LangGraph with an AsyncPostgresSaver checkpointer (durable state... |
 | `topic_dedup_existing_threshold` | `0.7` |  | Word-overlap ratio above which a candidate topic is treated as a duplicate of an existing published post or in-flight... |
-| `topic_dedup_intra_batch_threshold` | `0.65` |  | Word-overlap ratio above which two candidates from the same scrape batch are treated as duplicates (internal tracker)... |
+| `topic_dedup_intra_batch_threshold` | `0.65` |  | Word-overlap ratio above which two candidates from the same scrape batch are treated as duplicates. Range 0.0-1.0. Sl... |
 | `worker_heartbeat_interval_seconds` | `30` |  | Worker heartbeat cadence. While processing a single task the Prefect content_generation_flow stamps pipeline_tasks.up... |
 
 ## plugins
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `plugin.job.analyze_topic_gaps` | `{"enabled": true, "interval_seconds":...` |  | Config for job analyze_topic_gaps — tune cadence via config.schedule |
+| `plugin.job.audit_published_quality` | `{"enabled": true, "interval_seconds":...` |  | Config for job audit_published_quality — tune cadence via config.schedule |
+| `plugin.job.auto_embed_posts` | `{"enabled": true, "interval_seconds":...` |  | Config for job auto_embed_posts — tune cadence via config.schedule |
+| `plugin.job.backfill_podcasts` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_podcasts — tune cadence via config.schedule |
+| `plugin.job.backfill_post_performance_gsc` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_post_performance_gsc — tune cadence via config.schedule |
+| `plugin.job.backfill_videos` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_videos — tune cadence via config.schedule |
+| `plugin.job.check_memory_staleness` | `{"enabled": true, "interval_seconds":...` |  | Config for job check_memory_staleness — tune cadence via config.schedule |
+| `plugin.job.check_published_links` | `{"enabled": true, "interval_seconds":...` |  | Config for job check_published_links — tune cadence via config.schedule |
+| `plugin.job.collapse_old_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job collapse_old_embeddings — tune cadence via config.schedule |
+| `plugin.job.crosspost_to_devto` | `{"enabled": true, "interval_seconds":...` |  | Config for job crosspost_to_devto — tune cadence via config.schedule |
+| `plugin.job.db_backup` | `{"enabled": true, "interval_seconds":...` |  | Config for job db_backup — tune cadence via config.schedule |
+| `plugin.job.detect_anomalies` | `{"enabled": true, "interval_seconds":...` |  | Config for job detect_anomalies — tune cadence via config.schedule |
+| `plugin.job.detect_duplicate_posts` | `{"enabled": true, "interval_seconds":...` |  | Config for job detect_duplicate_posts — tune cadence via config.schedule |
+| `plugin.job.drive_media_gates` | `{"enabled": true, "interval_seconds":...` |  | Config for job drive_media_gates — tune cadence via config.schedule |
+| `plugin.job.expire_stale_approvals` | `{"enabled": true, "interval_seconds":...` |  | Config for job expire_stale_approvals — tune cadence via config.schedule |
+| `plugin.job.findings_alert_router` | `{"enabled": true, "interval_seconds":...` |  | Config for job findings_alert_router — tune cadence via config.schedule |
+| `plugin.job.fix_broken_external_links` | `{"enabled": true, "interval_seconds":...` |  | Config for job fix_broken_external_links — tune cadence via config.schedule |
+| `plugin.job.fix_broken_internal_links` | `{"enabled": true, "interval_seconds":...` |  | Config for job fix_broken_internal_links — tune cadence via config.schedule |
+| `plugin.job.fix_uncategorized_posts` | `{"enabled": true, "interval_seconds":...` |  | Config for job fix_uncategorized_posts — tune cadence via config.schedule |
+| `plugin.job.flag_missing_seo` | `{"enabled": true, "interval_seconds":...` |  | Config for job flag_missing_seo — tune cadence via config.schedule |
+| `plugin.job.morning_brief` | `{"enabled": true, "interval_seconds":...` |  | Config for job morning_brief — tune cadence via config.schedule |
+| `plugin.job.poll_mercury` | `{"enabled": true, "interval_seconds":...` |  | Config for job poll_mercury — tune cadence via config.schedule |
+| `plugin.job.postgres_vacuum` | `{"enabled": true, "interval_seconds":...` |  | Config for job postgres_vacuum — tune cadence via config.schedule |
+| `plugin.job.prune_orphan_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job prune_orphan_embeddings — tune cadence via config.schedule |
+| `plugin.job.prune_stale_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job prune_stale_embeddings — tune cadence via config.schedule |
+| `plugin.job.regenerate_stock_images` | `{"enabled": true, "interval_seconds":...` |  | Config for job regenerate_stock_images — tune cadence via config.schedule |
+| `plugin.job.reload_site_config` | `{"enabled": true, "interval_seconds":...` |  | Config for job reload_site_config — tune cadence via config.schedule |
 | `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
 | `plugin.job.render_prometheus_rules` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderPrometheusRulesJob |
+| `plugin.job.rollup_post_performance` | `{"enabled": true, "interval_seconds":...` |  | Config for job rollup_post_performance — tune cadence via config.schedule |
+| `plugin.job.run_dev_diary_post` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_dev_diary_post — tune cadence via config.schedule |
+| `plugin.job.run_niche_topic_sweep` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_niche_topic_sweep — tune cadence via config.schedule |
+| `plugin.job.run_retention` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_retention — tune cadence via config.schedule |
+| `plugin.job.run_taps` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_taps — tune cadence via config.schedule |
+| `plugin.job.static_export_orphan_sweep` | `{"enabled": true, "interval_seconds":...` |  | Config for job static_export_orphan_sweep — tune cadence via config.schedule |
+| `plugin.job.static_export_reconciliation` | `{"enabled": true, "interval_seconds":...` |  | Config for job static_export_reconciliation — tune cadence via config.schedule |
+| `plugin.job.sync_cloudflare_analytics` | `{"enabled": true, "interval_seconds":...` |  | Config for job sync_cloudflare_analytics — tune cadence via config.schedule |
+| `plugin.job.sync_newsletter_subscribers` | `{"enabled": true, "interval_seconds":...` |  | Config for job sync_newsletter_subscribers — tune cadence via config.schedule |
+| `plugin.job.topic_auto_resolve` | `{"enabled": true, "interval_seconds":...` |  | Config for job topic_auto_resolve — tune cadence via config.schedule |
+| `plugin.job.tune_publish_threshold` | `{"enabled": true, "interval_seconds":...` |  | Config for job tune_publish_threshold — tune cadence via config.schedule |
+| `plugin.job.update_utility_rates` | `{"enabled": true, "interval_seconds":...` |  | Config for job update_utility_rates — tune cadence via config.schedule |
+| `plugin.llm_provider.litellm` | `{"enabled": true, "interval_seconds":...` |  | LiteLLM dispatcher config (api_base + timeout) |
 | `plugin.llm_provider.primary.budget` | `litellm` |  | Default LLMProvider for the 'budget' cost tier. Resolved by services/llm_providers/dispatcher.get_provider at call ti... |
 | `plugin.llm_provider.primary.flagship` | `litellm` |  | Default LLMProvider for the 'flagship' cost tier. Resolved by services/llm_providers/dispatcher.get_provider at call ... |
 | `plugin.llm_provider.primary.free` | `litellm` |  | Default LLMProvider for the 'free' cost tier. Resolved by services/llm_providers/dispatcher.get_provider at call time... |
@@ -897,50 +963,96 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `findings_alert_route_watermark` | `76339` |  | Highest audit_log.id forwarded to alert_events by FindingsAlertRouterJob. Pre-seeded 2026-05-15 to current max to ski... |
 | `plugin_job_last_run_analyze_topic_gaps` | `0` |  | Unix epoch of last fire for plugin job 'analyze_topic_gaps' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_audit_published_quality` | `0` |  | Unix epoch of last fire for plugin job 'audit_published_quality' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_auto_embed_posts` | `0` |  | Unix epoch of last fire for plugin job 'auto_embed_posts' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_backfill_podcasts` | `0` |  | Unix epoch of last fire for plugin job 'backfill_podcasts' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_backfill_post_performance_gsc` | `0` |  | Unix epoch of last fire for plugin job 'backfill_post_performance_gsc' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_backfill_videos` | `0` |  | Unix epoch of last fire for plugin job 'backfill_videos' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_check_memory_staleness` | `0` |  | Unix epoch of last fire for plugin job 'check_memory_staleness' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_check_published_links` | `0` |  | Unix epoch of last fire for plugin job 'check_published_links' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_collapse_old_embeddings` | `0` |  | Unix epoch of last fire for plugin job 'collapse_old_embeddings' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_crosspost_to_devto` | `0` |  | Unix epoch of last fire for plugin job 'crosspost_to_devto' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_db_backup` | `0` |  | Unix epoch of last fire for plugin job 'db_backup' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_detect_anomalies` | `0` |  | Unix epoch of last fire for plugin job 'detect_anomalies' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_detect_duplicate_posts` | `0` |  | Unix epoch of last fire for plugin job 'detect_duplicate_posts' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_drive_media_gates` | `0` |  | Unix epoch of last fire for plugin job 'drive_media_gates' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_expire_stale_approvals` | `0` |  | Unix epoch of last fire for plugin job 'expire_stale_approvals' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_findings_alert_router` | `0` |  | Unix epoch of last fire for plugin job 'findings_alert_router' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_fix_broken_external_links` | `0` |  | Unix epoch of last fire for plugin job 'fix_broken_external_links' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_fix_broken_internal_links` | `0` |  | Unix epoch of last fire for plugin job 'fix_broken_internal_links' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_fix_uncategorized_posts` | `0` |  | Unix epoch of last fire for plugin job 'fix_uncategorized_posts' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_flag_missing_seo` | `0` |  | Unix epoch of last fire for plugin job 'flag_missing_seo' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_media_reconciliation` | `0` |  | Unix epoch of last fire for plugin job 'media_reconciliation' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_morning_brief` | `0` |  | Unix epoch of last fire for plugin job 'morning_brief' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_postgres_vacuum` | `0` |  | Unix epoch of last fire for plugin job 'postgres_vacuum' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_prune_orphan_embeddings` | `0` |  | Unix epoch of last fire for plugin job 'prune_orphan_embeddings' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_prune_stale_embeddings` | `0` |  | Unix epoch of last fire for plugin job 'prune_stale_embeddings' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_regenerate_stock_images` | `0` |  | Unix epoch of last fire for plugin job 'regenerate_stock_images' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_reload_site_config` | `0` |  | Unix epoch of last fire for plugin job 'reload_site_config' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_render_alertmanager_config` | `0` |  | Unix epoch of last fire for plugin job 'render_alertmanager_config' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_render_prometheus_rules` | `0` |  | Unix epoch of last fire for plugin job 'render_prometheus_rules' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_rollup_post_performance` | `0` |  | Unix epoch of last fire for plugin job 'rollup_post_performance' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_run_dev_diary_post` | `0` |  | Unix epoch of last fire for plugin job 'run_dev_diary_post' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_run_niche_topic_sweep` | `0` |  | Unix epoch of last fire for plugin job 'run_niche_topic_sweep' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_run_retention` | `0` |  | Unix epoch of last fire for plugin job 'run_retention' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_run_taps` | `0` |  | Unix epoch of last fire for plugin job 'run_taps' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_static_export_orphan_sweep` | `0` |  | Unix epoch of last fire for plugin job 'static_export_orphan_sweep' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_static_export_reconciliation` | `0` |  | Unix epoch of last fire for plugin job 'static_export_reconciliation' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_sync_cloudflare_analytics` | `0` |  | Unix epoch of last fire for plugin job 'sync_cloudflare_analytics' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_topic_auto_resolve` | `0` |  | Unix epoch of last fire for plugin job 'topic_auto_resolve' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_tune_publish_threshold` | `0` |  | Unix epoch of last fire for plugin job 'tune_publish_threshold' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_update_utility_rates` | `0` |  | Unix epoch of last fire for plugin job 'update_utility_rates' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_verify_published_posts` | `0` |  | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler) |
 | `plugin_job_last_status_analyze_topic_gaps` | `ok` |  | Outcome of last fire for plugin job 'analyze_topic_gaps': 'ok' or 'err' |
 | `plugin_job_last_status_audit_published_quality` | `ok` |  | Outcome of last fire for plugin job 'audit_published_quality': 'ok' or 'err' |
 | `plugin_job_last_status_auto_embed_posts` | `ok` |  | Outcome of last fire for plugin job 'auto_embed_posts': 'ok' or 'err' |
+| `plugin_job_last_status_backfill_podcasts` | `ok` |  | Outcome of last fire for plugin job 'backfill_podcasts': 'ok' or 'err' |
+| `plugin_job_last_status_backfill_post_performance_gsc` | `ok` |  | Outcome of last fire for plugin job 'backfill_post_performance_gsc': 'ok' or 'err' |
+| `plugin_job_last_status_backfill_videos` | `ok` |  | Outcome of last fire for plugin job 'backfill_videos': 'ok' or 'err' |
+| `plugin_job_last_status_check_memory_staleness` | `ok` |  | Outcome of last fire for plugin job 'check_memory_staleness': 'ok' or 'err' |
 | `plugin_job_last_status_check_published_links` | `ok` |  | Outcome of last fire for plugin job 'check_published_links': 'ok' or 'err' |
+| `plugin_job_last_status_collapse_old_embeddings` | `ok` |  | Outcome of last fire for plugin job 'collapse_old_embeddings': 'ok' or 'err' |
 | `plugin_job_last_status_crosspost_to_devto` | `ok` |  | Outcome of last fire for plugin job 'crosspost_to_devto': 'ok' or 'err' |
-| `plugin_job_last_status_db_backup` | `err` |  | Outcome of last fire for plugin job 'db_backup': 'ok' or 'err' |
+| `plugin_job_last_status_db_backup` | `ok` |  | Outcome of last fire for plugin job 'db_backup': 'ok' or 'err' |
+| `plugin_job_last_status_detect_anomalies` | `ok` |  | Outcome of last fire for plugin job 'detect_anomalies': 'ok' or 'err' |
 | `plugin_job_last_status_detect_duplicate_posts` | `ok` |  | Outcome of last fire for plugin job 'detect_duplicate_posts': 'ok' or 'err' |
+| `plugin_job_last_status_drive_media_gates` | `ok` |  | Outcome of last fire for plugin job 'drive_media_gates': 'ok' or 'err' |
 | `plugin_job_last_status_expire_stale_approvals` | `ok` |  | Outcome of last fire for plugin job 'expire_stale_approvals': 'ok' or 'err' |
+| `plugin_job_last_status_findings_alert_router` | `ok` |  | Outcome of last fire for plugin job 'findings_alert_router': 'ok' or 'err' |
 | `plugin_job_last_status_fix_broken_external_links` | `ok` |  | Outcome of last fire for plugin job 'fix_broken_external_links': 'ok' or 'err' |
 | `plugin_job_last_status_fix_broken_internal_links` | `ok` |  | Outcome of last fire for plugin job 'fix_broken_internal_links': 'ok' or 'err' |
 | `plugin_job_last_status_fix_uncategorized_posts` | `ok` |  | Outcome of last fire for plugin job 'fix_uncategorized_posts': 'ok' or 'err' |
 | `plugin_job_last_status_flag_missing_seo` | `ok` |  | Outcome of last fire for plugin job 'flag_missing_seo': 'ok' or 'err' |
+| `plugin_job_last_status_media_reconciliation` | `ok` |  | Outcome of last fire for plugin job 'media_reconciliation': 'ok' or 'err' |
 | `plugin_job_last_status_morning_brief` | `ok` |  | Outcome of last fire for plugin job 'morning_brief': 'ok' or 'err' |
 | `plugin_job_last_status_postgres_vacuum` | `ok` |  | Outcome of last fire for plugin job 'postgres_vacuum': 'ok' or 'err' |
+| `plugin_job_last_status_prune_orphan_embeddings` | `ok` |  | Outcome of last fire for plugin job 'prune_orphan_embeddings': 'ok' or 'err' |
+| `plugin_job_last_status_prune_stale_embeddings` | `ok` |  | Outcome of last fire for plugin job 'prune_stale_embeddings': 'ok' or 'err' |
+| `plugin_job_last_status_regenerate_stock_images` | `ok` |  | Outcome of last fire for plugin job 'regenerate_stock_images': 'ok' or 'err' |
 | `plugin_job_last_status_reload_site_config` | `ok` |  | Outcome of last fire for plugin job 'reload_site_config': 'ok' or 'err' |
+| `plugin_job_last_status_render_alertmanager_config` | `ok` |  | Outcome of last fire for plugin job 'render_alertmanager_config': 'ok' or 'err' |
 | `plugin_job_last_status_render_prometheus_rules` | `ok` |  | Outcome of last fire for plugin job 'render_prometheus_rules': 'ok' or 'err' |
 | `plugin_job_last_status_rollup_post_performance` | `ok` |  | Outcome of last fire for plugin job 'rollup_post_performance': 'ok' or 'err' |
 | `plugin_job_last_status_run_dev_diary_post` | `ok` |  | Outcome of last fire for plugin job 'run_dev_diary_post': 'ok' or 'err' |
 | `plugin_job_last_status_run_niche_topic_sweep` | `ok` |  | Outcome of last fire for plugin job 'run_niche_topic_sweep': 'ok' or 'err' |
+| `plugin_job_last_status_run_retention` | `ok` |  | Outcome of last fire for plugin job 'run_retention': 'ok' or 'err' |
+| `plugin_job_last_status_run_taps` | `ok` |  | Outcome of last fire for plugin job 'run_taps': 'ok' or 'err' |
+| `plugin_job_last_status_static_export_orphan_sweep` | `ok` |  | Outcome of last fire for plugin job 'static_export_orphan_sweep': 'ok' or 'err' |
+| `plugin_job_last_status_static_export_reconciliation` | `ok` |  | Outcome of last fire for plugin job 'static_export_reconciliation': 'ok' or 'err' |
+| `plugin_job_last_status_sync_cloudflare_analytics` | `ok` |  | Outcome of last fire for plugin job 'sync_cloudflare_analytics': 'ok' or 'err' |
+| `plugin_job_last_status_topic_auto_resolve` | `ok` |  | Outcome of last fire for plugin job 'topic_auto_resolve': 'ok' or 'err' |
 | `plugin_job_last_status_tune_publish_threshold` | `ok` |  | Outcome of last fire for plugin job 'tune_publish_threshold': 'ok' or 'err' |
 | `plugin_job_last_status_update_utility_rates` | `ok` |  | Outcome of last fire for plugin job 'update_utility_rates': 'ok' or 'err' |
 | `plugin_job_last_status_verify_published_posts` | `ok` |  | Outcome of last fire for plugin job 'verify_published_posts': 'ok' or 'err' |
+
+## podcast
+
+| Key | Default | Classification | Description |
+| --- | --- | --- | --- |
+| `podcast_spotify_show_id` | `033obxyUXdxhXyQ6erC07G` |  | Spotify show ID for the Glad Labs Podcast (the bit after /show/ in the public URL). |
+| `podcast_spotify_url` | `https://open.spotify.com/show/033obxy...` |  | Public Spotify URL for the Glad Labs Podcast. Surface this on the About page and at the bottom of dev_diary posts + i... |
 
 ## prometheus
 
@@ -950,25 +1062,30 @@ The worker re-reads on every poll; no restart needed.
 | `prometheus.threshold.daily_spend_warning_usd` | `4.0` |  | Daily LLM spend warning threshold |
 | `prometheus.threshold.embeddings_stale_seconds` | `21600` |  | Seconds without an embeddings_total change before EmbeddingsStale fires |
 | `prometheus.threshold.monthly_spend_warning_usd` | `35.0` |  | Monthly spend warning threshold (USD). Includes ALL cost_logs rows — local Ollama electricity (~$30/mo baseline) AND ... |
+| `prometheus.threshold.qa_rail_skip_ratio` | `1` |  | Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page e... |
 
 ## publishing
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `dev_diary_auto_publish_dry_run` | `true` |  | When true (default), auto-publish gate runs in observe-only mode: logs 'would have auto-published Y/N' for each final... |
+| `dev_diary_auto_publish_dry_run` | `false` |  | When true (default), auto-publish gate runs in observe-only mode: logs 'would have auto-published Y/N' for each final... |
 | `dev_diary_auto_publish_max_edit_distance` | `50` |  | Char-level edit distance threshold for the 'clean run' criterion. Default 50 — trivial typo fixes pass; substantive r... |
 | `dev_diary_auto_publish_min_clean_runs` | `3` |  | Trailing N publishes that must have edit_distance < auto_publish_max_edit_distance for the gate to fire. Default 3 — ... |
-| `dev_diary_auto_publish_threshold` | `-1` |  | Quality_score floor for dev_diary auto-publish. Default -1 disables the gate entirely. Set to a value 0-100 (e.g. 85)... |
+| `dev_diary_auto_publish_threshold` | `70` |  | Quality_score floor for dev_diary auto-publish. Default -1 disables the gate entirely. Set to a value 0-100 (e.g. 85)... |
+| `plugin.publish_adapter.youtube.enabled` | `true` |  | Master switch — flip to true ONCE the publish-video stage is wired (PR pending). |
 
 ## qa
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `deepeval_g_eval_criterion` | `The output is well-grounded in the in...` |  | Criterion text the DeepEval g-eval judge model uses to grade the post. Operators can rewrite this to emphasize differ... |
-| `deepeval_judge_model` | `glm-4.7-5090` |  | LLM model identifier used by the DeepEval g-eval and faithfulness reviewers. Default 'glm-4.7-5090' (Matt's local thi... |
+| `deepeval_judge_model` | `ollama/glm-4.7-5090:latest` |  | LLM model identifier used by the DeepEval g-eval and faithfulness reviewers. Default 'glm-4.7-5090' (Matt's local thi... |
 | `deepeval_threshold_faithfulness` | `0.8` |  | Threshold (0–1) above which the DeepEval faithfulness reviewer marks the post as approved. Default 0.8 — at least 80%... |
 | `deepeval_threshold_g_eval` | `0.7` |  | Threshold (0–1) above which the DeepEval g-eval reviewer marks the post as approved. Default 0.7 — anything below mea... |
-| `guardrails_competitor_list` | `` |  | Comma-separated list of competitor brand names to flag if they appear in a post body (case-insensitive, word-boundary... |
+| `guardrails_competitor_list` | `Jasper, Copy.ai, Writesonic, Article ...` |  | Comma-separated list of competitor brand names to flag if they appear in a post body (case-insensitive, word-boundary... |
+| `qa_rail_skip_window_passes` | `20` |  | How many recent QA passes the poindexter_qa_rail_skip_ratio gauge measures a rail's skip rate over — poindexter#553 |
+| `self_consistency_sample_count` | `3` |  | Number of summary samples for the self-consistency rail. Higher = more accurate signal, higher Ollama cost. Default 3. |
+| `self_consistency_threshold` | `0.55` |  | Minimum mean pairwise cosine similarity to pass the self-consistency rail. Range [0, 1]. Default 0.55. |
 
 ## qa_workflows
 
@@ -983,7 +1100,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `content_validator_warning_qa_penalty` | `3` |  | Points subtracted from final QA score per validator warning (GH-91) |
-| `qa_allow_first_person_niches` | `dev_diary` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. The validato... |
+| `qa_allow_first_person_niches` | `dev_diary` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per Matt's v... |
 | `qa_critical_dimension_floor` | `50` |  | Minimum score on any single quality dimension |
 | `qa_critic_weight` | `0.6` |  | Weight for LLM critic in final score |
 | `qa_final_score_threshold` | `80` |  | Multi-model QA final approval score threshold |
@@ -994,32 +1111,26 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `rag_engine_enabled` | `false` |  | Master switch for the LlamaIndex retriever path (services/rag_engine.py wired into MemoryClient.search per Lane D #32... |
+| `rag_engine_enabled` | `true` |  | Master switch for the LlamaIndex retriever path (services/rag_engine.py wired into MemoryClient.search per Lane D #32... |
 
 ## scheduling
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `dev_diary_last_run_date` | `2026-05-08` |  | YYYY-MM-DD (UTC) of the last successful dev-diary job run. Idempotency marker — the job no-ops if this matches today. |
+| `dev_diary_last_run_date` | `2026-06-06` |  | YYYY-MM-DD (UTC) of the last successful dev-diary job run. Idempotency marker — the job no-ops if this matches today. |
 
 ## security
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `oauth_issuer_url` | `*(per-operator)*` | per-operator | Public-facing issuer URL advertised in RFC 8414 metadata. Falls back to request.url when empty (e.g. localhost dev). ... |
-
-## seo
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `indexnow_key` | `*(encrypted)*` | encrypted | IndexNow API key for instant search-engine notification. SECRET — the key file at <site>/<key>.txt proves ownership o... |
+| `oauth_issuer_url` | `*(per-operator)*` | per-operator | Public-facing issuer URL advertised in RFC 8414 metadata. Falls back to request.url when empty (e.g. localhost dev). |
 
 ## site
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `public_site_revalidate_url` | `` |  | Full URL of the Next.js public site's /api/revalidate endpoint. POSTed by services/revalidation_service.py to bust th... |
-| `public_site_url` | `` |  | Public-site URL (operator-set) |
+| `public_site_url` | `` |  |  |
 
 ## social
 
@@ -1027,9 +1138,9 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `mastodon_instance_url` | `` |  | GH-36: Full Mastodon instance URL, e.g. 'https://mastodon.social'. Empty = Mastodon distribution skipped. |
 | `social_distribution_platforms` | `bluesky` |  | GH-36: Comma-separated list of platforms social_poster should push to after a successful publish. Valid values: 'blue... |
-| `social_linkedin_url` | `*(per-operator)*` | per-operator | LinkedIn profile URL (operator-set) |
-| `social_x_handle` | `*(per-operator)*` | per-operator | X/Twitter handle (operator-set) |
-| `social_x_url` | `*(per-operator)*` | per-operator | X/Twitter profile URL (operator-set) |
+| `social_linkedin_url` | `*(per-operator)*` | per-operator | LinkedIn profile URL |
+| `social_x_handle` | `*(per-operator)*` | per-operator | X/Twitter handle |
+| `social_x_url` | `*(per-operator)*` | per-operator | X/Twitter profile URL |
 
 ## system
 
@@ -1052,38 +1163,34 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `topic_discovery_auto_enabled` | `false` |  | Master kill-switch for the LEGACY auto-firing topic discovery loop in services/idle_worker.py. When 'true' (default, ... |
+| `topic_discovery_auto_enabled` | `true` |  | Master kill-switch for the LEGACY auto-firing topic discovery loop in services/idle_worker.py. When 'true' (default, ... |
 
 ## voice
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `livekit_api_key` | `*(encrypted)*` | encrypted | LiveKit API key the token minters use (#1000). Empty = fall back to the LIVEKIT_API_KEY env var. DB-first lets rotati... |
-| `livekit_api_secret` | `*(encrypted)*` | encrypted | LiveKit HS256 API secret the token minters sign JWTs with (#1000). Empty = fall back to the LIVEKIT_API_SECRET env va... |
 | `voice_agent_claude_code_enabled` | `true` |  | Master on/off for the claude-code voice room container (#1006). false/0/no/off = the container exits 0 and docker lea... |
-| `voice_agent_claude_code_host_brain_token` | `*(encrypted)*` | encrypted | Bearer token shared with the host-brain daemon (#1006). Required when host_brain_url is set. |
-| `voice_agent_claude_code_host_brain_url` | `` |  | Host-brain daemon URL for the voice room (#1006), e.g. http://host.docker.internal:8123/turn. Empty = run claude in-c... |
+| `voice_agent_claude_code_host_brain_url` | `http://host.docker.internal:8123/turn` |  | Host-brain daemon URL for the voice room (#1006), e.g. http://host.docker.internal:8123/turn. Empty = run claude in-c... |
 | `voice_agent_claude_code_identity` | `claude-code-bot` |  | Participant identity for the claude-code voice bot (#1006). Distinct from the poindexter bot so both can coexist. |
 | `voice_agent_claude_code_room_name` | `claude-code` |  | LiveKit room the claude-code voice bot joins (#1006). Must match an allowed room in routes/voice_routes.py so /voice/... |
-| `voice_agent_claude_code_session_id` | `` |  | Pinned claude -p voice session for the always-on claude-code room (#1006). Empty = unset; the bot mints and persists ... |
+| `voice_agent_claude_code_session_id` | `287e7fc4-5147-4bf4-92b5-c3df15d25aa6` |  | Pinned claude -p voice session for the always-on claude-code room (#1006) |
 | `voice_agent_claude_code_session_max_age_seconds` | `14400` |  | Rotate the pinned claude -p voice session once it is older than this many seconds (#1006). 14400 = 4h. |
 | `voice_agent_claude_code_session_token_budget` | `200000` |  | Rotate the pinned claude -p voice session once cumulative input+output tokens exceed this (#1006). |
 | `voice_agent_claude_code_transcript_enabled` | `true` |  | Master on/off for mirroring claude-code voice turns to Discord (#1006). false/0/no/off disables the mirror. |
-| `voice_agent_claude_code_tts_voice` | `` |  | Kokoro voice id for the claude-code voice room only (#1006). Empty = fall back to the shared voice_agent_tts_voice. L... |
+| `voice_agent_claude_code_tts_voice` | `bf_isabella` |  | Kokoro voice id for the claude-code voice room only (#1006). Empty = fall back to the shared voice_agent_tts_voice. L... |
 | `voice_agent_public_join_url` | `*(per-operator)*` | per-operator | Public URL the operator (or Claude, via the start_voice_call MCP tool) taps to join the always-on LiveKit voice room.... |
 | `voice_agent_stt_base_url` | `http://speaches:8000/v1` |  | Speaches STT endpoint (OpenAI-compatible) used when voice_agent_stt_mode=sidecar. Compose service name on the shared ... |
-| `voice_agent_stt_mode` | `inprocess` |  | STT backend for the voice pipeline (#1088): 'sidecar' = thin client of the warm Speaches container; 'inprocess' = loa... |
+| `voice_agent_stt_mode` | `sidecar` |  | STT backend for the voice pipeline (#1088): 'sidecar' = thin client of the warm Speaches container; 'inprocess' = loa... |
 | `voice_agent_stt_model` | `Systran/faster-whisper-medium` |  | faster-whisper model id passed to Speaches when voice_agent_stt_mode=sidecar. NOTE: an HF id, not the Pipecat Whisper... |
 | `voice_agent_tts_base_url` | `http://speaches:8000/v1` |  | Speaches TTS endpoint used when voice_agent_tts_mode=sidecar. Same Speaches service as STT by default; separate key s... |
-| `voice_agent_tts_mode` | `inprocess` |  | TTS backend for the voice pipeline (#1088): 'sidecar' = thin client of the warm Speaches container; 'inprocess' = run... |
+| `voice_agent_tts_mode` | `sidecar` |  | TTS backend for the voice pipeline (#1088): 'sidecar' = thin client of the warm Speaches container; 'inprocess' = run... |
 | `voice_agent_tts_model` | `speaches-ai/Kokoro-82M-v1.0-ONNX` |  | Kokoro model id passed to Speaches when voice_agent_tts_mode=sidecar. The voice id (bf_emma / bf_isabella) still come... |
 | `voice_bridge_chunk_max_chars` | `500` |  | Maximum characters per TTS chunk emitted by voice_speak. Long replies are split at sentence boundaries so the operato... |
 | `voice_bridge_enabled` | `true` |  | Master switch for the LiveKit MCP bridge — the architecturally-correct alternative to the subprocess-spawn voice_agen... |
 | `voice_bridge_max_session_seconds` | `1800` |  | Hard upper bound on a single bridge session, in seconds. The worker auto-leaves the LiveKit room after this many seco... |
 | `voice_bridge_stt_model` | `base.en` |  | faster-whisper model id loaded by the future Pipecat audio plane in the bridge worker. Defaults to base.en (CPU-frien... |
-| `voice_bridge_tts_voice` | `af_bella` |  | Kokoro voice id used by the bridge worker's TTS path. Matches the always-on voice-agent-livekit container default so ... |
+| `voice_bridge_tts_voice` | `bf_isabella` |  | Kokoro voice id used by the bridge worker's TTS path. Matches the always-on voice-agent-livekit container default so ... |
 | `voice_default_room` | `poindexter` |  | Default LiveKit room name when voice_join_room is called without an explicit channel_id. Distinct from voice_agent_ro... |
-| `voice_transcript_discord_webhook_url` | `*(encrypted)*` | encrypted | Dedicated Discord webhook for the voice transcript (#1006). Empty = fall back to discord_ops_webhook_url so it works ... |
 
 ## voice_agent
 
