@@ -40,10 +40,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
-from modules.content.stages.topic_decision_gate import build_topic_decision_artifact
 from services.approval_service import (
     is_gate_enabled,
     pause_at_gate,
@@ -399,6 +398,11 @@ async def propose_topic(
     # Gate enabled — pause the row immediately so the operator drains
     # the queue. Build the artifact through the same helper the Stage
     # uses so manual + auto proposals look identical to the operator.
+    # Lazy import — avoids a kernel→module top-level import that would
+    # violate the kernel-purity seam (poindexter#666). topic_decision_gate
+    # lives in modules/content/ and must not be imported at module load time
+    # from kernel services.
+    from modules.content.stages.topic_decision_gate import build_topic_decision_artifact  # noqa: PLC0415
     artifact = build_topic_decision_artifact(
         {
             "topic": topic_clean,
