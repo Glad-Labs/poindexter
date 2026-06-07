@@ -78,6 +78,9 @@ groups:
       # Filtered to drive-letter volumes (`[A-Z]:`) so the tiny EFI /
       # recovery partitions windows_exporter also reports
       # (HarddiskVolume1/4, ~0.1 GB, always near-full) can't false-fire.
+      # Additionally filtered to drives >= 200 GB total so USB flash drives
+      # (E: 7.5 GB, F: 117 GB) don't false-fire — windows_exporter has no
+      # DriveType label to distinguish Removable from Fixed.
       # The `volume` label is preserved so the page names the affected
       # drive. Thresholds are absolute GB (not a percentage) because what
       # actually hurts — Docker images, Postgres growth, model files —
@@ -86,7 +89,9 @@ groups:
       # cutoffs if a small data volume routinely runs near the line.
       - alert: PoindexterDiskSpaceLow
         expr: |
-          windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) < 20
+          (windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) < 20)
+            and on(volume)
+          (windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) > 200)
         for: 10m
         labels:
           severity: warning
@@ -102,7 +107,9 @@ groups:
 
       - alert: PoindexterDiskSpaceCritical
         expr: |
-          windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) < 10
+          (windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) < 10)
+            and on(volume)
+          (windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024) > 200)
         for: 5m
         labels:
           severity: critical
