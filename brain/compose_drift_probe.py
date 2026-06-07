@@ -696,8 +696,44 @@ def _recreate_services(
         }
         if os.name == "nt":  # pragma: no cover
             kwargs["creationflags"] = 0x08000000
+
+        # Docker compose parses the ENTIRE file on every `up` call and hits
+        # `:?` sentinels for services we're NOT recreating. Build an env that
+        # satisfies every required variable without polluting the target service.
+        env = dict(os.environ)
+        # The brain container's cwd is /app, so docker compose would infer
+        # project name "app" and create a new network instead of joining the
+        # existing glad-labs-website_default network. Pin the project name to
+        # match the host-side deployment.
+        env.setdefault("COMPOSE_PROJECT_NAME", "glad-labs-website")
+        # Pull real env values from each running target container so the
+        # recreated service gets the correct values, not stubs.
+        for svc in svc_list:
+            info = _docker_inspect(f"poindexter-{svc}")
+            if info:
+                for entry in (info.get("Config", {}).get("Env") or []):
+                    if "=" in entry:
+                        k, _, v = entry.partition("=")
+                        if k not in env:
+                            env[k] = v
+        # Stub any remaining `:?` sentinel vars so compose can parse the file.
+        try:
+            with open(compose_path, "r") as f:
+                compose_content = f.read()
+            for var in re.findall(r"\$\{([A-Z_][A-Z0-9_]*):\?", compose_content):
+                if var not in env:
+                    env[var] = "_compose-stub_"
+        except Exception:
+            pass
+
         result = subprocess.run(
-            ["docker", "compose", "-f", compose_path, "up", "-d", *svc_list],
+            # --no-build: never rebuild images (brain has no source tree).
+            # --no-recreate: don't recreate RUNNING services that have an
+            #   image-hash change (prevents compose from killing brain-daemon
+            #   when auto-recovering a stopped service from inside the brain).
+            ["docker", "compose", "-f", compose_path, "up", "-d",
+             "--no-build", "--no-recreate", *svc_list],
+            env=env,
             **kwargs,
         )
         if result.returncode == 0:
