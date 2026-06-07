@@ -322,6 +322,20 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_MCP_HTTP_PROBE = False
 
+try:
+    # poindexter#520 Stage 4 — post-performance probe. Reads the latest
+    # post_performance snapshot per published post, classifies into
+    # broken / fading / performing buckets, and pages on broken posts
+    # (0 views_30d despite age >30d). Enriches once GA4 data flows.
+    from post_performance_probe import probe_post_performance
+    _HAS_POST_PERFORMANCE_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.post_performance_probe import probe_post_performance
+        _HAS_POST_PERFORMANCE_PROBE = True
+    except ImportError:
+        _HAS_POST_PERFORMANCE_PROBE = False
+
 
 # --- Boot-time import audit (poindexter#504) ---------------------------------
 #
@@ -379,6 +393,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "MCP HTTP server reachability monitor offline"),
     ("_HAS_BRANCH_DRIFT_PROBE", "brain/branch_drift_probe.py",
      "Branch-drift deploy canary offline — prod checkout falling behind origin/main goes undetected (#942)"),
+    ("_HAS_POST_PERFORMANCE_PROBE", "brain/post_performance_probe.py",
+     "Post-performance signal detection offline — broken/fading posts go undetected (#520/#672)"),
 )
 
 
@@ -2339,6 +2355,15 @@ async def run_cycle(pool):
             probe_results.update(biz_results)
         except Exception as e:
             logger.warning("[BRAIN] Business probes failed: %s", e)
+
+    # Post-performance probe — broken/fading/performing traffic signals (#520/#672).
+    # Internally gated to its own interval (default 24h); ok to call every cycle.
+    if _HAS_POST_PERFORMANCE_PROBE:
+        try:
+            pp_result = await probe_post_performance(pool, notify_fn=notify)
+            probe_results["post_performance"] = pp_result
+        except Exception as e:
+            logger.warning("[BRAIN] post_performance_probe failed: %s", e)
 
     # Operator URL/IP drift probe (#214). Internally gated to ~15 min so it
     # doesn't run every 5-min cycle. Returns None when the gate skips, a

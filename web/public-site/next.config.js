@@ -365,9 +365,17 @@ const nextConfig = {
     maxInactiveAge: 60 * 1000, // Keep for 60 seconds
   },
 
-  // Environment variables exposed to browser
+  // Environment variables exposed to browser.
+  //
+  // NEXT_PUBLIC_GA_ID: the Vercel dashboard value takes precedence when set.
+  // The fallback (G-NJMBCYNDWN) is the known Glad Labs GA4 measurement ID —
+  // it is non-secret (visible in every gtag URL) and kept here so the
+  // analytics tag fires even when the dashboard env var is absent.
+  // Tracks poindexter#672 (GA4 data collection was silently disabled because
+  // the variable was missing from the Vercel project env).
   env: {
     NEXT_PUBLIC_FASTAPI_URL: process.env.NEXT_PUBLIC_FASTAPI_URL,
+    NEXT_PUBLIC_GA_ID: process.env.NEXT_PUBLIC_GA_ID || 'G-NJMBCYNDWN',
     // Disable Next.js telemetry to prevent trace file generation
     NEXT_TELEMETRY_DISABLED: '1',
   },

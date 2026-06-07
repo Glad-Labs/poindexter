@@ -13,6 +13,8 @@ Coverage:
 - Published post + page_views → snapshot row inserted with views_*.
 - Published post + GSC external_metrics → snapshot row enriched with
   ``google_impressions`` / ``google_clicks`` / ``google_avg_position``.
+- Published post + GA4 external_metrics → snapshot row enriched with
+  ``avg_time_on_page_seconds`` (Glad-Labs/poindexter#672).
 - The ``min_published_days_ago`` config gates posts too new to roll up.
 """
 
@@ -159,6 +161,39 @@ async def _insert_gsc_metric(
         )
 
 
+async def _insert_ga4_metric(
+    pool,
+    *,
+    slug: str,
+    metric_name: str,
+    metric_value: float,
+    days_ago: int = 1,
+) -> None:
+    """Insert one external_metrics row mimicking the GA4 Singer-tap output.
+
+    The GA4 tap writes ``user_engagement_duration`` (seconds users were
+    active on the page) and ``screen_page_views`` (page renders) per
+    slug per day — the rollup job sums them over the rolling window and
+    derives ``avg_time_on_page_seconds``.
+    """
+    date_value = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO external_metrics
+              (source, metric_name, metric_value, dimensions,
+               post_id, slug, date, fetched_at)
+            VALUES ($1, $2, $3, $4::jsonb, NULL, $5, $6, NOW())
+            """,
+            "ga4",
+            metric_name,
+            metric_value,
+            "{}",
+            slug,
+            date_value,
+        )
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio(loop_scope="session")
 class TestRollupPostPerformanceJobRun:
@@ -254,6 +289,72 @@ class TestRollupPostPerformanceJobRun:
             )
         # Only the 5d-ago row counts; 60d-ago is outside the 30d window.
         assert row["google_impressions"] == 10
+
+    async def test_ga4_external_metrics_enriches_snapshot(self, db_pool):
+        """Glad-Labs/poindexter#672 — GA4 LEFT JOIN populates avg_time_on_page_seconds.
+
+        Two days of GA4 data:
+          - Day 1: 120s engagement, 2 screen views  → 60s/view
+          - Day 2:  90s engagement, 3 screen views  → 30s/view
+          Total: 210s engagement / 5 screen views  = 42s avg.
+        """
+        await _wipe_perf_tables(db_pool)
+        await _insert_test_post(db_pool, slug="rollup-test-ga4")
+
+        # Day 1: 120s engagement across 2 page views.
+        await _insert_ga4_metric(db_pool, slug="rollup-test-ga4",
+                                 metric_name="user_engagement_duration",
+                                 metric_value=120.0, days_ago=2)
+        await _insert_ga4_metric(db_pool, slug="rollup-test-ga4",
+                                 metric_name="screen_page_views",
+                                 metric_value=2.0, days_ago=2)
+        # Day 2: 90s engagement across 3 page views.
+        await _insert_ga4_metric(db_pool, slug="rollup-test-ga4",
+                                 metric_name="user_engagement_duration",
+                                 metric_value=90.0, days_ago=5)
+        await _insert_ga4_metric(db_pool, slug="rollup-test-ga4",
+                                 metric_name="screen_page_views",
+                                 metric_value=3.0, days_ago=5)
+
+        job = RollupPostPerformanceJob()
+        result = await job.run(db_pool, {})
+
+        assert result.ok is True
+        assert result.changes_made == 1
+
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT avg_time_on_page_seconds, google_impressions "
+                "FROM post_performance WHERE slug = $1",
+                "rollup-test-ga4",
+            )
+        assert row is not None
+        # 210s total / 5 views = 42s — cast to numeric(8,2) so exact match.
+        assert row["avg_time_on_page_seconds"] == pytest.approx(42.0, abs=0.01)
+        # No GSC rows → google_impressions stays 0.
+        assert row["google_impressions"] == 0
+
+    async def test_ga4_no_screen_views_yields_null_avg(self, db_pool):
+        """When GA4 screen_page_views = 0 (or no rows), avg stays NULL not 0."""
+        await _wipe_perf_tables(db_pool)
+        await _insert_test_post(db_pool, slug="rollup-test-ga4-null")
+
+        # Engagement seconds present but no screen_page_views rows at all.
+        await _insert_ga4_metric(db_pool, slug="rollup-test-ga4-null",
+                                 metric_name="user_engagement_duration",
+                                 metric_value=60.0, days_ago=1)
+
+        job = RollupPostPerformanceJob()
+        result = await job.run(db_pool, {})
+
+        assert result.ok is True
+        async with db_pool.acquire() as conn:
+            val = await conn.fetchval(
+                "SELECT avg_time_on_page_seconds FROM post_performance WHERE slug = $1",
+                "rollup-test-ga4-null",
+            )
+        # No screen_page_views rows → COALESCE(..., 0) → CASE condition false → NULL.
+        assert val is None
 
     async def test_min_published_days_ago_skips_too_new_posts(self, db_pool):
         await _wipe_perf_tables(db_pool)

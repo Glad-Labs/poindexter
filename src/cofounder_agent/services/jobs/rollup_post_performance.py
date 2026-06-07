@@ -9,12 +9,18 @@ to enrich each snapshot row with google_impressions / google_clicks /
 google_avg_position, fixing the audit gap where 322 post_performance
 rows had impressions=0 despite 2,322 GSC rows in external_metrics.
 
+As of Glad-Labs/poindexter#672 the job also LEFT JOINs external_metrics
+(filtered by source='ga4') to populate ``avg_time_on_page_seconds``
+from the GA4 ``user_engagement_duration`` / ``screen_page_views`` metrics.
+
 ## What it does
 
 Once per cycle, for every published post:
   - Count page_views.slug matches over 1d / 7d / 30d / total windows.
   - Aggregate GSC impressions/clicks (sum) and position (avg) over the
     last 30 days from external_metrics.
+  - Aggregate GA4 engagement duration / page-views over the same window
+    to derive ``avg_time_on_page_seconds``.
   - Insert a new post_performance snapshot row with ``period='snapshot'``
     and ``measured_at=NOW()``.
 
@@ -31,7 +37,8 @@ Retention is bounded by the retention_janitor (defaults to 180d).
   views" patterns)
 - ``config.gsc_window_days`` (default 30) — how far back to aggregate
   GSC impressions/clicks. 30d matches the post_performance.views_30d
-  column convention so the per-row "30 day window" is consistent.
+  column convention so the per-row "30 day window" is consistent. The
+  same window is reused for GA4 engagement metrics.
 
 ## GSC-join semantics
 
@@ -41,6 +48,19 @@ with ``post_id`` NULL for any URL the tap couldn't resolve at write time
 slug means we capture all the impressions for a post regardless of
 when the tap was wired up. ``COALESCE(SUM(...), 0)`` keeps the columns
 non-NULL for posts with no GSC traffic yet.
+
+## GA4-join semantics
+
+The GA4 Singer tap writes ``user_engagement_duration`` (total seconds
+users were active on the page) and ``screen_page_views`` (total page
+renders) per slug per day. We aggregate both over the same rolling
+window as GSC and compute:
+
+    avg_time_on_page_seconds = SUM(user_engagement_duration)
+                               / GREATEST(SUM(screen_page_views), 1)
+
+A post with 0 GA4 screen_page_views in the window gets NULL (not 0) so
+NULL-means-no-data semantics are preserved downstream.
 
 ## Idempotency
 
@@ -84,6 +104,11 @@ class RollupPostPerformanceJob:
                 # (not post_id) captures GSC rows where the tap wrote
                 # ``post_id=NULL`` because the URL didn't resolve at write
                 # time — the slug column is always populated.
+                #
+                # Glad-Labs/poindexter#672: also LEFT JOIN external_metrics
+                # for GA4 enrichment using the same $2 rolling window.
+                # ``user_engagement_duration`` (seconds on page) /
+                # ``screen_page_views`` (page renders) → avg_time_on_page_seconds.
                 rows = await conn.fetch(
                     """
                     WITH windows AS (
@@ -126,11 +151,27 @@ class RollupPostPerformanceJob:
                         AND em.date > (NOW() - ($2::int || ' days')::interval)::date
                         AND em.slug IS NOT NULL
                       GROUP BY em.slug
+                    ),
+                    ga4 AS (
+                      SELECT
+                        em.slug,
+                        COALESCE(SUM(em.metric_value) FILTER (
+                          WHERE em.metric_name = 'user_engagement_duration'
+                        ), 0) AS total_engagement_seconds,
+                        COALESCE(SUM(em.metric_value) FILTER (
+                          WHERE em.metric_name = 'screen_page_views'
+                        ), 0) AS total_screen_views
+                      FROM external_metrics em
+                      WHERE em.source = 'ga4'
+                        AND em.date > (NOW() - ($2::int || ' days')::interval)::date
+                        AND em.slug IS NOT NULL
+                      GROUP BY em.slug
                     )
                     INSERT INTO post_performance (
                       post_id, slug,
                       views_1d, views_7d, views_30d, views_total,
                       google_impressions, google_clicks, google_avg_position,
+                      avg_time_on_page_seconds,
                       measured_at, period
                     )
                     SELECT
@@ -139,9 +180,15 @@ class RollupPostPerformanceJob:
                       COALESCE(g.google_impressions, 0),
                       COALESCE(g.google_clicks, 0),
                       g.google_avg_position,
+                      CASE WHEN COALESCE(g4.total_screen_views, 0) > 0
+                           THEN (g4.total_engagement_seconds
+                                 / g4.total_screen_views)::numeric(8,2)
+                           ELSE NULL
+                      END,
                       NOW(), 'snapshot'
                     FROM windows w
                     LEFT JOIN gsc g ON g.slug = w.slug
+                    LEFT JOIN ga4 g4 ON g4.slug = w.slug
                     RETURNING id
                     """,
                     min_published_days_ago,
