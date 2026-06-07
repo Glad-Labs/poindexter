@@ -125,6 +125,13 @@ _TRIAGE_HTTP_TIMEOUT_SECONDS = 30.0
 # burn budget chasing the same failure on every cycle.
 _TRIAGE_NO_RETRY_STATUSES: frozenset[int] = frozenset({401, 402, 503})
 
+# Cap background triage tasks so a burst of batch_size=50 alerts doesn't
+# open 50 simultaneous HTTP connections to the worker. Tasks are created
+# immediately (so dispatch is non-blocking) but each waits for a slot
+# before actually POSTing to /api/triage.
+_TRIAGE_MAX_CONCURRENT = 5
+_triage_semaphore = asyncio.Semaphore(_TRIAGE_MAX_CONCURRENT)
+
 
 # ---------------------------------------------------------------------------
 # Coalesce + severity-routing knobs (Glad-Labs/poindexter#420). Defaults
@@ -781,7 +788,7 @@ async def poll_and_dispatch(
         if triage_enabled:
             try:
                 task = asyncio.create_task(
-                    _triage_one(pool, row, notify_result or {}),
+                    _triage_one_guarded(pool, row, notify_result or {}),
                     name=f"triage_one_{row.get('id')}",
                 )
                 _triage_tasks.append(task)
@@ -1131,7 +1138,7 @@ async def _evaluate_dedup_decision(
         "repeat_count": new_repeat_count,
         "dispatch_result": (
             f"suppressed: repeat {new_repeat_count}, "
-            f"first_seen={first_seen_at.isoformat()}"
+            f"first_seen={first_seen_at.isoformat()}; no AI enrichment (deduped)"
         )[:400],
     }
 
@@ -1833,6 +1840,8 @@ async def _triage_one(
         }
         payload_bytes = json.dumps(triage_payload, default=str).encode("utf-8")
         url = f"{base_url}/api/triage"
+        alertname_label = triage_payload["alertname"]
+        severity_label = triage_payload["severity"]
 
         max_attempts, backoff = await _read_triage_retry_config(pool)
 
@@ -1844,8 +1853,10 @@ async def _triage_one(
                 )
             except Exception as e:  # noqa: BLE001 — network / dns / timeout
                 logger.warning(
-                    "[alert_dispatcher] triage row=%s attempt %d/%d network "
-                    "failure: %s", row_id, attempt, max_attempts, e,
+                    "[alert_dispatcher] triage row=%s (%s/%s) attempt %d/%d "
+                    "network failure: %s",
+                    row_id, alertname_label, severity_label,
+                    attempt, max_attempts, e,
                 )
                 if attempt >= max_attempts:
                     logger.warning(
@@ -1912,9 +1923,10 @@ async def _triage_one(
 
             # Transient (5xx) — retry with backoff if budget remains.
             logger.warning(
-                "[alert_dispatcher] triage row=%s attempt %d/%d "
+                "[alert_dispatcher] triage row=%s (%s/%s) attempt %d/%d "
                 "HTTP %d — %s",
-                row_id, attempt, max_attempts, status_code,
+                row_id, alertname_label, severity_label,
+                attempt, max_attempts, status_code,
                 body[:200].decode("utf-8", "replace") if body else "",
             )
             if attempt >= max_attempts:
@@ -1932,3 +1944,26 @@ async def _triage_one(
             row_id, e, exc_info=True,
         )
         return None
+
+
+async def _triage_one_guarded(
+    pool: Any,
+    row: Any,
+    notify_result: dict[str, Any],
+    *,
+    sleep_fn: Callable[[float], Awaitable[None]] | None = None,
+) -> dict[str, Any] | None:
+    """Semaphore-gated wrapper around :func:`_triage_one`.
+
+    Ensures at most ``_TRIAGE_MAX_CONCURRENT`` triage coroutines are
+    actively POSTing to ``/api/triage`` simultaneously. Tasks are
+    created immediately (non-blocking), but each waits here for a slot
+    before doing any real HTTP work — preventing a 50-row burst from
+    opening 50 concurrent worker connections.
+
+    A plain wrapper (rather than inlining ``async with`` into
+    ``_triage_one``) avoids re-indenting the large function body AND
+    lets tests mock either layer independently.
+    """
+    async with _triage_semaphore:
+        return await _triage_one(pool, row, notify_result, sleep_fn=sleep_fn)
