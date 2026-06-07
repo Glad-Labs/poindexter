@@ -54,6 +54,17 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "generate_title", "atom": "content.generate_title"},
         {"id": "check_title_originality", "atom": "content.check_title_originality"},
         {"id": "normalize_draft", "atom": "content.normalize_draft"},
+        # draft_gate (#363): true LangGraph interrupt() approval gate after the
+        # writer atom chain. NO-OP UNLESS the operator enables it
+        # (pipeline_gate_draft_gate=on); seeded DISABLED so prod canonical_blog
+        # runs are unaffected. When on, the gate atom checkpoints the graph and
+        # pauses for operator approval; resume via `poindexter pipeline resume
+        # <task_id>` (LangGraph reloads the checkpoint and continues from here,
+        # skipping the upstream writer nodes). gate_name is seeded from the
+        # node config so the atom's `requires=('task_id','gate_name')` is
+        # satisfied at build/seed validation time.
+        {"id": "draft_gate", "atom": "atoms.approval_gate",
+         "config": {"gate_name": "draft_gate"}},
         {"id": "writer_self_review", "atom": "stage.writer_self_review"},
         {"id": "resolve_internal_link_placeholders", "atom": "stage.resolve_internal_link_placeholders"},
         {"id": "quality_evaluation", "atom": "stage.quality_evaluation"},
@@ -95,11 +106,12 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
     ],
     "edges": [
         {"from": "verify_task", "to": "generate_draft"},
-        # generate_content atom chain
+        # generate_content atom chain → draft_gate → writer_self_review
         {"from": "generate_draft", "to": "generate_title"},
         {"from": "generate_title", "to": "check_title_originality"},
         {"from": "check_title_originality", "to": "normalize_draft"},
-        {"from": "normalize_draft", "to": "writer_self_review"},
+        {"from": "normalize_draft", "to": "draft_gate"},
+        {"from": "draft_gate", "to": "writer_self_review"},
         {"from": "writer_self_review", "to": "resolve_internal_link_placeholders"},
         {"from": "resolve_internal_link_placeholders", "to": "quality_evaluation"},
         {"from": "quality_evaluation", "to": "url_validation"},

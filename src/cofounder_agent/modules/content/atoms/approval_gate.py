@@ -5,23 +5,37 @@ Phase 3 of the dynamic-pipeline-composition spec. Wraps the existing
 shape so the architect-LLM can drop a gate at any point in a composed
 graph without subclassing.
 
-How "interrupt" works in v1 (without a Postgres checkpointer):
+How "interrupt" works (true LangGraph interrupt(), #363)
+--------------------------------------------------------
 
-When the gate is open, this atom calls
-:func:`services.approval_service.pause_at_gate` (which writes
-``content_tasks.awaiting_gate`` + fires the operator notification),
-then returns ``_halt=True`` to short-circuit the rest of the graph.
-The operator approves via Telegram / CLI / MCP, the existing approve
-flow clears the gate columns and re-queues the task, and TemplateRunner
-runs the template again. On the second pass the gate atom sees the
-gate is already cleared and passes through — the graph continues from
-where it left off.
+When the gate is open, this atom:
 
-This matches the StageRunner behavior exactly. A "true" LangGraph
-``interrupt()`` (state durably checkpointed mid-graph) is blocked on
-Phase 2's Postgres checkpointer with custom serializers, because the
-v1 state contains live service objects (DatabaseService etc.) that
-aren't msgpack-serializable.
+1. Persists the gate state via
+   :func:`services.approval_service.pause_at_gate` (writes
+   ``pipeline_tasks.awaiting_gate`` / ``gate_artifact`` / ``gate_paused_at``
+   and fires the operator notification).
+2. Sends a CRITICAL operator notification (Telegram) with the gate context
+   so the pause reaches Matt's phone.
+3. Calls :func:`langgraph.types.interrupt` — which raises ``GraphInterrupt``.
+   LangGraph catches that bubble-up, **durably checkpoints the entire graph
+   state** (via the Postgres checkpointer keyed on ``thread_id`` = task_id),
+   and pauses ``ainvoke`` mid-execution.
+
+The graph does NOT re-run earlier nodes on resume — that's the whole point
+versus the old status-polling / re-run design. The operator approves
+(``poindexter pipeline resume <task_id>`` or ``poindexter approve``), the
+runner calls ``ainvoke(Command(resume=...), config)`` with the SAME
+``thread_id``, and LangGraph re-enters THIS atom. On re-entry ``interrupt()``
+returns the resume value instead of raising, so the atom passes through.
+
+Two resume patterns are handled defensively:
+
+- **Command(resume=...) re-entry** — ``interrupt()`` returns the resume
+  payload; we treat any returned value as approval and pass through.
+- **gate_history approved row** — even before re-reaching ``interrupt()``,
+  the approved-row check below short-circuits to pass-through. This covers
+  the legacy re-run path and any caller that records approval before
+  resuming. A ``rejected`` row halts the graph instead.
 
 Issue: Glad-Labs/poindexter#363.
 """
@@ -31,6 +45,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langgraph.types import interrupt
+
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -39,11 +55,13 @@ logger = logging.getLogger(__name__)
 ATOM_META = AtomMeta(
     name="atoms.approval_gate",
     type="approval_gate",
-    version="1.0.0",
+    version="2.0.0",
     description=(
-        "Pause pipeline execution pending operator approval at a named gate. "
-        "On open: calls pause_at_gate(), notifies operator, returns _halt=True. "
-        "On cleared: passes through (operator already approved on a prior pass)."
+        "Pause pipeline execution pending operator approval at a named gate "
+        "via LangGraph interrupt(). On open: persists gate state, notifies the "
+        "operator (critical/Telegram), and calls interrupt() so the graph "
+        "durably checkpoints and pauses. On resume (Command(resume=...) or an "
+        "approved gate_history row): passes through. A rejected row halts."
     ),
     inputs=(
         FieldSpec(
@@ -54,8 +72,9 @@ ATOM_META = AtomMeta(
         FieldSpec(
             name="gate_name", type="str",
             description=(
-                "Stable gate slug, e.g. 'topic_decision', 'preview_approval'. "
-                "Lands in content_tasks.awaiting_gate."
+                "Stable gate slug, e.g. 'draft_gate', 'preview_approval'. "
+                "Lands in pipeline_tasks.awaiting_gate. May be seeded from the "
+                "spec node's static config."
             ),
             required=True,
         ),
@@ -73,7 +92,7 @@ ATOM_META = AtomMeta(
     outputs=(
         FieldSpec(
             name="_halt", type="bool",
-            description="Set to True when the gate is open — TemplateRunner halts.",
+            description="Set to True only on rejection — TemplateRunner halts.",
         ),
         FieldSpec(
             name="awaiting_gate", type="str",
@@ -90,8 +109,9 @@ ATOM_META = AtomMeta(
     cost_class="free",
     idempotent=True,
     side_effects=(
-        "writes content_tasks.awaiting_gate",
-        "calls notify_operator",
+        "writes pipeline_tasks.awaiting_gate",
+        "calls notify_operator (critical)",
+        "calls langgraph interrupt() — checkpoints + pauses the graph",
     ),
     retry=RetryPolicy(max_attempts=1),
     fallback=(),
@@ -102,11 +122,17 @@ ATOM_META = AtomMeta(
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Atom entry point.
 
-    Reads ``state['gate_name']`` (mandatory) plus optional
-    ``state['gate_artifact_keys']`` (list of state keys to surface in
-    the operator review payload). Writes the gate row + notifies on
-    open, returns ``{}`` (passthrough) when the gate is already
-    cleared.
+    Reads ``state['gate_name']`` (mandatory; may be seeded from the spec
+    node's config) plus optional ``state['gate_artifact_keys']`` (list of
+    state keys to surface in the operator review payload).
+
+    Flow:
+      1. Disabled gate → pass-through ``{}`` (prod-safe default).
+      2. ``rejected`` gate_history row → ``{"_halt": True}``.
+      3. ``approved`` gate_history row → pass-through (resume case).
+      4. Otherwise → persist gate state, notify (critical), and
+         ``interrupt()``. On resume, ``interrupt()`` returns the resume
+         value and we pass through.
     """
     from services.approval_service import is_gate_enabled, pause_at_gate
 
@@ -122,20 +148,34 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         return {}
 
     # Master enable check — passthrough when the operator has the gate
-    # turned off in app_settings.
+    # turned off in app_settings (pipeline_gate_<gate_name>). This is what
+    # keeps prod canonical_blog runs unaffected: the gate is seeded DISABLED.
     if not is_gate_enabled(gate_name, site_config):
         logger.info("[atoms.approval_gate:%s] disabled — passthrough", gate_name)
         return {}
 
-    # If the task already cleared this gate on a previous run, we're
-    # in the resume pass — don't re-pause.
     pool = _resolve_pool(state)
-    if pool is not None and await _gate_already_cleared(pool, str(task_id), gate_name):
-        logger.info(
-            "[atoms.approval_gate:%s] already cleared on prior pass — passthrough",
-            gate_name,
-        )
-        return {}
+
+    # Gate-history short-circuit. ``rejected`` halts; ``approved`` passes
+    # through (the legacy re-run resume path, and any caller that records
+    # approval before resuming the graph).
+    if pool is not None:
+        decision = await _gate_decision(pool, str(task_id), gate_name)
+        if decision == "rejected":
+            logger.info(
+                "[atoms.approval_gate:%s] rejected on prior pass — halting",
+                gate_name,
+            )
+            return {
+                "_halt": True,
+                "_halt_reason": f"gate {gate_name!r} rejected by operator",
+            }
+        if decision == "approved":
+            logger.info(
+                "[atoms.approval_gate:%s] already approved — passthrough",
+                gate_name,
+            )
+            return {}
 
     # Build the operator-review artifact. Keys to surface come from
     # ``state['gate_artifact_keys']`` (list[str]) when set; otherwise
@@ -180,12 +220,37 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             ),
         }
 
-    return {
-        "_halt": True,
-        "_halt_reason": f"awaiting operator approval at gate {gate_name!r}",
-        "awaiting_gate": gate_name,
-        "gate_artifact": artifact,
-    }
+    # Critical (Telegram) page so the pause reaches Matt's phone — the
+    # routine pause_at_gate notification above goes to Discord
+    # (critical=False), so this adds the high-urgency hit.
+    await _notify_critical(task_id=str(task_id), gate_name=gate_name, artifact=artifact, site_config=site_config)
+
+    rendered_message = (
+        f"Pipeline paused at gate {gate_name!r} (task {str(task_id)[:8]}). "
+        f"Approve: poindexter pipeline resume {task_id}"
+    )
+
+    # The pivot: interrupt() raises GraphInterrupt, LangGraph durably
+    # checkpoints the whole graph (keyed on thread_id=task_id) and pauses
+    # ainvoke. On resume via ainvoke(Command(resume=...), config) the SAME
+    # interrupt() call RETURNS the resume value instead of raising — so we
+    # treat any returned value as approval and pass through. The
+    # GraphInterrupt must NOT be caught here (or by _wrap_atom /
+    # make_stage_node) — it is the pause signal, not a failure.
+    resume_value = interrupt(
+        {
+            "gate_name": gate_name,
+            "task_id": str(task_id),
+            "message": rendered_message,
+            "artifact": artifact,
+        }
+    )
+
+    logger.info(
+        "[atoms.approval_gate:%s] resumed (resume_value=%r) — passthrough",
+        gate_name, resume_value,
+    )
+    return {}
 
 
 def _resolve_pool(state: dict[str, Any]) -> Any:
@@ -193,32 +258,64 @@ def _resolve_pool(state: dict[str, Any]) -> Any:
     return getattr(db, "pool", None) if db else None
 
 
-async def _gate_already_cleared(pool: Any, task_id: str, gate_name: str) -> bool:
-    """Return True if the task previously paused at this gate and was
-    approved.
+async def _notify_critical(
+    *,
+    task_id: str,
+    gate_name: str,
+    artifact: dict[str, Any],
+    site_config: Any,
+) -> None:
+    """Best-effort critical (Telegram) page that the graph is paused.
 
-    We check ``pipeline_gate_history`` rather than relying on
-    ``content_tasks.awaiting_gate`` alone because the column also reads
-    NULL for tasks that never hit the gate at all — the history row is
-    what tells us "this gate was specifically cleared, not just absent."
+    pause_at_gate already fires a Discord (critical=False) notification;
+    this adds the phone hit per the gate's HITL intent. Never raises.
+    """
+    try:
+        from services.integrations.operator_notify import notify_operator
+        title = artifact.get("title") or artifact.get("topic") or ""
+        msg = (
+            f"[approval gate] Task {task_id[:8]} paused at gate '{gate_name}'.\n"
+            f"{('title: ' + str(title)[:100]) if title else '(no title yet)'}\n"
+            f"Resume: poindexter pipeline resume {task_id}"
+        )
+        await notify_operator(msg, critical=True, site_config=site_config)
+    except Exception as exc:  # noqa: BLE001 — notifications are best-effort
+        logger.debug("[atoms.approval_gate:%s] critical notify failed: %s", gate_name, exc)
+
+
+async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
+    """Return the latest gate decision for ``(task_id, gate_name)``.
+
+    Reads ``pipeline_gate_history`` (not just ``pipeline_tasks.awaiting_gate``,
+    which is also NULL for tasks that never hit the gate) for the most-recent
+    typed event. Returns ``"approved"``, ``"rejected"``, or ``None`` when the
+    gate has no recorded decision yet.
+
+    A ``rejected`` event_kind covers both ``rejected`` and any per-gate reject
+    status (``dismissed`` etc.) — anything that is not ``approved`` and not a
+    bare pause is treated as a halt signal.
     """
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchval(
+            row = await conn.fetchrow(
                 """
-                SELECT EXISTS(
-                  SELECT 1 FROM pipeline_gate_history
-                  WHERE task_id = $1
-                    AND gate_name = $2
-                    AND event_kind = 'approved'
-                )
+                SELECT event_kind
+                  FROM pipeline_gate_history
+                 WHERE task_id = $1
+                   AND gate_name = $2
+                   AND event_kind IN ('approved', 'rejected', 'dismissed')
+                 ORDER BY created_at DESC
+                 LIMIT 1
                 """,
                 str(task_id), gate_name,
             )
-            return bool(row)
+        if row is None:
+            return None
+        kind = row["event_kind"]
+        return "approved" if kind == "approved" else "rejected"
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[atoms.approval_gate] cleared-check failed: %s", exc)
-        return False
+        logger.debug("[atoms.approval_gate] gate-decision check failed: %s", exc)
+        return None
 
 
 __all__ = ["ATOM_META", "run"]

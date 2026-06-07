@@ -23,6 +23,7 @@ from .integrations import integrations_group
 from .media import media_group
 from .memory import memory_group
 from .migrate import migrate_group
+from .pipeline import pipeline_group
 from .posts import post_group, posts_group
 from .premium import premium_group
 from .publish_approval import (
@@ -112,6 +113,10 @@ main.add_command(reject_command)
 main.add_command(list_pending_command)
 main.add_command(show_pending_command)
 main.add_command(gates_group)
+
+# Interrupt()-paused pipeline operator commands (list-paused / status /
+# resume) — true LangGraph checkpoint resume (Glad-Labs/poindexter#363).
+main.add_command(pipeline_group, name="pipeline")
 
 # Publish-time approval-gate operator commands (post-scheduling).
 main.add_command(approve_publish_command)

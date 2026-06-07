@@ -52,7 +52,9 @@ import ormsgpack
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, StateGraph
+from langgraph.types import Command
 from prometheus_client import Histogram
 
 from services.site_config import SiteConfig
@@ -356,6 +358,20 @@ class PipelineState(TypedDict, total=False):
     models_used_by_phase: dict
     model_selection_log: dict
 
+    # Halt + approval-gate channels (#363). ``_halt`` / ``_halt_reason``
+    # short-circuit the graph via the conditional-edge routers
+    # (halt_or_continue / pipeline_architect._halt_router_*). The
+    # approval_gate atom surfaces awaiting_gate / gate_artifact for operator
+    # dashboards. These are declared as last-value channels so they survive
+    # the graph_def adapter's state merge (same lesson as seo_keywords_list —
+    # undeclared keys get dropped by LangGraph on the graph_def path).
+    _halt: bool
+    _halt_reason: str
+    gate_name: str
+    awaiting_gate: str
+    gate_artifact: dict
+    gate_artifact_keys: list
+
     # Plumbing the runner needs but doesn't constrain:
     database_service: object
     settings_service: object
@@ -579,6 +595,14 @@ def make_stage_node(
             if halts:
                 raise RuntimeError(f"stage {name!r} timed out after {timeout}s") from te
             return {}
+        except GraphInterrupt:
+            # Control-flow signal — a stage (or an atom surfaced as a
+            # ``stage.*`` virtual atom that calls interrupt()) suspended the
+            # graph for operator approval. LangGraph checkpoints here and
+            # bubbles this to ainvoke; swallowing it into an error record
+            # would defeat true interrupt()-based resume
+            # (Glad-Labs/poindexter#363). Re-raise untouched.
+            raise
         except Exception as exc:
             elapsed = int((time.time() - t0) * 1000)
             NODE_DURATION_SECONDS.labels(node=name, outcome="error").observe(elapsed / 1000.0)
@@ -759,12 +783,39 @@ class TemplateRunner:
         initial_state: dict[str, Any],
         *,
         thread_id: str | None = None,
+        resume: bool = False,
+        resume_value: Any = None,
     ) -> TemplateRunSummary:
         """Run a template by slug.
 
         ``thread_id`` is the LangGraph checkpointer thread ID. Defaults
         to the task_id from initial_state, falling back to the slug
         itself for ad-hoc runs.
+
+        Resume (Glad-Labs/poindexter#363)
+        ---------------------------------
+
+        When ``resume=True``, the graph is NOT restarted from
+        ``initial_state``; instead LangGraph loads the durable checkpoint
+        for ``thread_id`` and continues from the ``interrupt()`` that paused
+        it. The runner invokes ``ainvoke(Command(resume=resume_value),
+        config)`` so the paused ``interrupt()`` call returns ``resume_value``
+        and execution proceeds past the gate (skipping every already-run
+        node).
+
+        ``resume=True`` REQUIRES a durable checkpointer — set
+        ``template_runner_use_postgres_checkpointer=true`` (the prod
+        default). With MemorySaver the checkpoint does not survive the
+        process that created it, so a resume in a fresh process finds no
+        saved state and LangGraph re-runs from the entry point.
+
+        ``initial_state`` is still partitioned on resume so the live
+        service handles (DatabaseService etc.) are re-threaded into the
+        RunnableConfig — services are never checkpointed, so they must be
+        re-supplied on every invocation, including resume. The data half of
+        the partition is ignored by ``ainvoke(Command(...))`` (LangGraph
+        reads the checkpoint), but partitioning it keeps the services dict
+        correct.
         """
         # Lazy import to avoid module-load cycle: pipeline_templates.__init__
         # imports adapters from here, here imports from there → cycle if
@@ -802,6 +853,10 @@ class TemplateRunner:
                 )
             graph = factory(pool=self._pool, record_sink=records)
 
+        # Both branches above assign graph; narrow away the Optional so
+        # the later graph.compile() call type-checks.
+        assert graph is not None
+
         thread_id = (
             thread_id
             or str(initial_state.get("task_id") or "")
@@ -822,7 +877,7 @@ class TemplateRunner:
                 "thread_id": thread_id,
             },
             notify_operator_message=(
-                f"▶️ Pipeline {template_slug} starting "
+                f"▶️ Pipeline {template_slug} {'resuming' if resume else 'starting'} "
                 f"(task {str(initial_state.get('task_id') or '')[:8]})"
             ),
             site_config=self._site_config,
@@ -857,8 +912,18 @@ class TemplateRunner:
                     },
                 }
                 compiled = graph.compile(checkpointer=checkpointer)
+                # Resume seam (#363): on resume LangGraph loads the durable
+                # checkpoint for thread_id and continues from the paused
+                # interrupt() — so we pass Command(resume=...) instead of the
+                # full data_state. The paused interrupt() call returns
+                # resume_value; execution proceeds past the gate without
+                # re-running already-completed nodes. Normal runs pass the
+                # full data_state (graph starts at the entry point).
+                invoke_input: Any = (
+                    Command(resume=resume_value) if resume else data_state
+                )
                 try:
-                    final_state = await compiled.ainvoke(data_state, config)
+                    final_state = await compiled.ainvoke(invoke_input, config)
                 except Exception as exc:
                     return await self._handle_run_exception(
                         exc, template_slug, initial_state, records,

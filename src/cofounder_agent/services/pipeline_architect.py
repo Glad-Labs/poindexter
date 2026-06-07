@@ -41,6 +41,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, StateGraph
 
 from services.atom_registry import (
@@ -617,7 +618,15 @@ def build_graph_from_spec(
             run_fn = get_atom_callable(atom_name)
             if run_fn is None:
                 raise KeyError(f"atom {atom_name!r} has no callable")
-            g.add_node(nid, _wrap_atom(run_fn, atom_name, nid, record_sink))
+            # Thread the node's static ``config`` dict from the spec into
+            # the atom adapter so per-node config (e.g. an approval_gate's
+            # {"gate_name": "draft_gate"}) seeds the atom_input. State
+            # values take precedence; config is the fallback/seed.
+            node_config = n.get("config") if isinstance(n.get("config"), dict) else None
+            g.add_node(
+                nid,
+                _wrap_atom(run_fn, atom_name, nid, record_sink, node_config=node_config),
+            )
         node_ids.append(nid)
 
     # Wire entry + edges.
@@ -695,6 +704,8 @@ def _wrap_atom(
     atom_name: str,
     node_id: str,
     record_sink: list | None,
+    *,
+    node_config: dict[str, Any] | None = None,
 ) -> Callable[..., Any]:
     """Wrap a pure atom into the LangGraph node signature with
     record_sink integration so observability matches stage nodes.
@@ -706,8 +717,20 @@ def _wrap_atom(
     keep working unchanged. ``config`` MUST be annotated as bare
     ``RunnableConfig`` — see the matching note in ``make_stage_node``.
 
+    The spec node's static ``node_config`` dict is seeded into the atom
+    input as a FALLBACK (state and threaded services both take precedence)
+    so per-node config — e.g. an ``approval_gate``'s
+    ``{"gate_name": "draft_gate"}`` — reaches the atom's ``run(state)``.
+
     Stamps ``node_id`` + input/output state-key lists + digests onto the
     record so ``atom_runs`` captures the composition shape (#355 Plan 2).
+
+    GraphInterrupt (raised by ``langgraph.types.interrupt`` inside an atom
+    like ``approval_gate``) propagates UNTOUCHED — the broad ``except
+    Exception`` below would otherwise convert a real checkpoint-pause into
+    an error record + ``_halt``, defeating true interrupt()-based resume
+    (Glad-Labs/poindexter#363). GraphInterrupt is a LangGraph control-flow
+    signal, not a failure.
     """
 
     from langchain_core.runnables import RunnableConfig
@@ -725,6 +748,11 @@ def _wrap_atom(
         atom_input: dict[str, Any] = dict(state)
         for svc_key, svc_value in _services_from_config(config).items():
             atom_input.setdefault(svc_key, svc_value)
+        # Seed per-node static config LAST as a fallback — setdefault means
+        # state + threaded services already present win over config.
+        if node_config:
+            for cfg_key, cfg_value in node_config.items():
+                atom_input.setdefault(cfg_key, cfg_value)
         input_keys = sorted(str(k) for k in atom_input.keys())
         try:
             result = await run_fn(atom_input)
@@ -751,6 +779,12 @@ def _wrap_atom(
                     )
                 )
             return out
+        except GraphInterrupt:
+            # Control-flow signal — the atom called interrupt() to pause the
+            # graph for operator approval. LangGraph checkpoints here and
+            # bubbles this up to ainvoke; we MUST NOT swallow it. No record
+            # is written (the node didn't complete or fail — it suspended).
+            raise
         except Exception as exc:
             elapsed_ms = int((_time.time() - t0) * 1000)
             logger.exception("[architect] atom %s raised: %s", atom_name, exc)
