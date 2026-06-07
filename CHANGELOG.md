@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## [0.74.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.73.0...v0.74.0) (2026-06-07)
+
+
+### Features
+
+* **analytics:** wire GA4 into rollup + post-performance probe ([#520](https://github.com/Glad-Labs/glad-labs-stack/issues/520)/[#672](https://github.com/Glad-Labs/glad-labs-stack/issues/672)) ([0ad8fd3](https://github.com/Glad-Labs/glad-labs-stack/commit/0ad8fd37698649ace190d013d21bfca399b34122))
+* **db:** add actor column to pipeline_gate_history (poindexter[#656](https://github.com/Glad-Labs/glad-labs-stack/issues/656)) ([#1192](https://github.com/Glad-Labs/glad-labs-stack/issues/1192)) ([ae3dcf6](https://github.com/Glad-Labs/glad-labs-stack/commit/ae3dcf66592f4720763a833e3c70a8cf41948fff))
+* **obs:** add cAdvisor + postgres_exporter + wire gh auth for findings ([#1189](https://github.com/Glad-Labs/glad-labs-stack/issues/1189)) ([8577f45](https://github.com/Glad-Labs/glad-labs-stack/commit/8577f457d9dd850f6c081864294091bcda0d4b3e))
+* **obs:** add cAdvisor + postgres_exporter Grafana panels ([#1191](https://github.com/Glad-Labs/glad-labs-stack/issues/1191)) ([27c00b6](https://github.com/Glad-Labs/glad-labs-stack/commit/27c00b6bb45bb89c7d8bb803097efe74adad39fa))
+* **platform:** wave 3d-ii — thread platform.dispatch.complete into image stages ([#1180](https://github.com/Glad-Labs/glad-labs-stack/issues/1180)) ([baf8c09](https://github.com/Glad-Labs/glad-labs-stack/commit/baf8c098abbaebe2e1690d5120fbf225292c96e3))
+* **seam-1:** wave 3e-4 — multi_model_qa config reads via platform.config ([#1178](https://github.com/Glad-Labs/glad-labs-stack/issues/1178)) ([491c649](https://github.com/Glad-Labs/glad-labs-stack/commit/491c649297b49aabaa9d0f941edfcad3032c795b))
+* **seam1:** Wave 3f + Wave 4 — clear module-purity violations + CI lint (poindexter[#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([1aa3d7b](https://github.com/Glad-Labs/glad-labs-stack/commit/1aa3d7bba28fe947773daa8a9d4812fdf1c415b8))
+
+
+### Bug Fixes
+
+* **alert_dispatcher:** cap concurrent triage tasks + enrich observability ([c9a4ac2](https://github.com/Glad-Labs/glad-labs-stack/commit/c9a4ac2eab8dca6c3b762e1aee6635936c623363))
+* **brain:** add post_performance_probe.py to Dockerfile COPY+cp ([463ad3e](https://github.com/Glad-Labs/glad-labs-stack/commit/463ad3e0fd3792c8befcfcbd80958465d8ac6919))
+* **brain:** fix compose drift auto-recover for containerized context ([caac48f](https://github.com/Glad-Labs/glad-labs-stack/commit/caac48f9ae4f6c63b2ec5f13a21f040a712d3daf))
+* **brain:** make compose project name configurable via app_settings ([d99ccab](https://github.com/Glad-Labs/glad-labs-stack/commit/d99ccabdd76c1d3d8f1ae77b677648802bf31317))
+* **brain:** pass LOCAL_POSTGRES_* vars to brain-daemon container ([fc94621](https://github.com/Glad-Labs/glad-labs-stack/commit/fc9462137e0c6b14f6755bec9c62d1206af4e3e2))
+* **brain:** remove deleted gate probes from Dockerfile COPY + cp list ([#1190](https://github.com/Glad-Labs/glad-labs-stack/issues/1190)) ([8341358](https://github.com/Glad-Labs/glad-labs-stack/commit/83413587a3d9962ee5bb5d36fae928102a86f152))
+* prefect queue-backlog probe fires on scheduling jitter (false positive) ([#1182](https://github.com/Glad-Labs/glad-labs-stack/issues/1182)) ([02437f2](https://github.com/Glad-Labs/glad-labs-stack/commit/02437f2fb16a6c3766966ce6b46ab506f061540f))
+* **startup:** syntax-check modules/ before boot to catch conflict markers ([54075fe](https://github.com/Glad-Labs/glad-labs-stack/commit/54075fe8b8c30696d3efaee85040fecd2a7e816d))
+* **startup:** use compile() not py_compile to avoid read-only __pycache__ error ([9086680](https://github.com/Glad-Labs/glad-labs-stack/commit/9086680afd072bc0309ab9b620d5692023757072))
+* structured skip_type taxonomy for QA-rail skip ratio (closes Glad-Labs/glad-labs-stack[#1181](https://github.com/Glad-Labs/glad-labs-stack/issues/1181)) ([#1187](https://github.com/Glad-Labs/glad-labs-stack/issues/1187)) ([fbdcadc](https://github.com/Glad-Labs/glad-labs-stack/commit/fbdcadc08fcd51e89edfae42744d60f801d8cd66))
+
 ## [0.73.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.72.0...v0.73.0) (2026-06-06)
 
 
