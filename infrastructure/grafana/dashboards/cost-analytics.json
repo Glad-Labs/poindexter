@@ -900,7 +900,7 @@
     {
       "type": "row",
       "id": 60,
-      "title": "Cost vs Electricity — local Ollama vs cloud APIs",
+      "title": "Cost vs Electricity \u2014 local Ollama vs cloud APIs",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -913,7 +913,7 @@
     {
       "type": "table",
       "id": 61,
-      "title": "Provider economics — $ vs kWh per call (last 30d)",
+      "title": "Provider economics \u2014 $ vs kWh per call (last 30d)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1099,6 +1099,182 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "id": 200,
+      "title": "Cost-Tier Benchmark (#530)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 80
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "id": 201,
+      "title": "Model Energy & Cost Efficiency",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 81
+      },
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "editorMode": "code",
+          "rawSql": "SELECT model, tier, ROUND(AVG(tokens_per_second),1) AS \"tok/s\", ROUND(AVG(joules_per_token),3) AS \"J/token\", ROUND(AVG(quality_score),1) AS \"quality\", ROUND(AVG(cost_usd / NULLIF(total_tokens,0) * 1000)::numeric, 6) AS \"$/1k_tok\", ROUND(AVG(cost_usd / NULLIF(quality_score,0))::numeric, 6) AS \"$/quality_pt\" FROM bench_run_results WHERE $__timeFilter(created_at) GROUP BY model, tier ORDER BY \"J/token\" ASC NULLS LAST"
+        }
+      ]
+    },
+    {
+      "type": "barchart",
+      "id": 202,
+      "title": "Joules per Token by Model",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 90
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisLabel": "J/token",
+            "fillOpacity": 80,
+            "gradientMode": "scheme",
+            "lineWidth": 1,
+            "axisFontSize": 14
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "barWidth": 0.8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "editorMode": "code",
+          "rawSql": "SELECT model AS \"Model\", ROUND(AVG(joules_per_token),3) AS \"J/token\" FROM bench_run_results WHERE $__timeFilter(created_at) AND joules_per_token IS NOT NULL GROUP BY model ORDER BY \"J/token\" ASC NULLS LAST"
+        }
+      ]
+    },
+    {
+      "type": "barchart",
+      "id": 203,
+      "title": "Cost per Quality Point by Tier",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 90
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisLabel": "$/quality pt",
+            "fillOpacity": 80,
+            "gradientMode": "scheme",
+            "lineWidth": 1,
+            "axisFontSize": 14
+          },
+          "unit": "currencyUSD",
+          "decimals": 6,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "barWidth": 0.8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(tier, model) AS \"Tier\", ROUND(AVG(cost_usd / NULLIF(quality_score,0))::numeric, 6) AS \"$/quality pt\" FROM bench_run_results WHERE $__timeFilter(created_at) AND quality_score IS NOT NULL GROUP BY COALESCE(tier, model) ORDER BY \"$/quality pt\" ASC NULLS LAST"
+        }
+      ]
     }
   ],
   "refresh": "5m",
@@ -1115,6 +1291,6 @@
   },
   "title": "Cost & Analytics",
   "uid": "cost-analytics",
-  "version": 3,
+  "version": 4,
   "id": null
 }
