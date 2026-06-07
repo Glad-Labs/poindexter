@@ -18,6 +18,7 @@ Task dispatch lives in the Prefect server at ``http://localhost:4200``
 import asyncio
 import os
 from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 from services.logger_config import get_logger
@@ -74,6 +75,85 @@ class StartupManager:
         else:
             logger.info("[startup] All secrets validated OK")
 
+    @staticmethod
+    def _scan_syntax_errors(modules_dir) -> list[tuple[str, str]]:
+        """Return (path, error_message) for every .py file under modules_dir with a SyntaxError.
+
+        Skips __pycache__ directories. Called by _check_module_syntax() and
+        directly in tests.
+        """
+        import py_compile
+
+        errors: list[tuple[str, str]] = []
+        checked = 0
+        for py_file in sorted(Path(modules_dir).rglob("*.py")):
+            if "__pycache__" in py_file.parts:
+                continue
+            checked += 1
+            try:
+                py_compile.compile(str(py_file), doraise=True)
+            except py_compile.PyCompileError as exc:
+                errors.append((str(py_file), str(exc)))
+        logger.debug("[startup] Syntax scan: %d file(s) checked, %d error(s)", checked, len(errors))
+        return errors
+
+    def _check_module_syntax(self) -> None:
+        """Syntax-check every .py file under modules/ before importing anything.
+
+        Catches git merge conflict markers (<<<<<<< / ======= / >>>>>>>) and
+        any other SyntaxErrors introduced into bind-mounted code before uvicorn
+        gets a chance to import the broken file and crash-loop with exit code 0.
+
+        Uses py_compile.compile() — pure bytecode compilation, no execution.
+        Fails loud: logs the offending file + line, notifies the operator, and
+        exits 1 so Docker restart policy kicks in with an obvious error rather
+        than a cryptic exit-0 loop.
+        """
+        import sys as _sys
+
+        modules_dir = Path(__file__).parent.parent / "modules"
+        if not modules_dir.is_dir():
+            logger.warning("[startup] modules/ dir not found at %s — skipping syntax check", modules_dir)
+            return
+
+        errors = self._scan_syntax_errors(modules_dir)
+
+        if not errors:
+            logger.info("[startup] Syntax check OK (%d file(s) in modules/)", sum(
+                1 for f in modules_dir.rglob("*.py") if "__pycache__" not in f.parts
+            ))
+            return
+
+        for path, msg in errors:
+            logger.critical("[startup] SYNTAX ERROR in %s: %s", path, msg)
+
+        detail_lines = "\n".join(f"  {p}: {m}" for p, m in errors)
+        detail = (
+            f"{len(errors)} syntax error(s) found in modules/ at startup:\n{detail_lines}\n\n"
+            "Most likely cause: unresolved git merge conflict markers (<<<<<<< / ======= / >>>>>>>).\n"
+            "Fix: resolve the conflict in the host checkout and restart the worker."
+        )
+
+        try:
+            _here = Path(__file__).resolve()
+            for _candidate in list(_here.parents) + [Path("/opt/poindexter")]:
+                if (_candidate / "brain").is_dir():
+                    if str(_candidate) not in _sys.path:
+                        _sys.path.insert(0, str(_candidate))
+                    break
+            from brain.operator_notifier import notify_operator
+
+            notify_operator(
+                title=f"Worker cannot start — {len(errors)} syntax error(s) in modules/",
+                detail=detail,
+                source="worker.startup_manager",
+                severity="critical",
+            )
+        except Exception as notify_err:
+            logger.error("[startup] operator_notifier failed: %s", notify_err)
+
+        _sys.exit(1)
+
     async def initialize_all_services(self) -> dict[str, Any]:
         """
         Initialize all services in sequence.
@@ -96,6 +176,10 @@ class StartupManager:
 
             # Step 0: Validate secrets before any heavy initialization
             self._validate_secrets()
+
+            # Step 0.5: Syntax-check modules/ before any imports — catches merge
+            # conflict markers that cause exit-0 crash-loops (glad-labs-stack#621).
+            self._check_module_syntax()
 
             # Step 1: Initialize PostgreSQL database (MANDATORY)
             await self._initialize_database()
