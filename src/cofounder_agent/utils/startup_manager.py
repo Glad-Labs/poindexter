@@ -82,8 +82,6 @@ class StartupManager:
         Skips __pycache__ directories. Called by _check_module_syntax() and
         directly in tests.
         """
-        import py_compile
-
         errors: list[tuple[str, str]] = []
         checked = 0
         for py_file in sorted(Path(modules_dir).rglob("*.py")):
@@ -91,9 +89,10 @@ class StartupManager:
                 continue
             checked += 1
             try:
-                py_compile.compile(str(py_file), doraise=True)
-            except py_compile.PyCompileError as exc:
-                errors.append((str(py_file), str(exc)))
+                source = py_file.read_bytes()
+                compile(source, str(py_file), "exec")
+            except SyntaxError as exc:
+                errors.append((str(py_file), f"{exc.msg} (line {exc.lineno})"))
         logger.debug("[startup] Syntax scan: %d file(s) checked, %d error(s)", checked, len(errors))
         return errors
 

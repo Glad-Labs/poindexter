@@ -8,6 +8,9 @@ The 2026-06-07 crash-loop root cause: content_module.py had unresolved
 git merge conflict markers (<<<<<<< HEAD) which caused a SyntaxError.
 The worker exited with code 0 on every restart attempt, making the root
 cause non-obvious. This check catches it before uvicorn even starts.
+
+Uses the built-in compile() — no .pyc writes — so it works even when
+the container filesystem is read-only for __pycache__.
 """
 
 import sys
@@ -73,6 +76,11 @@ class TestScanSyntaxErrors:
         paths = {e[0] for e in errors}
         assert any("bad1.py" in p for p in paths)
         assert any("bad2.py" in p for p in paths)
+
+    def test_does_not_write_pyc_files(self, tmp_path):
+        (tmp_path / "ok.py").write_text("x = 1\n")
+        StartupManager._scan_syntax_errors(tmp_path)
+        assert not any(tmp_path.rglob("*.pyc")), "Must not write .pyc files (read-only container filesystem)"
 
 
 # ---------------------------------------------------------------------------
