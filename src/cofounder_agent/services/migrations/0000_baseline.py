@@ -1,61 +1,53 @@
-"""Baseline migration — schema + seed data as of v0.6.0.
+"""Baseline migration — schema + seed data as of v0.7.0.
 
-This single migration replaces the 169 legacy ``0xxx_*.py`` files
-(squashed 2026-05-08 under Glad-Labs/poindexter#30) PLUS the 66
-timestamped ``20260509_*`` through ``20260529_*`` migrations that
-accumulated since (61 squashed 2026-05-28 — Phase C; a further 5
-post-#691 migrations folded in 2026-05-29 — Phase D). 235 total
-historical migrations folded into this one file.
+This single migration replaces all prior migration files (Phase E squash,
+2026-06-06, under Glad-Labs/poindexter). It supersedes:
 
-The Phase D flatten (2026-05-29) absorbed the five migrations that
-landed after the Phase C squash (#691):
+- The 0000_baseline.py that captured the Phase D squash (2026-05-29,
+  which itself absorbed 235 prior migrations through 20260529_*).
+- All 55 timestamped migrations from 20260529_050524_* through
+  20260606_233518_* that accumulated after the Phase D squash.
 
-- ``20260528_193105`` — seed ``media_approval_discord_notify_enabled``.
-- ``20260528_204250`` — lab-observability columns (niche_slug /
-  prompt_template_key / prompt_template_version across
-  capability_outcomes + routing_outcomes + published_post_edit_metrics)
-  + the ``lab_outcomes_v1`` view.
-- ``20260528_223439`` — seed the 3 Cloudflare Analytics beacon keys
-  (``cloudflare_analytics_api_token`` is is_secret=true and is seeded
-  with an EMPTY value, same as every other secret in seeds.sql).
-- ``20260529_000342`` — ``experiments`` + ``experiment_variants`` tables,
-  ``capability_outcomes.variant_id`` FK, extended ``lab_outcomes_v1`` +
-  ``experiment_variant_scorecard_v1`` view.
-- ``20260529_012228`` — ``experiments.winner_variant_label`` column.
+Key schema additions since Phase D:
+- ``alert_actions`` table (brain auto-triage remediation registry)
+- ``jwt_blocklist`` table (server-side token revocation)
+- ``atom_runs`` table (per-atom run + outcome capture on graph_def path)
+- ``pipeline_gate_history.actor`` column (audit who triggered gate events)
+- ``media_approvals.dispatched_at`` column (media dispatch idempotency)
 
-Why the second flatten:
+Key seed changes since Phase D:
+- ``pipeline_templates.canonical_blog`` v3+ graph_def (atom-cutover #355,
+  rewired multiple times through 2026-06-06)
+- ``pipeline_templates.dev_diary`` graph_def (seeded 2026-06-02)
+- Many new ``app_settings`` keys (voice, experiments, cadence SLOs,
+  anomaly probe, findings dispatcher, GPU staleness, etc.)
 
+Why:
 - Fresh-DB setup time grows linearly with migration count; CI
-  migrations-smoke was applying 62 files (baseline + 61) in series.
+  migrations-smoke was applying 56+ files in series.
 - A stale column reference in any one timestamped migration can crash
-  the unit-tier ``db_pool`` fixture and silently break every db-backed
-  test — same failure mode that motivated Phase A in 2026-05-08.
-- Matt is still the only user; the per-step audit trail of post-baseline
-  migrations carried no operational value beyond what the git log
-  already provides.
+  the db_pool fixture and silently break every db-backed test.
+- The per-step audit trail of post-baseline migrations carries no
+  operational value beyond what the git log provides.
 
-Two sibling files carry the actual SQL (kept out of this Python module
-so diffs are readable):
+Two sibling files carry the actual SQL:
 
-- ``0000_baseline.schema.sql`` — sanitized ``pg_dump --schema-only``
-  with ``CREATE TABLE → CREATE TABLE IF NOT EXISTS`` etc., so the same
-  file no-ops on Matt's prod and bootstraps a fresh DB.
+- ``0000_baseline.schema.sql`` — pg_dump --schema-only output sanitized
+  with ``CREATE TABLE → CREATE TABLE IF NOT EXISTS``, ``CREATE FUNCTION
+  → CREATE OR REPLACE FUNCTION``, etc. No-ops on Matt''s prod; bootstraps
+  a fresh DB.
 - ``0000_baseline.seeds.sql`` — non-secret ``app_settings`` rows,
-  ``qa_gates``, ``content_validator_rules``, ``niches``. Secrets stay
-  out by design; ``poindexter setup`` writes per-operator credentials
-  into bootstrap.toml + ``app_settings`` at install time.
-
-Each flatten was parity-checked against the live result of applying
-``0000_baseline + N timestamped`` on a throwaway DB (``regen_old``)
-versus applying this baseline alone (``regen_new``); schema dumps +
-seeded-data tables were equivalent after timestamp/restrict-token
-normalization. Phase D (2026-05-29) re-ran this check against the
-post-#691 tree.
+  ``qa_gates``, ``content_validator_rules``, ``niches``,
+  ``pipeline_templates``, ``external_taps``, ``publishing_adapters``,
+  ``webhook_endpoints``, ``retention_policies``, ``fact_overrides``.
+  Generated from prod DB state (Phase E, 2026-06-06). Secrets stay out;
+  ``poindexter setup`` writes per-operator credentials.
 
 New schema changes from here on go in fresh timestamped migrations
-(``YYYYMMDD_HHMMSS_<slug>.py``) — same convention as before; the runner
-sorts ``0000_baseline.py`` first because ``0`` < ``2`` lexically.
+(``YYYYMMDD_HHMMSS_<slug>.py``) — same convention; the runner sorts
+``0000_baseline.py`` first because ``0`` < ``2`` lexically.
 """
+
 
 from __future__ import annotations
 
@@ -226,7 +218,7 @@ async def up(pool) -> None:
     async with pool.acquire() as conn:
         await _execute_script(conn, schema_sql, "schema")
         await _execute_script(conn, seeds_sql, "seeds")
-    logger.info("[baseline] applied — schema + seeds in sync with v0.5.0 prod state")
+    logger.info("[baseline] applied — schema + seeds in sync with v0.7.0 prod state")
 
 
 async def down(pool) -> None:

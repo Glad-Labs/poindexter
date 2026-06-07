@@ -1942,41 +1942,45 @@ async def auto_remediate(pool):
 
 
 async def generate_daily_digest(pool):
-    """Send a daily summary to Telegram at ~9 AM (runs every cycle, fires once/day)."""
+    """Send an operator digest on a tunable cadence.
+
+    The operator can choose a shorter cadence via
+    ``brain_digest_window_hours`` (default 6). When the window is
+    24 hours or longer the digest is gated to the 13:00-14:00 UTC
+    morning window to preserve the existing daily-summary behaviour.
+    """
     try:
-        # Check if we already sent today
         row = await pool.fetchrow("""
             SELECT value FROM brain_knowledge
             WHERE entity = 'digest' AND attribute = 'last_sent'
         """)
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
+        _digest_h = await _setting_int(pool, "brain_digest_window_hours", 6)
+
         if row:
             last_sent = row["value"]
-            # Parse date and skip if same day
             try:
-                last_date = last_sent[:10]
-                today = now.strftime("%Y-%m-%d")
-                if last_date == today:
-                    return  # Already sent today
+                last_sent_dt = datetime.fromisoformat(last_sent)
+                if _digest_h >= 24:
+                    # Preserve the daily morning digest semantics when the
+                    # operator chooses a daily or longer cadence.
+                    if last_sent_dt.date() == now.date():
+                        return
+                    if not (13 <= now.hour < 14):
+                        return
+                else:
+                    if (now - last_sent_dt).total_seconds() < _digest_h * 3600:
+                        return
             except Exception as exc:
-                # poindexter#455 — used to be silent. If last_sent is
-                # malformed (e.g. operator manually edited app_settings),
-                # we fall through to "may send today" — log the malformed
-                # value so the operator can clean it up.
                 logger.warning(
-                    "[BRAIN] daily summary last-sent timestamp malformed "
-                    "(%r): %s: %s — will resend",
+                    "[BRAIN] digest last-sent timestamp malformed (%r): %s: %s — will resend",
                     last_sent, type(exc).__name__, exc,
                 )
 
-        # Only send between 13:00-14:00 UTC (~9 AM ET)
-        if not (13 <= now.hour < 14):
+        if _digest_h >= 24 and not (13 <= now.hour < 14):
             return
 
-        # Build digest — window is tunable for weekly / daily / hourly
-        # digest cadence per operator preference (#198).
-        _digest_h = await _setting_int(pool, "brain_digest_window_hours", 24)
         stats = await pool.fetchrow(f"""
             SELECT
                 (SELECT COUNT(*) FROM posts WHERE status = 'published') as total_posts,
@@ -1994,7 +1998,7 @@ async def generate_daily_digest(pool):
             return
 
         msg = (
-            f"📊 Daily Digest ({now.strftime('%b %d')})\n"
+            f"📊 Operator Digest ({now.strftime('%b %d')})\n"
             f"Posts: {stats['total_posts']} published, {stats['published_24h']} new today\n"
             f"Pipeline: {stats['pending']} pending, {stats['approval_queue']} awaiting approval, {stats['failed_24h']} failed\n"
             f"Traffic: {stats['views_today']} views today\n"
@@ -2003,17 +2007,16 @@ async def generate_daily_digest(pool):
         await send_telegram(msg, pool=pool)
         await send_discord(msg, pool=pool)  # #lab-logs channel
 
-        # Mark sent
         await pool.execute("""
             INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
             VALUES ('digest', 'last_sent', $1, 1.0, 'brain_daemon')
             ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
         """, now.isoformat())
 
-        logger.info("[BRAIN] Daily digest sent")
+        logger.info("[BRAIN] Operator digest sent")
 
     except Exception as e:
-        logger.debug("[BRAIN] Daily digest failed: %s", e)
+        logger.debug("[BRAIN] Operator digest failed: %s", e)
 
 
 async def self_maintain(pool):

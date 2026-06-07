@@ -79,7 +79,7 @@ class ContentModule:
         Phase 2 runner has somewhere to look; it's a no-op until
         Phase 3.5 moves content-specific migrations here.
         """
-        from services.module_migrations import run_module_migrations
+        from services.module_runner import run_module_migrations
 
         await run_module_migrations(pool, _MANIFEST.name, self.migrations_dir)
 

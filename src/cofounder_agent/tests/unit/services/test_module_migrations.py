@@ -1,4 +1,4 @@
-"""Unit tests for ``services.module_migrations.run_module_migrations``.
+"""Unit tests for ``services.module_runner.run_module_migrations``.
 
 These tests do NOT need a real DB — they mock ``pool`` so the runner's
 file discovery + ordering + already-applied-skip logic is pinned in
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.module_migrations import (
+from services.module_runner import (
     ModuleMigrationResult,
     run_module_migrations,
 )
@@ -170,7 +170,7 @@ async def test_logs_and_counts_when_migration_raises(tmp_path, caplog):
     )
 
     pool = _FakePool()
-    with caplog.at_level("ERROR", logger="services.module_migrations"):
+    with caplog.at_level("ERROR", logger="services.module_runner"):
         result = await run_module_migrations(
             pool=pool,
             module_name="content",
@@ -182,7 +182,7 @@ async def test_logs_and_counts_when_migration_raises(tmp_path, caplog):
     assert result.ok is False
     bad_errors = [
         r for r in caplog.records
-        if r.name == "services.module_migrations"
+        if r.name == "services.module_runner"
         and "b_bad.py" in r.message
     ]
     assert len(bad_errors) >= 1

@@ -1,24 +1,32 @@
 --
+-- PostgreSQL database dump
+--
+
+
+
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+CREATE SCHEMA IF NOT EXISTS public;
+
+
+--
+-- Extensions (required before dependent types like public.vector)
 --
 
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
 
---
---
-
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
-
---
---
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
---
---
-
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
+
 --
+-- Name: app_settings_auto_encrypt(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.app_settings_auto_encrypt() RETURNS trigger
@@ -55,7 +63,9 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: content_tasks_delete_redirect(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.content_tasks_delete_redirect() RETURNS trigger
@@ -67,7 +77,9 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: content_tasks_insert_redirect(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.content_tasks_insert_redirect() RETURNS trigger
@@ -97,7 +109,9 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: content_tasks_update_redirect(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.content_tasks_update_redirect() RETURNS trigger
@@ -150,7 +164,9 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: experiments_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.experiments_touch_updated_at() RETURNS trigger
@@ -162,14 +178,18 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: external_taps_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.external_taps_touch_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
+
 --
+-- Name: notify_pipeline_event(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.notify_pipeline_event() RETURNS trigger
@@ -181,7 +201,9 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: object_stores_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.object_stores_touch_updated_at() RETURNS trigger
@@ -193,14 +215,18 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: publishing_adapters_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.publishing_adapters_touch_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
+
 --
+-- Name: qa_gates_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.qa_gates_touch_updated_at() RETURNS trigger
@@ -212,25 +238,67 @@ BEGIN
 END;
 $$;
 
+
 --
+-- Name: retention_policies_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.retention_policies_touch_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
+
 --
+-- Name: webhook_endpoints_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE FUNCTION public.webhook_endpoints_touch_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
-SET default_tablespace = '';
 
-SET default_table_access_method = heap;
+
 
 --
+-- Name: alert_actions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.alert_actions (
+    id integer NOT NULL,
+    pattern text NOT NULL,
+    action_type text DEFAULT 'notify'::text NOT NULL,
+    cooldown_minutes integer DEFAULT 15 NOT NULL,
+    escalate_after_failures integer DEFAULT 1 NOT NULL,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    total_triggers integer DEFAULT 0 NOT NULL,
+    last_triggered_at timestamp with time zone,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: alert_actions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.alert_actions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: alert_actions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.alert_actions_id_seq OWNED BY public.alert_actions.id;
+
+
+--
+-- Name: alert_dedup_state; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.alert_dedup_state (
@@ -244,7 +312,9 @@ CREATE TABLE IF NOT EXISTS public.alert_dedup_state (
     sample_message text NOT NULL
 );
 
+
 --
+-- Name: alert_events; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.alert_events (
@@ -263,7 +333,9 @@ CREATE TABLE IF NOT EXISTS public.alert_events (
     dispatch_result text
 );
 
+
 --
+-- Name: alert_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.alert_events_id_seq
@@ -273,12 +345,16 @@ CREATE SEQUENCE IF NOT EXISTS public.alert_events_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: alert_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.alert_events_id_seq OWNED BY public.alert_events.id;
 
+
 --
+-- Name: alert_log; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.alert_log (
@@ -293,7 +369,9 @@ CREATE TABLE IF NOT EXISTS public.alert_log (
     created_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: alert_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.alert_log_id_seq
@@ -303,12 +381,16 @@ CREATE SEQUENCE IF NOT EXISTS public.alert_log_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: alert_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.alert_log_id_seq OWNED BY public.alert_log.id;
 
+
 --
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.app_settings (
@@ -323,7 +405,9 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     is_active boolean DEFAULT true NOT NULL
 );
 
+
 --
+-- Name: app_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.app_settings_id_seq
@@ -334,12 +418,16 @@ CREATE SEQUENCE IF NOT EXISTS public.app_settings_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: app_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.app_settings_id_seq OWNED BY public.app_settings.id;
 
+
 --
+-- Name: app_state; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.app_state (
@@ -348,7 +436,59 @@ CREATE TABLE IF NOT EXISTS public.app_state (
     content text
 );
 
+
 --
+-- Name: atom_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.atom_runs (
+    id bigint NOT NULL,
+    run_id text NOT NULL,
+    task_id text,
+    template_slug text,
+    seq integer DEFAULT 0 NOT NULL,
+    atom text NOT NULL,
+    node_id text,
+    tier text,
+    model text,
+    latency_ms integer DEFAULT 0 NOT NULL,
+    cost numeric(12,6),
+    retries integer DEFAULT 0 NOT NULL,
+    status text NOT NULL,
+    input_digest text,
+    output_digest text,
+    input_keys text[],
+    output_keys text[],
+    metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
+    post_id uuid,
+    decision text,
+    quality_score numeric(5,2),
+    edit_distance integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: atom_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.atom_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: atom_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.atom_runs_id_seq OWNED BY public.atom_runs.id;
+
+
+--
+-- Name: audit_log; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.audit_log (
@@ -361,7 +501,9 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
     severity character varying(10) DEFAULT 'info'::character varying
 );
 
+
 --
+-- Name: audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.audit_log_id_seq
@@ -371,22 +513,16 @@ CREATE SEQUENCE IF NOT EXISTS public.audit_log_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: audit_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
 
---
---
-
-CREATE TABLE IF NOT EXISTS public.auth_token (
-    id character varying(255) NOT NULL,
-    token_hash character varying(255),
-    user_id bigint,
-    expires_unix bigint
-);
 
 --
+-- Name: authors; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.authors (
@@ -397,7 +533,9 @@ CREATE TABLE IF NOT EXISTS public.authors (
     created_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: brain_decisions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.brain_decisions (
@@ -410,7 +548,9 @@ CREATE TABLE IF NOT EXISTS public.brain_decisions (
     created_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: brain_decisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.brain_decisions ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -422,7 +562,9 @@ ALTER TABLE public.brain_decisions ALTER COLUMN id ADD GENERATED BY DEFAULT AS I
     CACHE 1
 );
 
+
 --
+-- Name: brain_knowledge; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.brain_knowledge (
@@ -439,7 +581,9 @@ CREATE TABLE IF NOT EXISTS public.brain_knowledge (
     expires_at timestamp with time zone
 );
 
+
 --
+-- Name: brain_knowledge_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.brain_knowledge ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -451,7 +595,9 @@ ALTER TABLE public.brain_knowledge ALTER COLUMN id ADD GENERATED BY DEFAULT AS I
     CACHE 1
 );
 
+
 --
+-- Name: campaign_email_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.campaign_email_logs (
@@ -471,7 +617,9 @@ CREATE TABLE IF NOT EXISTS public.campaign_email_logs (
     bounce_reason text
 );
 
+
 --
+-- Name: campaign_email_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.campaign_email_logs_id_seq
@@ -482,12 +630,16 @@ CREATE SEQUENCE IF NOT EXISTS public.campaign_email_logs_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: campaign_email_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.campaign_email_logs_id_seq OWNED BY public.campaign_email_logs.id;
 
+
 --
+-- Name: capability_outcomes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.capability_outcomes (
@@ -511,7 +663,9 @@ CREATE TABLE IF NOT EXISTS public.capability_outcomes (
     variant_id uuid
 );
 
+
 --
+-- Name: capability_outcomes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.capability_outcomes_id_seq
@@ -521,12 +675,16 @@ CREATE SEQUENCE IF NOT EXISTS public.capability_outcomes_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: capability_outcomes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.capability_outcomes_id_seq OWNED BY public.capability_outcomes.id;
 
+
 --
+-- Name: capability_registry; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.capability_registry (
@@ -545,7 +703,9 @@ CREATE TABLE IF NOT EXISTS public.capability_registry (
     updated_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: categories; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.categories (
@@ -557,7 +717,9 @@ CREATE TABLE IF NOT EXISTS public.categories (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: checkpoint_blobs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.checkpoint_blobs (
@@ -569,7 +731,18 @@ CREATE TABLE IF NOT EXISTS public.checkpoint_blobs (
     blob bytea
 );
 
+
 --
+-- Name: checkpoint_migrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.checkpoint_migrations (
+    v integer NOT NULL
+);
+
+
+--
+-- Name: checkpoint_writes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.checkpoint_writes (
@@ -584,7 +757,9 @@ CREATE TABLE IF NOT EXISTS public.checkpoint_writes (
     task_path text DEFAULT ''::text NOT NULL
 );
 
+
 --
+-- Name: checkpoints; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.checkpoints (
@@ -597,7 +772,9 @@ CREATE TABLE IF NOT EXISTS public.checkpoints (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
+
 --
+-- Name: content_revisions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.content_revisions (
@@ -615,7 +792,9 @@ CREATE TABLE IF NOT EXISTS public.content_revisions (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: pipeline_distributions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.pipeline_distributions (
@@ -632,7 +811,9 @@ CREATE TABLE IF NOT EXISTS public.pipeline_distributions (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: pipeline_gate_history; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.pipeline_gate_history (
@@ -644,10 +825,13 @@ CREATE TABLE IF NOT EXISTS public.pipeline_gate_history (
     feedback text,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor character varying(100) DEFAULT 'system'::character varying NOT NULL,
     CONSTRAINT pipeline_gate_history_one_id CHECK (((task_id IS NOT NULL) <> (post_id IS NOT NULL)))
 );
 
+
 --
+-- Name: pipeline_tasks; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.pipeline_tasks (
@@ -684,7 +868,9 @@ CREATE TABLE IF NOT EXISTS public.pipeline_tasks (
     retry_count integer DEFAULT 0 NOT NULL
 );
 
+
 --
+-- Name: pipeline_versions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.pipeline_versions (
@@ -705,7 +891,9 @@ CREATE TABLE IF NOT EXISTS public.pipeline_versions (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: content_tasks; Type: VIEW; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE VIEW public.content_tasks AS
@@ -786,7 +974,9 @@ CREATE OR REPLACE VIEW public.content_tasks AS
            FROM public.pipeline_versions
           WHERE ((pipeline_versions.task_id)::text = (pt.task_id)::text))))));
 
+
 --
+-- Name: content_validator_rules; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.content_validator_rules (
@@ -802,7 +992,9 @@ CREATE TABLE IF NOT EXISTS public.content_validator_rules (
     CONSTRAINT content_validator_rules_severity_check CHECK ((severity = ANY (ARRAY['info'::text, 'warning'::text, 'error'::text])))
 );
 
+
 --
+-- Name: cost_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.cost_logs (
@@ -826,7 +1018,9 @@ CREATE TABLE IF NOT EXISTS public.cost_logs (
     electricity_kwh numeric(12,8)
 );
 
+
 --
+-- Name: cost_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.cost_logs ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -838,7 +1032,9 @@ ALTER TABLE public.cost_logs ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTIT
     CACHE 1
 );
 
+
 --
+-- Name: decision_log; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.decision_log (
@@ -857,7 +1053,9 @@ CREATE TABLE IF NOT EXISTS public.decision_log (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: discovery_runs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.discovery_runs (
@@ -871,7 +1069,9 @@ CREATE TABLE IF NOT EXISTS public.discovery_runs (
     error text
 );
 
+
 --
+-- Name: electricity_costs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.electricity_costs (
@@ -883,7 +1083,9 @@ CREATE TABLE IF NOT EXISTS public.electricity_costs (
     rate_per_kwh double precision DEFAULT 0.14770
 );
 
+
 --
+-- Name: electricity_costs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.electricity_costs_id_seq
@@ -893,12 +1095,16 @@ CREATE SEQUENCE IF NOT EXISTS public.electricity_costs_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: electricity_costs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.electricity_costs_id_seq OWNED BY public.electricity_costs.id;
 
+
 --
+-- Name: embeddings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.embeddings (
@@ -919,7 +1125,9 @@ CREATE TABLE IF NOT EXISTS public.embeddings (
     text_search tsvector GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, (COALESCE(text_preview, ''::character varying))::text)) STORED
 );
 
+
 --
+-- Name: embeddings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.embeddings_id_seq
@@ -929,12 +1137,16 @@ CREATE SEQUENCE IF NOT EXISTS public.embeddings_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: embeddings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.embeddings_id_seq OWNED BY public.embeddings.id;
 
+
 --
+-- Name: experiment_variants; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.experiment_variants (
@@ -952,7 +1164,9 @@ CREATE TABLE IF NOT EXISTS public.experiment_variants (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: experiments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.experiments (
@@ -974,7 +1188,9 @@ CREATE TABLE IF NOT EXISTS public.experiments (
     CONSTRAINT experiments_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'paused'::text, 'concluded'::text])))
 );
 
+
 --
+-- Name: page_views; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.page_views (
@@ -986,7 +1202,9 @@ CREATE TABLE IF NOT EXISTS public.page_views (
     created_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: posts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.posts (
@@ -1026,7 +1244,9 @@ CREATE TABLE IF NOT EXISTS public.posts (
     video_shot_list jsonb
 );
 
+
 --
+-- Name: published_post_edit_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.published_post_edit_metrics (
@@ -1050,7 +1270,9 @@ CREATE TABLE IF NOT EXISTS public.published_post_edit_metrics (
     prompt_template_version integer
 );
 
+
 --
+-- Name: routing_outcomes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.routing_outcomes (
@@ -1072,7 +1294,9 @@ CREATE TABLE IF NOT EXISTS public.routing_outcomes (
     prompt_template_version integer
 );
 
+
 --
+-- Name: lab_outcomes_v1; Type: VIEW; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE VIEW public.lab_outcomes_v1 AS
@@ -1118,12 +1342,9 @@ CREATE OR REPLACE VIEW public.lab_outcomes_v1 AS
      LEFT JOIN public.experiments e ON ((e.id = ev.experiment_id)))
   WHERE (co.created_at > (now() - '90 days'::interval));
 
---
---
-
-COMMENT ON VIEW public.lab_outcomes_v1 IS 'Unified read surface for the content R&D lab — joins capability_outcomes + routing_outcomes + published_post_edit_metrics + page_views per task. Phase 0 (2026-05-28). Bandit/dashboards/learnings digest read from this view.';
 
 --
+-- Name: experiment_variant_scorecard_v1; Type: VIEW; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE VIEW public.experiment_variant_scorecard_v1 AS
@@ -1151,12 +1372,9 @@ CREATE OR REPLACE VIEW public.experiment_variant_scorecard_v1 AS
      LEFT JOIN public.lab_outcomes_v1 lo ON ((lo.variant_id = ev.id)))
   GROUP BY e.id, e.key, e.niche_slug, e.status, e.objective_function, ev.id, ev.label, ev.weight, ev.active, ev.paused_at, ev.paused_reason;
 
---
---
-
-COMMENT ON VIEW public.experiment_variant_scorecard_v1 IS 'Per-variant rollup for active+concluded experiments. Read by the poindexter experiments status CLI (PR 3) and the Grafana panels (PR 4). objective_function tells the consumer which column to rank on. Phase 1 ranks manually; Phase 2 bandit reads this directly.';
 
 --
+-- Name: external_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.external_metrics (
@@ -1171,7 +1389,9 @@ CREATE TABLE IF NOT EXISTS public.external_metrics (
     fetched_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: external_taps; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.external_taps (
@@ -1197,7 +1417,9 @@ CREATE TABLE IF NOT EXISTS public.external_taps (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: fact_overrides; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.fact_overrides (
@@ -1211,7 +1433,9 @@ CREATE TABLE IF NOT EXISTS public.fact_overrides (
     updated_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: fact_overrides_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.fact_overrides_id_seq
@@ -1222,12 +1446,83 @@ CREATE SEQUENCE IF NOT EXISTS public.fact_overrides_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: fact_overrides_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.fact_overrides_id_seq OWNED BY public.fact_overrides.id;
 
+
 --
+-- Name: finance_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.finance_accounts (
+    id text NOT NULL,
+    name text NOT NULL,
+    type text NOT NULL,
+    kind text NOT NULL,
+    current_balance numeric(14,2) NOT NULL,
+    available_balance numeric(14,2) NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now(),
+    last_refreshed_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: finance_poll_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.finance_poll_runs (
+    id bigint NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    accounts_seen integer,
+    transactions_new integer,
+    transactions_updated integer,
+    status text DEFAULT 'running'::text NOT NULL,
+    error_message text
+);
+
+
+--
+-- Name: finance_poll_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.finance_poll_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: finance_poll_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.finance_poll_runs_id_seq OWNED BY public.finance_poll_runs.id;
+
+
+--
+-- Name: finance_transactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.finance_transactions (
+    id text NOT NULL,
+    account_id text NOT NULL,
+    amount numeric(14,2) NOT NULL,
+    posted_at timestamp with time zone,
+    counterparty text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'unknown'::text NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now(),
+    last_refreshed_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: financial_entries; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.financial_entries (
@@ -1242,7 +1537,9 @@ CREATE TABLE IF NOT EXISTS public.financial_entries (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: financial_entries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.financial_entries_id_seq
@@ -1253,12 +1550,16 @@ CREATE SEQUENCE IF NOT EXISTS public.financial_entries_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: financial_entries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.financial_entries_id_seq OWNED BY public.financial_entries.id;
 
+
 --
+-- Name: gpu_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.gpu_metrics (
@@ -1274,7 +1575,9 @@ CREATE TABLE IF NOT EXISTS public.gpu_metrics (
     clock_memory double precision
 );
 
+
 --
+-- Name: gpu_metrics_hourly; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.gpu_metrics_hourly (
@@ -1291,7 +1594,9 @@ CREATE TABLE IF NOT EXISTS public.gpu_metrics_hourly (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: gpu_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.gpu_metrics_id_seq
@@ -1301,12 +1606,16 @@ CREATE SEQUENCE IF NOT EXISTS public.gpu_metrics_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: gpu_metrics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.gpu_metrics_id_seq OWNED BY public.gpu_metrics.id;
 
+
 --
+-- Name: gpu_task_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.gpu_task_sessions (
@@ -1328,7 +1637,9 @@ CREATE TABLE IF NOT EXISTS public.gpu_task_sessions (
     tokens_generated integer DEFAULT 0
 );
 
+
 --
+-- Name: internal_topic_candidates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.internal_topic_candidates (
@@ -1352,7 +1663,21 @@ CREATE TABLE IF NOT EXISTS public.internal_topic_candidates (
     CONSTRAINT internal_topic_candidates_source_kind_check CHECK ((source_kind = ANY (ARRAY['claude_session'::text, 'brain_knowledge'::text, 'audit_event'::text, 'git_commit'::text, 'decision_log'::text, 'memory_file'::text, 'post_history'::text])))
 );
 
+
 --
+-- Name: jwt_blocklist; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.jwt_blocklist (
+    jti text NOT NULL,
+    user_id text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: media_approvals; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.media_approvals (
@@ -1366,11 +1691,15 @@ CREATE TABLE IF NOT EXISTS public.media_approvals (
     quality_score numeric,
     quality_signals jsonb,
     quality_evaluated_at timestamp with time zone,
+    dispatched_at timestamp with time zone,
+    dispatch_success boolean,
     CONSTRAINT media_approvals_medium_check CHECK ((medium = ANY (ARRAY['podcast'::text, 'video'::text, 'video_short'::text]))),
     CONSTRAINT media_approvals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))
 );
 
+
 --
+-- Name: media_assets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.media_assets (
@@ -1403,7 +1732,9 @@ CREATE TABLE IF NOT EXISTS public.media_assets (
     platform_video_ids jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
+
 --
+-- Name: model_performance; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.model_performance (
@@ -1424,7 +1755,9 @@ CREATE TABLE IF NOT EXISTS public.model_performance (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: module_schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.module_schema_migrations (
@@ -1434,7 +1767,9 @@ CREATE TABLE IF NOT EXISTS public.module_schema_migrations (
     applied_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: module_schema_migrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.module_schema_migrations_id_seq
@@ -1445,12 +1780,16 @@ CREATE SEQUENCE IF NOT EXISTS public.module_schema_migrations_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: module_schema_migrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.module_schema_migrations_id_seq OWNED BY public.module_schema_migrations.id;
 
+
 --
+-- Name: newsletter_subscribers; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
@@ -1474,7 +1813,9 @@ CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
     unsubscribe_token text NOT NULL
 );
 
+
 --
+-- Name: newsletter_subscribers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.newsletter_subscribers_id_seq
@@ -1485,12 +1826,16 @@ CREATE SEQUENCE IF NOT EXISTS public.newsletter_subscribers_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: newsletter_subscribers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.newsletter_subscribers_id_seq OWNED BY public.newsletter_subscribers.id;
 
+
 --
+-- Name: niche_goals; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.niche_goals (
@@ -1501,7 +1846,9 @@ CREATE TABLE IF NOT EXISTS public.niche_goals (
     CONSTRAINT niche_goals_weight_pct_check CHECK (((weight_pct >= 0) AND (weight_pct <= 100)))
 );
 
+
 --
+-- Name: niche_sources; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.niche_sources (
@@ -1512,7 +1859,9 @@ CREATE TABLE IF NOT EXISTS public.niche_sources (
     CONSTRAINT niche_sources_weight_pct_check CHECK (((weight_pct >= 0) AND (weight_pct <= 100)))
 );
 
+
 --
+-- Name: niches; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.niches (
@@ -1532,39 +1881,9 @@ CREATE TABLE IF NOT EXISTS public.niches (
     CONSTRAINT niches_discovery_cadence_minute_floor_check CHECK ((discovery_cadence_minute_floor >= 1))
 );
 
---
---
-
-CREATE TABLE IF NOT EXISTS public.notification (
-    id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    repo_id bigint NOT NULL,
-    status smallint NOT NULL,
-    source smallint NOT NULL,
-    issue_id bigint NOT NULL,
-    commit_id character varying(255),
-    comment_id bigint,
-    updated_by bigint NOT NULL,
-    created_unix bigint NOT NULL,
-    updated_unix bigint NOT NULL
-);
 
 --
---
-
-CREATE SEQUENCE IF NOT EXISTS public.notification_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
---
---
-
-ALTER SEQUENCE public.notification_id_seq OWNED BY public.notification.id;
-
---
+-- Name: oauth_authorization_codes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.oauth_authorization_codes (
@@ -1580,7 +1899,9 @@ CREATE TABLE IF NOT EXISTS public.oauth_authorization_codes (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: oauth_clients; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.oauth_clients (
@@ -1598,7 +1919,9 @@ CREATE TABLE IF NOT EXISTS public.oauth_clients (
     client_secret_encrypted text NOT NULL
 );
 
+
 --
+-- Name: object_stores; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.object_stores (
@@ -1623,7 +1946,9 @@ CREATE TABLE IF NOT EXISTS public.object_stores (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: operator_notes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.operator_notes (
@@ -1636,7 +1961,9 @@ CREATE TABLE IF NOT EXISTS public.operator_notes (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: operator_notes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.operator_notes_id_seq
@@ -1646,12 +1973,16 @@ CREATE SEQUENCE IF NOT EXISTS public.operator_notes_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: operator_notes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.operator_notes_id_seq OWNED BY public.operator_notes.id;
 
+
 --
+-- Name: orchestrator_training_data; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.orchestrator_training_data (
@@ -1672,7 +2003,9 @@ CREATE TABLE IF NOT EXISTS public.orchestrator_training_data (
     execution_time_ms integer
 );
 
+
 --
+-- Name: orchestrator_training_data_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.orchestrator_training_data ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -1684,7 +2017,9 @@ ALTER TABLE public.orchestrator_training_data ALTER COLUMN id ADD GENERATED BY D
     CACHE 1
 );
 
+
 --
+-- Name: page_views_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.page_views_id_seq
@@ -1694,12 +2029,16 @@ CREATE SEQUENCE IF NOT EXISTS public.page_views_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: page_views_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.page_views_id_seq OWNED BY public.page_views.id;
 
+
 --
+-- Name: pipeline_atoms; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.pipeline_atoms (
@@ -1716,7 +2055,9 @@ CREATE TABLE IF NOT EXISTS public.pipeline_atoms (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: pipeline_atoms_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.pipeline_atoms_id_seq
@@ -1726,12 +2067,16 @@ CREATE SEQUENCE IF NOT EXISTS public.pipeline_atoms_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: pipeline_atoms_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.pipeline_atoms_id_seq OWNED BY public.pipeline_atoms.id;
 
+
 --
+-- Name: pipeline_distributions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.pipeline_distributions_id_seq
@@ -1742,12 +2087,16 @@ CREATE SEQUENCE IF NOT EXISTS public.pipeline_distributions_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: pipeline_distributions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.pipeline_distributions_id_seq OWNED BY public.pipeline_distributions.id;
 
+
 --
+-- Name: pipeline_gate_history_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.pipeline_gate_history_id_seq
@@ -1757,12 +2106,16 @@ CREATE SEQUENCE IF NOT EXISTS public.pipeline_gate_history_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: pipeline_gate_history_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.pipeline_gate_history_id_seq OWNED BY public.pipeline_gate_history.id;
 
+
 --
+-- Name: pipeline_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.pipeline_tasks_id_seq
@@ -1773,12 +2126,16 @@ CREATE SEQUENCE IF NOT EXISTS public.pipeline_tasks_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: pipeline_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.pipeline_tasks_id_seq OWNED BY public.pipeline_tasks.id;
 
+
 --
+-- Name: pipeline_tasks_view; Type: VIEW; Schema: public; Owner: -
 --
 
 CREATE OR REPLACE VIEW public.pipeline_tasks_view AS
@@ -1854,7 +2211,9 @@ CREATE OR REPLACE VIEW public.pipeline_tasks_view AS
            FROM public.pipeline_versions
           WHERE ((pipeline_versions.task_id)::text = (pt.task_id)::text))))));
 
+
 --
+-- Name: pipeline_templates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.pipeline_templates (
@@ -1870,7 +2229,9 @@ CREATE TABLE IF NOT EXISTS public.pipeline_templates (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: pipeline_templates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.pipeline_templates_id_seq
@@ -1880,12 +2241,16 @@ CREATE SEQUENCE IF NOT EXISTS public.pipeline_templates_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: pipeline_templates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.pipeline_templates_id_seq OWNED BY public.pipeline_templates.id;
 
+
 --
+-- Name: pipeline_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.pipeline_versions_id_seq
@@ -1896,15 +2261,16 @@ CREATE SEQUENCE IF NOT EXISTS public.pipeline_versions_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: pipeline_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.pipeline_versions_id_seq OWNED BY public.pipeline_versions.id;
 
---
---
 
 --
+-- Name: post_performance; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.post_performance (
@@ -1933,7 +2299,9 @@ CREATE TABLE IF NOT EXISTS public.post_performance (
     period text DEFAULT 'snapshot'::text
 );
 
+
 --
+-- Name: post_tags; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.post_tags (
@@ -1941,7 +2309,9 @@ CREATE TABLE IF NOT EXISTS public.post_tags (
     tag_id uuid NOT NULL
 );
 
+
 --
+-- Name: published_post_edit_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.published_post_edit_metrics_id_seq
@@ -1951,12 +2321,16 @@ CREATE SEQUENCE IF NOT EXISTS public.published_post_edit_metrics_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: published_post_edit_metrics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.published_post_edit_metrics_id_seq OWNED BY public.published_post_edit_metrics.id;
 
+
 --
+-- Name: publishing_adapters; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.publishing_adapters (
@@ -1980,7 +2354,9 @@ CREATE TABLE IF NOT EXISTS public.publishing_adapters (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: qa_gates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.qa_gates (
@@ -2003,7 +2379,9 @@ CREATE TABLE IF NOT EXISTS public.qa_gates (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: quality_evaluations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.quality_evaluations (
@@ -2030,7 +2408,9 @@ CREATE TABLE IF NOT EXISTS public.quality_evaluations (
     context_data jsonb DEFAULT '{}'::jsonb
 );
 
+
 --
+-- Name: quality_evaluations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.quality_evaluations ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -2042,7 +2422,9 @@ ALTER TABLE public.quality_evaluations ALTER COLUMN id ADD GENERATED BY DEFAULT 
     CACHE 1
 );
 
+
 --
+-- Name: retention_policies; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.retention_policies (
@@ -2070,7 +2452,9 @@ CREATE TABLE IF NOT EXISTS public.retention_policies (
     CONSTRAINT retention_policies_parameter_required_chk CHECK (((ttl_days IS NOT NULL) OR (downsample_rule IS NOT NULL) OR (summarize_handler IS NOT NULL)))
 );
 
+
 --
+-- Name: revenue_events; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.revenue_events (
@@ -2091,7 +2475,9 @@ CREATE TABLE IF NOT EXISTS public.revenue_events (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: routing_outcomes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.routing_outcomes ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -2103,7 +2489,9 @@ ALTER TABLE public.routing_outcomes ALTER COLUMN id ADD GENERATED BY DEFAULT AS 
     CACHE 1
 );
 
+
 --
+-- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.schema_migrations (
@@ -2112,7 +2500,9 @@ CREATE TABLE IF NOT EXISTS public.schema_migrations (
     applied_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: schema_migrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.schema_migrations_id_seq
@@ -2123,12 +2513,16 @@ CREATE SEQUENCE IF NOT EXISTS public.schema_migrations_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: schema_migrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.schema_migrations_id_seq OWNED BY public.schema_migrations.id;
 
+
 --
+-- Name: sensor_samples; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.sensor_samples (
@@ -2142,7 +2536,9 @@ CREATE TABLE IF NOT EXISTS public.sensor_samples (
     fetched_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: sensor_samples_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.sensor_samples_id_seq
@@ -2152,12 +2548,16 @@ CREATE SEQUENCE IF NOT EXISTS public.sensor_samples_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: sensor_samples_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.sensor_samples_id_seq OWNED BY public.sensor_samples.id;
 
+
 --
+-- Name: subscriber_events; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.subscriber_events (
@@ -2171,7 +2571,9 @@ CREATE TABLE IF NOT EXISTS public.subscriber_events (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: sync_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.sync_metrics (
@@ -2181,7 +2583,9 @@ CREATE TABLE IF NOT EXISTS public.sync_metrics (
     synced_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: sync_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.sync_metrics_id_seq
@@ -2192,12 +2596,16 @@ CREATE SEQUENCE IF NOT EXISTS public.sync_metrics_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: sync_metrics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.sync_metrics_id_seq OWNED BY public.sync_metrics.id;
 
+
 --
+-- Name: tags; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.tags (
@@ -2209,7 +2617,9 @@ CREATE TABLE IF NOT EXISTS public.tags (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: task_failure_alerts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.task_failure_alerts (
@@ -2221,7 +2631,9 @@ CREATE TABLE IF NOT EXISTS public.task_failure_alerts (
     last_severity text
 );
 
+
 --
+-- Name: task_status_history; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.task_status_history (
@@ -2237,7 +2649,9 @@ CREATE TABLE IF NOT EXISTS public.task_status_history (
     CONSTRAINT chk_status_history_old_status CHECK (((old_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('queued'::character varying)::text, ('in_progress'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text, ('awaiting_approval'::character varying)::text, ('approved'::character varying)::text, ('validation_failed'::character varying)::text, ('validation_error'::character varying)::text])))
 );
 
+
 --
+-- Name: task_status_history_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.task_status_history ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -2249,7 +2663,9 @@ ALTER TABLE public.task_status_history ALTER COLUMN id ADD GENERATED BY DEFAULT 
     CACHE 1
 );
 
+
 --
+-- Name: topic_batches; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.topic_batches (
@@ -2265,7 +2681,9 @@ CREATE TABLE IF NOT EXISTS public.topic_batches (
     CONSTRAINT topic_batches_status_check CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text, 'expired'::text])))
 );
 
+
 --
+-- Name: topic_candidates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.topic_candidates (
@@ -2287,7 +2705,9 @@ CREATE TABLE IF NOT EXISTS public.topic_candidates (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
 --
+-- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.users (
@@ -2305,7 +2725,9 @@ CREATE TABLE IF NOT EXISTS public.users (
     last_login_at timestamp with time zone
 );
 
+
 --
+-- Name: webhook_endpoints; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.webhook_endpoints (
@@ -2333,7 +2755,9 @@ CREATE TABLE IF NOT EXISTS public.webhook_endpoints (
     CONSTRAINT webhook_endpoints_signing_algorithm_check CHECK ((signing_algorithm = ANY (ARRAY['none'::text, 'hmac-sha256'::text, 'svix'::text, 'bearer'::text])))
 );
 
+
 --
+-- Name: webhook_events; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.webhook_events (
@@ -2346,7 +2770,9 @@ CREATE TABLE IF NOT EXISTS public.webhook_events (
     created_at timestamp with time zone DEFAULT now()
 );
 
+
 --
+-- Name: webhook_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.webhook_events ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -2358,7 +2784,9 @@ ALTER TABLE public.webhook_events ALTER COLUMN id ADD GENERATED BY DEFAULT AS ID
     CACHE 1
 );
 
+
 --
+-- Name: writing_samples; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE IF NOT EXISTS public.writing_samples (
@@ -2375,7 +2803,9 @@ CREATE TABLE IF NOT EXISTS public.writing_samples (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+
 --
+-- Name: writing_samples_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE IF NOT EXISTS public.writing_samples_id_seq
@@ -2386,1772 +2816,2455 @@ CREATE SEQUENCE IF NOT EXISTS public.writing_samples_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
 --
+-- Name: writing_samples_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.writing_samples_id_seq OWNED BY public.writing_samples.id;
 
+
 --
+-- Name: alert_actions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_actions ALTER COLUMN id SET DEFAULT nextval('public.alert_actions_id_seq'::regclass);
+
+
+--
+-- Name: alert_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alert_events ALTER COLUMN id SET DEFAULT nextval('public.alert_events_id_seq'::regclass);
 
+
 --
+-- Name: alert_log id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alert_log ALTER COLUMN id SET DEFAULT nextval('public.alert_log_id_seq'::regclass);
 
+
 --
+-- Name: app_settings id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings ALTER COLUMN id SET DEFAULT nextval('public.app_settings_id_seq'::regclass);
 
+
 --
+-- Name: atom_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.atom_runs ALTER COLUMN id SET DEFAULT nextval('public.atom_runs_id_seq'::regclass);
+
+
+--
+-- Name: audit_log id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.audit_log_id_seq'::regclass);
 
+
 --
+-- Name: campaign_email_logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.campaign_email_logs ALTER COLUMN id SET DEFAULT nextval('public.campaign_email_logs_id_seq'::regclass);
 
+
 --
+-- Name: capability_outcomes id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.capability_outcomes ALTER COLUMN id SET DEFAULT nextval('public.capability_outcomes_id_seq'::regclass);
 
+
 --
+-- Name: electricity_costs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.electricity_costs ALTER COLUMN id SET DEFAULT nextval('public.electricity_costs_id_seq'::regclass);
 
+
 --
+-- Name: embeddings id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.embeddings ALTER COLUMN id SET DEFAULT nextval('public.embeddings_id_seq'::regclass);
 
+
 --
+-- Name: fact_overrides id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fact_overrides ALTER COLUMN id SET DEFAULT nextval('public.fact_overrides_id_seq'::regclass);
 
+
 --
+-- Name: finance_poll_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_poll_runs ALTER COLUMN id SET DEFAULT nextval('public.finance_poll_runs_id_seq'::regclass);
+
+
+--
+-- Name: financial_entries id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.financial_entries ALTER COLUMN id SET DEFAULT nextval('public.financial_entries_id_seq'::regclass);
 
+
 --
+-- Name: gpu_metrics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gpu_metrics ALTER COLUMN id SET DEFAULT nextval('public.gpu_metrics_id_seq'::regclass);
 
+
 --
+-- Name: module_schema_migrations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_schema_migrations ALTER COLUMN id SET DEFAULT nextval('public.module_schema_migrations_id_seq'::regclass);
 
+
 --
+-- Name: newsletter_subscribers id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.newsletter_subscribers ALTER COLUMN id SET DEFAULT nextval('public.newsletter_subscribers_id_seq'::regclass);
 
---
---
-
-ALTER TABLE ONLY public.notification ALTER COLUMN id SET DEFAULT nextval('public.notification_id_seq'::regclass);
 
 --
+-- Name: operator_notes id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.operator_notes ALTER COLUMN id SET DEFAULT nextval('public.operator_notes_id_seq'::regclass);
 
+
 --
+-- Name: page_views id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.page_views ALTER COLUMN id SET DEFAULT nextval('public.page_views_id_seq'::regclass);
 
+
 --
+-- Name: pipeline_atoms id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_atoms ALTER COLUMN id SET DEFAULT nextval('public.pipeline_atoms_id_seq'::regclass);
 
+
 --
+-- Name: pipeline_distributions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_distributions ALTER COLUMN id SET DEFAULT nextval('public.pipeline_distributions_id_seq'::regclass);
 
+
 --
+-- Name: pipeline_gate_history id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_gate_history ALTER COLUMN id SET DEFAULT nextval('public.pipeline_gate_history_id_seq'::regclass);
 
+
 --
+-- Name: pipeline_tasks id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_tasks ALTER COLUMN id SET DEFAULT nextval('public.pipeline_tasks_id_seq'::regclass);
 
+
 --
+-- Name: pipeline_templates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_templates ALTER COLUMN id SET DEFAULT nextval('public.pipeline_templates_id_seq'::regclass);
 
+
 --
+-- Name: pipeline_versions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_versions ALTER COLUMN id SET DEFAULT nextval('public.pipeline_versions_id_seq'::regclass);
 
+
 --
+-- Name: published_post_edit_metrics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.published_post_edit_metrics ALTER COLUMN id SET DEFAULT nextval('public.published_post_edit_metrics_id_seq'::regclass);
 
+
 --
+-- Name: schema_migrations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.schema_migrations ALTER COLUMN id SET DEFAULT nextval('public.schema_migrations_id_seq'::regclass);
 
+
 --
+-- Name: sensor_samples id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sensor_samples ALTER COLUMN id SET DEFAULT nextval('public.sensor_samples_id_seq'::regclass);
 
+
 --
+-- Name: sync_metrics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sync_metrics ALTER COLUMN id SET DEFAULT nextval('public.sync_metrics_id_seq'::regclass);
 
+
 --
+-- Name: writing_samples id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.writing_samples ALTER COLUMN id SET DEFAULT nextval('public.writing_samples_id_seq'::regclass);
 
+
 --
+-- Name: alert_actions alert_actions_pattern_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_actions
+    ADD CONSTRAINT alert_actions_pattern_key UNIQUE (pattern);
+
+
+--
+-- Name: alert_actions alert_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_actions
+    ADD CONSTRAINT alert_actions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_dedup_state alert_dedup_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alert_dedup_state
     ADD CONSTRAINT alert_dedup_state_pkey PRIMARY KEY (fingerprint);
 
+
 --
+-- Name: alert_events alert_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alert_events
     ADD CONSTRAINT alert_events_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: alert_log alert_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alert_log
     ADD CONSTRAINT alert_log_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: app_settings app_settings_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
     ADD CONSTRAINT app_settings_key_key UNIQUE (key);
 
+
 --
+-- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
     ADD CONSTRAINT app_settings_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: app_state app_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_state
     ADD CONSTRAINT app_state_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: atom_runs atom_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.atom_runs
+    ADD CONSTRAINT atom_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_log audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_log
     ADD CONSTRAINT audit_log_pkey PRIMARY KEY (id);
 
---
---
-
-ALTER TABLE ONLY public.auth_token
-    ADD CONSTRAINT auth_token_pkey PRIMARY KEY (id);
 
 --
+-- Name: authors authors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.authors
     ADD CONSTRAINT authors_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: brain_decisions brain_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.brain_decisions
     ADD CONSTRAINT brain_decisions_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: brain_knowledge brain_knowledge_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.brain_knowledge
     ADD CONSTRAINT brain_knowledge_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: campaign_email_logs campaign_email_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.campaign_email_logs
     ADD CONSTRAINT campaign_email_logs_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: capability_outcomes capability_outcomes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.capability_outcomes
     ADD CONSTRAINT capability_outcomes_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: capability_registry capability_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.capability_registry
     ADD CONSTRAINT capability_registry_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: categories categories_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.categories
     ADD CONSTRAINT categories_name_key UNIQUE (name);
 
+
 --
+-- Name: categories categories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.categories
     ADD CONSTRAINT categories_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: categories categories_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.categories
     ADD CONSTRAINT categories_slug_key UNIQUE (slug);
 
+
 --
+-- Name: checkpoint_blobs checkpoint_blobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.checkpoint_blobs
     ADD CONSTRAINT checkpoint_blobs_pkey PRIMARY KEY (thread_id, checkpoint_ns, channel, version);
 
+
 --
+-- Name: checkpoint_migrations checkpoint_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.checkpoint_migrations
+    ADD CONSTRAINT checkpoint_migrations_pkey PRIMARY KEY (v);
+
+
+--
+-- Name: checkpoint_writes checkpoint_writes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.checkpoint_writes
     ADD CONSTRAINT checkpoint_writes_pkey PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx);
 
+
 --
+-- Name: checkpoints checkpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.checkpoints
     ADD CONSTRAINT checkpoints_pkey PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id);
 
+
 --
+-- Name: content_revisions content_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.content_revisions
     ADD CONSTRAINT content_revisions_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: content_validator_rules content_validator_rules_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.content_validator_rules
     ADD CONSTRAINT content_validator_rules_name_key UNIQUE (name);
 
+
 --
+-- Name: content_validator_rules content_validator_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.content_validator_rules
     ADD CONSTRAINT content_validator_rules_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: cost_logs cost_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_logs
     ADD CONSTRAINT cost_logs_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: decision_log decision_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.decision_log
     ADD CONSTRAINT decision_log_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: discovery_runs discovery_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.discovery_runs
     ADD CONSTRAINT discovery_runs_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: electricity_costs electricity_costs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.electricity_costs
     ADD CONSTRAINT electricity_costs_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: embeddings embeddings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.embeddings
     ADD CONSTRAINT embeddings_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: embeddings embeddings_source_table_source_id_chunk_index_embedding_mod_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.embeddings
     ADD CONSTRAINT embeddings_source_table_source_id_chunk_index_embedding_mod_key UNIQUE (source_table, source_id, chunk_index, embedding_model);
 
+
 --
+-- Name: experiment_variants experiment_variants_experiment_id_label_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.experiment_variants
     ADD CONSTRAINT experiment_variants_experiment_id_label_key UNIQUE (experiment_id, label);
 
+
 --
+-- Name: experiment_variants experiment_variants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.experiment_variants
     ADD CONSTRAINT experiment_variants_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: experiments experiments_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.experiments
     ADD CONSTRAINT experiments_key_key UNIQUE (key);
 
+
 --
+-- Name: experiments experiments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.experiments
     ADD CONSTRAINT experiments_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: external_metrics external_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.external_metrics
     ADD CONSTRAINT external_metrics_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: external_taps external_taps_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.external_taps
     ADD CONSTRAINT external_taps_name_key UNIQUE (name);
 
+
 --
+-- Name: external_taps external_taps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.external_taps
     ADD CONSTRAINT external_taps_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: fact_overrides fact_overrides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fact_overrides
     ADD CONSTRAINT fact_overrides_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: finance_accounts finance_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_accounts
+    ADD CONSTRAINT finance_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: finance_poll_runs finance_poll_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_poll_runs
+    ADD CONSTRAINT finance_poll_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: finance_transactions finance_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_transactions
+    ADD CONSTRAINT finance_transactions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: financial_entries financial_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.financial_entries
     ADD CONSTRAINT financial_entries_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: gpu_metrics_hourly gpu_metrics_hourly_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gpu_metrics_hourly
     ADD CONSTRAINT gpu_metrics_hourly_pkey PRIMARY KEY (bucket_start);
 
+
 --
+-- Name: gpu_metrics gpu_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gpu_metrics
     ADD CONSTRAINT gpu_metrics_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: gpu_task_sessions gpu_task_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gpu_task_sessions
     ADD CONSTRAINT gpu_task_sessions_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: internal_topic_candidates internal_topic_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.internal_topic_candidates
     ADD CONSTRAINT internal_topic_candidates_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: jwt_blocklist jwt_blocklist_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jwt_blocklist
+    ADD CONSTRAINT jwt_blocklist_pkey PRIMARY KEY (jti);
+
+
+--
+-- Name: media_approvals media_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.media_approvals
     ADD CONSTRAINT media_approvals_pkey PRIMARY KEY (post_id, medium);
 
+
 --
+-- Name: media_assets media_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.media_assets
     ADD CONSTRAINT media_assets_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: model_performance model_performance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.model_performance
     ADD CONSTRAINT model_performance_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: module_schema_migrations module_schema_migrations_module_name_migration_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_schema_migrations
     ADD CONSTRAINT module_schema_migrations_module_name_migration_name_key UNIQUE (module_name, migration_name);
 
+
 --
+-- Name: module_schema_migrations module_schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_schema_migrations
     ADD CONSTRAINT module_schema_migrations_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: newsletter_subscribers newsletter_subscribers_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.newsletter_subscribers
     ADD CONSTRAINT newsletter_subscribers_email_key UNIQUE (email);
 
+
 --
+-- Name: newsletter_subscribers newsletter_subscribers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.newsletter_subscribers
     ADD CONSTRAINT newsletter_subscribers_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: niche_goals niche_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.niche_goals
     ADD CONSTRAINT niche_goals_pkey PRIMARY KEY (niche_id, goal_type);
 
+
 --
+-- Name: niche_sources niche_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.niche_sources
     ADD CONSTRAINT niche_sources_pkey PRIMARY KEY (niche_id, source_name);
 
+
 --
+-- Name: niches niches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.niches
     ADD CONSTRAINT niches_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: niches niches_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.niches
     ADD CONSTRAINT niches_slug_key UNIQUE (slug);
 
---
---
-
-ALTER TABLE ONLY public.notification
-    ADD CONSTRAINT notification_pkey PRIMARY KEY (id);
 
 --
+-- Name: oauth_authorization_codes oauth_authorization_codes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.oauth_authorization_codes
     ADD CONSTRAINT oauth_authorization_codes_pkey PRIMARY KEY (code);
 
+
 --
+-- Name: oauth_clients oauth_clients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.oauth_clients
     ADD CONSTRAINT oauth_clients_pkey PRIMARY KEY (client_id);
 
+
 --
+-- Name: object_stores object_stores_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.object_stores
     ADD CONSTRAINT object_stores_name_key UNIQUE (name);
 
+
 --
+-- Name: object_stores object_stores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.object_stores
     ADD CONSTRAINT object_stores_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: operator_notes operator_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.operator_notes
     ADD CONSTRAINT operator_notes_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: orchestrator_training_data orchestrator_training_data_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orchestrator_training_data
     ADD CONSTRAINT orchestrator_training_data_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: page_views page_views_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.page_views
     ADD CONSTRAINT page_views_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_atoms pipeline_atoms_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_atoms
     ADD CONSTRAINT pipeline_atoms_name_key UNIQUE (name);
 
+
 --
+-- Name: pipeline_atoms pipeline_atoms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_atoms
     ADD CONSTRAINT pipeline_atoms_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_distributions pipeline_distributions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_distributions
     ADD CONSTRAINT pipeline_distributions_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_distributions pipeline_distributions_task_id_target_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_distributions
     ADD CONSTRAINT pipeline_distributions_task_id_target_key UNIQUE (task_id, target);
 
+
 --
+-- Name: pipeline_gate_history pipeline_gate_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_gate_history
     ADD CONSTRAINT pipeline_gate_history_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_tasks pipeline_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_tasks
     ADD CONSTRAINT pipeline_tasks_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_tasks pipeline_tasks_task_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_tasks
     ADD CONSTRAINT pipeline_tasks_task_id_key UNIQUE (task_id);
 
+
 --
+-- Name: pipeline_templates pipeline_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_templates
     ADD CONSTRAINT pipeline_templates_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_templates pipeline_templates_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_templates
     ADD CONSTRAINT pipeline_templates_slug_key UNIQUE (slug);
 
+
 --
+-- Name: pipeline_versions pipeline_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_versions
     ADD CONSTRAINT pipeline_versions_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: pipeline_versions pipeline_versions_task_id_version_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_versions
     ADD CONSTRAINT pipeline_versions_task_id_version_key UNIQUE (task_id, version);
 
---
---
-
 
 --
+-- Name: post_performance post_performance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.post_performance
     ADD CONSTRAINT post_performance_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: post_tags post_tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.post_tags
     ADD CONSTRAINT post_tags_pkey PRIMARY KEY (post_id, tag_id);
 
+
 --
+-- Name: posts posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.posts
     ADD CONSTRAINT posts_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: posts posts_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.posts
     ADD CONSTRAINT posts_slug_key UNIQUE (slug);
 
+
 --
+-- Name: published_post_edit_metrics published_post_edit_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.published_post_edit_metrics
     ADD CONSTRAINT published_post_edit_metrics_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: publishing_adapters publishing_adapters_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.publishing_adapters
     ADD CONSTRAINT publishing_adapters_name_key UNIQUE (name);
 
+
 --
+-- Name: publishing_adapters publishing_adapters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.publishing_adapters
     ADD CONSTRAINT publishing_adapters_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: qa_gates qa_gates_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.qa_gates
     ADD CONSTRAINT qa_gates_name_key UNIQUE (name);
 
+
 --
+-- Name: qa_gates qa_gates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.qa_gates
     ADD CONSTRAINT qa_gates_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: quality_evaluations quality_evaluations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quality_evaluations
     ADD CONSTRAINT quality_evaluations_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: retention_policies retention_policies_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.retention_policies
     ADD CONSTRAINT retention_policies_name_key UNIQUE (name);
 
+
 --
+-- Name: retention_policies retention_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.retention_policies
     ADD CONSTRAINT retention_policies_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: revenue_events revenue_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.revenue_events
     ADD CONSTRAINT revenue_events_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: routing_outcomes routing_outcomes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.routing_outcomes
     ADD CONSTRAINT routing_outcomes_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: schema_migrations schema_migrations_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_name_key UNIQUE (name);
 
+
 --
+-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: sensor_samples sensor_samples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sensor_samples
     ADD CONSTRAINT sensor_samples_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: subscriber_events subscriber_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.subscriber_events
     ADD CONSTRAINT subscriber_events_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: sync_metrics sync_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sync_metrics
     ADD CONSTRAINT sync_metrics_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: tags tags_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_name_key UNIQUE (name);
 
+
 --
+-- Name: tags tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: tags tags_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_slug_key UNIQUE (slug);
 
+
 --
+-- Name: task_failure_alerts task_failure_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.task_failure_alerts
     ADD CONSTRAINT task_failure_alerts_pkey PRIMARY KEY (task_id, error_hash);
 
+
 --
+-- Name: task_status_history task_status_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.task_status_history
     ADD CONSTRAINT task_status_history_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: topic_batches topic_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_batches
     ADD CONSTRAINT topic_batches_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: topic_candidates topic_candidates_batch_id_source_name_source_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_candidates
     ADD CONSTRAINT topic_candidates_batch_id_source_name_source_ref_key UNIQUE (batch_id, source_name, source_ref);
 
+
 --
+-- Name: topic_candidates topic_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_candidates
     ADD CONSTRAINT topic_candidates_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_key UNIQUE (email);
 
+
 --
+-- Name: users users_github_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_github_id_key UNIQUE (github_id);
 
+
 --
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: webhook_endpoints webhook_endpoints_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.webhook_endpoints
     ADD CONSTRAINT webhook_endpoints_name_key UNIQUE (name);
 
+
 --
+-- Name: webhook_endpoints webhook_endpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.webhook_endpoints
     ADD CONSTRAINT webhook_endpoints_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: webhook_events webhook_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.webhook_events
     ADD CONSTRAINT webhook_events_pkey PRIMARY KEY (id);
 
+
 --
+-- Name: writing_samples writing_samples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.writing_samples
     ADD CONSTRAINT writing_samples_pkey PRIMARY KEY (id);
 
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_auth_token_expires_unix" ON public.auth_token USING btree (expires_unix);
 
 --
---
-
-CREATE INDEX IF NOT EXISTS "IDX_auth_token_user_id" ON public.auth_token USING btree (user_id);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_commit_id" ON public.notification USING btree (commit_id);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_issue_id" ON public.notification USING btree (issue_id);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_repo_id" ON public.notification USING btree (repo_id);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_source" ON public.notification USING btree (source);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_status" ON public.notification USING btree (status);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_updated_by" ON public.notification USING btree (updated_by);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_idx_notification_user_id" ON public.notification USING btree (user_id);
-
---
---
-
-CREATE INDEX IF NOT EXISTS "IDX_notification_u_s_uu" ON public.notification USING btree (user_id, status, updated_unix);
-
---
+-- Name: brain_knowledge_entity_attribute_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS brain_knowledge_entity_attribute_key ON public.brain_knowledge USING btree (entity, attribute);
 
+
 --
+-- Name: checkpoint_blobs_thread_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS checkpoint_blobs_thread_id_idx ON public.checkpoint_blobs USING btree (thread_id);
 
+
 --
+-- Name: checkpoint_writes_thread_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS checkpoint_writes_thread_id_idx ON public.checkpoint_writes USING btree (thread_id);
 
+
 --
+-- Name: checkpoints_thread_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON public.checkpoints USING btree (thread_id);
 
+
 --
+-- Name: finance_poll_runs_started_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS finance_poll_runs_started_idx ON public.finance_poll_runs USING btree (started_at DESC);
+
+
+--
+-- Name: finance_transactions_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS finance_transactions_account_idx ON public.finance_transactions USING btree (account_id, posted_at DESC);
+
+
+--
+-- Name: finance_transactions_posted_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS finance_transactions_posted_at_idx ON public.finance_transactions USING btree (posted_at DESC);
+
+
+--
+-- Name: idx_alert_actions_pattern_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_alert_actions_pattern_enabled ON public.alert_actions USING btree (pattern) WHERE (enabled = true);
+
+
+--
+-- Name: idx_alert_dedup_state_last_seen; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_state_last_seen ON public.alert_dedup_state USING btree (last_seen_at DESC);
 
+
 --
+-- Name: idx_alert_events_alertname; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_alertname ON public.alert_events USING btree (alertname, received_at DESC);
 
+
 --
+-- Name: idx_alert_events_received_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_received_at ON public.alert_events USING btree (received_at DESC);
 
+
 --
+-- Name: idx_alert_events_undispatched; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_undispatched ON public.alert_events USING btree (id) WHERE (dispatched_at IS NULL);
 
+
 --
+-- Name: idx_app_settings_category; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_app_settings_category ON public.app_settings USING btree (category);
 
+
 --
+-- Name: idx_app_settings_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_app_settings_is_active ON public.app_settings USING btree (is_active) WHERE (is_active = true);
 
+
 --
+-- Name: idx_atom_runs_atom; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_atom_runs_atom ON public.atom_runs USING btree (atom);
+
+
+--
+-- Name: idx_atom_runs_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_atom_runs_run_id ON public.atom_runs USING btree (run_id);
+
+
+--
+-- Name: idx_atom_runs_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_atom_runs_task_id ON public.atom_runs USING btree (task_id);
+
+
+--
+-- Name: idx_audit_log_event_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON public.audit_log USING btree (event_type);
 
+
 --
+-- Name: idx_audit_log_severity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_severity ON public.audit_log USING btree (severity);
 
+
 --
+-- Name: idx_audit_log_task_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_task_id ON public.audit_log USING btree (task_id);
 
+
 --
+-- Name: idx_audit_log_timestamp; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON public.audit_log USING btree ("timestamp");
 
+
 --
+-- Name: idx_brain_decisions_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_brain_decisions_created ON public.brain_decisions USING btree (created_at);
 
+
 --
+-- Name: idx_brain_knowledge_entity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_brain_knowledge_entity ON public.brain_knowledge USING btree (entity);
 
+
 --
+-- Name: idx_brain_knowledge_tags; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_brain_knowledge_tags ON public.brain_knowledge USING gin (tags);
 
+
 --
+-- Name: idx_capability_outcomes_atom_model; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_atom_model ON public.capability_outcomes USING btree (atom_name, model_used) WHERE ((atom_name IS NOT NULL) AND (model_used IS NOT NULL));
 
+
 --
+-- Name: idx_capability_outcomes_niche_template; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_niche_template ON public.capability_outcomes USING btree (niche_slug, prompt_template_key, created_at DESC) WHERE (niche_slug IS NOT NULL);
 
+
 --
+-- Name: idx_capability_outcomes_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_task ON public.capability_outcomes USING btree (task_id) WHERE (task_id IS NOT NULL);
 
+
 --
+-- Name: idx_capability_outcomes_template; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_template ON public.capability_outcomes USING btree (template_slug, created_at DESC);
 
+
 --
+-- Name: idx_capability_outcomes_tier; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_tier ON public.capability_outcomes USING btree (capability_tier, ok) WHERE (capability_tier IS NOT NULL);
 
+
 --
+-- Name: idx_capability_outcomes_variant; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_outcomes_variant ON public.capability_outcomes USING btree (variant_id) WHERE (variant_id IS NOT NULL);
 
+
 --
+-- Name: idx_capability_registry_heartbeat; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_registry_heartbeat ON public.capability_registry USING btree (last_heartbeat);
 
+
 --
+-- Name: idx_capability_registry_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_registry_status ON public.capability_registry USING btree (status);
 
+
 --
+-- Name: idx_capability_registry_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_registry_type ON public.capability_registry USING btree (entity_type);
 
+
 --
+-- Name: idx_content_revisions_post; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_content_revisions_post ON public.content_revisions USING btree (post_id) WHERE (post_id IS NOT NULL);
 
+
 --
+-- Name: idx_content_revisions_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_content_revisions_task ON public.content_revisions USING btree (task_id);
 
+
 --
+-- Name: idx_content_validator_rules_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_content_validator_rules_enabled ON public.content_validator_rules USING btree (enabled) WHERE (enabled = true);
 
+
 --
+-- Name: idx_cost_logs_cost_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_cost_logs_cost_type ON public.cost_logs USING btree (cost_type);
 
+
 --
+-- Name: idx_cost_logs_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_cost_logs_created_at ON public.cost_logs USING btree (created_at);
 
+
 --
+-- Name: idx_cost_logs_electricity_kwh; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_cost_logs_electricity_kwh ON public.cost_logs USING btree (created_at, provider) WHERE (electricity_kwh IS NOT NULL);
 
+
 --
+-- Name: idx_cost_logs_task_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_cost_logs_task_id ON public.cost_logs USING btree (task_id);
 
+
 --
+-- Name: idx_cost_logs_task_phase; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_cost_logs_task_phase ON public.cost_logs USING btree (task_id, phase);
 
+
 --
+-- Name: idx_decision_log_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_decision_log_created ON public.decision_log USING btree (created_at DESC);
 
+
 --
+-- Name: idx_decision_log_pending_outcome; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_decision_log_pending_outcome ON public.decision_log USING btree (outcome_recorded_at) WHERE ((outcome_recorded_at IS NULL) AND (outcome IS NULL));
 
+
 --
+-- Name: idx_decision_log_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_decision_log_task ON public.decision_log USING btree (task_id) WHERE (task_id IS NOT NULL);
 
+
 --
+-- Name: idx_decision_log_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_decision_log_type ON public.decision_log USING btree (decision_type);
 
+
 --
+-- Name: idx_embeddings_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_created_at ON public.embeddings USING btree (created_at);
 
+
 --
+-- Name: idx_embeddings_hnsw; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_hnsw ON public.embeddings USING hnsw (embedding public.vector_cosine_ops) WITH (m='16', ef_construction='64');
 
+
 --
+-- Name: idx_embeddings_model; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON public.embeddings USING btree (embedding_model);
 
+
 --
+-- Name: idx_embeddings_source; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_source ON public.embeddings USING btree (source_table, source_id);
 
+
 --
+-- Name: idx_embeddings_text_search; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_text_search ON public.embeddings USING gin (text_search);
 
+
 --
+-- Name: idx_embeddings_writer; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_writer ON public.embeddings USING btree (writer);
 
+
 --
+-- Name: idx_experiment_variants_active_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_experiment_variants_active_lookup ON public.experiment_variants USING btree (experiment_id) WHERE active;
 
+
 --
+-- Name: idx_experiments_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_experiments_key ON public.experiments USING btree (key);
 
+
 --
+-- Name: idx_experiments_one_active_per_niche; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_experiments_one_active_per_niche ON public.experiments USING btree (niche_slug) WHERE (status = 'active'::text);
 
+
 --
+-- Name: idx_external_metrics_post; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_external_metrics_post ON public.external_metrics USING btree (post_id) WHERE (post_id IS NOT NULL);
 
+
 --
+-- Name: idx_external_metrics_slug; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_external_metrics_slug ON public.external_metrics USING btree (slug) WHERE (slug IS NOT NULL);
 
+
 --
+-- Name: idx_external_metrics_source_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_external_metrics_source_date ON public.external_metrics USING btree (source, date DESC);
 
+
 --
+-- Name: idx_external_taps_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_external_taps_enabled ON public.external_taps USING btree (enabled);
 
+
 --
+-- Name: idx_external_taps_name; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_external_taps_name ON public.external_taps USING btree (name);
 
+
 --
+-- Name: idx_fact_overrides_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_fact_overrides_active ON public.fact_overrides USING btree (active) WHERE (active = true);
 
+
 --
+-- Name: idx_gpu_metrics_hourly_bucket; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_gpu_metrics_hourly_bucket ON public.gpu_metrics_hourly USING btree (bucket_start DESC);
 
+
 --
+-- Name: idx_gpu_metrics_timestamp; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_gpu_metrics_timestamp ON public.gpu_metrics USING btree ("timestamp");
 
+
 --
+-- Name: idx_gpu_sessions_phase; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_gpu_sessions_phase ON public.gpu_task_sessions USING btree (phase);
 
+
 --
+-- Name: idx_gpu_sessions_started; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_gpu_sessions_started ON public.gpu_task_sessions USING btree (started_at DESC);
 
+
 --
+-- Name: idx_gpu_sessions_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_gpu_sessions_task ON public.gpu_task_sessions USING btree (task_id);
 
+
 --
+-- Name: idx_jwt_blocklist_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_jwt_blocklist_expires_at ON public.jwt_blocklist USING btree (expires_at);
+
+
+--
+-- Name: idx_media_assets_kind_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_kind_created ON public.media_assets USING btree (type, created_at DESC);
 
+
 --
+-- Name: idx_media_assets_platform_video_ids; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_platform_video_ids ON public.media_assets USING gin (platform_video_ids);
 
+
 --
+-- Name: idx_media_assets_post_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_post_id ON public.media_assets USING btree (post_id) WHERE (post_id IS NOT NULL);
 
+
 --
+-- Name: idx_media_assets_site; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_site ON public.media_assets USING btree (site_id);
 
+
 --
+-- Name: idx_media_assets_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_task ON public.media_assets USING btree (task_id);
 
+
 --
+-- Name: idx_media_assets_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_type ON public.media_assets USING btree (type);
 
+
 --
+-- Name: idx_model_performance_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_model_performance_created ON public.model_performance USING btree (created_at DESC);
 
+
 --
+-- Name: idx_model_performance_model; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_model_performance_model ON public.model_performance USING btree (model_name);
 
+
 --
+-- Name: idx_model_performance_task_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_model_performance_task_type ON public.model_performance USING btree (task_type);
 
+
 --
+-- Name: idx_newsletter_interests_gin; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_newsletter_interests_gin ON public.newsletter_subscribers USING gin (interest_categories);
 
+
 --
+-- Name: idx_oauth_auth_codes_expires; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_expires ON public.oauth_authorization_codes USING btree (expires_at);
 
+
 --
+-- Name: idx_oauth_clients_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_oauth_clients_active ON public.oauth_clients USING btree (client_id) WHERE (revoked_at IS NULL);
 
+
 --
+-- Name: idx_object_stores_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_object_stores_enabled ON public.object_stores USING btree (enabled);
 
+
 --
+-- Name: idx_object_stores_name; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_object_stores_name ON public.object_stores USING btree (name);
 
+
 --
+-- Name: idx_operator_notes_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_operator_notes_date ON public.operator_notes USING btree (note_date DESC);
 
+
 --
+-- Name: idx_operator_notes_niche_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_operator_notes_niche_date ON public.operator_notes USING btree (niche_slug, note_date DESC);
 
+
 --
+-- Name: idx_page_views_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_page_views_created ON public.page_views USING btree (created_at);
 
+
 --
+-- Name: idx_page_views_slug; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_page_views_slug ON public.page_views USING btree (slug);
 
+
 --
+-- Name: idx_pipeline_atoms_capability_tier; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_atoms_capability_tier ON public.pipeline_atoms USING btree (capability_tier) WHERE (capability_tier IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_atoms_cost_class; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_atoms_cost_class ON public.pipeline_atoms USING btree (cost_class);
 
+
 --
+-- Name: idx_pipeline_atoms_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_atoms_type ON public.pipeline_atoms USING btree (type);
 
+
 --
+-- Name: idx_pipeline_distributions_target_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_distributions_target_status ON public.pipeline_distributions USING btree (target, status);
 
+
 --
+-- Name: idx_pipeline_distributions_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_distributions_task ON public.pipeline_distributions USING btree (task_id);
 
+
 --
+-- Name: idx_pipeline_gate_history_post_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_gate_history_post_lookup ON public.pipeline_gate_history USING btree (post_id, gate_name, event_kind) WHERE (post_id IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_gate_history_task_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_gate_history_task_lookup ON public.pipeline_gate_history USING btree (task_id, gate_name, event_kind) WHERE (task_id IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_tasks_auto_cancelled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_auto_cancelled ON public.pipeline_tasks USING btree (auto_cancelled_at) WHERE (auto_cancelled_at IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_tasks_awaiting_gate; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_awaiting_gate ON public.pipeline_tasks USING btree (awaiting_gate, gate_paused_at) WHERE (awaiting_gate IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_tasks_scheduled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_scheduled ON public.pipeline_tasks USING btree (status, scheduled_at) WHERE (scheduled_at IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_tasks_stage; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_stage ON public.pipeline_tasks USING btree (stage);
 
+
 --
+-- Name: idx_pipeline_tasks_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_status ON public.pipeline_tasks USING btree (status);
 
+
 --
+-- Name: idx_pipeline_tasks_status_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_status_created ON public.pipeline_tasks USING btree (status, created_at DESC);
 
+
 --
+-- Name: idx_pipeline_tasks_template_slug; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_template_slug ON public.pipeline_tasks USING btree (template_slug) WHERE (template_slug IS NOT NULL);
 
+
 --
+-- Name: idx_pipeline_templates_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_templates_active ON public.pipeline_templates USING btree (active) WHERE (active = true);
 
+
 --
+-- Name: idx_pipeline_templates_created_by; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_templates_created_by ON public.pipeline_templates USING btree (created_by);
 
---
---
-
 
 --
+-- Name: idx_post_edit_metrics_category; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_edit_metrics_category ON public.published_post_edit_metrics USING btree (category, approved_at DESC);
 
+
 --
+-- Name: idx_post_edit_metrics_niche; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_edit_metrics_niche ON public.published_post_edit_metrics USING btree (niche_slug, approved_at DESC) WHERE (niche_slug IS NOT NULL);
 
+
 --
+-- Name: idx_post_edit_metrics_task; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_edit_metrics_task ON public.published_post_edit_metrics USING btree (task_id);
 
+
 --
+-- Name: idx_post_performance_measured; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_performance_measured ON public.post_performance USING btree (measured_at DESC);
 
+
 --
+-- Name: idx_post_performance_post; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_performance_post ON public.post_performance USING btree (post_id);
 
+
 --
+-- Name: idx_post_tags_post_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_tags_post_id ON public.post_tags USING btree (post_id);
 
+
 --
+-- Name: idx_post_tags_tag_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_post_tags_tag_id ON public.post_tags USING btree (tag_id);
 
+
 --
+-- Name: idx_posts_author_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON public.posts USING btree (author_id);
 
+
 --
+-- Name: idx_posts_awaiting_gate; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_awaiting_gate ON public.posts USING btree (awaiting_gate, gate_paused_at) WHERE (awaiting_gate IS NOT NULL);
 
+
 --
+-- Name: idx_posts_category_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_category_id ON public.posts USING btree (category_id);
 
+
 --
+-- Name: idx_posts_cli_idempotency_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_cli_idempotency_key ON public.posts USING btree (cli_idempotency_key, created_at) WHERE (cli_idempotency_key IS NOT NULL);
 
+
 --
+-- Name: idx_posts_pipeline_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_posts_pipeline_task_id ON public.posts USING btree (((metadata ->> 'pipeline_task_id'::text))) WHERE ((metadata ->> 'pipeline_task_id'::text) IS NOT NULL);
+
+
+--
+-- Name: idx_posts_preview_token; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_preview_token ON public.posts USING btree (preview_token) WHERE (preview_token IS NOT NULL);
 
+
 --
+-- Name: idx_posts_published_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_published_at ON public.posts USING btree (published_at);
 
+
 --
+-- Name: idx_posts_site_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_site_id ON public.posts USING btree (site_id);
 
---
---
-
-CREATE INDEX IF NOT EXISTS idx_posts_slug ON public.posts USING btree (slug);
 
 --
+-- Name: idx_posts_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_status ON public.posts USING btree (status);
 
+
 --
+-- Name: idx_posts_status_published; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_posts_status_published ON public.posts USING btree (status, published_at DESC);
 
+
 --
+-- Name: idx_publishing_adapters_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_publishing_adapters_enabled ON public.publishing_adapters USING btree (enabled);
 
+
 --
+-- Name: idx_publishing_adapters_name; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_publishing_adapters_name ON public.publishing_adapters USING btree (name);
 
+
 --
+-- Name: idx_publishing_adapters_platform; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_publishing_adapters_platform ON public.publishing_adapters USING btree (platform);
 
+
 --
+-- Name: idx_qa_gates_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_qa_gates_enabled ON public.qa_gates USING btree (enabled);
 
+
 --
+-- Name: idx_qa_gates_stage_order; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_qa_gates_stage_order ON public.qa_gates USING btree (stage_name, execution_order);
 
+
 --
+-- Name: idx_quality_evaluations_content_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_quality_evaluations_content_id ON public.quality_evaluations USING btree (content_id);
 
+
 --
+-- Name: idx_quality_evaluations_task_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_quality_evaluations_task_id ON public.quality_evaluations USING btree (task_id);
 
+
 --
+-- Name: idx_retention_policies_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_retention_policies_enabled ON public.retention_policies USING btree (enabled);
 
+
 --
+-- Name: idx_retention_policies_name; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_retention_policies_name ON public.retention_policies USING btree (name);
 
+
 --
+-- Name: idx_revenue_events_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_revenue_events_created ON public.revenue_events USING btree (created_at DESC);
 
+
 --
+-- Name: idx_revenue_events_post; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_revenue_events_post ON public.revenue_events USING btree (source_post_id) WHERE (source_post_id IS NOT NULL);
 
+
 --
+-- Name: idx_revenue_events_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_revenue_events_type ON public.revenue_events USING btree (event_type);
 
+
 --
+-- Name: idx_routing_outcomes_model; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_routing_outcomes_model ON public.routing_outcomes USING btree (model_used, task_type);
 
+
 --
+-- Name: idx_routing_outcomes_worker; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_routing_outcomes_worker ON public.routing_outcomes USING btree (worker_id);
 
+
 --
+-- Name: idx_sensor_samples_source_metric_time; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_sensor_samples_source_metric_time ON public.sensor_samples USING btree (source, metric_name, sampled_at DESC);
 
+
 --
+-- Name: idx_subscriber_events_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_subscriber_events_created ON public.subscriber_events USING btree (created_at DESC);
 
+
 --
+-- Name: idx_subscriber_events_subscriber; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_subscriber_events_subscriber ON public.subscriber_events USING btree (subscriber_id) WHERE (subscriber_id IS NOT NULL);
 
+
 --
+-- Name: idx_subscriber_events_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_subscriber_events_type ON public.subscriber_events USING btree (event_type);
 
+
 --
+-- Name: idx_task_failure_alerts_last_sent; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_task_failure_alerts_last_sent ON public.task_failure_alerts USING btree (last_sent_at DESC);
 
+
 --
+-- Name: idx_task_status_history_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_task_status_history_created_at ON public.task_status_history USING btree (created_at DESC);
 
+
 --
+-- Name: idx_task_status_history_task_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_task_status_history_task_id ON public.task_status_history USING btree (task_id);
 
+
 --
+-- Name: idx_webhook_endpoints_direction_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_direction_enabled ON public.webhook_endpoints USING btree (direction, enabled);
 
+
 --
+-- Name: idx_webhook_endpoints_name; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_name ON public.webhook_endpoints USING btree (name);
 
+
 --
+-- Name: idx_webhook_events_undelivered; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_webhook_events_undelivered ON public.webhook_events USING btree (delivered, created_at) WHERE (NOT delivered);
 
+
 --
+-- Name: idx_writing_samples_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS idx_writing_samples_user_id ON public.writing_samples USING btree (user_id);
 
+
 --
+-- Name: ix_discovery_runs_niche_started; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS ix_discovery_runs_niche_started ON public.discovery_runs USING btree (niche_id, started_at DESC);
 
+
 --
+-- Name: ix_internal_topic_candidates_batch; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS ix_internal_topic_candidates_batch ON public.internal_topic_candidates USING btree (batch_id);
 
+
 --
+-- Name: ix_media_approvals_pending; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS ix_media_approvals_pending ON public.media_approvals USING btree (medium, created_at DESC) WHERE (status = 'pending'::text);
 
+
 --
+-- Name: ix_newsletter_subscribers_unsubscribe_token; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS ix_newsletter_subscribers_unsubscribe_token ON public.newsletter_subscribers USING btree (unsubscribe_token);
 
+
 --
+-- Name: ix_pipeline_tasks_batch; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS ix_pipeline_tasks_batch ON public.pipeline_tasks USING btree (topic_batch_id) WHERE (topic_batch_id IS NOT NULL);
 
+
 --
+-- Name: ix_pipeline_tasks_niche; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS ix_pipeline_tasks_niche ON public.pipeline_tasks USING btree (niche_slug) WHERE (niche_slug IS NOT NULL);
 
+
 --
+-- Name: ix_topic_candidates_batch; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS ix_topic_candidates_batch ON public.topic_candidates USING btree (batch_id);
 
+
 --
+-- Name: module_schema_migrations_module_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX IF NOT EXISTS module_schema_migrations_module_idx ON public.module_schema_migrations USING btree (module_name);
 
+
 --
+-- Name: orchestrator_training_data_execution_id_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS orchestrator_training_data_execution_id_key ON public.orchestrator_training_data USING btree (execution_id);
 
+
 --
+-- Name: uq_one_open_batch_per_niche; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_one_open_batch_per_niche ON public.topic_batches USING btree (niche_id) WHERE (status = 'open'::text);
 
+
 --
+-- Name: uq_sensor_samples_source_time_metric; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sensor_samples_source_time_metric ON public.sensor_samples USING btree (source, sampled_at, metric_name);
 
+
 --
+-- Name: app_settings app_settings_auto_encrypt_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS app_settings_auto_encrypt_trigger ON public.app_settings;
 CREATE TRIGGER app_settings_auto_encrypt_trigger BEFORE INSERT OR UPDATE OF value ON public.app_settings FOR EACH ROW EXECUTE FUNCTION public.app_settings_auto_encrypt();
 
+
 --
+-- Name: content_tasks content_tasks_delete_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS content_tasks_delete_trigger ON public.content_tasks;
 CREATE TRIGGER content_tasks_delete_trigger INSTEAD OF DELETE ON public.content_tasks FOR EACH ROW EXECUTE FUNCTION public.content_tasks_delete_redirect();
 
+
 --
+-- Name: content_tasks content_tasks_insert_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS content_tasks_insert_trigger ON public.content_tasks;
 CREATE TRIGGER content_tasks_insert_trigger INSTEAD OF INSERT ON public.content_tasks FOR EACH ROW EXECUTE FUNCTION public.content_tasks_insert_redirect();
 
+
 --
+-- Name: content_tasks content_tasks_update_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS content_tasks_update_trigger ON public.content_tasks;
 CREATE TRIGGER content_tasks_update_trigger INSTEAD OF UPDATE ON public.content_tasks FOR EACH ROW EXECUTE FUNCTION public.content_tasks_update_redirect();
 
+
 --
+-- Name: external_taps external_taps_touch_updated_at_trg; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS external_taps_touch_updated_at_trg ON public.external_taps;
 CREATE TRIGGER external_taps_touch_updated_at_trg BEFORE UPDATE ON public.external_taps FOR EACH ROW EXECUTE FUNCTION public.external_taps_touch_updated_at();
 
+
 --
+-- Name: object_stores object_stores_touch_updated_at_trg; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS object_stores_touch_updated_at_trg ON public.object_stores;
 CREATE TRIGGER object_stores_touch_updated_at_trg BEFORE UPDATE ON public.object_stores FOR EACH ROW EXECUTE FUNCTION public.object_stores_touch_updated_at();
 
+
 --
+-- Name: publishing_adapters publishing_adapters_touch_updated_at_trg; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS publishing_adapters_touch_updated_at_trg ON public.publishing_adapters;
 CREATE TRIGGER publishing_adapters_touch_updated_at_trg BEFORE UPDATE ON public.publishing_adapters FOR EACH ROW EXECUTE FUNCTION public.publishing_adapters_touch_updated_at();
 
+
 --
+-- Name: qa_gates qa_gates_touch_updated_at_trg; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS qa_gates_touch_updated_at_trg ON public.qa_gates;
 CREATE TRIGGER qa_gates_touch_updated_at_trg BEFORE UPDATE ON public.qa_gates FOR EACH ROW EXECUTE FUNCTION public.qa_gates_touch_updated_at();
 
+
 --
+-- Name: retention_policies retention_policies_touch_updated_at_trg; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS retention_policies_touch_updated_at_trg ON public.retention_policies;
 CREATE TRIGGER retention_policies_touch_updated_at_trg BEFORE UPDATE ON public.retention_policies FOR EACH ROW EXECUTE FUNCTION public.retention_policies_touch_updated_at();
 
+
 --
+-- Name: webhook_endpoints webhook_endpoints_touch_updated_at_trg; Type: TRIGGER; Schema: public; Owner: -
 --
 
-DROP TRIGGER IF EXISTS webhook_endpoints_touch_updated_at_trg ON public.webhook_endpoints;
 CREATE TRIGGER webhook_endpoints_touch_updated_at_trg BEFORE UPDATE ON public.webhook_endpoints FOR EACH ROW EXECUTE FUNCTION public.webhook_endpoints_touch_updated_at();
 
+
 --
+-- Name: campaign_email_logs campaign_email_logs_subscriber_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.campaign_email_logs
     ADD CONSTRAINT campaign_email_logs_subscriber_id_fkey FOREIGN KEY (subscriber_id) REFERENCES public.newsletter_subscribers(id) ON DELETE CASCADE;
 
+
 --
+-- Name: capability_outcomes capability_outcomes_variant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.capability_outcomes
     ADD CONSTRAINT capability_outcomes_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES public.experiment_variants(id) ON DELETE SET NULL;
 
+
 --
+-- Name: discovery_runs discovery_runs_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.discovery_runs
     ADD CONSTRAINT discovery_runs_batch_id_fkey FOREIGN KEY (batch_id) REFERENCES public.topic_batches(id);
 
+
 --
+-- Name: discovery_runs discovery_runs_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.discovery_runs
     ADD CONSTRAINT discovery_runs_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: experiment_variants experiment_variants_experiment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.experiment_variants
     ADD CONSTRAINT experiment_variants_experiment_id_fkey FOREIGN KEY (experiment_id) REFERENCES public.experiments(id) ON DELETE CASCADE;
 
+
 --
+-- Name: finance_transactions finance_transactions_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_transactions
+    ADD CONSTRAINT finance_transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.finance_accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: external_metrics fk_external_metrics_post; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.external_metrics
     ADD CONSTRAINT fk_external_metrics_post FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE SET NULL;
 
+
 --
+-- Name: post_performance fk_post_performance_post; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.post_performance
     ADD CONSTRAINT fk_post_performance_post FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE CASCADE;
 
+
 --
+-- Name: internal_topic_candidates internal_topic_candidates_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.internal_topic_candidates
     ADD CONSTRAINT internal_topic_candidates_batch_id_fkey FOREIGN KEY (batch_id) REFERENCES public.topic_batches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: internal_topic_candidates internal_topic_candidates_carried_from_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.internal_topic_candidates
     ADD CONSTRAINT internal_topic_candidates_carried_from_batch_id_fkey FOREIGN KEY (carried_from_batch_id) REFERENCES public.topic_batches(id);
 
+
 --
+-- Name: internal_topic_candidates internal_topic_candidates_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.internal_topic_candidates
     ADD CONSTRAINT internal_topic_candidates_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: media_approvals media_approvals_post_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.media_approvals
     ADD CONSTRAINT media_approvals_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE CASCADE;
 
+
 --
+-- Name: media_assets media_assets_post_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.media_assets
     ADD CONSTRAINT media_assets_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE SET NULL;
 
+
 --
+-- Name: niche_goals niche_goals_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.niche_goals
     ADD CONSTRAINT niche_goals_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: niche_sources niche_sources_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.niche_sources
     ADD CONSTRAINT niche_sources_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: oauth_authorization_codes oauth_authorization_codes_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.oauth_authorization_codes
     ADD CONSTRAINT oauth_authorization_codes_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.oauth_clients(client_id) ON DELETE CASCADE;
 
+
 --
+-- Name: pipeline_distributions pipeline_distributions_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_distributions
     ADD CONSTRAINT pipeline_distributions_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.pipeline_tasks(task_id) ON DELETE CASCADE;
 
+
 --
+-- Name: pipeline_tasks pipeline_tasks_topic_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_tasks
     ADD CONSTRAINT pipeline_tasks_topic_batch_id_fkey FOREIGN KEY (topic_batch_id) REFERENCES public.topic_batches(id);
 
+
 --
+-- Name: pipeline_versions pipeline_versions_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pipeline_versions
     ADD CONSTRAINT pipeline_versions_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.pipeline_tasks(task_id) ON DELETE CASCADE;
 
---
---
 
 --
+-- Name: post_tags post_tags_post_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.post_tags
     ADD CONSTRAINT post_tags_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id) ON DELETE CASCADE;
 
+
 --
+-- Name: post_tags post_tags_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.post_tags
     ADD CONSTRAINT post_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
 
+
 --
+-- Name: topic_batches topic_batches_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_batches
     ADD CONSTRAINT topic_batches_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: topic_candidates topic_candidates_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_candidates
     ADD CONSTRAINT topic_candidates_batch_id_fkey FOREIGN KEY (batch_id) REFERENCES public.topic_batches(id) ON DELETE CASCADE;
 
+
 --
+-- Name: topic_candidates topic_candidates_carried_from_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_candidates
     ADD CONSTRAINT topic_candidates_carried_from_batch_id_fkey FOREIGN KEY (carried_from_batch_id) REFERENCES public.topic_batches(id);
 
+
 --
+-- Name: topic_candidates topic_candidates_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topic_candidates
     ADD CONSTRAINT topic_candidates_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
+
 --
+-- PostgreSQL database dump complete
 --
 

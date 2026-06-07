@@ -369,6 +369,7 @@ DEFAULTS: dict[str, str] = {
     # ----- Brain daemon -----
     'brain_anomaly_baseline_window_days': '30',
     'brain_anomaly_current_window_hours': '24',
+    'brain_digest_window_hours': '6',
 
     # ----- Cadence SLO probe (brain probe_cadence_slo, issue #525) -----
     # Compares ACTUAL publish output against this CONFIGURED target so a

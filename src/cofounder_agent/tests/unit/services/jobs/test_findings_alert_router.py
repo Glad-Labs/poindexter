@@ -27,6 +27,7 @@ from services.jobs.findings_alert_router import (
 )
 from services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob as _FBEL
 from services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob as _FBIL
+from services.jobs.fix_missing_seo import FixMissingSeoJob as _FMSEO
 from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob as _FUP
 
 # No module-level ``pytestmark = pytest.mark.asyncio``: the project runs
@@ -439,6 +440,7 @@ def test_min_severity_normalization_applies_to_both_sides():
 def test_autofix_map_covers_seeded_auto_fix_kinds():
     assert _AUTOFIX_JOBS["broken_external_link"] is _FBEL
     assert _AUTOFIX_JOBS["broken_internal_link"] is _FBIL
+    assert _AUTOFIX_JOBS["missing_seo"] is _FMSEO
     assert _AUTOFIX_JOBS["uncategorized_post"] is _FUP
 
 

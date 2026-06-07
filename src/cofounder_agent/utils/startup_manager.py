@@ -346,7 +346,7 @@ class StartupManager:
             from pathlib import Path
 
             from plugins.registry import get_modules
-            from services.module_migrations import run_module_migrations
+            from services.module_runner import run_module_migrations
 
             modules = get_modules()
             if not modules:

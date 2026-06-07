@@ -303,6 +303,7 @@ render_alertmanager_config = "cofounder_agent.services.jobs.render_alertmanager_
 postgres_vacuum = "cofounder_agent.services.jobs.postgres_vacuum:PostgresVacuumJob"
 check_published_links = "cofounder_agent.services.jobs.check_published_links:CheckPublishedLinksJob"
 flag_missing_seo = "cofounder_agent.services.jobs.flag_missing_seo:FlagMissingSeoJob"
+fix_missing_seo = "cofounder_agent.services.jobs.fix_missing_seo:FixMissingSeoJob"
 detect_duplicate_posts = "cofounder_agent.services.jobs.detect_duplicate_posts:DetectDuplicatePostsJob"
 audit_published_quality = "cofounder_agent.services.jobs.audit_published_quality:AuditPublishedQualityJob"
 fix_broken_internal_links = "cofounder_agent.services.jobs.fix_broken_internal_links:FixBrokenInternalLinksJob"

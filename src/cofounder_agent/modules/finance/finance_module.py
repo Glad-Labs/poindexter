@@ -41,7 +41,7 @@ class FinanceModule:
 
     async def migrate(self, pool: object) -> None:
         """Apply finance-module-specific migrations. Idempotent."""
-        from services.module_migrations import run_module_migrations
+        from services.module_runner import run_module_migrations
 
         await run_module_migrations(pool, _MANIFEST.name, self.migrations_dir)
 

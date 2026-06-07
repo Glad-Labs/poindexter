@@ -567,6 +567,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
         ("jobs", "services.jobs.check_published_links", "CheckPublishedLinksJob"),
         ("jobs", "services.jobs.flag_missing_seo", "FlagMissingSeoJob"),
+        ("jobs", "services.jobs.fix_missing_seo", "FixMissingSeoJob"),
         ("jobs", "services.jobs.detect_duplicate_posts", "DetectDuplicatePostsJob"),
         ("jobs", "services.jobs.audit_published_quality", "AuditPublishedQualityJob"),
         ("jobs", "services.jobs.fix_broken_internal_links", "FixBrokenInternalLinksJob"),

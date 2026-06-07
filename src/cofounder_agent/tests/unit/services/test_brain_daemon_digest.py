@@ -166,11 +166,8 @@ class TestDailyDigestPostCounts:
         total_posts_block = before_total.rsplit("(SELECT", 1)[-1]
         assert "status = 'published'" in total_posts_block
 
-    async def test_digest_not_sent_outside_window(self, monkeypatch):
-        """Cleanroom regression check: outside 13:00-14:00 UTC the
-        digest exits before running the stats query, so the count
-        bug can't fire either. We verify the stats fetchrow is NOT
-        called when the hour is wrong."""
+    async def test_digest_not_sent_within_window(self, monkeypatch):
+        """The digest skips when last_sent is still within the configured window."""
         import datetime as _dt_mod
         from datetime import timezone
 
@@ -179,19 +176,57 @@ class TestDailyDigestPostCounts:
         class _PatchDT(real_datetime):
             @classmethod
             def now(cls, tz=None):
-                return real_datetime(2026, 4, 27, 7, 0, tzinfo=timezone.utc)
+                return real_datetime(2026, 4, 27, 13, 0, tzinfo=timezone.utc)
 
         monkeypatch.setattr(_dt_mod, "datetime", _PatchDT)
 
         pool = _digest_pool({"total_posts": 0})
-        # Override fetchrow side_effect — only the last-sent guard
-        # should fire; the stats query must NOT be reached.
-        pool.fetchrow = AsyncMock(return_value=None)
+        pool.fetchrow = AsyncMock(return_value={"value": "2026-04-27T09:30:00+00:00"})
+        pool.fetchval = AsyncMock(return_value="6")
 
         await bd.generate_daily_digest(pool)
 
         # Only the last_sent guard fetchrow ran (1 call), not the stats.
         assert pool.fetchrow.await_count == 1
+
+    async def test_digest_sends_after_window_elapsed(self, monkeypatch):
+        """When the digest window has elapsed, the stats query and send must run."""
+        import datetime as _dt_mod
+        from datetime import timezone
+
+        real_datetime = _dt_mod.datetime
+
+        class _PatchDT(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return real_datetime(2026, 4, 27, 16, 0, tzinfo=timezone.utc)
+
+        monkeypatch.setattr(_dt_mod, "datetime", _PatchDT)
+
+        stats_row = {
+            "total_posts": 1,
+            "approval_queue": 0,
+            "pending": 0,
+            "failed_24h": 0,
+            "published_24h": 1,
+            "views_today": 10,
+            "month_spend": 0.0,
+        }
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=[{"value": "2026-04-27T08:00:00+00:00"}, stats_row])
+        pool.fetchval = AsyncMock(return_value="6")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        assert pool.fetchrow.await_count == 2
+        send_telegram.assert_awaited_once()
+        send_discord.assert_awaited_once()
 
 
 @pytest.mark.unit

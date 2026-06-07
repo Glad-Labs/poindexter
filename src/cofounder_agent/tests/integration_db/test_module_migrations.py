@@ -1,6 +1,6 @@
 """End-to-end Phase 2 test against a real disposable Postgres DB.
 
-Exercises ``services.module_migrations.run_module_migrations`` on
+Exercises ``services.migrations.module_runner.run_module_migrations`` on
 synthetic test modules. The session-scoped ``test_pool`` fixture
 (from ``tests/integration_db/conftest.py``) is a fresh
 ``poindexter_test_<hex>`` DB with the full schema applied — that
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from services.module_migrations import run_module_migrations
+from services.module_runner import run_module_migrations
 
 pytestmark = [
     pytest.mark.integration_db,

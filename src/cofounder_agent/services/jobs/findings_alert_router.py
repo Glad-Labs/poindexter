@@ -48,6 +48,7 @@ from typing import Any
 from plugins.job import JobResult
 from services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob
 from services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob
+from services.jobs.fix_missing_seo import FixMissingSeoJob
 from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob
 from utils.findings import emit_finding
 
@@ -144,11 +145,11 @@ def _delivery_for(kind: str, severity: str, policies: dict[str, dict[str, str]])
 
 # kind -> auto-fix Job class. Only kinds with a REAL fix job belong here.
 # A kind with delivery='auto_fix' but no entry falls back to its
-# `fallback` channel (route) — never silently dropped. missing_seo is
-# intentionally absent (flag-only today; falls back to github_issue).
+# `fallback` channel (route) — never silently dropped.
 _AUTOFIX_JOBS: dict[str, Any] = {
     "broken_external_link": FixBrokenExternalLinksJob,
     "broken_internal_link": FixBrokenInternalLinksJob,
+    "missing_seo": FixMissingSeoJob,
     "uncategorized_post": FixUncategorizedPostsJob,
 }
 
