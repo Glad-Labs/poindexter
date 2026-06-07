@@ -99,10 +99,10 @@ async def persist_qa_reject(
         await database_service.pool.execute(
             """
             INSERT INTO pipeline_gate_history
-                (task_id, gate_name, event_kind, feedback, metadata)
-            VALUES ($1, $2, $3, $4, $5::jsonb)
+                (task_id, gate_name, event_kind, feedback, actor, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
             """,
-            task_id, "multi_model_qa", "rejected", reason[:2000],
+            task_id, "multi_model_qa", "rejected", reason[:2000], "multi_model_qa",
             json.dumps({"reviewer": "multi_model_qa", "decision": "rejected"}, default=str),
         )
     except Exception as exc:  # noqa: BLE001

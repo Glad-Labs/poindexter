@@ -336,6 +336,7 @@ async def approve(
     task_id: str,
     gate_name: str | None = None,
     feedback: str | None = None,
+    actor: str = "human",
     site_config: Any,
     pool: Any,
 ) -> dict[str, Any]:
@@ -350,6 +351,8 @@ async def approve(
         task_id: UUID of the content_tasks row.
         gate_name: Optional name to assert. None = "any active gate."
         feedback: Optional operator note recorded on the audit row.
+        actor: Who triggered the approval — 'human' for CLI/MCP/REST,
+            'auto_publish' for the quality-score gate.
         site_config: SiteConfig (DI seam).
         pool: asyncpg pool.
 
@@ -401,12 +404,13 @@ async def approve(
         await conn.execute(
             """
             INSERT INTO pipeline_gate_history
-                (task_id, gate_name, event_kind, feedback, metadata)
-            VALUES ($1, $2, 'approved', $3, $4::jsonb)
+                (task_id, gate_name, event_kind, feedback, actor, metadata)
+            VALUES ($1, $2, 'approved', $3, $4, $5::jsonb)
             """,
             str(task_id),
             cleared_gate,
             feedback or "",
+            actor,
             json.dumps(
                 {"previous_status": previous_status},
                 default=str,
@@ -444,6 +448,7 @@ async def reject(
     task_id: str,
     gate_name: str | None = None,
     reason: str | None = None,
+    actor: str = "human",
     site_config: Any,
     pool: Any,
 ) -> dict[str, Any]:
@@ -460,6 +465,7 @@ async def reject(
         task_id: UUID of the content_tasks row.
         gate_name: Optional name to assert.
         reason: Optional operator-supplied veto reason.
+        actor: Who triggered the rejection — 'human' for CLI/MCP/REST.
         site_config: SiteConfig (DI).
         pool: asyncpg pool.
 
@@ -506,6 +512,20 @@ async def reject(
             str(task_id),
             new_status,
             f"gate '{rejected_gate}' rejected: {reason}" if reason else None,
+        )
+
+        await conn.execute(
+            """
+            INSERT INTO pipeline_gate_history
+                (task_id, gate_name, event_kind, feedback, actor, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            """,
+            str(task_id),
+            rejected_gate,
+            new_status,
+            reason or "",
+            actor,
+            json.dumps({"new_status": new_status}, default=str),
         )
 
     audit_log_bg(

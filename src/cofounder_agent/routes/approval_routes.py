@@ -143,13 +143,14 @@ async def reject_task(
             await db_service.pool.execute(
                 """
                 INSERT INTO pipeline_gate_history
-                    (task_id, gate_name, event_kind, feedback, metadata)
-                VALUES ($1, $2, $3, $4, $5::jsonb)
+                    (task_id, gate_name, event_kind, feedback, actor, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                 """,
                 full_task_id,
                 LEGACY_APPROVAL_GATE,
                 event_kind,
                 request.feedback,
+                operator.get("id") or "human",
                 json.dumps(
                     {
                         "reviewer": operator["id"],

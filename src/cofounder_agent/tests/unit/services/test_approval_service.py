@@ -128,7 +128,32 @@ class TestApprove:
         assert out["feedback"] == "lgtm"
         sql = executed_sql(conn)
         assert "UPDATE pipeline_tasks" in sql
-        assert "pipeline_gate_history" in sql  # task path records gate history
+        assert "pipeline_gate_history" in sql
+        assert "actor" in sql  # actor column must be in the INSERT
+
+    async def test_approve_default_actor_is_human(self):
+        row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve(task_id="t1", site_config=None, pool=pool)
+        # Find the pipeline_gate_history INSERT and check args contain 'human'.
+        insert_calls = [
+            args for (sql, args) in conn.executed
+            if "pipeline_gate_history" in sql
+        ]
+        assert insert_calls, "expected a pipeline_gate_history INSERT"
+        assert "human" in insert_calls[0]
+
+    async def test_approve_custom_actor_propagates(self):
+        row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve(task_id="t1", actor="auto_publish", site_config=None, pool=pool)
+        insert_calls = [
+            args for (sql, args) in conn.executed
+            if "pipeline_gate_history" in sql
+        ]
+        assert "auto_publish" in insert_calls[0]
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +175,16 @@ class TestReject:
             out = await svc.reject(task_id="t1", reason="nope", site_config=None, pool=pool)
         assert out["new_status"] == "rejected"
         assert out["reason"] == "nope"
+
+    async def test_reject_writes_gate_history(self):
+        row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g", "gate_artifact": "{}"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        with patch("services.rejection_handlers.dispatch_rejection", new=AsyncMock()):
+            await svc.reject(task_id="t1", reason="bad", site_config=None, pool=pool)
+        sql = executed_sql(conn)
+        assert "pipeline_gate_history" in sql
+        assert "actor" in sql
 
     async def test_per_gate_reject_status_override(self):
         row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g", "gate_artifact": "{}"}

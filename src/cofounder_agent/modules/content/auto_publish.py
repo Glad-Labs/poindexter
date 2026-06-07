@@ -230,13 +230,14 @@ async def auto_publish_task(
         await database_service.pool.execute(
             """
             INSERT INTO pipeline_gate_history
-                (task_id, gate_name, event_kind, feedback, metadata)
-            VALUES ($1, $2, $3, $4, $5::jsonb)
+                (task_id, gate_name, event_kind, feedback, actor, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
             """,
             task_id,
             "auto_publish",
             "approved",
             f"Auto-approved at quality score {quality_score:.1f}",
+            "auto_publish",
             json.dumps(
                 {
                     "reviewer": "auto_publish",

@@ -90,11 +90,17 @@ class FakeConnection:
                     row["error_message"] = error_message
             return "UPDATE 1"
         if sql_norm.startswith("INSERT INTO pipeline_gate_history"):
-            task_id, gate_name, feedback, metadata = args
+            # approve: 5 args — event_kind='approved' is a SQL literal, not a param
+            # reject:  6 args — event_kind is passed as $3
+            if len(args) == 5:
+                task_id, gate_name, feedback, actor, metadata = args
+                event_kind = "approved"
+            else:
+                task_id, gate_name, event_kind, feedback, actor, metadata = args
             self._store.events.append({
                 "task_id": task_id, "gate_name": gate_name,
-                "event_kind": "approved", "feedback": feedback,
-                "metadata": metadata,
+                "event_kind": event_kind, "feedback": feedback,
+                "actor": actor, "metadata": metadata,
             })
             return "INSERT 0 1"
         if sql_norm.startswith("INSERT INTO app_settings"):
