@@ -23,7 +23,8 @@ class TestCanonicalBlogSpec:
         # restore four more checks the cutover dropped (#658/#659/#660/#661).
         assert {"qa.programmatic", "qa.critic", "qa.deepeval", "qa.guardrails",
                 "qa.ragas", "qa.vision", "qa.topic_delivery", "qa.citations",
-                "qa.consistency", "qa.web_factcheck", "qa.aggregate"} <= node_atoms
+                "qa.consistency", "qa.self_consistency", "qa.web_factcheck",
+                "qa.aggregate"} <= node_atoms
         # The three seo.* atoms replace generate_seo_metadata (#362).
         assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
         # No legacy monolithic QA / SEO stage nodes.
@@ -61,12 +62,15 @@ class TestCanonicalBlogSpec:
         """The four checks the #355 cutover silently dropped (#658/#659/#660/#661)
         run between qa.vision and qa.aggregate. qa.web_factcheck is LAST,
         immediately before qa.aggregate, so the known_wrong_fact rescue (#661)
-        can read its verdict."""
+        can read its verdict. qa.self_consistency (#621) is inserted between
+        qa_consistency and qa_web_factcheck."""
         edges = {(e["from"], e["to"]) for e in CANONICAL_BLOG_GRAPH_DEF["edges"]}
         assert ("qa_vision", "qa_topic_delivery") in edges
         assert ("qa_topic_delivery", "qa_citations") in edges
         assert ("qa_citations", "qa_consistency") in edges
-        assert ("qa_consistency", "qa_web_factcheck") in edges
+        # qa_self_consistency is inserted between consistency and web_factcheck
+        assert ("qa_consistency", "qa_self_consistency") in edges
+        assert ("qa_self_consistency", "qa_web_factcheck") in edges
         assert ("qa_web_factcheck", "qa_aggregate") in edges
         # The old direct qa_vision → qa_aggregate edge must be gone (re-routed).
         assert ("qa_vision", "qa_aggregate") not in edges

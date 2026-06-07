@@ -317,6 +317,32 @@ async def content_generation_flow(
             task_id=task_id,
             error=exc,
         )
+        # Send a deduped, severity-routed operator alert. Best-effort —
+        # never raises, never blocks the re-raise below.
+        try:
+            from services.task_failure_alerts import send_failure_alert
+
+            _pool = getattr(getattr(database_service, "database_service", database_service), "pool", None)
+
+            async def _get_setting(key: str, default: str = "") -> str:
+                if _wired_site_config is not None:
+                    try:
+                        return str(_wired_site_config.get(key, default) or default)
+                    except Exception:
+                        pass
+                return default
+
+            await send_failure_alert(
+                task_id=str(task_id),
+                topic=str(topic or ""),
+                error_message=str(exc),
+                pool=_pool,
+                get_setting=_get_setting,
+            )
+        except Exception as alert_exc:
+            logger.warning(
+                "[content_generation] send_failure_alert raised: %s", alert_exc,
+            )
         # Re-raise so Prefect knows the flow failed and the operator
         # sees it in the UI. The task row is already correctly marked
         # failed in the DB — Prefect's retry won't re-pick this task

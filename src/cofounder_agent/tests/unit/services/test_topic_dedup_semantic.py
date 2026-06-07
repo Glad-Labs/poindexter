@@ -95,7 +95,7 @@ class TestEngineSelector:
 
 @pytest.mark.unit
 class TestSemanticIntraBatch:
-    def test_paraphrases_marked_dup(self):
+    async def test_paraphrases_marked_dup(self):
         # Embedding map: a/b are paraphrases (cosine ≈ 0.95);
         # c is distinct (cosine ≈ 0 with both).
         mapping = {
@@ -109,13 +109,13 @@ class TestSemanticIntraBatch:
             "services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
-            dedup.mark_intra_batch(topics)
+            await dedup.mark_intra_batch(topics)
 
         assert topics[0].is_duplicate is False
         assert topics[1].is_duplicate is True   # paraphrase of #0
         assert topics[2].is_duplicate is False  # distinct
 
-    def test_below_threshold_left_alone(self):
+    async def test_below_threshold_left_alone(self):
         # All distant from each other.
         mapping = {
             "A": [1.0, 0.0, 0.0],
@@ -128,11 +128,11 @@ class TestSemanticIntraBatch:
             "services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
-            dedup.mark_intra_batch(topics)
+            await dedup.mark_intra_batch(topics)
 
         assert all(not t.is_duplicate for t in topics)
 
-    def test_threshold_override_via_site_config(self):
+    async def test_threshold_override_via_site_config(self):
         # Two pairs that score 0.5 — would NOT be marked at default 0.65,
         # but ARE marked when threshold lowered to 0.4 via app_settings.
         mapping = {
@@ -145,7 +145,7 @@ class TestSemanticIntraBatch:
             "services.topic_dedup_semantic._get_model",
             return_value=_stub_embeddings(mapping),
         ):
-            dedup.mark_intra_batch(topics)
+            await dedup.mark_intra_batch(topics)
         assert topics[1].is_duplicate is True
 
 

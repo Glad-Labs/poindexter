@@ -26,6 +26,8 @@ import re
 from typing import Any
 
 from plugins.stage import StageResult
+from services.audio_gen_service import generate_audio, is_audio_gen_enabled
+from services.tts_service import is_tts_enabled, synthesize_speech
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,52 @@ class GenerateMediaScriptsStage:
                 )
                 podcast_script = ""
 
+            # TTS narration — synthesize the podcast script to audio via Speaches.
+            # Non-critical: failure logs a warning, pipeline continues.
+            # Enable with app_settings: podcast_tts_enabled=true.
+            if podcast_script and is_tts_enabled(sc):
+                try:
+                    import os
+                    import tempfile
+                    suffix = (sc.get("podcast_tts_format", "wav") if sc else "wav") or "wav"
+                    with tempfile.NamedTemporaryFile(
+                        suffix=f".{suffix}", delete=False,
+                    ) as tmp:
+                        tts_path = tmp.name
+                    audio_bytes = await synthesize_speech(
+                        podcast_script,
+                        site_config=sc,
+                        output_path=tts_path,
+                    )
+                    if audio_bytes:
+                        context["podcast_audio_path"] = tts_path
+                        logger.info(
+                            "[MEDIA] Podcast TTS audio: %d bytes → %s",
+                            len(audio_bytes), tts_path,
+                        )
+                    else:
+                        os.unlink(tts_path)
+                except Exception as tts_exc:
+                    logger.warning("[MEDIA] podcast TTS failed: %s", tts_exc)
+
+            # Audio gen — podcast intro sting via StableAudioOpen.
+            # Non-critical, default-off (audio_gen_engine='' by default).
+            # Activate: set audio_gen_engine=stable-audio-open-1.0 in app_settings.
+            if podcast_script and is_audio_gen_enabled(sc):
+                try:
+                    intro_result = await generate_audio(
+                        f"podcast intro sting for: {title}",
+                        "intro",
+                        site_config=sc,
+                    )
+                    if intro_result is not None:
+                        path = intro_result.file_path or ""
+                        if path:
+                            context["podcast_intro_audio_path"] = path
+                            logger.info("[MEDIA] Podcast intro sting: %s", path)
+                except Exception as sfx_exc:
+                    logger.warning("[MEDIA] audio_gen intro sting failed: %s", sfx_exc)
+
             # Call 2: Video scenes + short summary (single LLM call).
             scene_prompt = _build_scene_prompt(
                 title, clean_content,
@@ -149,6 +197,23 @@ class GenerateMediaScriptsStage:
                     "[MEDIA] Video scenes: %d, Short summary: %d chars",
                     len(video_scenes), len(short_summary),
                 )
+
+            # Audio gen — ambient video bed via StableAudioOpen.
+            if video_scenes and is_audio_gen_enabled(sc):
+                try:
+                    ambient_prompt = video_scenes[0][:200] if video_scenes else title
+                    ambient_result = await generate_audio(
+                        ambient_prompt,
+                        "ambient",
+                        site_config=sc,
+                    )
+                    if ambient_result is not None:
+                        path = ambient_result.file_path or ""
+                        if path:
+                            context["video_ambient_audio_path"] = path
+                            logger.info("[MEDIA] Video ambient bed: %s", path)
+                except Exception as sfx_exc:
+                    logger.warning("[MEDIA] audio_gen ambient bed failed: %s", sfx_exc)
 
             stages = context.setdefault("stages", {})
             stages["4b_media_scripts"] = True

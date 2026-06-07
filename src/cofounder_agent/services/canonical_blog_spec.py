@@ -91,6 +91,9 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_citations", "atom": "qa.citations"},
         # qa.consistency (#660): cross-section self-contradiction check.
         {"id": "qa_consistency", "atom": "qa.consistency"},
+        # qa.self_consistency (#621): HalluCounter-style pairwise-cosine rail.
+        # Default-off (self_consistency_enabled=false). Advisory-first.
+        {"id": "qa_self_consistency", "atom": "qa.self_consistency"},
         # qa.web_factcheck (#661): DuckDuckGo product/spec verification. Ordered
         # LAST in the qa block, immediately before qa.aggregate, because the
         # known_wrong_fact rescue (qa.aggregate suppressing a stale-regex
@@ -126,7 +129,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_vision", "to": "qa_topic_delivery"},
         {"from": "qa_topic_delivery", "to": "qa_citations"},
         {"from": "qa_citations", "to": "qa_consistency"},
-        {"from": "qa_consistency", "to": "qa_web_factcheck"},
+        {"from": "qa_consistency", "to": "qa_self_consistency"},
+        {"from": "qa_self_consistency", "to": "qa_web_factcheck"},
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},
         {"from": "qa_aggregate", "to": "seo_title"},
         {"from": "seo_title", "to": "seo_description"},

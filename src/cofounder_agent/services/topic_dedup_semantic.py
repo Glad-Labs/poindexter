@@ -29,6 +29,7 @@ mpnet variants. Easy to swap by setting
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from collections.abc import Iterable
@@ -110,7 +111,7 @@ class SemanticDeduplicator:
         if not self.pool or not topics:
             return topics
         await self.mark_against_existing(topics)
-        self.mark_intra_batch(topics)
+        await self.mark_intra_batch(topics)
         return topics
 
     async def mark_against_existing(
@@ -129,7 +130,7 @@ class SemanticDeduplicator:
         candidate_titles = [t.title for t in topics]
         all_titles = candidate_titles + list(existing)
 
-        embeddings = self._embed(all_titles)
+        embeddings = await self._embed_async(all_titles)
         n_candidates = len(candidate_titles)
         candidate_embs = embeddings[:n_candidates]
         existing_embs = embeddings[n_candidates:]
@@ -162,13 +163,13 @@ class SemanticDeduplicator:
                 )
         return topics
 
-    def mark_intra_batch(
+    async def mark_intra_batch(
         self, topics: list[_TopicLike],
     ) -> list[_TopicLike]:
         """Mark candidates that are semantically near another in the
         same scrape. Threshold via
         ``topic_dedup_intra_batch_threshold_semantic`` (default 0.85).
-        Synchronous — no DB hit."""
+        Async — delegates blocking model.encode to a thread via asyncio.to_thread."""
         if not topics or len(topics) < 2:
             return topics
 
@@ -178,7 +179,7 @@ class SemanticDeduplicator:
         )
 
         titles = [t.title for t in topics]
-        embeddings = self._embed(titles)
+        embeddings = await self._embed_async(titles)
 
         import numpy as np
         # Upper-triangular similarity matrix — pair (i, j) only
@@ -208,10 +209,22 @@ class SemanticDeduplicator:
     # ------------------------------------------------------------------
 
     def _embed(self, texts: list[str]) -> Any:
-        """Encode texts to a (N, D) numpy array. Uses the cached model."""
+        """Encode texts to a (N, D) numpy array. Synchronous — for internal use only.
+        Callers should prefer _embed_async to avoid blocking the event loop."""
         model_name = self._get_model_name()
         model = _get_model(model_name)
         return model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+
+    async def _embed_async(self, texts: list[str]) -> Any:
+        """Encode texts via asyncio.to_thread so the blocking sentence-transformers
+        call does not freeze the event loop. Returns a (N, D) numpy array."""
+        model_name = self._get_model_name()
+        model = _get_model(model_name)
+        return await asyncio.to_thread(
+            model.encode, texts,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
 
     def _get_model_name(self) -> str:
         """Resolve the embedding model name from app_settings, with

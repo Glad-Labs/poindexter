@@ -84,3 +84,120 @@ async def test_happy_path_propagates_podcast_script_and_scenes():
 
     assert result.ok is True
     assert result.context_updates["podcast_script"] == "B" * 500
+
+
+# ---------------------------------------------------------------------------
+# Audio gen wiring tests (glad-labs-stack#621)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_audio_gen_intro_called_when_enabled():
+    """When audio_gen is enabled and podcast_script is long enough,
+    generate_audio must be called with kind='intro'."""
+    from plugins.audio_gen_provider import AudioGenResult
+    from types import SimpleNamespace
+
+    gpu = SimpleNamespace(lock=_fake_lock)
+    audio_calls = []
+
+    async def mock_generate_audio(prompt, kind, *, site_config, **kw):
+        audio_calls.append({"prompt": prompt, "kind": kind})
+        return AudioGenResult(file_path="/tmp/intro.wav", kind=kind)
+
+    ctx = _ctx()
+    # No platform/pool — video scenes call will be skipped gracefully
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="C" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             return_value=True,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.generate_audio",
+             new=mock_generate_audio,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             return_value=False,
+         ):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    intro_calls = [c for c in audio_calls if c["kind"] == "intro"]
+    assert len(intro_calls) == 1
+    assert "podcast intro sting" in intro_calls[0]["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_audio_gen_skipped_when_disabled():
+    """When audio_gen_enabled is False, generate_audio must not be called."""
+    from types import SimpleNamespace
+
+    gpu = SimpleNamespace(lock=_fake_lock)
+    audio_calls = []
+
+    async def mock_generate_audio(*a, **kw):
+        audio_calls.append(True)
+
+    ctx = _ctx()
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="D" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             return_value=False,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.generate_audio",
+             new=mock_generate_audio,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             return_value=False,
+         ):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert len(audio_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_tts_called_when_enabled():
+    """When podcast_tts_enabled is True and script is long enough,
+    synthesize_speech must be called."""
+    from types import SimpleNamespace
+
+    gpu = SimpleNamespace(lock=_fake_lock)
+    tts_calls = []
+
+    async def mock_synthesize_speech(text, *, site_config, output_path=None):
+        tts_calls.append(text)
+        return b"RIFF_fake_wav"
+
+    ctx = _ctx()
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="E" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             return_value=True,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.synthesize_speech",
+             new=mock_synthesize_speech,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             return_value=False,
+         ):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert len(tts_calls) == 1
