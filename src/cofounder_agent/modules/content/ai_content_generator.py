@@ -40,7 +40,6 @@ import httpx
 
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
-from services.site_config import SiteConfig
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
 # shim + ``_resolve_module_site_config`` helper were removed.
@@ -78,7 +77,8 @@ class AIContentGenerator:
         self,
         quality_threshold: float = 5.0,
         *,
-        site_config: SiteConfig,
+        site_config: Any,
+        platform: Any = None,
     ):
         """Initialize content generator
 
@@ -91,6 +91,8 @@ class AIContentGenerator:
         self.quality_threshold = quality_threshold
         # Every instance-method read goes through ``self._site_config``.
         self._site_config = site_config
+        # Seam 1 Wave 3f (#667): platform handle for dispatch.complete.
+        self._platform = platform
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
@@ -617,7 +619,6 @@ class AIContentGenerator:
 
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
-        from services.llm_providers.dispatcher import dispatch_complete
         from services.llm_providers.thinking_models import (
             is_thinking_model,
             resolve_thinking_substrings,
@@ -629,16 +630,21 @@ class AIContentGenerator:
         _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
         _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
         max_tokens_refinement = int(target_length * (_thinking_mult if _is_thinking_refine else _standard_mult))
-        completion = await dispatch_complete(
-            pool=pool,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": refinement_prompt},
-            ],
-            model=model_name,
-            tier="standard",
-            max_tokens=max_tokens_refinement,
-        )
+        if self._platform is not None:
+            completion = await self._platform.dispatch.complete(
+                pool=pool,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": refinement_prompt},
+                ],
+                model=model_name,
+                tier="standard",
+                max_tokens=max_tokens_refinement,
+            )
+        else:
+            raise RuntimeError(
+                "platform handle required for dispatch — check pipeline context threading"
+            )
 
         refined_content = (getattr(completion, "text", "") or "").strip()
         logger.debug(
@@ -857,13 +863,17 @@ class AIContentGenerator:
             )
             return None
 
-        from services.llm_providers.dispatcher import dispatch_complete
         from services.llm_providers.thinking_models import (
             is_thinking_model as _is_thinking_model,
         )
         from services.llm_providers.thinking_models import (
             resolve_thinking_substrings as _resolve_thinking_substrings,
         )
+
+        if self._platform is None:
+            raise RuntimeError(
+                "platform handle required for dispatch — check pipeline context threading"
+            )
 
         # Pool needed for dispatcher tier→provider lookup. The lifespan-bound
         # SiteConfig holds it via ``_pool``; tests that pass a pool-less
@@ -910,7 +920,7 @@ class AIContentGenerator:
                 )
 
                 logger.info("      Generating content via dispatcher...")
-                completion = await dispatch_complete(
+                completion = await self._platform.dispatch.complete(
                     pool=pool,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -1218,7 +1228,7 @@ Take action today—the insights you gain will compound over time.
 _generator: AIContentGenerator | None = None
 
 
-def get_content_generator(*, site_config: SiteConfig) -> AIContentGenerator:
+def get_content_generator(*, site_config: Any) -> AIContentGenerator:
     """Get or create the global content generator.
 
     ``site_config`` is REQUIRED (#272 Phase-2c). The cached instance
@@ -1235,7 +1245,7 @@ def get_content_generator(*, site_config: SiteConfig) -> AIContentGenerator:
 async def test_generation():
     """Test content generation"""
     logger = get_logger(__name__)
-    generator = AIContentGenerator(site_config=SiteConfig())
+    generator = AIContentGenerator(site_config=None)
 
     logger.info("Testing content generation...")
     logger.debug("Ollama available: %s", generator.ollama_available)
@@ -1268,7 +1278,7 @@ async def test_generation():
 
 
 async def _resolve_rag_writer_model(
-    *, site_config: SiteConfig,
+    *, site_config: Any,
 ) -> str:
     """Resolve writer model for the RAG ``generate_with_*`` helpers.
 
@@ -1334,7 +1344,7 @@ async def _resolve_rag_writer_model(
 async def generate_with_context(
     *, topic: str, angle: str, snippets: list[dict],
     extra_instructions: str | None = None,
-    site_config: SiteConfig,
+    site_config: Any,
     pool: Any = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the

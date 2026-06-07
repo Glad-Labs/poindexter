@@ -32,7 +32,6 @@ from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.qa_gates_db import load_qa_gate_chain
-from services.site_config import SiteConfig
 
 if TYPE_CHECKING:
     import httpx
@@ -209,7 +208,7 @@ class MultiModelQA:
         pool=None,
         settings_service=None,
         *,
-        site_config: SiteConfig,
+        site_config: Any,
         platform: Any = None,
     ):
         self.pool = pool

@@ -23,23 +23,30 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from modules.content.ai_content_generator import AIContentGenerator, ContentValidationResult
-from services.site_config import SiteConfig
+from plugins.fake_platform import FakePlatform
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_generator(site_config=None) -> AIContentGenerator:
+def _make_generator(site_config=None, platform=None) -> AIContentGenerator:
     """Instantiate AIContentGenerator. ProviderChecker is gone post-v2.8
     so no provider-availability patches are needed anymore.
 
-    ``site_config`` is REQUIRED on the ctor post-#272 Phase-2c; default to
-    a fresh empty :class:`SiteConfig` (env-fallback defaults) when the
-    test doesn't supply one."""
+    Wave 3f (#667): SiteConfig() fallback removed — pass site_config=None
+    (acceptable since tests that don't test config-reading don't need a
+    real SiteConfig). Pass platform= to exercise dispatch routing."""
+    sc = site_config if site_config is not None else MagicMock(
+        get=MagicMock(side_effect=lambda k, d=None: d),
+        get_int=MagicMock(side_effect=lambda k, d=3: d),
+        get_float=MagicMock(side_effect=lambda k, d=None: d),
+        _pool=MagicMock(),
+    )
     return AIContentGenerator(
         quality_threshold=7.5,
-        site_config=site_config if site_config is not None else SiteConfig(),
+        site_config=sc,
+        platform=platform,
     )
 
 
@@ -121,7 +128,15 @@ class TestAIContentGeneratorInit:
         assert gen.quality_threshold == 7.5
 
     def test_custom_quality_threshold(self):
-        gen = AIContentGenerator(quality_threshold=6.0, site_config=SiteConfig())
+        # Wave 3f (#667): SiteConfig() import removed; MagicMock satisfies the
+        # same interface for this threshold-only test.
+        sc = MagicMock(
+            get=MagicMock(side_effect=lambda k, d=None: d),
+            get_int=MagicMock(side_effect=lambda k, d=3: d),
+            get_float=MagicMock(side_effect=lambda k, d=None: d),
+            _pool=MagicMock(),
+        )
+        gen = AIContentGenerator(quality_threshold=6.0, site_config=sc)
         assert gen.quality_threshold == 6.0
 
     def test_initial_state(self):
@@ -509,12 +524,22 @@ class TestGenerateFallbackContentExpanded:
 # ---------------------------------------------------------------------------
 
 
+def _make_sc():
+    """Minimal site_config stand-in for singleton-init tests."""
+    return MagicMock(
+        get=MagicMock(side_effect=lambda k, d=None: d),
+        get_int=MagicMock(side_effect=lambda k, d=3: d),
+        get_float=MagicMock(side_effect=lambda k, d=None: d),
+        _pool=MagicMock(),
+    )
+
+
 class TestGetContentGenerator:
     def test_returns_ai_content_generator(self):
         import modules.content.ai_content_generator as mod
         mod._generator = None
         from modules.content.ai_content_generator import get_content_generator
-        gen = get_content_generator(site_config=SiteConfig())
+        gen = get_content_generator(site_config=_make_sc())
         assert isinstance(gen, AIContentGenerator)
         mod._generator = None
 
@@ -522,8 +547,8 @@ class TestGetContentGenerator:
         import modules.content.ai_content_generator as mod
         mod._generator = None
         from modules.content.ai_content_generator import get_content_generator
-        g1 = get_content_generator(site_config=SiteConfig())
-        g2 = get_content_generator(site_config=SiteConfig())
+        g1 = get_content_generator(site_config=_make_sc())
+        g2 = get_content_generator(site_config=_make_sc())
         assert g1 is g2
         mod._generator = None
 
@@ -1245,19 +1270,22 @@ class TestBuildCostLog:
 @pytest.mark.unit
 class TestTryOllamaDispatcherRouting:
     """The core #407 contract: ``_try_ollama`` routes via
-    ``dispatch_complete`` with ``tier='standard'`` — not OllamaClient.
+    ``platform.dispatch.complete`` with ``tier='standard'`` — not OllamaClient.
+
+    Wave 3f (#667): the legacy direct-import fallback is removed; tests use
+    FakePlatform so the generator has a real dispatch handle.
     """
 
     @pytest.mark.asyncio
     async def test_calls_dispatch_complete_with_tier_standard(self):
-        gen = _make_generator()
+        # Long enough content for the >100 chars gate.
+        body = "Topic phrase. " + ("Lorem ipsum dolor sit amet. " * 20)
+        platform = FakePlatform(dispatch_response=_make_completion(body))
+        gen = _make_generator(platform=platform)
         gen._validate_content = MagicMock(return_value=ContentValidationResult(
             is_valid=True, quality_score=9.0, issues=[], feedback="ok",
         ))
         gen._resolve_writer_models = AsyncMock(return_value=["model-1"])
-        # Long enough content for the >100 chars gate.
-        body = "Topic phrase. " + ("Lorem ipsum dolor sit amet. " * 20)
-        dispatch_mock = AsyncMock(return_value=_make_completion(body))
         ctx = {
             "use_ollama": True,
             "skip_ollama": False,
@@ -1280,22 +1308,19 @@ class TestTryOllamaDispatcherRouting:
             "attempts": [],
             "start_time": 0.0,
         }
-        with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
-            dispatch_mock,
-        ):
-            result = await gen._try_ollama(ctx)
+        result = await gen._try_ollama(ctx)
         assert result is not None
         content, model_used, _metrics = result
         assert model_used == "model-1"
-        dispatch_mock.assert_awaited()
-        for call in dispatch_mock.await_args_list:
-            assert call.kwargs.get("tier") == "standard"
-            assert call.kwargs.get("model") == "model-1"
+        assert len(platform.dispatch.calls) >= 1
+        _args, kwargs = platform.dispatch.calls[-1]
+        assert kwargs.get("tier") == "standard"
+        assert kwargs.get("model") == "model-1"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_writer_model_resolvable(self):
-        gen = _make_generator()
+        platform = FakePlatform()
+        gen = _make_generator(platform=platform)
         gen._resolve_writer_models = AsyncMock(return_value=[])
         ctx = {
             "use_ollama": True,
@@ -1343,14 +1368,14 @@ class TestTryOllamaDispatcherRouting:
         """The success path stamps a cost_log derived from Completion.raw,
         not from OllamaClient's response dict — the migration's #1
         observable side effect besides Langfuse spans."""
-        gen = _make_generator()
+        body = "x " * 200  # > 100 chars
+        completion = _make_completion(body, response_cost=0.0042)
+        platform = FakePlatform(dispatch_response=completion)
+        gen = _make_generator(platform=platform)
         gen._validate_content = MagicMock(return_value=ContentValidationResult(
             is_valid=True, quality_score=9.0, issues=[], feedback="ok",
         ))
         gen._resolve_writer_models = AsyncMock(return_value=["m1"])
-        body = "x " * 200  # > 100 chars
-        completion = _make_completion(body, response_cost=0.0042)
-        dispatch_mock = AsyncMock(return_value=completion)
         ctx = {
             "use_ollama": True, "skip_ollama": False,
             "effective_provider": "auto", "preferred_model": None,
@@ -1363,11 +1388,7 @@ class TestTryOllamaDispatcherRouting:
             "system_prompt": "s", "generation_prompt": "g",
             "target_length": 100, "topic": "t", "attempts": [], "start_time": 0.0,
         }
-        with patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
-            dispatch_mock,
-        ):
-            _, _, metrics = await gen._try_ollama(ctx)
+        _, _, metrics = await gen._try_ollama(ctx)
         assert "cost_log" in metrics
         assert metrics["cost_log"]["cost_usd"] == round(0.0042, 6)
         assert metrics["cost_log"]["model"] == "m1"

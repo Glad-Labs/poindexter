@@ -71,14 +71,12 @@ class UrlValidationStage:
             )
 
         try:
-            from services.site_config import SiteConfig
             from services.url_validator import URLValidator
 
-            # Caller-bridge: build a URLValidator from the lifespan-bound
-            # SiteConfig carried on the pipeline context (#272 DI migration).
-            # Falls back to an env-fallback SiteConfig when the context
-            # doesn't seed one (legacy / test rigs).
-            site_config = context.get("site_config") or SiteConfig()
+            # Seam 1 Wave 3f (#667): fallback SiteConfig() removed — pipeline
+            # always threads a real site_config via context. None is safe;
+            # URLValidator handles site_config=None.
+            site_config = context.get("site_config")
             validator = URLValidator(site_config=site_config)
             urls = validator.extract_urls(content_text)
             if not urls:

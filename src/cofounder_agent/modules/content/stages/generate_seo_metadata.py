@@ -54,14 +54,9 @@ class GenerateSeoMetadataStage:
 
         logger.info("STAGE 4: Generating SEO metadata...")
 
-        # SiteConfig DI migration (#272 leaf batch 5): the SEO generator chain
-        # now takes ``site_config`` via constructor DI. Pipeline stages reach
-        # it through the context seam seeded by
-        # ``content_router_service.process_content_generation_task``.
+        # Seam 1 Wave 3f (#667): fallback SiteConfig() removed — pipeline
+        # always threads a real site_config via context.
         site_config = context.get("site_config")
-        if site_config is None:
-            from services.site_config import SiteConfig
-            site_config = SiteConfig()
         seo_generator = get_seo_content_generator(
             get_content_generator(site_config=site_config), site_config=site_config
         )

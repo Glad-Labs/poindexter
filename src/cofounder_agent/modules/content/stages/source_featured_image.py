@@ -627,16 +627,8 @@ async def _build_sdxl_prompt(
                 max_tokens=150,
             )
         else:
-            from services.llm_providers.dispatcher import dispatch_complete
-
-            result = await dispatch_complete(
-                pool=pool,
-                messages=[{"role": "user", "content": img_prompt}],
-                model=prompt_model,
-                tier="standard",
-                timeout_s=30,
-                temperature=0.7,
-                max_tokens=150,
+            raise RuntimeError(
+                "platform handle required for dispatch — check pipeline context threading"
             )
         prompt_text = (getattr(result, "text", "") or "").strip().strip('"')
         logger.info(

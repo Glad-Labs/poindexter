@@ -1,13 +1,13 @@
-"""Wave 3d-ii: platform handle dispatch seam tests.
+"""Wave 3d-ii / Wave 3f: platform handle dispatch seam tests.
 
 Pins that when a ``platform`` is injected into the stage context, the
 image-prompt helpers in ``source_featured_image`` and ``replace_inline_images``
 call ``platform.dispatch.complete()`` instead of importing
 ``dispatch_complete`` directly from the services layer.
 
-When ``platform`` is absent (substrate / legacy path), both functions fall
-back to the direct substrate import — preserving backward-compat for callers
-that don't wire a platform yet (e.g. test_replace_inline_images_task_id.py).
+Wave 3f (#667): the legacy fallback path (direct substrate import when
+``platform`` is None) is removed. Both functions now raise RuntimeError
+if ``platform`` is absent — callers must always thread a platform handle.
 """
 
 from __future__ import annotations
@@ -83,11 +83,12 @@ class TestBuildSdxlPromptDispatch:
         assert text == self._PROMPT_TEXT
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_direct_import_when_no_platform(self):
+    async def test_raises_when_no_platform(self):
+        """Wave 3f (#667): platform=None raises RuntimeError (caught by caller's
+        except-block), so _build_sdxl_prompt returns the deterministic fallback
+        string instead of calling dispatch_complete."""
         from modules.content.stages.source_featured_image import _build_sdxl_prompt
 
-        result_obj = MagicMock(text=self._PROMPT_TEXT)
-        dispatch_mock = AsyncMock(return_value=result_obj)
         style_tracker = MagicMock(recent=MagicMock(return_value=[]))
 
         with patch(
@@ -96,9 +97,6 @@ class TestBuildSdxlPromptDispatch:
         ), patch(
             "modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
-        ), patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
-            dispatch_mock,
         ):
             text = await _build_sdxl_prompt(
                 "mountains at dawn",
@@ -108,8 +106,10 @@ class TestBuildSdxlPromptDispatch:
                 platform=None,
             )
 
-        assert dispatch_mock.await_count == 1
-        assert text == self._PROMPT_TEXT
+        # RuntimeError is caught by the try/except and the deterministic fallback
+        # style+tags string is returned — not the LLM-generated prompt.
+        assert text is not None
+        assert "nature" in text
 
     @pytest.mark.asyncio
     async def test_no_pool_returns_fallback_without_dispatch(self):
@@ -181,20 +181,17 @@ class TestTrySdxlDispatch:
         assert len(platform.dispatch.calls) == 1
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_direct_import_when_no_platform(self):
+    async def test_raises_when_no_platform(self):
+        """Wave 3f (#667): platform=None raises RuntimeError; _try_sdxl catches
+        it and returns None (non-critical path — image is skipped, not fatal)."""
         from modules.content.stages.replace_inline_images import _try_sdxl
 
-        result_obj = MagicMock(text="short")
-        dispatch_mock = AsyncMock(return_value=result_obj)
         gpu_mock = MagicMock(lock=_noop_gpu_lock)
 
         with patch(
             "modules.content.stages.replace_inline_images.gpu",
             gpu_mock,
             create=True,
-        ), patch(
-            "services.llm_providers.dispatcher.dispatch_complete",
-            dispatch_mock,
         ):
             out = await _try_sdxl(
                 "2",
@@ -205,8 +202,9 @@ class TestTrySdxlDispatch:
                 platform=None,
             )
 
+        # RuntimeError is caught inside _try_sdxl (non-critical inline image)
+        # and the function returns None.
         assert out is None
-        assert dispatch_mock.await_count == 1
 
     @pytest.mark.asyncio
     async def test_no_pool_returns_none_without_dispatch(self):

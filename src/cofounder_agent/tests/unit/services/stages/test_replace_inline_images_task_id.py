@@ -26,6 +26,7 @@ from modules.content.stages.replace_inline_images import (
     ReplaceInlineImagesStage,
     _try_sdxl,
 )
+from plugins.fake_platform import FakePlatform
 
 # Mirrors the fake used in test_remaining_stages_smoke.py.
 _FAKE_SITE_CONFIG = SimpleNamespace(
@@ -63,11 +64,14 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
     """
     recorder = _LockRecorder()
 
-    # dispatcher returns a usable SDXL prompt (>20 chars). The SDXL
+    # Wave 3f (#667): dispatch now goes through platform.dispatch.complete.
+    # FakePlatform returns a usable SDXL prompt (>20 chars). The SDXL
     # POST returns 200 so the path proceeds to R2 upload, which we
     # short-circuit with a stub ``_resolve_sdxl_response``.
     completion = MagicMock()
     completion.text = "a serene server room with cyan accents"
+
+    platform = FakePlatform(dispatch_response=completion)
 
     sdxl_resp = MagicMock()
     sdxl_resp.status_code = 200
@@ -90,9 +94,6 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
     ), patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "services.llm_providers.dispatcher.dispatch_complete",
-        new=AsyncMock(return_value=completion),
-    ), patch(
         "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
@@ -108,6 +109,7 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
             topic="Database performance",
             site_config=site_config,
             task_id="task-abc-123",
+            platform=platform,
         )
 
     assert result == "https://r2.example/x.png"

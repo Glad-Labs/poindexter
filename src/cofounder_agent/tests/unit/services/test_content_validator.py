@@ -14,6 +14,7 @@ _SC = SiteConfig()
 from modules.content.content_validator import (
     GLAD_LABS_FACTS,
     ValidationResult,
+    _get_company_facts,
     validate_content,
 )
 
@@ -120,13 +121,18 @@ class TestCompanyFactValidation:
     """Detect impossible claims about the company."""
 
     def test_facts_are_configurable(self):
-        """Company facts should come from config, not be hardcoded."""
-        assert "company_name" in GLAD_LABS_FACTS
-        assert "founded_year" in GLAD_LABS_FACTS
-        assert "team_size" in GLAD_LABS_FACTS
+        """Company facts come from the site_config passed at call time (Wave 3f #667).
+
+        The module-level GLAD_LABS_FACTS is intentionally {} at import (no
+        SiteConfig() fallback); _get_company_facts(site_config) populates per-call.
+        """
+        facts = _get_company_facts(_SC)
+        assert "company_name" in facts
+        assert "founded_year" in facts
+        assert "team_size" in facts
 
     def test_catches_impossible_age_claim(self):
-        company = GLAD_LABS_FACTS["company_name"]
+        company = _get_company_facts(_SC)["company_name"]
         content = f"{company} has been operating for over 10 years in the AI space."
         result = validate_content("About Us", content, "company", site_config=_SC)
         assert any("claim" in i.description.lower() or "years" in i.description.lower()

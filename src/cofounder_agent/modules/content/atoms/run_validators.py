@@ -160,10 +160,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if halt_on_critical is None:
         halt_on_critical = True
 
-    # #272 Phase-2d: validate_content now requires an explicit site_config.
-    # Atoms read the run-bound instance from state (DI seam, GH#330).
-    from services.site_config import SiteConfig
-    site_config = state.get("site_config") or SiteConfig()
+    # Seam 1 Wave 3f (#667): fallback SiteConfig() removed — pipeline always
+    # threads a real site_config via state. validate_content accepts None.
+    site_config = state.get("site_config")
 
     try:
         result = validate_content(

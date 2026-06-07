@@ -18,10 +18,9 @@ Usage:
 import re
 import time as _time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
-from services.site_config import SiteConfig
 
 if TYPE_CHECKING:
     import httpx
@@ -29,14 +28,11 @@ if TYPE_CHECKING:
 # #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
 # setter are DELETED. injection is now mandatory — the public entry points
 # (``validate_content`` / ``_check_code_block_density`` / ``verify_content_urls``)
-# all REQUIRE an explicit keyword ``site_config`` and callers thread the
-# run-bound instance. The sole remaining import-time read
-# (``GLAD_LABS_FACTS = _get_company_facts()`` below) builds the fact patterns
-# from a fresh env-fallback ``SiteConfig()`` — identical to the previous
-# behaviour, since at module-import time the old global was still its empty
-# default (the lifespan setter never ran before this module finished
-# importing). ``content_validator`` is therefore removed from
-# ``di_wiring.WIRED_MODULES``.
+# all accept a ``site_config`` param and callers thread the run-bound instance.
+# Seam 1 Wave 3f (#667): the import-time ``GLAD_LABS_FACTS = _get_company_facts()``
+# call below now returns ``{}`` when no site_config is available (instead of
+# building a bare SiteConfig()); the pipeline always threads a real instance.
+# ``content_validator`` is therefore removed from ``di_wiring.WIRED_MODULES``.
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
@@ -105,17 +101,17 @@ _NAMED_SOURCE_KEYWORDS = (
 # ============================================================================
 
 
-def _get_company_facts(site_config: SiteConfig | None = None) -> dict:
+def _get_company_facts(site_config: Any = None) -> dict:
     """Load company facts from DB (site_config) with env fallback.
 
-    #272 Phase-2g: ``site_config`` is OPTIONAL only because the import-time
-    call (``GLAD_LABS_FACTS = _get_company_facts()`` below) has no SiteConfig
-    in scope. When omitted, a fresh env-fallback ``SiteConfig()`` is used —
-    which is exactly what the deleted module global resolved to at import
-    time (the lifespan setter never ran before import completed), so the
-    derived fact patterns are byte-for-byte identical to before.
+    Seam 1 Wave 3f (#667): SiteConfig() fallback removed. When called at
+    import time (``GLAD_LABS_FACTS = _get_company_facts()`` below) without
+    a site_config, returns an empty dict — the facts will be populated when
+    the pipeline calls validate_content with the run-bound instance.
     """
-    _sc = site_config if site_config is not None else SiteConfig()
+    if site_config is None:
+        return {}
+    _sc = site_config
     return {
         "company_name": _sc.get("company_name", "My Company"),
         "founded_date": _sc.get("company_founded_date", "2025-01-01"),
@@ -129,9 +125,10 @@ def _get_company_facts(site_config: SiteConfig | None = None) -> dict:
     }
 
 
-# Loaded at module import time — uses DB values from site_config cache. Not refreshed on config changes without reimport.
+# Loaded at module import time — returns {} when no site_config available;
+# real values are populated per-call via validate_content(site_config=...).
 GLAD_LABS_FACTS = _get_company_facts()
-_COMPANY_NAME = GLAD_LABS_FACTS["company_name"]
+_COMPANY_NAME = GLAD_LABS_FACTS.get("company_name", "My Company")
 
 # People names that should NEVER appear (fabricated by LLMs)
 FAKE_NAME_PATTERNS = [
@@ -1202,7 +1199,7 @@ def _check_code_block_density(
     content: str,
     topic: str,
     tags: list[str],
-    site_config: SiteConfig,
+    site_config: Any,
 ) -> list[ValidationIssue]:
     """GH-234: warn when tech-tagged posts ship without enough code.
 
@@ -1296,7 +1293,7 @@ def validate_content(
     tags: list[str] | None = None,
     niche: str | None = None,
     *,
-    site_config: SiteConfig,
+    site_config: Any,
 ) -> ValidationResult:
     """
     Validate content against hard quality rules.
@@ -1329,6 +1326,9 @@ def validate_content(
     from services.validator_config import is_validator_enabled
 
     _sc = site_config
+    # Per-call company facts — populated from the live site_config for this
+    # pipeline run (Wave 3f #667: module-level GLAD_LABS_FACTS is {} at import).
+    _facts = _get_company_facts(_sc)
 
     def _enabled(rule_name: str) -> bool:
         return is_validator_enabled(rule_name, niche=niche, site_config=_sc)
@@ -1531,7 +1531,7 @@ def validate_content(
             if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
                 issues.append(ValidationIssue(
                     severity="critical", category="glad_labs_claim",
-                    description=f"Title claims {word} years -- {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
+                    description=f"Title claims {word} years -- {_facts.get('company_name', _COMPANY_NAME)} is {_facts.get('age_months', 12)} months old",
                     matched_text=title,
                 ))
         if re.search(r"\d+\s*years?", title, re.IGNORECASE):
@@ -1541,7 +1541,7 @@ def validate_content(
                 issues.append(ValidationIssue(
                     severity="critical",
                     category="glad_labs_claim",
-                    description=f"Title claims {years} years -- {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
+                    description=f"Title claims {years} years -- {_facts.get('company_name', _COMPANY_NAME)} is {_facts.get('age_months', 12)} months old",
                     matched_text=title,
                 ))
 
@@ -1900,7 +1900,7 @@ def validate_content(
 async def verify_content_urls(
     content: str,
     *,
-    site_config: SiteConfig,
+    site_config: Any,
 ) -> list[ValidationIssue]:
     """Extract all URLs from content and verify they resolve.
 

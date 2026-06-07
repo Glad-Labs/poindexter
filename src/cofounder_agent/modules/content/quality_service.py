@@ -91,7 +91,6 @@ from services.quality_scorers import (
 from services.quality_scorers import (
     score_seo as _score_seo_fn,
 )
-from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -140,7 +139,7 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(self, database_service=None, qa_agent=None, llm_client=None, *, site_config: SiteConfig):
+    def __init__(self, database_service=None, qa_agent=None, llm_client=None, *, site_config: Any):
         """
         Initialize quality service
 
@@ -169,7 +168,7 @@ class UnifiedQualityService:
 
         logger.info("UnifiedQualityService initialized")
 
-    def _resolve_site_config(self) -> SiteConfig:
+    def _resolve_site_config(self) -> Any:
         """Return the DI-injected SiteConfig threaded into ``quality_scorers``.
 
         #272 Phase-2d: ``self._site_config`` is always populated (the
@@ -635,7 +634,7 @@ class UnifiedQualityService:
         return artifacts
 
     @staticmethod
-    def _score_llm_patterns(content: str, site_config: SiteConfig) -> tuple[float, list[str]]:
+    def _score_llm_patterns(content: str, site_config: Any) -> tuple[float, list[str]]:
         """Detect and penalize common LLM-generated content patterns.
 
         Returns (penalty, list_of_issues) where penalty is a NEGATIVE number
@@ -938,7 +937,7 @@ class UnifiedQualityService:
 
 
 def get_quality_service(
-    database_service=None, llm_client=None, *, site_config: SiteConfig
+    database_service=None, llm_client=None, *, site_config: Any
 ) -> UnifiedQualityService:
     """Factory function for UnifiedQualityService dependency injection.
 
@@ -953,7 +952,7 @@ def get_quality_service(
 
 # Backward compatibility alias
 def get_content_quality_service(
-    database_service=None, llm_client=None, *, site_config: SiteConfig
+    database_service=None, llm_client=None, *, site_config: Any
 ) -> UnifiedQualityService:
     """Backward compatibility alias for get_quality_service.
 
