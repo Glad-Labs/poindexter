@@ -238,8 +238,8 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com`,
-                "frame-src 'self' https://pagead2.googlesyndication.com https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
+                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
+                "frame-src 'self' https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
               ].join('; ') + ';',
           },
           // Control referrer information
