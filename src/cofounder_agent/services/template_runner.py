@@ -372,6 +372,10 @@ class PipelineState(TypedDict, total=False):
     content_task_id: int
     content_length: int
     models_by_phase: dict
+    # Added by #362 atom granularity refactor
+    image_plans: list                # content.plan_image_markers output: [{num, desc}, ...]
+    image_results: list              # content.generate_images output: [{num, url, alt_text, source}, ...]
+    qa_feedback_formatted: str       # content.compile_meta: formatted QA rail feedback
 
 
 # ---------------------------------------------------------------------------

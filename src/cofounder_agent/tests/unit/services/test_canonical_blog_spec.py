@@ -27,16 +27,32 @@ class TestCanonicalBlogSpec:
                 "qa.aggregate"} <= node_atoms
         # The three seo.* atoms replace generate_seo_metadata (#362).
         assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
+        # The content.* atoms replace the three coarse stages decomposed in
+        # the #362 atom-granularity refactor: generate_content,
+        # replace_inline_images, and finalize_task.
+        assert {
+            "content.generate_draft", "content.generate_title",
+            "content.check_title_originality", "content.normalize_draft",
+            "content.plan_image_markers", "content.generate_images",
+            "content.inject_images",
+            "content.compile_meta", "content.persist_task",
+            "content.record_pipeline_version", "content.evaluate_auto_publish",
+        } <= node_atoms
         # No legacy monolithic QA / SEO stage nodes.
         assert "stage.cross_model_qa" not in node_atoms
         assert "stage.generate_seo_metadata" not in node_atoms
+        # The three coarse stages decomposed in #362 are NO LONGER stage.* nodes
+        # (they survive as Stage classes for the dev_diary legacy path only).
+        assert "stage.generate_content" not in node_atoms
+        assert "stage.replace_inline_images" not in node_atoms
+        assert "stage.finalize_task" not in node_atoms
         # The surviving coarse stages are present as stage.* nodes.
         for s in (
-            "verify_task", "generate_content", "writer_self_review",
+            "verify_task", "writer_self_review",
             "resolve_internal_link_placeholders", "quality_evaluation",
-            "url_validation", "replace_inline_images", "source_featured_image",
+            "url_validation", "source_featured_image", "caption_images",
             "generate_media_scripts",
-            "generate_video_shot_list", "capture_training_data", "finalize_task",
+            "generate_video_shot_list", "capture_training_data",
         ):
             assert f"stage.{s}" in node_atoms, s
 
