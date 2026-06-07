@@ -40,6 +40,7 @@ from .setup import setup_command
 from .stores import stores_group
 from .taps import taps_group
 from .tasks import tasks_group
+from .skills import skills_group
 from .topics import topics_group
 from .validators import validators_group
 from .vercel import vercel_group
@@ -77,6 +78,7 @@ main.add_command(settings_group, name="settings")
 main.add_command(costs_group, name="costs")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
+main.add_command(skills_group, name="skills")
 main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")
 main.add_command(integrations_group, name="integrations")
