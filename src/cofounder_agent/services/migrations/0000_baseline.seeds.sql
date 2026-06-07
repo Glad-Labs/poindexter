@@ -986,6 +986,14 @@ exactly:
 Style: short paragraphs. Plain language. No marketing voice. No
 opening hook. No closing CTA. Issue, Fix, Why — three sentences each
 where possible. Nothing more.', 1, 1440, ARRAY[]::text[], 'dev_diary') ON CONFLICT (id) DO NOTHING;
+-- dev_diary niche_goals (sum to 100, AUTHORITY top). Carried over from the
+-- pre-squash migration 0134_seed_dev_diary_niche.py — the squash absorbed the
+-- niches row but dropped these matching niche_goals INSERTs (Glad-Labs/glad-labs-stack#1199).
+INSERT INTO niche_goals (niche_id, goal_type, weight_pct) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'AUTHORITY', 40) ON CONFLICT DO NOTHING;
+INSERT INTO niche_goals (niche_id, goal_type, weight_pct) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'BRAND', 30) ON CONFLICT DO NOTHING;
+INSERT INTO niche_goals (niche_id, goal_type, weight_pct) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'COMMUNITY', 15) ON CONFLICT DO NOTHING;
+INSERT INTO niche_goals (niche_id, goal_type, weight_pct) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'EDUCATION', 10) ON CONFLICT DO NOTHING;
+INSERT INTO niche_goals (niche_id, goal_type, weight_pct) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'TRAFFIC', 5) ON CONFLICT DO NOTHING;
 INSERT INTO niches (id, slug, name, active, target_audience_tags, writer_prompt_override, batch_size, discovery_cadence_minute_floor, default_media_to_generate, default_template_slug) VALUES ('919124f3-22de-4133-812c-88bde6975318', 'glad-labs', 'Glad Labs', true, ARRAY['indie-devs','ai-curious','prospects','future-matt']::text[], 'You are writing a blog post for Glad Labs — an AI-operated content
 business covering AI/ML, gaming, and PC hardware for indie developers
 and tinkerers.
