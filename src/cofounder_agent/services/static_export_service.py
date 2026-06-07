@@ -295,7 +295,7 @@ def _build_sitemap(posts: list[dict], categories: list[dict], site_url: str) -> 
 
 
 # ---------------------------------------------------------------------------
-# Takedown / orphan cleanup (Glad-Labs/glad-labs-stack#1146)
+# Takedown / orphan cleanup (Glad-Labs/poindexter#1146)
 #
 # When a post leaves the published set (rejected / archived / deleted), its
 # static/posts/<slug>.json on storage and its prerendered /posts/<slug> page
