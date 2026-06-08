@@ -52,7 +52,10 @@ class _PoolHolder:
 
 
 def _migration_files() -> list[Path]:
-    return sorted(p for p in MIGRATIONS_DIR.glob("*.py") if p.name != "__init__.py")
+    return sorted(
+        p for p in MIGRATIONS_DIR.glob("*.py")
+        if p.name != "__init__.py" and not p.name.startswith("_")
+    )
 
 
 def _evaluate(

@@ -385,3 +385,64 @@ def test_run_smoke_passes_restored_backup_flag(monkeypatch):
     assert "--restored-backup" in captured["cmd"]
     # appended after the script path so argparse on the worker side sees it
     assert captured["cmd"][-1] == "--restored-backup"
+
+
+# ---------------------------------------------------------------------------
+# Operator page title — distinguish smoke failure from corrupt backup
+# (poindexter#228 / glad-labs-stack#1194)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_smoke_failure_title_not_corrupt_alarm():
+    """When backup DATA is fine but migration smoke fails, title must NOT say
+    'corrupt' — the backup restored successfully; only the migration check failed.
+    The old single title "Restore test FAILED — latest backup may be corrupt" was
+    misleading in this case and trained the operator to ignore Telegram alerts.
+    """
+    pool = _make_pool(seconds_since_last_run=None)
+    seams = _seams(smoke_fn=lambda thr, db, pw, timeout: (False, "FAIL: 1 missing"))
+    out = await rt.run_restore_test_probe(pool, **seams)
+    assert out["ok"] is False
+    title = seams["notify_fn"].call_args.kwargs.get("title", "")
+    assert "corrupt" not in title.lower(), (
+        f"Smoke failure with intact backup rows must not say 'corrupt'; got: {title!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_corrupt_dump_title_flags_corruption():
+    """When critical-table row counts are 0 (actual data corruption), the page
+    title SHOULD clearly flag the backup as suspect."""
+    pool = _make_pool(seconds_since_last_run=None)
+    seams = _seams(count_fn=lambda name, db, table: 0)
+    out = await rt.run_restore_test_probe(pool, **seams)
+    assert out["ok"] is False
+    title = seams["notify_fn"].call_args.kwargs.get("title", "")
+    assert "corrupt" in title.lower() or "failed" in title.lower(), (
+        f"Empty-tables failure must mention corruption or failure; got: {title!r}"
+    )
+
+
+def test_failure_title_pure_smoke_is_not_corrupt():
+    """Unit-test the _failure_title() helper directly — pure smoke failure."""
+    title = rt._failure_title(
+        row_counts={"posts": 78, "app_settings": 800, "audit_log": 5},
+        schema_migrations_count=120,
+        min_count=1,
+        smoke_enabled=True,
+        smoke_ok=False,
+    )
+    assert "corrupt" not in title.lower()
+    assert "smoke" in title.lower() or "migration" in title.lower()
+
+
+def test_failure_title_empty_tables_is_corrupt():
+    """Unit-test _failure_title() — empty tables → backup suspect."""
+    title = rt._failure_title(
+        row_counts={"posts": 0, "app_settings": 800, "audit_log": 5},
+        schema_migrations_count=120,
+        min_count=1,
+        smoke_enabled=True,
+        smoke_ok=True,
+    )
+    assert "corrupt" in title.lower() or "failed" in title.lower()

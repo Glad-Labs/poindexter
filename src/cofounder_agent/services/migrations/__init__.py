@@ -29,6 +29,20 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
+def _collect_migration_files(migrations_dir: Path) -> list[Path]:
+    """Return migration .py files in ``migrations_dir``, sorted alphabetically.
+
+    Excludes ``__init__.py`` and any file whose name starts with ``_``
+    (private helpers such as ``_module_runner.py``).  Matches the rule in
+    ``services/module_runner.py`` and ``scripts/ci/migrations_smoke.py``.
+    """
+    return sorted(
+        (f for f in migrations_dir.glob("*.py")
+         if f.name != "__init__.py" and not f.name.startswith("_")),
+        key=lambda p: p.name,
+    )
+
+
 async def get_migration_status(pool: Any) -> dict[str, Any]:
     """Return a snapshot of migration state for ``/api/health`` consumers.
 
@@ -59,10 +73,7 @@ async def get_migration_status(pool: Any) -> dict[str, Any]:
         return {"error": "pool unavailable"}
     try:
         migrations_dir = Path(__file__).parent
-        on_disk = sorted(
-            f.name for f in migrations_dir.glob("*.py")
-            if f.name != "__init__.py"
-        )
+        on_disk = [f.name for f in _collect_migration_files(migrations_dir)]
         async with pool.acquire() as conn:
             # Tolerate the table not existing yet — fresh DB during
             # startup race. Empty applied set = everything is pending.
@@ -124,9 +135,7 @@ async def run_migrations(database_service) -> bool:
             await conn.execute(_MIGRATIONS_TABLE_SQL)
 
         migrations_dir = Path(__file__).parent
-        migration_files = sorted(
-            [f for f in migrations_dir.glob("*.py") if f.name != "__init__.py"]
-        )
+        migration_files = _collect_migration_files(migrations_dir)
 
         if not migration_files:
             logger.info("No migrations found")

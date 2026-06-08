@@ -40,7 +40,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
@@ -343,15 +343,38 @@ def _table_count(name: str, db: str, table: str) -> int | None:
         return None
 
 
+def _failure_title(
+    *,
+    row_counts: dict[str, int | None],
+    schema_migrations_count: int | None,
+    min_count: int,
+    smoke_enabled: bool,
+    smoke_ok: bool,
+) -> str:
+    """Return an operator-page title that accurately names the failure cause.
+
+    When only the migration smoke fails (backup data rows are intact), the
+    backup itself is fine — calling it "corrupt" trains the operator to ignore
+    alerts.  Reserve the "may be corrupt" phrasing for genuine data-level
+    failures (empty / missing critical tables).
+    """
+    data_problems = (
+        any(c is None or c < min_count for c in row_counts.values())
+        or not schema_migrations_count
+    )
+    if smoke_enabled and not smoke_ok and not data_problems:
+        return "Restore test: migration smoke failed (backup itself restored OK)"
+    return "Restore test FAILED — latest backup may be corrupt"
+
+
 def _run_smoke(throwaway: str, db: str, password: str, timeout: int) -> tuple[bool, str]:
     """Run migrations_smoke.py inside the worker against the throwaway DB.
 
     Passes ``--restored-backup`` so the smoke tolerates historical
     ``schema_migrations`` rows whose files were squashed/removed. A restored
-    prod backup carries the full migration history (266 rows) while the repo
-    ships only the post-squash files (31) — without the flag the smoke's
-    exact-count / no-extra-row check always fails on a perfectly good backup
-    (poindexter#441).
+    prod backup carries the full migration history while the repo ships only
+    the post-squash files — without the flag the smoke's exact-count /
+    no-extra-row check always fails on a perfectly good backup (poindexter#441).
     """
     dsn = f"postgresql://postgres:{password}@{throwaway}:5432/{db}"
     rc, out, err = _run_cmd(
@@ -560,7 +583,13 @@ async def run_restore_test_probe(
         if not passed:
             await _notify(
                 notify_fn,
-                title="Restore test FAILED — latest backup may be corrupt",
+                title=_failure_title(
+                    row_counts=row_counts,
+                    schema_migrations_count=schema_migrations,
+                    min_count=cfg["min_row_count"],
+                    smoke_enabled=cfg["run_smoke"],
+                    smoke_ok=smoke_ok,
+                ),
                 detail=detail + f"\n\nDump: {os.path.basename(dump)}",
                 severity=severity)
         elif _last_passed is False:
