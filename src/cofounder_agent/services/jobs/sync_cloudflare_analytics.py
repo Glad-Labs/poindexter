@@ -285,6 +285,12 @@ class SyncCloudflareAnalyticsJob:
                         ts_raw = raw.get("created_at") or ""
                         if not (slug or path):
                             continue
+                        ua_lower = ua.lower()
+                        if any(
+                            tok in ua_lower
+                            for tok in ("bot/", "crawler", "spider", "slurp", "facebookexternalhit")
+                        ):
+                            continue
                         try:
                             # CF AE returns "YYYY-MM-DD HH:MM:SS" UTC
                             ts = datetime.strptime(

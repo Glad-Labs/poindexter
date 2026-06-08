@@ -388,3 +388,85 @@ class TestSyncCloudflareAnalyticsWatermark:
         # Should not crash — falls back, hits the API, returns ok
         assert result.ok is True
         client.post.assert_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Bot filtering
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBotFiltering:
+    async def test_bingbot_rows_are_skipped(self):
+        pool, conn = _make_pool()
+        rows = [
+            _row(
+                slug="post-a",
+                user_agent=(
+                    "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; "
+                    "compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) "
+                    "Chrome/136.0.0.0 Safari/537.36"
+                ),
+            ),
+        ]
+        fake_httpx, _ = _fake_httpx(rows=rows)
+        sc = _sc()
+        with patch.dict("sys.modules", {"httpx": fake_httpx}):
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": sc}
+            )
+        assert result.ok is True
+        assert result.changes_made == 0
+        sql_calls = [c.args[0] for c in conn.execute.await_args_list]
+        assert not any("INSERT INTO page_views" in s for s in sql_calls)
+
+    async def test_known_bot_tokens_are_skipped(self):
+        bot_uas = [
+            "Googlebot/2.1 (+http://www.google.com/bot.html)",
+            "Mozilla/5.0 (compatible; YandexBot/3.0)",
+            "CCBot/2.0 (https://commoncrawl.org/faq/)",
+            "LinkedInBot/1.0 (compatible; Mozilla/5.0)",
+            "facebookexternalhit/1.1",
+            "Sogou web spider/4.0",
+        ]
+        for ua in bot_uas:
+            pool, conn = _make_pool()
+            rows = [_row(slug="post-a", user_agent=ua)]
+            fake_httpx, _ = _fake_httpx(rows=rows)
+            sc = _sc()
+            with patch.dict("sys.modules", {"httpx": fake_httpx}):
+                result = await SyncCloudflareAnalyticsJob().run(
+                    pool, {"_site_config": sc}
+                )
+            assert result.changes_made == 0, f"bot UA not filtered: {ua}"
+
+    async def test_human_rows_are_still_inserted(self):
+        pool, conn = _make_pool()
+        rows = [
+            _row(slug="post-a", user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"),
+            _row(slug="post-b", user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15"),
+        ]
+        fake_httpx, _ = _fake_httpx(rows=rows)
+        sc = _sc()
+        with patch.dict("sys.modules", {"httpx": fake_httpx}):
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": sc}
+            )
+        assert result.ok is True
+        assert result.changes_made == 2
+
+    async def test_mixed_human_and_bot_rows_only_inserts_human(self):
+        pool, conn = _make_pool()
+        rows = [
+            _row(slug="post-a", user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/136.0.0.0"),
+            _row(slug="post-b", user_agent="compatible; bingbot/2.0"),
+            _row(slug="post-c", user_agent="Googlebot/2.1"),
+        ]
+        fake_httpx, _ = _fake_httpx(rows=rows)
+        sc = _sc()
+        with patch.dict("sys.modules", {"httpx": fake_httpx}):
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": sc}
+            )
+        assert result.changes_made == 1
