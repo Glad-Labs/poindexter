@@ -218,7 +218,7 @@ sentence-transformers = "^3.4"
 # through 2026-05-27 because of this exact mismatch (the ``^3.7.0``
 # caret was bumping the worker past the server's 3.6.x). Bump together
 # when upgrading.
-prefect = "~3.6.29"
+prefect = ">=3.6.29,<3.8.0"
 langchain-openai = ">=1.2"
 
 # YouTube Data API v3 — used by services/publish_adapters/youtube.py
