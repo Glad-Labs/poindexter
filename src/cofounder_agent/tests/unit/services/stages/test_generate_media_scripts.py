@@ -224,3 +224,110 @@ async def test_ambient_path_returned_via_context_updates():
 
     assert result.ok
     assert result.context_updates.get("video_ambient_audio_path") == "/tmp/ambient.wav"
+
+
+# ---------------------------------------------------------------------------
+# Podcast audio paths via context_updates (poindexter#690) — the podcast-audio
+# twin of the #679 ambient discard. The TTS narration + intro sting were
+# written via direct ``context[...] =`` (dropped by make_stage_node) AND were
+# undeclared PipelineState channels (dropped by LangGraph). They must instead
+# flow out via context_updates, and survive a later scene-parse failure since
+# they are built before the video-scenes call.
+# ---------------------------------------------------------------------------
+
+class _FakeNamedTmp:
+    """Stand-in for tempfile.NamedTemporaryFile so the test never touches disk
+    (and dodges the ``:`` -in-suffix Windows footgun from the mock site_config).
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __enter__(self) -> "_FakeNamedTmp":
+        return self
+
+    def __exit__(self, *_a: Any) -> bool:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_podcast_audio_path_returned_via_context_updates():
+    gpu = SimpleNamespace(lock=_fake_lock)
+    ctx = _ctx()  # no platform → scene call skipped, only the TTS block runs
+
+    async def _mock_tts(text, *, site_config, output_path=None):
+        return b"RIFF_fake_wav"
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="P" * 600)), \
+         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.synthesize_speech",
+               new=_mock_tts), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=False), \
+         patch("tempfile.NamedTemporaryFile",
+               return_value=_FakeNamedTmp("/tmp/podcast_tts.wav")):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert result.context_updates.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
+
+
+@pytest.mark.asyncio
+async def test_intro_sting_path_returned_via_context_updates():
+    gpu = SimpleNamespace(lock=_fake_lock)
+    ctx = _ctx()  # no platform → only the intro-sting block fires (not ambient)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="Q" * 600)), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.generate_audio",
+               new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/intro.wav"))), \
+         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+               return_value=False):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert result.context_updates.get("podcast_intro_audio_path") == "/tmp/intro.wav"
+
+
+@pytest.mark.asyncio
+async def test_podcast_audio_paths_preserved_on_scene_failure():
+    """TTS + intro sting are built before the video-scenes call. A later
+    scene-parse failure must NOT discard them (same preservation contract as
+    podcast_script)."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(
+        return_value=SimpleNamespace(text="PART1\n\nSHORT:\nsummary"),
+    )
+
+    async def _mock_tts(text, *, site_config, output_path=None):
+        return b"RIFF_fake_wav"
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="R" * 600)), \
+         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.synthesize_speech",
+               new=_mock_tts), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.generate_audio",
+               new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/intro.wav"))), \
+         patch("tempfile.NamedTemporaryFile",
+               return_value=_FakeNamedTmp("/tmp/podcast_tts.wav")), \
+         patch("modules.content.stages.generate_media_scripts._parse_scene_output",
+               side_effect=RuntimeError("podcast_service requires a site_config")):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    # Scene parse raised, but the audio built beforehand must survive.
+    assert result.context_updates.get("podcast_script") == "R" * 600
+    assert result.context_updates.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
+    assert result.context_updates.get("podcast_intro_audio_path") == "/tmp/intro.wav"

@@ -88,6 +88,13 @@ class GenerateMediaScriptsStage:
         podcast_script = ""
         video_scenes: list[str] = []
         short_summary = ""
+        # Declared before the try so a later scene-parse failure can still
+        # preserve audio built upstream (podcast TTS + intro sting run before
+        # the video-scenes call). poindexter#690 — these were direct
+        # context[...] writes (dropped by make_stage_node) + undeclared
+        # PipelineState channels; now flow out via context_updates.
+        podcast_audio_path = ""
+        podcast_intro_audio_path = ""
 
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
@@ -123,7 +130,7 @@ class GenerateMediaScriptsStage:
                         output_path=tts_path,
                     )
                     if audio_bytes:
-                        context["podcast_audio_path"] = tts_path
+                        podcast_audio_path = tts_path
                         logger.info(
                             "[MEDIA] Podcast TTS audio: %d bytes → %s",
                             len(audio_bytes), tts_path,
@@ -146,7 +153,7 @@ class GenerateMediaScriptsStage:
                     if intro_result is not None:
                         path = intro_result.file_path or ""
                         if path:
-                            context["podcast_intro_audio_path"] = path
+                            podcast_intro_audio_path = path
                             logger.info("[MEDIA] Podcast intro sting: %s", path)
                 except Exception as sfx_exc:
                     logger.warning("[MEDIA] audio_gen intro sting failed: %s", sfx_exc)
@@ -235,6 +242,8 @@ class GenerateMediaScriptsStage:
                     "video_scenes_count": len(video_scenes),
                     "short_summary_length": len(short_summary),
                     "video_ambient_audio_path": ambient_audio_path,
+                    "podcast_audio_path": podcast_audio_path,
+                    "podcast_intro_audio_path": podcast_intro_audio_path,
                     "stages": stages,
                 },
                 metrics={
@@ -261,6 +270,10 @@ class GenerateMediaScriptsStage:
                 context_updates={
                     "podcast_script": podcast_script,
                     "podcast_script_length": len(podcast_script),
+                    # Preserve audio built before the failure (poindexter#690),
+                    # same contract as podcast_script above.
+                    "podcast_audio_path": podcast_audio_path,
+                    "podcast_intro_audio_path": podcast_intro_audio_path,
                     "stages": stages,
                 },
             )

@@ -442,6 +442,11 @@ class PipelineState(TypedDict, total=False):
     short_summary_script: str
     video_shot_list: dict
     video_ambient_audio_path: str
+    # podcast audio assets (#690): TTS narration + intro sting. Same
+    # last-value-channel discipline as video_ambient_audio_path — undeclared
+    # keys are dropped on the graph_def path.
+    podcast_audio_path: str
+    podcast_intro_audio_path: str
     stages: dict
     generate_metrics: dict
     cost_log: dict

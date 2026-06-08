@@ -33,6 +33,8 @@ async def test_persist_includes_media_artifacts():
         "short_summary_script": "SHORT",
         "video_shot_list": {"version": 1, "shots": [{"idx": 0}]},
         "video_ambient_audio_path": "/tmp/ambient.wav",
+        "podcast_audio_path": "/tmp/podcast_tts.wav",
+        "podcast_intro_audio_path": "/tmp/intro.wav",
     }
 
     # pipeline_versions + log_revision are best-effort; let them no-op.
@@ -45,4 +47,6 @@ async def test_persist_includes_media_artifacts():
     assert meta["podcast_script"] == "POD"
     assert meta["video_shot_list"] == {"version": 1, "shots": [{"idx": 0}]}
     assert meta["video_ambient_audio_path"] == "/tmp/ambient.wav"
+    assert meta["podcast_audio_path"] == "/tmp/podcast_tts.wav"
+    assert meta["podcast_intro_audio_path"] == "/tmp/intro.wav"
     assert result["status"] == "awaiting_approval"
