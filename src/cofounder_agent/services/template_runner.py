@@ -71,6 +71,71 @@ from services.site_config import SiteConfig
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# on_event streaming callback contract (Glad-Labs/poindexter#361 part 2)
+#
+# ``on_event(event_type, payload)`` is an async callback the operator can
+# pass to ``TemplateRunner.run`` to receive a live stream of pipeline
+# progress — so multi-minute runs surface per-node instead of staying
+# silent. It is threaded down through ``_emit_progress`` (run-level + stage
+# nodes) and ``pipeline_architect._wrap_atom`` (atom nodes), so BOTH node
+# kinds emit. A callback failure must NEVER break the run — every invocation
+# is wrapped in try/except (see ``_emit_progress`` / ``_safe_on_event``).
+#
+# event_type ∈ {
+#   "run_started", "node_started", "node_completed", "node_failed",
+#   "node_halted", "run_completed", "run_failed",
+# }
+# payload carries: {task_id, node?, template_slug?, elapsed_ms?, index?,
+#                   total?, reason?}
+#
+# Note the event_type values above are the CONTRACT names exposed to
+# on_event callbacks. The internal ``_emit_progress`` event_type strings
+# (``template.node_started`` etc.) are mapped to these via _CONTRACT_EVENT.
+# ---------------------------------------------------------------------------
+
+OnEventCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
+
+# Map the internal ``template.*`` event_type strings to the public on_event
+# contract names. Internal run-level "halted"/"completed" both collapse to
+# the contract's run_completed/run_halted distinction below.
+_CONTRACT_EVENT: dict[str, str] = {
+    "template.run_started": "run_started",
+    "template.node_started": "node_started",
+    "template.node_completed": "node_completed",
+    "template.node_failed": "node_failed",
+    "template.node_halted": "node_halted",
+    "template.node_skipped": "node_completed",
+    "template.run_completed": "run_completed",
+    "template.run_halted": "run_completed",
+    "template.run_failed": "run_failed",
+}
+
+
+async def _safe_on_event(
+    on_event: OnEventCallback | None,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """Invoke ``on_event`` with the public-contract event_type, never raising.
+
+    ``event_type`` is the INTERNAL ``template.*`` string; it is mapped to
+    the public contract name before the callback sees it. A callback that
+    raises (or hangs synchronously) must not break the pipeline — per the
+    #361 rule, every failure is swallowed + logged at debug.
+    """
+    if on_event is None:
+        return
+    contract = _CONTRACT_EVENT.get(event_type, event_type)
+    try:
+        await on_event(contract, payload)
+    except Exception as exc:  # noqa: BLE001 — callback must never break the run
+        logger.debug(
+            "[template_runner] on_event callback failed for %s: %s",
+            contract, exc,
+        )
+
+
 # Per-node execution latency (audit gap close — 2026-06-02). Every
 # make_stage_node terminal branch already computed ``elapsed`` (ms) and
 # shipped it ONLY to the operator-notify / Discord progress feed via
@@ -231,19 +296,35 @@ async def _emit_progress(
     payload: dict[str, Any],
     notify_operator_message: str | None = None,
     site_config: SiteConfig,
+    on_event: OnEventCallback | None = None,
 ) -> None:
-    """Fan progress events out to Discord (when enabled).
+    """Fan progress events out to Discord (when enabled) + ``on_event``.
 
-    The ``pool`` and ``event_type`` / ``payload`` parameters are kept
-    on the signature so the dozen call sites don't churn — they're now
-    unused at this layer. A future Langfuse-tracing wire-up will read
-    ``event_type`` + ``payload`` to populate span attributes.
+    Two independent sinks:
+
+    1. **Discord** — gated by ``template_runner_progress_streaming`` (default
+       ON). Posts ``notify_operator_message`` via
+       ``notify_operator(critical=False)``. Unchanged from before — Discord
+       is the routine spam channel, NEVER Telegram for routine progress.
+    2. **on_event** (Glad-Labs/poindexter#361 part 2) — when a callback is
+       set, ALWAYS fires ``on_event(event_type, payload)`` regardless of the
+       Discord flag, so an opt-in streaming channel (e.g. Telegram
+       edit-streaming) sees every node event. A callback failure is swallowed
+       (``_safe_on_event``) — it must never break the run.
+
+    The ``pool`` parameter is kept on the signature so the dozen call sites
+    don't churn — it's unused at this layer.
 
     ``site_config`` is mandatory (#272 Phase-2f — the module global was
     deleted): run-level callers pass ``self._site_config`` and node-level
     callers pass ``context.get("site_config")``.
     """
-    del pool, event_type, payload  # see docstring — kept for source-compat
+    del pool  # kept for source-compat — unused at this layer
+    # on_event ALWAYS fires (independent of the Discord progress flag) so an
+    # opt-in streaming channel gets every event. _safe_on_event maps the
+    # internal event_type to the public contract name + swallows failures.
+    await _safe_on_event(on_event, event_type, payload)
+
     if not notify_operator_message:
         return
     _sc = site_config
@@ -458,6 +539,7 @@ def make_stage_node(
     pool: Any,
     *,
     record_sink: list[TemplateRunRecord] | None = None,
+    on_event: OnEventCallback | None = None,
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Wrap an existing Stage instance as a LangGraph node.
 
@@ -539,6 +621,7 @@ def make_stage_node(
                 event_type="template.node_skipped",
                 payload={"task_id": str(task_id or ""), "node": name},
                 site_config=node_site_config,
+                on_event=on_event,
             )
             return {}
 
@@ -552,6 +635,7 @@ def make_stage_node(
             payload={"task_id": str(task_id or ""), "node": name},
             notify_operator_message=f"⚙️ {name}… (task {str(task_id or '')[:8]})",
             site_config=node_site_config,
+            on_event=on_event,
         )
 
         timeout = int(
@@ -591,6 +675,7 @@ def make_stage_node(
                     f"(task {str(task_id or '')[:8]})"
                 ),
                 site_config=node_site_config,
+                on_event=on_event,
             )
             if halts:
                 raise RuntimeError(f"stage {name!r} timed out after {timeout}s") from te
@@ -628,6 +713,7 @@ def make_stage_node(
                     f"(task {str(task_id or '')[:8]})"
                 ),
                 site_config=node_site_config,
+                on_event=on_event,
             )
             if halts:
                 raise
@@ -673,6 +759,7 @@ def make_stage_node(
                     f"(task {str(task_id or '')[:8]})"
                 ),
                 site_config=node_site_config,
+                on_event=on_event,
             )
         else:
             await _emit_progress(
@@ -687,6 +774,7 @@ def make_stage_node(
                     f"(task {str(task_id or '')[:8]})"
                 ),
                 site_config=node_site_config,
+                on_event=on_event,
             )
 
         return updates
@@ -785,6 +873,7 @@ class TemplateRunner:
         thread_id: str | None = None,
         resume: bool = False,
         resume_value: Any = None,
+        on_event: OnEventCallback | None = None,
     ) -> TemplateRunSummary:
         """Run a template by slug.
 
@@ -816,6 +905,23 @@ class TemplateRunner:
         the partition is ignored by ``ainvoke(Command(...))`` (LangGraph
         reads the checkpoint), but partitioning it keeps the services dict
         correct.
+
+        Progress streaming (Glad-Labs/poindexter#361 part 2)
+        ----------------------------------------------------
+
+        ``on_event`` is an optional async callback
+        ``on_event(event_type, payload)`` that receives a live stream of
+        per-node progress (run_started / node_started / node_completed /
+        node_failed / node_halted / run_completed / run_failed) so a
+        multi-minute run surfaces incrementally instead of staying silent.
+        It is threaded into BOTH the stage-node adapter (``make_stage_node``)
+        and the atom-node adapter (``build_graph_from_spec`` →
+        ``_wrap_atom``), so every node emits regardless of kind. A callback
+        failure NEVER breaks the run (each invocation is wrapped). Independent
+        of the Discord ``_emit_progress`` feed — both can be active at once.
+        ``content_router_service`` wires a default callback per the
+        ``pipeline_streaming_channel`` setting (default ``discord`` → no-op
+        callback so Discord isn't double-posted; ``telegram`` → edit-stream).
         """
         # Lazy import to avoid module-load cycle: pipeline_templates.__init__
         # imports adapters from here, here imports from there → cycle if
@@ -842,6 +948,7 @@ class TemplateRunner:
                 )
                 graph = build_graph_from_spec(
                     graph_def, pool=self._pool, record_sink=records,
+                    on_event=on_event,
                 )
 
         if graph is None:
@@ -851,7 +958,17 @@ class TemplateRunner:
                     f"unknown template_slug={template_slug!r}; "
                     f"registered={sorted(TEMPLATES)}"
                 )
-            graph = factory(pool=self._pool, record_sink=records)
+            # Legacy TEMPLATES factories don't all accept on_event; thread it
+            # only when the factory's signature advertises it (dev_diary's
+            # factory threads to make_stage_node). Probe via inspect so older
+            # factories stay callable unchanged.
+            import inspect
+            if "on_event" in inspect.signature(factory).parameters:
+                graph = factory(
+                    pool=self._pool, record_sink=records, on_event=on_event,
+                )
+            else:
+                graph = factory(pool=self._pool, record_sink=records)
 
         # Both branches above assign graph; narrow away the Optional so
         # the later graph.compile() call type-checks.
@@ -881,6 +998,7 @@ class TemplateRunner:
                 f"(task {str(initial_state.get('task_id') or '')[:8]})"
             ),
             site_config=self._site_config,
+            on_event=on_event,
         )
 
         # Partition input into (data_state, services) so the
@@ -927,6 +1045,7 @@ class TemplateRunner:
                 except Exception as exc:
                     return await self._handle_run_exception(
                         exc, template_slug, initial_state, records,
+                        on_event=on_event,
                     )
         except _CheckpointerSetupError:
             # Re-raise — _handle_run_exception already logged the upstream
@@ -953,6 +1072,7 @@ class TemplateRunner:
                 f"(task {str(initial_state.get('task_id') or '')[:8]}, {len(records)} nodes)"
             ),
             site_config=self._site_config,
+            on_event=on_event,
         )
 
         # Outcome feedback loop — write one capability_outcomes row per
@@ -1015,6 +1135,8 @@ class TemplateRunner:
         template_slug: str,
         initial_state: dict[str, Any],
         records: list[TemplateRunRecord],
+        *,
+        on_event: OnEventCallback | None = None,
     ) -> TemplateRunSummary:
         """Build the run-failed summary + emit progress. Centralized so
         the new checkpointer-context-managed call site stays readable."""
@@ -1034,6 +1156,7 @@ class TemplateRunner:
                 f"(task {str(initial_state.get('task_id') or '')[:8]})"
             ),
             site_config=self._site_config,
+            on_event=on_event,
         )
         return TemplateRunSummary(
             ok=False,

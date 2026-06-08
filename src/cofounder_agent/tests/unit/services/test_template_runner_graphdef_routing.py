@@ -46,7 +46,7 @@ class TestGraphDefRouting:
             calls["factory"] += 1
             return _trivial_graph()
 
-        def fake_build(spec, *, pool, record_sink=None):
+        def fake_build(spec, *, pool, record_sink=None, on_event=None):
             calls["build"] += 1
             return _trivial_graph()
 
@@ -65,7 +65,7 @@ class TestGraphDefRouting:
             calls["factory"] += 1
             return _trivial_graph()
 
-        def fake_build(spec, *, pool, record_sink=None):
+        def fake_build(spec, *, pool, record_sink=None, on_event=None):
             calls["build"] += 1
             return _trivial_graph()
 
@@ -92,7 +92,7 @@ class TestGraphDefRouting:
             calls["factory"] += 1
             return _trivial_graph()
 
-        def fake_build(spec, *, pool, record_sink=None):
+        def fake_build(spec, *, pool, record_sink=None, on_event=None):
             calls["build"] += 1
             return _trivial_graph()
 

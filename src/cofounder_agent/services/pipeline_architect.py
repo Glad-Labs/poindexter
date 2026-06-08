@@ -575,6 +575,7 @@ def build_graph_from_spec(
     *,
     pool: Any,
     record_sink: list | None = None,
+    on_event: Any = None,
 ) -> StateGraph:
     """Compile a validated spec into an executable LangGraph.
 
@@ -586,6 +587,13 @@ def build_graph_from_spec(
     legacy 12 stages) are wrapped via ``make_stage_node``; pure atoms
     are wrapped with a tiny adapter that records to ``record_sink``
     on the same shape as stage nodes.
+
+    ``on_event`` (Glad-Labs/poindexter#361 part 2) is the optional async
+    progress callback threaded down from ``TemplateRunner.run``. It is
+    forwarded to BOTH ``make_stage_node`` (stage nodes) and ``_wrap_atom``
+    (atom nodes) so every node emits node_started / node_completed /
+    node_failed, with ``index``/``total`` reflecting position in the graph.
+    A callback failure never breaks the run (see ``_safe_on_event``).
     """
     from plugins.registry import get_core_samples
 
@@ -594,10 +602,11 @@ def build_graph_from_spec(
 
     nodes = spec["nodes"]
     edges = spec.get("edges") or []
+    total_nodes = len(nodes)
 
     # Build node map.
     node_ids: list[str] = []
-    for n in nodes:
+    for index, n in enumerate(nodes):
         nid = n["id"]
         atom_name = n["atom"]
         meta = get_atom_meta(atom_name)
@@ -611,7 +620,12 @@ def build_graph_from_spec(
                     f"node {nid!r} references stage {stage_short!r} "
                     f"which is not registered"
                 )
-            g.add_node(nid, make_stage_node(stage, pool, record_sink=record_sink))
+            g.add_node(
+                nid,
+                make_stage_node(
+                    stage, pool, record_sink=record_sink, on_event=on_event,
+                ),
+            )
         else:
             if meta is None:
                 raise KeyError(f"unknown atom {atom_name!r} in node {nid!r}")
@@ -625,7 +639,13 @@ def build_graph_from_spec(
             node_config = n.get("config") if isinstance(n.get("config"), dict) else None
             g.add_node(
                 nid,
-                _wrap_atom(run_fn, atom_name, nid, record_sink, node_config=node_config),
+                _wrap_atom(
+                    run_fn, atom_name, nid, record_sink,
+                    node_config=node_config,
+                    on_event=on_event,
+                    index=index,
+                    total=total_nodes,
+                ),
             )
         node_ids.append(nid)
 
@@ -706,6 +726,9 @@ def _wrap_atom(
     record_sink: list | None,
     *,
     node_config: dict[str, Any] | None = None,
+    on_event: Any = None,
+    index: int | None = None,
+    total: int | None = None,
 ) -> Callable[..., Any]:
     """Wrap a pure atom into the LangGraph node signature with
     record_sink integration so observability matches stage nodes.
@@ -730,14 +753,47 @@ def _wrap_atom(
     Exception`` below would otherwise convert a real checkpoint-pause into
     an error record + ``_halt``, defeating true interrupt()-based resume
     (Glad-Labs/poindexter#363). GraphInterrupt is a LangGraph control-flow
-    signal, not a failure.
+    signal, not a failure — and crucially it does NOT emit a node_failed
+    progress event (no record, no on_event), matching make_stage_node.
+
+    ``on_event`` / ``index`` / ``total`` (Glad-Labs/poindexter#361 part 2)
+    wire the atom node into the streaming progress feed: node_started fires
+    before ``run_fn``, then node_completed (or node_halted) on success /
+    node_failed on exception. ``index``/``total`` are the node's position in
+    the graph so a streaming channel can render a checklist. Callback
+    failures are swallowed (``_safe_on_event``) — they never break the run.
     """
 
     from langchain_core.runnables import RunnableConfig
 
     from services.atom_runs import digest_keys
     from services.template_runner import NODE_DURATION_SECONDS as _node_duration
-    from services.template_runner import TemplateRunRecord, _services_from_config
+    from services.template_runner import (
+        TemplateRunRecord,
+        _safe_on_event,
+        _services_from_config,
+    )
+
+    def _progress_payload(
+        task_id: Any, *, extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build the on_event payload for this atom node.
+
+        Carries node identity + graph position (index/total) so a
+        streaming channel can render a checklist. ``extra`` merges in
+        per-event fields (elapsed_ms / reason).
+        """
+        payload: dict[str, Any] = {
+            "task_id": str(task_id or ""),
+            "node": atom_name,
+        }
+        if index is not None:
+            payload["index"] = index
+        if total is not None:
+            payload["total"] = total
+        if extra:
+            payload.update(extra)
+        return payload
 
     async def node(
         state: PipelineState,
@@ -754,6 +810,13 @@ def _wrap_atom(
             for cfg_key, cfg_value in node_config.items():
                 atom_input.setdefault(cfg_key, cfg_value)
         input_keys = sorted(str(k) for k in atom_input.keys())
+        task_id = atom_input.get("task_id")
+        # node_started — fires before run_fn so a streaming channel shows the
+        # atom as in-flight. _safe_on_event maps the internal event_type to
+        # the public contract name + swallows callback failures (#361).
+        await _safe_on_event(
+            on_event, "template.node_started", _progress_payload(task_id),
+        )
         try:
             result = await run_fn(atom_input)
             elapsed_ms = int((_time.time() - t0) * 1000)
@@ -763,6 +826,17 @@ def _wrap_atom(
                 node=atom_name, outcome="halted" if halted else "ok",
             ).observe(elapsed_ms / 1000.0)
             output_keys = sorted(str(k) for k in out.keys())
+            await _safe_on_event(
+                on_event,
+                "template.node_halted" if halted else "template.node_completed",
+                _progress_payload(
+                    task_id,
+                    extra={
+                        "elapsed_ms": elapsed_ms,
+                        **({"reason": str(out.get("_halt_reason") or "")} if halted else {}),
+                    },
+                ),
+            )
             if record_sink is not None:
                 record_sink.append(
                     TemplateRunRecord(
@@ -789,6 +863,16 @@ def _wrap_atom(
             elapsed_ms = int((_time.time() - t0) * 1000)
             logger.exception("[architect] atom %s raised: %s", atom_name, exc)
             _node_duration.labels(node=atom_name, outcome="error").observe(elapsed_ms / 1000.0)
+            await _safe_on_event(
+                on_event, "template.node_failed",
+                _progress_payload(
+                    task_id,
+                    extra={
+                        "elapsed_ms": elapsed_ms,
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    },
+                ),
+            )
             if record_sink is not None:
                 record_sink.append(
                     TemplateRunRecord(

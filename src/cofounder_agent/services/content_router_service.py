@@ -361,8 +361,26 @@ async def process_content_generation_task(
     try:
         from services.template_runner import TemplateRunner
         _tmpl_runner = TemplateRunner(database_service.pool, site_config=_sc)
+        # Build the default progress-streaming callback per the
+        # pipeline_streaming_channel setting (#361 part 2). Returns None for
+        # discord/off (Discord is driven by _emit_progress; off = silent) and
+        # a Telegram edit-streaming callback when opted in. Best-effort — a
+        # callback-build failure must never block the run.
+        _on_event = None
+        try:
+            from services.pipeline_streaming import make_streaming_callback
+            _on_event = await make_streaming_callback(
+                database_service.pool, _sc, str(task_id),
+                template_slug=template_slug,
+            )
+        except Exception as _stream_exc:  # noqa: BLE001
+            logger.debug(
+                "[BG-TASK] streaming callback build failed (%s) — continuing "
+                "without on_event streaming", _stream_exc,
+            )
         _tmpl_summary = await _tmpl_runner.run(
             template_slug, result, thread_id=str(task_id),
+            on_event=_on_event,
         )
         # Mirror the stage-summary shape expected by callers — task
         # routes through ``finalize_task`` inside the template, which
