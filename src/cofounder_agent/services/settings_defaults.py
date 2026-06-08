@@ -515,6 +515,11 @@ DEFAULTS: dict[str, str] = {
     'shared_http_client_max_connections': '100',
     'shared_http_client_max_keepalive': '20',
 
+    # ----- MCP HTTP probe recovery (brain/mcp_http_probe.py) -----
+    # Empty = HTTP recovery disabled. Set to http://host.docker.internal:9841/recover
+    # once the Recovery Agent Task Scheduler task is running on the host.
+    'mcp_http_probe_recovery_url': '',
+
 }
 
 

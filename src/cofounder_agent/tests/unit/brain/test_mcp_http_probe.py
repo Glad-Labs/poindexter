@@ -20,6 +20,8 @@ def _default_settings() -> dict[str, str]:
         mhp.LAUNCHER_PATH_KEY: "",
         mhp.RESTART_CAP_KEY: "3",
         mhp.RESTART_WINDOW_MINUTES_KEY: "60",
+        mhp.RECOVERY_URL_KEY: "",
+        mhp.RECOVERY_TOKEN_KEY: "",
     }
 
 
@@ -264,3 +266,118 @@ class TestMcpHttpProbe:
             )
         # Cap=2 → only first 2 cycles invoke the launcher.
         assert len(launcher_calls) == 2
+
+
+class TestMcpHttpProbeHttpRecovery:
+    """HTTP recovery path (recovery_fn injection, no subprocess)."""
+
+    @pytest.mark.asyncio
+    async def test_http_recovery_invoked_on_failure(self):
+        pool = _make_pool(
+            setting_values={
+                mhp.RECOVERY_URL_KEY: "http://host.docker.internal:9841/recover",
+                mhp.RECOVERY_TOKEN_KEY: "tok",
+            }
+        )
+        recovery_calls: list[tuple[str, str]] = []
+
+        async def fake_recovery(url: str, token: str) -> tuple[bool, str]:
+            recovery_calls.append((url, token))
+            return True, "recovery dispatched"
+
+        result = await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=503),
+            recovery_fn=fake_recovery,
+            now_fn=lambda: 1000.0,
+        )
+        assert result["ok"] is False
+        assert recovery_calls == [
+            ("http://host.docker.internal:9841/recover", "tok")
+        ]
+        assert "recovery dispatched" in result.get("recovery_detail", "")
+
+    @pytest.mark.asyncio
+    async def test_http_recovery_not_invoked_when_url_empty(self):
+        """Empty recovery_url → no attempt, no recovery_detail."""
+        pool = _make_pool(
+            setting_values={
+                mhp.RECOVERY_URL_KEY: "",
+                mhp.RECOVERY_TOKEN_KEY: "tok",
+            }
+        )
+        recovery_calls: list = []
+
+        async def fake_recovery(url: str, token: str) -> tuple[bool, str]:
+            recovery_calls.append((url, token))
+            return True, "should not be called"
+
+        result = await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=503),
+            recovery_fn=fake_recovery,
+            now_fn=lambda: 1000.0,
+        )
+        assert recovery_calls == []
+        assert "recovery_detail" not in result
+
+    @pytest.mark.asyncio
+    async def test_http_recovery_restart_cap_enforced(self):
+        """HTTP recovery obeys the same restart_cap/window as the subprocess path."""
+        pool = _make_pool(
+            setting_values={
+                mhp.RECOVERY_URL_KEY: "http://host.docker.internal:9841/recover",
+                mhp.RECOVERY_TOKEN_KEY: "tok",
+                mhp.RESTART_CAP_KEY: "2",
+                mhp.RESTART_WINDOW_MINUTES_KEY: "60",
+            }
+        )
+        recovery_calls: list = []
+
+        async def fake_recovery(url: str, token: str) -> tuple[bool, str]:
+            recovery_calls.append((url, token))
+            return True, "dispatched"
+
+        clock = [1000.0]
+        factory = _make_http_factory(status_code=503)
+        for offset in (0, 6 * 60, 12 * 60, 18 * 60):
+            clock[0] = 1000.0 + offset
+            await mhp.run_mcp_http_probe(
+                pool,
+                http_client_factory=factory,
+                recovery_fn=fake_recovery,
+                now_fn=lambda: clock[0],
+            )
+        # Cap=2 → only first 2 cycles invoke recovery.
+        assert len(recovery_calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_launcher_takes_priority_over_http_recovery(self):
+        """If launcher_path is set, it is preferred over recovery_url."""
+        pool = _make_pool(
+            setting_values={
+                mhp.LAUNCHER_PATH_KEY: "C:\\fake\\launcher.cmd",
+                mhp.RECOVERY_URL_KEY: "http://host.docker.internal:9841/recover",
+                mhp.RECOVERY_TOKEN_KEY: "tok",
+            }
+        )
+        launcher_calls: list = []
+        recovery_calls: list = []
+
+        def fake_launcher(path: str) -> tuple[bool, str]:
+            launcher_calls.append(path)
+            return True, f"dispatched {path}"
+
+        async def fake_recovery(url: str, token: str) -> tuple[bool, str]:
+            recovery_calls.append((url, token))
+            return True, "should not be called"
+
+        await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=503),
+            launcher_fn=fake_launcher,
+            recovery_fn=fake_recovery,
+            now_fn=lambda: 1000.0,
+        )
+        assert launcher_calls == ["C:\\fake\\launcher.cmd"]
+        assert recovery_calls == []

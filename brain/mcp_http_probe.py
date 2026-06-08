@@ -66,6 +66,8 @@ DISCOVERY_PATH_KEY = "mcp_http_probe_discovery_path"
 LAUNCHER_PATH_KEY = "mcp_http_probe_launcher_path"
 RESTART_CAP_KEY = "mcp_http_probe_restart_cap_per_window"
 RESTART_WINDOW_MINUTES_KEY = "mcp_http_probe_restart_window_minutes"
+RECOVERY_URL_KEY = "mcp_http_probe_recovery_url"
+RECOVERY_TOKEN_KEY = "mcp_http_probe_recovery_token"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 5
@@ -246,6 +248,33 @@ def _try_launcher(launcher_path: str) -> tuple[bool, str]:
         return False, f"launcher spawn failed: {type(exc).__name__}: {exc}"
 
 
+async def _try_http_recovery(url: str, token: str) -> tuple[bool, str]:
+    """POST to the host-side recovery agent to restart the MCP HTTP server.
+
+    Container-safe recovery path — the recovery agent runs on the Windows host
+    and is reachable via host.docker.internal even from inside Docker, unlike
+    _try_launcher which requires direct host-OS access.
+    """
+    if not url or not token:
+        return False, "recovery_url or recovery_token not configured"
+
+    if httpx is None:
+        return False, "httpx not available"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                url,
+                json={"service": "mcp-http"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if 200 <= response.status_code < 300:
+                return True, f"recovery agent responded HTTP {response.status_code}"
+            return False, f"recovery agent returned HTTP {response.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"recovery request failed: {type(exc).__name__}: {exc}"
+
+
 # ---------------------------------------------------------------------------
 # Probe entry point.
 # ---------------------------------------------------------------------------
@@ -257,6 +286,7 @@ async def run_mcp_http_probe(
     now_fn: Callable[[], float] | None = None,
     http_client_factory: Callable[..., Any] | None = None,
     launcher_fn: Callable[[str], tuple[bool, str]] | None = None,
+    recovery_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Single probe cycle. Returns a summary dict."""
     global _last_real_check_at, _last_alert_at
@@ -306,6 +336,7 @@ async def run_mcp_http_probe(
             title="MCP HTTP server unreachable",
             body=f"GET {probe_url} raised {type(exc).__name__}: {exc}",
             launcher_fn=launcher_fn,
+            recovery_fn=recovery_fn,
         )
 
     if 200 <= status_code < 400:
@@ -350,6 +381,7 @@ async def run_mcp_http_probe(
         body=f"GET {probe_url} returned HTTP {status_code}",
         status_code=status_code,
         launcher_fn=launcher_fn,
+        recovery_fn=recovery_fn,
     )
 
 
@@ -363,6 +395,7 @@ async def _handle_failure(
     body: str,
     status_code: int | None = None,
     launcher_fn: Callable[[str], tuple[bool, str]] | None = None,
+    recovery_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Common failure path: alert (deduped) + optional auto-recover."""
     global _last_alert_at
@@ -379,25 +412,33 @@ async def _handle_failure(
         await _write_alert(pool, fingerprint_suffix=fingerprint_suffix, title=title, body=body)
         _last_alert_at = now
 
-    # Auto-recovery — bounded by the rolling restart cap so we don't
-    # busy-loop the launcher when the underlying problem is persistent.
+    # Auto-recovery — bounded by the rolling restart cap.
+    # Priority: subprocess launcher (host-process deployments) >
+    #           HTTP recovery agent (containerised brain deployments).
     launcher_path = (await _read_app_setting(pool, LAUNCHER_PATH_KEY, "")).strip()
+    recovery_url = (await _read_app_setting(pool, RECOVERY_URL_KEY, "")).strip()
+    recovery_token = (await _read_app_setting(pool, RECOVERY_TOKEN_KEY, "")).strip()
+
     recovery_detail = ""
-    if launcher_path:
+    if launcher_path or recovery_url:
         restart_cap = await _read_int(pool, RESTART_CAP_KEY, DEFAULT_RESTART_CAP)
         window_min = await _read_int(pool, RESTART_WINDOW_MINUTES_KEY, DEFAULT_RESTART_WINDOW_MINUTES)
         window_s = max(1, window_min) * 60
         cutoff = now - window_s
-        # Drop any restart attempts older than the rolling window.
         _restart_attempts[:] = [t for t in _restart_attempts if t >= cutoff]
         if len(_restart_attempts) < max(1, restart_cap):
-            ok, detail = (launcher_fn or _try_launcher)(launcher_path)
+            if launcher_path:
+                ok, detail = (launcher_fn or _try_launcher)(launcher_path)
+            else:
+                ok, detail = await (recovery_fn or _try_http_recovery)(
+                    recovery_url, recovery_token,
+                )
+            _restart_attempts.append(now)
             recovery_detail = detail
             if ok:
-                _restart_attempts.append(now)
                 logger.info("[MCP_HTTP_PROBE] auto-recovery: %s", detail)
             else:
-                logger.warning("[MCP_HTTP_PROBE] auto-recovery skipped: %s", detail)
+                logger.warning("[MCP_HTTP_PROBE] auto-recovery failed: %s", detail)
         else:
             recovery_detail = (
                 f"restart cap reached ({len(_restart_attempts)}/{restart_cap} in "
