@@ -240,3 +240,87 @@ async def test_graphdef_run_propagates_content_to_finalize(monkeypatch):
     node_ids = {r.node_id for r in summary.records}
     assert "finalize_task" in node_ids
     assert "generate_content" in node_ids
+
+
+# ---------------------------------------------------------------------------
+# Test 3 — media-artifact channels survive graph_def state merge (#674)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
+    """#674 guard: media artifacts returned by the media stages must reach
+    the terminal node via LangGraph state channels. Fails if any of the
+    five media keys is an undeclared PipelineState channel (LangGraph drops
+    undeclared keys on the graph_def path)."""
+    from services import atom_registry
+    from services.atom_registry import discover
+    from services.template_runner import TemplateRunner
+
+    discover()
+    seen: dict[str, Any] = {}
+
+    async def _verify_runner(state):
+        return {"verified": True}
+
+    async def _media_scripts_runner(state):
+        return {
+            "podcast_script": "PODCAST",
+            "video_scenes": ["scene-a", "scene-b"],
+            "short_summary_script": "SHORT",
+            "video_ambient_audio_path": "/tmp/ambient.wav",
+        }
+
+    async def _shot_list_runner(state):
+        return {"video_shot_list": {"version": 1, "shots": [{"idx": 0}]}}
+
+    async def _finalize_runner(state):
+        seen["podcast_script"] = state.get("podcast_script")
+        seen["video_scenes"] = state.get("video_scenes")
+        seen["short_summary_script"] = state.get("short_summary_script")
+        seen["video_ambient_audio_path"] = state.get("video_ambient_audio_path")
+        seen["video_shot_list"] = state.get("video_shot_list")
+        return {"status": "awaiting_approval"}
+
+    runners = dict(atom_registry._RUNNERS)
+    runners["stage.verify_task"] = _verify_runner
+    runners["stage.generate_media_scripts"] = _media_scripts_runner
+    runners["stage.generate_video_shot_list"] = _shot_list_runner
+    runners["stage.finalize_task"] = _finalize_runner
+    monkeypatch.setattr(atom_registry, "_RUNNERS", runners)
+
+    minimal_spec = {
+        "name": "canonical_blog",
+        "description": "#674 media-artifact propagation guard",
+        "entry": "verify_task",
+        "nodes": [
+            {"id": "verify_task", "atom": "stage.verify_task"},
+            {"id": "generate_media_scripts", "atom": "stage.generate_media_scripts"},
+            {"id": "generate_video_shot_list", "atom": "stage.generate_video_shot_list"},
+            {"id": "finalize_task", "atom": "stage.finalize_task"},
+        ],
+        "edges": [
+            {"from": "verify_task", "to": "generate_media_scripts"},
+            {"from": "generate_media_scripts", "to": "generate_video_shot_list"},
+            {"from": "generate_video_shot_list", "to": "finalize_task"},
+            {"from": "finalize_task", "to": "END"},
+        ],
+    }
+
+    async def _fake_load_active_graph_def(_pool, _slug):
+        return minimal_spec
+
+    monkeypatch.setattr(
+        "services.pipeline_templates.load_active_graph_def",
+        _fake_load_active_graph_def,
+    )
+
+    runner = TemplateRunner(pool=_make_fake_pool(), site_config=_make_site_config())
+    summary = await runner.run("canonical_blog", {"task_id": "t-media-1", "topic": "Testing"})
+
+    assert summary.ok, f"graph_def run halted at {summary.halted_at}"
+    assert seen.get("podcast_script") == "PODCAST"
+    assert seen.get("video_scenes") == ["scene-a", "scene-b"]
+    assert seen.get("short_summary_script") == "SHORT"
+    assert seen.get("video_ambient_audio_path") == "/tmp/ambient.wav"
+    assert seen.get("video_shot_list") == {"version": 1, "shots": [{"idx": 0}]}

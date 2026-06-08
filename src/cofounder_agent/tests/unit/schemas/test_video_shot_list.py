@@ -251,3 +251,18 @@ def test_ai_source_silhouette_prompt_does_not_warn(caplog: pytest.LogCaptureFixt
             _valid_shot(0, "wan21", prompt="faceless silhouette of a figure walking"),
         )
     assert "human-indicator" not in caplog.text
+
+
+def test_aspect_defaults_to_16x9() -> None:
+    sl = VideoShotList.model_validate(_valid_shot_list())
+    assert sl.aspect == "16:9"
+
+
+def test_aspect_accepts_9x16() -> None:
+    sl = VideoShotList.model_validate(_valid_shot_list(aspect="9:16"))
+    assert sl.aspect == "9:16"
+
+
+def test_aspect_rejects_unknown() -> None:
+    with pytest.raises(ValidationError):
+        VideoShotList.model_validate(_valid_shot_list(aspect="4:3"))

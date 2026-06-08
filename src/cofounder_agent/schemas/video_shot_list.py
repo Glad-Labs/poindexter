@@ -161,6 +161,10 @@ class VideoShotList(BaseModel):
     """
 
     version: int = Field(1, description="Schema version; bump on breaking changes")
+    aspect: Literal["16:9", "9:16"] = Field(
+        "16:9",
+        description="Output aspect ratio: 16:9 long-form, 9:16 short-form",
+    )
     total_duration_s: float = Field(..., gt=0, description="Sum of shot durations; matches podcast length ±1s")
     shots: list[Shot] = Field(..., min_length=1, max_length=30)
     director_model: str = Field(..., description="LLM model that produced this shot list")

@@ -432,6 +432,16 @@ class PipelineState(TypedDict, total=False):
     # pointed at the same URL.
     preview_token: str
     preview_url: str
+    # Media artifacts (#674): the media stages produce these for the
+    # downstream media_pipeline. Declared as last-value channels so they
+    # survive LangGraph's graph_def state merge — undeclared keys are
+    # silently dropped on the graph_def path (same lesson as
+    # seo_keywords_list / research_context above).
+    podcast_script: str
+    video_scenes: list
+    short_summary_script: str
+    video_shot_list: dict
+    video_ambient_audio_path: str
     stages: dict
     generate_metrics: dict
     cost_log: dict

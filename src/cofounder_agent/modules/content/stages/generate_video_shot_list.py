@@ -316,10 +316,11 @@ class GenerateVideoShotListStage:
                 metrics={"failed": True},
             )
 
-        # Success — write to context + audit_log.
+        # Success — return via context_updates so it survives the graph_def
+        # state merge (#674: direct context writes are dropped on graph_def).
         shot_list_dict = shot_list.model_dump(mode="json")
-        context["video_shot_list"] = shot_list_dict
-        context.setdefault("stages", {})["video_shot_list"] = True
+        stages = context.setdefault("stages", {})
+        stages["video_shot_list"] = True
 
         await _log_audit(
             pool,
@@ -341,6 +342,10 @@ class GenerateVideoShotListStage:
         return StageResult(
             ok=True,
             detail=f"{len(shot_list.shots)} shots, {shot_list.total_duration_s:.1f}s total",
+            context_updates={
+                "video_shot_list": shot_list_dict,
+                "stages": stages,
+            },
             metrics={
                 "shot_count": len(shot_list.shots),
                 "total_duration_s": shot_list.total_duration_s,

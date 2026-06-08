@@ -9,6 +9,7 @@ conditions). The schema-level validation is covered separately in
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -195,8 +196,9 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
         result = await stage.execute(context, {})
 
     assert result.ok
-    assert "video_shot_list" in context
-    assert len(context["video_shot_list"]["shots"]) == 3
+    # #674 fix: shot list is in context_updates, not mutated directly onto context.
+    assert "video_shot_list" in result.context_updates
+    assert len(result.context_updates["video_shot_list"]["shots"]) == 3
     # Wave 3e (#667): the model is resolved from the capability handle's
     # config, not a context['site_config'] object — pin that seam by asserting
     # dispatch received the model the handle's config returned.
@@ -305,3 +307,64 @@ async def test_invalid_schema_output_records_failure() -> None:
 
     assert result.ok
     assert result.metrics.get("failed") is True
+
+
+# ---------------------------------------------------------------------------
+# #674 regression: shot list must be returned via context_updates, not direct
+# context mutation, so it survives the LangGraph graph_def state merge.
+# ---------------------------------------------------------------------------
+
+
+class _FakeLock:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+def _director_json() -> str:
+    return json.dumps({
+        "version": 1,
+        "total_duration_s": 15.0,
+        "shots": [
+            {"idx": 0, "duration_s": 5.0, "intent": "open", "source": "pexels",
+             "query": "data center", "narration_offset_s": 0.0},
+            {"idx": 1, "duration_s": 5.0, "intent": "mid", "source": "sdxl_kenburns",
+             "prompt": "abstract data flow", "narration_offset_s": 5.0},
+            {"idx": 2, "duration_s": 5.0, "intent": "close", "source": "pexels",
+             "query": "server racks", "narration_offset_s": 10.0},
+        ],
+        "director_model": "llama3:latest",
+        "director_prompt_version": "v1",
+        "director_decided_at": "2026-06-07T00:00:00+00:00",
+    })
+
+
+@pytest.mark.asyncio
+async def test_shot_list_returned_via_context_updates():
+    platform = MagicMock()
+    platform.config = {"site_name": "Test", "video_director_model": "llama3:latest"}
+    platform.dispatch.complete = AsyncMock(return_value=SimpleNamespace(text=_director_json()))
+
+    db = SimpleNamespace(pool=MagicMock())
+    ctx = {
+        "title": "A Post",
+        "content": "Body content that is long enough.",
+        "podcast_script": "narration " * 50,
+        "task_id": "t-1",
+        "database_service": db,
+        "platform": platform,
+    }
+
+    gpu = SimpleNamespace(lock=lambda *a, **k: _FakeLock())
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.prompt_manager.get_prompt_manager") as pm, \
+         patch("modules.content.stages.generate_video_shot_list._log_audit", new=AsyncMock()):
+        pm.return_value.get_prompt.return_value = "director prompt"
+        result = await GenerateVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    assert "video_shot_list" in result.context_updates
+    assert result.context_updates["video_shot_list"]["shots"][0]["idx"] == 0
+    assert result.context_updates["stages"]["video_shot_list"] is True

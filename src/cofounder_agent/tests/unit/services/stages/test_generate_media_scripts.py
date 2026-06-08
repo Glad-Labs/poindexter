@@ -201,3 +201,26 @@ async def test_tts_called_when_enabled():
 
     assert result.ok
     assert len(tts_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_ambient_path_returned_via_context_updates():
+    gpu = SimpleNamespace(lock=_fake_lock)
+    # Supply platform so video_scenes LLM call runs and returns scene text.
+    scene_text = "1. a cinematic wide shot of mountains\n\nSHORT:\nsummary text"
+    result_obj = SimpleNamespace(text=scene_text)
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="P" * 600)), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.generate_audio",
+               new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/ambient.wav"))):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert result.context_updates.get("video_ambient_audio_path") == "/tmp/ambient.wav"

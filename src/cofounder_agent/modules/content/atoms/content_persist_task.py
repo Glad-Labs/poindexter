@@ -131,6 +131,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "video_scenes": state.get("video_scenes", []),
         "short_summary_script": state.get("short_summary_script", ""),
         "video_shot_list": state.get("video_shot_list"),
+        "video_ambient_audio_path": state.get("video_ambient_audio_path", ""),
     }
 
     updates = {

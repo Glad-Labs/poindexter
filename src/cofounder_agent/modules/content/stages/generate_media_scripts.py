@@ -199,6 +199,7 @@ class GenerateMediaScriptsStage:
                 )
 
             # Audio gen — ambient video bed via StableAudioOpen.
+            ambient_audio_path = ""
             if video_scenes and is_audio_gen_enabled(sc):
                 try:
                     ambient_prompt = video_scenes[0][:200] if video_scenes else title
@@ -210,7 +211,7 @@ class GenerateMediaScriptsStage:
                     if ambient_result is not None:
                         path = ambient_result.file_path or ""
                         if path:
-                            context["video_ambient_audio_path"] = path
+                            ambient_audio_path = path
                             logger.info("[MEDIA] Video ambient bed: %s", path)
                 except Exception as sfx_exc:
                     logger.warning("[MEDIA] audio_gen ambient bed failed: %s", sfx_exc)
@@ -233,6 +234,7 @@ class GenerateMediaScriptsStage:
                     "podcast_script_length": len(podcast_script),
                     "video_scenes_count": len(video_scenes),
                     "short_summary_length": len(short_summary),
+                    "video_ambient_audio_path": ambient_audio_path,
                     "stages": stages,
                 },
                 metrics={
