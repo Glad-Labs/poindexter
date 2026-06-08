@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-06.**  
+> **Auto-generated from live `app_settings` table on 2026-06-08.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 827 active rows across 60 categories. 1 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 842 active rows across 62 categories. 1 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -30,6 +30,7 @@ The worker re-reads on every poll; no restart needed.
 - [alerts](#alerts) (5 keys)
 - [api_keys](#api-keys) (1 key)
 - [backup](#backup) (14 keys)
+- [bench](#bench) (2 keys)
 - [brain](#brain) (13 keys)
 - [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
@@ -38,12 +39,12 @@ The worker re-reads on every poll; no restart needed.
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
 - [cost](#cost) (8 keys)
-- [experiments](#experiments) (2 keys)
+- [experiments](#experiments) (4 keys)
 - [features](#features) (7 keys)
 - [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (323 keys)
+- [general](#general) (326 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -62,11 +63,11 @@ The worker re-reads on every poll; no restart needed.
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
 - [notifications](#notifications) (3 keys)
-- [observability](#observability) (10 keys)
+- [observability](#observability) (14 keys)
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (34 keys)
+- [pipeline](#pipeline) (37 keys)
 - [plugins](#plugins) (48 keys)
 - [plugin_telemetry](#plugin-telemetry) (83 keys)
 - [podcast](#podcast) (2 keys)
@@ -79,6 +80,7 @@ The worker re-reads on every poll; no restart needed.
 - [scheduling](#scheduling) (1 key)
 - [security](#security) (1 key)
 - [site](#site) (2 keys)
+- [skills](#skills) (1 key)
 - [social](#social) (5 keys)
 - [system](#system) (2 keys)
 - [tokens](#tokens) (5 keys)
@@ -122,6 +124,13 @@ The worker re-reads on every poll; no restart needed.
 | `backup_watcher_poll_interval_minutes` | `5` |  | Cadence at which the watcher re-checks backup freshness. Matches the brain cycle by default; bump higher only if the ... |
 | `backup_watcher_retry_delay_seconds` | `120` |  | How long the watcher waits after `docker restart` before re-stat-ing the dump directory. Long enough for postgres rec... |
 | `backup_watcher_sentinel_dir` | `/host-backup-logs` |  | Container path the brain bind-mounts ~/.poindexter/logs into (read-only). brain/backup_watcher.py scans this director... |
+
+## bench
+
+| Key | Default | Classification | Description |
+| --- | --- | --- | --- |
+| `bench_default_prompt_count` | `3` |  | Default --repeat count for the cost/energy eval harness (scripts/bench/eval_cost_tiers.py): how many times each promp... |
+| `bench_prometheus_url` | `http://localhost:9091` |  | Prometheus HTTP API base URL the cost/energy eval harness queries for avg_over_time(nvidia_gpu_power_draw_watts) duri... |
 
 ## brain
 
@@ -228,7 +237,9 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `active_pipeline_experiment_key` | `` |  | Experiment key the content pipeline routes through (matches experiments.key in the experiments table). Empty = disabl... |
+| `experiment_weighted_selection_enabled` | `false` |  | When true, experiment_runner.pick_variant allocates proportional to experiment_variants.weight (the column the #361 f... |
 | `premium_active` | `false` |  | When 'true', UnifiedPromptManager loads prompt_templates rows where source='premium' on top of source='default'. When... |
+| `router_feedback_alpha` | `0.2` |  | EWMA damping for the outcome→experiment-variant-weight feedback loop (#361). new_weight = (1 - alpha) * old + alpha *... |
 
 ## features
 
@@ -404,6 +415,9 @@ The worker re-reads on every poll; no restart needed.
 | `memory_stale_threshold_seconds_openclaw` | `2592000` |  |  |
 | `memory_stale_threshold_seconds_shared-context` | `2592000` |  |  |
 | `migration_drift_auto_recover_enabled` | `true` |  |  |
+| `migration_drift_auto_sync_enabled` | `false` |  | When true, the migration-drift probe resyncs the deploy checkout (git reset --hard origin/main + clean -fd) before re... |
+| `migration_drift_deploy_checkout_path` | `/host-deploy` |  | In-brain-container path where the dedicated deploy checkout is mounted RW. The probe runs git here. Nothing else touc... |
+| `migration_drift_recover_max_attempts` | `3` |  | Max consecutive recovery attempts (sync+restart) for one drift episode before the probe gives up, pages once, and sup... |
 | `model_role_image_decision` | `ollama/phi4:14b` |  |  |
 | `newsletter_batch_delay_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_batch_size` | `50` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -835,11 +849,15 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
+| `data_fabric_loki_url` | `http://localhost:3100` |  | Loki HTTP API base URL used by DataFabric.LokiClient. Override to http://host.docker.internal:3100 when running insid... |
+| `data_fabric_prometheus_url` | `http://localhost:9091` |  | Prometheus HTTP API base URL used by DataFabric.PrometheusClient. Override to http://host.docker.internal:9091 when r... |
+| `data_fabric_pyroscope_url` | `http://localhost:4040` |  | Pyroscope HTTP API base URL used by DataFabric.PyroscopeClient. Override to http://host.docker.internal:4040 when run... |
+| `data_fabric_tempo_url` | `http://localhost:3200` |  | Tempo HTTP API base URL used by DataFabric.TempoClient. Override to http://host.docker.internal:3200 when running ins... |
 | `enable_pyroscope` | `true` |  | When true, services/profiling.py:setup_pyroscope() configures the pyroscope-io agent at worker / brain / voice-agent ... |
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
 | `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
-| `operator_url_probe_target_overrides` | `{"video_server_url": {"method": "HEAD...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
+| `operator_url_probe_target_overrides` | `{"data_fabric_loki_url": {"method": "...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
 | `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP gRPC endpoint that the worker pushes spans to. Default points at the docker-compose tempo service on its OTLP gR... |
 | `pyroscope_server_url` | `http://pyroscope:4040` |  | Pyroscope ingestion URL for worker agent |
 | `sentry_profiles_sample_rate` | `0.1` |  | Fraction of transactions to capture as CPU profiles. Default 0.1. Same hardcoding bug as traces sample rate. |
@@ -889,9 +907,12 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_architect_model` | `glm-4.7-5090:latest` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
 | `pipeline_factcheck_model` | `programmatic` |  | Model for fact-checking -- programmatic or LLM provider |
+| `pipeline_gate_draft_gate` | `off` |  | HITL approval gate 'draft_gate': on/off. When on, the canonical_blog pipeline pauses after the writer stage via LangG... |
 | `pipeline_refinement_model` | `ollama/glm-4.7-5090:latest` |  | Model for content refinement (stage 5) |
 | `pipeline_research_model` | `ollama/glm-4.7-5090:latest` |  | Model for research stage (stage 1) |
 | `pipeline.stages.order` | `["verify_task", "generate_content", "...` |  | Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert thi... |
+| `pipeline_streaming_channel` | `discord` |  | Where TemplateRunner.run streams per-node progress via its on_event callback: 'discord' (default — existing Discord p... |
+| `pipeline_streaming_min_edit_interval_s` | `5` |  | Minimum seconds between Telegram editMessageText calls when pipeline_streaming_channel='telegram'. Rapid node complet... |
 | `publish_spacing_hours` | `4` |  | Minimum hours between published posts |
 | `require_human_approval` | `true` |  | When true, all content requires human approval before publishing |
 | `seed_url_fetch_timeout_seconds` | `10` |  | URL-based topic seeding: total HTTP timeout (seconds) for the seed_url fetch on POST /api/tasks. Short by design — if... |
@@ -1131,6 +1152,12 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `public_site_revalidate_url` | `` |  | Full URL of the Next.js public site's /api/revalidate endpoint. POSTed by services/revalidation_service.py to bust th... |
 | `public_site_url` | `` |  |  |
+
+## skills
+
+| Key | Default | Classification | Description |
+| --- | --- | --- | --- |
+| `skill_importer_allowed_licenses` | `MIT,Apache-2.0,BSD-2-Clause,BSD-3-Cla...` |  | Comma-separated list of SPDX license identifiers that ``poindexter skills import`` accepts.  Add identifiers to permi... |
 
 ## social
 
