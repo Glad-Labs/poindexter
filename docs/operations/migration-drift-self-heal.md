@@ -108,9 +108,13 @@ pwsh scripts/deploy-checkout-sync.ps1 -Install
 #    src-mounting services so they pick up the new mount. Set the var in .env
 #    so it persists across `docker compose up` / reboots:
 echo 'POINDEXTER_DEPLOY_ROOT=C:/Users/<you>/.poindexter/deploy/glad-labs-stack' >> .env
-docker compose -f docker-compose.local.yml up -d --force-recreate \
-  poindexter-worker poindexter-pipeline-bot poindexter-prefect-worker \
-  poindexter-voice-agent-livekit poindexter-voice-agent-claude-code
+# Recreate every service whose mount references POINDEXTER_DEPLOY_ROOT. These are
+# compose SERVICE names (not container names): worker, pipeline-bot,
+# prefect-worker, the two voice agents (src/cofounder_agent mounts) + gpu-exporter
+# (brain mount). --no-deps so dependencies aren't bounced.
+docker compose -f docker-compose.local.yml up -d --force-recreate --no-deps \
+  worker pipeline-bot prefect-worker \
+  voice-agent-livekit voice-agent-claude-code gpu-exporter
 
 # 5. Enable genuine self-heal
 poindexter set migration_drift_auto_recover_enabled true   # if not already
