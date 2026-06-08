@@ -1128,7 +1128,12 @@ services:
       # Mounting the whole projects/ dir means every C--* scope gets embedded
       # automatically — no more silent skips when cwd changes (2026-04-18 incident).
       CLAUDE_PROJECTS_DIR: /memory/claude-projects
-      OPENCLAW_MEMORY_DIR: /memory/openclaw
+      # OpenClaw memory embedding retired 2026-06-07 (Matt): operations memories
+      # live in the DB as structured data, not in pgvector. The "__skip__"
+      # sentinel makes the memory tap's _resolve() return a non-existent path,
+      # so the openclaw source is skipped on every run. The .openclaw bind mount
+      # below is left in place (harmless) for any future openclaw_sqlite tap.
+      OPENCLAW_MEMORY_DIR: __skip__
       # auto-embed calls get_secret('gitea_password') to auth against
       # the local Gitea tap. Needs the symmetric key to decrypt it.
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
