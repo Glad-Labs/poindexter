@@ -131,6 +131,40 @@ def test_build_tts_sidecar_uses_override_voice_and_speed():
     assert tts.kw["speed"] == 1.25
 
 
+def test_build_tts_sidecar_without_valid_voices_attr():
+    """pipecat 1.1.0 (the voice image) has NO ``VALID_VOICES`` attribute.
+
+    Regression for the crash-loop introduced by #1153/#1157: the unconditional
+    ``OpenAITTSService.VALID_VOICES.setdefault(...)`` raised AttributeError on
+    every agent start. The guarded version must pass the raw voice straight
+    through without touching the (absent) map.
+    """
+    # Stub an OpenAITTSService that, like pipecat 1.1.0, has no VALID_VOICES.
+    tts_cls = type(
+        "OpenAITTSService",
+        (),
+        {"__init__": lambda self, **kw: setattr(self, "kw", kw)},
+    )
+    pkg = types.ModuleType("pipecat.services.openai")
+    sys.modules["pipecat.services.openai"] = pkg
+    tts_mod = types.ModuleType("pipecat.services.openai.tts")
+    tts_mod.OpenAITTSService = tts_cls
+    sys.modules["pipecat.services.openai.tts"] = tts_mod
+
+    import services.voice_agent as va
+    cfg = _Cfg(
+        voice_agent_tts_mode="sidecar",
+        voice_agent_tts_base_url="http://speaches:8000/v1",
+        voice_agent_tts_model="speaches-ai/Kokoro-82M-v1.0-ONNX",
+        voice_agent_tts_voice="bf_emma",
+    )
+    # Must NOT raise AttributeError; voice flows straight through.
+    tts = va._build_tts(cfg, None)
+    assert isinstance(tts, tts_cls)
+    assert tts.kw["voice"] == "bf_emma"
+    assert not hasattr(tts_cls, "VALID_VOICES")
+
+
 def test_build_tts_sidecar_empty_model_fails_loud():
     _stub_openai_services()
     import services.voice_agent as va
