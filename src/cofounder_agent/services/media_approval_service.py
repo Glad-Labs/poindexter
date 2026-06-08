@@ -15,17 +15,30 @@ Workflow
 6. Distribution paths (RSS feed query, YouTube publish adapter) call
    ``is_approved(post_id, medium)`` before exposing the media
 
-Auto-approve
-============
-Per-niche-per-medium auto-approve is an opt-in setting Matt flips once
-he trusts a niche/medium combo. The setting key is::
+Auto-approve tiers
+==================
+``record_pending`` checks three tiers in order; the first match wins:
 
-    niche.<slug>.media.<medium>.auto_approve = true
+**Tier 1 — manual opt-in** (per-niche-per-medium):
+``niche.<slug>.media.<medium>.auto_approve = true``
+When set, the row is inserted with ``status='approved'``,
+``decided_by='auto:niche.<slug>'``. Operator flips this once they
+unconditionally trust a niche/medium combo.
 
-When set, ``record_pending`` inserts the row with
-``status='approved'``, ``decided_by='auto:niche.<slug>'`` directly,
-skipping the human-review step. Defaults to ``false`` for every
-combination — explicit opt-in, no silent default per
+**Tier 2 — earned autonomy** (#531):
+When ``media.gate2.earned_autonomy_enabled = true`` AND the last N
+successfully-dispatched rows for the same (niche_slug, medium) were all
+``dispatch_success=true`` (N = ``media.gate2.earned_autonomy_min_dispatches``,
+default 5), the new medium is approved automatically with
+``decided_by='auto:earned_autonomy:<niche_slug>'``. Observability: an
+``audit_log`` finding (kind=``media_earned_autonomy_granted``) is emitted.
+
+**Tier 3 — manual review** (default):
+Row is inserted with ``status='pending'``; operator reviews via
+``poindexter media pending``.
+
+All tiers default to the conservative path (Tier 3) on any missing
+setting or query error — explicit opt-in, no silent default per
 ``feedback_no_silent_defaults``.
 """
 
@@ -34,6 +47,8 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+
+from utils.findings import emit_finding  # noqa: E402 — audit observability
 
 logger = logging.getLogger(__name__)
 
@@ -108,13 +123,85 @@ async def _niche_auto_approve_enabled(
     return (enabled, niche_slug)
 
 
+async def _earned_autonomy_check(
+    db: Any, niche_slug: str, medium: str,
+) -> bool:
+    """Return True iff the (niche_slug, medium) combo has earned autonomous
+    Gate-2 approval based on its dispatch track record (#531).
+
+    Reads the global master switch (``media.gate2.earned_autonomy_enabled``)
+    and the consecutive-success threshold
+    (``media.gate2.earned_autonomy_min_dispatches``; per-niche override
+    ``niche.<slug>.media.<medium>.earned_autonomy_min_dispatches`` takes
+    precedence when set).
+
+    Returns ``False`` conservatively on any missing setting, insufficient
+    history, or any failure in the recent dispatch record.
+    """
+    # Master switch — off by default, explicit opt-in.
+    enabled_row = await db.fetchrow(
+        "SELECT value FROM app_settings "
+        "WHERE key = 'media.gate2.earned_autonomy_enabled' AND is_active = true",
+    )
+    if not enabled_row:
+        return False
+    raw = str(enabled_row["value"] or "").strip().lower()
+    if raw not in ("true", "1", "yes", "on"):
+        return False
+
+    # Per-niche threshold override → global default.
+    override_key = (
+        f"niche.{niche_slug}.media.{medium}.earned_autonomy_min_dispatches"
+    )
+    threshold_row = await db.fetchrow(
+        "SELECT value FROM app_settings WHERE key = $1 AND is_active = true",
+        override_key,
+    )
+    if not threshold_row:
+        threshold_row = await db.fetchrow(
+            "SELECT value FROM app_settings "
+            "WHERE key = 'media.gate2.earned_autonomy_min_dispatches' "
+            "AND is_active = true",
+        )
+
+    try:
+        min_dispatches = int(threshold_row["value"]) if threshold_row else 5
+    except (TypeError, ValueError):
+        min_dispatches = 5
+
+    if min_dispatches <= 0:
+        return False
+
+    # Fetch the last N dispatched rows for this niche + medium.
+    rows = await db.fetch(
+        """
+        SELECT ma.dispatch_success
+        FROM media_approvals ma
+        JOIN posts p ON p.id = ma.post_id
+        JOIN pipeline_tasks pt
+            ON pt.task_id = (p.metadata ->> 'pipeline_task_id')
+        WHERE pt.niche_slug = $1
+          AND ma.medium = $2
+          AND ma.dispatched_at IS NOT NULL
+        ORDER BY ma.dispatched_at DESC
+        LIMIT $3
+        """,
+        niche_slug, medium, min_dispatches,
+    )
+
+    if len(rows) < min_dispatches:
+        return False  # Not enough history yet — conservative.
+
+    return all(r["dispatch_success"] is True for r in rows)
+
+
 async def record_pending(
     db: Any, post_id: str, medium: str,
 ) -> str:
     """Insert a row for a freshly generated medium.
 
     Returns the resulting ``status`` (``'pending'`` or ``'approved'``
-    if auto-approve fired). Idempotent via ``ON CONFLICT DO NOTHING``
+    if any auto-approve tier fired). Idempotent via ``ON CONFLICT DO NOTHING``
     on the ``(post_id, medium)`` PK — re-generation events don't
     clobber prior decisions.
 
@@ -129,6 +216,7 @@ async def record_pending(
         db, post_id, medium,
     )
 
+    # Tier 1: per-niche manual opt-in.
     if auto_enabled:
         await db.execute(
             """
@@ -140,11 +228,53 @@ async def record_pending(
             post_id, medium, f"auto:niche.{niche_slug}",
         )
         logger.info(
-            "[media_approval] auto-approved %s for post %s (niche=%s)",
+            "[media_approval] tier-1 auto-approved %s for post %s (niche=%s)",
             medium, post_id, niche_slug,
         )
         return "approved"
 
+    # Tier 2: earned autonomy (#531) — only when niche is known.
+    if niche_slug and await _earned_autonomy_check(db, niche_slug, medium):
+        decided_by = f"auto:earned_autonomy:{niche_slug}"
+        await db.execute(
+            """
+            INSERT INTO media_approvals
+                (post_id, medium, status, decided_at, decided_by)
+            VALUES ($1::uuid, $2, 'approved', now(), $3)
+            ON CONFLICT (post_id, medium) DO NOTHING
+            """,
+            post_id, medium, decided_by,
+        )
+        logger.info(
+            "[media_approval] tier-2 earned-autonomy approved %s for post %s "
+            "(niche=%s, decided_by=%s)",
+            medium, post_id, niche_slug, decided_by,
+        )
+        # Observability: emit a finding so Grafana / findings-dispatcher can see
+        # when autonomy is exercised (audit trail, not an alert).
+        emit_finding(
+            source="media_approval",
+            kind="media_earned_autonomy_granted",
+            title=(
+                f"Earned-autonomy Gate-2 approved: {medium} for "
+                f"niche={niche_slug}"
+            ),
+            body=(
+                f"post {post_id}: Gate-2 approval bypassed via earned-autonomy "
+                f"track record (niche={niche_slug}, medium={medium}). "
+                f"decided_by={decided_by}."
+            ),
+            severity="info",
+            dedup_key=f"media_earned_autonomy:{post_id}:{medium}",
+            extra={
+                "post_id": post_id,
+                "niche_slug": niche_slug,
+                "medium": medium,
+            },
+        )
+        return "approved"
+
+    # Tier 3: manual review.
     await db.execute(
         """
         INSERT INTO media_approvals (post_id, medium, status)

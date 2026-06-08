@@ -281,6 +281,14 @@ DEFAULTS: dict[str, str] = {
     # published post + seeds Gate-2 approvals; caps assets linked per cycle.
     # Gated on the same media_pipeline_trigger_enabled master switch.
     'media_distribute_max_per_cycle': '20',
+    # Gate-2 earned-autonomy (#531) — automatic Tier-2 approval when the last N
+    # dispatches for a (niche, medium) combo all succeeded. Disabled by default;
+    # operator flips media.gate2.earned_autonomy_enabled to 'true' once they are
+    # satisfied with the track record. min_dispatches is the consecutive-success
+    # window; per-niche overrides (niche.<slug>.media.<medium>.earned_autonomy_
+    # min_dispatches) take precedence over the global value when set.
+    'media.gate2.earned_autonomy_enabled': 'false',
+    'media.gate2.earned_autonomy_min_dispatches': '5',
     'podcast_description': '',
     'podcast_name': '',
     'podcast_tts_engine': '',

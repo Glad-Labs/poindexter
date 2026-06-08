@@ -129,10 +129,13 @@ async def test_record_pending_auto_approves_when_niche_setting_enabled(
 async def test_record_pending_stays_pending_when_niche_setting_disabled(
     mock_db: MagicMock,
 ) -> None:
-    """Setting present but value=false → manual approval (conservative)."""
+    """Setting present but value=false → manual approval (conservative).
+    Tier-2 earned-autonomy also disabled (master switch off) so stays pending.
+    """
     mock_db.fetchrow.side_effect = [
         {"niche_slug": "glad-labs"},
-        {"value": "false"},
+        {"value": "false"},  # Tier-1 manual opt-in: off
+        {"value": "false"},  # Tier-2 earned_autonomy_enabled: off
     ]
 
     result = await media_approval_service.record_pending(
@@ -145,10 +148,13 @@ async def test_record_pending_stays_pending_when_niche_setting_disabled(
 async def test_record_pending_stays_pending_when_setting_missing(
     mock_db: MagicMock,
 ) -> None:
-    """Missing app_settings row → not enabled (no silent default)."""
+    """Missing app_settings row → not enabled (no silent default).
+    Tier-2 earned-autonomy also absent → stays pending.
+    """
     mock_db.fetchrow.side_effect = [
         {"niche_slug": "glad-labs"},
-        None,  # no app_settings row
+        None,  # Tier-1 manual opt-in: no row
+        None,  # Tier-2 earned_autonomy_enabled: no row
     ]
 
     result = await media_approval_service.record_pending(
@@ -404,6 +410,201 @@ async def test_notify_pending_for_review_skips_when_disabled(
 
     assert result is False
     mock_notify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Earned-autonomy (#531) — _earned_autonomy_check + record_pending Tier-2
+# ---------------------------------------------------------------------------
+
+
+async def test_earned_autonomy_grants_when_threshold_met(
+    mock_db: MagicMock,
+) -> None:
+    """With 5 consecutive successful dispatches and master switch on, Tier-2
+    fires and record_pending returns 'approved'."""
+    # record_pending flow:
+    #   fetchrow #1: niche lookup → 'glad-labs'
+    #   fetchrow #2: niche manual auto_approve → false (Tier-1 skip)
+    #   _earned_autonomy_check flow:
+    #   fetchrow #3: earned_autonomy_enabled → true
+    #   fetchrow #4: per-niche override key → missing
+    #   fetchrow #5: global min_dispatches → '5'
+    #   fetch #1:   last 5 dispatched rows → all dispatch_success=true
+    niche_slug = "glad-labs"
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": niche_slug},                 # niche lookup
+        {"value": "false"},                          # Tier-1 setting: off
+        {"value": "true"},                           # earned_autonomy_enabled
+        None,                                        # per-niche override: missing
+        {"value": "5"},                              # global min_dispatches
+    ]
+    mock_db.fetch.return_value = [
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+    ]
+
+    with patch(
+        "services.media_approval_service.emit_finding",
+        return_value=None,
+    ):
+        result = await media_approval_service.record_pending(
+            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+        )
+
+    assert result == "approved"
+    insert_sql = mock_db.execute.call_args.args[0]
+    assert "'approved'" in insert_sql
+    decided_by_arg = mock_db.execute.call_args.args[3]
+    assert decided_by_arg == f"auto:earned_autonomy:{niche_slug}"
+
+
+async def test_earned_autonomy_stays_pending_when_insufficient_history(
+    mock_db: MagicMock,
+) -> None:
+    """Only 3 dispatches when threshold=5 → stays pending (conservative)."""
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": "glad-labs"},
+        {"value": "false"},   # Tier-1 off
+        {"value": "true"},    # earned_autonomy_enabled
+        None,                 # no per-niche override
+        {"value": "5"},       # min_dispatches = 5
+    ]
+    mock_db.fetch.return_value = [
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+    ]  # only 3 — not enough
+
+    result = await media_approval_service.record_pending(
+        mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+    )
+
+    assert result == "pending"
+
+
+async def test_earned_autonomy_stays_pending_when_any_failure_in_history(
+    mock_db: MagicMock,
+) -> None:
+    """One failed dispatch in the last N breaks the streak → stays pending."""
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": "glad-labs"},
+        {"value": "false"},
+        {"value": "true"},
+        None,
+        {"value": "3"},  # threshold = 3
+    ]
+    mock_db.fetch.return_value = [
+        {"dispatch_success": True},
+        {"dispatch_success": False},  # failure breaks streak
+        {"dispatch_success": True},
+    ]
+
+    result = await media_approval_service.record_pending(
+        mock_db, "00000000-0000-0000-0000-000000000001", "video",
+    )
+
+    assert result == "pending"
+
+
+async def test_earned_autonomy_disabled_by_master_switch(
+    mock_db: MagicMock,
+) -> None:
+    """Master switch off → skip even with perfect dispatch history."""
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": "glad-labs"},
+        {"value": "false"},   # Tier-1 off
+        {"value": "false"},   # earned_autonomy_enabled = false
+    ]
+    mock_db.fetch.return_value = []  # should never be called
+
+    result = await media_approval_service.record_pending(
+        mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+    )
+
+    assert result == "pending"
+    mock_db.fetch.assert_not_called()
+
+
+async def test_earned_autonomy_skipped_when_no_niche(mock_db: MagicMock) -> None:
+    """No niche slug → Tier-2 is skipped entirely, no extra DB calls."""
+    mock_db.fetchrow.return_value = None  # niche lookup: no row
+
+    result = await media_approval_service.record_pending(
+        mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+    )
+
+    assert result == "pending"
+    # Only the niche-lookup fetchrow should have been called.
+    assert mock_db.fetchrow.call_count == 1
+    mock_db.fetch.assert_not_called()
+
+
+async def test_earned_autonomy_per_niche_threshold_override(
+    mock_db: MagicMock,
+) -> None:
+    """Per-niche threshold override takes precedence over global value."""
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": "gaming"},
+        {"value": "false"},  # Tier-1 off
+        {"value": "true"},   # earned_autonomy_enabled
+        {"value": "3"},      # per-niche override: min_dispatches = 3
+        # global default should NOT be queried (override took precedence)
+    ]
+    mock_db.fetch.return_value = [
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+    ]  # exactly 3 — meets per-niche threshold
+
+    with patch(
+        "services.media_approval_service.emit_finding",
+        return_value=None,
+    ):
+        result = await media_approval_service.record_pending(
+            mock_db, "00000000-0000-0000-0000-000000000001", "video",
+        )
+
+    assert result == "approved"
+    # Global default query (5th fetchrow) must NOT have been called.
+    assert mock_db.fetchrow.call_count == 4
+
+
+async def test_earned_autonomy_emit_finding_called_on_grant(
+    mock_db: MagicMock,
+) -> None:
+    """On Tier-2 grant, emit_finding is called with kind='media_earned_autonomy_granted'."""
+    mock_db.fetchrow.side_effect = [
+        {"niche_slug": "gaming"},
+        {"value": "false"},
+        {"value": "true"},
+        None,
+        {"value": "2"},
+    ]
+    mock_db.fetch.return_value = [
+        {"dispatch_success": True},
+        {"dispatch_success": True},
+    ]
+
+    captured: list = []
+
+    def fake_emit_finding(**kwargs):
+        captured.append(kwargs)
+
+    with patch(
+        "services.media_approval_service.emit_finding",
+        side_effect=fake_emit_finding,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, "00000000-0000-0000-0000-000000000001", "video",
+        )
+
+    assert len(captured) == 1
+    assert captured[0]["kind"] == "media_earned_autonomy_granted"
+    assert captured[0]["severity"] == "info"
+    assert "gaming" in captured[0]["title"]
 
 
 async def test_record_pending_notify_discord_swallows_dispatch_errors(
