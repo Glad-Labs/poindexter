@@ -7,9 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.podcast_service import (
+    VOICE_POOL,
     EpisodeResult,
     PodcastService,
     _estimate_duration_from_text,
+    _resolve_voice_pool,
     _strip_markdown,
 )
 from services.podcast_service import (
@@ -770,3 +772,40 @@ class TestNarrationSibling:
                     title="Title",
                     voice="en-US-AvaNeural",
                 )
+
+
+class TestResolveVoicePool:
+    """DB-configurable voice-rotation pool (Plan 7, #689).
+
+    Lifts the hardcoded ``VOICE_POOL`` to operator-tunable app_settings
+    (``tts_voice_rotation_enabled`` / ``tts_voice_pool``). Behavior MUST be
+    unchanged when unset — a disabled flag or an empty pool falls back to the
+    module constant, so existing edge-tts installs rotate exactly as before.
+    """
+
+    def test_disabled_falls_back_to_constant(self):
+        # tts_voice_pool present but rotation disabled (default) → ignore it.
+        sc = SiteConfig(initial_config={"tts_voice_pool": "voice-a,voice-b"})
+        assert _resolve_voice_pool(sc) == list(VOICE_POOL)
+
+    def test_enabled_empty_pool_falls_back_to_constant(self):
+        sc = SiteConfig(
+            initial_config={
+                "tts_voice_rotation_enabled": "true",
+                "tts_voice_pool": "",
+            }
+        )
+        assert _resolve_voice_pool(sc) == list(VOICE_POOL)
+
+    def test_enabled_with_pool_uses_db_values(self):
+        # Comma-separated, whitespace-trimmed, blanks dropped.
+        sc = SiteConfig(
+            initial_config={
+                "tts_voice_rotation_enabled": "true",
+                "tts_voice_pool": "voice-a, voice-b ,, voice-c",
+            }
+        )
+        assert _resolve_voice_pool(sc) == ["voice-a", "voice-b", "voice-c"]
+
+    def test_none_site_config_falls_back_to_constant(self):
+        assert _resolve_voice_pool(None) == list(VOICE_POOL)

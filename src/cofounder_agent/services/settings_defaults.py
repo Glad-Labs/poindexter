@@ -277,6 +277,12 @@ DEFAULTS: dict[str, str] = {
     'scheduled_publisher_poll_seconds': '60',
     'tts_acronym_replacements': '',
     'tts_pronunciations': '',
+    # Voice-rotation pool (#689 Plan 7) — DB-configurable override of the
+    # podcast_service VOICE_POOL constant. Default-off / empty falls back to
+    # the constant (zero behavior change); an operator supplies engine-
+    # appropriate, comma-separated voice names to customise rotation.
+    'tts_voice_pool': '',
+    'tts_voice_rotation_enabled': 'false',
     'video_compositor': '',
     'video_feed_name': '',
     'video_negative_prompt': '',
