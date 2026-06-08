@@ -693,6 +693,13 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 0 audit_log rows from either job, ever.
         ("jobs", "services.jobs.backfill_podcasts", "BackfillPodcastsJob"),
         ("jobs", "services.jobs.backfill_videos", "BackfillVideosJob"),
+        # Stage-2 trigger (#689 Plan 7): runs media_pipeline for Gate-1-approved
+        # pieces that have persisted Stage-1 scripts. Scheduled but DORMANT —
+        # gated on ``media_pipeline_trigger_enabled`` (default off), so it is a
+        # behaviour no-op until the operator opts in. Becomes the primary
+        # Stage-2 producer; the backfill jobs above demote to reconciliation
+        # (Plan 8).
+        ("jobs", "services.jobs.dispatch_media_pipeline", "DispatchMediaPipelineJob"),
         # Anomaly detection — z-score outlier detection across failure
         # rate, quality, cost, and error-log rate (every 4h). Emits a
         # finding via utils.findings (routes through notify_operator

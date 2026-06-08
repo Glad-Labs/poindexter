@@ -271,12 +271,24 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',
+    # Stage-2 media trigger (#689 Plan 7) — the dispatch_media_pipeline job is
+    # scheduled but DORMANT until media_pipeline_trigger_enabled flips on; this
+    # is what takes media_pipeline from dormant to LIVE in prod.
+    # media_pipeline_max_per_cycle caps GPU-bound renders kicked off per cycle.
+    'media_pipeline_max_per_cycle': '1',
+    'media_pipeline_trigger_enabled': 'false',
     'podcast_description': '',
     'podcast_name': '',
     'podcast_tts_engine': '',
     'scheduled_publisher_poll_seconds': '60',
     'tts_acronym_replacements': '',
     'tts_pronunciations': '',
+    # Voice-rotation pool (#689 Plan 7) — DB-configurable override of the
+    # podcast_service VOICE_POOL constant. Default-off / empty falls back to
+    # the constant (zero behavior change); an operator supplies engine-
+    # appropriate, comma-separated voice names to customise rotation.
+    'tts_voice_pool': '',
+    'tts_voice_rotation_enabled': 'false',
     'video_compositor': '',
     'video_feed_name': '',
     'video_negative_prompt': '',

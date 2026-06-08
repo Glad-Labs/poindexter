@@ -84,6 +84,37 @@ VOICE_FALLBACKS = [
 ]
 
 
+def _resolve_voice_pool(site_config: "SiteConfig | None") -> list[str]:
+    """Resolve the voice-rotation pool — DB-config first, constant fallback.
+
+    Lifts the hardcoded ``VOICE_POOL`` to operator-tunable app_settings so the
+    rotation pool is DB-configurable (config-in-DB principle, #689 Plan 7):
+
+    - ``tts_voice_rotation_enabled`` (default ``false``) — master switch.
+    - ``tts_voice_pool`` (default ``''``) — comma-separated voice names.
+
+    Behavior is UNCHANGED when unset: a disabled flag OR an empty
+    ``tts_voice_pool`` falls through to the module ``VOICE_POOL`` constant, so
+    existing edge-tts installs rotate exactly as before. An operator on a
+    different TTS engine supplies engine-appropriate voice names via
+    ``tts_voice_pool`` without touching code.
+    """
+    if site_config is None:
+        return list(VOICE_POOL)
+    try:
+        enabled = bool(site_config.get_bool("tts_voice_rotation_enabled", False))
+    except Exception:  # noqa: BLE001 — defensive; any read failure → constant
+        enabled = False
+    if not enabled:
+        return list(VOICE_POOL)
+    try:
+        raw = str(site_config.get("tts_voice_pool", "") or "")
+    except Exception:  # noqa: BLE001 — defensive; any read failure → constant
+        raw = ""
+    pool = [v.strip() for v in raw.split(",") if v.strip()]
+    return pool or list(VOICE_POOL)
+
+
 # ---------------------------------------------------------------------------
 # Spoken English normalization — convert written conventions to natural speech
 # ---------------------------------------------------------------------------
@@ -673,12 +704,13 @@ class PodcastService:
         # post_id", not an integrity check; bandit's B324 (weak-hash-for-
         # security) is a false positive on this path.
         import hashlib
+        voice_pool = _resolve_voice_pool(self._site_config)
         voice_index = int(
             hashlib.md5(post_id.encode(), usedforsecurity=False).hexdigest(), 16,
-        ) % len(VOICE_POOL)
-        selected_voice = VOICE_POOL[voice_index]
+        ) % len(voice_pool)
+        selected_voice = voice_pool[voice_index]
         # Try selected voice first, then remaining pool voices, then fallbacks
-        remaining_pool = [v for v in VOICE_POOL if v != selected_voice]
+        remaining_pool = [v for v in voice_pool if v != selected_voice]
         voices_to_try = [selected_voice, *remaining_pool, *VOICE_FALLBACKS]
         last_error = None
         logger.info("[PODCAST] Voice rotation: selected '%s' (index %d) for post %s",
