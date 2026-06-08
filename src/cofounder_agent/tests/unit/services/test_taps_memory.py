@@ -67,6 +67,57 @@ class TestDiscoverMemoryDirs:
         origins = [origin for _, origin, _ in dirs]
         assert "openclaw" in origins
 
+    def test_scope_allowlist_filters_other_scopes(self, tmp_path: Path):
+        """Only allowlisted claude-code scopes are scanned (junction dedup).
+
+        Guards the C--Users-mattm ⇄ C--Users-mattm-glad-labs-website Junction:
+        the second scope is a reparse point to the first, so without the
+        allowlist the host would embed the same files under two scopes.
+        """
+        projects = tmp_path / "projects"
+        (projects / "C--Users-mattm" / "memory").mkdir(parents=True)
+        (projects / "C--Users-mattm-glad-labs-website" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir=str(projects),
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+            scope_allowlist="C--Users-mattm",
+        )
+        scopes = [s for _, _, s in dirs]
+        assert "C--Users-mattm" in scopes
+        assert "C--Users-mattm-glad-labs-website" not in scopes
+
+    def test_scope_allowlist_is_case_insensitive(self, tmp_path: Path):
+        """Docker bind mounts can lowercase Windows dir names — match on lower()."""
+        projects = tmp_path / "projects"
+        (projects / "C--Users-mattm" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir=str(projects),
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+            scope_allowlist="c--users-mattm",  # different casing than on disk
+        )
+        scopes = [s for _, _, s in dirs]
+        assert "C--Users-mattm" in scopes
+
+    def test_empty_allowlist_keeps_all_scopes(self, tmp_path: Path):
+        """Back-compat: empty allowlist means ingest every scope."""
+        projects = tmp_path / "projects"
+        (projects / "C--Users-mattm" / "memory").mkdir(parents=True)
+        (projects / "C--Users-mattm-glad-labs-website" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir=str(projects),
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+            scope_allowlist="",
+        )
+        scopes = {s for _, _, s in dirs}
+        assert "C--Users-mattm" in scopes
+        assert "C--Users-mattm-glad-labs-website" in scopes
+
 
 class TestBuildSourceId:
     def test_claude_code_includes_scope(self):

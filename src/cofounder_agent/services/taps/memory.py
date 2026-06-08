@@ -47,6 +47,7 @@ def _discover_memory_dirs(
     shared_context_dir: str | None = None,
     *,
     site_config: Any = None,
+    scope_allowlist: str = "",
 ) -> list[tuple[Path, str, str]]:
     """Return the list of ``(path, origin, scope)`` tuples to scan.
 
@@ -60,6 +61,15 @@ def _discover_memory_dirs(
     ``shared_context_dir`` override the defaults; config args override
     site_config. Passing the sentinel ``"__skip__"`` disables that source
     entirely — useful for tests that shouldn't touch real home dirs.
+
+    ``scope_allowlist`` is a comma-separated list of ``claude-code`` project
+    scopes (the ``C--*`` directory names) to ingest; when set, every other
+    scope is skipped. Empty means "all scopes" (back-compat). Matching is
+    case-insensitive because Docker bind mounts can lowercase Windows dir
+    names. This is the dedup guard for the ``C--Users-mattm`` ⇄
+    ``C--Users-mattm-glad-labs-website`` junction: the latter is a Windows
+    Junction to the former, so on the host (where the reparse point
+    resolves) both scopes would otherwise embed the same files twice.
 
     site_config is the DI seam (glad-labs-stack#330) — passed in by the
     tap dispatcher rather than imported as a module-level singleton.
@@ -95,8 +105,12 @@ def _discover_memory_dirs(
 
     dirs: list[tuple[Path, str, str]] = []
 
+    allow = {s.strip().lower() for s in scope_allowlist.split(",") if s.strip()}
+
     if projects_root and projects_root.is_dir():
         for scope_dir in sorted(projects_root.glob("C--*")):
+            if allow and scope_dir.name.lower() not in allow:
+                continue  # scope not on the allowlist — skip (junction dedup)
             mem = scope_dir / "memory"
             if mem.is_dir():
                 dirs.append((mem, "claude-code", scope_dir.name))
@@ -148,6 +162,7 @@ class MemoryFilesTap:
             # DI seam (glad-labs-stack#330) — taps receive `_site_config`
             # from the dispatcher per CLAUDE.md.
             site_config=config.get("_site_config"),
+            scope_allowlist=config.get("memory_scope_allowlist", "") or "",
         )
 
         total_files = 0
