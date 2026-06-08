@@ -500,7 +500,14 @@ async def _probe_one_url(
     # Use probe_url when the setting value points at a non-probeable path
     # (POST-only, base path with no handler) but a separate health endpoint
     # exists. Result keeps url=url (the original setting) for alert messages.
-    probe_url = (override or {}).get("probe_url") or url
+    # Localize the override's probe_url too — the collected ``url`` was already
+    # run through _localize() in collect_app_setting_urls, but an override
+    # probe_url bypasses that, so a localhost health endpoint would be
+    # unreachable from inside the brain container. _localize is idempotent
+    # and a no-op for non-localhost hosts (host.docker.internal, service
+    # names), so existing overrides are unaffected.
+    override_probe_url = (override or {}).get("probe_url")
+    probe_url = _localize(override_probe_url) if override_probe_url else url
     async with semaphore:
         try:
             if method == "GET":
@@ -644,7 +651,7 @@ async def probe_urls(
         results = await asyncio.gather(*coros, return_exceptions=True)
 
     out: list[dict[str, Any]] = []
-    for r, t in zip(results, targets):
+    for r, t in zip(results, targets, strict=True):
         if isinstance(r, Exception):
             out.append({
                 "surface": t["surface"],

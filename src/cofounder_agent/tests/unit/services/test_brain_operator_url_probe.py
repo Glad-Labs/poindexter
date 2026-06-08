@@ -846,3 +846,54 @@ class TestProbeUrlRedirect:
         assert result["ok"] is True
         assert result["status"] == 200
         assert result["url"] == "http://speaches:8000/v1"  # original preserved
+
+    @pytest.mark.asyncio
+    async def test_probe_url_is_localized(self, monkeypatch):
+        """Regression (2026-06-08): an override probe_url pointing at
+        localhost must be run through _localize() before the HTTP call,
+        exactly like the collected setting url is. Before the fix the
+        override probe_url bypassed localization, so a localhost health
+        endpoint was unreachable from inside the brain container — which
+        is how data_fabric_loki_url / data_fabric_tempo_url (root path
+        404s, /ready is the health endpoint) paged 50x/day.
+        """
+        import asyncio
+
+        import httpx
+
+        # Simulate running inside the container: localhost -> host.docker.internal.
+        def fake_localize(url: str) -> str:
+            return url.replace("localhost", "host.docker.internal")
+
+        monkeypatch.setattr(oup, "_localize", fake_localize)
+
+        requested: list[str] = []
+
+        def handler(req):
+            requested.append(str(req.url))
+            # Only the localized health URL answers 200; the raw localhost
+            # form (or the setting's root path) would 404/500.
+            if str(req.url) == "http://host.docker.internal:3100/ready":
+                return httpx.Response(200)
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(handler=handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            sem = asyncio.Semaphore(1)
+            result = await oup._probe_one_url(
+                client, sem,
+                surface="app_settings.data_fabric_loki_url",
+                url="http://host.docker.internal:3100",  # already-localized setting value
+                override={
+                    "probe_url": "http://localhost:3100/ready",  # NOT yet localized
+                    "method": "GET",
+                },
+            )
+
+        assert result["ok"] is True
+        assert result["status"] == 200
+        # The HTTP call must have hit the LOCALIZED health URL.
+        assert "http://host.docker.internal:3100/ready" in requested
+        assert "http://localhost:3100/ready" not in requested
+        # Result still reports the original setting url for the operator.
+        assert result["url"] == "http://host.docker.internal:3100"
