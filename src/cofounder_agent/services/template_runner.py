@@ -465,6 +465,12 @@ class PipelineState(TypedDict, total=False):
     # are dropped on the graph_def path, so the captions would vanish without them.
     caption_srt_path: str
     asr_transcript: str
+    # Stage-2 media QA result (#1193 Plan 6): media.qa runs AFTER the renders
+    # and produces a per-asset QA signals dict (A/V duration sync, caption
+    # presence, gated frame human-detection). Same last-value-channel
+    # discipline — undeclared keys are dropped on the graph_def path, so the
+    # QA result would vanish without this declaration (#674 trap).
+    media_qa_result: dict
     stages: dict
     generate_metrics: dict
     cost_log: dict

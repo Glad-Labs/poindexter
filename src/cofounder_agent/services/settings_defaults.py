@@ -334,6 +334,16 @@ DEFAULTS: dict[str, str] = {
     # ``caption_fidelity`` finding fires (likely a TTS dropout / truncation).
     # Advisory only — never fails the render.
     'media.caption.fidelity_min_ratio': '0.80',
+    # Gate for the Stage-2 media QA frame human-detection check
+    # (media.qa, Plan 6 #1193). When 'true', a midpoint frame of each
+    # rendered video is vision-checked for a photorealistic human (policy
+    # #675). Fail-soft: a missing ffmpeg / vision error is a no-op (no
+    # finding). Set 'false' to skip the vision call entirely.
+    'media_qa_frame_detection_enabled': 'true',
+    # Max allowed drift (seconds) between the probed render duration and the
+    # director shot-list's planned total_duration_s before media.qa emits an
+    # advisory ``av_desync`` finding (Plan 6 #1193). Advisory only.
+    'media.qa.av_sync_tolerance_s': '2.0',
 
     # ----- Observability / monitoring -----
     'enable_pyroscope': 'false',
