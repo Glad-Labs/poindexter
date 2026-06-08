@@ -451,6 +451,12 @@ class PipelineState(TypedDict, total=False):
     # keys are dropped on the graph_def path.
     podcast_audio_path: str
     podcast_intro_audio_path: str
+    # rendered video paths (#675 Plan 4): the media_pipeline render atoms
+    # (media.render_long_video / media.render_short_video) produce these.
+    # Same last-value-channel discipline — undeclared keys are dropped on
+    # the graph_def path, so a render atom's output would vanish without them.
+    long_video_path: str
+    short_video_path: str
     stages: dict
     generate_metrics: dict
     cost_log: dict

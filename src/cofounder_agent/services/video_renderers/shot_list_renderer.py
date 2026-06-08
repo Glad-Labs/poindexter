@@ -322,6 +322,9 @@ async def render_shot_list(
     site_config: Any,
     pool: Any = None,
     http_client_factory: Any = None,
+    width: int = 1920,
+    height: int = 1080,
+    ambient_path: str | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -338,6 +341,17 @@ async def render_shot_list(
         pool: asyncpg pool for audit-log inserts. Optional.
         http_client_factory: ``httpx.AsyncClient`` factory — defaults
             to the real client. Tests inject a mock.
+        width: Output frame width. Default 1920 (16:9 long-form). Pass
+            1080 for the 9:16 short profile (Gap A — the renderer used
+            to hardcode 1920x1080).
+        height: Output frame height. Default 1080 (16:9 long-form).
+            Pass 1920 for the 9:16 short profile.
+        ambient_path: Local path to the ambient music/SFX bed mixed
+            under the narration as the soundtrack (#679). ``None`` =
+            no soundtrack mix, so the narration plays clean. The
+            narration itself stays on scene 0's ``narration_path``;
+            passing it here too would double-use it (full-volume on
+            scene 0 AND again at -18dB across the whole concat).
 
     Returns:
         ``ShotListRenderResult`` with file path on success.
@@ -403,10 +417,13 @@ async def render_shot_list(
 
     request = CompositionRequest(
         scenes=scenes,
-        soundtrack_path=audio_path,
+        # The soundtrack is the AMBIENT bed (#679), NOT the narration.
+        # Narration rides on scene 0's narration_path (above); passing it
+        # as the soundtrack too would double-use it. None = clean narration.
+        soundtrack_path=ambient_path,
         output_path=output_path,
-        width=1920,
-        height=1080,
+        width=width,
+        height=height,
         fps=30,
         codec="h264",
         container="mp4",

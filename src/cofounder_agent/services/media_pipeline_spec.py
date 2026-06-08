@@ -5,11 +5,13 @@ dict without pulling in LangGraph / template_runner (the migrations-smoke CI
 step applies migrations without a full app boot). This mirrors
 ``canonical_blog_spec.py``.
 
-This is the **spine** (Plan 2): a single ``media.load_scripts`` entry node that
-loads the persisted Stage-1 artifacts (scripts + shot-lists) from
-``pipeline_versions.task_metadata`` so the downstream render/QA/gate/distribute
-nodes — added in Plans 3-8 — have them in graph state. A re-render therefore
-never re-invents prompts (the root fix for #674/#675).
+Plan 4 extends the Plan-2 spine: the ``media.load_scripts`` entry node loads
+the persisted Stage-1 artifacts (scripts + shot-lists) from
+``pipeline_versions.task_metadata``, then two render nodes
+(``media.render_long_video`` → ``media.render_short_video``) turn the persisted
+shot-lists into MP4s via the director-driven shot-list renderer. A re-render
+therefore never re-invents prompts (the root fix for #674/#675). The
+QA/gate/distribute nodes are added in Plans 5-8.
 
 Seeded ``active=true`` but **dormant**: nothing calls
 ``TemplateRunner.run("media_pipeline", …)`` yet (the Gate-1 → Stage-2 trigger
@@ -24,16 +26,20 @@ from typing import Any
 MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
     "name": "media_pipeline",
     "description": (
-        "Stage-2 media pipeline (spine, #689): load persisted Stage-1 "
-        "scripts/shot-lists. Render/QA/gate/distribute nodes added in "
-        "Plans 3-8."
+        "Stage-2 media pipeline (Plan 4, #689/#675): load persisted Stage-1 "
+        "scripts/shot-lists, then render the 16:9 long-form and 9:16 short-form "
+        "videos. QA/gate/distribute nodes added in Plans 5-8."
     ),
     "entry": "load_scripts",
     "nodes": [
         {"id": "load_scripts", "atom": "media.load_scripts"},
+        {"id": "render_long_video", "atom": "media.render_long_video"},
+        {"id": "render_short_video", "atom": "media.render_short_video"},
     ],
     "edges": [
-        {"from": "load_scripts", "to": "END"},
+        {"from": "load_scripts", "to": "render_long_video"},
+        {"from": "render_long_video", "to": "render_short_video"},
+        {"from": "render_short_video", "to": "END"},
     ],
 }
 

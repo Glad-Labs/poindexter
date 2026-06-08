@@ -352,5 +352,185 @@ class TestRenderShotList:
         assert scenes[0].narration_path == audio_path
         assert scenes[1].narration_path is None
         assert scenes[2].narration_path is None
-        # The full audio is also passed as the soundtrack.
-        assert captured_request["soundtrack_path"] == audio_path
+        # The soundtrack is the AMBIENT bed (None here, since no ambient
+        # was passed) — NOT the narration. Passing narration as the
+        # soundtrack double-used it (full-volume on scene 0 AND again at
+        # -18dB across the whole concat). #679 fix.
+        assert captured_request["soundtrack_path"] is None
+
+
+class TestRenderShotListAspectAndAmbient:
+    """Gaps A + B (#679): aspect-profile dimensions and the ambient bed.
+
+    These exercise the new ``width`` / ``height`` / ``ambient_path``
+    kwargs on ``render_shot_list``. They mock the compositor and capture
+    the ``CompositionRequest`` so we can assert the dims + soundtrack.
+    """
+
+    def _single_sdxl_shot_list(self):
+        shots = [
+            Shot(
+                idx=0,
+                duration_s=3.0,
+                intent="opening still",
+                source="sdxl",
+                prompt="a clean abstract gradient backdrop",
+                narration_offset_s=0.0,
+            ),
+        ]
+        return _build_shot_list(shots)
+
+    def _sdxl_client_factory(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "image/png"}
+        mock_resp.content = b"fake-png-bytes"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        return _factory
+
+    def _capturing_compositor(self, captured: dict):
+        class _MockCompositor:
+            def __init__(self, site_config=None):
+                self._sc = site_config
+
+            async def compose(self, request, **kwargs):
+                captured["width"] = request.width
+                captured["height"] = request.height
+                captured["soundtrack_path"] = request.soundtrack_path
+                with open(request.output_path, "wb") as f:
+                    f.write(b"fake composed mp4 bytes")
+                return MagicMock(
+                    success=True,
+                    output_path=request.output_path,
+                    file_size_bytes=len(b"fake composed mp4 bytes"),
+                    duration_s=3.0,
+                )
+
+        return _MockCompositor
+
+    @pytest.mark.asyncio
+    async def test_short_dims_produce_9_16_composition_request(self, tmp_path):
+        """Passing width=1080, height=1920 (the 9:16 short profile) sets
+        those dims on the CompositionRequest — Gap A. The renderer must
+        not hardcode 1920x1080 anymore."""
+        shot_list = self._single_sdxl_shot_list()
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "short.mp4")
+
+        captured: dict = {}
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            self._capturing_compositor(captured),
+        ):
+            result = await render_shot_list(
+                post_id="post-short",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=self._sdxl_client_factory(),
+                width=1080,
+                height=1920,
+            )
+
+        assert result.success is True
+        assert captured["width"] == 1080
+        assert captured["height"] == 1920
+
+    @pytest.mark.asyncio
+    async def test_default_dims_remain_16_9(self, tmp_path):
+        """No width/height args → backcompat 1920x1080 (16:9 long-form)."""
+        shot_list = self._single_sdxl_shot_list()
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "long.mp4")
+
+        captured: dict = {}
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            self._capturing_compositor(captured),
+        ):
+            await render_shot_list(
+                post_id="post-long",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=self._sdxl_client_factory(),
+            )
+
+        assert captured["width"] == 1920
+        assert captured["height"] == 1080
+
+    @pytest.mark.asyncio
+    async def test_ambient_path_sets_soundtrack(self, tmp_path):
+        """Passing ambient_path routes it to soundtrack_path — the ambient
+        bed channel (#679) is now consumed, and narration is no longer
+        double-used as the soundtrack."""
+        shot_list = self._single_sdxl_shot_list()
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "with_amb.mp4")
+
+        captured: dict = {}
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            self._capturing_compositor(captured),
+        ):
+            await render_shot_list(
+                post_id="post-amb",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=self._sdxl_client_factory(),
+                ambient_path="/x/amb.wav",
+            )
+
+        assert captured["soundtrack_path"] == "/x/amb.wav"
+
+    @pytest.mark.asyncio
+    async def test_no_ambient_leaves_soundtrack_none(self, tmp_path):
+        """No ambient_path → soundtrack_path is None (clean narration,
+        no -18dB second copy of the voice over the whole video)."""
+        shot_list = self._single_sdxl_shot_list()
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "no_amb.mp4")
+
+        captured: dict = {}
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            self._capturing_compositor(captured),
+        ):
+            await render_shot_list(
+                post_id="post-noamb",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=self._sdxl_client_factory(),
+            )
+
+        assert captured["soundtrack_path"] is None
