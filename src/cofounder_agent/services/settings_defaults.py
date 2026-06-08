@@ -327,6 +327,13 @@ DEFAULTS: dict[str, str] = {
     # time to finish. Storage-agnostic rename of the deprecated
     # ``media_r2_upload_delay_seconds`` (#731).
     'media_upload_delay_seconds': '240',
+    # Minimum ASR-vs-script similarity ratio for the Stage-2 caption
+    # fidelity check (media.transcribe_narration, Plan 5 #676). When the
+    # one-ASR-pass transcript diverges below this normalized
+    # SequenceMatcher ratio from the source narration script, an advisory
+    # ``caption_fidelity`` finding fires (likely a TTS dropout / truncation).
+    # Advisory only — never fails the render.
+    'media.caption.fidelity_min_ratio': '0.80',
 
     # ----- Observability / monitoring -----
     'enable_pyroscope': 'false',

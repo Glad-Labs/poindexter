@@ -405,6 +405,7 @@ class TestRenderShotListAspectAndAmbient:
                 captured["width"] = request.width
                 captured["height"] = request.height
                 captured["soundtrack_path"] = request.soundtrack_path
+                captured["caption_track_path"] = request.caption_track_path
                 with open(request.output_path, "wb") as f:
                     f.write(b"fake composed mp4 bytes")
                 return MagicMock(
@@ -534,3 +535,61 @@ class TestRenderShotListAspectAndAmbient:
             )
 
         assert captured["soundtrack_path"] is None
+
+    @pytest.mark.asyncio
+    async def test_caption_path_sets_caption_track(self, tmp_path):
+        """Passing caption_path routes it to caption_track_path on the
+        CompositionRequest so the compositor burns the captions into the
+        video (#676 Plan 5)."""
+        shot_list = self._single_sdxl_shot_list()
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "with_caps.mp4")
+
+        captured: dict = {}
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            self._capturing_compositor(captured),
+        ):
+            await render_shot_list(
+                post_id="post-caps",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=self._sdxl_client_factory(),
+                caption_path="/x/c.srt",
+            )
+
+        assert captured["caption_track_path"] == "/x/c.srt"
+
+    @pytest.mark.asyncio
+    async def test_no_caption_path_leaves_caption_track_none(self, tmp_path):
+        """No caption_path → caption_track_path is None (backcompat: the
+        existing video_service.py caller renders without captions)."""
+        shot_list = self._single_sdxl_shot_list()
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "no_caps.mp4")
+
+        captured: dict = {}
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            self._capturing_compositor(captured),
+        ):
+            await render_shot_list(
+                post_id="post-nocaps",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=self._sdxl_client_factory(),
+            )
+
+        assert captured["caption_track_path"] is None

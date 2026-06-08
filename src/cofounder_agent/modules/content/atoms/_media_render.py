@@ -106,6 +106,10 @@ async def render_from_state(
 
     narration = state.get("podcast_audio_path") or ""
     ambient = state.get("video_ambient_audio_path") or None
+    # SRT caption track produced by the one-ASR-pass transcribe atom
+    # (media.transcribe_narration, Plan 5 #676). Empty-string is the atom's
+    # no-op sentinel, so `or None` maps it to None — no track to burn.
+    caption = state.get("caption_srt_path") or None
     width, height = _resolve_dims(shot_list.aspect)
 
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"
@@ -122,6 +126,7 @@ async def render_from_state(
             width=width,
             height=height,
             ambient_path=ambient,
+            caption_path=caption,
         )
     except Exception as exc:  # noqa: BLE001 — a render must never halt the graph
         logger.exception("[media.render] %s render raised: %s", output_key, exc)

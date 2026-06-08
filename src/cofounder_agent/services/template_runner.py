@@ -457,6 +457,14 @@ class PipelineState(TypedDict, total=False):
     # the graph_def path, so a render atom's output would vanish without them.
     long_video_path: str
     short_video_path: str
+    # ASR caption track + transcript (#676 Plan 5): media.transcribe_narration
+    # runs one whisper pass over podcast_audio_path BEFORE the renders and
+    # produces these. caption_srt_path is read opportunistically by the render
+    # atoms (_media_render) to burn captions in; asr_transcript feeds the
+    # fidelity QA check. Same last-value-channel discipline — undeclared keys
+    # are dropped on the graph_def path, so the captions would vanish without them.
+    caption_srt_path: str
+    asr_transcript: str
     stages: dict
     generate_metrics: dict
     cost_log: dict

@@ -129,6 +129,51 @@ class TestRenderFromStateHelper:
         assert kwargs["ambient_path"] == "/tmp/amb.wav"
 
     @pytest.mark.asyncio
+    async def test_caption_srt_path_threaded_to_renderer(self):
+        """A caption_srt_path in state is threaded to render_shot_list's
+        caption_path kwarg so the render burns the captions in (#676 Plan 5)."""
+        state = {
+            "task_id": "t-1",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "caption_srt_path": "/tmp/captions_t-1.srt",
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert mock_render.await_args.kwargs["caption_path"] == "/tmp/captions_t-1.srt"
+
+    @pytest.mark.asyncio
+    async def test_no_caption_srt_path_passes_none(self):
+        """No caption_srt_path in state → caption_path=None (render without
+        burned-in captions; the empty-string channel default also maps to None)."""
+        state = {"task_id": "t-1", "video_shot_list": _LONG_SHOT_LIST}
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert mock_render.await_args.kwargs["caption_path"] is None
+
+    @pytest.mark.asyncio
+    async def test_empty_caption_srt_path_passes_none(self):
+        """An empty-string caption_srt_path (the transcribe atom's no-op
+        sentinel) maps to None, not "" — so the compositor doesn't try to
+        burn a non-existent track."""
+        state = {
+            "task_id": "t-1",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "caption_srt_path": "",
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert mock_render.await_args.kwargs["caption_path"] is None
+
+    @pytest.mark.asyncio
     async def test_missing_shot_list_is_graceful_noop(self):
         """No shot-list in state → empty output, render_shot_list NOT called."""
         state = {"task_id": "t-1"}

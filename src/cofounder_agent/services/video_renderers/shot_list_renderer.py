@@ -325,6 +325,7 @@ async def render_shot_list(
     width: int = 1920,
     height: int = 1080,
     ambient_path: str | None = None,
+    caption_path: str | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -352,6 +353,12 @@ async def render_shot_list(
             narration itself stays on scene 0's ``narration_path``;
             passing it here too would double-use it (full-volume on
             scene 0 AND again at -18dB across the whole concat).
+        caption_path: Local path to an SRT/VTT caption track to burn
+            into the video (#676 Plan 5). ``None`` = no captions
+            (backcompat default — the existing ``video_service.py``
+            caller and the Plan-4 render path render without captions).
+            When set, it's threaded to ``CompositionRequest.caption_track_path``
+            and the compositor burns the subtitles in.
 
     Returns:
         ``ShotListRenderResult`` with file path on success.
@@ -421,6 +428,9 @@ async def render_shot_list(
         # Narration rides on scene 0's narration_path (above); passing it
         # as the soundtrack too would double-use it. None = clean narration.
         soundtrack_path=ambient_path,
+        # SRT/VTT caption track to burn in (#676 Plan 5). None = no captions
+        # (backcompat — the legacy video_service caller renders captionless).
+        caption_track_path=caption_path,
         output_path=output_path,
         width=width,
         height=height,
