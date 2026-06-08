@@ -101,6 +101,19 @@ PROBE_INTERVAL_SECONDS = 300
 # ``None`` when drift clears so a fresh drift event re-triggers a notify.
 _last_notify_drift_count: int | None = None
 
+# Module-level state — the ``pending`` count we last ATTEMPTED an auto-recover
+# restart for. Once a restart fails to clear drift at a given count, restarting
+# again at the SAME count is futile (a bad migration the runner won't apply, or
+# a checkout the restart can't fix) — so we suppress repeat restarts + critical
+# pages until the count CHANGES (a new migration arrives) or CLEARS (operator
+# fixes it). Reset to ``None`` whenever drift clears or recovery succeeds, so a
+# fresh drift always gets exactly one recovery attempt. Closes the 5-min
+# restart-loop + critical-page storm observed 2026-06-07 (131 pages / 24h),
+# where an untracked migration scaffold kept `pending` pinned at 1 and every
+# brain cycle re-restarted the worker and re-paged. (Glad-Labs/poindexter#228
+# follow-up.)
+_last_recover_attempt_pending: int | None = None
+
 # Expected ``pg_class.relkind`` per relation, post-migration. Migration
 # 0125 (closes Glad-Labs/poindexter#329) unified ``content_tasks`` to be
 # a VIEW in both dev and prod — relkind 'v'. Add new entries here as
@@ -546,7 +559,7 @@ async def run_migration_drift_probe(
     Returns a summary dict suitable for storage in brain_knowledge or
     inclusion in the probe results map.
     """
-    global _last_notify_drift_count
+    global _last_notify_drift_count, _last_recover_attempt_pending
 
     notify_fn = notify_fn or notify_operator
     restart_fn = restart_fn or _restart_worker_container
@@ -589,6 +602,9 @@ async def run_migration_drift_probe(
                 _last_notify_drift_count,
             )
             _last_notify_drift_count = None
+        # Drift cleared — re-arm auto-recover so a FUTURE drift gets a fresh
+        # restart attempt rather than being suppressed by stale loop state.
+        _last_recover_attempt_pending = None
 
         # Even with zero pending migrations, the post-migration shape
         # contract can drift (e.g. someone hand-edits prod via psql). The
@@ -676,10 +692,46 @@ async def run_migration_drift_probe(
         }
 
     # ---- 4b) Auto-recover enabled — restart worker, re-check ---------------
+    # Cross-cycle circuit breaker: if we ALREADY restarted for this exact
+    # pending count on a previous cycle and the drift is still here, another
+    # restart won't help (the runner is refusing this migration, or the
+    # checkout the restart can't change). Suppress the restart + the critical
+    # page until the count CHANGES or CLEARS — otherwise a single bad/blocked
+    # migration churns the worker and blasts Telegram every 5-min cycle (the
+    # 131-pages-in-24h storm this guard closes). The detection audit at the
+    # top of section 3 still fires every cycle, so the timeline stays intact.
+    if _last_recover_attempt_pending == pending:
+        suppressed_detail = (
+            f"{detected_detail} — auto-recover suppressed: already restarted "
+            f"for {pending} pending on a prior cycle and drift persists. "
+            f"Waiting for the pending count to change or clear (likely a "
+            f"migration the runner won't apply — check "
+            f"`docker logs {WORKER_CONTAINER}`)."
+        )
+        logger.warning("[MIGRATION_DRIFT] %s", suppressed_detail)
+        await _emit_audit_event(
+            pool,
+            "probe.migration_drift_recover_suppressed",
+            suppressed_detail,
+            pending=pending,
+        )
+        return {
+            "ok": False,
+            "status": "recover_suppressed",
+            "detail": suppressed_detail,
+            "pending": pending,
+            "applied": drift["applied"],
+            "latest_applied": drift["latest_applied"],
+            "auto_recover_enabled": True,
+        }
+
     logger.info(
         "[MIGRATION_DRIFT] Auto-recover enabled — restarting %s",
         WORKER_CONTAINER,
     )
+    # Record the attempt BEFORE restarting so the next cycle's circuit breaker
+    # trips even if this restart partially helps but leaves drift > 0.
+    _last_recover_attempt_pending = pending
     restart_ok, restart_msg = restart_fn()
     if not restart_ok:
         # Restart itself failed — escalate immediately. We don't want
@@ -772,6 +824,8 @@ async def run_migration_drift_probe(
             extra={"previous_pending": pending},
         )
         _last_notify_drift_count = None
+        # Recovery worked — re-arm so a future drift gets a fresh attempt.
+        _last_recover_attempt_pending = None
         return {
             "ok": True,
             "status": "recovered",
@@ -847,7 +901,7 @@ class MigrationDriftProbe:
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
-    async def check(self, pool, config):  # type: ignore[override]
+    async def check(self, pool, config):  # type: ignore[override]  # noqa: ARG002 — Probe Protocol signature; config unused by this probe
         # ProbeResult import is lazy so brain_daemon.py imports don't
         # require probe_interface.py to be on sys.path in every context.
         try:
