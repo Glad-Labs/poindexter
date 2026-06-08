@@ -13,12 +13,17 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
    surfaces in the operator's Gate-2 review queue — ``video`` for the long form,
    ``video_short`` for the short (the media_approvals media vocabulary; the
    matching media_assets *types* are ``video_long`` / ``video_short``).
+3. **Dispatch.** Deliver Gate-2-*approved* assets to the enabled video platforms
+   via the publishing handler registry — long form ``shorts=False``, short
+   ``shorts=True`` (the #682/#1249 Shorts-aware YouTube handler) — then stamp
+   ``record_dispatched``. Runs the same cycle as link/seed so a freshly-approved
+   asset can reach YouTube without waiting a cycle.
 
-The actual platform dispatch (YouTube long + Shorts) is the follow-up pass
-(8b-2b) — it fires only once the operator approves the Gate-2 rows this job
-seeds. Keeping link/seed separate from dispatch keeps each pass small and means
-a rendered asset becomes *reviewable* the moment its post publishes, without
-waiting on the dispatch lane.
+**Deconfliction with ``backfill_videos``.** That legacy dispatch-only pass fires
+only for posts whose ``VIDEO_DIR/{post_id}.mp4`` exists on disk; media_pipeline
+assets live task-keyed (``{task_id}.mp4``) at ``media_assets.storage_path``, so
+backfill skips them — the approved row stays eligible for this pass alone, no
+double-send.
 
 **Default-OFF.** Gated on ``media_pipeline_trigger_enabled`` (the Stage-2 master
 switch, default ``false``) so the job is scheduled but a behaviour no-op in prod
@@ -30,12 +35,17 @@ no-op (already-linked assets fall out of the query; ``record_pending`` is
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from plugins.job import JobResult
-from services.media_approval_service import record_pending
+from services.media_approval_service import record_dispatched, record_pending
 
 logger = logging.getLogger(__name__)
+
+# Video destinations this lane delivers to. Adding a platform = add here + a
+# publishing_adapters row + a publishing.<name> handler (the #112 contract).
+_VIDEO_PLATFORMS: frozenset[str] = frozenset({"youtube"})
 
 # media_assets.type → media_approvals.medium. The asset table distinguishes
 # long/short by ``video_long`` / ``video_short``; the approvals table uses
@@ -72,6 +82,126 @@ _RESOLVE_POST_SQL = """
 # out of _UNLINKED_SQL once post_id is set).
 _LINK_SQL = "UPDATE media_assets SET post_id = $1::uuid, updated_at = NOW() WHERE id = $2::uuid"
 
+# Approved-but-undispatched media_pipeline assets, joined to the durable file
+# path. The CASE maps the media_approvals medium back to the media_assets type
+# (video → video_long, video_short → video_short) so we deliver the right file.
+# Deconfliction with backfill_videos: that legacy pass only fires for posts
+# whose VIDEO_DIR/{post_id}.mp4 exists on disk; media_pipeline assets live
+# task-keyed ({task_id}.mp4) at media_assets.storage_path, so backfill skips
+# them and the approved row stays eligible for this pass alone — no double-send.
+_APPROVED_UNDISPATCHED_SQL = """
+    SELECT ma.post_id::text AS post_id,
+           ma.medium,
+           p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
+           mas.storage_path
+      FROM media_approvals ma
+      JOIN posts p ON p.id = ma.post_id
+      JOIN media_assets mas
+        ON mas.post_id = ma.post_id
+       AND mas.type = CASE ma.medium
+                          WHEN 'video' THEN 'video_long'
+                          WHEN 'video_short' THEN 'video_short'
+                      END
+     WHERE ma.status = 'approved'
+       AND ma.dispatched_at IS NULL
+       AND ma.medium = ANY($1::text[])
+       AND COALESCE(mas.storage_path, '') <> ''
+     ORDER BY ma.created_at ASC
+     LIMIT $2
+"""
+
+# Enabled video-platform adapter rows (the registry routes the handler by name).
+_ADAPTERS_SQL = """
+    SELECT name, platform, handler_name, config, metadata
+      FROM publishing_adapters
+     WHERE enabled = true
+       AND platform = ANY($1::text[])
+"""
+
+
+async def _dispatch_asset(
+    pool: Any, site_config: Any, row: dict[str, Any], *, shorts: bool
+) -> bool:
+    """Deliver one approved video asset to the enabled video platforms.
+
+    Builds the SEO-rich YouTube payload from the post's structured fields
+    (reusing the same helpers backfill_videos uses, glad-labs-stack#275) and
+    threads the ``shorts`` flag so the adapter injects the ``#Shorts`` marker for
+    short-form (the #682/#1249 handler). Per-adapter exceptions are isolated.
+    Returns True iff at least one platform accepted the upload.
+    """
+    # Reuse the pure YouTube-payload helpers — they compose the description
+    # (SEO excerpt + canonical back-link + stripped body, ≤4800 chars) and parse
+    # seo_keywords into capped tags. (Shared home: services/jobs/backfill_videos.)
+    from services.integrations import registry
+    from services.integrations.handlers import load_all
+    from services.jobs.backfill_videos import (
+        _build_youtube_description,
+        _parse_seo_keywords,
+    )
+
+    try:
+        load_all()  # idempotent — ensures publishing_youtube is registered
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[MEDIA_DISTRIBUTE] handler load failed: %s", exc)
+        return False
+
+    try:
+        adapters = await pool.fetch(_ADAPTERS_SQL, list(_VIDEO_PLATFORMS))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[MEDIA_DISTRIBUTE] adapter lookup failed: %s", exc)
+        return False
+    if not adapters:
+        logger.debug("[MEDIA_DISTRIBUTE] no enabled video adapters — skipping")
+        return False
+
+    description = _build_youtube_description(
+        seo_description=row.get("excerpt") or "",
+        body=row.get("content") or "",
+        site_config=site_config,
+        slug=row.get("slug") or "",
+    )
+    tags = _parse_seo_keywords(row.get("seo_keywords") or "")
+    payload = {
+        "media_path": row["storage_path"],
+        "title": row.get("title") or "",
+        "description": description,
+        "tags": tags or None,
+        "post_id": row["post_id"],
+        "shorts": shorts,
+    }
+
+    any_success = False
+    for adapter in adapters:
+        platform = adapter["platform"]
+        try:
+            result = await registry.dispatch(
+                "publishing",
+                adapter["handler_name"] or platform,
+                payload,
+                site_config=site_config,
+                row=dict(adapter),
+                pool=pool,
+            )
+            if isinstance(result, dict) and result.get("success"):
+                any_success = True
+                logger.info(
+                    "[MEDIA_DISTRIBUTE] %s upload succeeded for post %s (shorts=%s)",
+                    platform, row["post_id"], shorts,
+                )
+            else:
+                logger.warning(
+                    "[MEDIA_DISTRIBUTE] %s upload failed for post %s: %s",
+                    platform, row["post_id"],
+                    (result or {}).get("error") if isinstance(result, dict) else result,
+                )
+        except Exception as exc:  # noqa: BLE001 — one platform must not starve others
+            logger.warning(
+                "[MEDIA_DISTRIBUTE] %s upload raised for post %s: %s",
+                platform, row["post_id"], exc,
+            )
+    return any_success
+
 
 def _max_per_cycle(site_config: Any) -> int:
     try:
@@ -83,8 +213,9 @@ def _max_per_cycle(site_config: Any) -> int:
 class MediaDistributeJob:
     name = "media_distribute"
     description = (
-        "Link media_pipeline-rendered assets to their published post and seed "
-        "Gate-2 approval rows (dormant until media_pipeline_trigger_enabled)"
+        "Link media_pipeline-rendered assets to their published post, seed "
+        "Gate-2 approval rows, and dispatch approved assets to video platforms "
+        "(long + Shorts; dormant until media_pipeline_trigger_enabled)"
     )
     schedule = "every 10 minutes"
     idempotent = True
@@ -148,8 +279,56 @@ class MediaDistributeJob:
                     asset_id, post_id, exc,
                 )
 
-        detail = f"linked {linked}" if linked else "no assets to link"
-        return JobResult(ok=True, detail=detail, changes_made=linked)
+        # --- Dispatch pass: deliver approved, undispatched assets ------------
+        # Fires only for Gate-2-approved rows, so a freshly-approved asset can
+        # reach YouTube the same cycle. Long form → shorts=False, short →
+        # shorts=True (the #1249 Shorts-aware handler).
+        dispatched = 0
+        try:
+            drows = await pool.fetch(
+                _APPROVED_UNDISPATCHED_SQL,
+                list(_TYPE_TO_MEDIUM.values()),
+                limit,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[MEDIA_DISTRIBUTE] approved-undispatched query failed: %s", exc)
+            drows = []
+
+        for row in drows or []:
+            medium = row["medium"]
+            path = row.get("storage_path") or ""
+            if not path or not os.path.exists(path):
+                # Durable file gone (cleaned up / never landed). Don't stamp —
+                # leave the approved row eligible for the reconciliation watchdog.
+                logger.warning(
+                    "[MEDIA_DISTRIBUTE] durable file missing for post %s (%s): %s "
+                    "— skipping (left for reconciliation)",
+                    row["post_id"], medium, path,
+                )
+                continue
+
+            shorts = medium == "video_short"
+            try:
+                ok = await _dispatch_asset(pool, sc, dict(row), shorts=shorts)
+            except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
+                logger.warning(
+                    "[MEDIA_DISTRIBUTE] dispatch raised for post %s (%s): %s",
+                    row["post_id"], medium, exc,
+                )
+                ok = False
+
+            try:
+                await record_dispatched(pool, row["post_id"], medium, success=ok)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[MEDIA_DISTRIBUTE] record_dispatched failed for post %s (%s): %s",
+                    row["post_id"], medium, exc,
+                )
+            if ok:
+                dispatched += 1
+
+        detail = f"linked {linked}, dispatched {dispatched}"
+        return JobResult(ok=True, detail=detail, changes_made=linked + dispatched)
 
 
 __all__ = ["MediaDistributeJob"]

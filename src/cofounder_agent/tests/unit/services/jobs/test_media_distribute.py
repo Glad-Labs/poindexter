@@ -28,11 +28,13 @@ def _sc(**overrides):
 
 
 class _FakePool:
-    """asyncpg-pool stand-in — fetch returns the unlinked asset rows, fetchval
-    resolves the post id, execute returns a command tag."""
+    """asyncpg-pool stand-in. ``run()`` issues two fetches per active cycle —
+    the link-pass unlinked-asset query, then the dispatch-pass
+    approved-undispatched query — so ``fetch`` is a 2-element side_effect.
+    ``fetchval`` resolves the post id; ``execute`` returns a command tag."""
 
-    def __init__(self, rows, post_id="p1"):
-        self.fetch = AsyncMock(return_value=rows)
+    def __init__(self, unlinked=None, approved=None, post_id="p1"):
+        self.fetch = AsyncMock(side_effect=[list(unlinked or []), list(approved or [])])
         self.fetchval = AsyncMock(return_value=post_id)
         self.execute = AsyncMock(return_value="UPDATE 1")
 
@@ -126,6 +128,87 @@ async def test_link_failure_is_best_effort():
         )
     assert out.ok  # best-effort
     assert out.changes_made == 1  # only the second linked
+
+
+@pytest.mark.asyncio
+async def test_dispatches_approved_assets_with_correct_shorts_flag(tmp_path):
+    """Approved long + short assets (file present) → dispatch each via the
+    Shorts-aware handler (long shorts=False, short shorts=True) and stamp
+    record_dispatched per flavor."""
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    job = MediaDistributeJob()
+    base = {
+        "post_id": "p1", "title": "T", "content": "c", "excerpt": "e",
+        "seo_keywords": "a,b", "slug": "s", "storage_path": str(f),
+    }
+    pool = _FakePool(
+        unlinked=[],
+        approved=[
+            {**base, "medium": "video"},
+            {**base, "medium": "video_short"},
+        ],
+    )
+    disp = AsyncMock(return_value=True)
+    rec = AsyncMock()
+    with patch.object(md, "_dispatch_asset", disp), patch.object(md, "record_dispatched", rec):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    assert out.changes_made == 2
+    assert {c.kwargs["shorts"] for c in disp.await_args_list} == {False, True}
+    assert {c.args[2] for c in rec.await_args_list} == {"video", "video_short"}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_skips_and_does_not_stamp_missing_file(tmp_path):
+    """An approved asset whose durable file is gone → don't dispatch and don't
+    stamp dispatched (leave it for the reconciliation watchdog)."""
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        unlinked=[],
+        approved=[{
+            "post_id": "p1", "medium": "video", "title": "T", "content": "c",
+            "excerpt": "e", "seo_keywords": "", "slug": "s",
+            "storage_path": str(tmp_path / "gone.mp4"),
+        }],
+    )
+    disp = AsyncMock(return_value=True)
+    rec = AsyncMock()
+    with patch.object(md, "_dispatch_asset", disp), patch.object(md, "record_dispatched", rec):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    assert out.changes_made == 0
+    disp.assert_not_awaited()
+    rec.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_asset_fires_handler_with_shorts_in_payload():
+    """_dispatch_asset builds the publishing payload (with the shorts flag) and
+    fires the registered handler for each enabled video adapter."""
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[
+        {"name": "yt", "platform": "youtube", "handler_name": "youtube",
+         "config": {}, "metadata": {}},
+    ])
+    dispatch = AsyncMock(return_value={"success": True})
+    row = {
+        "post_id": "p1", "title": "Clip", "content": "c", "excerpt": "e",
+        "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4",
+    }
+    with patch("services.integrations.registry.dispatch", dispatch), patch(
+        "services.integrations.handlers.load_all", lambda: None
+    ):
+        ok = await md._dispatch_asset(
+            pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=True
+        )
+    assert ok is True
+    payload = dispatch.await_args.args[2]
+    assert payload["shorts"] is True
+    assert payload["media_path"] == "/tmp/v.mp4"
+    assert payload["post_id"] == "p1"
 
 
 def test_job_protocol_shape():
