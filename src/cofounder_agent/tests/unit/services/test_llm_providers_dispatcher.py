@@ -331,7 +331,11 @@ class TestDispatchCompleteAutoLog:
         provider.complete.return_value = _FakeCompletionResult(
             prompt_tokens=12, completion_tokens=34,
         )
-        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+        guard = MagicMock()
+        guard.estimate_local_kwh.return_value = 0.001
+        guard.kwh_to_usd.return_value = 0.00016
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -344,17 +348,18 @@ class TestDispatchCompleteAutoLog:
         assert len(cost_inserts) == 1, executions
         query, args = cost_inserts[0]
         # Args: task_id, phase, model, provider, in, out, total, cost_usd,
-        # cost_type, duration_ms, success, error
+        # cost_type, duration_ms, success, electricity_kwh, error_message
         assert args[0] == "task-abc"
         assert args[1] == "atom.narrate_bundle"
         assert args[2] == "gemma3:27b"
         assert args[3] == "ollama_native"
-        assert args[4] == 12   # input_tokens
-        assert args[5] == 34   # output_tokens
-        assert args[7] == 0.0  # cost_usd (no response_cost on raw)
+        assert args[4] == 12    # input_tokens
+        assert args[5] == 34    # output_tokens
+        assert args[7] == pytest.approx(0.00016)  # cost_usd from electricity
         assert args[8] == "inference"
         assert args[10] is True   # success
-        assert args[11] is None   # error
+        assert args[11] == pytest.approx(0.001)   # electricity_kwh
+        assert args[12] is None   # error_message
 
     async def test_response_cost_from_raw_populates_cost_usd(self):
         pool, executions = _make_logging_pool(setting_value="litellm")
@@ -369,9 +374,13 @@ class TestDispatchCompleteAutoLog:
             )
         cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
         assert len(cost_inserts) == 1
-        # cost_usd is at index 7.
-        assert cost_inserts[0][1][7] == 0.000123
-        assert cost_inserts[0][1][3] == "litellm"
+        args = cost_inserts[0][1]
+        # cost_usd at index 7 — cloud price kept as-is; no electricity path.
+        assert args[7] == 0.000123
+        assert args[3] == "litellm"
+        # Cloud call: electricity_kwh not estimated (cost_usd was non-zero).
+        assert args[11] is None  # electricity_kwh
+        assert args[12] is None  # error_message
 
     async def test_phase_defaults_to_dispatch_complete_when_not_supplied(self):
         pool, executions = _make_logging_pool()
@@ -391,7 +400,11 @@ class TestDispatchCompleteAutoLog:
         pool, executions = _make_logging_pool()
         provider = _FakeProvider(name="ollama_native")
         provider.complete.side_effect = RuntimeError("upstream timeout")
-        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+        guard = MagicMock()
+        guard.estimate_local_kwh.return_value = 0.0005
+        guard.kwh_to_usd.return_value = 0.00008
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
             with pytest.raises(RuntimeError, match="upstream timeout"):
                 await dispatcher.dispatch_complete(
                     pool, messages=[{"role": "user", "content": "hi"}],
@@ -401,8 +414,9 @@ class TestDispatchCompleteAutoLog:
         assert len(cost_inserts) == 1
         args = cost_inserts[0][1]
         assert args[10] is False  # success
-        assert "upstream timeout" in (args[11] or "")  # error_message
-        assert args[7] == 0.0  # cost_usd
+        assert args[11] == pytest.approx(0.0005)  # electricity_kwh
+        assert "upstream timeout" in (args[12] or "")  # error_message
+        assert args[7] == pytest.approx(0.00008)  # cost_usd from electricity
 
     async def test_log_write_failure_does_not_break_call(self):
         # Pool whose execute() raises — auto-log must swallow it.
@@ -541,15 +555,99 @@ class TestDispatchCompleteBudgetGate:
         pool = _FakePool(setting_value="ollama_native")
         provider = _FakeProvider(name="ollama_native")
         provider.complete = AsyncMock(return_value=_FakeCompletionResult(prompt_tokens=2))
+        guard = MagicMock()
+        guard.estimate_local_kwh.return_value = 0.001
+        guard.kwh_to_usd.return_value = 0.00016
         with patch.object(
             dispatcher, "get_all_llm_providers", return_value=[provider]
         ), patch.object(
             dispatcher, "get_provider_config", AsyncMock(return_value={})
-        ), patch("services.cost_guard.CostGuard") as CG:
+        ), patch("services.cost_guard.CostGuard", return_value=guard):
             result = await dispatcher.dispatch_complete(
                 pool, messages=[{"role": "user", "content": "hi"}],
                 model="gemma3:27b",
             )
-        CG.assert_not_called()
+        # Budget gate (check_budget) must NOT have been called for a local model.
+        guard.check_budget.assert_not_called()
         provider.complete.assert_awaited_once()
         assert result.prompt_tokens == 2
+
+
+# ---------------------------------------------------------------------------
+# Local-model electricity attribution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLocalElectricityAttribution:
+    """Local Ollama calls get electricity_kwh populated and cost_usd derived
+    from GPU power × duration — not left at $0.0 / NULL."""
+
+    async def test_local_model_writes_electricity_kwh_and_nonzero_cost(self):
+        pool, executions = _make_logging_pool()
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult(
+            prompt_tokens=50, completion_tokens=100,
+        )
+        guard = MagicMock()
+        guard.estimate_local_kwh.return_value = 0.002
+        guard.kwh_to_usd.return_value = 0.00032
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="glm-4.7-5090:latest",
+                task_id="task-123",
+                phase="generate_content",
+            )
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        assert len(cost_inserts) == 1
+        args = cost_inserts[0][1]
+        assert args[7] == pytest.approx(0.00032)   # cost_usd from electricity
+        assert args[11] == pytest.approx(0.002)    # electricity_kwh
+        assert args[12] is None                    # error_message
+        guard.estimate_local_kwh.assert_called_once()
+        guard.kwh_to_usd.assert_called_once_with(0.002)
+
+    async def test_cloud_model_with_nonzero_response_cost_skips_electricity_path(self):
+        """If LiteLLM returns a real price, electricity estimation must not run."""
+        pool, executions = _make_logging_pool(setting_value="litellm")
+        provider = _FakeProvider(name="litellm")
+        result = _FakeCompletionResult(prompt_tokens=200, completion_tokens=80)
+        result.raw = {"response_cost": 0.0045}  # type: ignore[attr-defined]
+        provider.complete.return_value = result
+        guard = MagicMock()
+        # _enforce_budget_if_paid also uses CostGuard.check_budget — must be async.
+        guard.check_budget = AsyncMock()
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="anthropic/claude-haiku-4-5",
+            )
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        args = cost_inserts[0][1]
+        assert args[7] == pytest.approx(0.0045)  # cloud price preserved
+        assert args[11] is None                   # electricity_kwh not touched
+        guard.estimate_local_kwh.assert_not_called()
+
+    async def test_electricity_estimation_failure_falls_back_to_zero(self):
+        """If CostGuard raises, cost_usd stays 0.0 — best-effort only."""
+        pool, executions = _make_logging_pool()
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult()
+        guard = MagicMock()
+        guard.estimate_local_kwh.side_effect = RuntimeError("gpu metrics unavailable")
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
+            # Must not raise.
+            result = await dispatcher.dispatch_complete(
+                pool, messages=[{"role": "user", "content": "hi"}], model="gemma3:27b",
+            )
+        assert result is not None
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        args = cost_inserts[0][1]
+        assert args[7] == 0.0   # fallback
+        assert args[11] is None  # electricity_kwh not set

@@ -378,23 +378,17 @@ async def _record_dispatch_cost(
 
     Best-effort — never raises out of the call path. Uses LiteLLM's
     ``response_cost`` when present (the litellm provider stamps it on
-    ``result.raw``); falls back to 0.0 for providers that don't report
-    cost (e.g., a pure local Ollama path with no LiteLLM cost table).
-
-    The 0.0 fallback matters: a row with provider='ollama', cost_usd=0.0
-    still tells morning_brief + Grafana "we made a local call" — without
-    it, local volume is invisible. Electricity attribution happens via
-    the separate ``electricity`` provider rows written by
-    ``services.jobs.update_utility_rates``.
+    ``result.raw``); for local models where LiteLLM has no price table
+    entry (response_cost == 0.0), falls back to GPU power × duration via
+    CostGuard so cost_usd reflects true electricity spend rather than $0.
+    ``electricity_kwh`` is populated for every local call so the Cost &
+    Analytics dashboard can show per-call energy attribution.
     """
     if pool is None:
         return
     try:
         provider_name = getattr(provider, "name", "unknown") if provider else "unknown"
         raw: dict[str, Any] = getattr(result, "raw", {}) or {} if result is not None else {}
-        # LiteLLM stamps response_cost on the response when it knows the
-        # model. For pure-local Ollama paths the field is absent — record
-        # 0.0 so the row still shows up in volume counts.
         cost_usd = 0.0
         rc = raw.get("response_cost") if isinstance(raw, dict) else None
         if rc is not None:
@@ -405,6 +399,28 @@ async def _record_dispatch_cost(
         prompt_tokens = int(getattr(result, "prompt_tokens", 0) or 0) if result is not None else 0
         completion_tokens = int(getattr(result, "completion_tokens", 0) or 0) if result is not None else 0
         total_tokens = int(getattr(result, "total_tokens", 0) or 0) if result is not None else 0
+
+        # For local models LiteLLM returns response_cost=0.0 (no price table
+        # entry). Estimate electricity from GPU power × wall-clock duration so
+        # cost_usd and electricity_kwh are meaningful in the dashboard instead
+        # of being $0 / NULL. Cloud calls keep their LiteLLM-reported price.
+        electricity_kwh: float | None = None
+        if cost_usd == 0.0:
+            try:
+                from services.cost_guard import CostGuard
+
+                site_config = None
+                try:
+                    from services.integrations.shared_context import get_site_config
+                    site_config = get_site_config()
+                except Exception:  # noqa: BLE001
+                    pass
+                guard = CostGuard(pool=pool, site_config=site_config)
+                electricity_kwh = guard.estimate_local_kwh(duration_ms=duration_ms)
+                cost_usd = guard.kwh_to_usd(electricity_kwh)
+            except Exception:  # noqa: BLE001 — best-effort; $0 is still a valid fallback
+                pass
+
         async with pool.acquire() as conn:
             await conn.execute(
                 """
@@ -412,16 +428,16 @@ async def _record_dispatch_cost(
                     task_id, phase, model, provider,
                     input_tokens, output_tokens, total_tokens,
                     cost_usd, cost_type, duration_ms, success,
-                    error_message, created_at, updated_at
+                    electricity_kwh, error_message, created_at, updated_at
                 )
                 VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()
                 )
                 """,
                 task_id, phase, model, provider_name,
                 prompt_tokens, completion_tokens, total_tokens,
                 cost_usd, "inference", duration_ms, success,
-                error,
+                electricity_kwh, error,
             )
     except Exception as e:
         # Demote to debug so we don't pollute logs on every call when
