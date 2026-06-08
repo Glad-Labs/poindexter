@@ -21,6 +21,46 @@ def _names(modules):
     return sorted(m.manifest().name for m in modules)
 
 
+@pytest.fixture(autouse=True)
+def _scan_is_sole_module_source(monkeypatch):
+    """Pin module discovery to the in-tree directory scan by neutralizing
+    the *other* discovery channel: pip-installed ``poindexter.modules``
+    entry points.
+
+    ``get_modules()`` merges two independent sources — the in-tree directory
+    scan (what these tests drive via the ``_intree_module_names`` monkeypatch)
+    AND any installed ``poindexter.modules`` entry points
+    (``_merge_with_core_samples`` → ``_cached`` → ``entry_points``). On a clean
+    ``poetry install --no-root`` (the CI ``test-backend`` job) and on the
+    stripped public mirror, that entry-point group is empty, so the scan is the
+    sole source. But a full-tree *editable* dev install whose ``dist-info``
+    predates the 2026-06-04 Phase-5 change that emptied the pyproject
+    ``[tool.poetry.plugins."poindexter.modules"]`` group still carries stale
+    ``content``/``finance`` entry points (frozen in ``entry_points.txt``).
+    Those leak ``finance`` past the scan monkeypatch and falsely red
+    ``test_stripped_tree_has_no_finance_anywhere`` in local full-tree dev runs,
+    even though CI stays green.
+
+    Returning ``[]`` for the modules group models the clean-install /
+    stripped-mirror state regardless of ambient ``dist-info`` — the same way
+    ``test_registry.py``'s ``_reset_registry_cache`` neutralizes
+    ``entry_points`` for the groups it isn't exercising. Other groups delegate
+    to the real lookup, and the cache is cleared before+after so the patch is
+    honoured and never leaks into neighbouring tests.
+    """
+    real_entry_points = registry.entry_points
+
+    def _scan_only_entry_points(*args, **kwargs):
+        if kwargs.get("group") == registry.ENTRY_POINT_GROUPS["modules"]:
+            return []
+        return real_entry_points(*args, **kwargs)
+
+    monkeypatch.setattr(registry, "entry_points", _scan_only_entry_points)
+    registry.clear_registry_cache()
+    yield
+    registry.clear_registry_cache()
+
+
 def test_scan_discovers_real_intree_modules():
     """The real modules/ tree yields content + finance, and finance's
     poll_mercury job rides along via modules/finance/jobs/JOBS."""
