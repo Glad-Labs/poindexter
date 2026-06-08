@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 EMBED_MODEL = "nomic-embed-text"
 
+# Cap retained per-document store-failure samples so a tap that fails on
+# thousands of docs can't balloon memory or the summary log. Enough to
+# diagnose the usual handful (e.g. the 3 NUL-byte sessions) while bounded.
+_MAX_FAILURE_SAMPLES = 25
+
 
 @dataclass
 class TapStats:
@@ -49,6 +54,12 @@ class TapStats:
     failed: int = 0
     duration_s: float = 0.0
     error: str | None = None
+    # Per-document store-failure reasons ("<source_id>: <ExcType>: <msg>"),
+    # capped at _MAX_FAILURE_SAMPLES. The runner logs the underlying
+    # exception on its own logger, which does NOT propagate to the
+    # auto-embed.py file handler — carrying the reason here lets the runner
+    # entry point surface it into auto-embed.log (feedback_no_silent_defaults).
+    failures: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +70,7 @@ class TapStats:
             "failed": self.failed,
             "duration_s": round(self.duration_s, 3),
             "error": self.error,
+            "failures": list(self.failures),
         }
 
 
@@ -224,6 +236,8 @@ async def run_tap(tap: Any, pool: Any, mem: Any) -> TapStats:
             except Exception as e:
                 logger.exception("Tap %s: store failed for %s: %s", stats.name, doc.source_id, e)
                 stats.failed += 1
+                if len(stats.failures) < _MAX_FAILURE_SAMPLES:
+                    stats.failures.append(f"{doc.source_id}: {type(e).__name__}: {e}")
                 continue
             if outcome == "embedded":
                 stats.embedded += 1

@@ -317,6 +317,36 @@ class TestRenderSession:
         assert "USER: valid" in out
         assert "ASSISTANT: ok" in out
 
+    def test_nul_bytes_stripped(self, tmp_path: Path):
+        """A transcript carrying a raw NUL byte (0x00) must render without it.
+
+        Regression for the claude_code_sessions "3 failed" embeds bug: NUL is
+        valid UTF-8 (so errors="replace" decoding keeps it) but Postgres text
+        columns reject it, so the embeddings INSERT died with
+        ``CharacterNotInRepertoireError: invalid byte sequence for encoding
+        "UTF8": 0x00`` on the same handful of sessions every run.
+
+        Note ``json.dumps`` escapes the NUL to ``\\u0000`` on disk; ``json.loads``
+        in ``_render_session`` turns it back into a real ``\\x00`` in the parsed
+        string — exactly how a real Claude Code transcript carries one.
+        """
+        path = _make_session_file(
+            tmp_path,
+            "nul-session",
+            [
+                {"type": "user", "message": {"content": "before\x00after"}},
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "text", "text": "ok\x00done"}]},
+                },
+            ],
+        )
+        out = _render_session(path, max_tool_chars=2000)
+        assert "\x00" not in out
+        # Surrounding content is preserved — only the NUL is removed.
+        assert "USER: beforeafter" in out
+        assert "ASSISTANT: okdone" in out
+
     def test_noise_only_session_returns_empty(self, tmp_path: Path):
         """Session with nothing but system reminders + snapshots yields
         no meaningful text — caller should skip emitting a Document."""

@@ -439,7 +439,15 @@ def _render_session(session_file: Path, max_tool_chars: int) -> str:
 
     if not parts:
         return ""
-    return "\n\n".join(parts)
+    rendered = "\n\n".join(parts)
+    # Strip NUL bytes (0x00). Transcripts occasionally capture them from
+    # binary tool output or terminal control sequences. NUL is valid UTF-8,
+    # so the errors="replace" decode above does NOT drop it — but Postgres
+    # text columns reject it, which crashed the embeddings INSERT
+    # ("invalid byte sequence for encoding UTF8: 0x00") on every session
+    # carrying one, every run. It carries no semantic content.
+    # MemoryClient.store keeps a matching backstop for non-tap writers.
+    return rendered.replace("\x00", "")
 
 
 def _split_session(text: str, max_chars: int = _SESSION_CHUNK_CHARS) -> list[str]:

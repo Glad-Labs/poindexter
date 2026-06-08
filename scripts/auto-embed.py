@@ -199,6 +199,17 @@ async def main() -> None:
                 "  %-20s %s %d embedded, %d skipped, %d failed (%.2fs)",
                 ts.name, status, ts.embedded, ts.skipped, ts.failed, ts.duration_s,
             )
+            # Surface per-tap failure detail into auto-embed.log. The runner
+            # logs the underlying exception on its own logger
+            # (services.taps.runner), which does NOT propagate to this
+            # script's "auto-embed" file handler — so without this the log
+            # only ever showed the failure COUNT, never the cause (which hid
+            # a NUL-byte INSERT crash on 3 sessions every run). A non-zero
+            # failed count must come with its reason — feedback_no_silent_defaults.
+            if ts.error:
+                logger.warning("    %-20s extract error: %s", ts.name, ts.error)
+            for failure in ts.failures:
+                logger.warning("    %-20s store failure: %s", ts.name, failure)
 
         # OpenClaw SQLite is now a proper Tap (services/taps/openclaw_sqlite.py,
         # registered via poindexter.taps entry_points) — it appears above

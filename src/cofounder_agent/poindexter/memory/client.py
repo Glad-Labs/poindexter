@@ -297,7 +297,26 @@ class MemoryClient:
         Returns:
             The final `source_id` that was written (useful when it was generated).
         """
-        text = (text or "").strip()
+        text = text or ""
+        if "\x00" in text:
+            # Postgres text/varchar columns cannot store a NUL byte (0x00):
+            # the INSERT dies with CharacterNotInRepertoireError ("invalid
+            # byte sequence for encoding UTF8: 0x00"). NUL is valid UTF-8, so
+            # upstream errors="replace" decoding leaves it intact — it reaches
+            # us as a capture artifact (binary tool output, terminal control
+            # bytes) carrying no semantic value. Strip it so the document
+            # still embeds instead of being silently dropped, and log so the
+            # mutation is never silent (feedback_no_silent_defaults). Text-
+            # rendering callers (e.g. the claude_code_sessions tap) also strip
+            # at source; this is the universal backstop for every writer.
+            logger.warning(
+                "store(): stripped NUL byte(s) from text before INSERT "
+                "(source_table=%r chunk_index=%s) — 0x00 is not storable in a "
+                "Postgres text column",
+                source_table, chunk_index,
+            )
+            text = text.replace("\x00", "")
+        text = text.strip()
         if not text:
             raise ValueError("text is required and cannot be empty")
         if not writer:
