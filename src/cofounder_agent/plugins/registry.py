@@ -700,6 +700,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Stage-2 producer; the backfill jobs above demote to reconciliation
         # (Plan 8).
         ("jobs", "services.jobs.dispatch_media_pipeline", "DispatchMediaPipelineJob"),
+        # Stage-2 link + Gate-2-seed pass (#689 Plan 8 / 8b-2): links
+        # media_pipeline-rendered media_assets to their published post (via the
+        # posts.metadata->>'pipeline_task_id' seam) and seeds the Gate-2 approval
+        # rows. Same dormant master switch (``media_pipeline_trigger_enabled``).
+        ("jobs", "services.jobs.media_distribute", "MediaDistributeJob"),
         # Anomaly detection — z-score outlier detection across failure
         # rate, quality, cost, and error-log rate (every 4h). Emits a
         # finding via utils.findings (routes through notify_operator

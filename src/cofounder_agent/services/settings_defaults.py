@@ -277,6 +277,10 @@ DEFAULTS: dict[str, str] = {
     # media_pipeline_max_per_cycle caps GPU-bound renders kicked off per cycle.
     'media_pipeline_max_per_cycle': '1',
     'media_pipeline_trigger_enabled': 'false',
+    # media_distribute (#689 Plan 8 / 8b-2) links rendered media_assets to their
+    # published post + seeds Gate-2 approvals; caps assets linked per cycle.
+    # Gated on the same media_pipeline_trigger_enabled master switch.
+    'media_distribute_max_per_cycle': '20',
     'podcast_description': '',
     'podcast_name': '',
     'podcast_tts_engine': '',
