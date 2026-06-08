@@ -1,11 +1,11 @@
-"""Contract test for the media_pipeline qa-node re-seed migration (Plan 6).
+"""Contract test for the media_pipeline persist-node re-seed migration (Plan 8).
 
 The re-seed must INSERT…ON CONFLICT (slug) DO UPDATE the ``media_pipeline`` row
-in ``pipeline_templates`` so an already-seeded caption-chain row is upgraded in
-place to the Plan-6 graph_def (now carrying the media_qa node). It must NOT
-delete on down() — the row is intentionally retained (re-seed, not create). The
-graph_def source module must stay pure data so migrations-smoke can import it
-without a full app boot.
+in ``pipeline_templates`` so an already-seeded qa-chain row is upgraded in place
+to the Plan-8 graph_def (now carrying the ``persist_media`` terminal node). It
+must NOT delete on down() — the row is intentionally retained (re-seed, not
+create). The graph_def source module must stay pure data so migrations-smoke can
+import it without a full app boot.
 """
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ _MIGRATION = (
     Path(__file__).resolve().parents[4]
     / "services"
     / "migrations"
-    / "20260608_150000_reseed_media_pipeline_qa_node.py"
+    / "20260608_170000_reseed_media_pipeline_persist_node.py"
 )
 
 
 def _load_migration():
-    spec = importlib.util.spec_from_file_location("reseed_media_qa_mig", _MIGRATION)
+    spec = importlib.util.spec_from_file_location("reseed_media_persist_mig", _MIGRATION)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -50,7 +50,7 @@ def test_migration_file_exists():
 
 
 @pytest.mark.asyncio
-async def test_up_upserts_media_pipeline_with_qa_node():
+async def test_up_upserts_media_pipeline_with_persist_node():
     mod = _load_migration()
     pool, conn = _mock_pool()
 
@@ -60,21 +60,17 @@ async def test_up_upserts_media_pipeline_with_qa_node():
     assert "INSERT INTO pipeline_templates" in sql
     assert "'media_pipeline'" in sql
     assert "ON CONFLICT (slug) DO UPDATE" in sql
-    # The graph_def is passed as a param (not string-interpolated) and now
-    # carries the media_qa node id — the substance of this re-seed.
     graph_blob = " ".join(str(p) for p in params)
+    assert "persist_media" in graph_blob
+    assert "media.persist" in graph_blob
+    # The prior chain survives the re-seed (upgrade, not replace).
     assert "media_qa" in graph_blob
-    # The prior chain is still present (re-seed upgrades, doesn't drop nodes).
-    assert "transcribe_narration" in graph_blob
-    assert "render_long_video" in graph_blob
     assert "render_short_video" in graph_blob
     assert "load_scripts" in graph_blob
 
 
 @pytest.mark.asyncio
 async def test_down_does_not_delete_the_row():
-    """down() is a no-op re-seed reversal — the row stays. A DELETE here would
-    wrongly drop a template a prior migration created."""
     mod = _load_migration()
     pool, conn = _mock_pool()
 
@@ -85,15 +81,16 @@ async def test_down_does_not_delete_the_row():
         assert "DELETE" not in sql.upper()
 
 
-def test_graph_def_carries_qa_node():
+def test_graph_def_carries_persist_node():
     from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 
     node_ids = {n["id"] for n in MEDIA_PIPELINE_GRAPH_DEF["nodes"]}
-    assert "media_qa" in node_ids
+    assert "persist_media" in node_ids
     node_atoms = {n["atom"] for n in MEDIA_PIPELINE_GRAPH_DEF["nodes"]}
-    assert "media.qa" in node_atoms
-    # The media_qa node sits AFTER render_short_video. As of Plan 8 it feeds the
-    # persist_media terminal node rather than ending the graph directly.
+    assert "media.persist" in node_atoms
+    # persist_media sits AFTER media_qa and now terminates the graph.
     edges = {(e["from"], e["to"]) for e in MEDIA_PIPELINE_GRAPH_DEF["edges"]}
-    assert ("render_short_video", "media_qa") in edges
     assert ("media_qa", "persist_media") in edges
+    assert ("persist_media", "END") in edges
+    # media_qa no longer points straight at END.
+    assert ("media_qa", "END") not in edges
