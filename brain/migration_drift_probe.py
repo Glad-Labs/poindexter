@@ -72,6 +72,29 @@ logger = logging.getLogger("brain.migration_drift_probe")
 # their workload.
 AUTO_RECOVER_SETTING_KEY = "migration_drift_auto_recover_enabled"
 
+# Genuine self-heal (Glad-Labs/poindexter#228). When auto-sync is enabled the
+# probe resyncs a DEDICATED deploy checkout to origin/main (git reset --hard +
+# clean -fd) BEFORE restarting the worker, so the restart actually has correct,
+# un-polluted migration files to apply — rather than restarting blindly into the
+# same stale/polluted checkout. Default off (seed migration) until the deploy
+# checkout is wired + the worker bind-mount repointed at it.
+AUTO_SYNC_SETTING_KEY = "migration_drift_auto_sync_enabled"
+DEPLOY_CHECKOUT_PATH_SETTING_KEY = "migration_drift_deploy_checkout_path"
+RECOVER_MAX_ATTEMPTS_SETTING_KEY = "migration_drift_recover_max_attempts"
+
+# In-brain-container path the deploy checkout is mounted at (RW). Only used when
+# auto-sync is enabled; overridable via DEPLOY_CHECKOUT_PATH_SETTING_KEY.
+_DEFAULT_DEPLOY_PATH = "/host-deploy"
+
+# Max consecutive recovery attempts per drift episode before the probe gives up,
+# pages once, and suppresses until the pending count changes/clears. Backoff
+# between attempts is exponential (2^(n-1) brain cycles). Overridable via
+# RECOVER_MAX_ATTEMPTS_SETTING_KEY.
+_DEFAULT_MAX_ATTEMPTS = 3
+
+# Branch the deploy checkout is reset to. origin/main is the deploy target.
+_DEPLOY_SYNC_REF = "origin/main"
+
 # Worker container name — the only thing we restart. Kept as a constant
 # rather than a setting because it matches docker-compose.local.yml's
 # container_name and changing it would break dozens of other things.
@@ -101,18 +124,21 @@ PROBE_INTERVAL_SECONDS = 300
 # ``None`` when drift clears so a fresh drift event re-triggers a notify.
 _last_notify_drift_count: int | None = None
 
-# Module-level state — the ``pending`` count we last ATTEMPTED an auto-recover
-# restart for. Once a restart fails to clear drift at a given count, restarting
-# again at the SAME count is futile (a bad migration the runner won't apply, or
-# a checkout the restart can't fix) — so we suppress repeat restarts + critical
-# pages until the count CHANGES (a new migration arrives) or CLEARS (operator
-# fixes it). Reset to ``None`` whenever drift clears or recovery succeeds, so a
-# fresh drift always gets exactly one recovery attempt. Closes the 5-min
-# restart-loop + critical-page storm observed 2026-06-07 (131 pages / 24h),
-# where an untracked migration scaffold kept `pending` pinned at 1 and every
-# brain cycle re-restarted the worker and re-paged. (Glad-Labs/poindexter#228
-# follow-up.)
+# Module-level state — the ``pending`` count of the CURRENT recovery episode.
+# Used to detect when drift changes (new migration arrives) so the attempt
+# counters reset and a fresh episode gets its full backoff budget. Reset to
+# ``None`` whenever drift clears or recovery succeeds. (Glad-Labs/poindexter#228.)
 _last_recover_attempt_pending: int | None = None
+
+# Module-level state — recovery attempts made in the current episode, and the
+# number of brain cycles waited since the last attempt. Together they implement
+# exponential backoff: after attempt N, wait 2^(N-1) cycles before attempt N+1;
+# after ``max_attempts``, page once + suppress (the LAST resort, never the
+# first response). Reset on drift clear / recovery / count change. This replaces
+# the binary "restart-once-then-suppress" breaker with genuine bounded retry —
+# suppression only after the system has exhausted what it can safely do itself.
+_recover_attempts: int = 0
+_recover_cycles_waited: int = 0
 
 # Expected ``pg_class.relkind`` per relation, post-migration. Migration
 # 0125 (closes Glad-Labs/poindexter#329) unified ``content_tasks`` to be
@@ -336,6 +362,44 @@ async def _read_auto_recover_enabled(pool) -> bool:
     return str(val).strip().lower() in ("true", "1", "yes", "on")
 
 
+async def _read_bool_setting(pool, key: str, default: bool = False) -> bool:
+    """Generic truthy app_settings reader; ``default`` on miss/error."""
+    try:
+        val = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1", key
+        )
+    except Exception as exc:
+        logger.warning("[MIGRATION_DRIFT] read %s failed: %s", key, exc)
+        return default
+    if val is None:
+        return default
+    return str(val).strip().lower() in ("true", "1", "yes", "on")
+
+
+async def _read_str_setting(pool, key: str, default: str) -> str:
+    """Generic string app_settings reader; ``default`` on miss/blank/error."""
+    try:
+        val = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1", key
+        )
+    except Exception as exc:
+        logger.warning("[MIGRATION_DRIFT] read %s failed: %s", key, exc)
+        return default
+    text = (val or "").strip() if val is not None else ""
+    return text or default
+
+
+async def _read_int_setting(pool, key: str, default: int) -> int:
+    """Generic int app_settings reader; ``default`` on miss/parse-error."""
+    raw = await _read_str_setting(pool, key, "")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 async def _emit_relkind_audit_and_notify(
     pool,
     mismatches: list[dict[str, str]],
@@ -501,6 +565,68 @@ def _restart_worker_container() -> tuple[bool, str]:
         return False, f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
 
 
+def _run_git(deploy_path: str, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run a git subcommand against the deploy checkout. Raises on failure."""
+    kwargs: dict[str, Any] = {
+        "capture_output": True,
+        "text": True,
+        "timeout": timeout,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+    return subprocess.run(["git", "-C", deploy_path, *args], **kwargs)
+
+
+def _sync_deploy_checkout(deploy_path: str, ref: str = _DEPLOY_SYNC_REF) -> tuple[bool, str]:
+    """Resync the dedicated deploy checkout to ``ref`` (default origin/main).
+
+    Runs ``git reset --hard <ref>`` + ``git clean -fd`` so the worker's
+    bind-mounted code matches origin/main exactly — wiping any stray untracked
+    file (e.g. an unfinished migration scaffold, the 2026-06-07 root cause) and
+    advancing past a stale checkout. This is SAFE because the deploy checkout is
+    DEDICATED — nothing else (no human, no scheduled agent) ever works in it, so
+    there's no uncommitted work to clobber and no "is work active?" race.
+
+    The NETWORK fetch is intentionally NOT done here — it runs on the host
+    (where git creds live) via a separate periodic job, keeping this step local,
+    auth-free, and network-free. We reset to the already-fetched ``origin/main``.
+
+    Returns ``(ok, message)``. Never raises — the caller logs + decides. Guards:
+    the path must exist and be a git work tree; otherwise returns ``(False, …)``
+    so the caller falls back to a plain restart rather than crashing the cycle.
+    """
+    try:
+        if not os.path.isdir(deploy_path):
+            return False, f"deploy path not found: {deploy_path}"
+        check = _run_git(deploy_path, "rev-parse", "--is-inside-work-tree", timeout=15)
+        if check.returncode != 0 or "true" not in (check.stdout or "").lower():
+            return False, (
+                f"{deploy_path} is not a git work tree "
+                f"({(check.stderr or check.stdout or '').strip()[:120]})"
+            )
+        reset = _run_git(deploy_path, "reset", "--hard", ref)
+        if reset.returncode != 0:
+            return False, (
+                f"git reset --hard {ref} failed: "
+                f"{(reset.stderr or '').strip()[:160]}"
+            )
+        clean = _run_git(deploy_path, "clean", "-fd")
+        if clean.returncode != 0:
+            return False, (
+                f"reset ok but git clean -fd failed: "
+                f"{(clean.stderr or '').strip()[:160]}"
+            )
+        head = _run_git(deploy_path, "rev-parse", "--short", "HEAD", timeout=15)
+        head_sha = (head.stdout or "").strip() or "unknown"
+        return True, f"reset --hard {ref} + clean -fd → HEAD {head_sha}"
+    except FileNotFoundError:
+        return False, "git CLI not on PATH (brain container missing git?)"
+    except subprocess.TimeoutExpired:
+        return False, f"git operation on {deploy_path} timed out"
+    except Exception as exc:
+        return False, f"deploy sync error: {type(exc).__name__}: {str(exc)[:160]}"
+
+
 def _wait_for_worker_healthy(
     deadline_seconds: int = RESTART_WAIT_SECONDS,
     poll_interval: float = RESTART_POLL_INTERVAL_SECONDS,
@@ -538,6 +664,7 @@ async def run_migration_drift_probe(
     restart_fn=None,
     wait_fn=None,
     health_fetcher=None,
+    sync_fn=None,
 ) -> dict[str, Any]:
     """Single execution of the migration-drift probe.
 
@@ -555,16 +682,22 @@ async def run_migration_drift_probe(
         health_fetcher: callable that returns a parsed /api/health dict.
             Defaults to :func:`_fetch_health`. Tests inject canned
             responses.
+        sync_fn: deploy-checkout resync callable ``(path) -> (ok, msg)``.
+            Defaults to :func:`_sync_deploy_checkout`. Only called when
+            ``migration_drift_auto_sync_enabled`` is true. Tests inject a
+            stub so no real ``git reset`` runs.
 
     Returns a summary dict suitable for storage in brain_knowledge or
     inclusion in the probe results map.
     """
     global _last_notify_drift_count, _last_recover_attempt_pending
+    global _recover_attempts, _recover_cycles_waited
 
     notify_fn = notify_fn or notify_operator
     restart_fn = restart_fn or _restart_worker_container
     wait_fn = wait_fn or _wait_for_worker_healthy
     health_fetcher = health_fetcher or _fetch_health
+    sync_fn = sync_fn or _sync_deploy_checkout
 
     # ---- 1) Initial drift check via worker /api/health ----------------------
     health = health_fetcher()
@@ -603,8 +736,10 @@ async def run_migration_drift_probe(
             )
             _last_notify_drift_count = None
         # Drift cleared — re-arm auto-recover so a FUTURE drift gets a fresh
-        # restart attempt rather than being suppressed by stale loop state.
+        # episode (full backoff budget) rather than inheriting stale counters.
         _last_recover_attempt_pending = None
+        _recover_attempts = 0
+        _recover_cycles_waited = 0
 
         # Even with zero pending migrations, the post-migration shape
         # contract can drift (e.g. someone hand-edits prod via psql). The
@@ -691,47 +826,121 @@ async def run_migration_drift_probe(
             "notified": _last_notify_drift_count == pending,
         }
 
-    # ---- 4b) Auto-recover enabled — restart worker, re-check ---------------
-    # Cross-cycle circuit breaker: if we ALREADY restarted for this exact
-    # pending count on a previous cycle and the drift is still here, another
-    # restart won't help (the runner is refusing this migration, or the
-    # checkout the restart can't change). Suppress the restart + the critical
-    # page until the count CHANGES or CLEARS — otherwise a single bad/blocked
-    # migration churns the worker and blasts Telegram every 5-min cycle (the
-    # 131-pages-in-24h storm this guard closes). The detection audit at the
-    # top of section 3 still fires every cycle, so the timeline stays intact.
-    if _last_recover_attempt_pending == pending:
-        suppressed_detail = (
-            f"{detected_detail} — auto-recover suppressed: already restarted "
-            f"for {pending} pending on a prior cycle and drift persists. "
-            f"Waiting for the pending count to change or clear (likely a "
-            f"migration the runner won't apply — check "
-            f"`docker logs {WORKER_CONTAINER}`)."
+    # ---- 4b) Auto-recover enabled — resync + restart, exp backoff ----------
+    # Genuine self-heal (Glad-Labs/poindexter#228): rather than restart the
+    # worker blindly every cycle, we (optionally) resync a DEDICATED deploy
+    # checkout to origin/main, then restart so migrations apply. If a single
+    # attempt doesn't clear drift we retry with EXPONENTIAL BACKOFF up to
+    # ``max_attempts``; ONLY after attempts are exhausted do we page once +
+    # suppress. Suppression is the last resort, never the first response.
+
+    # New drift episode? (count appeared / changed) → reset attempt counters so
+    # a fresh episode gets its full backoff budget.
+    if pending != _last_recover_attempt_pending:
+        _last_recover_attempt_pending = pending
+        _recover_attempts = 0
+        _recover_cycles_waited = 0
+
+    max_attempts = await _read_int_setting(
+        pool, RECOVER_MAX_ATTEMPTS_SETTING_KEY, _DEFAULT_MAX_ATTEMPTS
+    )
+
+    # Exhausted → LAST RESORT: page once, then stay quiet until drift changes.
+    if _recover_attempts >= max_attempts:
+        exhausted_detail = (
+            f"{detected_detail} — auto-recover exhausted after {max_attempts} "
+            f"attempt(s); drift persists. Likely a migration the runner won't "
+            f"apply — check `docker logs {WORKER_CONTAINER}`. Suppressed until "
+            f"the pending count changes or clears."
         )
-        logger.warning("[MIGRATION_DRIFT] %s", suppressed_detail)
+        if _last_notify_drift_count != pending:
+            try:
+                notify_fn(
+                    title=(
+                        f"Migration drift UNRESOLVED after {max_attempts} "
+                        f"auto-recover attempts"
+                    ),
+                    detail=exhausted_detail,
+                    source="brain.migration_drift_probe",
+                    severity="critical",
+                )
+                _last_notify_drift_count = pending
+            except Exception as exc:
+                logger.warning("[MIGRATION_DRIFT] notify_fn failed: %s", exc)
+        logger.warning("[MIGRATION_DRIFT] %s", exhausted_detail)
         await _emit_audit_event(
             pool,
             "probe.migration_drift_recover_suppressed",
-            suppressed_detail,
+            exhausted_detail,
             pending=pending,
         )
         return {
             "ok": False,
-            "status": "recover_suppressed",
-            "detail": suppressed_detail,
+            "status": "recover_exhausted",
+            "detail": exhausted_detail,
             "pending": pending,
             "applied": drift["applied"],
             "latest_applied": drift["latest_applied"],
             "auto_recover_enabled": True,
+            "attempts": _recover_attempts,
         }
 
+    # Backoff gate: after attempt N, wait 2^(N-1) cycles before attempt N+1.
+    # The first attempt of an episode (attempts==0) runs immediately.
+    if _recover_attempts > 0:
+        required_wait = 2 ** (_recover_attempts - 1)
+        if _recover_cycles_waited < required_wait:
+            _recover_cycles_waited += 1
+            waiting_detail = (
+                f"{detected_detail} — backoff: waited "
+                f"{_recover_cycles_waited}/{required_wait} cycle(s) before "
+                f"recovery attempt {_recover_attempts + 1}/{max_attempts}"
+            )
+            logger.info("[MIGRATION_DRIFT] %s", waiting_detail)
+            return {
+                "ok": False,
+                "status": "recover_backoff_waiting",
+                "detail": waiting_detail,
+                "pending": pending,
+                "applied": drift["applied"],
+                "latest_applied": drift["latest_applied"],
+                "auto_recover_enabled": True,
+                "attempts": _recover_attempts,
+            }
+        _recover_cycles_waited = 0
+
+    # ---- Perform one recovery attempt: (optional) resync, then restart ------
+    _recover_attempts += 1
     logger.info(
-        "[MIGRATION_DRIFT] Auto-recover enabled — restarting %s",
-        WORKER_CONTAINER,
+        "[MIGRATION_DRIFT] Auto-recover attempt %d/%d for pending=%d",
+        _recover_attempts, max_attempts, pending,
     )
-    # Record the attempt BEFORE restarting so the next cycle's circuit breaker
-    # trips even if this restart partially helps but leaves drift > 0.
-    _last_recover_attempt_pending = pending
+
+    # Genuine resolution step: resync the dedicated deploy checkout so the
+    # restart has correct, un-polluted migration files to apply. Gated by
+    # ``migration_drift_auto_sync_enabled`` (default off until the deploy
+    # checkout is wired). Best-effort: a sync failure is audited but we still
+    # restart (a restart alone may suffice; if not, backoff/exhaustion handle it).
+    if await _read_bool_setting(pool, AUTO_SYNC_SETTING_KEY):
+        deploy_path = await _read_str_setting(
+            pool, DEPLOY_CHECKOUT_PATH_SETTING_KEY, _DEFAULT_DEPLOY_PATH
+        )
+        sync_ok, sync_msg = sync_fn(deploy_path)
+        logger.info(
+            "[MIGRATION_DRIFT] deploy resync ok=%s (%s): %s",
+            sync_ok, deploy_path, sync_msg,
+        )
+        await _emit_audit_event(
+            pool,
+            "probe.migration_drift_synced" if sync_ok
+            else "probe.migration_drift_sync_failed",
+            f"deploy checkout resync ({deploy_path}): {sync_msg}",
+            pending=pending,
+        )
+
+    logger.info(
+        "[MIGRATION_DRIFT] Restarting %s to apply migrations", WORKER_CONTAINER,
+    )
     restart_ok, restart_msg = restart_fn()
     if not restart_ok:
         # Restart itself failed — escalate immediately. We don't want
@@ -824,8 +1033,10 @@ async def run_migration_drift_probe(
             extra={"previous_pending": pending},
         )
         _last_notify_drift_count = None
-        # Recovery worked — re-arm so a future drift gets a fresh attempt.
+        # Recovery worked — reset the episode so a future drift starts fresh.
         _last_recover_attempt_pending = None
+        _recover_attempts = 0
+        _recover_cycles_waited = 0
         return {
             "ok": True,
             "status": "recovered",
@@ -837,40 +1048,25 @@ async def run_migration_drift_probe(
             "auto_recover_enabled": True,
         }
 
-    # Restart succeeded, worker is healthy, but drift is STILL there —
-    # this is the "bad migration that the runner refused to apply"
-    # case. Escalate hard so the operator looks at logs.
+    # Restart succeeded, worker is healthy, but drift is STILL there. Do NOT
+    # page here — this attempt failed, but we have backoff budget left. Record
+    # it and let the next cycle's backoff/exhaustion logic decide when (and
+    # whether) to retry or escalate. The operator is paged ONCE, only after all
+    # attempts are exhausted (the LAST resort) — never on every failed attempt.
     persistent_detail = (
-        f"Drift persists after restart: was {pending}, "
+        f"Drift persists after recovery attempt {_recover_attempts}/"
+        f"{max_attempts}: was {pending}, "
         f"now {post_pending if post_pending is not None else 'unknown'} "
         f"({post_drift.get('error', 'no error reported')})"
     )
-    try:
-        notify_fn(
-            title=f"Migration drift PERSISTS after auto-restart of {WORKER_CONTAINER}",
-            detail=(
-                f"{persistent_detail}\n\n"
-                f"The worker came back healthy but the migrations "
-                f"runner did not clear the pending count. This usually "
-                f"means a migration is failing — check "
-                f"`docker logs {WORKER_CONTAINER}` for the error.\n\n"
-                f"Auto-recover will not retry this cycle. Disable it "
-                f"with `poindexter set {AUTO_RECOVER_SETTING_KEY} false` "
-                f"if you don't want it to retry next cycle either."
-            ),
-            source="brain.migration_drift_probe",
-            severity="critical",
-        )
-    except Exception as exc:
-        logger.warning("[MIGRATION_DRIFT] notify_fn failed: %s", exc)
+    logger.warning("[MIGRATION_DRIFT] %s", persistent_detail)
     await _emit_audit_event(
         pool,
-        "probe.migration_drift_recover_failed",
+        "probe.migration_drift_recover_attempt_failed",
         persistent_detail,
         pending=post_pending,
-        extra={"previous_pending": pending},
+        extra={"previous_pending": pending, "attempt": _recover_attempts},
     )
-    _last_notify_drift_count = post_pending if post_pending is not None else pending
     return {
         "ok": False,
         "status": "recover_drift_persists",
@@ -878,6 +1074,7 @@ async def run_migration_drift_probe(
         "pending": post_pending,
         "previous_pending": pending,
         "auto_recover_enabled": True,
+        "attempts": _recover_attempts,
     }
 
 

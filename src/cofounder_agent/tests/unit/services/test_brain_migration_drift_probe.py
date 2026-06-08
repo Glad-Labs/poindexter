@@ -53,15 +53,41 @@ def _health_with_drift(pending: int, applied: int = 5, latest: str = "0121.py") 
     }
 
 
+def _settings_fetchval(**overrides):
+    """Key-aware ``pool.fetchval`` stub for the auto-recover settings.
+
+    The probe reads several app_settings via ``fetchval(query, key)``
+    (auto-recover, auto-sync, max-attempts). A single-return-value mock would
+    conflate them — so resolve by the key (2nd positional arg). Defaults:
+    auto-recover ON, auto-sync OFF (no real git), max-attempts 3.
+    """
+    values = {
+        mdp.AUTO_RECOVER_SETTING_KEY: "true",
+        mdp.AUTO_SYNC_SETTING_KEY: "false",
+        mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "3",
+    }
+    values.update(overrides)
+
+    async def _fv(_query, *args):
+        key = args[0] if args else None
+        return values.get(key)
+
+    return AsyncMock(side_effect=_fv)
+
+
 @pytest.fixture(autouse=True)
 def _reset_module_state():
     mdp._last_notify_drift_count = None
     mdp._last_relkind_notify_key = None
     mdp._last_recover_attempt_pending = None
+    mdp._recover_attempts = 0
+    mdp._recover_cycles_waited = 0
     yield
     mdp._last_notify_drift_count = None
     mdp._last_relkind_notify_key = None
     mdp._last_recover_attempt_pending = None
+    mdp._recover_attempts = 0
+    mdp._recover_cycles_waited = 0
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +285,7 @@ class TestDriftAutoRecoverEnabled:
         # Drift detected, auto-recover ON, restart succeeds, post-restart
         # health shows pending=0 → recovered status, no notify.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")  # auto-recover on
+        pool.fetchval = _settings_fetchval()  # auto-recover on, sync off
 
         notifies: list[dict] = []
         restart_calls: list[None] = []
@@ -306,12 +332,13 @@ class TestDriftAutoRecoverEnabled:
         assert "probe.migration_drift_recovered" in events_written
 
     @pytest.mark.asyncio
-    async def test_recover_drift_persists_escalates(self):
-        # Drift detected, auto-recover ON, restart succeeds, but
-        # post-restart drift is still > 0 (e.g. broken migration the
-        # runner refused to apply) → critical notify + audit.
+    async def test_recover_drift_persists_first_attempt_does_not_page(self):
+        # Drift detected, auto-recover ON, restart succeeds, but post-restart
+        # drift is still > 0. The FIRST failed attempt must NOT page — we still
+        # have backoff budget. Page only happens after attempts are exhausted
+        # (see TestRecoverBackoffAndSync). One restart, zero notifies.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")
+        pool.fetchval = _settings_fetchval()
 
         notifies: list[dict] = []
         restart_calls: list[None] = []
@@ -335,16 +362,15 @@ class TestDriftAutoRecoverEnabled:
 
         assert summary["ok"] is False
         assert summary["status"] == "recover_drift_persists"
+        assert summary["attempts"] == 1
         assert len(restart_calls) == 1
-        assert len(notifies) == 1
-        assert notifies[0]["severity"] == "critical"
-        assert "PERSISTS" in notifies[0]["title"]
+        assert notifies == [], "first failed attempt must not page"
 
     @pytest.mark.asyncio
     async def test_recover_restart_fails_escalates(self):
         # docker restart itself fails → critical notify, no health re-check.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")
+        pool.fetchval = _settings_fetchval()
 
         notifies: list[dict] = []
         wait_calls: list[None] = []
@@ -377,7 +403,7 @@ class TestDriftAutoRecoverEnabled:
         # Restart succeeded but worker never reports healthy within
         # RESTART_WAIT_SECONDS → critical notify.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")
+        pool.fetchval = _settings_fetchval()
 
         notifies: list[dict] = []
 
@@ -400,16 +426,13 @@ class TestDriftAutoRecoverEnabled:
 
 
 @pytest.mark.unit
-class TestPersistentDriftCircuitBreaker:
-    """Cross-cycle circuit breaker (2026-06-08 regression).
+class TestRecoverBackoffAndSync:
+    """Genuine self-heal (2026-06-08, supersedes the binary circuit breaker).
 
-    When auto-recover is ON but a restart can't clear drift (a migration the
-    runner won't apply, or a checkout the restart can't change), the probe
-    must NOT restart the worker + page CRITICAL every 5-min cycle. After the
-    first failed recovery for a given pending count, later cycles with the
-    SAME count suppress both the restart and the page until the count changes
-    or clears. This closes the 131-pages-in-24h storm where an untracked
-    migration scaffold pinned ``pending`` at 1 forever.
+    Auto-recover now (optionally) resyncs a dedicated deploy checkout, then
+    restarts, retrying with EXPONENTIAL BACKOFF up to ``max_attempts`` and
+    paging exactly ONCE — only after attempts are exhausted (the last resort).
+    Suppression is never the first response.
     """
 
     @staticmethod
@@ -430,47 +453,65 @@ class TestPersistentDriftCircuitBreaker:
         }
 
     @pytest.mark.asyncio
-    async def test_persistent_drift_restarts_and_pages_only_once(self):
+    async def test_exponential_backoff_then_page_once(self):
+        # max_attempts=3, persistent drift. Expect exactly 3 restart attempts
+        # spaced by exponential idle cycles (wait 1, then 2), then exactly ONE
+        # critical page at exhaustion, then quiet.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")  # auto-recover on
-
+        pool.fetchval = _settings_fetchval(
+            **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "3"}
+        )
         notifies: list[dict] = []
         restart_calls: list[None] = []
-        kwargs = self._persist_kwargs(notifies, restart_calls, pending=1)
+        kw = self._persist_kwargs(notifies, restart_calls, pending=1)
 
-        # Cycle 1: detect → restart → persists → 1 critical page.
-        first = await mdp.run_migration_drift_probe(pool, **kwargs)
-        assert first["status"] == "recover_drift_persists"
-        assert len(restart_calls) == 1
+        statuses = [
+            (await mdp.run_migration_drift_probe(pool, **kw))["status"]
+            for _ in range(8)
+        ]
+
+        assert statuses == [
+            "recover_drift_persists",   # attempt 1 (immediate)
+            "recover_backoff_waiting",  # wait 2^0 = 1 cycle
+            "recover_drift_persists",   # attempt 2
+            "recover_backoff_waiting",  # wait 2^1 = 2 cycles ...
+            "recover_backoff_waiting",
+            "recover_drift_persists",   # attempt 3
+            "recover_exhausted",        # attempts exhausted → page
+            "recover_exhausted",        # ... and stay quiet
+        ], statuses
+        assert len(restart_calls) == 3
         assert len(notifies) == 1
         assert notifies[0]["severity"] == "critical"
-
-        # Cycle 2: same pending → SUPPRESSED. No second restart, no second page.
-        second = await mdp.run_migration_drift_probe(pool, **kwargs)
-        assert second["status"] == "recover_suppressed"
-        assert second["ok"] is False
-        assert len(restart_calls) == 1, "must not restart the worker again"
-        assert len(notifies) == 1, "must not re-page on unchanged drift"
-
-        # Cycle 3: still same → still suppressed.
-        third = await mdp.run_migration_drift_probe(pool, **kwargs)
-        assert third["status"] == "recover_suppressed"
-        assert len(restart_calls) == 1
-        assert len(notifies) == 1
+        assert "UNRESOLVED" in notifies[0]["title"]
 
     @pytest.mark.asyncio
-    async def test_suppressed_cycle_still_audits_detection(self):
-        # The detection audit fires every cycle even while suppressed, so the
-        # incident timeline stays complete.
+    async def test_no_repage_after_exhaustion(self):
+        # max_attempts=1: attempt once, then exhausted+page once, then quiet.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")
+        pool.fetchval = _settings_fetchval(
+            **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "1"}
+        )
         notifies: list[dict] = []
         restart_calls: list[None] = []
-        kwargs = self._persist_kwargs(notifies, restart_calls, pending=1)
+        kw = self._persist_kwargs(notifies, restart_calls, pending=1)
 
-        await mdp.run_migration_drift_probe(pool, **kwargs)  # cycle 1
+        for _ in range(4):
+            await mdp.run_migration_drift_probe(pool, **kw)
+
+        assert len(restart_calls) == 1
+        assert len(notifies) == 1  # paged once at exhaustion, never again
+
+    @pytest.mark.asyncio
+    async def test_exhaustion_audits_suppressed(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            **{mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "1"}
+        )
+        kw = self._persist_kwargs([], [], pending=1)
+        await mdp.run_migration_drift_probe(pool, **kw)  # attempt
         pool.execute.reset_mock()
-        await mdp.run_migration_drift_probe(pool, **kwargs)  # cycle 2 (suppressed)
+        await mdp.run_migration_drift_probe(pool, **kw)  # exhausted
 
         events = [
             call.args[1] for call in pool.execute.call_args_list
@@ -480,11 +521,79 @@ class TestPersistentDriftCircuitBreaker:
         assert "probe.migration_drift_recover_suppressed" in events
 
     @pytest.mark.asyncio
-    async def test_count_change_re_attempts_recovery(self):
-        # A new migration arriving (pending 1 → 2) is a changed situation, so
-        # the breaker re-arms and the probe attempts recovery again.
+    async def test_sync_called_before_restart_when_enabled(self):
+        # auto-sync ON → the deploy resync runs BEFORE the restart, at the
+        # configured deploy path.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")
+        pool.fetchval = _settings_fetchval(
+            **{mdp.AUTO_SYNC_SETTING_KEY: "true"}
+        )
+        order: list[tuple] = []
+
+        def fake_sync(path):
+            order.append(("sync", path))
+            return True, "synced"
+
+        def fake_restart():
+            order.append(("restart", None))
+            return True, "Restarted"
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=fake_restart,
+            sync_fn=fake_sync,
+            wait_fn=lambda: (True, _health_with_drift(0)),  # recovers
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert [step[0] for step in order] == ["sync", "restart"]
+        assert order[0][1] == mdp._DEFAULT_DEPLOY_PATH
+
+    @pytest.mark.asyncio
+    async def test_sync_not_called_when_disabled(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()  # auto-sync OFF (default)
+        sync_calls: list[str] = []
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=lambda: (True, "Restarted"),
+            sync_fn=lambda p: (sync_calls.append(p) or (True, "")),
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert sync_calls == []
+
+    @pytest.mark.asyncio
+    async def test_sync_failure_still_restarts(self):
+        # A failed resync is best-effort — the restart still happens (a restart
+        # alone may suffice; if not, backoff/exhaustion handle it).
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            **{mdp.AUTO_SYNC_SETTING_KEY: "true"}
+        )
+        restart_calls: list[None] = []
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            sync_fn=lambda p: (False, "git reset failed"),
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert len(restart_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_count_change_resets_episode(self):
+        # A new migration arriving (pending 1 → 2) is a fresh episode → the
+        # attempt counters reset and recovery is attempted immediately again.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval()
         notifies: list[dict] = []
         restart_calls: list[None] = []
 
@@ -493,37 +602,34 @@ class TestPersistentDriftCircuitBreaker:
         )
         assert len(restart_calls) == 1
 
-        # Pending changed to 2 → retry (not suppressed).
         await mdp.run_migration_drift_probe(
             pool, **self._persist_kwargs(notifies, restart_calls, pending=2)
         )
-        assert len(restart_calls) == 2
+        assert len(restart_calls) == 2  # immediate retry on changed count
 
     @pytest.mark.asyncio
-    async def test_clear_then_new_drift_re_attempts_recovery(self):
-        # persist(1) → suppressed(1) → cleared(0) → fresh drift(1) must restart
-        # again: clearing re-arms the breaker.
+    async def test_clear_resets_episode(self):
+        # persist(1) → cleared(0) → fresh drift(1) attempts immediately again.
         pool = _make_pool()
-        pool.fetchval = AsyncMock(return_value="true")
+        pool.fetchval = _settings_fetchval()
         notifies: list[dict] = []
         restart_calls: list[None] = []
         persist = self._persist_kwargs(notifies, restart_calls, pending=1)
 
-        await mdp.run_migration_drift_probe(pool, **persist)  # cycle 1: restart
-        await mdp.run_migration_drift_probe(pool, **persist)  # cycle 2: suppressed
+        await mdp.run_migration_drift_probe(pool, **persist)  # attempt 1
         assert len(restart_calls) == 1
 
-        # Cycle 3: drift clears — no restart, breaker re-arms.
+        # Drift clears — no restart, episode resets.
         await mdp.run_migration_drift_probe(
             pool,
-            notify_fn=lambda **k: notifies.append(k),
+            notify_fn=lambda **k: None,
             restart_fn=lambda: (restart_calls.append(None) or (True, "")),
             wait_fn=lambda: (True, {}),
             health_fetcher=lambda: _health_with_drift(0),
         )
         assert len(restart_calls) == 1  # clear path never restarts
 
-        # Cycle 4: fresh drift at 1 → must attempt recovery again.
+        # Fresh drift → immediate attempt again.
         await mdp.run_migration_drift_probe(pool, **persist)
         assert len(restart_calls) == 2
 

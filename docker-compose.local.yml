@@ -312,6 +312,21 @@ services:
       # age check above. Pair with: app_settings.backup_watcher_sentinel_dir
       # = /host-backup-logs (default seeded by the migration).
       - ${USERPROFILE:-${HOME}}/.poindexter/logs:/host-backup-logs:ro
+      # Glad-Labs/poindexter#228 — DEDICATED deploy checkout for the
+      # migration-drift probe's genuine self-heal step. When
+      # app_settings.migration_drift_auto_sync_enabled=true the probe runs
+      # `git reset --hard origin/main` + `git clean -fd` HERE before
+      # restarting the worker, so the restart applies correct, un-polluted
+      # migration files (the 2026-06-07 drift storm was a stray untracked
+      # scaffold polluting the live checkout). RW because the probe resets it;
+      # SAFE because nothing else ever touches this checkout (no human, no
+      # scheduled agent), so reset --hard can never clobber uncommitted work.
+      # Ships DARK: auto_sync defaults false, and brain/migration_drift_probe.py
+      # `_sync_deploy_checkout` guards with `git rev-parse --is-inside-work-tree`
+      # — so until the operator runs scripts/setup-deploy-checkout.sh to clone
+      # here, an empty auto-created dir simply makes sync a graceful no-op that
+      # falls back to a plain restart. See docs/operations/migration-drift-self-heal.md.
+      - ${USERPROFILE:-${HOME}}/.poindexter/deploy/glad-labs-stack:/host-deploy:rw
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
