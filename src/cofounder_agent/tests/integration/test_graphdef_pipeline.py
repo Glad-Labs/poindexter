@@ -122,6 +122,29 @@ def test_canonical_blog_spec_compiles():
     assert compiled is not None
 
 
+def test_media_pipeline_spec_compiles():
+    """The Stage-2 media_pipeline spec (#689) compiles via the real compiler.
+
+    The media.load_scripts atom must resolve to a registered callable and the
+    wiring must form a valid LangGraph. Guards against the media_pipeline spec
+    drifting into a non-compileable shape (e.g. a renamed/removed atom).
+    """
+    from services import pipeline_architect
+    from services.atom_registry import discover
+    from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+
+    discover()  # register media.* atoms (auto-discovered under modules.content.atoms)
+
+    ok, errors = pipeline_architect._validate_spec(MEDIA_PIPELINE_GRAPH_DEF)
+    assert ok, f"media_pipeline spec failed validation: {errors}"
+
+    graph = pipeline_architect.build_graph_from_spec(
+        MEDIA_PIPELINE_GRAPH_DEF, pool=_make_fake_pool(), record_sink=[],
+    )
+    compiled = graph.compile()
+    assert compiled is not None
+
+
 # ---------------------------------------------------------------------------
 # Test 2 — content survives the graph_def run to finalize_task
 # ---------------------------------------------------------------------------
