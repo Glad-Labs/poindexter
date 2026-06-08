@@ -81,7 +81,17 @@ switch for restart-based recovery; also defaults `false`).
 ## Cutover (operator steps)
 
 Until these are done, the system is a behavior no-op: an empty `/host-deploy`
-makes the sync step a graceful no-op that falls back to a plain restart.
+makes the sync step a graceful no-op that falls back to a plain restart, and the
+worker still runs the dev checkout (so a clone reset wouldn't change its code).
+
+**Why the worker repoint matters.** The migration-drift probe resets the deploy
+_clone_ and restarts the _worker_. That only resolves drift if the worker
+actually runs from the clone. By default the worker (and the other 4
+src-mounting services) bind-mount the live dev checkout, so the relocation is
+the step that closes the loop. It's controlled by one env var,
+`POINDEXTER_DEPLOY_ROOT` (see the comment at the worker's `:/app` mount in
+`docker-compose.local.yml`): unset → dev checkout (default, what fresh operators
+get); set → the deploy clone.
 
 ```bash
 # 1. Create the dedicated deploy clone at ~/.poindexter/deploy/glad-labs-stack
@@ -90,14 +100,34 @@ bash scripts/setup-deploy-checkout.sh
 # 2. Recreate the brain so the /host-deploy RW mount attaches
 docker compose -f docker-compose.local.yml up -d --force-recreate brain-daemon
 
-# 3. (optional) keep origin/main fresh for the probe to reset to.
-#    Schedule this however you like (Task Scheduler / cron / a brain job):
-git -C ~/.poindexter/deploy/glad-labs-stack fetch origin main --prune
+# 3. Keep the clone advancing to origin/main as merges land (fetch + reset).
+#    Registers a Windows Scheduled Task that runs every 10 min and syncs now:
+pwsh scripts/deploy-checkout-sync.ps1 -Install
 
-# 4. Enable genuine self-heal
+# 4. Repoint the stack's runtime code mounts at the clone, then recreate the
+#    src-mounting services so they pick up the new mount. Set the var in .env
+#    so it persists across `docker compose up` / reboots:
+echo 'POINDEXTER_DEPLOY_ROOT=C:/Users/<you>/.poindexter/deploy/glad-labs-stack' >> .env
+docker compose -f docker-compose.local.yml up -d --force-recreate \
+  poindexter-worker poindexter-pipeline-bot poindexter-prefect-worker \
+  poindexter-voice-agent-livekit poindexter-voice-agent-claude-code
+
+# 5. Enable genuine self-heal
 poindexter set migration_drift_auto_recover_enabled true   # if not already
 poindexter set migration_drift_auto_sync_enabled true
 ```
+
+**Rollback of the repoint:** remove the `POINDEXTER_DEPLOY_ROOT` line from `.env`
+and re-run the step-4 `up --force-recreate` — the mounts fall back to the dev
+checkout. `docker restart` keeps a container's existing mount, so the probe's
+restart is unaffected either way.
+
+**Note — normal (non-migration) deploys after the repoint:** the 10-min sync
+keeps the clone's _code_ at origin/main, but a running service only loads new
+code on its next restart. Migrations self-heal (the probe restarts the worker);
+other code changes load on the service's next natural/manual restart. Making the
+sync also restart services (continuous deploy) is a deliberate future step, not
+wired here.
 
 ## Verify
 

@@ -475,11 +475,23 @@ services:
       - ${USERPROFILE:-.}/sensor_logs:/host/sensor_logs:ro
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
-      - ./src/cofounder_agent:/app:ro
+      #
+      # POINDEXTER_DEPLOY_ROOT (Glad-Labs/poindexter#228) — the source root for
+      # ALL runtime code mounts (this :/app and the ./brain mounts below + in the
+      # other 4 src-mounting services). UNSET → '.' → the live dev checkout
+      # (today's behavior, zero change, what fresh operators get). SET to the
+      # dedicated deploy clone (~/.poindexter/deploy/glad-labs-stack) → the worker
+      # runs pinned origin/main code, so the migration-drift probe's
+      # `git reset --hard origin/main` on that clone + `docker restart` actually
+      # changes what the worker runs. ONE var moves the whole stack together (no
+      # split-brain); `docker restart` keeps a container's existing mount, so the
+      # probe's restart works regardless. Build contexts intentionally stay on '.'
+      # (you build from the dev tree). See docs/operations/migration-drift-self-heal.md.
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       # Mount brain alongside /app (which is :ro and can't host a child
       # mount) and tell voice_agent_*.py where to find it via
       # POINDEXTER_BRAIN_PARENT below.
-      - ./brain:/opt/poindexter/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
       # NOTE: The ``./.git:/app/.git:ro`` mount that #259/#348 added is
       # gone -- after the Docker Desktop upgrade ~2026-04-30 the
@@ -565,11 +577,11 @@ services:
       PYTHONPATH: "/app:/opt/poindexter"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
-      - ./src/cofounder_agent:/app:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       # Mount brain alongside /app (which is :ro and can't host a child
       # mount) and tell voice_agent_*.py where to find it via
       # POINDEXTER_BRAIN_PARENT below.
-      - ./brain:/opt/poindexter/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -745,8 +757,8 @@ services:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
-      - ./src/cofounder_agent:/app:ro
-      - ./brain:/opt/poindexter/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
     extra_hosts:
       # Ollama + SDXL servers run on the host machine, not in the
@@ -1139,7 +1151,7 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - ./scripts/auto-embed.py:/app/auto-embed.py:ro
-      - ./brain:/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
       - ${USERPROFILE:-.}/.claude/projects:/memory/claude-projects:ro
       - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
       # Persist ~/.gladlabs/auto-embed.log to the host so `tail -f` works
@@ -1419,7 +1431,7 @@ services:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
     volumes:
       - ./scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
-      - ./brain:/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Healthcheck (issue #319): catches the silent-hang failure mode where the
@@ -1508,11 +1520,11 @@ services:
       # the compose service name on the shared poindexter-network.
       POINDEXTER_API_URL: "http://worker:8002"
     volumes:
-      - ./src/cofounder_agent:/app:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       # Mount brain alongside /app (which is :ro and can't host a child
       # mount) and tell voice_agent_*.py where to find it via
       # POINDEXTER_BRAIN_PARENT below.
-      - ./brain:/opt/poindexter/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       # Persist Whisper / Silero / Kokoro model weights across rebuilds.
       # First boot downloads ~470 MB total; cached after that.
       # poindexter#488 — container now runs as the non-root `voiceagent`
@@ -1608,9 +1620,9 @@ services:
       # container. Use the compose service name on the shared network.
       POINDEXTER_API_URL: "http://worker:8002"
     volumes:
-      - ./src/cofounder_agent:/app:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       # Mount brain alongside /app (which is :ro and can't host a child mount).
-      - ./brain:/opt/poindexter/brain:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       # Share the model-weight cache with voice-agent-livekit (named volume,
       # so Whisper / Silero / Kokoro weights download once for both bots).
       - voice-agent-cache:/home/voiceagent/.cache
