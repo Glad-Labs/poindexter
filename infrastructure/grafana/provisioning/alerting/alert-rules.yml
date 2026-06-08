@@ -372,27 +372,30 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Page views dropped over 50% compared to previous day"
-          description: "Today: {{ $values.B.Value }} ratio vs yesterday. Possible site issue, SEO penalty, or CDN problem."
+          summary: "Page views dropped over 50% compared to 7-day rolling average"
+          description: "Today: {{ $values.B.Value }} ratio vs 7-day avg. Possible site issue, SEO penalty, or CDN problem."
         data:
           - refId: A
             datasourceUid: local-brain-db
             relativeTimeRange:
-              from: 172800
+              from: 777600
               to: 0
             model:
               rawSql: >
                 WITH today AS (
                   SELECT COUNT(*) as cnt FROM page_views
                   WHERE created_at > NOW() - INTERVAL '24 hours'
-                ), yesterday AS (
-                  SELECT COUNT(*) as cnt FROM page_views
-                  WHERE created_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours'
+                ), baseline AS (
+                  SELECT GREATEST(AVG(daily_cnt), 1.0) as avg_cnt
+                  FROM (
+                    SELECT DATE(created_at) as day, COUNT(*) as daily_cnt
+                    FROM page_views
+                    WHERE created_at BETWEEN NOW() - INTERVAL '8 days' AND NOW() - INTERVAL '24 hours'
+                    GROUP BY DATE(created_at)
+                  ) daily
                 )
-                SELECT CASE WHEN yesterday.cnt = 0 THEN 1.0
-                            ELSE today.cnt::float / yesterday.cnt::float
-                       END as ratio
-                FROM today, yesterday
+                SELECT today.cnt::float / baseline.avg_cnt as ratio
+                FROM today, baseline
               format: table
               editorMode: code
           - refId: B
