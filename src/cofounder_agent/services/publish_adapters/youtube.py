@@ -266,6 +266,18 @@ class YouTubePublishAdapter:
         description_clean = (description or "").strip()[:5000]
         tags_clean = [str(t).strip() for t in (tags or []) if str(t).strip()][:30]
 
+        # YouTube Shorts classification: when the caller flags this upload as
+        # a Short (9:16 vertical, ≤60s — the render pipeline already produces
+        # 1080×1920), YouTube keys off a ``#Shorts`` marker in the title or
+        # description. Append it idempotently (case-insensitive — never a
+        # second copy) while honouring the 5000-char description cap by
+        # trimming the body to leave room for the marker.
+        if bool(kwargs.get("shorts", False)) and "#shorts" not in description_clean.lower():
+            shorts_marker = "\n\n#Shorts"
+            description_clean = (
+                description_clean[: 5000 - len(shorts_marker)].rstrip() + shorts_marker
+            )
+
         category_id = str(
             kwargs.get("category_id")
             or self._get("default_category_id", _DEFAULT_CATEGORY),

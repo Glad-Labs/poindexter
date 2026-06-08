@@ -367,6 +367,93 @@ class TestPublishTruncation:
         assert captured["body"]["snippet"]["tags"] == ["a", "b"]
 
 
+class TestPublishShorts:
+    """YouTube classifies an upload as a Short by the ``#Shorts`` marker in
+    the title/description plus 9:16 aspect + short duration. The render
+    pipeline already produces 1080×1920; the adapter's job is to ensure the
+    marker is present when the caller flags ``shorts=True`` — idempotently and
+    within the 5000-char description cap."""
+
+    @staticmethod
+    def _capture_adapter(tmp_path, monkeypatch):
+        adapter = _make_adapter(enabled=True, secrets=_FULL_SECRETS)
+        monkeypatch.setattr(
+            adapter, "_build_credentials",
+            staticmethod(lambda secrets: MagicMock()),
+        )
+        captured: dict[str, Any] = {}
+
+        def fake_upload(*, credentials, media_path, body):
+            captured["body"] = body
+            return {"id": "x", "snippet": {}, "status": {}}
+
+        monkeypatch.setattr(
+            adapter, "_do_resumable_upload_blocking",
+            staticmethod(fake_upload),
+        )
+        return adapter, captured
+
+    @pytest.mark.asyncio
+    async def test_shorts_flag_appends_marker(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture_adapter(tmp_path, monkeypatch)
+        await adapter.publish(
+            media_path=_make_media_file(tmp_path),
+            title="Clip",
+            description="watch this clip",
+            shorts=True,
+        )
+        desc = captured["body"]["snippet"]["description"]
+        assert "watch this clip" in desc
+        assert desc.endswith("#Shorts")
+
+    @pytest.mark.asyncio
+    async def test_shorts_marker_not_duplicated(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture_adapter(tmp_path, monkeypatch)
+        await adapter.publish(
+            media_path=_make_media_file(tmp_path),
+            title="Clip",
+            description="already tagged #shorts in the body",
+            shorts=True,
+        )
+        desc = captured["body"]["snippet"]["description"]
+        # Case-insensitive idempotency — never append a second marker.
+        assert desc.lower().count("#shorts") == 1
+
+    @pytest.mark.asyncio
+    async def test_non_shorts_upload_has_no_marker(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture_adapter(tmp_path, monkeypatch)
+        await adapter.publish(
+            media_path=_make_media_file(tmp_path),
+            title="Episode",
+            description="a long-form video",
+            shorts=False,
+        )
+        assert "#Shorts" not in captured["body"]["snippet"]["description"]
+
+    @pytest.mark.asyncio
+    async def test_shorts_default_off_when_kwarg_omitted(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture_adapter(tmp_path, monkeypatch)
+        await adapter.publish(
+            media_path=_make_media_file(tmp_path),
+            title="Episode",
+            description="a long-form video",
+        )
+        assert "#Shorts" not in captured["body"]["snippet"]["description"]
+
+    @pytest.mark.asyncio
+    async def test_shorts_marker_respects_5000_cap(self, tmp_path, monkeypatch):
+        adapter, captured = self._capture_adapter(tmp_path, monkeypatch)
+        await adapter.publish(
+            media_path=_make_media_file(tmp_path),
+            title="Clip",
+            description="z" * 7000,  # over the cap before the marker is added
+            shorts=True,
+        )
+        desc = captured["body"]["snippet"]["description"]
+        assert len(desc) <= 5000
+        assert desc.endswith("#Shorts")
+
+
 class TestPublishScheduling:
     @pytest.mark.asyncio
     async def test_scheduled_at_forces_private_with_publish_at(self, tmp_path, monkeypatch):

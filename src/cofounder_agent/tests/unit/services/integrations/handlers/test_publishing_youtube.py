@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from plugins.publish_adapter import PublishResult
 from services.integrations import registry
 from services.integrations.handlers import publishing_youtube  # noqa: F401  side-effect: decorator
 
@@ -39,27 +40,24 @@ def stub_site_config() -> Any:
     return sc
 
 
-def _publish_result(**overrides) -> Any:
-    """Build a fake PublishResult — duck-typed so we don't import the
-    real dataclass (keeps tests light + tolerant of adapter refactors).
+def _publish_result(**overrides) -> PublishResult:
+    """Build a real :class:`PublishResult` — NOT a duck-type.
 
-    All known fields default to concrete values (not MagicMock auto-
-    attributes), so a None override actually surfaces as None to the
-    handler's ``getattr(..., default)`` fallback logic.
+    Using the genuine dataclass is deliberate: the handler reads
+    ``result.external_id`` / ``result.public_url`` and a duck-typed
+    stub with invented field names (``platform_post_id`` / ``url``)
+    would silently mask a contract drift between the adapter and the
+    shim — which is exactly the bug (#682) this test now guards.
     """
     base = {
-        "success": True,
         "platform": "youtube",
-        "platform_post_id": "abc123",
-        "video_id": None,           # alternate id field the handler also checks
-        "url": "https://youtube.com/watch?v=abc123",
+        "success": True,
+        "external_id": "abc123",
+        "public_url": "https://youtube.com/watch?v=abc123",
         "error": None,
     }
     base.update(overrides)
-    obj = MagicMock(spec_set=list(base.keys()))
-    for k, v in base.items():
-        setattr(obj, k, v)
-    return obj
+    return PublishResult(**base)
 
 
 async def test_handler_is_registered() -> None:
@@ -123,11 +121,56 @@ async def test_handler_dispatches_to_adapter_with_payload_fields(stub_site_confi
     assert call_kwargs["tags"] == ["ai", "automation"]
 
     # Result is the flattened dict every other publishing.* handler returns.
+    # The shim MUST map the real PublishResult fields — external_id → post_id
+    # and public_url → url. Reading the (non-existent) ``platform_post_id`` /
+    # ``url`` attributes silently yielded None in prod (#682).
     assert result["success"] is True
     assert result["platform"] == "youtube"
     assert result["post_id"] == "abc123"
     assert result["url"] == "https://youtube.com/watch?v=abc123"
     assert result["error"] is None
+
+
+async def test_handler_threads_shorts_flag_to_adapter(stub_site_config) -> None:
+    """A ``shorts: true`` payload key must reach the adapter so it can
+    inject YouTube's ``#Shorts`` classification marker. The long-video
+    path (no key / false) leaves it off."""
+    handler = registry.lookup("publishing", "youtube")
+    fake_adapter = MagicMock()
+    fake_adapter.publish = AsyncMock(return_value=_publish_result())
+
+    with patch(
+        "services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        return_value=fake_adapter,
+    ):
+        await handler(
+            {"media_path": "/tmp/short.mp4", "title": "Clip", "shorts": True},
+            site_config=stub_site_config,
+            row={"name": "youtube_main"},
+            pool=None,
+        )
+
+    assert fake_adapter.publish.await_args.kwargs["shorts"] is True
+
+
+async def test_handler_defaults_shorts_false(stub_site_config) -> None:
+    """No ``shorts`` key → the adapter is told this is a long upload."""
+    handler = registry.lookup("publishing", "youtube")
+    fake_adapter = MagicMock()
+    fake_adapter.publish = AsyncMock(return_value=_publish_result())
+
+    with patch(
+        "services.integrations.handlers.publishing_youtube.YouTubePublishAdapter",
+        return_value=fake_adapter,
+    ):
+        await handler(
+            {"media_path": "/tmp/long.mp4", "title": "Episode"},
+            site_config=stub_site_config,
+            row={"name": "youtube_main"},
+            pool=None,
+        )
+
+    assert fake_adapter.publish.await_args.kwargs["shorts"] is False
 
 
 async def test_handler_propagates_adapter_failure(stub_site_config) -> None:
@@ -141,7 +184,8 @@ async def test_handler_propagates_adapter_failure(stub_site_config) -> None:
         return_value=_publish_result(
             success=False,
             error="youtube adapter disabled in app_settings",
-            platform_post_id=None,
+            external_id=None,
+            public_url=None,
         ),
     )
 

@@ -19,6 +19,7 @@ Payload shape::
         "tags": ["ai", "automation"],
         "privacy": "public" | "unlisted" | "private",
         "made_for_kids": false,
+        "shorts": false,                              # 9:16 vertical short — appends a #Shorts marker
         "post_id": "<uuid>",                          # for audit linkage
     }
 
@@ -87,19 +88,25 @@ async def youtube(
         category_id=payload.get("category_id"),
         privacy=payload.get("privacy"),
         made_for_kids=payload.get("made_for_kids"),
+        # Vertical short-form (9:16, ≤60s) gets YouTube's ``#Shorts``
+        # classification marker injected by the adapter. Long uploads
+        # leave it off.
+        shorts=bool(payload.get("shorts", False)),
         _pool=pool,
         _site_config=site_config,
     )
 
-    # PublishResult is a dataclass; .__dict__ is the canonical
-    # serialization. Hand-pick the fields the social_poster + audit
-    # log actually use rather than splat the whole thing — keeps the
-    # contract narrow.
+    # Map the PublishResult dataclass to the narrow dict shape the
+    # social_poster + audit log consume. Use DIRECT attribute access
+    # (not getattr-with-default): the contract is the PublishResult
+    # dataclass, so a field rename should fail loud here rather than
+    # silently degrade to None — that silent degrade was bug #682,
+    # where the shim read the non-existent ``platform_post_id`` / ``url``
+    # and recorded post_id=None / url=None on every successful upload.
     return {
-        "success": bool(getattr(result, "success", False)),
+        "success": bool(result.success),
         "platform": "youtube",
-        "post_id": getattr(result, "platform_post_id", None)
-            or getattr(result, "video_id", None),
-        "url": getattr(result, "url", None),
-        "error": getattr(result, "error", None),
+        "post_id": result.external_id,
+        "url": result.public_url,
+        "error": result.error,
     }
