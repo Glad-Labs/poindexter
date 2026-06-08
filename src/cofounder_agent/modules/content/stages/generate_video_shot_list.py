@@ -71,6 +71,24 @@ def _estimate_target_duration(podcast_script: str) -> float:
     return max(20.0, min(estimated, 300.0))
 
 
+_DEFAULT_SHORT_DURATION_S = 20.0  # Fallback when short script length unknown
+
+
+def _estimate_short_duration(short_script: str) -> float:
+    """Estimate the short-form clip duration from word count.
+
+    Same ~2.5 words/second estimate as the long-form director, but
+    clamped to [15, 45] seconds — the short-form retention window. Below
+    15s isn't enough to land a hook + payoff; above 45s a "short" stops
+    being short and viewers scroll. If empty, return the 20s default.
+    """
+    if not short_script:
+        return _DEFAULT_SHORT_DURATION_S
+    word_count = len(short_script.split())
+    estimated = word_count / _WORDS_PER_SECOND
+    return max(15.0, min(estimated, 45.0))
+
+
 def _extract_json_object(text: str) -> str | None:
     """Strip prose / code-fence wrappers and return the JSON object body.
 
@@ -136,10 +154,167 @@ class GenerateVideoShotListStage:
 
     name = "generate_video_shot_list"
     description = "Director — produce shot list (sources, prompts, durations) for the post's video"
-    # One LLM call up to 120s. Director output is structured JSON; small
-    # generations. Budget 180 for slow disks + cold model loads.
-    timeout_seconds = 180
+    # Up to two LLM calls (long + short) up to 120s each. Director output
+    # is structured JSON; small generations. Budget 240 for slow disks +
+    # cold model loads + the second short-form call.
+    timeout_seconds = 240
     halts_on_failure = False  # Director failure shouldn't block the post
+
+    async def _produce_shot_list(
+        self,
+        *,
+        platform: Any,
+        pool: Any,
+        model: str,
+        script: str,
+        target_duration_s: float,
+        prompt_key: str,
+        task_id: str | None,
+        now_iso: str,
+        title: str,
+        content_text: str,
+        site_name: str,
+    ) -> dict[str, Any] | None:
+        """Render the director prompt, dispatch the LLM, validate the result.
+
+        Returns the validated ``shot_list.model_dump(mode="json")`` on
+        success or ``None`` on any failure (logging the same audit events
+        the inline flow used to). Shared by the long-form
+        (``video.director_v1``, ``podcast_script=...``) and short-form
+        (``video.director_short_v1``, ``short_script=...``) calls — the
+        template variable the script binds to is keyed off ``prompt_key``.
+        """
+        # The two director prompts name the narration script differently:
+        # the long prompt uses {podcast_script}, the short prompt uses
+        # {short_script}. Bind the script under the right template var.
+        script_param = (
+            "short_script" if prompt_key == "video.director_short_v1"
+            else "podcast_script"
+        )
+
+        # Render the director prompt via UnifiedPromptManager so edits
+        # land in Langfuse + the YAML defaults stay in repo control.
+        try:
+            from services.prompt_manager import get_prompt_manager
+            pm = get_prompt_manager()
+            rendered_prompt = pm.get_prompt(
+                prompt_key,
+                title=title,
+                content=content_text,
+                target_duration_s=f"{target_duration_s:.1f}",
+                model=model,
+                now_iso=now_iso,
+                # Operator brand templated into the director persona via
+                # {site_name} (migrated to skills/content/video-director).
+                site_name=site_name,
+                **{script_param: script},
+            )
+        except Exception as exc:
+            logger.warning(
+                "[VIDEO_DIRECTOR] prompt render failed (%s, key=%s) — skipping",
+                exc, prompt_key,
+            )
+            await _log_audit(
+                pool,
+                event_type="video_director.shot_list_failed",
+                task_id=task_id,
+                details={"phase": "prompt_render", "prompt_key": prompt_key, "error": str(exc)},
+                severity="warning",
+            )
+            return None
+
+        # Dispatch the LLM call (Seam 1 Wave 3d, #667 — via the handle).
+        from services.gpu_scheduler import gpu
+
+        director_output = ""
+        try:
+            async with gpu.lock(
+                "ollama", model=model,
+                task_id=task_id, phase="video_director",
+            ):
+                result = await platform.dispatch.complete(
+                    pool=pool,
+                    messages=[{"role": "user", "content": rendered_prompt}],
+                    model=model,
+                    tier="standard",
+                    timeout_s=120,
+                    temperature=0.4,  # Lower temp — director should be decisive
+                    max_tokens=3072,
+                )
+            director_output = (getattr(result, "text", "") or "").strip()
+        except Exception as exc:
+            logger.warning(
+                "[VIDEO_DIRECTOR] LLM dispatch failed (%s, key=%s) — skipping",
+                exc, prompt_key,
+            )
+            await _log_audit(
+                pool,
+                event_type="video_director.shot_list_failed",
+                task_id=task_id,
+                details={"phase": "llm_dispatch", "prompt_key": prompt_key, "error": str(exc)},
+                severity="warning",
+            )
+            return None
+
+        # Parse + validate. The schema enforces all the pacing rules
+        # (no >2 consecutive same source, duration sum matches total,
+        # idx contiguous from 0). Validation failures here mean the
+        # director produced garbage; we record + skip.
+        json_body = _extract_json_object(director_output)
+        if not json_body:
+            await _log_audit(
+                pool,
+                event_type="video_director.shot_list_failed",
+                task_id=task_id,
+                details={
+                    "phase": "json_extract",
+                    "prompt_key": prompt_key,
+                    "raw_output_preview": director_output[:500],
+                },
+                severity="warning",
+            )
+            return None
+
+        try:
+            parsed = json.loads(json_body)
+            shot_list = VideoShotList.model_validate(parsed)
+        except Exception as exc:
+            await _log_audit(
+                pool,
+                event_type="video_director.shot_list_failed",
+                task_id=task_id,
+                details={
+                    "phase": "schema_validate",
+                    "prompt_key": prompt_key,
+                    "error": str(exc),
+                    "raw_output_preview": json_body[:500],
+                },
+                severity="warning",
+            )
+            return None
+
+        await _log_audit(
+            pool,
+            event_type="video_director.shot_list_produced",
+            task_id=task_id,
+            details={
+                "model": model,
+                "prompt_key": prompt_key,
+                "aspect": shot_list.aspect,
+                "shot_count": len(shot_list.shots),
+                "total_duration_s": shot_list.total_duration_s,
+                "sources": [s.source for s in shot_list.shots],
+            },
+        )
+        logger.info(
+            "[VIDEO_DIRECTOR] %s: %d shots produced (aspect=%s, total=%.1fs, sources=%s)",
+            prompt_key,
+            len(shot_list.shots),
+            shot_list.aspect,
+            shot_list.total_duration_s,
+            ",".join(s.source for s in shot_list.shots),
+        )
+        return shot_list.model_dump(mode="json")
 
     async def execute(
         self,
@@ -198,156 +373,82 @@ class GenerateVideoShotListStage:
         if model == "auto":
             model = "llama3:latest"
 
-        target_duration_s = _estimate_target_duration(podcast_script)
         now_iso = datetime.now(timezone.utc).isoformat()
+        site_name = cfg.get("site_name") or ""
 
-        # Render the director prompt via UnifiedPromptManager so edits
-        # land in Langfuse + the YAML defaults stay in repo control.
-        try:
-            from services.prompt_manager import get_prompt_manager
-            pm = get_prompt_manager()
-            rendered_prompt = pm.get_prompt(
-                "video.director_v1",
-                title=title,
-                content=content_text,
-                podcast_script=podcast_script,
-                target_duration_s=f"{target_duration_s:.1f}",
+        # LONG (unchanged behavior): the 16:9 director over podcast_script.
+        long_shot_list = await self._produce_shot_list(
+            platform=platform,
+            pool=pool,
+            model=model,
+            script=podcast_script,
+            target_duration_s=_estimate_target_duration(podcast_script),
+            prompt_key="video.director_v1",
+            task_id=task_id,
+            now_iso=now_iso,
+            title=title,
+            content_text=content_text,
+            site_name=site_name,
+        )
+
+        if long_shot_list is None:
+            # The long-form director failed — the stage is non-critical, so
+            # record + skip (per-phase audit was already logged in the helper).
+            return StageResult(
+                ok=True,
+                detail="director did not produce a long-form shot list",
+                metrics={"failed": True},
+            )
+
+        # SHORT (new, best-effort): the purpose-built 9:16 vertical director
+        # over short_summary_script. A short failure must NOT affect the long
+        # result or halt the stage — so we only add short_shot_list when the
+        # short script is present AND the helper returns a validated dict.
+        short_summary_script = context.get("short_summary_script", "")
+        short_shot_list = None
+        if short_summary_script:
+            short_shot_list = await self._produce_shot_list(
+                platform=platform,
+                pool=pool,
                 model=model,
+                script=short_summary_script,
+                target_duration_s=_estimate_short_duration(short_summary_script),
+                prompt_key="video.director_short_v1",
+                task_id=task_id,
                 now_iso=now_iso,
-                # Operator brand templated into the director persona via
-                # {site_name} (migrated to skills/content/video-director).
-                site_name=cfg.get("site_name") or "",
-            )
-        except Exception as exc:
-            logger.warning(
-                "[VIDEO_DIRECTOR] prompt render failed (%s) — skipping",
-                exc,
-            )
-            await _log_audit(
-                pool,
-                event_type="video_director.shot_list_failed",
-                task_id=task_id,
-                details={"phase": "prompt_render", "error": str(exc)},
-                severity="warning",
-            )
-            return StageResult(
-                ok=True,
-                detail=f"prompt render failed: {exc}",
-                metrics={"failed": True},
-            )
-
-        # Dispatch the LLM call (Seam 1 Wave 3d, #667 — via the handle).
-        from services.gpu_scheduler import gpu
-
-        director_output = ""
-        try:
-            async with gpu.lock(
-                "ollama", model=model,
-                task_id=task_id, phase="video_director",
-            ):
-                result = await platform.dispatch.complete(
-                    pool=pool,
-                    messages=[{"role": "user", "content": rendered_prompt}],
-                    model=model,
-                    tier="standard",
-                    timeout_s=120,
-                    temperature=0.4,  # Lower temp — director should be decisive
-                    max_tokens=3072,
-                )
-            director_output = (getattr(result, "text", "") or "").strip()
-        except Exception as exc:
-            logger.warning(
-                "[VIDEO_DIRECTOR] LLM dispatch failed (%s) — skipping",
-                exc,
-            )
-            await _log_audit(
-                pool,
-                event_type="video_director.shot_list_failed",
-                task_id=task_id,
-                details={"phase": "llm_dispatch", "error": str(exc)},
-                severity="warning",
-            )
-            return StageResult(
-                ok=True,
-                detail=f"LLM dispatch failed: {exc}",
-                metrics={"failed": True},
-            )
-
-        # Parse + validate. The schema enforces all the pacing rules
-        # (no >2 consecutive same source, duration sum matches total,
-        # idx contiguous from 0). Validation failures here mean the
-        # director produced garbage; we record + skip.
-        json_body = _extract_json_object(director_output)
-        if not json_body:
-            await _log_audit(
-                pool,
-                event_type="video_director.shot_list_failed",
-                task_id=task_id,
-                details={
-                    "phase": "json_extract",
-                    "raw_output_preview": director_output[:500],
-                },
-                severity="warning",
-            )
-            return StageResult(
-                ok=True,
-                detail="director output had no JSON object",
-                metrics={"failed": True},
-            )
-
-        try:
-            parsed = json.loads(json_body)
-            shot_list = VideoShotList.model_validate(parsed)
-        except Exception as exc:
-            await _log_audit(
-                pool,
-                event_type="video_director.shot_list_failed",
-                task_id=task_id,
-                details={
-                    "phase": "schema_validate",
-                    "error": str(exc),
-                    "raw_output_preview": json_body[:500],
-                },
-                severity="warning",
-            )
-            return StageResult(
-                ok=True,
-                detail=f"director output failed validation: {exc}",
-                metrics={"failed": True},
+                title=title,
+                content_text=content_text,
+                site_name=site_name,
             )
 
         # Success — return via context_updates so it survives the graph_def
         # state merge (#674: direct context writes are dropped on graph_def).
-        shot_list_dict = shot_list.model_dump(mode="json")
         stages = context.setdefault("stages", {})
         stages["video_shot_list"] = True
 
-        await _log_audit(
-            pool,
-            event_type="video_director.shot_list_produced",
-            task_id=task_id,
-            details={
-                "model": model,
-                "shot_count": len(shot_list.shots),
-                "total_duration_s": shot_list.total_duration_s,
-                "sources": [s.source for s in shot_list.shots],
-            },
+        context_updates: dict[str, Any] = {
+            "video_shot_list": long_shot_list,
+            "stages": stages,
+        }
+        metrics: dict[str, Any] = {
+            "shot_count": len(long_shot_list["shots"]),
+            "total_duration_s": long_shot_list["total_duration_s"],
+        }
+        if short_shot_list is not None:
+            stages["short_shot_list"] = True
+            context_updates["short_shot_list"] = short_shot_list
+            metrics["short_shot_count"] = len(short_shot_list["shots"])
+
+        detail = (
+            f"{len(long_shot_list['shots'])} shots, "
+            f"{long_shot_list['total_duration_s']:.1f}s total"
         )
-        logger.info(
-            "[VIDEO_DIRECTOR] %d shots produced (total=%.1fs, sources=%s)",
-            len(shot_list.shots),
-            shot_list.total_duration_s,
-            ",".join(s.source for s in shot_list.shots),
-        )
+        if short_shot_list is not None:
+            detail += f" (+ {len(short_shot_list['shots'])}-shot 9:16 short)"
+
         return StageResult(
             ok=True,
-            detail=f"{len(shot_list.shots)} shots, {shot_list.total_duration_s:.1f}s total",
-            context_updates={
-                "video_shot_list": shot_list_dict,
-                "stages": stages,
-            },
-            metrics={
-                "shot_count": len(shot_list.shots),
-                "total_duration_s": shot_list.total_duration_s,
-            },
+            detail=detail,
+            context_updates=context_updates,
+            metrics=metrics,
         )

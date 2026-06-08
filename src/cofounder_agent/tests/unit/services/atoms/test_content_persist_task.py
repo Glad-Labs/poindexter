@@ -32,6 +32,7 @@ async def test_persist_includes_media_artifacts():
         "video_scenes": ["a"],
         "short_summary_script": "SHORT",
         "video_shot_list": {"version": 1, "shots": [{"idx": 0}]},
+        "short_shot_list": {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]},
         "video_ambient_audio_path": "/tmp/ambient.wav",
         "podcast_audio_path": "/tmp/podcast_tts.wav",
         "podcast_intro_audio_path": "/tmp/intro.wav",
@@ -46,6 +47,7 @@ async def test_persist_includes_media_artifacts():
     meta = captured["task_metadata"]
     assert meta["podcast_script"] == "POD"
     assert meta["video_shot_list"] == {"version": 1, "shots": [{"idx": 0}]}
+    assert meta["short_shot_list"] == {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]}
     assert meta["video_ambient_audio_path"] == "/tmp/ambient.wav"
     assert meta["podcast_audio_path"] == "/tmp/podcast_tts.wav"
     assert meta["podcast_intro_audio_path"] == "/tmp/intro.wav"

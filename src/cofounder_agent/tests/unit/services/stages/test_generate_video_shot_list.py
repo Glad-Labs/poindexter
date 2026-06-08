@@ -16,6 +16,7 @@ import pytest
 
 from modules.content.stages.generate_video_shot_list import (
     GenerateVideoShotListStage,
+    _estimate_short_duration,
     _estimate_target_duration,
     _extract_json_object,
 )
@@ -368,3 +369,155 @@ async def test_shot_list_returned_via_context_updates():
     assert "video_shot_list" in result.context_updates
     assert result.context_updates["video_shot_list"]["shots"][0]["idx"] == 0
     assert result.context_updates["stages"]["video_shot_list"] is True
+
+
+# ---------------------------------------------------------------------------
+# Short-form director (Plan 3, #517): the stage ALSO produces a purpose-built
+# 9:16 short_shot_list from short_summary_script. Best-effort — a short failure
+# must not affect the long result or halt the stage.
+# ---------------------------------------------------------------------------
+
+
+def test_estimate_short_duration_empty_returns_20() -> None:
+    assert _estimate_short_duration("") == 20.0
+
+
+def test_estimate_short_duration_clamps_to_15_45() -> None:
+    # A 2-word script (0.8s raw) clamps up to the 15s floor.
+    assert _estimate_short_duration("two words") == 15.0
+    # A 5000-word script clamps down to the 45s ceiling.
+    long_script = " ".join(["word"] * 5000)
+    assert _estimate_short_duration(long_script) == 45.0
+
+
+def _make_valid_short_director_output() -> str:
+    """JSON output for a 9:16 short that satisfies the schema validator."""
+    return json.dumps({
+        "version": 1,
+        "aspect": "9:16",
+        "total_duration_s": 6.0,
+        "shots": [
+            {
+                "idx": 0, "duration_s": 2.0, "intent": "cold-open hook",
+                "source": "sdxl_kenburns",
+                "prompt": "cyberpunk neon illustration of a glowing server rack",
+                "narration_offset_s": 0.0,
+            },
+            {
+                "idx": 1, "duration_s": 4.0, "intent": "concrete payoff",
+                "source": "pexels", "query": "circuit board macro close up vertical",
+                "narration_offset_s": 2.0,
+            },
+        ],
+        "director_model": "test-model",
+        "director_prompt_version": "short_v1",
+        "director_decided_at": "2026-06-08T00:00:00+00:00",
+    })
+
+
+@pytest.mark.asyncio
+async def test_short_shot_list_produced_when_short_script_present() -> None:
+    """short_summary_script present → both long + short shot lists produced.
+
+    The mock dispatch is called TWICE (long then short) via side_effect.
+    """
+    db_service = _make_db_service()
+    platform = _platform_with_dispatch(model="director-model-x")
+    platform.dispatch.complete = AsyncMock(side_effect=[
+        MagicMock(text=_make_valid_director_output()),
+        MagicMock(text=_make_valid_short_director_output()),
+    ])
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "short_summary_script": "short narration " * 10,
+        "task_id": "task-1",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        stage = GenerateVideoShotListStage()
+        result = await stage.execute(context, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_count == 2
+    assert "video_shot_list" in result.context_updates
+    assert result.context_updates["short_shot_list"]["aspect"] == "9:16"
+    assert len(result.context_updates["short_shot_list"]["shots"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_short_skipped_when_no_short_script() -> None:
+    """No short_summary_script → short_shot_list absent, long still produced.
+
+    The mock dispatch is called ONCE (long only)."""
+    db_service = _make_db_service()
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text=_make_valid_director_output()),
+        model="director-model-x",
+    )
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "task_id": "task-1",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        stage = GenerateVideoShotListStage()
+        result = await stage.execute(context, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_count == 1
+    assert "video_shot_list" in result.context_updates
+    assert "short_shot_list" not in result.context_updates
+
+
+@pytest.mark.asyncio
+async def test_short_failure_does_not_break_long() -> None:
+    """Short call (2nd dispatch) returns garbage → long still present, short absent."""
+    db_service = _make_db_service()
+    platform = _platform_with_dispatch(model="director-model-x")
+    platform.dispatch.complete = AsyncMock(side_effect=[
+        MagicMock(text=_make_valid_director_output()),
+        MagicMock(text="I refuse to output JSON."),
+    ])
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "short_summary_script": "short narration " * 10,
+        "task_id": "task-1",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        stage = GenerateVideoShotListStage()
+        result = await stage.execute(context, {})
+
+    assert result.ok
+    assert "video_shot_list" in result.context_updates
+    assert "short_shot_list" not in result.context_updates

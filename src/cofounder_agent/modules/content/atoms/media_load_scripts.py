@@ -11,10 +11,11 @@ is the spine of the redesign: a re-render reuses the writer/director's
 pipeline-time creative work rather than re-inventing prompts (root fix for
 #674/#675).
 
-Produces the five Stage-1 channels declared on ``PipelineState`` (#1226):
+Produces the six Stage-1 channels declared on ``PipelineState`` (#1226):
 ``podcast_script``, ``video_scenes``, ``short_summary_script``,
-``video_shot_list``, ``video_ambient_audio_path``. (The podcast-audio paths
-from #1233 / #690 join once podcast rendering lands in a later plan.)
+``video_shot_list``, ``short_shot_list`` (#517), and
+``video_ambient_audio_path``. (The podcast-audio paths from #1233 / #690
+join once podcast rendering lands in a later plan.)
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="video_scenes", type="list", description="long-form scene prompts"),
         FieldSpec(name="short_summary_script", type="str", description="short-form narration"),
         FieldSpec(name="video_shot_list", type="dict", description="director shot list"),
+        FieldSpec(name="short_shot_list", type="dict", description="short-form (9:16) director shot list"),
         FieldSpec(name="video_ambient_audio_path", type="str", description="ambient bed path"),
     ),
     requires=("task_id",),
@@ -55,6 +57,7 @@ ATOM_META = AtomMeta(
         "video_scenes",
         "short_summary_script",
         "video_shot_list",
+        "short_shot_list",
         "video_ambient_audio_path",
     ),
     capability_tier=None,
@@ -77,6 +80,7 @@ _EMPTY = {
     "video_scenes": [],
     "short_summary_script": "",
     "video_shot_list": None,
+    "short_shot_list": None,
     "video_ambient_audio_path": "",
 }
 
@@ -126,6 +130,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "short_summary_script", _EMPTY["short_summary_script"],
         ),
         "video_shot_list": meta.get("video_shot_list", _EMPTY["video_shot_list"]),
+        "short_shot_list": meta.get("short_shot_list", _EMPTY["short_shot_list"]),
         "video_ambient_audio_path": meta.get(
             "video_ambient_audio_path", _EMPTY["video_ambient_audio_path"],
         ),

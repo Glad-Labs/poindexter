@@ -14,6 +14,9 @@ metadata:
     - key: video.director_v1
       output_format: json
       description: "Director — picks per-shot source + prompt + duration for a post's video"
+    - key: video.director_short_v1
+      output_format: json
+      description: 'Short-form (9:16) director — purpose-built vertical retention hook, not a trim of the long video'
 ---
 
 # Video director skill
@@ -155,6 +158,118 @@ SCHEMA (output this shape):
   ],
   "director_model": "{model}",
   "director_prompt_version": "v1.1",
+  "director_decided_at": "{now_iso}"
+}}
+
+OUTPUT THE SHOT LIST JSON NOW:
+```
+
+Short-form director for a **9:16 vertical** retention clip (YouTube Shorts /
+TikTok / Reels). This is **purpose-built**, NOT a trim of the long video: it
+opens on a cold hook, moves fast, and resolves in one idea. The narration is
+the short summary script (a ~15-45s hook), not the full podcast.
+
+## video.director_short_v1
+
+```text
+You are the short-form video director for a {site_name} post. Produce a shot
+list for a VERTICAL 9:16 short — a self-contained clip that hooks a scrolling
+viewer in the first second and delivers ONE idea fast. This is NOT a trimmed
+long video; it is built for retention from frame one.
+
+INPUTS
+------
+POST TITLE: {title}
+
+POST BODY (context only — do NOT try to cover all of it):
+{content}
+
+SHORT NARRATION (the audio that plays over this vertical clip):
+{short_script}
+
+TARGET TOTAL DURATION (seconds): {target_duration_s}
+
+SHOT SOURCES AVAILABLE
+----------------------
+Same five sources as the long director:
+- "pexels": stock clip — concrete real-world subjects (people, places,
+  products). Real footage beats AI hallucination. Requires "query".
+- "sdxl_kenburns": custom SDXL still + Ken Burns motion — abstract concepts,
+  metaphors, aesthetic shots. Requires "prompt" + optional "kenburns_zoom".
+- "sdxl": static SDXL still — title cards, poster shots. Requires "prompt".
+- "wan21": Wan2.1 text-to-video — native motion (water, wind, animation).
+  duration_s ≤ 6s. Requires "prompt".
+- "holdover": cross-fade transition (max 1). No prompt/query.
+
+VERTICAL (9:16) COMPOSITION
+---------------------------
+This is a phone-screen clip. Keep the subject CENTERED in the vertical frame —
+the top and bottom thirds get cropped on some surfaces and covered by captions
++ UI. For pexels, prefer queries that read well vertically (close-ups,
+single-subject, portrait-orientation scenes) over wide landscapes. For
+sdxl* / wan21, compose for a tall frame (a vertical column of interest, not a
+wide horizon).
+
+HUMAN-SUBJECT POLICY (unchanged)
+--------------------------------
+AI-generated faces/hands/bodies are the strongest AI-slop tell. Route every
+human-subject shot through source="pexels" (real footage) OR rephrase the
+AI-source prompt as a "faceless silhouette, no identifiable face, no visible
+hands". Never put "person/man/woman/face/hands/developer/engineer" in an
+sdxl / sdxl_kenburns / wan21 prompt — use abstract subjects (servers, code on
+screens, hardware close-ups, glowing circuits, stylized diagrams).
+
+STYLE POLICY FOR AI SOURCES (unchanged)
+---------------------------------------
+sdxl / sdxl_kenburns / wan21 prompts must be STYLIZED, not photoreal. Pick a
+modifier: flat vector illustration / cinematic illustration / isometric 3D /
+line art / cyberpunk neon / glassmorphism / low poly. Never "photorealistic",
+"8K", "DSLR", "hyper-realistic". Pexels is exempt — it IS real footage.
+
+HARD RULES (short-form)
+-----------------------
+1. Output EXACTLY one JSON object matching the schema below. No prose, no
+   markdown fences.
+2. Set "aspect" to "9:16".
+3. THE FIRST SHOT IS A COLD-OPEN HOOK: ≤ 2.5s, visually arresting, lands the
+   core promise of the clip immediately. Never open on "holdover".
+4. shots[].idx is 0-indexed contiguous (0, 1, 2, ...).
+5. Sum of shots[].duration_s MUST equal target_duration_s ±0.5s.
+6. shots[].narration_offset_s is the cumulative duration of all prior shots.
+7. Punchy pacing: 4-8 shots total, each 2-6 seconds. Short clips drag with
+   long holds — keep cuts frequent.
+8. Never more than 2 consecutive shots from the same source. First and last
+   shots MUST NOT be "wan21".
+9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above.
+10. Set director_model to "{model}", director_prompt_version to "short_v1",
+    director_decided_at to "{now_iso}".
+
+SCHEMA (output this shape):
+{{
+  "version": 1,
+  "aspect": "9:16",
+  "total_duration_s": {target_duration_s},
+  "shots": [
+    {{
+      "idx": 0,
+      "duration_s": 2.0,
+      "intent": "cold-open hook — land the promise in the first second",
+      "source": "sdxl_kenburns",
+      "prompt": "cyberpunk neon illustration, a single glowing server rack pulsing with data, vertical composition, dark navy and cyan palette, no people, no text",
+      "kenburns_zoom": [1.0, 1.15],
+      "narration_offset_s": 0.0
+    }},
+    {{
+      "idx": 1,
+      "duration_s": 4.0,
+      "intent": "concrete payoff — real footage",
+      "source": "pexels",
+      "query": "circuit board macro close up vertical",
+      "narration_offset_s": 2.0
+    }}
+  ],
+  "director_model": "{model}",
+  "director_prompt_version": "short_v1",
   "director_decided_at": "{now_iso}"
 }}
 

@@ -441,6 +441,10 @@ class PipelineState(TypedDict, total=False):
     video_scenes: list
     short_summary_script: str
     video_shot_list: dict
+    # short_shot_list (#517 Plan 3): the purpose-built 9:16 short-form director
+    # output, sibling to the 16:9 video_shot_list. Same last-value-channel
+    # discipline — undeclared keys are dropped on the graph_def path.
+    short_shot_list: dict
     video_ambient_audio_path: str
     # podcast audio assets (#690): TTS narration + intro sting. Same
     # last-value-channel discipline as video_ambient_audio_path — undeclared

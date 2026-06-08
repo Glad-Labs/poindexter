@@ -297,7 +297,10 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
         }
 
     async def _shot_list_runner(state):
-        return {"video_shot_list": {"version": 1, "shots": [{"idx": 0}]}}
+        return {
+            "video_shot_list": {"version": 1, "shots": [{"idx": 0}]},
+            "short_shot_list": {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]},
+        }
 
     async def _finalize_runner(state):
         seen["podcast_script"] = state.get("podcast_script")
@@ -305,6 +308,7 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
         seen["short_summary_script"] = state.get("short_summary_script")
         seen["video_ambient_audio_path"] = state.get("video_ambient_audio_path")
         seen["video_shot_list"] = state.get("video_shot_list")
+        seen["short_shot_list"] = state.get("short_shot_list")
         seen["podcast_audio_path"] = state.get("podcast_audio_path")
         seen["podcast_intro_audio_path"] = state.get("podcast_intro_audio_path")
         return {"status": "awaiting_approval"}
@@ -351,5 +355,6 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
     assert seen.get("short_summary_script") == "SHORT"
     assert seen.get("video_ambient_audio_path") == "/tmp/ambient.wav"
     assert seen.get("video_shot_list") == {"version": 1, "shots": [{"idx": 0}]}
+    assert seen.get("short_shot_list") == {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]}
     assert seen.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
     assert seen.get("podcast_intro_audio_path") == "/tmp/intro.wav"

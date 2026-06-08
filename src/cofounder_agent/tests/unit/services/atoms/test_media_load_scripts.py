@@ -37,6 +37,7 @@ async def test_media_load_scripts_reads_task_metadata():
         "video_scenes": ["a", "b"],
         "short_summary_script": "SHORT",
         "video_shot_list": {"version": 1, "shots": [{"idx": 0}]},
+        "short_shot_list": {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]},
         "video_ambient_audio_path": "/tmp/ambient.wav",
     }
     pool, _ = _pool_returning({"task_metadata": meta})
@@ -48,6 +49,7 @@ async def test_media_load_scripts_reads_task_metadata():
     assert result["video_scenes"] == ["a", "b"]
     assert result["short_summary_script"] == "SHORT"
     assert result["video_shot_list"] == {"version": 1, "shots": [{"idx": 0}]}
+    assert result["short_shot_list"] == {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]}
     assert result["video_ambient_audio_path"] == "/tmp/ambient.wav"
 
 
@@ -82,6 +84,7 @@ async def test_media_load_scripts_handles_missing_metadata():
         "video_scenes": [],
         "short_summary_script": "",
         "video_shot_list": None,
+        "short_shot_list": None,
         "video_ambient_audio_path": "",
     }
 
