@@ -471,6 +471,12 @@ class PipelineState(TypedDict, total=False):
     # discipline — undeclared keys are dropped on the graph_def path, so the
     # QA result would vanish without this declaration (#674 trap).
     media_qa_result: dict
+    # Stage-2 audio QA result (#1193 Phase 2): qa.audio runs after
+    # transcribe_narration (before the renders) and checks the raw narration
+    # audio for long silences, volume levels (clipping / too quiet), and
+    # duration vs script-word-count estimate. All deterministic (no AI model).
+    # Same last-value-channel discipline (#674 trap).
+    audio_qa_result: dict
     stages: dict
     generate_metrics: dict
     cost_log: dict

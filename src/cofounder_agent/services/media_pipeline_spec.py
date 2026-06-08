@@ -13,6 +13,13 @@ task-keyed ``media_assets`` row per asset (post resolved later at distribution �
 8b-2). It's the bridge between the task-keyed render graph and the post-keyed
 distribution lane (#682/#678).
 
+Phase 2 (#1193) inserts a ``qa_audio`` node (``qa.audio``) between
+``transcribe_narration`` and ``render_long_video``. It runs three deterministic
+ffprobe/ffmpeg checks on the raw narration audio BEFORE the GPU-heavy render
+step: silence detection (TTS dropout), volume-level check (clipping / too
+quiet), and duration-vs-script-estimate consistency. All checks are fail-soft
+(no AI model required); a QA failure never halts the graph.
+
 Plan 6 appends a ``media_qa`` node (``media.qa``) AFTER the renders: it
 QA-checks the rendered videos — A/V duration sync (probe vs shot-list
 ``total_duration_s``), caption presence, and a gated/fail-soft frame
@@ -48,17 +55,18 @@ MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
     "name": "media_pipeline",
     "description": (
         "Stage-2 media pipeline (Plan 8, #689/#675/#676/#1193/#682): load "
-        "persisted Stage-1 scripts/shot-lists, run one ASR pass to caption the "
-        "narration (and fidelity-check the transcript vs the script), render the "
-        "16:9 long-form and 9:16 short-form videos with captions burned in, QA "
-        "the rendered videos (A/V duration sync, caption presence, gated frame "
-        "human-detection), then persist them to durable storage + record "
-        "task-keyed media_assets rows. Distribution runs post-Gate-2 as a job."
+        "persisted Stage-1 scripts/shot-lists → one ASR pass for captions + "
+        "fidelity QA → audio QA (silence/volume/duration, deterministic, "
+        "Phase 2 #1193) → render 16:9 long-form + 9:16 short-form videos with "
+        "captions burned in → video QA (A/V sync, caption presence, gated frame "
+        "human-detection) → persist durable task-keyed media_assets rows. "
+        "Gate-2 distribution runs post-approval as a job (Plans 7-8)."
     ),
     "entry": "load_scripts",
     "nodes": [
         {"id": "load_scripts", "atom": "media.load_scripts"},
         {"id": "transcribe_narration", "atom": "media.transcribe_narration"},
+        {"id": "qa_audio", "atom": "qa.audio"},
         {"id": "render_long_video", "atom": "media.render_long_video"},
         {"id": "render_short_video", "atom": "media.render_short_video"},
         {"id": "media_qa", "atom": "media.qa"},
@@ -66,7 +74,8 @@ MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
     ],
     "edges": [
         {"from": "load_scripts", "to": "transcribe_narration"},
-        {"from": "transcribe_narration", "to": "render_long_video"},
+        {"from": "transcribe_narration", "to": "qa_audio"},
+        {"from": "qa_audio", "to": "render_long_video"},
         {"from": "render_long_video", "to": "render_short_video"},
         {"from": "render_short_video", "to": "media_qa"},
         {"from": "media_qa", "to": "persist_media"},
