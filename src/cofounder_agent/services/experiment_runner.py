@@ -9,10 +9,16 @@ Phase 1 selection model (per
 ``docs/architecture/2026-05-28-phase-1-variant-experiments-design.md``):
 
 - **Uniform random** over the active variants of the niche's
-  most-recent active experiment. The ``weight`` column is present on
-  ``experiment_variants`` for Phase 2's bandit but is intentionally
-  ignored here — Phase 1 ships equal allocation so the operator can
-  read scorecard rollups without weighting bias.
+  most-recent active experiment — the default. The ``weight`` column on
+  ``experiment_variants`` is intentionally ignored on this path so the
+  operator can read scorecard rollups without weighting bias.
+- **Weighted random** (opt-in, #361 part 1): when the app_setting
+  ``experiment_weighted_selection_enabled`` is true, allocation is
+  proportional to ``ev.weight`` — the column the outcome→weight feedback
+  loop (``services/router_outcome_feedback.py``) nudges from operator
+  approve/reject. Default OFF keeps prod uniform until an operator opts in;
+  the weight column is maintained either way, so only consumption is gated.
+  Falls back to uniform when weights are all-zero or all-equal.
 - **Task-level stickiness.** ``pick_variant`` is called ONCE per task
   (at writer-atom entry); the returned ``variant_id`` threads through
   every downstream atom via ``state["variant_id"]`` so the same task
@@ -125,7 +131,8 @@ SELECT
     ev.prompt_template_key,
     ev.prompt_template_version,
     ev.writer_model,
-    ev.rag_config
+    ev.rag_config,
+    ev.weight
 FROM experiments e
 JOIN experiment_variants ev ON ev.experiment_id = e.id
 WHERE e.niche_slug = $1
@@ -133,6 +140,62 @@ WHERE e.niche_slug = $1
   AND ev.active   = TRUE
 ORDER BY e.activated_at DESC NULLS LAST, e.created_at DESC, ev.label
 """
+
+# Phase 2 gate (#361 part 1). When this app_setting is true,
+# :func:`pick_variant` allocates proportional to ``experiment_variants.weight``
+# (which the outcome→weight feedback loop in ``router_outcome_feedback`` nudges)
+# instead of uniform random. Default OFF preserves the Phase 1 uniform
+# allocation so prod variant picking stays unbiased until an operator opts in.
+_WEIGHTED_SELECTION_SETTING = "experiment_weighted_selection_enabled"
+
+
+def _truthy(value: Any) -> bool:
+    """Coerce an app_settings string/bool to a bool (``"true"`` -> True)."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _weighted_selection_enabled(conn: Any) -> bool:
+    """Read the ``experiment_weighted_selection_enabled`` flag off ``conn``.
+
+    Best-effort — defaults to ``False`` (uniform allocation) on any miss or
+    error so the Phase-1 behaviour is preserved unless explicitly opted in.
+    """
+    try:
+        raw = await conn.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            _WEIGHTED_SELECTION_SETTING,
+        )
+    except Exception as exc:  # noqa: BLE001 — never let a config read break selection
+        logger.debug(
+            "[experiment_runner] weighted-selection flag read failed: %s — "
+            "defaulting to uniform",
+            exc,
+        )
+        return False
+    return _truthy(raw)
+
+
+def _weighted_choice(rows: list[Any]) -> Any:
+    """Pick one row weighted by its ``weight`` column.
+
+    Falls back to uniform :func:`random.choice` when weights are absent,
+    non-positive, or all equal — so a misconfigured experiment degrades to
+    the Phase-1 behaviour rather than crashing or starving a variant.
+    """
+    weights: list[float] = []
+    for r in rows:
+        try:
+            w = float(r["weight"])
+        except (KeyError, TypeError, ValueError):
+            w = 0.0
+        weights.append(max(0.0, w))
+    total = sum(weights)
+    if total <= 0.0 or len(set(weights)) <= 1:
+        # No usable signal (all zero / all equal) — uniform.
+        return random.choice(rows)
+    return random.choices(rows, weights=weights, k=1)[0]
 
 
 async def pick_variant(
@@ -182,6 +245,9 @@ async def pick_variant(
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(_PICK_ACTIVE_VARIANTS_SQL, niche_slug)
+            # Read the gate on the same connection while we hold it — one
+            # extra cheap point-lookup, avoids a second acquire.
+            weighted = await _weighted_selection_enabled(conn)
     except Exception as exc:  # noqa: BLE001 — fail-safe; never escape
         logger.warning(
             "[experiment_runner] pick_variant DB lookup failed "
@@ -204,9 +270,16 @@ async def pick_variant(
     # The ORDER BY (activated_at DESC, created_at DESC, label) groups all
     # variants of the single active experiment together — the partial
     # unique index guarantees only one experiment row, so every row in
-    # ``rows`` shares the same (experiment_id, experiment_key). Uniform
-    # random pick over them.
-    chosen = random.choice(rows)
+    # ``rows`` shares the same (experiment_id, experiment_key).
+    #
+    # Selection model: uniform random by default (Phase 1, unbiased rollups).
+    # When ``experiment_weighted_selection_enabled`` is true the pick is
+    # proportional to ``ev.weight`` — the column the outcome→weight feedback
+    # loop (``router_outcome_feedback``) nudges from operator approve/reject.
+    # The weight COLUMN is always maintained; only its *consumption* here is
+    # gated, so flipping the flag is the operator's explicit opt-in to
+    # bandit-style allocation.
+    chosen = _weighted_choice(rows) if weighted else random.choice(rows)
 
     try:
         rag_config_raw = chosen["rag_config"]

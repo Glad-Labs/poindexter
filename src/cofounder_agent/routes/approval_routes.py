@@ -166,6 +166,25 @@ async def reject_task(
                 "[reject_task] pipeline_gate_history write failed for %s: %s",
                 full_task_id, review_err,
             )
+
+        # Outcome → variant-weight feedback loop (#361 part 1). The reject
+        # path was the gap: before this it did NO atom_runs.decision backfill,
+        # so a rejected run never became negative training signal. This
+        # backfills the decision AND nudges the variant weight(s) down.
+        # Best-effort — never breaks the rejection.
+        try:
+            from services.router_outcome_feedback import record_task_outcome
+
+            await record_task_outcome(
+                pool=db_service.pool,
+                task_id=full_task_id,
+                decision="rejected",
+            )
+        except Exception as rfb_err:  # noqa: BLE001
+            logger.debug(
+                "[reject_task] router outcome feedback failed: %s", rfb_err,
+            )
+
         try:
             await db_service.mark_model_performance_outcome(
                 full_task_id, human_approved=False,

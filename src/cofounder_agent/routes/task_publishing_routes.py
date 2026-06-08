@@ -434,6 +434,31 @@ async def approve_task(
                 task_id, review_err,
             )
 
+        # Outcome → variant-weight feedback loop (#361 part 1). Attribute the
+        # operator's verdict to the experiment variant(s) the task ran under
+        # and nudge their weights. Also backfills atom_runs.decision on this
+        # approve path. Best-effort — wrapped so the learning loop can never
+        # break the operator's approve/reject.
+        try:
+            from services.router_outcome_feedback import record_task_outcome
+
+            _rfb_quality = merged_result.get("quality_score")
+            try:
+                _rfb_quality = float(_rfb_quality) if _rfb_quality is not None else None
+            except (TypeError, ValueError):
+                _rfb_quality = None
+            await record_task_outcome(
+                pool=db_service.pool,
+                task_id=str(task_id),
+                decision="approved" if approved else "rejected",
+                quality_score=_rfb_quality,
+                site_config=site_config_dep,
+            )
+        except Exception as rfb_err:  # noqa: BLE001
+            logger.debug(
+                "[approve_task] router outcome feedback failed: %s", rfb_err,
+            )
+
         # Flip the outcome columns on every model_performance row for this
         # task so the learning signal has the human verdict attached
         # (internal tracker Phase 3.A1).

@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from services.audit_log import audit_log_bg
 from services.gate_machinery import (
@@ -128,6 +128,35 @@ def is_gate_enabled(gate_name: str, site_config: Any) -> bool:
         return False
     raw = site_config.get(_gate_setting_key(gate_name), "off")
     return str(raw).strip().lower() in ("on", "true", "1", "yes")
+
+
+async def _record_router_outcome(
+    *,
+    pool: Any,
+    task_id: str,
+    decision: str,
+    site_config: Any,
+) -> None:
+    """Fire the outcome→variant-weight feedback loop (#361 part 1).
+
+    Lazily imported to avoid an import cycle at module load. Best-effort —
+    every failure is logged + swallowed so the learning loop can NEVER
+    break an operator approve/reject (per ``feedback_human_approval``).
+    """
+    try:
+        from services.router_outcome_feedback import record_task_outcome
+
+        await record_task_outcome(
+            pool=pool,
+            task_id=task_id,
+            decision=decision,
+            site_config=site_config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[approval_service] router outcome feedback failed task=%s: %s",
+            task_id, exc,
+        )
 
 
 async def _fetch_task_row(pool: Any, task_id: str) -> dict[str, Any] | None:
@@ -429,6 +458,15 @@ async def approve(
         severity="info",
     )
 
+    # Outcome → variant-weight feedback loop (#361 part 1). Gate-based
+    # approval surface (CLI / MCP / REST). Attributes the verdict to the
+    # task's experiment variant(s) + backfills atom_runs.decision.
+    # Best-effort — never breaks the approval.
+    await _record_router_outcome(
+        pool=pool, task_id=str(task_id), decision="approved",
+        site_config=site_config,
+    )
+
     return {
         "ok": True,
         "task_id": str(task_id),
@@ -538,6 +576,15 @@ async def reject(
         },
         task_id=str(task_id),
         severity="warning",
+    )
+
+    # Outcome → variant-weight feedback loop (#361 part 1). Gate-based
+    # rejection surface. Backfills atom_runs.decision (the reject path's
+    # historic gap) + nudges the task's variant weight(s) down.
+    # Best-effort — never breaks the rejection.
+    await _record_router_outcome(
+        pool=pool, task_id=str(task_id), decision="rejected",
+        site_config=site_config,
     )
 
     # Per-gate rejection handler — turns the rejection into a learning
@@ -748,7 +795,7 @@ async def set_gate_enabled(
 async def list_gates(
     *,
     pool: Any,
-    site_config: Any = None,
+    site_config: Any = None,  # noqa: ARG001 — kept for API consistency with other gate fns; callers pass it
 ) -> list[dict[str, Any]]:
     """Return every gate the system has ever heard of, plus its state.
 
