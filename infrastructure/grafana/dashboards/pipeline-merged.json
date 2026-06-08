@@ -26,7 +26,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
+      "tooltip": "Open Langfuse 3 \u00e2\u20ac\u201d LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
       "type": "link",
       "url": "http://localhost:3010"
     }
@@ -34,7 +34,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Approval Queue — Human Oversight",
+      "title": "Approval Queue \u00e2\u20ac\u201d Human Oversight",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -928,7 +928,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Throughput — posts generated per hour",
+      "description": "Throughput \u00e2\u20ac\u201d posts generated per hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1247,7 +1247,7 @@
     },
     {
       "type": "row",
-      "title": "Quality — scores & output",
+      "title": "Quality \u00e2\u20ac\u201d scores & output",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1818,7 +1818,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Quality scores over time — are we improving?",
+      "description": "Quality scores over time \u00e2\u20ac\u201d are we improving?",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2022,7 +2022,7 @@
     },
     {
       "type": "row",
-      "title": "QA — rejections & validation",
+      "title": "QA \u00e2\u20ac\u201d rejections & validation",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2038,7 +2038,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Rejection rate over the selected time window. Lower is better — but a 0% rate with low throughput often means content isn't being generated.",
+      "description": "Rejection rate over the selected time window. Lower is better \u00e2\u20ac\u201d but a 0% rate with low throughput often means content isn't being generated.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2271,7 +2271,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval vs rejection rates over time — track human oversight effectiveness",
+      "description": "Approval vs rejection rates over time \u00e2\u20ac\u201d track human oversight effectiveness",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2468,7 +2468,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Per-writer-model approval rate — reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
+      "description": "Per-writer-model approval rate \u00e2\u20ac\u201d reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2528,7 +2528,7 @@
     },
     {
       "type": "row",
-      "title": "Topic Discovery — Niche Pivot",
+      "title": "Topic Discovery \u00e2\u20ac\u201d Niche Pivot",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2703,7 +2703,7 @@
       "type": "stat",
       "id": 39,
       "title": "Active niches",
-      "description": "Niches with active=true — each has its own discovery sweep.",
+      "description": "Niches with active=true \u00e2\u20ac\u201d each has its own discovery sweep.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2784,7 +2784,7 @@
       "type": "table",
       "id": 41,
       "title": "Recent batch decisions (7 days)",
-      "description": "Closed batches with the picked candidate — retroactive review of what got shipped to research/draft.",
+      "description": "Closed batches with the picked candidate \u00e2\u20ac\u201d retroactive review of what got shipped to research/draft.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2901,7 +2901,7 @@
       "type": "stat",
       "id": 44,
       "title": "Oldest pending",
-      "description": "Age of the oldest pending media — surfaces stuck items (green <24h, yellow <7d, red ≥7d)",
+      "description": "Age of the oldest pending media \u00e2\u20ac\u201d surfaces stuck items (green <24h, yellow <7d, red \u00e2\u2030\u00a57d)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2969,7 +2969,7 @@
       "type": "stat",
       "id": 45,
       "title": "Page views (last 24h)",
-      "description": "Page views from CF Analytics Engine landed in page_views by sync_cloudflare_analytics. Red at 0 means the Worker beacon or the sync job is broken (silent-failure detector — the same regression mode that ran 2026-04-09 → 2026-05-28).",
+      "description": "Page views from CF Analytics Engine landed in page_views by sync_cloudflare_analytics. Red at 0 means the Worker beacon or the sync job is broken (silent-failure detector \u00e2\u20ac\u201d the same regression mode that ran 2026-04-09 \u00e2\u2020\u2019 2026-05-28).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -3035,7 +3035,7 @@
     },
     {
       "id": 46,
-      "title": "media_approvals — approved (window)",
+      "title": "media_approvals \u00e2\u20ac\u201d approved (window)",
       "type": "stat",
       "description": "Approved media_approvals in the dashboard time window, filtered on decided_at.",
       "datasource": {
@@ -3396,7 +3396,7 @@
     },
     {
       "id": 52,
-      "title": "media_approvals — rejected by medium",
+      "title": "media_approvals \u00e2\u20ac\u201d rejected by medium",
       "type": "bargauge",
       "description": "Rejected media_approvals grouped by medium (podcast / video / video_short) in the dashboard time window. Filtered on decided_at.",
       "datasource": {
@@ -3527,14 +3527,677 @@
       ]
     },
     {
+      "id": 63,
+      "title": "Media Pipeline (Stage 2)",
       "type": "row",
-      "title": "Pipeline Throttle & Stale-Task Sweeper · Prometheus",
       "collapsed": false,
+      "description": "Render-side telemetry from atom_runs (media.* atoms), durable asset counts, Gate-2 pipeline depth, dispatch success rates, and failure findings from audit_log. Plan 8c / #678.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 162
+      },
+      "panels": []
+    },
+    {
+      "id": 64,
+      "title": "Render success rate (24h)",
+      "type": "stat",
+      "description": "Percentage of media.* atom runs that completed successfully in the last 24 hours. Covers render_video, render_short, persist, and qa atoms.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 163
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(\n  COUNT(*) FILTER (WHERE status = 'success') * 100.0 / NULLIF(COUNT(*), 0),\n  1\n) AS \"Success %\"\nFROM atom_runs\nWHERE atom LIKE 'media.%'\n  AND created_at > NOW() - INTERVAL '24h'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "title": "Render failures (24h)",
+      "type": "stat",
+      "description": "Count of non-success runs for media.* atoms in the last 24 hours. See 'Recent render failures' table below for details.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 163
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Failures\"\nFROM atom_runs\nWHERE atom LIKE 'media.%'\n  AND status != 'success'\n  AND created_at > NOW() - INTERVAL '24h'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 66,
+      "title": "Videos persisted (total)",
+      "type": "stat",
+      "description": "Total durable task-keyed video assets on disk (all time). Written by the media.persist atom. Includes both long and short form.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 163
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Assets\"\nFROM media_assets\nWHERE type IN ('video_long', 'video_short')\n  AND COALESCE(storage_path, '') != ''",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 67,
+      "title": "Gate-2 pending",
+      "type": "stat",
+      "description": "Video assets awaiting operator Gate-2 approval (video = long form, video_short = Shorts). Seeded by MediaDistributeJob link pass.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 163
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 6
+              }
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Pending\"\nFROM media_approvals\nWHERE medium IN ('video', 'video_short')\n  AND status = 'pending'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 68,
+      "title": "Gate-2 dispatched (total)",
+      "type": "stat",
+      "description": "Total video approval rows that have been dispatched to YouTube (all time). Covers both long form (shorts=False) and Shorts (shorts=True).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 163
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Dispatched\"\nFROM media_approvals\nWHERE medium IN ('video', 'video_short')\n  AND dispatched_at IS NOT NULL",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 69,
+      "title": "Dispatch success rate",
+      "type": "stat",
+      "description": "Percentage of dispatched video approvals where the YouTube upload succeeded (dispatch_success=true). NULL / orange when nothing dispatched yet.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 163
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(\n  COUNT(*) FILTER (WHERE dispatch_success = true) * 100.0\n  / NULLIF(COUNT(*) FILTER (WHERE dispatched_at IS NOT NULL), 0),\n  1\n) AS \"Success %\"\nFROM media_approvals\nWHERE medium IN ('video', 'video_short')",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 70,
+      "title": "Render latency by atom (avg, success runs)",
+      "type": "bargauge",
+      "description": "Average wall-clock time per successful media.* atom run (all time). Identifies which atom dominates pipeline duration.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 167
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "s",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT atom AS metric,\n       ROUND(AVG(latency_ms)::numeric / 1000.0, 1) AS value\nFROM atom_runs\nWHERE atom LIKE 'media.%'\n  AND status = 'success'\nGROUP BY atom\nORDER BY value DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 71,
+      "title": "Gate-2 pipeline by medium",
+      "type": "table",
+      "description": "Per-medium pipeline depth across all Gate-2 stages. video = long form, video_short = Shorts. 'Dispatch OK' is the final happy-path count.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 167
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  medium                                                        AS \"Medium\",\n  COUNT(*) FILTER (WHERE status = 'pending')                   AS \"Pending\",\n  COUNT(*) FILTER (WHERE status = 'approved')                  AS \"Approved\",\n  COUNT(*) FILTER (WHERE status = 'rejected')                  AS \"Rejected\",\n  COUNT(*) FILTER (WHERE dispatched_at IS NOT NULL)            AS \"Dispatched\",\n  COUNT(*) FILTER (WHERE dispatch_success = true)              AS \"Dispatch OK\"\nFROM media_approvals\nWHERE medium IN ('video', 'video_short')\nGROUP BY medium\nORDER BY medium",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 72,
+      "title": "Recent render failures (findings)",
+      "type": "table",
+      "description": "Most recent render_failed findings from media render atoms. Emitted by _media_render.py when the video renderer fails after all retries.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  timestamp         AS \"Time\",\n  source            AS \"Source\",\n  severity          AS \"Sev\",\n  details->>'title' AS \"Title\"\nFROM audit_log\nWHERE event_type = 'finding'\n  AND details->>'kind' = 'render_failed'\nORDER BY timestamp DESC\nLIMIT 20",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "title": "Recent dispatch failures (findings)",
+      "type": "table",
+      "description": "Most recent media_dispatch_failed findings from the dispatch_media_pipeline job. Emitted when a Gate-2-approved video fails to upload to YouTube.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  timestamp         AS \"Time\",\n  source            AS \"Source\",\n  severity          AS \"Sev\",\n  details->>'title' AS \"Title\"\nFROM audit_log\nWHERE event_type = 'finding'\n  AND details->>'kind' = 'media_dispatch_failed'\nORDER BY timestamp DESC\nLIMIT 20",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Pipeline Throttle & Stale-Task Sweeper \u00c2\u00b7 Prometheus",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 181
       },
       "panels": [],
       "id": 54
@@ -3544,7 +4207,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_active — 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
+      "description": "poindexter_pipeline_throttle_active \u00e2\u20ac\u201d 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3556,11 +4219,11 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "✓ flowing"
+                  "text": "\u00e2\u0153\u201c flowing"
                 },
                 "1": {
                   "color": "red",
-                  "text": "⚠ THROTTLED"
+                  "text": "\u00e2\u0161\u00a0 THROTTLED"
                 }
               }
             }
@@ -3585,7 +4248,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 163
+        "y": 182
       },
       "id": 55,
       "options": {
@@ -3621,7 +4284,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_queue_size — current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
+      "description": "poindexter_pipeline_throttle_queue_size \u00e2\u20ac\u201d current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3652,7 +4315,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 163
+        "y": 182
       },
       "id": 56,
       "options": {
@@ -3688,7 +4351,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_seconds_total — cumulative seconds the pipeline has spent throttled by the approval queue. Defined as a Gauge (survives worker restarts) so it is shown as a raw cumulative value, NOT a rate.",
+      "description": "poindexter_pipeline_throttle_seconds_total \u00e2\u20ac\u201d cumulative seconds the pipeline has spent throttled by the approval queue. Defined as a Gauge (survives worker restarts) so it is shown as a raw cumulative value, NOT a rate.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3715,7 +4378,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 163
+        "y": 182
       },
       "id": 57,
       "options": {
@@ -3751,7 +4414,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_auto_cancelled_total — cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed → shown as a raw cumulative value.",
+      "description": "poindexter_pipeline_auto_cancelled_total \u00e2\u20ac\u201d cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed \u00e2\u2020\u2019 shown as a raw cumulative value.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3778,7 +4441,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 163
+        "y": 182
       },
       "id": 58,
       "options": {
@@ -3814,7 +4477,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles — correlate with the 'Throttle state' tile above.",
+      "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles \u00e2\u20ac\u201d correlate with the 'Throttle state' tile above.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3867,7 +4530,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 167
+        "y": 186
       },
       "id": 59,
       "options": {
@@ -3908,13 +4571,13 @@
     },
     {
       "type": "row",
-      "title": "Per-Stage Latency · Prometheus (populates during active pipeline runs)",
+      "title": "Per-Stage Latency \u00c2\u00b7 Prometheus (populates during active pipeline runs)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 175
+        "y": 194
       },
       "panels": [],
       "id": 60
@@ -3924,7 +4587,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "p95 execution latency per pipeline node, from the poindexter_pipeline_node_duration_seconds histogram (services/template_runner.py). Answers 'which of the canonical_blog stages is slow' — the writer/QA nodes should dominate. NOTE: this metric was added 2026-06-02 and only appears after the worker image is rebuilt/restarted and at least one pipeline run has executed; until then this reads 'No data'.",
+      "description": "p95 execution latency per pipeline node, from the poindexter_pipeline_node_duration_seconds histogram (services/template_runner.py). Answers 'which of the canonical_blog stages is slow' \u00e2\u20ac\u201d the writer/QA nodes should dominate. NOTE: this metric was added 2026-06-02 and only appears after the worker image is rebuilt/restarted and at least one pipeline run has executed; until then this reads 'No data'.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3977,7 +4640,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 176
+        "y": 195
       },
       "id": 61,
       "options": {
@@ -4065,7 +4728,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 176
+        "y": 195
       },
       "id": 62,
       "options": {
