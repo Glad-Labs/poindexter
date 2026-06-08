@@ -271,6 +271,12 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',
+    # Stage-2 media trigger (#689 Plan 7) — the dispatch_media_pipeline job is
+    # scheduled but DORMANT until media_pipeline_trigger_enabled flips on; this
+    # is what takes media_pipeline from dormant to LIVE in prod.
+    # media_pipeline_max_per_cycle caps GPU-bound renders kicked off per cycle.
+    'media_pipeline_max_per_cycle': '1',
+    'media_pipeline_trigger_enabled': 'false',
     'podcast_description': '',
     'podcast_name': '',
     'podcast_tts_engine': '',
