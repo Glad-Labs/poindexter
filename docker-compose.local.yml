@@ -1129,6 +1129,15 @@ services:
       dockerfile: scripts/Dockerfile.auto-embed
     container_name: poindexter-auto-embed
     restart: unless-stopped
+    # PARKED 2026-06-07 (Matt): the host Scheduled Task "Glad Labs Auto-Embed"
+    # is the SOLE auto-embed runner. The current DI-seam services/taps/memory.py
+    # resolves claude_projects_dir from the home default (~/.claude/projects),
+    # which only the host satisfies — in-container it falls back to
+    # /root/.claude/projects (the mount is /memory/claude-projects) and embeds
+    # zero memory. Profiled out so `docker compose up` won't start it. To revive
+    # as the runner: mount projects at /root/.claude/projects (or have the
+    # auto-embed runner inject _site_config) and drop this profile.
+    profiles: ["parked"]
     environment:
       # Only DATABASE_URL is an env var by policy; everything else — ollama_url,
       # gitea_url, etc. — lives in the app_settings DB and is loaded at runtime.
