@@ -65,69 +65,15 @@ def _check_task_ownership(task: dict, current_user: Any) -> None:
         raise HTTPException(status_code=403, detail="Access denied")
 
 
-async def _embed_published_post(db_service: DatabaseService, post_dict: dict) -> None:
-    """Embed a newly published post into pgvector as a background task.
-
-    Non-blocking: if Ollama or pgvector is unavailable, logs a warning
-    and returns silently so the publish flow is never interrupted.
-    """
-    try:
-        from plugins.registry import get_all_llm_providers
-        from services.embedding_service import EmbeddingService
-
-        embeddings_db = getattr(db_service, "embeddings", None)
-        if not embeddings_db:
-            logger.debug("[RAG] Skipping post embedding: embeddings DB not available")
-            return
-
-        # v2.2b: Provider Protocol instead of concrete OllamaClient.
-        # ``plugin.llm_provider.primary.free`` in app_settings decides
-        # which backend does the embedding without editing this code.
-        providers = {p.name: p for p in get_all_llm_providers()}
-        provider = providers.get("ollama_native")
-        if provider is None:
-            logger.debug("[RAG] Skipping post embedding: ollama_native provider not registered")
-            return
-
-        embedding_svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db)
-        await embedding_svc.embed_post(post_dict)
-        logger.info("[RAG] Embedded published post for future RAG: %s", post_dict.get("title", "")[:60])
-    except Exception as e:
-        logger.warning("[RAG] Failed to embed published post (non-fatal): %s", e)
-
-
-async def _sync_published_post(post_id: str) -> None:
-    """Push a newly published post to the cloud DB as a background task.
-
-    Non-blocking: if either database is unreachable, logs a warning
-    and returns silently so the publish flow is never interrupted.
-    Skipped entirely when LOCAL_DATABASE_URL is not set (coordinator mode).
-    """
-    if not os.getenv("LOCAL_DATABASE_URL"):
-        logger.debug("[SYNC] Skipping post sync: LOCAL_DATABASE_URL not set (coordinator mode)")
-        return
-
-    try:
-        from services.sync_service import SyncService
-
-        async with SyncService() as sync:
-            ok = await sync.push_post(post_id)
-            if ok:
-                logger.info("[SYNC] Pushed published post to cloud DB: %s", post_id)
-            else:
-                logger.warning("[SYNC] push_post returned False for post %s", post_id)
-    except Exception as e:
-        logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
-
-
 def _should_run_post_publish_hooks() -> bool:
-    """Return True if post-publish hooks (sync + embed) should run.
+    """Return True when running on the local-workstation worker.
 
-    They require LOCAL_DATABASE_URL to be set, meaning we are on the
-    local workstation with the brain DB. On the cloud coordinator,
-    LOCAL_DATABASE_URL is absent and hooks are silently skipped.
+    Mirrors ``publish_service._should_run_post_publish_hooks`` — uses
+    ``DEPLOYMENT_MODE`` rather than ``LOCAL_DATABASE_URL`` (the legacy check
+    that silently skipped hooks on the worker; fixed in publish_service
+    2026-05-08; routes copy updated 2026-06-08, poindexter#683).
     """
-    return bool(os.getenv("LOCAL_DATABASE_URL"))
+    return os.getenv("DEPLOYMENT_MODE", "coordinator").lower() == "worker"
 
 
 # ============================================================================

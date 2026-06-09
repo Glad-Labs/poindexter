@@ -92,7 +92,10 @@ def test_graph_def_carries_caption_node():
     assert "transcribe_narration" in node_ids
     node_atoms = {n["atom"] for n in MEDIA_PIPELINE_GRAPH_DEF["nodes"]}
     assert "media.transcribe_narration" in node_atoms
-    # The transcribe node sits between load_scripts and render_long_video.
+    # Phase 2 (#1193) inserted qa_audio between transcribe_narration and
+    # render_long_video: load_scripts → transcribe_narration → qa_audio →
+    # render_long_video.
     edges = {(e["from"], e["to"]) for e in MEDIA_PIPELINE_GRAPH_DEF["edges"]}
     assert ("load_scripts", "transcribe_narration") in edges
-    assert ("transcribe_narration", "render_long_video") in edges
+    assert ("transcribe_narration", "qa_audio") in edges
+    assert ("qa_audio", "render_long_video") in edges
