@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+from modules.content.atoms._qa_rail_common import aggregate_rail_reviews, resolve_gate_states
 from plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,44 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     )
     final_score = result["qa_final_score"]
     approved = bool(result["approved"])
+
+    # Vacuous-pass guard (poindexter#680): a required rail that emits NO review
+    # still passes silently because aggregate_rail_reviews sees nothing to veto.
+    # Load gate states and fail closed when any required-to-pass rail is absent.
+    pool = getattr(state.get("database_service"), "pool", None)
+    site_config = state.get("site_config")
+    settings_service = state.get("settings_service")
+    if pool is not None and site_config is not None and approved:
+        try:
+            from modules.content.multi_model_qa import MultiModelQA
+            _qa = MultiModelQA(
+                pool=pool, settings_service=settings_service,
+                site_config=site_config, platform=state.get("platform"),
+            )
+            gate_states = await resolve_gate_states(_qa)
+            present = {r.get("reviewer") for r in reviews}
+            missing_required = [
+                gate_name
+                for gate_name, (enabled, required) in gate_states.items()
+                if required and enabled and gate_name not in present
+            ]
+            if missing_required:
+                logger.warning(
+                    "[qa.aggregate] required rail(s) produced no review — "
+                    "failing closed: %s (task=%s)",
+                    missing_required, str(state.get("task_id") or "?")[:8],
+                )
+                approved = False
+                result = {
+                    **result,
+                    "approved": False,
+                    "qa_final_verdict": "reject",
+                    "vetoed_by": result.get("vetoed_by", []) + [
+                        f"missing_required:{g}" for g in missing_required
+                    ],
+                }
+        except Exception as _guard_err:  # noqa: BLE001
+            logger.debug("[qa.aggregate] vacuous-pass guard skipped: %s", _guard_err)
     if result.get("known_wrong_fact_rescued"):
         logger.info(
             "[qa.aggregate] web fact-check rescued a known_wrong_fact-only "
@@ -108,6 +146,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # for finalize_task's qa_feedback.
         "qa_reviews": list(reviews),
         "qa_rewrite_attempts": 0,
+        # Surface veto reasons for callers and tests; empty list on approve.
+        "vetoed_by": result.get("vetoed_by", []),
     }
 
     if not approved:

@@ -379,3 +379,88 @@ class TestQaAggregateEmitsPassAudit:
         assert passes[0]["details"]["approved"] is False
         # Rejected passes are severity=warning (mirrors the legacy stage).
         assert passes[0]["severity"] == "warning"
+
+
+class _FakeSiteConfig:
+    def get(self, key, default=None):
+        return default
+
+
+class _VacuousPool:
+    async def execute(self, *a):
+        pass
+
+    def acquire(self):
+        pass
+
+
+class _VacuousDB:
+    def __init__(self):
+        self.pool = _VacuousPool()
+    async def update_task(self, *a, **kw):
+        pass
+    async def mark_model_performance_outcome(self, *a, **kw):
+        pass
+
+
+@pytest.mark.unit
+class TestQaAggregateVacuousPassGuard:
+    """poindexter#680: a required rail that emits no review must fail closed,
+    not wave content through as if the rail passed."""
+
+    async def test_missing_required_rail_rejects(self, monkeypatch):
+        # Patch resolve_gate_states to report deepeval_g_eval as required+enabled.
+        async def _fake_gate_states(_qa):
+            return {"deepeval_g_eval": (True, True), "ragas_eval": (True, False)}
+
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            _fake_gate_states,
+        )
+        # Also stub MultiModelQA construction (it requires Ollama + DB).
+        monkeypatch.setattr(
+            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            lambda self, **kw: None,
+        )
+
+        state = {
+            "platform": FakePlatform(),
+            "database_service": _VacuousDB(),
+            "site_config": _FakeSiteConfig(),
+            # One non-required rail approved; the required deepeval_g_eval is absent.
+            "qa_rail_reviews": [
+                {"reviewer": "ragas_eval", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": True, "feedback": ""},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        assert any("missing_required:deepeval_g_eval" in v for v in out.get("vetoed_by", []))
+
+    async def test_all_required_present_approves(self, monkeypatch):
+        # All required rails present → normal approve path.
+        async def _fake_gate_states(_qa):
+            return {"deepeval_g_eval": (True, True)}
+
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            _fake_gate_states,
+        )
+        monkeypatch.setattr(
+            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            lambda self, **kw: None,
+        )
+
+        state = {
+            "platform": FakePlatform(),
+            "database_service": _VacuousDB(),
+            "site_config": _FakeSiteConfig(),
+            "qa_rail_reviews": [
+                {"reviewer": "deepeval_g_eval", "approved": True, "score": 88.0,
+                 "provider": "ollama", "advisory": False, "feedback": "good"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "approve"
+        assert "_halt" not in out
