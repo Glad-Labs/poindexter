@@ -1313,11 +1313,18 @@ class TestHallucinatedReferenceDetection:
             f"{[h.matched_text for h in hallucinated]}"
         )
 
-    def test_hallucinated_reference_promotes_after_threshold(self):
-        """Many hallucinated_reference warnings should promote to critical.
+    def test_hallucinated_reference_stays_warning_not_promoted(self):
+        """Many fake-library references stay WARNINGS and never hard-reject.
 
-        Uses the same threshold (``content_validator_warning_reject_threshold``
-        default 3) wired for ``unlinked_citation`` in #91.
+        Demoted 2026-06-09 (Glad-Labs/poindexter#692): the programmatic regex
+        cannot tell a fabricated ``fakelib_one`` from a real post-cutoff product
+        (``Mythos 5``) or an internal project file (``api_token_auth.py``) — so
+        ``hallucinated_reference`` no longer promotes to critical
+        (``content_validator_hallucinated_reference_warning_threshold`` defaults
+        to ``0`` = never promote). Detection is INTACT — the warnings still fire
+        (score penalty + rewrite signal + Grafana counter) — but the hard veto
+        moves to the LLM critic + the qa.web_factcheck rescue (#661), which CAN
+        distinguish a real new library from a fabricated one.
         """
         content = (
             "The post name-drops `fakelib_one(event)`, then suggests "
@@ -1331,16 +1338,16 @@ class TestHallucinatedReferenceDetection:
             topic="python",
             tags=["backend"], site_config=_SC)
         hallucinated = self._hallucinated_issues(result)
-        # 4+ matches should exceed the default threshold of 3 and promote.
+        # Still DETECTED — the demotion changes severity, not detection.
         assert len(hallucinated) >= 4, (
             f"expected 4+ hallucinated matches, got {len(hallucinated)}: "
             f"{[h.matched_text for h in hallucinated]}"
         )
-        assert all(h.severity == "critical" for h in hallucinated), (
-            f"expected all hallucinated warnings to promote to critical, "
+        assert all(h.severity == "warning" for h in hallucinated), (
+            f"hallucinated_reference must stay non-fatal warning, "
             f"got severities {[h.severity for h in hallucinated]}"
         )
-        assert result.passed is False
+        assert result.passed is True
 
     def test_tags_parameter_is_optional(self):
         """Calling validate_content without tags must still work."""
@@ -1523,3 +1530,229 @@ class TestMarkdownEmphasisTruncationFalsePositive:
         )
         cats = [i.category for i in result.issues]
         assert "truncated_content" in cats
+
+
+# ---------------------------------------------------------------------------
+# Internal-file / path exemption from the hallucinated-library rule
+# (Glad-Labs/poindexter#692, 2026-06-09)
+# ---------------------------------------------------------------------------
+#
+# Captured live: prod task ba847e88 hard-rejected a post the LLM critic scored
+# 92/100 because the backtick reference `api_token_auth.py` — an INTERNAL
+# project file the post legitimately discussed — was extracted as a
+# library-candidate (root ``api_token_auth``), found nowhere in stdlib /
+# top-500 PyPI / Ollama lists, and flagged ``hallucinated_reference``. A
+# dev_diary-style post about the codebase references several such ``*.py``
+# files, so the per-category count promotion (prod threshold 5) escalated them
+# to critical and vetoed the whole post.
+#
+# A backtick token that ends in a known source/config file extension
+# (``api_token_auth.py``, ``Component.tsx``, ``config.json``) or is path-like
+# (``services/foo.py``) is the author pointing at a file in the repo — never an
+# external library to check against PyPI. The exemption is structural (suffix /
+# separator), so it needs no repo I/O and works for any operator's tree.
+
+
+class TestInternalFilePathExemption:
+    """Internal project files / repo paths are NOT hallucinated libraries."""
+
+    def test_looks_like_file_or_path_predicate(self):
+        from modules.content.content_validator import _looks_like_file_or_path
+
+        # Files (known source / config extensions) and paths → True.
+        assert _looks_like_file_or_path("api_token_auth.py")
+        assert _looks_like_file_or_path("Component.tsx")
+        assert _looks_like_file_or_path("worker_service.py")
+        assert _looks_like_file_or_path("config.json")
+        assert _looks_like_file_or_path("services/foo.py")
+        assert _looks_like_file_or_path("web\\public-site\\lib\\posts.ts")
+        # Real library / attribute references → False (still validated).
+        assert not _looks_like_file_or_path("asyncio.run")
+        assert not _looks_like_file_or_path("np.array")
+        assert not _looks_like_file_or_path("requests")
+        assert not _looks_like_file_or_path("fakelib_one")
+        assert not _looks_like_file_or_path("")
+
+    def test_extract_candidates_skips_internal_py_file(self):
+        from modules.content.content_validator import _extract_library_candidates
+
+        cands = _extract_library_candidates(
+            "We split the auth layer into `api_token_auth.py` this week."
+        )
+        assert not any("api_token_auth" in raw for raw, _ in cands), (
+            f"internal .py file must not be a library candidate, got: {cands}"
+        )
+
+    def test_internal_py_file_not_flagged_as_hallucinated(self):
+        # The exact ba847e88 trigger.
+        content = (
+            "We split the auth layer out into `api_token_auth.py` this week. "
+            "The module centralises token verification for every route."
+        )
+        result = validate_content(
+            "Auth Refactor", content, "tech", tags=["tech"], site_config=_SC
+        )
+        hallucinated = [
+            i for i in result.issues if i.category == "hallucinated_reference"
+        ]
+        assert not any("api_token_auth" in h.matched_text for h in hallucinated), (
+            f"internal file flagged as hallucinated library: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+
+    def test_codebase_discussion_post_not_hard_rejected(self):
+        """A dev_diary post about the codebase references many internal files.
+
+        Before the fix each ``*.py`` backtick ref became a
+        ``hallucinated_reference`` warning and the count threshold promoted them
+        to critical (the ba847e88 failure mode). They must not produce ANY
+        critical now.
+        """
+        content = (
+            "This week we refactored the worker. We moved token logic into "
+            "`api_token_auth.py`, split the dispatcher into `worker_service.py`, "
+            "and pulled the gate into `auto_publish_gate.py`. The validator now "
+            "lives in `content_validator.py`, the rail in `qa_programmatic.py`, "
+            "and the runner in `template_runner.py`. The frontend hook moved to "
+            "`usePosts.tsx` and config to `vercel.json`."
+        )
+        result = validate_content(
+            "Refactor Diary", content, "tech", tags=["tech"], site_config=_SC
+        )
+        crit = [i for i in result.issues if i.severity == "critical"]
+        assert not crit, (
+            f"internal-file references must not hard-reject; got criticals: "
+            f"{[(c.category, c.matched_text) for c in crit]}"
+        )
+        assert result.passed is True
+
+    def test_real_fake_library_still_detected(self):
+        """The exemption must NOT swallow genuine fabricated libraries: a
+        non-file token (`fakelib_one`) is still detected (as a warning)."""
+        content = "The post relies on `fakelib_one(event)` to schedule work."
+        result = validate_content(
+            "Fakes", content, "python", tags=["backend"], site_config=_SC
+        )
+        hallucinated = [
+            i for i in result.issues if i.category == "hallucinated_reference"
+        ]
+        assert any("fakelib_one" in h.matched_text for h in hallucinated)
+
+
+# ---------------------------------------------------------------------------
+# Demotion: unlinked_citation + hallucinated_reference are non-fatal warnings
+# (Glad-Labs/poindexter#692, 2026-06-09)
+# ---------------------------------------------------------------------------
+#
+# Captured live: prod tasks 5979b399 / 29921a2d / b0ee40b9 were hard-rejected
+# at 0/100 by the programmatic rail when rhetorical / self-referential phrases
+# ("According to our analysis", "As noted in the Indie Hackers blueprint",
+# "Published in Glad Labs") tripped UNLINKED_CITATION_PATTERNS 7+ times and the
+# count threshold promoted them to critical — despite high LLM-critic scores.
+#
+# Both categories are pattern-based heuristics that cannot distinguish a
+# fabricated external reference from a rhetorical phrase, a real new product, or
+# a legitimate news citation. They are demoted to non-promotable warnings; the
+# hard veto for genuinely fabricated EXTERNAL refs moves to the LLM critic +
+# qa.web_factcheck (#661). Fake people / stats / quotes / company claims stay
+# hard-critical (emitted at critical severity directly, unaffected here).
+
+
+class TestUnlinkedCitationDemotion:
+    """Rhetorical / self-referential citation phrases never hard-reject."""
+
+    def test_rhetorical_citations_stay_warning_and_pass(self):
+        content = (
+            "According to our analysis, the trend is clear. As noted in the "
+            "Indie Hackers blueprint, distribution beats product. According to "
+            "our data, retention rose. As highlighted in the Founder Playbook, "
+            "focus wins. According to our research, churn fell. As reported in "
+            "the Growth Memo, loops compound. According to our findings, the "
+            "model holds. As shown in the Weekly Review, momentum matters."
+        )
+        result = validate_content(
+            "Growth Notes", content, "business", site_config=_SC
+        )
+        unlinked = [
+            i for i in result.issues if i.category == "unlinked_citation"
+        ]
+        # Detection intact — the heuristic still matches the rhetorical prose.
+        assert len(unlinked) >= 3, (
+            f"expected the citation patterns to still fire, got {len(unlinked)}"
+        )
+        # But never promoted to critical, and nothing else hard-fails.
+        assert all(i.severity == "warning" for i in unlinked)
+        assert not [i for i in result.issues if i.severity == "critical"]
+        assert result.passed is True
+
+    def test_published_in_company_name_does_not_hard_reject(self):
+        content = (
+            "Published in Glad Labs, this note recaps the week. " * 8
+        )
+        result = validate_content(
+            "Weekly Recap", content, "business", site_config=_SC
+        )
+        assert not [i for i in result.issues if i.severity == "critical"]
+        assert result.passed is True
+
+
+class TestPostCutoffProductArticle:
+    """Forward guard for the upcoming Anthropic-models article (Claude Fable 5
+    / Mythos 5 / Opus 4.8 / "Project Glasswing", announced 2026-06-09). Brand-
+    new proper nouns trip the hallucinated-library rule and the announcement
+    citations trip the unlinked-citation rule — none are fabrications, so the
+    programmatic gate must not hard-reject."""
+
+    def test_new_model_announcement_not_hard_rejected(self):
+        # Enough proper-noun library refs (>4) AND news citations (>6) to trip
+        # BOTH count thresholds in the test env (global=3, unlinked=6) — i.e.
+        # this content hard-rejected before the 2026-06-09 demotion.
+        content = (
+            "Anthropic announced Claude Fable 5 and Mythos 5 today, alongside "
+            "Opus 4.8. According to the Anthropic announcement, Project "
+            "Glasswing powers the new reasoning core. Developers can call the "
+            "Fable API and explore the Mythos SDK. The Glasswing framework "
+            "underpins all three, and the Fable library ships with a Mythos "
+            "package for tool use. As reported in the Anthropic blog, latency "
+            "dropped. According to the release notes, the models ship this "
+            "week. As noted in the changelog, pricing is unchanged. According "
+            "to the technical report, context grew. As described in the model "
+            "card, safety held. According to the pricing page, tiers are flat. "
+            "As highlighted in the developer guide, migration is one line."
+        )
+        result = validate_content(
+            "Anthropic Ships Fable 5",
+            content,
+            topic="ai-ml",
+            tags=["ai-ml"],
+            site_config=_SC,
+        )
+        crit = [i for i in result.issues if i.severity == "critical"]
+        assert not crit, (
+            f"post-cutoff proper nouns + news citations must not hard-reject; "
+            f"got: {[(c.category, c.matched_text) for c in crit]}"
+        )
+        assert result.passed is True
+
+
+class TestGenuineFabricationStillHardFails:
+    """Regression guard: the demotion must NOT weaken real fabrication
+    detection. Fake people / stats / quotes stay hard-critical."""
+
+    def test_fake_person_still_hard_fails(self):
+        content = "Sarah Johnson, CEO at Acme, said our tool was transformative."
+        result = validate_content("AI Trends", content, "ai", site_config=_SC)
+        assert any(
+            i.category == "fake_person" and i.severity == "critical"
+            for i in result.issues
+        )
+        assert result.passed is False
+
+    def test_fabricated_study_still_hard_fails(self):
+        content = (
+            "A 2024 report by Gartner found a 50% reduction in costs after "
+            "teams adopted the approach across the board."
+        )
+        result = validate_content("AI Adoption", content, "ai", site_config=_SC)
+        assert any(i.severity == "critical" for i in result.issues)
+        assert result.passed is False

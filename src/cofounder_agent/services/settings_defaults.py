@@ -252,6 +252,14 @@ DEFAULTS: dict[str, str] = {
     'content_router_qa_rewrite_max_tokens': '8000',
     'content_router_qa_rewrite_timeout_seconds': '240',
     'content_router_seo_title_max_tokens': '4000',
+    # Content-validator per-category promotion thresholds. 0 = never promote
+    # this warning category to a hard critical (Glad-Labs/poindexter#692):
+    # both rules are pattern heuristics that can't tell a fabricated external
+    # ref from a rhetorical phrase / real post-cutoff product / internal file,
+    # so the hard veto lives with the LLM critic + qa.web_factcheck (#661).
+    # Raise > 0 to re-arm count-based promotion for that category.
+    'content_validator_hallucinated_reference_warning_threshold': '0',
+    'content_validator_unlinked_citation_warning_threshold': '0',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'deepeval_enabled': 'true',
     'enable_training_capture': 'true',

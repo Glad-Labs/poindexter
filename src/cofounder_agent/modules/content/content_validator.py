@@ -947,6 +947,51 @@ def _get_hallucination_whitelist() -> set[str]:
     return _HALLUCINATION_WHITELIST_BASE | _load_hallucination_whitelist_additions_sync()
 
 
+# Source / config file extensions. A backtick token ending in one of these
+# (``api_token_auth.py``, ``Component.tsx``, ``vercel.json``) is the author
+# referencing a FILE in the repo — never an external library to be checked
+# against PyPI/stdlib/Ollama. See ``_looks_like_file_or_path``.
+_SOURCE_FILE_EXTENSIONS = frozenset({
+    # languages
+    "py", "pyi", "ts", "tsx", "js", "jsx", "mjs", "cjs",
+    "rs", "go", "rb", "java", "kt", "kts", "swift", "php",
+    "c", "h", "cpp", "cc", "hpp", "cs", "scala", "clj", "ex", "exs",
+    "lua", "dart", "vue", "svelte",
+    # shell / build
+    "sh", "bash", "zsh", "ps1", "bat",
+    # markup / style / data / config
+    "html", "css", "scss", "sass", "sql",
+    "json", "toml", "yaml", "yml", "ini", "cfg", "conf", "env",
+    "md", "rst", "txt", "lock", "xml", "csv",
+})
+
+
+def _looks_like_file_or_path(raw: str) -> bool:
+    """True when a backtick token is a FILE or repo PATH, not a library.
+
+    Internal project files (``api_token_auth.py``, ``Component.tsx``) and repo
+    paths (``services/foo.py``) are the author pointing at a file in the
+    codebase — never an external library. Flagging them as
+    ``hallucinated_reference`` was a false-positive source: prod task ba847e88
+    hard-rejected a 92/100 post on a single ``api_token_auth.py`` reference, and
+    codebase-discussion (dev_diary) posts that name several ``*.py`` files
+    tripped the count-threshold promotion into a multi-critical veto.
+
+    Detected structurally — a path separator, or a final segment in
+    ``_SOURCE_FILE_EXTENSIONS`` — so it needs no repo I/O and works for any
+    operator's tree. Real dotted library/attribute refs (``asyncio.run``,
+    ``np.array``) have no file extension, so detection of genuine fabricated
+    libraries is intact (Glad-Labs/poindexter#692).
+    """
+    if not raw:
+        return False
+    if "/" in raw or "\\" in raw:
+        return True
+    if "." not in raw:
+        return False
+    return raw.rsplit(".", 1)[-1].lower() in _SOURCE_FILE_EXTENSIONS
+
+
 def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
     """Pull potential library/API references from the text.
 
@@ -964,6 +1009,11 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
         for m in pattern.finditer(clean):
             raw = m.group(1)
             if not raw:
+                continue
+            # Internal project file / repo path is not a library — skip before
+            # any list lookup so codebase-discussion posts that name several
+            # ``*.py`` files don't false-positive (Glad-Labs/poindexter#692).
+            if _looks_like_file_or_path(raw):
                 continue
             root = raw.split(".", 1)[0]
             norm = _normalize_pkg(root)
@@ -1854,16 +1904,26 @@ def validate_content(
     _warning_threshold = _sc.get_int(
         "content_validator_warning_reject_threshold", 3,
     )
-    # Per-category override: ``unlinked_citation`` is more tolerant than the
-    # global default because dev_diary + URL-seeded posts naturally cite
-    # several sources per piece. The default of 3 was triggering on
-    # legitimate posts that just had four "PR #N" references. Override
-    # value (default 6) raises the bar specifically for this category;
-    # other categories still use the global threshold. Tunable via
-    # ``content_validator_unlinked_citation_warning_threshold``.
+    # Per-category override. ``unlinked_citation`` and ``hallucinated_reference``
+    # are DEMOTED to non-promotable warnings (default 0 = never promote, via the
+    # ``_effective_threshold <= 0`` skip below). These two rules are pattern-based
+    # heuristics that cannot distinguish a fabricated EXTERNAL reference from a
+    # rhetorical phrase ("According to our analysis"), a real post-cutoff product
+    # ("Claude Mythos 5"), a legitimate news citation, or an internal file — so
+    # accumulated false positives were promoting to a hard 0/100 veto on
+    # high-quality posts (prod tasks ba847e88 / 5979b399 / 29921a2d / b0ee40b9,
+    # 2026-06-09). They still fire as WARNINGS (score penalty + rewrite signal +
+    # Grafana counter); the hard veto for genuinely fabricated external refs
+    # moves to the LLM critic (qa.critic) + the qa.web_factcheck rescue (#661),
+    # which CAN make that distinction. Fake people/stats/quotes/company claims are
+    # emitted at ``critical`` severity directly and are unaffected. Operators can
+    # re-arm either category by setting its threshold > 0 (Glad-Labs/poindexter#692).
     _per_category_overrides = {
         "unlinked_citation": _sc.get_int(
-            "content_validator_unlinked_citation_warning_threshold", 6,
+            "content_validator_unlinked_citation_warning_threshold", 0,
+        ),
+        "hallucinated_reference": _sc.get_int(
+            "content_validator_hallucinated_reference_warning_threshold", 0,
         ),
     }
     if _warning_threshold > 0:
