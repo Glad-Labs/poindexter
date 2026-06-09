@@ -349,7 +349,11 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
             ollama_url = _os.getenv("OLLAMA_URL") or "http://localhost:11434"
             provider = OllamaNativeProvider()
             provider._client = OllamaClient(base_url=ollama_url)
-            svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db)
+            _embed_model_row = await pool.fetchval(
+                "SELECT value FROM app_settings WHERE key = 'embedding_model'"
+            )
+            embed_model = _embed_model_row or "nomic-embed-text"
+            svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db, embed_model=embed_model)
 
             embedded, skipped, failed = 0, 0, 0
             with click.progressbar(rows, label="Embedding posts") as bar:

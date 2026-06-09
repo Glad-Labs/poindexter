@@ -277,3 +277,37 @@ class TestEmbedAllPosts:
 
         assert result["skipped"] == 1
         assert result["embedded"] == 1
+
+
+# ---------------------------------------------------------------------------
+# embed_model threading
+# ---------------------------------------------------------------------------
+
+
+class TestEmbedModelPassthrough:
+    """The model name must flow from the constructor into every embed call.
+    Without this guarantee, changing `embedding_model` in app_settings would
+    silently have no effect on the write path while the read (RAG) path honours
+    the setting — producing cross-model query/corpus mismatch."""
+
+    @pytest.mark.asyncio
+    async def test_custom_model_passed_to_provider_on_single_embed(self, ollama, embeddings_db):
+        svc = EmbeddingService(provider=ollama, embeddings_db=embeddings_db, embed_model="mxbai-embed-large")
+        await svc.embed_post(_make_post())
+        _, call_kwargs = ollama.embed.call_args
+        assert call_kwargs.get("model") == "mxbai-embed-large"
+
+    @pytest.mark.asyncio
+    async def test_default_model_is_nomic(self, ollama, embeddings_db):
+        svc = EmbeddingService(provider=ollama, embeddings_db=embeddings_db)
+        await svc.embed_post(_make_post())
+        _, call_kwargs = ollama.embed.call_args
+        assert call_kwargs.get("model") == "nomic-embed-text"
+
+    @pytest.mark.asyncio
+    async def test_custom_model_passed_on_batch_embed(self, ollama, embeddings_db):
+        svc = EmbeddingService(provider=ollama, embeddings_db=embeddings_db, embed_model="mxbai-embed-large")
+        ollama.embed_batch.return_value = [SAMPLE_EMBEDDING]
+        await svc.embed_all_posts([_make_post()])
+        _, call_kwargs = ollama.embed_batch.call_args
+        assert call_kwargs.get("model") == "mxbai-embed-large"

@@ -274,7 +274,7 @@ async def _ping_search_engines(
                 logger.warning("[SEO] Sitemap ping failed (non-fatal): %s", e)
 
 
-async def _embed_published_post(db_service, post_dict: dict) -> None:
+async def _embed_published_post(db_service, post_dict: dict, site_config: "SiteConfig | None" = None) -> None:
     """Embed a newly published post into pgvector (non-blocking)."""
     try:
         from plugins.registry import get_all_llm_providers
@@ -293,7 +293,12 @@ async def _embed_published_post(db_service, post_dict: dict) -> None:
             logger.debug("[RAG] Skipping post embedding: ollama_native provider not registered")
             return
 
-        embedding_svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db)
+        embed_model = (
+            site_config.get("embedding_model", "") or "nomic-embed-text"
+            if site_config is not None
+            else "nomic-embed-text"
+        )
+        embedding_svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db, embed_model=embed_model)
         await embedding_svc.embed_post(post_dict)
         logger.info("[RAG] Embedded published post for future RAG: %s", post_dict.get("title", "")[:60])
     except Exception as e:
@@ -1018,6 +1023,7 @@ def _queue_sync_and_embed(
     post_title: str,
     seo_description: str,
     post_content: Any,
+    site_config: "SiteConfig | None" = None,
 ) -> None:
     """Phase 8 — queue cloud-DB sync + pgvector embed (no-op when hooks off)."""
     if not _should_run_post_publish_hooks():
@@ -1030,13 +1036,13 @@ def _queue_sync_and_embed(
     }
     if background_tasks:
         background_tasks.add_task(_sync_published_post, post_id)
-        background_tasks.add_task(_embed_published_post, db_service, post_dict)
+        background_tasks.add_task(_embed_published_post, db_service, post_dict, site_config)
     else:
         _spawn_background(
             _sync_published_post(post_id), name=f"sync_published_post({post_id})"
         )
         _spawn_background(
-            _embed_published_post(db_service, post_dict),
+            _embed_published_post(db_service, post_dict, site_config),
             name=f"embed_published_post({post_id})",
         )
     logger.info("[publish_service] Queued sync + embed for post %s", post_id)
@@ -1443,7 +1449,8 @@ async def publish_post_from_task(
     # 8. Sync to cloud DB + embed in pgvector — phase 8
     # ---------------------------------------------------------------
     _queue_sync_and_embed(
-        db_service, background_tasks, post_id, post_title, seo_description, post_content
+        db_service, background_tasks, post_id, post_title, seo_description, post_content,
+        site_config=site_config,
     )
 
     # ---------------------------------------------------------------
