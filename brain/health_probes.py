@@ -244,42 +244,123 @@ async def probe_quality_score(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
+# Final safety literal for the content-gen probe — only used when neither
+# app_settings nor /api/tags yields a usable model. gemma3:27b is the prod
+# default writer (settings_defaults.pipeline_writer_model), so it's the most
+# likely-installed fallback if every dynamic source comes up empty.
+_CONTENT_GEN_FALLBACK_MODEL = "gemma3:27b"
+
+
+def _strip_ollama_prefix(model: str) -> str:
+    """Drop a leading ``ollama/`` LiteLLM routing prefix.
+
+    LiteLLM stores the writer model with an ``ollama/`` provider prefix
+    (e.g. ``ollama/gemma3:27b``), but Ollama's native ``/api/generate``
+    404s on a prefixed name — it wants the bare tag. Strip it here so the
+    probe queries the model Ollama actually knows about.
+    """
+    model = (model or "").strip()
+    if model.startswith("ollama/"):
+        return model[len("ollama/"):]
+    return model
+
+
+def _first_installed_generative_model() -> str:
+    """Return the first non-embedding model from Ollama's ``/api/tags``.
+
+    Best-effort, sync (called via ``asyncio.to_thread``): returns ``""``
+    if Ollama is unreachable or only embedding models are installed.
+    Embedding models can't serve ``/api/generate`` (they 400/500), so we
+    skip names that look like embedders.
+    """
+    ok, result = _http_json(f"{LOCAL_OLLAMA}/api/tags", timeout=5)
+    if not ok:
+        return ""
+    for m in result.get("models", []):
+        name = (m.get("name") or "").strip()
+        if not name:
+            continue
+        lowered = name.lower()
+        if "embed" in lowered or "bge" in lowered:
+            continue
+        return name
+    return ""
+
+
+async def _resolve_content_gen_model(pool) -> str:
+    """Resolve the model the content-gen probe should exercise.
+
+    Resolution order (first non-empty wins):
+
+    1. ``app_settings.pipeline_writer_model`` — the configured writer
+       (``ollama/`` prefix stripped).
+    2. ``app_settings.default_ollama_model``.
+    3. The first installed non-embedding model from ``/api/tags``.
+    4. ``_CONTENT_GEN_FALLBACK_MODEL`` — a safe literal.
+
+    Best-effort — never raises; a DB hiccup just falls through to the
+    next source.
+    """
+    for key in ("pipeline_writer_model", "default_ollama_model"):
+        try:
+            raw = await pool.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", key
+            )
+        except Exception as exc:
+            logger.warning(
+                "[content_gen] could not read %s from app_settings: %s", key, exc
+            )
+            raw = None
+        model = _strip_ollama_prefix(str(raw) if raw is not None else "")
+        if model:
+            return model
+
+    # Neither setting resolved — ask Ollama what's actually installed.
+    installed = await asyncio.to_thread(_first_installed_generative_model)
+    if installed:
+        return installed
+
+    return _CONTENT_GEN_FALLBACK_MODEL
+
+
 async def probe_content_gen(_pool) -> dict:
-    """Probe: Check Ollama can generate text — 1-sentence test."""
+    """Probe: Check Ollama can generate text — 1-sentence test.
+
+    Uses the DB-configured writer model (``pipeline_writer_model``, then
+    ``default_ollama_model``) rather than a hardcoded tag, so the probe
+    exercises a model that's actually installed. A hardcoded model that
+    isn't pulled makes ``/api/generate`` 404 and the probe falsely
+    reports content generation broken (#228 follow-up).
+    """
+    model = await _resolve_content_gen_model(_pool)
     ok, result = await asyncio.to_thread(
         _http_json,
         f"{LOCAL_OLLAMA}/api/generate",
         method="POST",
         data={
-            "model": "qwen3-coder:30b",
+            "model": model,
             "prompt": "Respond with exactly one sentence: What is FastAPI?",
             "stream": False,
             "options": {"num_predict": 50},
         },
         timeout=30,
     )
-    if not ok:
-        # Try fallback model
-        ok, result = await asyncio.to_thread(
-            _http_json,
-            f"{LOCAL_OLLAMA}/api/generate",
-            method="POST",
-            data={
-                "model": "llama3:latest",
-                "prompt": "Respond with exactly one sentence: What is Python?",
-                "stream": False,
-                "options": {"num_predict": 50},
-            },
-            timeout=30,
-        )
 
     if not ok:
-        return {"ok": False, "detail": f"Ollama generate failed: {result.get('error', 'unknown')}"}
+        return {
+            "ok": False,
+            "model": model,
+            "detail": (
+                f"Ollama generate failed for model {model!r}: "
+                f"{result.get('error', 'unknown')}"
+            ),
+        }
 
     response_text = result.get("response", "")
     has_content = len(response_text.strip()) > 10
     return {
         "ok": has_content,
+        "model": model,
         "response_length": len(response_text),
         "detail": "generation working" if has_content else "empty response",
     }

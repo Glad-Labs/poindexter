@@ -53,24 +53,35 @@ def _health_with_drift(pending: int, applied: int = 5, latest: str = "0121.py") 
     }
 
 
-def _settings_fetchval(**overrides):
+def _settings_fetchval(*, inflight: int = 0, **overrides):
     """Key-aware ``pool.fetchval`` stub for the auto-recover settings.
 
     The probe reads several app_settings via ``fetchval(query, key)``
-    (auto-recover, auto-sync, max-attempts). A single-return-value mock would
-    conflate them — so resolve by the key (2nd positional arg). Defaults:
-    auto-recover ON, auto-sync OFF (no real git), max-attempts 3.
+    (auto-recover, auto-sync, max-attempts, defer-while-inflight,
+    max-inflight-defers). A single-return-value mock would conflate them —
+    so resolve by the key (2nd positional arg). Defaults: auto-recover ON,
+    auto-sync OFF (no real git), max-attempts 3, defer ON, defer-cap 6.
+
+    The in-flight-task count query (``SELECT count(*) FROM pipeline_tasks
+    WHERE status = 'in_progress'``) takes NO key arg, so it resolves to the
+    ``inflight`` value (default 0 = nothing in-flight, preserving the
+    original restart-immediately behavior).
     """
     values = {
         mdp.AUTO_RECOVER_SETTING_KEY: "true",
         mdp.AUTO_SYNC_SETTING_KEY: "false",
         mdp.RECOVER_MAX_ATTEMPTS_SETTING_KEY: "3",
+        mdp.DEFER_WHILE_INFLIGHT_SETTING_KEY: "true",
+        mdp.MAX_INFLIGHT_DEFERS_SETTING_KEY: "6",
     }
     values.update(overrides)
 
     async def _fv(_query, *args):
-        key = args[0] if args else None
-        return values.get(key)
+        # The in-flight count query passes no key; everything else passes
+        # the setting key as the 2nd positional arg.
+        if not args:
+            return inflight
+        return values.get(args[0])
 
     return AsyncMock(side_effect=_fv)
 
@@ -82,12 +93,14 @@ def _reset_module_state():
     mdp._last_recover_attempt_pending = None
     mdp._recover_attempts = 0
     mdp._recover_cycles_waited = 0
+    mdp._inflight_defers = 0
     yield
     mdp._last_notify_drift_count = None
     mdp._last_relkind_notify_key = None
     mdp._last_recover_attempt_pending = None
     mdp._recover_attempts = 0
     mdp._recover_cycles_waited = 0
+    mdp._inflight_defers = 0
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +645,128 @@ class TestRecoverBackoffAndSync:
         # Fresh drift → immediate attempt again.
         await mdp.run_migration_drift_probe(pool, **persist)
         assert len(restart_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# In-flight guard (Glad-Labs/poindexter#228) — defer the restart while a
+# content task is generating so it isn't orphaned in 'in_progress'.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInflightDefer:
+    @pytest.mark.asyncio
+    async def test_restart_deferred_when_task_in_flight(self):
+        # Drift detected, auto-recover ON, but a content task is mid-run →
+        # the restart is DEFERRED (no restart, healthy "waiting" status).
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(inflight=1)
+
+        notifies: list[dict] = []
+        restart_calls: list[None] = []
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert summary["ok"] is True  # healthy self-heal-in-waiting
+        assert summary["status"] == "recover_deferred_inflight"
+        assert summary["inflight_tasks"] == 1
+        assert summary["consecutive_defers"] == 1
+        assert restart_calls == [], "must not restart while a task is in-flight"
+        # Deferring does NOT consume a recovery attempt.
+        assert mdp._recover_attempts == 0
+
+        events = [
+            call.args[1] for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+        ]
+        assert "probe.migration_drift_recover_deferred_inflight" in events
+
+    @pytest.mark.asyncio
+    async def test_defer_cap_exceeded_restart_proceeds(self):
+        # Persistent in-flight work: defer up to the cap, then restart anyway.
+        # Cap = 2 here so the test is short.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            inflight=1, **{mdp.MAX_INFLIGHT_DEFERS_SETTING_KEY: "2"}
+        )
+
+        restart_calls: list[None] = []
+        kw = {
+            "notify_fn": lambda **k: None,
+            "restart_fn": lambda: (restart_calls.append(None) or (True, "Restarted")),
+            "wait_fn": lambda: (True, _health_with_drift(0)),  # recovers on restart
+            "health_fetcher": lambda: _health_with_drift(1),
+        }
+
+        # Cycle 1 + 2 → deferred (cap not yet reached).
+        s1 = await mdp.run_migration_drift_probe(pool, **kw)
+        s2 = await mdp.run_migration_drift_probe(pool, **kw)
+        assert s1["status"] == "recover_deferred_inflight"
+        assert s2["status"] == "recover_deferred_inflight"
+        assert restart_calls == []
+
+        # Cycle 3 → cap reached, restart proceeds (drift clears → recovered).
+        s3 = await mdp.run_migration_drift_probe(pool, **kw)
+        assert s3["status"] == "recovered"
+        assert len(restart_calls) == 1
+        # Defer counter reset after falling through.
+        assert mdp._inflight_defers == 0
+
+        events = [
+            call.args[1] for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+        ]
+        assert "probe.migration_drift_recover_defer_cap_reached" in events
+
+    @pytest.mark.asyncio
+    async def test_defer_setting_off_restarts_immediately(self):
+        # Defer disabled → original behavior: restart even with in-flight work.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            inflight=3, **{mdp.DEFER_WHILE_INFLIGHT_SETTING_KEY: "false"}
+        )
+
+        restart_calls: list[None] = []
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert summary["status"] == "recovered"
+        assert len(restart_calls) == 1  # restarted despite in-flight work
+
+    @pytest.mark.asyncio
+    async def test_no_inflight_restarts_immediately(self):
+        # Defer ON but nothing in-flight → restart proceeds as before.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(inflight=0)
+
+        restart_calls: list[None] = []
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=lambda: (restart_calls.append(None) or (True, "Restarted")),
+            wait_fn=lambda: (True, _health_with_drift(0)),
+            health_fetcher=lambda: _health_with_drift(1),
+        )
+
+        assert summary["status"] == "recovered"
+        assert len(restart_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_count_inflight_tasks_best_effort_zero_on_error(self):
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(side_effect=Exception("db down"))
+        assert await mdp._count_inflight_tasks(pool) == 0
 
 
 # ---------------------------------------------------------------------------

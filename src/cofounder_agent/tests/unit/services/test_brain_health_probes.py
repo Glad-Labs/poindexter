@@ -555,3 +555,107 @@ class TestProbeCadenceSlo:
         assert r["ok"] is False
         assert r["expected_for_window"] == 3.0
         assert "target 3/day" in r["detail"]
+
+
+@pytest.mark.unit
+class TestStripOllamaPrefix:
+    def test_strips_leading_ollama_prefix(self):
+        assert hp._strip_ollama_prefix("ollama/gemma3:27b") == "gemma3:27b"
+
+    def test_leaves_bare_model_untouched(self):
+        assert hp._strip_ollama_prefix("gemma3:27b") == "gemma3:27b"
+
+    def test_only_strips_leading_occurrence(self):
+        # A model name that merely contains 'ollama/' mid-string is left alone.
+        assert hp._strip_ollama_prefix("my-ollama/model") == "my-ollama/model"
+
+    def test_empty_and_none_safe(self):
+        assert hp._strip_ollama_prefix("") == ""
+        assert hp._strip_ollama_prefix(None) == ""
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestResolveContentGenModel:
+    """The content-gen probe resolves its model dynamically from
+    app_settings (writer → default), then /api/tags, then a safe literal —
+    so it never 404s on an uninstalled hardcoded model (#228 follow-up)."""
+
+    def _pool_with_settings(self, **values):
+        """fetchval(query, key) → values[key]; missing keys return None."""
+        p = _make_pool()
+
+        async def _fv(_query, *args):
+            key = args[0] if args else None
+            return values.get(key)
+
+        p.fetchval = AsyncMock(side_effect=_fv)
+        return p
+
+    async def test_uses_writer_model_and_strips_prefix(self):
+        # pipeline_writer_model carries a LiteLLM ollama/ prefix → stripped.
+        p = self._pool_with_settings(pipeline_writer_model="ollama/glm-4.7-5090:latest")
+        model = await hp._resolve_content_gen_model(p)
+        assert model == "glm-4.7-5090:latest"
+
+    async def test_falls_back_to_default_ollama_model(self):
+        p = self._pool_with_settings(
+            pipeline_writer_model="", default_ollama_model="gemma3:27b"
+        )
+        model = await hp._resolve_content_gen_model(p)
+        assert model == "gemma3:27b"
+
+    async def test_falls_back_to_first_installed_non_embedding_model(self):
+        # Neither setting set → probe asks /api/tags and skips embedders.
+        p = self._pool_with_settings()
+        tags = MagicMock()
+        tags.read.return_value = (
+            b'{"models": [{"name": "nomic-embed-text:latest"},'
+            b' {"name": "phi4:14b"}]}'
+        )
+        with patch("urllib" + ".request.urlopen", return_value=tags):
+            model = await hp._resolve_content_gen_model(p)
+        assert model == "phi4:14b"  # embedder skipped
+
+    async def test_final_literal_when_nothing_resolves(self):
+        # No settings, /api/tags unreachable → safe literal.
+        p = self._pool_with_settings()
+        with patch("urllib" + ".request.urlopen", side_effect=RuntimeError("down")):
+            model = await hp._resolve_content_gen_model(p)
+        assert model == hp._CONTENT_GEN_FALLBACK_MODEL
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeContentGen:
+    """probe_content_gen exercises the resolved (installed) model rather
+    than a hardcoded one, and surfaces the model it used."""
+
+    def _pool_with_writer(self, writer):
+        p = _make_pool()
+
+        async def _fv(_query, *args):
+            key = args[0] if args else None
+            return {"pipeline_writer_model": writer}.get(key)
+
+        p.fetchval = AsyncMock(side_effect=_fv)
+        return p
+
+    async def test_resolves_installed_model_and_generates(self):
+        p = self._pool_with_writer("ollama/glm-4.7-5090:latest")
+        resp = MagicMock()
+        resp.read.return_value = b'{"response": "FastAPI is a Python web framework."}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_content_gen(p)
+        assert r["ok"] is True
+        # The ollama/ prefix must be stripped before hitting /api/generate.
+        assert r["model"] == "glm-4.7-5090:latest"
+        assert r["response_length"] > 0
+
+    async def test_generate_failure_reports_model(self):
+        p = self._pool_with_writer("gemma3:27b")
+        with patch("urllib" + ".request.urlopen", side_effect=RuntimeError("404")):
+            r = await hp.probe_content_gen(p)
+        assert r["ok"] is False
+        assert r["model"] == "gemma3:27b"
+        assert "gemma3:27b" in r["detail"]

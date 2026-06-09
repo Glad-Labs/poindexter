@@ -412,6 +412,20 @@ DEFAULTS: dict[str, str] = {
     'brain_anomaly_current_window_hours': '24',
     'brain_digest_window_hours': '6',
 
+    # ----- Migration-drift in-flight guard (brain/migration_drift_probe.py, #228) -----
+    # When true, the migration-drift auto-recover path defers the worker
+    # restart while a content task is mid-generation (pipeline_tasks.status
+    # = 'in_progress'). A restart mid-run orphans a multi-minute
+    # canonical_blog task in 'in_progress' (the claim path never re-picks
+    # it) until the 180-min stale sweep. Deferring lets the in-flight job
+    # finish before applying pending migrations.
+    'migration_drift_defer_while_inflight': 'true',
+    # Safety cap on consecutive defers (≈ one per 5-min brain cycle, so 6
+    # ≈ 30 min). Once reached the probe STOPS deferring and falls through
+    # to the normal restart — pending migrations matter too, and a wedged
+    # 'in_progress' row shouldn't block recovery forever.
+    'migration_drift_max_inflight_defers': '6',
+
     # ----- Cadence SLO probe (brain probe_cadence_slo, issue #525) -----
     # Compares ACTUAL publish output against this CONFIGURED target so a
     # cadence slowdown is caught within hours (existing publish_rate /

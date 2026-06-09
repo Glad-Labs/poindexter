@@ -82,6 +82,19 @@ AUTO_SYNC_SETTING_KEY = "migration_drift_auto_sync_enabled"
 DEPLOY_CHECKOUT_PATH_SETTING_KEY = "migration_drift_deploy_checkout_path"
 RECOVER_MAX_ATTEMPTS_SETTING_KEY = "migration_drift_recover_max_attempts"
 
+# In-flight guard (Glad-Labs/poindexter#228). A worker restart mid-content-run
+# orphans a multi-minute ``canonical_blog`` task in status='in_progress' — the
+# claim path only re-picks 'pending'/'rejected_retry', so the orphan sits until
+# the 180-min stale sweep. When ``migration_drift_defer_while_inflight`` is true
+# (default), the auto-recover path DEFERS the restart while any task is
+# in-flight, up to ``migration_drift_max_inflight_defers`` consecutive cycles —
+# then falls through to the normal restart (pending migrations matter too).
+DEFER_WHILE_INFLIGHT_SETTING_KEY = "migration_drift_defer_while_inflight"
+MAX_INFLIGHT_DEFERS_SETTING_KEY = "migration_drift_max_inflight_defers"
+
+# Default cap on consecutive in-flight defers — ≈30 min at the 5-min cycle.
+_DEFAULT_MAX_INFLIGHT_DEFERS = 6
+
 # In-brain-container path the deploy checkout is mounted at (RW). Only used when
 # auto-sync is enabled; overridable via DEPLOY_CHECKOUT_PATH_SETTING_KEY.
 _DEFAULT_DEPLOY_PATH = "/host-deploy"
@@ -139,6 +152,14 @@ _last_recover_attempt_pending: int | None = None
 # suppression only after the system has exhausted what it can safely do itself.
 _recover_attempts: int = 0
 _recover_cycles_waited: int = 0
+
+# Module-level state — consecutive cycles the auto-recover restart has been
+# DEFERRED because a content task was in-flight (Glad-Labs/poindexter#228). Reset
+# to 0 wherever the other episode counters reset (drift clears, recovery
+# succeeds, pending count changes) AND once the cap is hit and we fall through to
+# a restart. Bounded by ``migration_drift_max_inflight_defers`` so a wedged
+# 'in_progress' row can't block migration recovery forever.
+_inflight_defers: int = 0
 
 # Expected ``pg_class.relkind`` per relation, post-migration. Migration
 # 0125 (closes Glad-Labs/poindexter#329) unified ``content_tasks`` to be
@@ -398,6 +419,34 @@ async def _read_int_setting(pool, key: str, default: int) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+async def _count_inflight_tasks(pool) -> int:
+    """Return the count of ``pipeline_tasks`` rows currently mid-generation.
+
+    An ``in_progress`` row is a content task a worker has claimed and is
+    actively running (a multi-minute ``canonical_blog`` LLM job, or a
+    quick ``dev_diary`` render). The migration-drift auto-recover path
+    uses this to DEFER a worker restart while work is in flight, so it
+    doesn't orphan a mid-run task (the claim path only re-picks
+    'pending'/'rejected_retry', never 'in_progress').
+
+    Best-effort — returns 0 on any error so a transient DB hiccup can't
+    wedge migration recovery. Mirrors the other ``_read_*`` helpers.
+    """
+    try:
+        val = await pool.fetchval(
+            "SELECT count(*) FROM pipeline_tasks WHERE status = 'in_progress'"
+        )
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION_DRIFT] in-flight task count query failed: %s", exc
+        )
+        return 0
+    try:
+        return int(val or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 async def _emit_relkind_audit_and_notify(
@@ -691,7 +740,7 @@ async def run_migration_drift_probe(
     inclusion in the probe results map.
     """
     global _last_notify_drift_count, _last_recover_attempt_pending
-    global _recover_attempts, _recover_cycles_waited
+    global _recover_attempts, _recover_cycles_waited, _inflight_defers
 
     notify_fn = notify_fn or notify_operator
     restart_fn = restart_fn or _restart_worker_container
@@ -740,6 +789,7 @@ async def run_migration_drift_probe(
         _last_recover_attempt_pending = None
         _recover_attempts = 0
         _recover_cycles_waited = 0
+        _inflight_defers = 0
 
         # Even with zero pending migrations, the post-migration shape
         # contract can drift (e.g. someone hand-edits prod via psql). The
@@ -840,6 +890,7 @@ async def run_migration_drift_probe(
         _last_recover_attempt_pending = pending
         _recover_attempts = 0
         _recover_cycles_waited = 0
+        _inflight_defers = 0
 
     max_attempts = await _read_int_setting(
         pool, RECOVER_MAX_ATTEMPTS_SETTING_KEY, _DEFAULT_MAX_ATTEMPTS
@@ -908,6 +959,81 @@ async def run_migration_drift_probe(
                 "attempts": _recover_attempts,
             }
         _recover_cycles_waited = 0
+
+    # ---- In-flight guard: defer the restart while content is generating -----
+    # A restart mid-run orphans a multi-minute ``canonical_blog`` task in
+    # status='in_progress' — the claim path only re-picks 'pending'/
+    # 'rejected_retry', so the orphan sits until the 180-min stale sweep. While
+    # ``migration_drift_defer_while_inflight`` is on (default) and a task is
+    # in-flight, DEFER the restart — but only up to
+    # ``migration_drift_max_inflight_defers`` consecutive cycles, after which we
+    # fall through and restart anyway (pending migrations matter, and a wedged
+    # 'in_progress' row must not block recovery forever). Deferring does NOT
+    # consume a recovery attempt (the migrations still aren't applied), so the
+    # backoff/exhaustion budget is untouched.
+    if await _read_bool_setting(
+        pool, DEFER_WHILE_INFLIGHT_SETTING_KEY, default=True
+    ):
+        inflight = await _count_inflight_tasks(pool)
+        max_defers = await _read_int_setting(
+            pool, MAX_INFLIGHT_DEFERS_SETTING_KEY, _DEFAULT_MAX_INFLIGHT_DEFERS
+        )
+        if inflight > 0 and _inflight_defers < max_defers:
+            _inflight_defers += 1
+            defer_detail = (
+                f"{detected_detail} — restart DEFERRED: {inflight} content "
+                f"task(s) in-flight (defer {_inflight_defers}/{max_defers}). "
+                f"Restarting now would orphan a mid-run task in 'in_progress' "
+                f"until the 180-min stale sweep; waiting for it to finish "
+                f"before applying pending migrations."
+            )
+            logger.info("[MIGRATION_DRIFT] %s", defer_detail)
+            await _emit_audit_event(
+                pool,
+                "probe.migration_drift_recover_deferred_inflight",
+                defer_detail,
+                pending=pending,
+                extra={
+                    "inflight_tasks": inflight,
+                    "consecutive_defers": _inflight_defers,
+                    "max_defers": max_defers,
+                },
+            )
+            return {
+                "ok": True,  # healthy self-heal-in-waiting, not a failure
+                "status": "recover_deferred_inflight",
+                "detail": defer_detail,
+                "pending": pending,
+                "applied": drift["applied"],
+                "latest_applied": drift["latest_applied"],
+                "auto_recover_enabled": True,
+                "inflight_tasks": inflight,
+                "consecutive_defers": _inflight_defers,
+            }
+        if inflight > 0 and _inflight_defers >= max_defers:
+            # Cap hit — stop deferring and restart anyway. Log + audit so the
+            # orphan-on-restart is explainable after the fact.
+            cap_detail = (
+                f"{detected_detail} — in-flight defer cap reached "
+                f"({_inflight_defers}/{max_defers}) with {inflight} task(s) "
+                f"still in-flight; restarting to apply pending migrations "
+                f"(a mid-run task may be orphaned until the stale sweep)."
+            )
+            logger.warning("[MIGRATION_DRIFT] %s", cap_detail)
+            await _emit_audit_event(
+                pool,
+                "probe.migration_drift_recover_defer_cap_reached",
+                cap_detail,
+                pending=pending,
+                extra={
+                    "inflight_tasks": inflight,
+                    "consecutive_defers": _inflight_defers,
+                    "max_defers": max_defers,
+                },
+            )
+        # Falling through to restart — reset the defer counter so a future
+        # episode (or a future stretch of in-flight work) gets a fresh budget.
+        _inflight_defers = 0
 
     # ---- Perform one recovery attempt: (optional) resync, then restart ------
     _recover_attempts += 1
@@ -1037,6 +1163,7 @@ async def run_migration_drift_probe(
         _last_recover_attempt_pending = None
         _recover_attempts = 0
         _recover_cycles_waited = 0
+        _inflight_defers = 0
         return {
             "ok": True,
             "status": "recovered",
