@@ -233,6 +233,14 @@ class _State(TypedDict, total=False):
     # notable_commits, brain_decisions, audit_resolved, recent_posts,
     # cost_summary, date.
     context_bundle: dict[str, Any]
+    # Pre-collected external research corpus (ResearchService + RAG),
+    # threaded down from GenerateContentStage via run(). Injected into the
+    # draft prompt by _draft_node as a SOURCES section so the niche writer
+    # grounds + cites against the same corpus the QA critic grades against.
+    # Without it the niche writer drafted research-blind and the critic
+    # rejected every glad-labs post for "ignoring the SOURCES corpus"
+    # (2026-06-09 disconnect). Empty string when no research was gathered.
+    research_context: str
     # Phase 0 lab observability (2026-05-28) — populated by
     # _revise_node when it resolves a prompt via UnifiedPromptManager.
     # Surface up through run() into the caller stage so they land on
@@ -312,6 +320,23 @@ async def _draft_node(state: _State) -> _State:
                 f"commit, use the exact title and link to the URL given):\n\n"
                 f"{ground_truth}"
             )
+    # Inject the pre-collected external research corpus (ResearchService +
+    # RAG, threaded from GenerateContentStage via run()) as a SOURCES
+    # section. The QA critic grades the draft against this same corpus, so
+    # without surfacing it to the writer the niche path drafted research-
+    # blind and was rejected for "ignoring the SOURCES corpus" (2026-06-09).
+    # Phrased to override the "ONLY internal snippets" line above: these are
+    # vetted facts the writer SHOULD use in addition to the snippets.
+    research_context = (state.get("research_context") or "").strip()
+    if research_context:
+        instruction = (
+            f"{instruction}\n\n---\n\n"
+            f"SOURCES (vetted external research already gathered for this "
+            f"article — use these IN ADDITION to the internal snippets: ground "
+            f"your key claims in them and cite them inline as markdown links "
+            f"using the exact URLs provided. Do not invent other external facts "
+            f"or sources beyond these and the snippets):\n\n{research_context}"
+        )
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
     draft = await generate_with_context(
@@ -685,6 +710,7 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
             "pool_thread": thread_id,
             "writer_prompt_override": str(kw.get("writer_prompt_override") or ""),
             "context_bundle": cb_kw if isinstance(cb_kw, dict) else {},
+            "research_context": str(kw.get("research_context") or ""),
         }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)

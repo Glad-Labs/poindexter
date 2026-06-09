@@ -1232,6 +1232,33 @@ class TestHallucinatedReferenceDetection:
             f"{[h.matched_text for h in hallucinated]}"
         )
 
+    def test_backticked_common_content_words_not_flagged(self):
+        """Common English/content nouns wrapped in backticks (`source`,
+        `target`, `content`, `audience`) are NOT library references.
+
+        The bare-module pattern (`` `[a-z]{3,}` ``) flagged `source` as a
+        'hallucinated library/API reference', which the writer's citation
+        placeholders (`[source]`) tripped — failing the programmatic gate
+        0/100 and rejecting every post that used the word (2026-06-09
+        false positive). These belong in the whitelist alongside the
+        existing common-variable names (`data`, `result`, `value`, ...).
+        """
+        content = (
+            "Always cite your `source` when you make a claim. "
+            "Pick a `target` `audience` and tailor the `content` to it. "
+            "List your `sources` at the end."
+        )
+        result = validate_content(
+            "Citing Sources",
+            content,
+            topic="content strategy",
+            tags=["business"], site_config=_SC)
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            f"common backticked content nouns should not be flagged, got: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+
     def test_instance_variables_not_flagged(self):
         """Dotted names rooted at common vars (loop, app, db) must be ignored."""
         content = (

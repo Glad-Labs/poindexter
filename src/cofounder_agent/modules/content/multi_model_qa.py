@@ -373,16 +373,37 @@ class MultiModelQA:
         setting_key: str,
         site: str,
     ) -> str:
-        """Resolve the critic model via the cost-tier API + fallback chain.
+        """Resolve the critic model + fallback chain.
 
-        Lane B sweep migration. Order:
+        Order:
+        0. ``pipeline_critic_model`` — the dedicated adversarial-critic
+           model. Kept DISTINCT from the writer: both the writer
+           (``ai_content_generator`` #407) and steps 1-2 resolve
+           ``cost_tier.standard``, so without this the critic reviews its
+           OWN model's output and adversarial QA collapses (2026-06-09
+           fix — this setting was previously set-but-never-read). Empty /
+           unset → fall through to the tier mapping (the backward-
+           compatible Lane B default).
         1. ``resolve_tier_model(pool, "standard")`` — operator-tuned tier mapping.
         2. ``app_settings[setting_key]`` — per-call-site fallback (e.g.
            ``qa_fallback_critic_model``). Only used if the tier mapping
            is missing AND we successfully notify the operator.
         3. Raise — per feedback_no_silent_defaults.md, missing config is a
            configuration bug, not a quiet fallback.
+
+        NB: resolution happens INSIDE the critic call (not threaded through
+        ``review()`` as a ``model_override``), so the Lane B contract pinned
+        by ``test_critic_model_resolved_via_cost_tier`` is preserved.
         """
+        # 0. Dedicated critic model — keeps the critic a DIFFERENT model
+        #    from the writer (both otherwise resolve cost_tier.standard).
+        if self.settings is not None:
+            try:
+                dedicated = await self.settings.get("pipeline_critic_model")
+            except Exception:  # noqa: BLE001 — settings hiccup → fall through
+                dedicated = None
+            if dedicated:
+                return dedicated
         try:
             return await resolve_tier_model(self.pool, "standard")
         except (RuntimeError, ValueError, AttributeError) as exc:

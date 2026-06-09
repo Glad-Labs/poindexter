@@ -110,6 +110,69 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     assert result["revision_loops"] == 1
 
 
+async def test_research_context_injected_into_draft_prompt(monkeypatch):
+    """research_context (the ResearchService corpus) must reach the writer's
+    DRAFT prompt so it can ground + cite its claims — not just the QA layer.
+
+    Pins the niche-writer research disconnect found 2026-06-09:
+    ``GenerateContentStage._collect_research_context`` fetched the external
+    sources and handed them to the critic/ragas/deepeval rails, but
+    ``two_pass.run`` never threaded ``research_context`` into the draft, so
+    the writer drafted research-blind and the critic correctly rejected
+    every ``glad-labs`` post for "completely ignores the provided SOURCES
+    corpus" (gemma4 run, ollama_critic 68/100 FAIL, score 88 → rejected).
+    """
+    captured: dict[str, str] = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["instructions"] = extra_instructions or ""
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    research = (
+        "Source A: 2026 Developer Content Survey "
+        "(https://example.com/survey) — 60% of technical founders cite "
+        "the strategy gap as their top blocker."
+    )
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+        research_context=research,
+    )
+    assert result["draft"] == "A clean first draft with no markers."
+    # The collected research corpus must appear verbatim in the writer's
+    # draft instruction, framed as citeable SOURCES.
+    assert research in captured["instructions"]
+    assert "SOURCES" in captured["instructions"]
+
+
+async def test_no_research_context_leaves_draft_prompt_unchanged(monkeypatch):
+    """When no research_context is supplied, the draft instruction must not
+    gain an empty SOURCES section (byte-compatible with prior behaviour)."""
+    captured: dict[str, str] = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["instructions"] = extra_instructions or ""
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    assert "SOURCES" not in captured["instructions"]
+
+
 async def test_loop_caps_at_max_revisions(monkeypatch):
     """Pathological: every revision adds new markers. Loop must terminate at _MAX_REVISION_LOOPS=3."""
     counter = {"n": 0}

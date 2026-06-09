@@ -640,6 +640,50 @@ class TestSettingsOverrides:
         assert captured["model_override"] is None
 
 
+class TestCriticModelDistinctFromWriter:
+    """The adversarial critic must run a DIFFERENT model from the writer.
+
+    Both the writer (``ai_content_generator`` #407) and the critic resolve
+    ``cost_tier.standard.model`` by default, so the critic would review its
+    own model's output — defeating adversarial QA. ``_resolve_critic_model``
+    must prefer the dedicated ``pipeline_critic_model`` setting when set,
+    falling back to the standard tier (the Lane B default) when it's not.
+    2026-06-09 fix. NB: this does NOT re-thread the model through
+    ``review()`` — resolution still happens inside the critic call, so the
+    Lane B ``model_override is None`` contract is preserved.
+    """
+
+    async def test_dedicated_critic_model_overrides_writer_tier(self):
+        settings = _settings_service(
+            pipeline_critic_model="ollama/glm-4.7-5090:latest",
+        )
+        with MagicMock():
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
+        with patch(
+            "modules.content.multi_model_qa.resolve_tier_model",
+            AsyncMock(return_value="ollama/gemma-4-31B-it-qat:latest"),
+        ):
+            model = await qa._resolve_critic_model(
+                setting_key="qa_fallback_critic_model", site="critic",
+            )
+        # The dedicated critic model wins over the writer's standard tier.
+        assert model == "ollama/glm-4.7-5090:latest"
+
+    async def test_falls_back_to_standard_tier_when_no_dedicated_model(self):
+        settings = _settings_service()  # pipeline_critic_model unset → None
+        with MagicMock():
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
+        with patch(
+            "modules.content.multi_model_qa.resolve_tier_model",
+            AsyncMock(return_value="ollama/gemma-4-31B-it-qat:latest"),
+        ):
+            model = await qa._resolve_critic_model(
+                setting_key="qa_fallback_critic_model", site="critic",
+            )
+        # Backward compatible: standard cost-tier (the Lane B default).
+        assert model == "ollama/gemma-4-31B-it-qat:latest"
+
+
 # ---------------------------------------------------------------------------
 # research_sources threading
 # ---------------------------------------------------------------------------

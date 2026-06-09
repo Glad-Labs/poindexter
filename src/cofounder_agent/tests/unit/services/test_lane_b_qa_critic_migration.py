@@ -32,7 +32,13 @@ from services.site_config import SiteConfig
 class TestMultiModelQAResolveCriticModel:
     @pytest.mark.asyncio
     async def test_returns_tier_model_on_success(self):
-        qa = MultiModelQA(pool=MagicMock(), settings_service=AsyncMock(), site_config=SiteConfig())
+        # No dedicated pipeline_critic_model → resolution falls through to
+        # the standard cost-tier (the Lane B path this test pins). The
+        # step-0 dedicated-model precedence is covered by
+        # test_multi_model_qa.py::TestCriticModelDistinctFromWriter.
+        settings = AsyncMock()
+        settings.get = AsyncMock(return_value=None)
+        qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         with patch(
             "modules.content.multi_model_qa.resolve_tier_model",
             AsyncMock(return_value="ollama/gemma3:27b"),
@@ -45,7 +51,13 @@ class TestMultiModelQAResolveCriticModel:
     @pytest.mark.asyncio
     async def test_falls_back_to_setting_when_tier_missing(self):
         settings = AsyncMock()
-        settings.get = AsyncMock(return_value="ollama/gemma3:27b-it-qat")
+
+        async def _get(key):
+            # No dedicated pipeline_critic_model → fall through to the tier
+            # path; qa_fallback_critic_model is the per-call-site backstop.
+            return {"qa_fallback_critic_model": "ollama/gemma3:27b-it-qat"}.get(key)
+
+        settings.get = AsyncMock(side_effect=_get)
         qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         notify = AsyncMock()
         with patch(

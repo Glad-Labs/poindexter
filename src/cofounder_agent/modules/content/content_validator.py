@@ -754,6 +754,21 @@ _HALLUCINATION_WHITELIST_BASE = {
     "queue", "cache", "pool", "worker", "task", "tasks", "job", "jobs",
     "message", "messages", "payload", "header", "headers", "body", "field",
     "model", "models", "schema", "schemas", "view", "template",
+    # Common English / content-writing nouns. A content pipeline writes
+    # ABOUT writing, so these appear constantly in backticks (`source`,
+    # `audience`, `draft`). The bare-module pattern (`` `[a-z]{3,}` ``)
+    # was flagging them as "hallucinated library/API reference" — the
+    # writer's citation placeholders (`[source]`) hard-failed the
+    # programmatic gate 0/100 on this alone (2026-06-09 false positive).
+    "source", "sources", "target", "targets", "content", "contents",
+    "audience", "audiences", "topic", "topics", "draft", "drafts",
+    "article", "articles", "post", "posts", "claim", "claims",
+    "fact", "facts", "citation", "citations", "quote", "quotes",
+    "summary", "section", "sections", "paragraph", "heading", "headings",
+    "title", "titles", "reader", "readers", "author", "authors",
+    "example", "examples", "reference", "references", "snippet", "snippets",
+    "link", "links", "note", "notes", "point", "points", "detail",
+    "details", "idea", "ideas", "intro", "outro", "word", "words",
     # Python style shorthands often used in examples
     "np", "pd", "plt", "tf", "torch",
     # ---- AI/ML brands and well-known tools (Matt's brand_niches: ai/ml)

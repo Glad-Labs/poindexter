@@ -129,6 +129,58 @@ async def test_no_active_experiment_state_unchanged() -> None:
     assert "experiment_key" not in metrics
 
 
+async def test_research_context_forwarded_to_writer_atom() -> None:
+    """``research_context`` passed into ``_generate_via_two_pass_atom`` must
+    thread through to ``two_pass_writer.run`` so the niche writer can ground
+    + cite the same corpus the QA critic grades against.
+
+    Pins the 2026-06-09 disconnect: ``_collect_research_context`` handed the
+    external sources to the critic/ragas/deepeval rails, but the writer was
+    never given them — so every ``glad-labs`` post was rejected for
+    "completely ignores the provided SOURCES corpus".
+    """
+    from modules.content.stages.generate_content import GenerateContentStage
+
+    stage = GenerateContentStage()
+    db = _fake_database_service()
+
+    atom_call_kwargs: dict[str, Any] = {}
+
+    async def fake_run(*, topic, angle, niche_id, pool, **kw):
+        atom_call_kwargs.update(kw)
+        return {
+            "draft": "grounded draft",
+            "model_used": "default-writer:1b",
+            "snippets_used": [],
+        }
+
+    research = "Source A: 2026 survey (https://example.com/s) — 60% cite the gap."
+
+    with patch(
+        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "modules.content.atoms.two_pass_writer.run", new=fake_run,
+    ), patch(
+        "services.experiment_runner.pick_variant",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "services.gpu_scheduler.gpu.lock", new=_passthrough_lock,
+    ):
+        await stage._generate_via_two_pass_atom(
+            topic="t", style="", tone="", tags=[],
+            database_service=db, task_id="task-research-ctx",
+            niche_slug="glad-labs",
+            site_config=_fake_site_config(),
+            research_context=research,
+        )
+
+    assert atom_call_kwargs.get("research_context") == research
+
+
 # ---------------------------------------------------------------------------
 # Test 2: Active experiment with writer_model override → model overridden
 # ---------------------------------------------------------------------------

@@ -168,6 +168,7 @@ class GenerateContentStage:
                 task_id=task_id,
                 niche_slug=niche_slug,
                 site_config=context.get("site_config"),
+                research_context=research_context,
             )
         else:
             # Generate content (GPU-locked to ollama mode).
@@ -696,6 +697,7 @@ class GenerateContentStage:
         task_id: str,
         niche_slug: str | None = None,
         site_config: Any = None,
+        research_context: str = "",
     ) -> tuple[str, str, dict[str, Any]]:
         """Run ``atoms.two_pass_writer`` and shape the result into the
         (content_text, model_used, metrics) tuple the rest of this stage
@@ -819,6 +821,12 @@ class GenerateContentStage:
                 pool=pool,
                 writer_prompt_override=writer_prompt_override,
                 context_bundle=context_bundle,
+                # Pre-collected external research corpus — threaded so the
+                # niche writer grounds + cites against the same SOURCES the
+                # QA critic grades against. Without this the niche path
+                # drafted research-blind and was rejected for "ignoring the
+                # SOURCES corpus" (2026-06-09 disconnect fix).
+                research_context=research_context,
                 # DI seam (glad-labs-stack#330) — threaded so the atom
                 # reads from the injected SiteConfig instead of
                 # importing the legacy module-level singleton.
