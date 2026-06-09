@@ -705,6 +705,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # posts.metadata->>'pipeline_task_id' seam) and seeds the Gate-2 approval
         # rows. Same dormant master switch (``media_pipeline_trigger_enabled``).
         ("jobs", "services.jobs.media_distribute", "MediaDistributeJob"),
+        # Gate-2 earned-autonomy re-evaluation (#531): periodically promotes
+        # pending Gate-2 rows where the niche has since met the consecutive-
+        # dispatch-success threshold. Dormant behind the same
+        # ``media_pipeline_trigger_enabled`` gate as the other Stage-2 jobs.
+        ("jobs", "services.jobs.evaluate_earned_autonomy_gate2", "EvaluateEarnedAutonomyGate2Job"),
         # Anomaly detection — z-score outlier detection across failure
         # rate, quality, cost, and error-log rate (every 4h). Emits a
         # finding via utils.findings (routes through notify_operator

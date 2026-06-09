@@ -30,6 +30,9 @@ What stays out:
 
 from __future__ import annotations
 
+from . import narrate_bundle, qa_audio
+
 __all__ = [
     "narrate_bundle",
+    "qa_audio",
 ]
