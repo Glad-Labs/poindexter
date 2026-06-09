@@ -1,0 +1,909 @@
+/* ──────────────────────────────────────────────────────────────
+   Poindexter Operator Console — mock data + live simulation.
+   Authentic to the real stack: services, probes, pipeline stages.
+   Exposes window.PX.
+   ────────────────────────────────────────────────────────────── */
+(function () {
+  const now = new Date('2026-06-08T14:32:00');
+  const hhmmss = (d) => d.toTimeString().slice(0, 8);
+  const ago = (mins) => {
+    if (mins < 1) return 'now';
+    if (mins < 60) return mins + 'm ago';
+    const h = Math.floor(mins / 60);
+    if (h < 24) return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  };
+
+  // ── KPI strip ───────────────────────────────────────────────
+  const kpis = [
+    {
+      id: 'published',
+      label: 'Published (30d)',
+      value: 79,
+      unit: '',
+      tone: '',
+      delta: +6,
+      deltaLabel: '+6 vs prev',
+      spark: [
+        3, 1, 0, 2, 1, 0, 4, 2, 3, 1, 0, 5, 2, 1, 3, 4, 2, 6, 3, 2, 1, 0, 4, 5,
+        3, 2, 7, 4, 3, 5,
+      ],
+    },
+    {
+      id: 'approval',
+      label: 'Awaiting Approval',
+      value: 4,
+      unit: '',
+      tone: 'amber',
+      action: 'approvals',
+      delta: +4,
+      deltaLabel: 'needs you',
+      spark: [
+        0, 0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 0, 2, 1, 0, 1, 2, 3, 2, 1, 0, 1, 2, 1,
+        3, 2, 4, 3, 2, 4,
+      ],
+    },
+    {
+      id: 'failed',
+      label: 'Failed Tasks (24h)',
+      value: 3,
+      unit: '',
+      tone: 'alert',
+      action: 'tasks',
+      delta: +3,
+      deltaLabel: 'investigate',
+      spark: [
+        0, 0, 0, 1, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 1, 0, 0, 3, 0, 0, 1, 0, 0, 2,
+        0, 1, 0, 0, 2, 3,
+      ],
+    },
+    {
+      id: 'quality',
+      label: 'Avg Quality (7d)',
+      value: 82.4,
+      unit: '',
+      tone: 'mint',
+      delta: +1.7,
+      deltaLabel: 'target ≥ 80',
+      spark: [
+        78, 79, 77, 80, 81, 79, 82, 80, 83, 81, 82, 84, 83, 82, 81, 83, 84, 82,
+        83, 85, 82, 81, 83, 84, 82, 83, 84, 82, 83, 82,
+      ],
+    },
+    {
+      id: 'traffic',
+      label: 'Page Views (24h)',
+      value: 1284,
+      unit: '',
+      tone: '',
+      delta: -8,
+      deltaLabel: '-8% d/d',
+      spark: [
+        42, 38, 55, 61, 48, 72, 80, 65, 90, 77, 84, 69, 95, 88, 76, 82, 91, 70,
+        66, 84, 79, 92, 88, 74, 81, 77, 69, 85, 72, 64,
+      ],
+    },
+    {
+      id: 'spend',
+      label: 'Cloud Spend (mo)',
+      value: 11.42,
+      unit: '$',
+      tone: '',
+      delta: -2.1,
+      deltaLabel: '$50 budget',
+      spark: [
+        0.2, 0.3, 0.4, 0.4, 0.5, 0.6, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4,
+        1.5, 1.6, 1.7, 1.9, 2.0, 2.2, 2.4, 2.6, 2.9, 3.2, 3.6, 4.0, 4.6, 5.2,
+        6.1, 7.0,
+      ],
+    },
+  ];
+
+  // ── Action inbox — the thing Grafana can't do ───────────────
+  const inbox = [
+    {
+      id: 'apr-512',
+      kind: 'approve',
+      priority: 1,
+      title: 'The Quiet Compounding of Local-First Infrastructure',
+      sub: [
+        ['QUALITY', '84'],
+        ['MODEL', 'glm-4.7-50b'],
+        ['WORDS', '1,840'],
+        ['CHANNEL', 'Blog · Newsletter'],
+      ],
+      age: ago(12),
+      tags: [['cyan', 'READY']],
+      detail: {
+        excerpt:
+          "Most teams reach for a managed cloud before they understand their own workload. The compounding advantage of running your own stack isn't cost — it's the feedback loop. When the GPU, the database, and the model all live under one roof, every experiment is free and every failure is legible…",
+        quality: 84,
+        breakdown: [
+          ['Originality', 86],
+          ['Clarity', 83],
+          ['Evidence', 81],
+          ['SEO', 87],
+          ['Brand voice', 82],
+        ],
+        pipeline: 'awaiting_approval',
+        topic: 'Infrastructure',
+        created: ago(38),
+      },
+    },
+    {
+      id: 'apr-513',
+      kind: 'approve',
+      priority: 1,
+      title: 'Why We Killed Our Observability Vendor (And What We Built)',
+      sub: [
+        ['QUALITY', '81'],
+        ['MODEL', 'glm-4.7-50b'],
+        ['WORDS', '2,210'],
+        ['CHANNEL', 'Blog'],
+      ],
+      age: ago(34),
+      tags: [['cyan', 'READY']],
+      detail: {
+        excerpt:
+          "A $0 observability stack is not a fantasy. Prometheus, Loki, Tempo, and a 200-line brain daemon replaced a four-figure monthly bill. Here's the migration, the gaps, and the one thing we still miss…",
+        quality: 81,
+        breakdown: [
+          ['Originality', 82],
+          ['Clarity', 84],
+          ['Evidence', 79],
+          ['SEO', 80],
+          ['Brand voice', 80],
+        ],
+        pipeline: 'awaiting_approval',
+        topic: 'Observability',
+        created: ago(58),
+      },
+    },
+    {
+      id: 'fail-2231',
+      kind: 'fail',
+      priority: 2,
+      title: 'Task #2231 failed — image_search timeout',
+      sub: [
+        ['STAGE', 'illustrate'],
+        ['RETRIES', '2/3'],
+        ['ERROR', 'httpx.ReadTimeout'],
+      ],
+      age: ago(48),
+      tags: [['red', 'FAILED']],
+      detail: {
+        task: 2231,
+        stage: 'illustrate',
+        error:
+          'httpx.ReadTimeout: image_search provider exceeded 30s read timeout',
+        topic: 'The Economics of Self-Hosted GPUs',
+        retries: 2,
+        lastRun: ago(48),
+        trace:
+          'brain.probe.image_search → unsplash_provider → connect 0.4s → read >30s ✕',
+      },
+    },
+    {
+      id: 'alert-dec-88',
+      kind: 'alert',
+      priority: 2,
+      title: 'EmbeddingsStale — semantic memory 41m behind',
+      sub: [
+        ['SEVERITY', 'warning'],
+        ['PROBE', 'embeddings_freshness'],
+        ['SINCE', '41m'],
+      ],
+      age: ago(6),
+      tags: [['amber', 'UNACKED']],
+      detail: {
+        severity: 'warning',
+        probe: 'embeddings_freshness',
+        source: 'Prometheus → EmbeddingsStale',
+        detail:
+          '24 source rows changed since last embed cycle. Threshold is 15m; currently 41m behind. nomic-embed-text queue depth = 24.',
+        recommend:
+          'Embedding worker is up but throttled behind GPU contention (SDXL running). Will self-clear when illustrate stage drains, or trigger embed cycle manually.',
+        firstSeen: ago(41),
+      },
+    },
+    {
+      id: 'drift-prefect',
+      kind: 'drift',
+      priority: 3,
+      title: 'Operator URL drift — Prefect UI unreachable',
+      sub: [
+        ['SURFACE', 'Pipeline :: Prefect UI'],
+        ['STATUS', 'ConnectError'],
+        ['IP', '100.64.1.5'],
+      ],
+      age: ago(73),
+      tags: [['amber', 'DRIFT']],
+      detail: {
+        surface: 'Pipeline Operations :: Prefect UI',
+        url: 'http://100.64.1.5:4200/dashboard',
+        error: 'ConnectError: All connection attempts failed',
+        recommend:
+          "Tailscale IP for device 'brain-pc' drifted. Run: UPDATE system_devices SET tailscale_ip='100.64.1.9' WHERE hostname='brain-pc';",
+        fix: "UPDATE system_devices SET tailscale_ip='100.64.1.9' WHERE hostname='brain-pc';",
+        firstSeen: ago(73),
+      },
+    },
+    {
+      id: 'alert-dec-89',
+      kind: 'alert',
+      priority: 3,
+      title: 'Cadence SLO — 0.8/day vs 1.0/day target',
+      sub: [
+        ['SEVERITY', 'warning'],
+        ['PROBE', 'cadence_slo'],
+        ['WINDOW', '7d'],
+      ],
+      age: ago(180),
+      tags: [['amber', 'UNACKED']],
+      detail: {
+        severity: 'warning',
+        probe: 'cadence_slo',
+        source: 'brain.probe.cadence_slo',
+        detail:
+          'Actual publish cadence is 0.8 posts/day against operator-configured target of 1.0/day over the trailing 7 days.',
+        recommend:
+          'Two failed tasks this week reduced throughput. No action required if backlog clears; consider raising research concurrency.',
+        firstSeen: ago(180),
+      },
+    },
+  ];
+
+  // ── Services / containers ───────────────────────────────────
+  const services = [
+    {
+      name: 'poindexter-worker',
+      port: 8000,
+      status: 'ok',
+      metric: 'p95 142ms',
+      sub: 'FastAPI',
+      uptime: '6d 4h',
+      cpu: 18,
+      mem: 1240,
+      probe: 'content_gen ✓',
+      img: 'poindexter/worker:v3.1.4',
+    },
+    {
+      name: 'poindexter-brain-daemon',
+      port: null,
+      status: 'ok',
+      metric: 'cycle 4.2s',
+      sub: 'supervisor',
+      uptime: '6d 4h',
+      cpu: 3,
+      mem: 210,
+      probe: '28/28 probes ✓',
+      img: 'poindexter/brain:v3.1.4',
+    },
+    {
+      name: 'ollama',
+      port: 11434,
+      status: 'warn',
+      metric: 'GPU queue 2',
+      sub: 'glm-4.7-50b',
+      uptime: '2d 11h',
+      cpu: 64,
+      mem: 9800,
+      probe: 'ollama_models ⚠',
+      img: 'ollama/ollama:0.5.7',
+    },
+    {
+      name: 'postgres',
+      port: 5432,
+      status: 'ok',
+      metric: '17.3 GB',
+      sub: 'pg16 · pgvector',
+      uptime: '21d 9h',
+      cpu: 6,
+      mem: 2100,
+      probe: 'db_ping ✓',
+      img: 'pgvector/pgvector:pg16',
+    },
+    {
+      name: 'prometheus',
+      port: 9090,
+      status: 'ok',
+      metric: '142 series',
+      sub: 'metrics',
+      uptime: '21d 9h',
+      cpu: 2,
+      mem: 480,
+      probe: 'scrape ✓',
+      img: 'prom/prometheus:v2.54',
+    },
+    {
+      name: 'loki',
+      port: 3100,
+      status: 'ok',
+      metric: '4.1 GB',
+      sub: 'logs',
+      uptime: '21d 9h',
+      cpu: 1,
+      mem: 320,
+      probe: 'ready ✓',
+      img: 'grafana/loki:3.2',
+    },
+    {
+      name: 'tempo',
+      port: 3200,
+      status: 'ok',
+      metric: '12k spans/h',
+      sub: 'traces',
+      uptime: '21d 9h',
+      cpu: 2,
+      mem: 410,
+      probe: 'ready ✓',
+      img: 'grafana/tempo:2.6',
+    },
+    {
+      name: 'prefect-server',
+      port: 4200,
+      status: 'err',
+      metric: 'unreachable',
+      sub: 'orchestration',
+      uptime: '—',
+      cpu: 0,
+      mem: 0,
+      probe: 'connect ✕',
+      img: 'prefecthq/prefect:3.1',
+    },
+    {
+      name: 'sdxl-server',
+      port: 7860,
+      status: 'ok',
+      metric: 'gen 8.4s',
+      sub: 'illustrate',
+      uptime: '2d 11h',
+      cpu: 71,
+      mem: 6200,
+      probe: 'image_gen ✓',
+      img: 'poindexter/sdxl:v2',
+    },
+    {
+      name: 'glitchtip',
+      port: 8001,
+      status: 'ok',
+      metric: '0 new',
+      sub: 'errors',
+      uptime: '14d 2h',
+      cpu: 1,
+      mem: 540,
+      probe: 'triage ✓',
+      img: 'glitchtip/glitchtip:4.1',
+    },
+  ];
+
+  // ── GPU — RTX 5090 ──────────────────────────────────────────
+  const gpu = {
+    name: 'RTX 5090',
+    driver: '560.94',
+    util: 71,
+    temp: 67,
+    power: 412,
+    powerMax: 575,
+    vramUsed: 21.4,
+    vramTotal: 32,
+    fan: 58,
+    clock: 2820,
+    clockMax: 2950,
+    procs: [
+      { name: 'ollama (glm-4.7-50b)', vram: 14.2, util: 48 },
+      { name: 'sdxl-server', vram: 6.1, util: 21 },
+      { name: 'nomic-embed-text', vram: 1.1, util: 2 },
+    ],
+    utilHist: [
+      62, 58, 71, 69, 74, 81, 77, 72, 68, 74, 79, 83, 76, 71, 69, 73, 77, 80,
+      84, 79, 72, 68, 71, 74, 77, 71,
+    ],
+    tempHist: [
+      61, 62, 64, 63, 65, 67, 68, 66, 64, 65, 67, 69, 68, 66, 65, 66, 68, 69,
+      70, 68, 66, 65, 66, 67, 68, 67,
+    ],
+  };
+
+  // ── Pipeline ────────────────────────────────────────────────
+  const pipeline = {
+    stages: [
+      { name: 'research', count: 2, state: 'hot' },
+      { name: 'draft', count: 1, state: '' },
+      { name: 'edit', count: 0, state: '' },
+      { name: 'illustrate', count: 1, state: 'warn' },
+      { name: 'review', count: 4, state: 'hot' },
+      { name: 'publish', count: 0, state: '' },
+    ],
+    perDay: [
+      4, 2, 6, 3, 5, 7, 3, 5, 8, 4, 6, 9, 5, 4, 7, 6, 8, 5, 7, 4, 3, 6, 9, 7, 5,
+      8, 6, 4, 7, 5,
+    ],
+    successRate: 94,
+    avgCompletion: '38m',
+    tasks: [
+      {
+        id: 2241,
+        topic: 'The Quiet Compounding of Local-First Infra',
+        stage: 'review',
+        status: 'ok',
+        quality: 84,
+        model: 'glm-4.7-50b',
+        age: ago(12),
+      },
+      {
+        id: 2240,
+        topic: 'Why We Killed Our Observability Vendor',
+        stage: 'review',
+        status: 'ok',
+        quality: 81,
+        model: 'glm-4.7-50b',
+        age: ago(34),
+      },
+      {
+        id: 2238,
+        topic: 'The Economics of Self-Hosted GPUs',
+        stage: 'illustrate',
+        status: 'fail',
+        quality: null,
+        model: 'glm-4.7-50b',
+        age: ago(48),
+      },
+      {
+        id: 2237,
+        topic: 'A Field Guide to pgvector at Small Scale',
+        stage: 'research',
+        status: 'run',
+        quality: null,
+        model: 'glm-4.7-50b',
+        age: ago(4),
+      },
+      {
+        id: 2236,
+        topic: 'Tailscale as the Only Network You Need',
+        stage: 'draft',
+        status: 'run',
+        quality: null,
+        model: 'glm-4.7-50b',
+        age: ago(9),
+      },
+      {
+        id: 2235,
+        topic: 'Prometheus Recording Rules, Demystified',
+        stage: 'research',
+        status: 'run',
+        quality: null,
+        model: 'glm-4.7-50b',
+        age: ago(2),
+      },
+      {
+        id: 2234,
+        topic: 'The 200-Line Supervisor Pattern',
+        stage: 'published',
+        status: 'ok',
+        quality: 85,
+        model: 'glm-4.7-50b',
+        age: ago(380),
+      },
+      {
+        id: 2233,
+        topic: 'Cost Telemetry Without a SaaS Bill',
+        stage: 'published',
+        status: 'ok',
+        quality: 82,
+        model: 'glm-4.7-50b',
+        age: ago(520),
+      },
+    ],
+  };
+
+  // ── Brain / embeddings ──────────────────────────────────────
+  const brain = {
+    totalEmbeddings: 957,
+    model: 'nomic-embed-text',
+    queueDepth: 24,
+    lastCycle: ago(41),
+    bySource: [
+      ['issues', 612],
+      ['posts', 211],
+      ['docs', 88],
+      ['shared-context', 46],
+    ],
+    byOrigin: [
+      ['unknown', 894],
+      ['claude-code', 44],
+      ['openclaw', 10],
+      ['shared-context', 9],
+    ],
+    growth: [
+      12, 8, 21, 15, 32, 18, 9, 24, 41, 17, 28, 53, 22, 19, 36, 44, 31, 27, 48,
+      33, 19, 29, 57, 42, 38, 61, 45, 33, 52, 40,
+    ],
+    decisions: [
+      {
+        ts: '14:31:08',
+        kind: 'probe',
+        msg: 'embeddings_freshness → WARN · queue depth 24',
+        tone: 'amber',
+      },
+      {
+        ts: '14:28:44',
+        kind: 'remediate',
+        msg: 'restarted ollama after 3 consecutive ollama_models timeouts',
+        tone: 'cyan',
+      },
+      {
+        ts: '14:12:02',
+        kind: 'observe',
+        msg: 'infra.database_size → 17.3 GB (conf 1.0)',
+        tone: 'mint',
+      },
+      {
+        ts: '13:58:19',
+        kind: 'alert',
+        msg: 'operator_url_probe → Prefect UI unreachable',
+        tone: 'amber',
+      },
+      {
+        ts: '13:40:55',
+        kind: 'observe',
+        msg: 'quality.trend → 82.4 avg over 7d (conf 0.92)',
+        tone: 'mint',
+      },
+    ],
+    recent: [
+      {
+        src: 'issues',
+        id: 612,
+        chunk: 0,
+        model: 'nomic-embed-text',
+        preview: 'feat: auto-capture screenshots during Playwright runs',
+        at: ago(41),
+      },
+      {
+        src: 'posts',
+        id: 79,
+        chunk: 2,
+        model: 'nomic-embed-text',
+        preview: 'The 200-Line Supervisor Pattern — chunk 3 of 9',
+        at: ago(44),
+      },
+      {
+        src: 'issues',
+        id: 611,
+        chunk: 0,
+        model: 'nomic-embed-text',
+        preview: 'dream: always-on thought capture — ambient recording',
+        at: ago(52),
+      },
+      {
+        src: 'docs',
+        id: 88,
+        chunk: 1,
+        model: 'nomic-embed-text',
+        preview: 'Brain Daemon — operator URL probe reference',
+        at: ago(67),
+      },
+    ],
+  };
+
+  // ── Cost ────────────────────────────────────────────────────
+  const cost = {
+    monthToDate: 11.42,
+    budget: 50,
+    projected: 28.6,
+    byProvider: [
+      {
+        name: 'Cloudflare R2',
+        amt: 4.12,
+        pct: 36,
+        note: 'object storage + egress',
+      },
+      { name: 'Cloudflare', amt: 3.0, pct: 26, note: 'Workers + Pages' },
+      { name: 'Domain / DNS', amt: 2.5, pct: 22, note: 'gladlabs.io + .ai' },
+      { name: 'Backblaze B2', amt: 1.8, pct: 16, note: 'offsite backup' },
+    ],
+    daily: [
+      0.2, 0.3, 0.4, 0.4, 0.5, 0.6, 0.6, 0.7, 0.8, 0.4, 0.5, 0.6, 0.6, 0.4, 0.7,
+      0.6, 0.5, 0.5, 0.7, 0.4, 0.3, 0.6, 0.9, 0.7, 0.5, 0.8, 0.6, 0.4, 0.7, 0.5,
+    ],
+    saved: 1840,
+    savedNote: 'vs equivalent managed stack (Vercel + Datadog + OpenAI)',
+  };
+
+  // ── Audit / event feed (live) ───────────────────────────────
+  const auditSeed = [
+    {
+      ts: '14:31:52',
+      tag: ['cyan', 'PIPELINE'],
+      html: '<b>Task #2237</b> entered <span class="c-cyan">research</span> · topic "A Field Guide to pgvector"',
+    },
+    {
+      ts: '14:31:08',
+      tag: ['amber', 'PROBE'],
+      html: '<span class="c-amber">embeddings_freshness</span> WARN — queue depth <b>24</b>, 41m behind',
+    },
+    {
+      ts: '14:30:44',
+      tag: ['mint', 'PUBLISH'],
+      html: '<b>RUN 0078</b> <span class="c-mint">PUBLISHED</span> · "The 200-Line Supervisor Pattern" · Q=85',
+    },
+    {
+      ts: '14:29:30',
+      tag: ['cyan', 'BRAIN'],
+      html: 'embedded <b>4</b> chunks from <span class="c-cyan">posts</span> · nomic-embed-text',
+    },
+    {
+      ts: '14:28:44',
+      tag: ['cyan', 'REMEDIATE'],
+      html: 'brain restarted <b>ollama</b> after 3× ollama_models timeout',
+    },
+    {
+      ts: '14:27:11',
+      tag: ['red', 'TASK'],
+      html: '<b>Task #2231</b> <span class="c-red">FAILED</span> · illustrate · httpx.ReadTimeout',
+    },
+    {
+      ts: '14:25:02',
+      tag: ['amber', 'DRIFT'],
+      html: 'operator_url_probe — <b>Prefect UI</b> unreachable (100.64.1.5)',
+    },
+    {
+      ts: '14:22:38',
+      tag: ['mint', 'QUALITY'],
+      html: 'Task #2240 scored <span class="c-mint">81</span> · awaiting approval',
+    },
+    {
+      ts: '14:20:15',
+      tag: ['cyan', 'GPU'],
+      html: 'RTX 5090 util <b>71%</b> · 67°C · 412W · VRAM 21.4/32 GB',
+    },
+    {
+      ts: '14:18:50',
+      tag: ['cyan', 'CONFIG'],
+      html: 'operator updated <span class="c-cyan">research.concurrency</span> 2 → 3',
+    },
+  ];
+
+  // live-feed generators
+  const liveTemplates = [
+    () => ({
+      tag: ['cyan', 'GPU'],
+      html: `RTX 5090 util <b>${60 + Math.floor(Math.random() * 28)}%</b> · ${64 + Math.floor(Math.random() * 7)}°C · ${390 + Math.floor(Math.random() * 60)}W`,
+    }),
+    () => ({
+      tag: ['cyan', 'BRAIN'],
+      html: `embedded <b>${1 + Math.floor(Math.random() * 6)}</b> chunks · nomic-embed-text`,
+    }),
+    () => ({
+      tag: ['mint', 'PROBE'],
+      html: `<span class="c-mint">db_ping</span> ✓ · ${1 + Math.floor(Math.random() * 4)}ms`,
+    }),
+    () => ({
+      tag: ['cyan', 'PIPELINE'],
+      html: `scheduler tick · <b>${2 + Math.floor(Math.random() * 3)}</b> tasks in flight`,
+    }),
+    () => ({
+      tag: ['mint', 'PROBE'],
+      html: `<span class="c-mint">content_gen</span> ✓ · ollama 1.2s`,
+    }),
+    () => ({
+      tag: ['cyan', 'TRACE'],
+      html: `tempo · brain.probe cycle <b>${(3.8 + Math.random() * 1.2).toFixed(1)}s</b>`,
+    }),
+  ];
+
+  // ── Revenue (Lemon Squeezy) ─────────────────────────────────
+  const revenue = {
+    today: 87,
+    month: 1284,
+    net: 1196,
+    prevMonth: 1042,
+    orders: 34,
+    subscriptions: 11,
+    refunds: 1,
+    mrr: 318,
+    byType: [
+      ['Guide — one-time', 642, 'cyan'],
+      ['Quick Start sub', 318, 'amber'],
+      ['Templates pack', 224, 'cyan'],
+      ['Other', 100, 'mint'],
+    ],
+    bySource: [
+      ['gladlabs.io organic', 58],
+      ['Newsletter', 22],
+      ['Direct', 13],
+      ['Referral', 7],
+    ],
+    daily: [
+      22, 0, 41, 18, 0, 67, 12, 0, 34, 55, 0, 29, 48, 0, 18, 72, 33, 0, 41, 29,
+      12, 0, 58, 44, 0, 31, 67, 0, 22, 87,
+    ],
+    topPosts: [
+      { title: 'The 200-Line Supervisor Pattern', rev: 312, orders: 9 },
+      { title: 'Why We Killed Our Observability Vendor', rev: 248, orders: 7 },
+      { title: 'Cost Telemetry Without a SaaS Bill', rev: 184, orders: 5 },
+      {
+        title: 'A Field Guide to pgvector at Small Scale',
+        rev: 142,
+        orders: 4,
+      },
+    ],
+    recent: [
+      {
+        ts: '14:08',
+        kind: 'order',
+        amt: 29,
+        what: 'Quick Start Guide',
+        src: 'organic',
+      },
+      {
+        ts: '12:51',
+        kind: 'sub',
+        amt: 9,
+        what: 'Quick Start monthly',
+        src: 'newsletter',
+      },
+      {
+        ts: '11:32',
+        kind: 'order',
+        amt: 49,
+        what: 'Templates pack',
+        src: 'direct',
+      },
+      {
+        ts: '09:14',
+        kind: 'refund',
+        amt: -29,
+        what: 'Quick Start Guide',
+        src: 'support',
+      },
+    ],
+  };
+
+  // ── Media pipeline — Stage 2 (video + podcast) ──────────────
+  const media = {
+    renderSuccess24h: 92,
+    gate2Pending: 3,
+    dispatched: 41,
+    videosPersisted: 128,
+    queue: [
+      {
+        id: 'vid-318',
+        medium: 'video',
+        title: 'The 200-Line Supervisor Pattern',
+        quality: 86,
+        dur: '4:12',
+        shots: 9,
+        age: ago(22),
+      },
+      {
+        id: 'pod-204',
+        medium: 'podcast',
+        title: 'Why We Killed Our Observability Vendor',
+        quality: 80,
+        dur: '11:38',
+        shots: null,
+        age: ago(51),
+      },
+      {
+        id: 'vid-317',
+        medium: 'video',
+        title: 'Tailscale as the Only Network You Need',
+        quality: 78,
+        dur: '3:48',
+        shots: 7,
+        age: ago(96),
+      },
+    ],
+    byMedium: [
+      ['video', 22],
+      ['podcast', 14],
+      ['short', 5],
+    ],
+  };
+
+  // ── QA rails — rejections & hallucination guardrails ────────
+  const qa = {
+    rejectionRate: 12,
+    passRate: 88,
+    ragFallback: 4,
+    reasons: [
+      ['Off-brand voice', 7],
+      ['Thin evidence', 5],
+      ['SEO weak', 4],
+      ['Structure', 3],
+      ['Factual risk', 2],
+    ],
+    hallucination: [
+      { rule: 'unverified_product_claim', rate: 0.8, tone: 'amber' },
+      { rule: 'fabricated_stat', rate: 0.3, tone: 'red' },
+      { rule: 'nonexistent_pkg_import', rate: 0.2, tone: 'amber' },
+    ],
+    byModel: [
+      { model: 'glm-4.7-50b', appr: 89, tasks: 147 },
+      { model: 'gemma3:27b', appr: 81, tasks: 38 },
+      { model: 'qwen3:8b', appr: 74, tasks: 22 },
+    ],
+  };
+
+  // ── Cost by model (extends cost) ────────────────────────────
+  cost.byModel = [
+    { model: 'glm-4.7-50b', calls: 1840, tokens: '4.2M', kwh: 6.1, share: 62 },
+    { model: 'gemma3:27b', calls: 612, tokens: '1.1M', kwh: 1.8, share: 22 },
+    { model: 'qwen3:8b', calls: 980, tokens: '0.6M', kwh: 0.7, share: 12 },
+    { model: 'sdxl-lightning', calls: 128, tokens: '—', kwh: 0.9, share: 4 },
+  ];
+  cost.electricityRate = 0.142; // $/kWh
+  cost.kwhMonth = 9.5;
+
+  // ── Container restarts (24h) — cAdvisor signal ──────────────
+  const restarts = [
+    { name: 'ollama', count: 3, last: ago(64), tone: 'amber' },
+    { name: 'prefect-server', count: 5, last: ago(73), tone: 'red' },
+    { name: 'sdxl-server', count: 1, last: ago(220), tone: 'mint' },
+  ];
+
+  // ── Sub-tool launcher (Mission Control link registry) ───────
+  const launcher = [
+    { name: 'Prefect', sub: 'orchestration', url: '#', status: 'err' },
+    { name: 'Langfuse', sub: 'LLM traces', url: '#', status: 'ok' },
+    { name: 'GlitchTip', sub: 'errors', url: '#', status: 'ok' },
+    { name: 'Grafana', sub: 'deep metrics', url: '#', status: 'ok' },
+    { name: 'Pyroscope', sub: 'profiling', url: '#', status: 'ok' },
+    { name: 'pgAdmin', sub: 'database', url: '#', status: 'ok' },
+    { name: 'Prometheus', sub: 'metrics', url: '#', status: 'ok' },
+    { name: 'Tempo', sub: 'tracing', url: '#', status: 'ok' },
+    { name: 'Loki', sub: 'logs', url: '#', status: 'ok' },
+    { name: 'Uptime Kuma', sub: 'uptime', url: '#', status: 'ok' },
+  ];
+
+  // media items injected into the Action Inbox (human-gated)
+  const mediaInbox = [
+    {
+      id: 'media-318',
+      kind: 'media',
+      priority: 2,
+      title: 'Video ready — The 200-Line Supervisor Pattern',
+      sub: [
+        ['MEDIUM', 'video'],
+        ['QUALITY', '86'],
+        ['DUR', '4:12'],
+      ],
+      age: ago(22),
+      tags: [['mint', 'RENDERED']],
+      detail: {
+        medium: 'video',
+        title: 'The 200-Line Supervisor Pattern',
+        quality: 86,
+        dur: '4:12',
+        shots: 9,
+        stage: 'gate_2_review',
+      },
+    },
+  ];
+
+  window.PX = {
+    now,
+    hhmmss,
+    ago,
+    kpis,
+    inbox: [...inbox, ...mediaInbox],
+    services,
+    gpu,
+    pipeline,
+    brain,
+    cost,
+    auditSeed,
+    liveTemplates,
+    revenue,
+    media,
+    qa,
+    restarts,
+    launcher,
+    nextTs() {
+      now.setSeconds(now.getSeconds() + 30 + Math.floor(Math.random() * 90));
+      return hhmmss(now);
+    },
+  };
+})();

@@ -916,6 +916,20 @@ logger.info("[STARTUP] Registering routes for deployment mode: %s", _deployment_
 register_all_routes(app, deployment_mode=_deployment_mode)
 logger.info("[STARTUP] ✅ Routes registered (mode=%s)", _deployment_mode)
 
+# ===== OPERATOR CONSOLE (static SPA) =====
+# Mounted after API routes so it never shadows /api/... paths.
+# html=True serves index.html for bare /console/ requests.
+# Not behind verify_api_token — the page loads freely; its /api/... calls carry the bearer token.
+from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+app.mount(
+    "/console",
+    _StaticFiles(directory=_Path(__file__).parent / "console", html=True),
+    name="console",
+)
+logger.info("[STARTUP] ✅ Operator console mounted at /console/")
+
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
 

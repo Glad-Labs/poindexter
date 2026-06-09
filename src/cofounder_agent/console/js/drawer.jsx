@@ -1,0 +1,1056 @@
+/* ──────────────────────────────────────────────────────────────
+   Poindexter Operator Console — drill-in detail drawer.
+   Verbose readout + action footer, dispatched by entity type.
+   ────────────────────────────────────────────────────────────── */
+
+function DL({ rows }) {
+  return (
+    <dl className="dl">
+      {rows.map(([k, v], i) => (
+        <React.Fragment key={i}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </React.Fragment>
+      ))}
+    </dl>
+  );
+}
+
+function Drawer({ entity, onClose, actions }) {
+  const open = !!entity;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  let title = '',
+    eyebrow = '',
+    body = null,
+    foot = null;
+
+  if (entity) {
+    const e = entity.data;
+    switch (entity.type) {
+      case 'inbox': {
+        const d = e.detail || {};
+        if (e.kind === 'approve') {
+          eyebrow = 'CONTENT · AWAITING APPROVAL';
+          title = e.title;
+          body = (
+            <>
+              <div className="section-label">Draft preview</div>
+              <div className="preview">
+                <h4>{e.title}</h4>
+                <p>{d.excerpt}</p>
+                <p className="mono c-dim" style={{ fontSize: 10 }}>
+                  … {d.topic} · created {d.created}
+                </p>
+              </div>
+              <div className="section-label">
+                Quality breakdown · {d.quality}/100
+              </div>
+              {(d.breakdown || []).map(([k, v]) => (
+                <div key={k} style={{ marginBottom: 8 }}>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      marginBottom: 3,
+                    }}
+                  >
+                    <span className="c-muted">{k}</span>
+                    <span className="c-text tnum">{v}</span>
+                  </div>
+                  <Meter
+                    value={v}
+                    max={100}
+                    color={v >= 80 ? 'mint' : 'amber'}
+                  />
+                </div>
+              ))}
+              <div className="section-label">Routing</div>
+              <DL
+                rows={[
+                  ['Channels', 'Blog · Newsletter'],
+                  ['Topic', d.topic],
+                  ['Model', 'Ollama glm-4.7-50b'],
+                  ['Stage', 'awaiting_approval'],
+                ]}
+              />
+            </>
+          );
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.approve(e)}
+              >
+                <Icon name="check" size={13} />
+                Approve & Publish
+              </button>
+              <button
+                className="mbtn"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.schedule(e)}
+              >
+                Schedule
+              </button>
+              <button
+                className="mbtn mbtn--ghost mbtn--danger"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.reject(e)}
+              >
+                <Icon name="x" size={13} />
+                Reject
+              </button>
+            </>
+          );
+        } else if (e.kind === 'fail') {
+          eyebrow = 'PIPELINE · FAILED TASK';
+          title = `Task #${d.task}`;
+          body = (
+            <>
+              <div className="section-label">Failure</div>
+              <div
+                className="preview"
+                style={{ borderLeftColor: 'var(--gl-red)' }}
+              >
+                <p className="mono c-red" style={{ margin: 0, fontSize: 12 }}>
+                  {d.error}
+                </p>
+              </div>
+              <div className="section-label">Trace</div>
+              <div className="gl-log" style={{ fontSize: 11 }}>
+                {d.trace}
+              </div>
+              <div className="section-label">Context</div>
+              <DL
+                rows={[
+                  ['Topic', d.topic],
+                  ['Stage', d.stage],
+                  ['Retries', `${d.retries} / 3`],
+                  ['Last run', d.lastRun],
+                ]}
+              />
+            </>
+          );
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--amber"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.retry(e)}
+              >
+                <Icon name="retry" size={13} />
+                Retry task
+              </button>
+              <button
+                className="mbtn"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.skipStage(e)}
+              >
+                Skip stage
+              </button>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.kill(e)}
+              >
+                <Icon name="kill" size={13} />
+                Kill
+              </button>
+            </>
+          );
+        } else if (e.kind === 'alert') {
+          eyebrow = `ALERT · ${d.severity?.toUpperCase()}`;
+          title = e.title;
+          body = (
+            <>
+              <div className="section-label">Detail</div>
+              <p className="gl-body" style={{ fontSize: 13, marginTop: 0 }}>
+                {d.detail}
+              </p>
+              <div className="section-label">Recommended</div>
+              <div className="preview">
+                <p style={{ margin: 0 }}>{d.recommend}</p>
+              </div>
+              <div className="section-label">Source</div>
+              <DL
+                rows={[
+                  ['Probe', d.probe],
+                  ['Origin', d.source],
+                  ['Severity', d.severity],
+                  ['First seen', d.firstSeen],
+                ]}
+              />
+            </>
+          );
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.ack(e)}
+              >
+                <Icon name="check" size={13} />
+                Acknowledge
+              </button>
+              <button
+                className="mbtn mbtn--amber"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.runProbe(e)}
+              >
+                <Icon name="bolt" size={13} />
+                Re-run probe
+              </button>
+              <button
+                className="mbtn mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.snooze(e)}
+              >
+                Snooze 1h
+              </button>
+            </>
+          );
+        } else if (e.kind === 'drift') {
+          eyebrow = 'OPERATOR URL DRIFT';
+          title = d.surface;
+          body = (
+            <>
+              <div className="section-label">Failure</div>
+              <DL
+                rows={[
+                  [
+                    'URL',
+                    <span
+                      className="c-amber"
+                      style={{ wordBreak: 'break-all' }}
+                    >
+                      {d.url}
+                    </span>,
+                  ],
+                  ['Error', <span className="c-red">{d.error}</span>],
+                  ['First seen', d.firstSeen],
+                ]}
+              />
+              <div className="section-label">Recommended fix</div>
+              <p className="gl-body" style={{ fontSize: 13, marginTop: 0 }}>
+                {d.recommend}
+              </p>
+              <div className="gl-log" style={{ fontSize: 11 }}>
+                <span className="c-mint">$</span> {d.fix}
+              </div>
+            </>
+          );
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.fix(e)}
+              >
+                <Icon name="bolt" size={13} />
+                Apply fix
+              </button>
+              <button
+                className="mbtn"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.runProbe(e)}
+              >
+                Re-probe
+              </button>
+            </>
+          );
+        } else if (e.kind === 'media') {
+          eyebrow = `MEDIA · ${(e.detail.medium || '').toUpperCase()} · GATE 2`;
+          title = e.detail.title;
+          body = (
+            <>
+              <div className="section-label">Rendered asset</div>
+              <div
+                className="preview"
+                style={{ borderLeftColor: 'var(--gl-mint)' }}
+              >
+                <h4 style={{ fontSize: 16 }}>{e.detail.title}</h4>
+                <p className="mono c-dim" style={{ margin: 0, fontSize: 11 }}>
+                  {e.detail.medium} · {e.detail.dur} · quality{' '}
+                  {e.detail.quality}
+                  {e.detail.shots ? ` · ${e.detail.shots} shots` : ''}
+                </p>
+              </div>
+              <div className="section-label">Pipeline</div>
+              <DL
+                rows={[
+                  ['Medium', e.detail.medium],
+                  ['Duration', e.detail.dur],
+                  ['Quality', e.detail.quality],
+                  ['Stage', e.detail.stage],
+                  ['Shot list', e.detail.shots || '—'],
+                ]}
+              />
+            </>
+          );
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.approve(e)}
+              >
+                <Icon name="check" size={13} />
+                Publish to channel
+              </button>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.reject(e)}
+              >
+                <Icon name="x" size={13} />
+                Reject
+              </button>
+            </>
+          );
+        }
+        break;
+      }
+      case 'service': {
+        eyebrow = 'CONTAINER';
+        title = e.name;
+        body = (
+          <>
+            <div className="section-label">Status</div>
+            <DL
+              rows={[
+                [
+                  'State',
+                  <StatusText
+                    kind={
+                      e.status === 'ok'
+                        ? 'ok'
+                        : e.status === 'warn'
+                          ? 'warn'
+                          : 'err'
+                    }
+                  >
+                    {e.status === 'ok'
+                      ? 'healthy'
+                      : e.status === 'warn'
+                        ? 'degraded'
+                        : 'down'}
+                  </StatusText>,
+                ],
+                ['Image', e.img],
+                ['Port', e.port || '—'],
+                ['Uptime', e.uptime],
+                ['Last probe', e.probe],
+              ]}
+            />
+            <div className="section-label">Resources</div>
+            <div style={{ marginBottom: 10 }}>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: 3,
+                }}
+              >
+                <span className="c-muted">CPU</span>
+                <span className="c-text tnum">{e.cpu}%</span>
+              </div>
+              <Meter
+                value={e.cpu}
+                max={100}
+                color={e.cpu > 80 ? 'amber' : ''}
+              />
+            </div>
+            <div>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: 3,
+                }}
+              >
+                <span className="c-muted">Memory</span>
+                <span className="c-text tnum">{e.mem} MB</span>
+              </div>
+              <Meter
+                value={e.mem}
+                max={12000}
+                color={e.mem > 9000 ? 'amber' : ''}
+              />
+            </div>
+          </>
+        );
+        foot = (
+          <>
+            <button
+              className="mbtn mbtn--primary"
+              style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+              onClick={() => actions.restart(e)}
+            >
+              <Icon name="retry" size={13} />
+              Restart
+            </button>
+            <button
+              className="mbtn"
+              style={{ padding: '10px 14px' }}
+              onClick={() => actions.probe(e)}
+            >
+              <Icon name="bolt" size={13} />
+              Probe
+            </button>
+            <button
+              className="mbtn mbtn--ghost"
+              style={{ padding: '10px 14px' }}
+              onClick={() => actions.logs(e)}
+            >
+              Logs
+            </button>
+          </>
+        );
+        break;
+      }
+      case 'gpu': {
+        const g = e;
+        eyebrow = 'HARDWARE';
+        title = `GPU · ${g.name}`;
+        body = (
+          <>
+            <div className="section-label">Live telemetry</div>
+            <DL
+              rows={[
+                ['Utilization', g.util + '%'],
+                ['Temperature', g.temp + '°C'],
+                ['Power', `${g.power} / ${g.powerMax} W`],
+                ['VRAM', `${g.vramUsed} / ${g.vramTotal} GB`],
+                ['Fan', g.fan + '%'],
+                ['Clock', `${g.clock} / ${g.clockMax} MHz`],
+                ['Driver', g.driver],
+              ]}
+            />
+            <div className="section-label">Utilization · last hour</div>
+            <div
+              style={{
+                background: 'var(--gl-surface)',
+                padding: '12px 10px',
+                border: '1px solid var(--gl-hairline)',
+              }}
+            >
+              <Sparkline data={g.utilHist} color="var(--gl-cyan)" height={64} />
+            </div>
+            <div className="section-label">VRAM by process</div>
+            {g.procs.map((p) => (
+              <div key={p.name} style={{ marginBottom: 9 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 3,
+                  }}
+                >
+                  <span className="c-muted">{p.name}</span>
+                  <span className="c-text tnum">{p.vram} GB</span>
+                </div>
+                <Meter value={p.vram} max={g.vramTotal} />
+              </div>
+            ))}
+          </>
+        );
+        foot = (
+          <button
+            className="mbtn mbtn--ghost"
+            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        );
+        break;
+      }
+      case 'task': {
+        eyebrow = `PIPELINE · ${e.stage.toUpperCase()}`;
+        title = `Task #${e.id}`;
+        body = (
+          <>
+            <div className="section-label">Task</div>
+            <div
+              className="preview"
+              style={{ borderLeftColor: 'var(--gl-cyan)' }}
+            >
+              <h4 style={{ fontSize: 15 }}>{e.topic}</h4>
+            </div>
+            <div className="section-label">State</div>
+            <DL
+              rows={[
+                ['Stage', e.stage],
+                [
+                  'Status',
+                  <StatusText
+                    kind={{ ok: 'ok', fail: 'err', run: 'run' }[e.status]}
+                  >
+                    {e.status}
+                  </StatusText>,
+                ],
+                ['Quality', e.quality ?? '—'],
+                ['Model', e.model],
+                ['Age', e.age],
+              ]}
+            />
+          </>
+        );
+        foot =
+          e.status === 'fail' ? (
+            <>
+              <button
+                className="mbtn mbtn--amber"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.retry({ id: 'task-' + e.id })}
+              >
+                <Icon name="retry" size={13} />
+                Retry
+              </button>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={onClose}
+              >
+                <Icon name="kill" size={13} />
+                Kill
+              </button>
+            </>
+          ) : (
+            <button
+              className="mbtn mbtn--ghost"
+              style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+              onClick={onClose}
+            >
+              Close
+            </button>
+          );
+        break;
+      }
+      case 'pipeline': {
+        const p = e;
+        eyebrow = 'PIPELINE OVERVIEW';
+        title = 'Content Pipeline';
+        body = (
+          <>
+            <div className="section-label">Throughput · last 30 days</div>
+            <div
+              style={{
+                background: 'var(--gl-surface)',
+                padding: 12,
+                border: '1px solid var(--gl-hairline)',
+              }}
+            >
+              <MiniBars
+                data={p.perDay}
+                color="cyan"
+                labels={['30d ago', 'today']}
+                height={90}
+              />
+            </div>
+            <div className="section-label">Stage distribution</div>
+            {p.stages.map((s) => (
+              <div key={s.name} style={{ marginBottom: 8 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 3,
+                  }}
+                >
+                  <span className="c-muted">{s.name}</span>
+                  <span className="c-text tnum">{s.count}</span>
+                </div>
+                <Meter
+                  value={s.count}
+                  max={Math.max(...p.stages.map((x) => x.count)) || 1}
+                  color={s.state === 'warn' ? 'amber' : ''}
+                />
+              </div>
+            ))}
+            <div className="section-label">SLO</div>
+            <DL
+              rows={[
+                ['Success rate', p.successRate + '%'],
+                ['Avg completion', p.avgCompletion],
+                ['Cadence', '0.8 / 1.0 per day'],
+              ]}
+            />
+          </>
+        );
+        foot = (
+          <>
+            <button
+              className="mbtn mbtn--primary"
+              style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+              onClick={() => actions.runPipeline()}
+            >
+              <Icon name="play" size={13} />
+              Trigger run
+            </button>
+            <button
+              className="mbtn"
+              style={{ padding: '10px 14px' }}
+              onClick={() => actions.openPrefect()}
+            >
+              Open Prefect
+            </button>
+          </>
+        );
+        break;
+      }
+      case 'brain': {
+        const b = e;
+        eyebrow = 'SEMANTIC MEMORY';
+        title = 'Brain';
+        body = (
+          <>
+            <div className="section-label">Embeddings · growth (30d)</div>
+            <div
+              style={{
+                background: 'var(--gl-surface)',
+                padding: 12,
+                border: '1px solid var(--gl-hairline)',
+              }}
+            >
+              <MiniBars
+                data={b.growth}
+                color="cyan"
+                labels={['30d', 'today']}
+                height={80}
+              />
+            </div>
+            <div className="section-label">Recently embedded</div>
+            <table
+              className="tbl"
+              style={{ border: '1px solid var(--gl-hairline)' }}
+            >
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Preview</th>
+                  <th className="num">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b.recent.map((r, i) => (
+                  <tr key={i}>
+                    <td className="c-cyan">
+                      {r.src}#{r.id}
+                    </td>
+                    <td className="truncate" title={r.preview}>
+                      {r.preview}
+                    </td>
+                    <td className="num c-dim">{r.at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="section-label">Memory</div>
+            <DL
+              rows={[
+                ['Total vectors', b.totalEmbeddings.toLocaleString()],
+                ['Model', b.model],
+                ['Queue depth', b.queueDepth],
+                ['Last cycle', b.lastCycle],
+              ]}
+            />
+          </>
+        );
+        foot = (
+          <button
+            className="mbtn mbtn--amber"
+            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+            onClick={() => actions.embed()}
+          >
+            <Icon name="bolt" size={13} />
+            Trigger embed cycle
+          </button>
+        );
+        break;
+      }
+      case 'cost': {
+        const c = e;
+        eyebrow = 'COST CONTROL';
+        title = 'Cloud Spend';
+        body = (
+          <>
+            <div className="section-label">Daily spend · 30 days</div>
+            <div
+              style={{
+                background: 'var(--gl-surface)',
+                padding: 12,
+                border: '1px solid var(--gl-hairline)',
+              }}
+            >
+              <MiniBars
+                data={c.daily}
+                color="amber"
+                labels={['30d', 'today']}
+                height={80}
+              />
+            </div>
+            <div className="section-label">By provider</div>
+            {c.byProvider.map((p) => (
+              <div key={p.name} style={{ marginBottom: 8 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 3,
+                  }}
+                >
+                  <span className="c-muted">{p.name}</span>
+                  <span className="c-text tnum">${p.amt.toFixed(2)}</span>
+                </div>
+                <Meter value={p.amt} max={c.byProvider[0].amt} color="amber" />
+              </div>
+            ))}
+            <div className="section-label">LLM cost by model</div>
+            <table
+              className="tbl"
+              style={{ border: '1px solid var(--gl-hairline)' }}
+            >
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th className="num">Calls</th>
+                  <th className="num">Tokens</th>
+                  <th className="num">kWh</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(c.byModel || []).map((m) => (
+                  <tr key={m.model}>
+                    <td className="c-cyan">{m.model}</td>
+                    <td className="num">{m.calls.toLocaleString()}</td>
+                    <td className="num">{m.tokens}</td>
+                    <td className="num c-amber">{m.kwh}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="section-label">Budget</div>
+            <DL
+              rows={[
+                ['Month to date', '$' + c.monthToDate.toFixed(2)],
+                ['Projected', '$' + c.projected.toFixed(2)],
+                ['Budget', '$' + c.budget],
+                ['Saved / mo', '~$' + c.saved.toLocaleString()],
+              ]}
+            />
+          </>
+        );
+        foot = (
+          <button
+            className="mbtn"
+            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+            onClick={() => actions.editBudget()}
+          >
+            <Icon name="settings" size={13} />
+            Edit budget
+          </button>
+        );
+        break;
+      }
+      case 'revenue': {
+        const r = e;
+        eyebrow = 'REVENUE · LEMON SQUEEZY';
+        title = 'Revenue';
+        body = (
+          <>
+            <div className="section-label">Daily revenue · 30 days</div>
+            <div
+              style={{
+                background: 'var(--gl-surface)',
+                padding: 12,
+                border: '1px solid var(--gl-hairline)',
+              }}
+            >
+              <MiniBars
+                data={r.daily}
+                color="cyan"
+                labels={['30d', 'today']}
+                height={80}
+              />
+            </div>
+            <div className="section-label">By product type</div>
+            {r.byType.map(([name, amt]) => (
+              <div key={name} style={{ marginBottom: 8 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 3,
+                  }}
+                >
+                  <span className="c-muted">{name}</span>
+                  <span className="c-text tnum">${amt}</span>
+                </div>
+                <Meter
+                  value={amt}
+                  max={r.byType[0][1]}
+                  color={name.includes('sub') ? 'amber' : 'mint'}
+                />
+              </div>
+            ))}
+            <div className="section-label">Top earning posts</div>
+            <table
+              className="tbl"
+              style={{ border: '1px solid var(--gl-hairline)' }}
+            >
+              <thead>
+                <tr>
+                  <th>Post</th>
+                  <th className="num">Orders</th>
+                  <th className="num">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.topPosts.map((p, i) => (
+                  <tr key={i}>
+                    <td className="truncate" title={p.title}>
+                      {p.title}
+                    </td>
+                    <td className="num">{p.orders}</td>
+                    <td className="num c-mint">${p.rev}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="section-label">Recent events</div>
+            {r.recent.map((ev, i) => (
+              <div
+                key={i}
+                className="svc"
+                style={{
+                  gridTemplateColumns: 'auto 1fr auto',
+                  padding: '6px 0',
+                  cursor: 'default',
+                }}
+              >
+                <span
+                  className={`tag tag--${ev.kind === 'refund' ? 'amber' : ev.kind === 'sub' ? 'mint' : 'cyan'}`}
+                >
+                  {ev.kind}
+                </span>
+                <span className="svc__name truncate" style={{ fontSize: 11 }}>
+                  {ev.what}
+                  <small>{ev.src}</small>
+                </span>
+                <span
+                  className={`svc__metric ${ev.amt < 0 ? 'c-amber' : 'c-mint'}`}
+                >
+                  {ev.amt < 0 ? '-' : ''}${Math.abs(ev.amt)}
+                </span>
+              </div>
+            ))}
+          </>
+        );
+        foot = (
+          <button
+            className="mbtn mbtn--ghost"
+            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+            onClick={() => actions.openLemon()}
+          >
+            <Icon name="link" size={13} />
+            Open Lemon Squeezy
+          </button>
+        );
+        break;
+      }
+      case 'qa': {
+        const Q = e;
+        eyebrow = 'QA RAILS';
+        title = 'Multi-Model Review';
+        body = (
+          <>
+            <div className="section-label">Throughput</div>
+            <DL
+              rows={[
+                ['Pass rate', Q.passRate + '%'],
+                ['Rejection rate', Q.rejectionRate + '%'],
+                ['RAG fallback', Q.ragFallback],
+              ]}
+            />
+            <div className="section-label">Rejection reasons · 7d</div>
+            {Q.reasons.map(([name, n]) => (
+              <div key={name} style={{ marginBottom: 8 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 3,
+                  }}
+                >
+                  <span className="c-muted">{name}</span>
+                  <span className="c-text tnum">{n}</span>
+                </div>
+                <Meter value={n} max={Q.reasons[0][1]} color="amber" />
+              </div>
+            ))}
+            <div className="section-label">Hallucination guardrails</div>
+            <table
+              className="tbl"
+              style={{ border: '1px solid var(--gl-hairline)' }}
+            >
+              <thead>
+                <tr>
+                  <th>Rule</th>
+                  <th className="num">Rate / 5m</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Q.hallucination.map((h) => (
+                  <tr key={h.rule}>
+                    <td>{h.rule}</td>
+                    <td className={`num c-${h.tone}`}>{h.rate.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="section-label">Approval rate by writer model</div>
+            {Q.byModel.map((m) => (
+              <div key={m.model} style={{ marginBottom: 8 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 3,
+                  }}
+                >
+                  <span className="c-muted">
+                    {m.model} · {m.tasks} tasks
+                  </span>
+                  <span className="c-text tnum">{m.appr}%</span>
+                </div>
+                <Meter
+                  value={m.appr}
+                  max={100}
+                  color={m.appr >= 85 ? 'mint' : 'amber'}
+                />
+              </div>
+            ))}
+          </>
+        );
+        foot = (
+          <button
+            className="mbtn mbtn--ghost"
+            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        );
+        break;
+      }
+      case 'kpi': {
+        eyebrow = 'METRIC';
+        title = e.label;
+        body = (
+          <>
+            <div className="section-label">Trend · 30 points</div>
+            <div
+              style={{
+                background: 'var(--gl-surface)',
+                padding: 12,
+                border: '1px solid var(--gl-hairline)',
+              }}
+            >
+              <Sparkline
+                data={e.spark}
+                color={
+                  e.tone === 'amber'
+                    ? 'var(--gl-amber)'
+                    : e.tone === 'alert'
+                      ? 'var(--gl-red)'
+                      : e.tone === 'mint'
+                        ? 'var(--gl-mint)'
+                        : 'var(--gl-cyan)'
+                }
+                height={70}
+              />
+            </div>
+            <div className="section-label">Current</div>
+            <DL
+              rows={[
+                ['Value', (e.unit === '$' ? '$' : '') + e.value],
+                ['Change', e.deltaLabel],
+              ]}
+            />
+          </>
+        );
+        foot = (
+          <button
+            className="mbtn mbtn--ghost"
+            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        );
+        break;
+      }
+    }
+  }
+
+  return (
+    <>
+      <div className={`drawer-scrim ${open ? 'open' : ''}`} onClick={onClose} />
+      <aside
+        className={`drawer ${open ? 'open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+      >
+        {entity && (
+          <>
+            <header className="drawer__head">
+              <div>
+                <div className="topbar__eyebrow" style={{ marginBottom: 4 }}>
+                  {eyebrow}
+                </div>
+                <div className="drawer__title">{title}</div>
+              </div>
+              <button
+                className="drawer__close"
+                onClick={onClose}
+                aria-label="Close"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </header>
+            <div className="drawer__body">{body}</div>
+            {foot && <footer className="drawer__foot">{foot}</footer>}
+          </>
+        )}
+      </aside>
+    </>
+  );
+}
+
+window.Drawer = Drawer;
