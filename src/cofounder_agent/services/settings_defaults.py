@@ -151,6 +151,12 @@ DEFAULTS: dict[str, str] = {
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     'rag_rrf_k': '60',
     'rag_source_filter': '',
+    # Minimum acceptable writer-draft length; below this the draft is treated
+    # as a generation failure (empty/too-short → status='failed' + finding,
+    # not a misleading reviewer_count:0 QA reject). A real canonical_blog post
+    # is never this short — a sub-threshold draft means the reasoning writer
+    # model returned (near-)empty content. poindexter#691.
+    'writer_min_draft_chars': '200',
     'writer_rag_context_snippet_max_chars': '500',
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',

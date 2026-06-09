@@ -514,6 +514,49 @@ def _emit_variant_fallback_finding(
         pass
 
 
+def _emit_empty_revise_kept_prior_finding(*, model: str) -> None:
+    """Loud-but-recovered canary: the default-path revise returned empty on
+    both the initial call and its retry, so the writer kept the prior draft
+    instead of zeroing it (poindexter#691).
+
+    Self-heal is not silent (``feedback_self_heal_not_suppress``): the pipeline
+    keeps producing content (a transient empty revise must never zero a good
+    draft) while the empty-output condition stays visible on the Findings
+    dashboard. ``severity='warn'`` → Discord per the dispatcher policy.
+    """
+    logger.warning(
+        "[two_pass_writer] default revise model=%r returned empty twice — kept "
+        "the prior draft (markers stripped) instead of zeroing it. A reasoning "
+        "writer model intermittently emits empty content; verify model health "
+        "if this recurs. Refs poindexter#691.",
+        model,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001 — emit path optional; never block recovery
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_empty_draft_kept_prior",
+            title=f"Default revise model {model!r} returned empty — kept prior draft",
+            body=(
+                f"The default-path revise call (model {model!r}) returned empty "
+                f"content on both the initial attempt and one retry. The writer "
+                f"kept the pre-revision draft (unresolved [EXTERNAL_NEEDED] "
+                f"markers stripped) so the post is not zeroed. A reasoning model "
+                f"that spends its budget in the thinking channel returns empty "
+                f"content intermittently; verify model health if this recurs. "
+                f"Refs poindexter#691."
+            ),
+            severity="warn",
+            dedup_key=f"writer_empty_draft_kept_prior:{model}",
+            extra={"model": model, "reason": "revise returned empty twice"},
+        )
+    except Exception:  # noqa: BLE001 — finding emission must never raise here
+        pass
+
+
 async def _revise_node(state: _State) -> _State:
     # 2026-05-16: switched from ``_ollama_chat_json`` (which forces
     # ``format=json`` on Ollama and returns a JSON-wrapped string) to
@@ -585,7 +628,26 @@ async def _revise_node(state: _State) -> _State:
     # fallback machinery.
     using_override = bool(model_override) and model != default_model
     if not using_override:
+        # poindexter#691 — default-path empty-revise guard. A reasoning writer
+        # model can intermittently return EMPTY content (all tokens spent in
+        # the thinking channel). Pre-#691 this path had no empty check, so an
+        # empty revise silently OVERWROTE a good prior draft with '' — which
+        # then flowed into QA as a misleading reviewer_count:0 reject. Retry
+        # ONCE with the same model (preserve writer quality — do NOT downgrade
+        # the article body to a weaker model), and if still empty keep the
+        # PRIOR draft instead of zeroing it.
         new_draft = await _call(model)
+        if not (new_draft or "").strip():
+            retry = await _call(model)
+            if (retry or "").strip():
+                new_draft = retry
+            else:
+                prior = state.get("draft") or ""
+                # Strip unresolved [EXTERNAL_NEEDED] markers so detect_needs
+                # terminates the loop (instead of re-looping to the cap on the
+                # same markers) and the markers don't leak into the post.
+                new_draft = _NEED_PATTERN.sub("", prior).strip() or prior
+                _emit_empty_revise_kept_prior_finding(model=model)
     else:
         try:
             new_draft = await _call(model)

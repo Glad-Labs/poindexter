@@ -489,3 +489,88 @@ async def test_no_override_single_call_no_fallback_machinery(monkeypatch):
     assert calls == ["glm-4.7-5090:latest"]
     assert result["draft"] == "Revised draft, default path."
     assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# poindexter#691 — default-path empty-revise guard (root cause).
+#
+# A reasoning writer model (e.g. a GLM thinking model) can intermittently
+# emit all its tokens into the thinking channel and return EMPTY content.
+# Pre-#691 the DEFAULT revise path (no experiment variant) had no empty
+# check — an empty revise silently OVERWROTE a good prior draft with '',
+# which then flowed into QA as a misleading reviewer_count:0 0/100 reject.
+# Fix: retry once with the same model (preserve writer quality — do NOT
+# downgrade the article body), and if still empty keep the prior draft
+# (markers stripped so the graph terminates) + emit a visibility finding.
+# ---------------------------------------------------------------------------
+
+
+async def test_empty_revise_retries_once_and_recovers(monkeypatch):
+    """Default path: an intermittently-empty revise response is retried once
+    with the same model; when the retry produces content it is used as-is and
+    no finding fires (clean self-heal). Pins poindexter#691."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        return "" if len(calls) == 1 else "Revised draft after a retry."
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+
+    # First attempt empty → one retry against the SAME default model.
+    assert calls == ["glm-4.7-5090:latest", "glm-4.7-5090:latest"]
+    assert result["draft"] == "Revised draft after a retry."
+    assert findings == []
+
+
+async def test_empty_revise_keeps_prior_draft_when_retry_also_empty(monkeypatch):
+    """Default path: when BOTH the revise call and its retry return empty, the
+    writer must NOT zero the good prior draft. It keeps the pre-revision draft
+    (unresolved [EXTERNAL_NEEDED] markers stripped so detect_needs terminates
+    the loop instead of re-looping to the cap) and emits a visibility finding.
+    This is the exact prod failure: an empty revise overwrote a non-empty
+    draft with '' → empty content flowed into QA. Pins poindexter#691."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        return ""  # both the call and its retry come back empty
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+
+    # Retried once with the same default model, then fell back to the prior draft.
+    assert calls == ["glm-4.7-5090:latest", "glm-4.7-5090:latest"]
+    # Prior draft preserved (non-empty), with the unresolved marker stripped.
+    assert result["draft"].strip() != ""
+    assert "First draft with" in result["draft"]
+    assert "EXTERNAL_NEEDED" not in result["draft"]
+    # Self-heal is not silent (feedback_self_heal_not_suppress).
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "writer_empty_draft_kept_prior"
+    assert findings[0]["severity"] == "warn"

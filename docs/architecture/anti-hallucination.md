@@ -65,6 +65,40 @@ contract so this can't silently regress. (This is the same channel-dropping
 failure mode the `seo_keywords_list` channel hit — see the PipelineState
 comment in `template_runner.py`.)
 
+#### The draft-presence gate: the writer must produce a non-empty draft
+
+The `qa.*` rails all guard `if not content: return {}` — so on an **empty
+draft** every rail emits nothing, `qa.aggregate` sees zero reviews, and
+`aggregate_rail_reviews([])` rejects at `score 0` with `reviewer_count:0,
+vetoed_by=[]`. That reject is a lie: the post wasn't bad, the writer produced
+nothing, and the real cause is buried in the worker logs. A reasoning writer
+model can intermittently emit all of its tokens into the thinking channel and
+return an empty `content` field (the same failure mode that
+`services/llm_text.py::resolve_structured_model` exists to avoid for
+structured-extraction calls). Glad-Labs/poindexter#691 was exactly this — an
+empty revise pass overwrote a good draft with `''`, which then flowed through
+the whole graph to a misleading `reviewer_count:0` reject.
+
+Two layers fix it, both before the rails ever see the draft:
+
+- **Root cause (`two_pass_writer._revise_node`, default path):** an empty
+  revise response is retried once with the same model (preserving writer
+  quality — no downgrade to a weaker model for the article body), and if it's
+  still empty the **prior draft is kept** (unresolved `[EXTERNAL_NEEDED]`
+  markers stripped so the loop terminates) rather than zeroed. A
+  `writer_empty_draft_kept_prior` finding keeps the self-heal visible.
+- **Fail-loud guard (`GenerateContentStage`):** when the final draft is empty
+  or shorter than `writer_min_draft_chars` (default 200 — a real
+  canonical_blog post is never a single sentence) the stage does a
+  **load-bearing terminal write** (`status='failed'` + a specific
+  `error_message` + a `writer_empty_draft` finding) _before_ raising. The
+  status sticks even though the graph_def node wrapper swallows the raise into
+  an (unhonored) `_halt` and keeps running — the GH-90 terminal-write guard
+  then blocks the downstream QA-reject write, so the writer-empty cause is what
+  surfaces. This is the same load-bearing-DB-write idiom `qa.aggregate` uses on
+  reject. `test_generate_content.py` + `test_two_pass_writer.py` pin both
+  layers.
+
 #### The vision/preview gate: `preview_url` must reach `qa.vision`
 
 The `qa.vision` rail runs two vision-model checks the deleted

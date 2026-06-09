@@ -157,7 +157,16 @@ def _patch_everything():
                     '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
                 ],
                 generate_blog_post=AsyncMock(return_value=(
-                    "Some generated body text with enough content.",
+                    # Realistic-length body so it clears the writer_min_draft_chars
+                    # guard (default 200) added for poindexter#691 — a 44-char
+                    # fixture would now (correctly) be treated as a too-short
+                    # writer failure.
+                    "# A Realistic Draft\n\nThis is a generated blog post body with "
+                    "enough substance to comfortably clear the minimum-draft-length "
+                    "guard the pipeline now enforces. It has a heading, multiple "
+                    "sentences, and well over two hundred characters so the happy-path "
+                    "stage flow runs end to end without tripping the empty/too-short "
+                    "writer guard.",
                     "glm-4.7-5090",
                     {
                         "models_used_by_phase": {"writer": "glm-4.7-5090"},
@@ -295,7 +304,14 @@ class TestGenerateContentStageExecute:
         assert originality_mock.await_count == 2
         assert title_mock.await_count == 2
 
-    async def test_empty_content_raises(self):
+    async def test_empty_content_fails_loud_marks_task_failed_and_emits_finding(self):
+        """poindexter#691: an empty writer draft must FAIL THE TASK loud —
+        a load-bearing terminal ``status='failed'`` write with a specific
+        ``error_message`` + a ``finding`` — and still raise. Previously the
+        raise was swallowed by the graph wrapper and the empty draft flowed
+        into QA, surfacing as a misleading ``reviewer_count:0`` 0/100 reject
+        instead of naming the real writer-empty cause.
+        """
         db = _FakeDb()
         ctx: dict[str, Any] = {
             "task_id": "t3",
@@ -303,20 +319,76 @@ class TestGenerateContentStageExecute:
             "target_length": 100, "tags": [], "models_by_phase": {},
             "database_service": db,
         }
+        findings: list[dict[str, Any]] = []
         patches = _patch_everything()
         for p in patches:
             p.start()
         try:
-            # Replace the generator so it returns empty content
             with patch(
                 "modules.content.ai_content_generator.get_content_generator",
                 return_value=SimpleNamespace(
                     _internal_links_cache=[],
-                    generate_blog_post=AsyncMock(return_value=("", "model", {})),
+                    generate_blog_post=AsyncMock(return_value=("", "glm-4.7-5090", {})),
                 ),
+            ), patch(
+                "utils.findings.emit_finding",
+                side_effect=lambda **kw: findings.append(kw),
             ):
-                with pytest.raises(ValueError, match="no content produced"):
+                with pytest.raises(ValueError, match="empty draft"):
                     await GenerateContentStage().execute(ctx, {})
         finally:
             for p in reversed(patches):
                 p.stop()
+
+        # Load-bearing terminal failure write — the status sticks even though
+        # the graph wrapper keeps running downstream nodes (matches the
+        # qa.aggregate reject idiom). No happy-path in_progress write happens.
+        assert db.updates, "expected a terminal status write before raising"
+        last = db.updates[-1]
+        assert last["status"] == "failed"
+        assert "empty draft" in last["error_message"].lower()
+        assert "glm-4.7-5090" in last["error_message"]
+        # A finding surfaces it on the Findings dashboard / Discord.
+        assert len(findings) == 1
+        assert findings[0]["kind"] == "writer_empty_draft"
+        assert findings[0]["severity"] == "warn"
+
+    async def test_too_short_content_fails_loud(self):
+        """poindexter#691: a draft below ``writer_min_draft_chars`` (default
+        200) is treated as a writer failure too — a real canonical_blog post
+        is never a single sentence; sub-threshold output is broken generation.
+        """
+        db = _FakeDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t4",
+            "topic": "AI", "style": "", "tone": "",
+            "target_length": 1200, "tags": [], "models_by_phase": {},
+            "database_service": db,
+        }
+        findings: list[dict[str, Any]] = []
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "modules.content.ai_content_generator.get_content_generator",
+                return_value=SimpleNamespace(
+                    _internal_links_cache=[],
+                    generate_blog_post=AsyncMock(
+                        return_value=("Too short to be a real post.", "glm-4.7-5090", {}),
+                    ),
+                ),
+            ), patch(
+                "utils.findings.emit_finding",
+                side_effect=lambda **kw: findings.append(kw),
+            ):
+                with pytest.raises(ValueError, match="too-short draft"):
+                    await GenerateContentStage().execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert db.updates[-1]["status"] == "failed"
+        assert "too-short draft" in db.updates[-1]["error_message"].lower()
+        assert len(findings) == 1
+        assert findings[0]["kind"] == "writer_empty_draft"

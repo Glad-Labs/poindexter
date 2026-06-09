@@ -155,7 +155,11 @@ async def test_generate_content_stage_returns_research_context_in_updates():
             return_value=SimpleNamespace(
                 _internal_links_cache=[],
                 generate_blog_post=AsyncMock(return_value=(
-                    "Body text long enough to count.", "glm-4.7-5090",
+                    # Body must clear the writer_min_draft_chars guard (#691,
+                    # default 200). This test exercises research_context
+                    # threading, not draft length — so use a realistically
+                    # sized body (~256 chars) rather than a 31-char stub.
+                    "Body text long enough to count. " * 8, "glm-4.7-5090",
                     {"models_used_by_phase": {}, "model_selection_log": {}},
                 )),
             ),

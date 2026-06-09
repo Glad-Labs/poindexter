@@ -191,9 +191,42 @@ class GenerateContentStage:
                     domain=domain,
                 )
 
-        if not content_text:
-            logger.error("Content generation returned None or empty")
-            raise ValueError("Content generation failed: no content produced")
+        # poindexter#691 — empty/too-short writer output must FAIL THE TASK
+        # loud here, not flow into QA as a misleading reviewer_count:0 0/100
+        # reject. A reasoning writer model can intermittently emit all of its
+        # tokens into the thinking channel and return empty content (documented
+        # in services/llm_text.py::resolve_structured_model). We do a
+        # LOAD-BEARING terminal write (status='failed' + a specific
+        # error_message + a finding) BEFORE raising — so the clear cause sticks
+        # even though the graph_def node wrapper swallows the raise into a
+        # (currently unhonored) ``_halt`` and keeps running downstream nodes.
+        # This mirrors qa.aggregate's reject-persistence idiom; the GH-90
+        # terminal-write guard then blocks any later QA-reject write, so the
+        # writer-empty cause is what surfaces, not a confusing QA reject.
+        stripped = (content_text or "").strip()
+        min_chars = _min_draft_chars(context.get("site_config"))
+        if not stripped or len(stripped) < min_chars:
+            kind = "empty" if not stripped else "too-short"
+            detail = (
+                f"{len(stripped)} chars" if not stripped
+                else f"{len(stripped)} chars < min {min_chars}"
+            )
+            error_message = (
+                f"writer produced {kind} draft ({detail}); "
+                f"model={model_used or '?'} — no content produced "
+                f"(reasoning-model empty output; poindexter#691)"
+            )
+            logger.error("[generate_content] %s", error_message)
+            await _fail_empty_draft(
+                database_service,
+                task_id=str(task_id),
+                error_message=error_message,
+                model=model_used,
+                kind=kind,
+                content_len=len(stripped),
+                platform=context.get("platform"),
+            )
+            raise ValueError(error_message)
 
         # Generate canonical title with recent-titles avoidance prompt.
         logger.info("Generating title from content...")
@@ -953,6 +986,90 @@ def _extract_caller_research(task_row: dict[str, Any]) -> str:
         or task_row.get("research_context")
         or ""
     )
+
+
+def _min_draft_chars(site_config: Any = None) -> int:
+    """Minimum acceptable draft length before writer output is a failure.
+
+    DB-configurable via ``writer_min_draft_chars``. The 200-char floor means
+    even a single-sentence "post" from a degraded reasoning model is caught —
+    a real canonical_blog article is never that short. Returns the floor when
+    no site_config is available (tests / bootstrap). poindexter#691.
+    """
+    if site_config is None:
+        return 200
+    try:
+        return int(site_config.get_int("writer_min_draft_chars", 200))
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        return 200
+
+
+async def _fail_empty_draft(
+    database_service: Any,
+    *,
+    task_id: str,
+    error_message: str,
+    model: str | None,
+    kind: str,
+    content_len: int,
+    platform: Any = None,
+) -> None:
+    """Load-bearing terminal failure for an empty/too-short writer draft.
+
+    Mirrors ``qa.aggregate``'s reject persistence: write the terminal status +
+    ``error_message`` FIRST (so it sticks even though the graph_def node wrapper
+    keeps running downstream nodes after the raise), then emit a finding +
+    audit event so the writer-empty cause surfaces on the Findings dashboard /
+    Discord instead of a misleading ``reviewer_count:0`` QA reject. The status
+    write is the load-bearing one; the telemetry writes are best-effort.
+    poindexter#691.
+    """
+    # 1. Terminal status — the load-bearing write.
+    try:
+        await database_service.update_task(task_id, {
+            "status": "failed",
+            "error_message": error_message,
+            "model_used": model,
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[generate_content] terminal failed-status write failed for %s: %s",
+            task_id[:8], exc,
+        )
+
+    # 2. Finding → Findings dashboard + Discord (severity warn per the
+    #    findings dispatcher policy). Late import so tests can patch it.
+    try:
+        from utils.findings import emit_finding
+        emit_finding(
+            source="modules.content.stages.generate_content",
+            kind="writer_empty_draft",
+            title=f"Writer produced {kind} draft — task failed",
+            body=error_message,
+            severity="warn",
+            dedup_key=f"writer_empty_draft:{task_id}",
+            extra={
+                "task_id": task_id,
+                "model": model,
+                "kind": kind,
+                "content_len": content_len,
+            },
+        )
+    except Exception:  # noqa: BLE001 — finding emission must never block the fail path
+        pass
+
+    # 3. Audit event through the capability handle (Seam 1 Wave 3c, #667).
+    try:
+        if platform is not None:
+            platform.audit.write_bg(
+                "writer_empty_draft",
+                source="generate_content",
+                details={"kind": kind, "content_len": content_len, "model": model},
+                task_id=task_id,
+                severity="warning",
+            )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _self_review_enabled(site_config: Any = None) -> bool:
