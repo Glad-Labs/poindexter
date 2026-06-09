@@ -726,3 +726,61 @@ class TestMediaToGenerateFilter:
         assert "/podcast/" in head_url
         assert out["podcast_missing"] is False  # 200 means present.
         assert out["video_missing"] is False  # Not requested → not missing.
+
+    @pytest.mark.asyncio
+    async def test_stage2_video_asset_demotes_regen(self):
+        """Regression: Stage-2 video assets live at ``{task_id}.mp4``
+        locally, NOT at R2's ``{post_id}.mp4`` path.  The R2 HEAD check
+        therefore returns 404 even though the asset was generated.
+        The reconciliation regen pass MUST NOT trigger ``_regen_video``
+        for posts that already have a ``media_assets`` row of type
+        ``video_long`` or ``video_short`` — doing so would bypass all
+        Stage-2 quality gates and produce a competing R2 asset.
+
+        (Plan 8 / #689 — reconciliation watchdog demotion)
+        """
+        post = _post(id_="stage2-post", published_at=datetime.now(timezone.utc))
+        # media_assets row already exists (Stage-2 already ran).
+        existing = [{"post_id": "stage2-post", "type": "video_long"}]
+        pool, conn = _make_pool([post], existing_assets=existing)
+
+        # R2 returns 404 for video — simulates Stage-2 asset not on R2.
+        with _patch_head(podcast_status=200, video_status=404):
+            with patch.object(
+                MediaReconciliationJob,
+                "_regen_video",
+                new_callable=AsyncMock,
+            ) as mock_regen, patch(
+                "services.jobs.media_reconciliation.emit_finding",
+            ):
+                result = await MediaReconciliationJob().run(pool, config={})
+
+        # The regen must NOT have been called — Stage-2 owns this asset.
+        mock_regen.assert_not_awaited()
+        # Job is still ok (the finding is advisory).
+        assert result.ok is True
+
+    @pytest.mark.asyncio
+    async def test_legacy_video_asset_missing_triggers_regen(self):
+        """Counterpart to ``test_stage2_video_asset_demotes_regen``.
+        A post with NO ``media_assets`` row and a 404 on R2 MUST still
+        trigger ``_regen_video`` — the legacy regen path is the safety
+        net for pre-Stage-2 posts.
+        """
+        post = _post(id_="legacy-post", published_at=datetime.now(timezone.utc))
+        # No media_assets row (pre-Stage-2 post).
+        pool, _ = _make_pool([post], existing_assets=[])
+
+        with _patch_head(podcast_status=200, video_status=404):
+            with patch.object(
+                MediaReconciliationJob,
+                "_regen_video",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_regen, patch(
+                "services.jobs.media_reconciliation.emit_finding",
+            ):
+                await MediaReconciliationJob().run(pool, config={})
+
+        # Legacy post → regen MUST fire.
+        mock_regen.assert_awaited_once()

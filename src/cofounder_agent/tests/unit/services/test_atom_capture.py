@@ -1,11 +1,14 @@
 """Unit tests for the atom-node capture extension (atom-cutover Plan 2, #355):
 _wrap_atom stamps node_id + input/output state-key digests onto the
-TemplateRunRecord it appends to record_sink."""
+TemplateRunRecord it appends to record_sink.
+
+Also covers the ATOM_META.retry enforcement added for poindexter#681."""
 
 from __future__ import annotations
 
 import pytest
 
+from plugins.atom import RetryPolicy
 from services.atom_runs import digest_keys
 from services.pipeline_architect import _wrap_atom
 
@@ -52,3 +55,50 @@ class TestAtomCapture:
         assert rec.halted is True
         assert rec.node_id == "n2"
         assert "task_id" in rec.metrics["input_keys"]
+
+    async def test_retry_succeeds_on_second_attempt(self):
+        """Matching exception triggers retry; atom succeeds on retry."""
+        calls = []
+
+        async def flaky(state):
+            calls.append(1)
+            if len(calls) < 2:
+                raise ConnectionError("transient")
+            return {"ok": True}
+
+        policy = RetryPolicy(max_attempts=3, backoff_s=0.0, retry_on=("ConnectionError",))
+        node = _wrap_atom(flaky, "atoms.flaky", "n3", None, retry_policy=policy)
+        out = await node({"task_id": "t"}, None)
+
+        assert out == {"ok": True}
+        assert len(calls) == 2
+
+    async def test_retry_not_triggered_for_non_matching_exception(self):
+        """Non-matching exception halts without retry."""
+        calls = []
+
+        async def boom(state):
+            calls.append(1)
+            raise RuntimeError("nope")
+
+        policy = RetryPolicy(max_attempts=3, backoff_s=0.0, retry_on=("ConnectionError",))
+        node = _wrap_atom(boom, "atoms.boom2", "n4", None, retry_policy=policy)
+        out = await node({"task_id": "t"}, None)
+
+        assert out.get("_halt") is True
+        assert len(calls) == 1  # no retry
+
+    async def test_retry_exhaustion_halts_graph(self):
+        """All retries exhausted: final exception is recorded as halt."""
+        calls = []
+
+        async def always_fails(state):
+            calls.append(1)
+            raise ConnectionError("persistent")
+
+        policy = RetryPolicy(max_attempts=3, backoff_s=0.0, retry_on=("ConnectionError",))
+        node = _wrap_atom(always_fails, "atoms.persistent", "n5", None, retry_policy=policy)
+        out = await node({"task_id": "t"}, None)
+
+        assert out.get("_halt") is True
+        assert len(calls) == 3  # all 3 attempts

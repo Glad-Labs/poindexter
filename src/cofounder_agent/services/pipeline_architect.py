@@ -35,6 +35,7 @@ Issue: Glad-Labs/poindexter#364.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable
@@ -645,6 +646,7 @@ def build_graph_from_spec(
                     on_event=on_event,
                     index=index,
                     total=total_nodes,
+                    retry_policy=meta.retry if meta else None,
                 ),
             )
         node_ids.append(nid)
@@ -729,6 +731,7 @@ def _wrap_atom(
     on_event: Any = None,
     index: int | None = None,
     total: int | None = None,
+    retry_policy: Any = None,
 ) -> Callable[..., Any]:
     """Wrap a pure atom into the LangGraph node signature with
     record_sink integration so observability matches stage nodes.
@@ -818,7 +821,32 @@ def _wrap_atom(
             on_event, "template.node_started", _progress_payload(task_id),
         )
         try:
-            result = await run_fn(atom_input)
+            _max_a = retry_policy.max_attempts if retry_policy else 1
+            result: dict[str, Any] = {}
+            for _attempt in range(1, _max_a + 1):
+                try:
+                    result = await run_fn(atom_input)
+                    break
+                except GraphInterrupt:
+                    raise
+                except Exception as _exc:
+                    _retryable = (
+                        _attempt < _max_a
+                        and retry_policy is not None
+                        and any(
+                            pat == cls.__name__ or pat.endswith(f".{cls.__name__}")
+                            for cls in type(_exc).__mro__
+                            for pat in retry_policy.retry_on
+                        )
+                    )
+                    if not _retryable:
+                        raise
+                    _sleep = (retry_policy.backoff_s or 0.0) * (2 ** (_attempt - 1))
+                    logger.warning(
+                        "[architect] atom %s attempt %d/%d (%s), retry in %.1fs",
+                        atom_name, _attempt, _max_a, type(_exc).__name__, _sleep,
+                    )
+                    await asyncio.sleep(_sleep)
             elapsed_ms = int((_time.time() - t0) * 1000)
             out = result if isinstance(result, dict) else {}
             halted = bool(out.get("_halt"))
