@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-06-08.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 842 active rows across 62 categories. 1 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 843 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -50,7 +50,7 @@ The worker re-reads on every poll; no restart needed.
 - [image](#image) (6 keys)
 - [infrastructure](#infrastructure) (1 key)
 - [integration](#integration) (2 keys)
-- [integrations](#integrations) (8 keys)
+- [integrations](#integrations) (9 keys)
 - [llm_routing](#llm-routing) (7 keys)
 - [logging](#logging) (2 keys)
 - [media](#media) (9 keys)
@@ -672,6 +672,7 @@ The worker re-reads on every poll; no restart needed.
 | `gh_repo` | `Glad-Labs/glad-labs-stack` |  | GitHub repository (``owner/name``) the dev_diary topic source queries for merged PRs and notable commits when assembl... |
 | `google_oauth_client_id` | `206722606964-lt75101b5surs28ede8t7d3j...` |  | Google OAuth client ID — shared by GSC + GA4 Singer taps |
 | `igdb_twitch_client_id` | `` |  | Twitch app client ID for IGDB access. Get it from https://dev.twitch.tv/console/apps. Public — not a secret. Used by ... |
+| `mcp_http_probe_recovery_token` | `*(encrypted)*` | encrypted | Bearer token shared between brain probe and host recovery agent (port 9841). Set to output of: python -c "import secr... |
 | `telegram_cli_audit_logged` | `true` |  | When 'true' (default), every /cli invocation writes one row to the audit_log table (event_type='telegram_cli_invoked'... |
 | `telegram_cli_enabled` | `true` |  | Global kill-switch for the Telegram /cli passthrough. When 'true' (default), '/cli <args>' messages from the configur... |
 | `telegram_cli_max_output_chars` | `3500` |  | Maximum characters of combined stdout+stderr the Telegram /cli passthrough will reply with. Telegram's hard per-messa... |
