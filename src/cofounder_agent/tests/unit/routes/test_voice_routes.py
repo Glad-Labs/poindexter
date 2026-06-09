@@ -38,7 +38,7 @@ from routes.voice_routes import (
 
 # Tailscale Serve injects this header for authenticated tailnet devices;
 # public Funnel traffic never carries it. Presence == tailnet caller.
-_TAILNET = {"Tailscale-User-Login": "matt@gladlabs.io"}
+_TAILNET = {"Tailscale-User-Login": "operator@example.com"}
 
 
 def _build_app():

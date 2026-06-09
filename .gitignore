@@ -172,6 +172,7 @@ infrastructure/grafana/dashboards/cost-analytics.json
 infrastructure/grafana/dashboards/infrastructure-data.json
 
 # Matt-specific operator scripts (scheduled tasks, watchdogs) — kept locally only
+scripts/glitchtip_audit.py
 scripts/run-hidden.vbs
 scripts/start-claude-code.ps1
 scripts/claude-code-watchdog.ps1

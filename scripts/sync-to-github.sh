@@ -118,6 +118,7 @@ git rm --cached --quiet scripts/claude-sessions.ps1 2>/dev/null || true       # 
 git rm --cached --quiet scripts/run-claude-session.cmd 2>/dev/null || true    # cmd wrapper for above
 git rm --cached --quiet scripts/sync-premium-prompts.py 2>/dev/null || true   # syncs premium prompts from Glad Labs operator stash, no-op for public users
 git rm --cached --quiet scripts/kuma_bootstrap.py 2>/dev/null || true         # operator-specific Kuma monitor list (gladlabs.io / Tailscale Funnel), not a reusable template
+git rm --cached --quiet scripts/glitchtip_audit.py 2>/dev/null || true        # one-shot admin-credential script (operator-only; was accidentally tracked with a hardcoded password default)
 
 # === Operator-specific taps (read from Matt's local Claude / OpenClaw state) ===
 git rm --cached --quiet src/cofounder_agent/services/taps/claude_code_sessions.py 2>/dev/null || true  # taps ~/.claude/projects/*.jsonl — Matt's actual conversations
