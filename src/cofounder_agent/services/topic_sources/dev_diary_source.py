@@ -30,7 +30,6 @@ the job, not here, so the source's contract stays small + testable.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -788,7 +787,11 @@ class DevDiarySource:
             config.get("confidence_floor", _DEFAULT_BRAIN_CONFIDENCE_FLOOR)
             or _DEFAULT_BRAIN_CONFIDENCE_FLOOR
         )
-        gh_repo = config.get("gh_repo") or os.environ.get("DEV_DIARY_GH_REPO") or None
+        # gh_repo is a DB setting (feedback_db_first_config): only an explicit
+        # per-call override is honoured here; gather_context resolves the rest
+        # of the chain (SiteConfig['gh_repo'] -> app_settings.gh_repo row ->
+        # ctor arg -> default). No os.environ escape hatch.
+        gh_repo = config.get("gh_repo") or None
         site_config = config.get("_site_config")
 
         ctx = await self.gather_context(

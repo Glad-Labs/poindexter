@@ -617,6 +617,29 @@ def test_resolve_livekit_creds_dev_default(monkeypatch):
     assert url == "ws://localhost:7880"
 
 
+def test_resolve_livekit_creds_passes_env_key_and_secret(monkeypatch):
+    """LIVEKIT_API_KEY / _SECRET env vars flow through unchanged."""
+    monkeypatch.setenv("LIVEKIT_API_KEY", "real-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "real-secret")
+    _url, key, secret = voice_agent_livekit._resolve_livekit_creds(None)
+    assert (key, secret) == ("real-key", "real-secret")
+
+
+def test_resolve_livekit_creds_no_fabricated_secret(monkeypatch):
+    """No env + no DB -> empty key/secret, never a placeholder.
+
+    The empty creds let ``mint_livekit_token`` fail loud (it requires
+    non-blank key/secret) instead of minting a token signed with a stand-in
+    ``devkey`` / ``devsecret`` that LiveKit silently rejects
+    (feedback_no_silent_defaults / feedback_no_dummy_data).
+    """
+    monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+    monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
+    _url, key, secret = voice_agent_livekit._resolve_livekit_creds(None)
+    assert key == ""
+    assert secret == ""
+
+
 # ---------------------------------------------------------------------------
 # Regression tests for the IN_PROGRESS sentinel bug (2026-05-05).
 #

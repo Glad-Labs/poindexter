@@ -122,9 +122,14 @@ def resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, str
     2. ``LIVEKIT_URL`` env var.
     3. Hardcoded ``ws://localhost:7880`` dev fallback.
 
-    API key / secret come from env here -- this SYNC variant is for contexts
-    with no DB pool (the ``--print-client-token`` CLI, first-boot). Async
-    minters should call :func:`resolve_livekit_creds_async`, which reads the
+    API key / secret come from the ``LIVEKIT_API_KEY`` / ``LIVEKIT_API_SECRET``
+    env vars here -- this SYNC variant is for contexts with no DB pool (the
+    ``--print-client-token`` CLI, first-boot). When those env vars are unset we
+    return **empty** strings (never a fabricated ``devkey`` / ``devsecret``
+    placeholder) so the downstream :func:`mint_livekit_token` guard fails loud
+    rather than minting a token signed with a stand-in secret that LiveKit
+    silently rejects (``feedback_no_silent_defaults`` / ``feedback_no_dummy_data``).
+    Async minters should call :func:`resolve_livekit_creds_async`, which reads the
     key/secret from ``app_settings`` first (#1000) so rotation is DB-first.
     """
     url = ""
@@ -135,12 +140,13 @@ def resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, str
             ).strip()
         except Exception:  # noqa: BLE001 -- site_config absence is OK
             url = ""
+    # ``ws://localhost:7880`` is the genuine local LiveKit address (a non-secret
+    # connection URL), so a dev fallback here is safe. The key/secret get NO such
+    # fallback: an unset env var must surface as "" so mint_livekit_token() fails
+    # loud instead of fabricating creds.
     url = url or os.environ.get("LIVEKIT_URL", "") or "ws://localhost:7880"
-    key = os.environ.get("LIVEKIT_API_KEY", "devkey")
-    secret = os.environ.get(
-        "LIVEKIT_API_SECRET",
-        "devsecret_change_me_change_me_change_me",
-    )
+    key = os.environ.get("LIVEKIT_API_KEY", "")
+    secret = os.environ.get("LIVEKIT_API_SECRET", "")
     return url, key, secret
 
 

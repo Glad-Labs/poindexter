@@ -828,6 +828,52 @@ class TestExtract:
 
         assert topics == []
 
+    async def test_extract_forwards_explicit_config_gh_repo(self):
+        """An explicit config['gh_repo'] override reaches gather_context."""
+        source = DevDiarySource()
+        captured: dict = {}
+
+        async def fake_gather(self_, pool, **kwargs):
+            captured.update(kwargs)
+            return DevDiaryContext(
+                date="2026-05-02",
+                merged_prs=[], notable_commits=[], brain_decisions=[],
+                audit_resolved=[], recent_posts=[],
+                cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+            )
+
+        with patch.object(DevDiarySource, "gather_context", fake_gather):
+            await source.extract(pool=None, config={"gh_repo": "Cfg-Org/cfg-repo"})
+
+        assert captured["gh_repo"] == "Cfg-Org/cfg-repo"
+
+    async def test_extract_ignores_dev_diary_gh_repo_env(self, monkeypatch):
+        """The DEV_DIARY_GH_REPO env escape hatch was removed (db-first config).
+
+        gh_repo is resolved inside gather_context from SiteConfig /
+        app_settings.gh_repo, so a stray env var must NOT leak in as the
+        per-call override (feedback_db_first_config).
+        """
+        monkeypatch.setenv("DEV_DIARY_GH_REPO", "Env-Org/env-repo")
+        source = DevDiarySource()
+        captured: dict = {}
+
+        async def fake_gather(self_, pool, **kwargs):
+            captured.update(kwargs)
+            return DevDiaryContext(
+                date="2026-05-02",
+                merged_prs=[], notable_commits=[], brain_decisions=[],
+                audit_resolved=[], recent_posts=[],
+                cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+            )
+
+        with patch.object(DevDiarySource, "gather_context", fake_gather):
+            await source.extract(pool=None, config={})
+
+        # No explicit override -> None handed to gather_context, which resolves
+        # gh_repo from the DB chain, NOT the env var.
+        assert captured["gh_repo"] is None
+
 
 # ---------------------------------------------------------------------------
 # gather_context — gh_token + gh_repo plumbing (no DB needed)
