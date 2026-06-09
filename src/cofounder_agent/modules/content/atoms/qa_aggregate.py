@@ -20,7 +20,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from modules.content.atoms._qa_rail_common import aggregate_rail_reviews, resolve_gate_states
+from modules.content.atoms._qa_rail_common import (
+    aggregate_rail_reviews,
+    missing_required_gates,
+    resolve_gate_states,
+)
 from plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -97,12 +101,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 site_config=site_config, platform=state.get("platform"),
             )
             gate_states = await resolve_gate_states(_qa)
-            present = {r.get("reviewer") for r in reviews}
-            missing_required = [
-                gate_name
-                for gate_name, (enabled, required) in gate_states.items()
-                if required and enabled and gate_name not in present
-            ]
+            # Alias-aware presence check (reviewer name != gate name for the
+            # critic etc.) — see missing_required_gates. The prior raw
+            # ``gate_name not in {r["reviewer"]}`` test rejected EVERY passing
+            # post because the required ``llm_critic`` gate is emitted as
+            # ``ollama_critic``.
+            missing_required = missing_required_gates(reviews, gate_states)
             if missing_required:
                 logger.warning(
                     "[qa.aggregate] required rail(s) produced no review — "

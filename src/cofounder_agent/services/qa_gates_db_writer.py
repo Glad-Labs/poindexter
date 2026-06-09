@@ -68,6 +68,25 @@ _REVIEWER_TO_GATE: dict[str, str] = {
 }
 
 
+def reviewer_to_gate(reviewer: str | None) -> str | None:
+    """Resolve a ``ReviewerResult.reviewer`` name to its ``qa_gates.name``.
+
+    The string a rail writes (e.g. ``ollama_critic``) and the ``qa_gates``
+    row it belongs to (e.g. ``llm_critic``) diverge for several rails —
+    ``_REVIEWER_TO_GATE`` above is the single source of truth for that
+    aliasing. Returns the gate name, or ``None`` when the reviewer has no
+    gate row.
+
+    Two callers, two fallbacks: ``record_chain_run`` skips a ``None``
+    (counters track rows that exist); the qa.aggregate vacuous-pass guard
+    falls back to identity (an unaliased reviewer whose name already equals
+    its gate name still counts as present).
+    """
+    if not reviewer:
+        return None
+    return _REVIEWER_TO_GATE.get(reviewer)
+
+
 def _field(review: Any, name: str, default: Any) -> Any:
     """Read a review field from either shape.
 
@@ -104,7 +123,7 @@ async def record_chain_run(
     # twice for dead-link vs bonus paths) updates the row exactly once.
     runs: dict[str, dict[str, Any]] = {}
     for r in reviews:
-        gate_name = _REVIEWER_TO_GATE.get(_field(r, "reviewer", ""))
+        gate_name = reviewer_to_gate(_field(r, "reviewer", ""))
         if gate_name is None:
             continue
         bucket = runs.setdefault(
@@ -141,4 +160,4 @@ async def record_chain_run(
         logger.debug("qa_gates counter update failed: %s", exc)
 
 
-__all__ = ["record_chain_run"]
+__all__ = ["record_chain_run", "reviewer_to_gate"]

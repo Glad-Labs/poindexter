@@ -150,6 +150,46 @@ def aggregate_rail_reviews(
     }
 
 
+def missing_required_gates(
+    reviews: list[dict[str, Any]],
+    gate_states: dict[str, tuple[bool, bool]],
+) -> list[str]:
+    """Required + enabled gates that produced NO matching review.
+
+    Powers the qa.aggregate vacuous-pass guard (poindexter#680): a required
+    rail that emits no review would otherwise pass silently, because
+    ``aggregate_rail_reviews`` only vetoes on reviews it can *see*. We fail
+    closed when a required gate is genuinely absent.
+
+    Reviewer→gate aliasing is load-bearing here. The critic writes
+    ``reviewer="ollama_critic"`` while its gate row is named ``llm_critic``
+    (and ``internal_consistency`` → ``consistency``). Each review's reviewer
+    is resolved through ``qa_gates_db_writer.reviewer_to_gate`` — the single
+    source of truth for that aliasing — with identity fallback for reviewers
+    whose name already equals their gate name. Without the alias, the raw
+    name membership test saw the required ``llm_critic`` gate as absent and
+    hard-rejected EVERY otherwise-passing post (regression introduced with
+    the #680 guard; the alias table predates it but the guard didn't use it).
+
+    ``gate_states`` is ``{name: (enabled, required_to_pass)}`` as returned by
+    ``resolve_gate_states``. An empty mapping (no-DB / fresh checkout) yields
+    an empty list — the guard then leaves the aggregate decision untouched.
+    """
+    from services.qa_gates_db_writer import reviewer_to_gate
+
+    present: set[str] = set()
+    for r in reviews:
+        reviewer = r.get("reviewer")
+        if not reviewer:
+            continue
+        present.add(reviewer_to_gate(reviewer) or reviewer)
+    return [
+        name
+        for name, (enabled, required) in gate_states.items()
+        if required and enabled and name not in present
+    ]
+
+
 async def resolve_gate_states(qa: Any) -> dict[str, Any]:
     """Best-effort ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates`` via
     the MultiModelQA instance. Empty dict on any failure — advisory marking
@@ -164,6 +204,7 @@ async def resolve_gate_states(qa: Any) -> dict[str, Any]:
 __all__ = [
     "aggregate_rail_reviews",
     "known_wrong_fact_rescued",
+    "missing_required_gates",
     "resolve_gate_states",
     "reviewer_to_dict",
 ]
