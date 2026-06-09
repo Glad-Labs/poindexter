@@ -692,6 +692,13 @@ services:
       PREFECT_REDIS_MESSAGING_PORT: "6379"
       PREFECT_REDIS_MESSAGING_DB: "0"
     command: prefect server services start
+    healthcheck:
+      # No HTTP endpoint — probe the services process directly.
+      test: ["CMD-SHELL", "pgrep -f 'prefect server services' || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # Prefect worker — pulls runs from `content-pool` and executes them as
   # subprocesses. Reuses `Dockerfile.worker` so it has the full pipeline
@@ -875,6 +882,15 @@ services:
     restart: unless-stopped
     mem_limit: 2g
     mem_reservation: 512m
+    healthcheck:
+      # Worker is a Node.js process with no dedicated HTTP endpoint on a
+      # documented fixed port. Probe the process directly; a dead worker
+      # container shows unhealthy and triggers an automatic restart.
+      test: ["CMD-SHELL", "pgrep -f 'node' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on: &langfuse-depends-on
       postgres-local:
         condition: service_healthy
@@ -923,6 +939,12 @@ services:
     restart: unless-stopped
     mem_limit: 2g
     mem_reservation: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/public/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     depends_on: *langfuse-depends-on
     ports:
       # Avoid the existing :3000 binding (Grafana). Map :3010 → :3000
@@ -1213,6 +1235,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Promtail remembers where it left off across restarts.
       - promtail-positions:/var/log
+    healthcheck:
+      # Promtail exposes /ready on its http_listen_port (9080 per promtail-config.yml).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9080/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       loki:
         condition: service_healthy
@@ -1424,6 +1453,13 @@ services:
         condition: service_healthy
       glitchtip-redis:
         condition: service_healthy
+    healthcheck:
+      # Celery worker — no HTTP. Check that at least one celery process is alive.
+      test: ["CMD-SHELL", "pgrep -f celery || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # ===========================================
   # GPU Metrics Exporter — nvidia-smi + HWiNFO to Prometheus
