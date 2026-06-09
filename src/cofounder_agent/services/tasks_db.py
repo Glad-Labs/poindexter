@@ -57,6 +57,25 @@ def serialize_value_for_postgres(value: Any) -> Any:
     return str(value)
 
 
+def _parse_rowcount(status: Any) -> int:
+    """Extract the affected-row count from an asyncpg command-status tag.
+
+    asyncpg's ``Connection.execute`` returns the command tag string, e.g.
+    ``"DELETE 7"`` / ``"UPDATE 0"``. The row count is the trailing integer.
+    Returns 0 for anything unparseable (None, empty, non-string mocks),
+    so callers can sum counts without guarding each call.
+    """
+    if not isinstance(status, str):
+        return 0
+    parts = status.rsplit(" ", 1)
+    if len(parts) != 2:
+        return 0
+    try:
+        return int(parts[1])
+    except ValueError:
+        return 0
+
+
 async def _resolve_default_template_slug(pool: Pool) -> str:
     """Read ``app_settings.default_template_slug``.
 
@@ -1593,6 +1612,32 @@ class TasksDatabase(DatabaseServiceMixin):
                             fail_ids,
                         )
 
+                    # Clear the LangGraph Postgres checkpoint for every
+                    # swept task so any retry runs a FRESH graph instead
+                    # of resuming a half-written (poisoned) checkpoint.
+                    #
+                    # Failure mode this prevents: a ``canonical_blog`` run
+                    # killed mid-pipeline (worker restart / crash / OOM)
+                    # leaves a partial checkpoint keyed by
+                    # ``thread_id == task_id`` in the ``checkpoints`` /
+                    # ``checkpoint_blobs`` / ``checkpoint_writes`` tables
+                    # (template_runner sets ``thread_id`` to the bare
+                    # task_id when ``template_runner_use_postgres_checkpointer``
+                    # is on). When this sweeper resets the orphaned task to
+                    # ``pending`` and the dispatcher re-claims it, LangGraph
+                    # RESUMES the poisoned checkpoint → the graph runs ~1
+                    # node (``verify_task``) and exits "complete" at score 0
+                    # (``preview_token`` missing). The task can never
+                    # regenerate until the checkpoint rows are deleted.
+                    # Verified in prod: clearing the rows makes the next
+                    # run execute the full 21-node graph normally.
+                    #
+                    # Covers BOTH buckets (reset→pending AND →failed): a
+                    # failed task may still be retried by an operator, and
+                    # neither should ever resume a stale checkpoint.
+                    swept_ids = reset_ids + fail_ids
+                    await self._clear_checkpoints_for_threads(conn, swept_ids)
+
                     logger.info(
                         "Stale task sweep complete: %d reset, %d failed (threshold=%dm)",
                         len(reset_ids), len(fail_ids), stale_threshold_minutes,
@@ -1602,6 +1647,86 @@ class TasksDatabase(DatabaseServiceMixin):
         except Exception as e:
             logger.error("Failed to sweep stale tasks: %s", e, exc_info=True)
             return {"reset": 0, "failed": 0}
+
+    async def _clear_checkpoints_for_threads(
+        self,
+        conn: Any,
+        thread_ids: list[str],
+    ) -> int:
+        """Delete LangGraph Postgres-checkpointer rows for the given threads.
+
+        The LangGraph checkpointer persists per-run graph state keyed by
+        ``thread_id`` across three tables — ``checkpoint_writes``,
+        ``checkpoint_blobs`` and ``checkpoints`` (``checkpoint_migrations``
+        has no ``thread_id`` and is intentionally left alone). For the
+        content pipeline the ``thread_id`` is the bare ``task_id`` (see
+        ``template_runner.TemplateRunner.run``), so clearing a swept
+        task's rows forces its next run to start a fresh graph.
+
+        Safety / robustness:
+
+        * **No-op when there are no threads** — returns 0 without touching
+          the DB.
+        * **Safe when checkpointing is off / fresh install** — guarded by
+          ``to_regclass('public.checkpoints') IS NOT NULL`` so the sweeper
+          never breaks on installs that don't run the Postgres checkpointer
+          (the tables may simply not exist).
+        * **Best-effort, never blocks the status reset** — any error here
+          is logged and swallowed. The caller runs this inside the sweep
+          transaction; letting a checkpoint-clear failure raise would roll
+          back the far-more-important status reset, so we contain it.
+
+        ``thread_id`` / ``task_id`` are ``varchar``/``text`` — cast
+        ``::text[]`` (NOT ``::uuid[]``).
+
+        Returns the number of checkpoint rows deleted across all three
+        tables (0 when skipped).
+        """
+        if not thread_ids:
+            return 0
+
+        try:
+            # Guard: the checkpoint tables only exist when the Postgres
+            # checkpointer has been initialised. ``to_regclass`` returns
+            # NULL for a missing relation instead of raising.
+            tables_present = await conn.fetchval(
+                "SELECT to_regclass('public.checkpoints') IS NOT NULL"
+            )
+            if not tables_present:
+                logger.debug(
+                    "Checkpoint tables absent — skipping checkpoint clear "
+                    "for %d swept task(s)",
+                    len(thread_ids),
+                )
+                return 0
+
+            cleared = 0
+            for table in (
+                "checkpoint_writes",
+                "checkpoint_blobs",
+                "checkpoints",
+            ):
+                status = await conn.execute(
+                    f"DELETE FROM {table} WHERE thread_id = ANY($1::text[])",
+                    thread_ids,
+                )
+                cleared += _parse_rowcount(status)
+
+            logger.info(
+                "Cleared %d LangGraph checkpoint row(s) for %d swept task(s)",
+                cleared, len(thread_ids),
+            )
+            return cleared
+
+        except Exception as e:
+            # Best-effort: a checkpoint-clear failure must never roll back
+            # or block the status reset (the reset is what actually frees
+            # the stuck task). Log and move on.
+            logger.warning(
+                "Failed to clear LangGraph checkpoints for %d swept task(s): %s",
+                len(thread_ids), e, exc_info=True,
+            )
+            return 0
 
     async def bulk_update_task_statuses(
         self,

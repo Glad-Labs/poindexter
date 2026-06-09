@@ -16,7 +16,9 @@ Tests cover:
 - TasksDatabase.delete_task — success, not found, DB error
 - TasksDatabase.get_drafts — success, empty, DB error
 - TasksDatabase.get_status_history — success, DB error fallback
-- TasksDatabase.sweep_stale_tasks — success, no changes, DB error
+- TasksDatabase.sweep_stale_tasks — success, no changes, DB error,
+  LangGraph checkpoint clear (present/absent/best-effort/no-op)
+- _parse_rowcount — asyncpg command-tag parsing
 
 asyncpg pool fully mocked; no real DB access.
 """
@@ -28,7 +30,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.tasks_db import TasksDatabase, serialize_value_for_postgres
+from services.tasks_db import (
+    TasksDatabase,
+    _parse_rowcount,
+    serialize_value_for_postgres,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -164,6 +170,34 @@ class TestSerializeValueForPostgres:
 
         result = serialize_value_for_postgres(Weird())
         assert result == "weird_value"
+
+
+# ---------------------------------------------------------------------------
+# _parse_rowcount — module-level pure function
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestParseRowcount:
+    def test_delete_tag(self):
+        assert _parse_rowcount("DELETE 7") == 7
+
+    def test_update_zero(self):
+        assert _parse_rowcount("UPDATE 0") == 0
+
+    def test_insert_with_oid_takes_trailing_int(self):
+        # asyncpg never returns the legacy "INSERT <oid> <n>" form, but
+        # rsplit on the last space still yields the row count.
+        assert _parse_rowcount("INSERT 0 3") == 3
+
+    def test_non_string_returns_zero(self):
+        assert _parse_rowcount(None) == 0
+        assert _parse_rowcount(MagicMock()) == 0
+
+    def test_unparseable_returns_zero(self):
+        assert _parse_rowcount("DELETE") == 0
+        assert _parse_rowcount("") == 0
+        assert _parse_rowcount("DELETE abc") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +1102,9 @@ class TestSweepStaleTasks:
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=stale_rows)
-        conn.execute = AsyncMock()
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        # Checkpoint-clear guard: tables present so the 3 DELETEs fire.
+        conn.fetchval = AsyncMock(return_value=True)
 
         @asynccontextmanager
         async def _txn():
@@ -1085,8 +1121,8 @@ class TestSweepStaleTasks:
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
         assert result == {"reset": 1, "failed": 1}
-        # Two execute calls: one reset, one fail
-        assert conn.execute.await_count == 2
+        # Five execute calls: one reset + one fail + three checkpoint DELETEs.
+        assert conn.execute.await_count == 5
 
     @pytest.mark.asyncio
     async def test_writes_target_pipeline_tasks_not_content_tasks_view(self):
@@ -1100,7 +1136,8 @@ class TestSweepStaleTasks:
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=stale_rows)
-        conn.execute = AsyncMock()
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        conn.fetchval = AsyncMock(return_value=True)
 
         @asynccontextmanager
         async def _txn():
@@ -1122,8 +1159,11 @@ class TestSweepStaleTasks:
         assert "FROM pipeline_tasks" in select_sql
         assert "FROM content_tasks" not in select_sql
 
-        # Both UPDATE calls must also target pipeline_tasks.
-        update_sqls = [call.args[0] for call in conn.execute.await_args_list]
+        # Both UPDATE calls must target pipeline_tasks (the checkpoint
+        # DELETEs are separate statements — filter to just the UPDATEs).
+        all_sqls = [call.args[0] for call in conn.execute.await_args_list]
+        update_sqls = [sql for sql in all_sqls if "UPDATE" in sql]
+        assert len(update_sqls) == 2
         assert all("UPDATE pipeline_tasks" in sql for sql in update_sqls)
         assert all("UPDATE content_tasks" not in sql for sql in update_sqls)
 
@@ -1136,7 +1176,8 @@ class TestSweepStaleTasks:
         stale_rows = [{"task_id": "t-1", "retry_count": 0}]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=stale_rows)
-        conn.execute = AsyncMock()
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        conn.fetchval = AsyncMock(return_value=True)
 
         @asynccontextmanager
         async def _txn():
@@ -1153,7 +1194,12 @@ class TestSweepStaleTasks:
         db = TasksDatabase(pool=pool)
         await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
 
-        reset_sql = conn.execute.await_args.args[0]
+        # Find the reset UPDATE among all execute calls (the checkpoint
+        # DELETEs also go through conn.execute now).
+        all_sqls = [call.args[0] for call in conn.execute.await_args_list]
+        reset_sqls = [sql for sql in all_sqls if "SET status = 'pending'" in sql]
+        assert len(reset_sqls) == 1
+        reset_sql = reset_sqls[0]
         assert "retry_count = retry_count + 1" in reset_sql
         # The old jsonb_set form must NOT be back.
         assert "jsonb_set" not in reset_sql
@@ -1178,7 +1224,8 @@ class TestSweepStaleTasks:
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=stale_rows)
-        conn.execute = AsyncMock()
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        conn.fetchval = AsyncMock(return_value=True)
 
         @asynccontextmanager
         async def _txn():
@@ -1196,6 +1243,152 @@ class TestSweepStaleTasks:
         result = await db.sweep_stale_tasks()
         # Both should be reset (retry_count defaults to 0)
         assert result == {"reset": 2, "failed": 0}
+
+    @pytest.mark.asyncio
+    async def test_clears_checkpoints_for_swept_threads(self):
+        """The poisoned-checkpoint fix: every swept task (reset→pending
+        AND →failed) has its LangGraph checkpoint rows deleted so a retry
+        runs a fresh graph. thread_id == task_id for the content pipeline.
+        Covers all three checkpointer tables (NOT checkpoint_migrations)."""
+        stale_rows = [
+            {"task_id": "t-reset", "retry_count": 0},
+            {"task_id": "t-fail", "retry_count": 99},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock(return_value="DELETE 1")
+        # Guard query: tables present.
+        conn.fetchval = AsyncMock(return_value=True)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+        assert result == {"reset": 1, "failed": 1}
+
+        # The to_regclass guard ran.
+        guard_sql = conn.fetchval.await_args.args[0]
+        assert "to_regclass('public.checkpoints')" in guard_sql
+
+        # Exactly three checkpoint DELETEs — one per table, in the
+        # child→parent order, each over the union of swept ids cast ::text[].
+        delete_calls = [
+            c for c in conn.execute.await_args_list
+            if "DELETE FROM" in c.args[0]
+        ]
+        delete_sqls = [c.args[0] for c in delete_calls]
+        assert len(delete_sqls) == 3
+        assert any("DELETE FROM checkpoint_writes" in s for s in delete_sqls)
+        assert any("DELETE FROM checkpoint_blobs" in s for s in delete_sqls)
+        assert any("DELETE FROM checkpoints WHERE" in s for s in delete_sqls)
+        # checkpoint_migrations has no thread_id — must never be touched.
+        assert not any("checkpoint_migrations" in s for s in delete_sqls)
+        # Cast must be ::text[] (task_id is varchar), never ::uuid[].
+        assert all("::text[]" in s for s in delete_sqls)
+        assert not any("::uuid[]" in s for s in delete_sqls)
+        # Each DELETE targets BOTH swept ids (reset + failed union).
+        for c in delete_calls:
+            assert c.args[1] == ["t-reset", "t-fail"]
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_clear_noop_when_tables_absent(self):
+        """Fresh install / checkpointer off: the checkpoint tables may
+        not exist. The to_regclass guard must make the clear a no-op —
+        no DELETE fires and the status reset still succeeds."""
+        stale_rows = [{"task_id": "t-1", "retry_count": 0}]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        # Guard query: tables ABSENT (to_regclass → NULL → IS NOT NULL → False).
+        conn.fetchval = AsyncMock(return_value=False)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+        # Status reset still happened.
+        assert result == {"reset": 1, "failed": 0}
+        # No checkpoint DELETE was issued.
+        assert not any(
+            "DELETE FROM checkpoint" in c.args[0]
+            for c in conn.execute.await_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_clear_failure_does_not_block_reset(self):
+        """Best-effort contract: an error inside the checkpoint clear must
+        NOT propagate out of the sweep (which would roll back the reset).
+        The reset is the more important action."""
+        stale_rows = [{"task_id": "t-1", "retry_count": 0}]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        # Guard query itself blows up — the clear must swallow it.
+        conn.fetchval = AsyncMock(side_effect=RuntimeError("checkpoints table locked"))
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        # Must NOT raise — and the reset still reports.
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+        assert result == {"reset": 1, "failed": 0}
+
+    @pytest.mark.asyncio
+    async def test_no_checkpoint_clear_when_nothing_swept(self):
+        """No stale rows → the sweep returns early and never runs the
+        checkpoint guard or any DELETE (skip the work entirely)."""
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock()
+        conn.fetchval = AsyncMock(return_value=True)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60)
+        assert result == {"reset": 0, "failed": 0}
+        conn.fetchval.assert_not_awaited()
+        conn.execute.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
