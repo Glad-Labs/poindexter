@@ -189,6 +189,20 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: pip install "poetry==2.2.1"
 
+      # Reclaim runner disk before the full poetry install. The dep tree pulls
+      # sentence-transformers -> torch (multi-GB wheels); on tight ubuntu-latest
+      # runners the install intermittently hits `OSError(28) No space left on
+      # device` mid-download (PR #1277 — two consecutive runs died installing
+      # sentence-transformers, while main passed on roomier runners). Removing
+      # preinstalled toolchains this job never uses (Android SDK ~9GB, .NET ~3GB,
+      # GHC/Haskell ~5GB) reclaims ~15GB+ of headroom. Inline rm (no third-party
+      # action) keeps the SHA-pin allowlist clean; `|| true` + df are advisory.
+      - name: Free up runner disk
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+          df -h /
+
       - name: Install dependencies
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent

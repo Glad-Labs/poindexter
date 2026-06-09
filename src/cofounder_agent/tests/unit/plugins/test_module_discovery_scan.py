@@ -8,12 +8,24 @@ loud per feedback_no_silent_defaults.
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 from plugins import registry
 from plugins.registry import (
     ModuleDiscoveryError,
     _scan_intree_modules,
+)
+
+# The sync filter strips ``src/cofounder_agent/modules/finance/`` from the
+# public ``poindexter`` mirror. Tests that require the finance module to be
+# present on disk (real-tree scan / forced-load) must skip there rather than
+# fail. ``find_spec`` checks importability without executing the module.
+_FINANCE_MODULE_PRESENT = importlib.util.find_spec("modules.finance") is not None
+_finance_only = pytest.mark.skipif(
+    not _FINANCE_MODULE_PRESENT,
+    reason="modules.finance is private (operator overlay) — stripped from public mirror",
 )
 
 
@@ -61,6 +73,7 @@ def _scan_is_sole_module_source(monkeypatch):
     registry.clear_registry_cache()
 
 
+@_finance_only
 def test_scan_discovers_real_intree_modules():
     """The real modules/ tree yields content + finance, and finance's
     poll_mercury job rides along via modules/finance/jobs/JOBS."""
@@ -133,6 +146,7 @@ def test_jobs_loader_broken_inner_import_propagates(monkeypatch):
         registry._load_intree_module_jobs("finance")
 
 
+@_finance_only
 def test_get_modules_uses_scan(monkeypatch):
     """get_modules() surfaces the scanned in-tree modules (via the
     unchanged _merge_with_core_samples -> get_core_samples path)."""

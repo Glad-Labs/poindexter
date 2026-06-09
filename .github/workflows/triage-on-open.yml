@@ -8,8 +8,12 @@ on:
   issues:
     types: [opened]
 
-# Only the permission needed to add a label. No PR is opened, so no App token.
+# No PR is opened, so no App token. `contents: read` is required for
+# actions/checkout to clone the (private) repo — without it the token
+# defaults to `none` for contents and checkout fails with "repository not
+# found"; `issues: write` is what lets the job add the type label.
 permissions:
+  contents: read
   issues: write
 
 concurrency:
