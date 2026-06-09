@@ -269,6 +269,24 @@ async def process_content_generation_task(
         "topic": topic,
         "status": "pending",
         "stages": {},
+        # Seed media-artifact channels at graph construction time so LangGraph
+        # registers them in channel_versions at step 0.  Without this, channels
+        # absent from the initial state dict are silently dropped when a node
+        # returns them (#674 variant) — even though they ARE declared in
+        # PipelineState — because LangGraph 1.1.10 does not promote untracked
+        # channels from node return values unless the channel already has a
+        # registered version.  Seeding empty defaults here ensures that when
+        # generate_media_scripts writes podcast_script/video_scenes/etc. the
+        # updates propagate correctly to generate_video_shot_list and Stage-2
+        # dispatch.  (Discovered 2026-06-08 via checkpoint_blobs audit.)
+        "podcast_script": "",
+        "video_scenes": [],
+        "short_summary_script": "",
+        "video_shot_list": {},
+        "short_shot_list": {},
+        "video_ambient_audio_path": "",
+        "podcast_audio_path": "",
+        "podcast_intro_audio_path": "",
         "category": category or "technology",
         # Orchestrator inputs — stages read these directly.
         "style": style,

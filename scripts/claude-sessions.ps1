@@ -73,7 +73,6 @@ $Sessions = @{
         TimeMM = "00"
         Days = "daily"
         MaxMinutes = 30
-        Model = "claude-opus-4-8"
     }
     "codebase-audit" = @{
         Prompt = "You are running autonomously in a dedicated worktree. Run: cd src/cofounder_agent ; poetry run ruff check --select F401 services/ routes/ ; poetry run bandit -r services/ routes/ -q -ll. Fix ONLY the unused-import (F401) findings - the safe mechanical fix. For bandit MEDIUM/HIGH findings, file a GitHub issue via gh issue create --repo Glad-Labs/glad-labs-stack --label security (security findings stay in the PRIVATE repo - never disclose vulns in the public poindexter). Commit the import fixes on the current branch (code PRs go to glad-labs-stack), push via git push -u origin HEAD, open a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
