@@ -3,7 +3,7 @@
 **Last Updated:** 2026-06-03
 
 > **What this doc is.** A transparency record of how Poindexter (the
-> project, not your self-host) is tested and shipped to gladlabs.io.
+> project, not your self-host) is tested and shipped to [gladlabs.io](https://www.gladlabs.io).
 > Kept here so that contributors can understand why a PR fails CI,
 > what gets run on every push, and how changes reach production.
 >
