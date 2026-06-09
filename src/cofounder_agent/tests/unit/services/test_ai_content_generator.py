@@ -534,23 +534,129 @@ def _make_sc():
     )
 
 
-class TestGetContentGenerator:
-    def test_returns_ai_content_generator(self):
-        import modules.content.ai_content_generator as mod
+@pytest.fixture
+def _reset_generator_singleton():
+    """Reset the module-global ``_generator`` around each test so factory
+    state never leaks between cases (the factory caches the first instance)."""
+    import modules.content.ai_content_generator as mod
+    mod._generator = None
+    try:
+        yield mod
+    finally:
         mod._generator = None
+
+
+class TestGetContentGenerator:
+    def test_returns_ai_content_generator(self, _reset_generator_singleton):
         from modules.content.ai_content_generator import get_content_generator
         gen = get_content_generator(site_config=_make_sc())
         assert isinstance(gen, AIContentGenerator)
-        mod._generator = None
 
-    def test_returns_same_instance(self):
-        import modules.content.ai_content_generator as mod
-        mod._generator = None
+    def test_returns_same_instance(self, _reset_generator_singleton):
         from modules.content.ai_content_generator import get_content_generator
         g1 = get_content_generator(site_config=_make_sc())
         g2 = get_content_generator(site_config=_make_sc())
         assert g1 is g2
-        mod._generator = None
+
+    # -- Glad-Labs/poindexter#667 regression: platform threading -------------
+    # #667 added the ``platform`` dispatch handle to ``AIContentGenerator.__init__``
+    # and a ``_try_ollama`` guard that raises "platform handle required for
+    # dispatch" when ``_platform is None`` — but the factory was never updated
+    # to thread it, so every non-niche ``canonical_blog`` generation aborted.
+
+    def test_platform_threaded_into_construction(self, _reset_generator_singleton):
+        """Factory with ``platform=p`` yields an instance whose ``_platform is p``."""
+        from modules.content.ai_content_generator import get_content_generator
+        platform = FakePlatform()
+        gen = get_content_generator(site_config=_make_sc(), platform=platform)
+        assert gen._platform is platform
+
+    def test_singleton_backfills_platform_when_first_call_lacked_one(
+        self, _reset_generator_singleton
+    ):
+        """First call with no platform → ``_platform is None``; a later call
+        supplying a real platform upgrades the cached singleton in place."""
+        from modules.content.ai_content_generator import get_content_generator
+        g1 = get_content_generator(site_config=_make_sc())
+        assert g1._platform is None  # regression precondition
+
+        platform = FakePlatform()
+        g2 = get_content_generator(site_config=_make_sc(), platform=platform)
+        assert g2 is g1  # same cached instance
+        assert g1._platform is platform  # back-filled in place
+
+    def test_backfill_does_not_overwrite_existing_platform(
+        self, _reset_generator_singleton
+    ):
+        """A platform already bound on the singleton is NOT clobbered by a
+        later call passing a different one (back-fill only fills a None)."""
+        from modules.content.ai_content_generator import get_content_generator
+        first = FakePlatform()
+        g1 = get_content_generator(site_config=_make_sc(), platform=first)
+        second = FakePlatform()
+        g2 = get_content_generator(site_config=_make_sc(), platform=second)
+        assert g2 is g1
+        assert g1._platform is first  # original handle preserved
+
+    def test_later_call_without_platform_leaves_singleton_unchanged(
+        self, _reset_generator_singleton
+    ):
+        """A platform-less call must not reset an already-bound handle to None."""
+        from modules.content.ai_content_generator import get_content_generator
+        platform = FakePlatform()
+        g1 = get_content_generator(site_config=_make_sc(), platform=platform)
+        g2 = get_content_generator(site_config=_make_sc())  # no platform
+        assert g2 is g1
+        assert g1._platform is platform
+
+    @pytest.mark.asyncio
+    async def test_factory_built_generator_passes_try_ollama_guard(
+        self, _reset_generator_singleton
+    ):
+        """Regression: a factory-built generator with a platform proceeds past
+        the ``if self._platform is None: raise RuntimeError(...)`` guard in
+        ``_try_ollama`` and actually dispatches, rather than aborting with
+        "platform handle required for dispatch"."""
+        from modules.content.ai_content_generator import get_content_generator
+
+        body = "Topic phrase. " + ("Lorem ipsum dolor sit amet. " * 20)
+        platform = FakePlatform(dispatch_response=_make_completion(body))
+        gen = get_content_generator(site_config=_make_sc(), platform=platform)
+        assert gen._platform is not None  # guard precondition satisfied
+
+        gen._validate_content = MagicMock(return_value=ContentValidationResult(
+            is_valid=True, quality_score=9.0, issues=[], feedback="ok",
+        ))
+        gen._resolve_writer_models = AsyncMock(return_value=["model-1"])
+        ctx = {
+            "use_ollama": True,
+            "skip_ollama": False,
+            "effective_provider": "auto",
+            "preferred_model": None,
+            "metrics": {
+                "generation_attempts": 0,
+                "refinement_attempts": 0,
+                "validation_results": [],
+                "model_used": None,
+                "final_quality_score": 0.0,
+                "generation_time_seconds": 0,
+                "models_used_by_phase": {},
+                "model_selection_log": {},
+            },
+            "system_prompt": "sys",
+            "generation_prompt": "gen",
+            "target_length": 100,
+            "topic": "Topic phrase",
+            "attempts": [],
+            "start_time": 0.0,
+        }
+        # Would raise RuntimeError("platform handle required for dispatch ...")
+        # under the regression; with the fix it dispatches and returns content.
+        result = await gen._try_ollama(ctx)
+        assert result is not None
+        _content, model_used, _metrics = result
+        assert model_used == "model-1"
+        assert len(platform.dispatch.calls) >= 1
 
 
 # ---------------------------------------------------------------------------

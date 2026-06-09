@@ -1228,17 +1228,29 @@ Take action today—the insights you gain will compound over time.
 _generator: AIContentGenerator | None = None
 
 
-def get_content_generator(*, site_config: Any) -> AIContentGenerator:
+def get_content_generator(*, site_config: Any, platform: Any = None) -> AIContentGenerator:
     """Get or create the global content generator.
 
     ``site_config`` is REQUIRED (#272 Phase-2c). The cached instance
     binds the first-supplied run-bound SiteConfig — which is the single
     shared lifespan instance (``.reload()`` mutates it in place), so the
     cache stays correct across reloads.
+
+    ``platform`` is the Seam 1 Wave 3f (#667) dispatch handle that
+    ``_try_ollama`` requires. The factory threads it into construction
+    AND back-fills the cached singleton: if a previous caller built the
+    instance without a platform (``_platform is None``) and a later
+    caller supplies a real one, the live handle is grafted on so dispatch
+    works for the rest of the run. Without this back-fill every non-niche
+    ``canonical_blog`` generation aborts with "platform handle required
+    for dispatch" because the factory was never updated alongside the
+    ``__init__`` seam (this regression).
     """
     global _generator
     if _generator is None:
-        _generator = AIContentGenerator(site_config=site_config)
+        _generator = AIContentGenerator(site_config=site_config, platform=platform)
+    elif platform is not None and getattr(_generator, "_platform", None) is None:
+        _generator._platform = platform
     return _generator
 
 

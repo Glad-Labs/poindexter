@@ -57,8 +57,14 @@ class GenerateSeoMetadataStage:
         # Seam 1 Wave 3f (#667): fallback SiteConfig() removed — pipeline
         # always threads a real site_config via context.
         site_config = context.get("site_config")
+        # Seam 1 Wave 3f (#667): thread the dispatch handle so a fresh
+        # generator (or a still-platform-less cached singleton) can route
+        # through ``platform.dispatch.complete`` instead of aborting.
         seo_generator = get_seo_content_generator(
-            get_content_generator(site_config=site_config), site_config=site_config
+            get_content_generator(
+                site_config=site_config, platform=context.get("platform")
+            ),
+            site_config=site_config,
         )
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic, content=content_text, topic=topic,

@@ -113,6 +113,7 @@ class GenerateContentStage:
 
         content_generator = get_content_generator(
             site_config=context.get("site_config"),
+            platform=context.get("platform"),
         )
         preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
 
