@@ -52,7 +52,7 @@ Pipe layout under `~/.poindexter/voice/<session_id>.{in,out,lock,status,log}`:
 
 ## Process model — subprocess-spawned worker (#1010)
 
-Since [Glad-Labs/glad-labs-stack#1010](https://github.com/Glad-Labs/glad-labs-stack/issues/1010)
+Since [Glad-Labs/poindexter#1010](https://github.com/Glad-Labs/poindexter/issues/1010)
 the bridge worker runs as a **separate Python subprocess**
 (`mcp-server-voice/bridge_worker.py`), not as an `asyncio` task inside the
 long-lived MCP server. `voice_join_room` is a thin launcher:

@@ -575,7 +575,7 @@ class TestGeneratePodcastEpisodeWrapper:
 
 # ---------------------------------------------------------------------------
 # _unwrap_intro_outro + narration sibling
-# Glad-Labs/glad-labs-stack#649 PR 2 — the body-only narration sibling MP3
+# Glad-Labs/poindexter#649 PR 2 — the body-only narration sibling MP3
 # the video composer mixes in so videos don't open with "Welcome to ..."
 # ---------------------------------------------------------------------------
 

@@ -60,7 +60,7 @@ def _video_server_url(*, site_config: SiteConfig) -> str:
     always the hardcoded default — changing video_server_url in
     app_settings had no effect until worker restart.
 
-    Glad-Labs/glad-labs-stack#649 PR 2 — emit a loud warning when the
+    Glad-Labs/poindexter#649 PR 2 — emit a loud warning when the
     URL points at port 9840. That port belongs to the wan-server
     (Wan2.1 T2V model), which is a different service that only
     accepts a ``prompt`` field. POSTing the slideshow body
@@ -75,7 +75,7 @@ def _video_server_url(*, site_config: SiteConfig) -> str:
             "(port 9840), which expects {'prompt': ...} not the slideshow body. "
             "Every /generate POST will 422. Repoint to the slideshow server "
             "(default http://host.docker.internal:9837) — see migration "
-            "20260528_040918 and Glad-Labs/glad-labs-stack#649 PR 2.",
+            "20260528_040918 and Glad-Labs/poindexter#649 PR 2.",
             url,
         )
     return url
@@ -173,7 +173,7 @@ async def _consume_sdxl_image_response(
     8 frames per cycle would silently fail, surfacing as
     ``VideoResult.error = "No images could be generated"`` even though
     SDXL was succeeding. Closes
-    Glad-Labs/glad-labs-stack#198 follow-up (the underlying
+    Glad-Labs/poindexter#198 follow-up (the underlying
     ``poindexter#459`` fix was already applied to the featured-image
     path; this extends it to the slideshow path).
     """
@@ -446,7 +446,7 @@ async def _generate_images_from_scenes(
 async def _load_video_shot_list(post_id: str, *, site_config: SiteConfig) -> Any:
     """Load + validate ``posts.video_shot_list`` for ``post_id``.
 
-    Glad-Labs/glad-labs-stack#649 PR 2 — the director stage writes the
+    Glad-Labs/poindexter#649 PR 2 — the director stage writes the
     shot list to ``posts.video_shot_list jsonb``. Returns a
     ``VideoShotList`` Pydantic model on success, or ``None`` when:
 
@@ -617,7 +617,7 @@ async def generate_video_for_post(
             file_size_bytes=output_path.stat().st_size,
         )
 
-    # Find podcast audio. Glad-Labs/glad-labs-stack#649 PR 2 — prefer
+    # Find podcast audio. Glad-Labs/poindexter#649 PR 2 — prefer
     # the body-only narration sibling ({post_id}-narration.mp3) over
     # the main podcast MP3. The sibling is produced by
     # PodcastService.generate_episode when
@@ -666,7 +666,7 @@ async def generate_video_for_post(
     if not os.path.exists(podcast_path):
         return VideoResult(success=False, error=f"Podcast not found: {podcast_path}")
 
-    # Glad-Labs/glad-labs-stack#649 PR 2 — director-driven shot list path.
+    # Glad-Labs/poindexter#649 PR 2 — director-driven shot list path.
     # When ``posts.video_shot_list`` is populated for this post, hand off
     # to ``services/video_renderers/shot_list_renderer.render_shot_list``
     # which composes the video from per-shot SDXL / Pexels / Wan2.1
@@ -733,7 +733,7 @@ async def generate_video_for_post(
     # path translation — the previous version hardcoded "/root/.poindexter"
     # and silently no-op'd on /home/appuser/... paths, so the video-server
     # received an unmangled container path and returned "Audio file not
-    # found" for every video regen attempt (Glad-Labs/glad-labs-stack#198).
+    # found" for every video regen attempt (Glad-Labs/poindexter#198).
     host_home = _sc.get("host_home", "")
     if not host_home:
         return VideoResult(
