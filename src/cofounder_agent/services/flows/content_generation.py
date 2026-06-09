@@ -171,10 +171,9 @@ async def content_generation_flow(
     # across every wired module, and returns the AppContainer so
     # downstream migrated services can construct through it.
     _wired_site_config: Any = None
-    _app_container: Any = None
     _pool = getattr(database_service, "pool", None)
     if _pool is not None:
-        _wired_site_config, _app_container = (
+        _wired_site_config, _ = (
             await build_and_wire_subprocess_with_container(_pool)
         )
     else:
@@ -363,7 +362,7 @@ async def content_generation_flow(
             if isinstance(result, dict)
             else "awaiting_approval"
         )
-        if final_status != "failed":
+        if final_status != "failed" and task_id is not None:
             from services.post_pipeline_actions import run_post_pipeline_actions
 
             await run_post_pipeline_actions(
