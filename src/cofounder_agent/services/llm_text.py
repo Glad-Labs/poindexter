@@ -280,7 +280,16 @@ async def ollama_chat_text(
             "output": data.get("eval_count") or 0,
         }
 
-    output = maybe_unwrap_json(raw)
+    # Strip leaked reasoning / chat-template control tokens BEFORE the JSON
+    # unwrap (a model may wrap a JSON envelope in a "<|channel>thought…" header;
+    # stripping the markers first lets maybe_unwrap_json still see the ``{…}``).
+    # Production calls also strip at the provider boundary; this covers the
+    # httpx test/bootstrap fallback above and any non-dispatcher caller. Local
+    # import keeps module load light for bootstrap/migration paths (mirrors the
+    # dispatch_complete import idiom).
+    from services.llm_providers.thinking_models import strip_reasoning_artifacts
+
+    output = maybe_unwrap_json(strip_reasoning_artifacts(raw))
     # Stamp output + token counts so the trace surfaces tokens in the
     # Langfuse UI. ``usage_details`` is the v3 schema (Dict[str, int]);
     # "input"/"output" are the canonical Langfuse generic keys.

@@ -71,7 +71,15 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content_text:
         return {}
 
+    from services.llm_providers.thinking_models import strip_reasoning_artifacts
     from services.text_utils import normalize_text, scrub_fabricated_links
+
+    # Defense-in-depth: strip leaked reasoning / chat-template control tokens
+    # (e.g. "<|channel>thought<channel|>…") from the persisted body. Production
+    # writes also strip at the provider boundary, but BOTH writer paths (legacy
+    # + two_pass) converge on this node, so it guarantees a clean body even for
+    # a future path that bypasses the provider seam. Fence-aware + idempotent.
+    content_text = strip_reasoning_artifacts(content_text)
 
     # Build real-slug allowlist from content_generator cache if available.
     real_slug_set: set[str] = set()

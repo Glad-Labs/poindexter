@@ -89,9 +89,9 @@ Two layers fix it, both before the rails ever see the draft:
   `writer_empty_draft_kept_prior` finding keeps the self-heal visible.
 - **Fail-loud guard (`GenerateContentStage`):** when the final draft is empty
   or shorter than `writer_min_draft_chars` (default 200 — a real
-  canonical_blog post is never a single sentence) the stage does a
+  canonical*blog post is never a single sentence) the stage does a
   **load-bearing terminal write** (`status='failed'` + a specific
-  `error_message` + a `writer_empty_draft` finding) _before_ raising. The
+  `error_message` + a `writer_empty_draft` finding) \_before* raising. The
   status sticks even though the graph_def node wrapper swallows the raise into
   an (unhonored) `_halt` and keeps running — the GH-90 terminal-write guard
   then blocks the downstream QA-reject write, so the writer-empty cause is what
@@ -474,6 +474,35 @@ Strip-only is the right tool here: preserving a hypothetical
 cross-link matters less than escaping the rewrite cycle, and the
 resolver at template stage 4 already had its lookup-and-link shot
 at the original draft.
+
+**Reasoning-token strip (2026-06-09).** Mis-templated or
+reasoning-channel models leak chat-template / reasoning control tokens
+straight into prose. Two prod captures the same day — a mis-imported
+`gemma-4-31B-it-qat` (broken Ollama `<|turn>` Modelfile template) and
+`glm-4.7-5090` — both emitted article bodies that began, at char 1,
+with a mangled-Harmony channel header
+(`<|channel>thought\n<channel|>The release of …`), the whole article
+living inside the `thought` channel. `strip_think_blocks` only knew
+`<think>…</think>` and missed it. `strip_reasoning_artifacts`
+(`services/llm_providers/thinking_models.py`) handles both forms —
+`<think>` blocks (dropped when a real answer follows, **unwrapped** when
+the answer is _inside_ the block, since some reasoning models put their
+output there), mangled/proper channel headers, `<|turn>role` headers,
+and standalone control markers (`<|message|>`, `<|end|>`,
+`<|im_start|>`, …). It is **fence-aware**: a control token shown as an
+example inside a fenced code block or inline code span (an AI/ML post
+explaining the Harmony format) is left untouched, and the keyword
+allowlist never touches semantic HTML such as `<article>` or `<section>`.
+A control token must carry a pipe on at least one side, so a bare
+`<user>` written as plain JSX is left alone; and the strip is **skipped
+for JSON-mode calls** (`response_format=json_object`) — and, defensively,
+on any payload that already parses as JSON — so a control-token literal
+inside a JSON string value is never silently mutated. It runs at three
+idempotent boundaries: the provider chokepoint (`litellm_provider.py`,
+every dispatcher call), `ollama_chat_text` (beside `maybe_unwrap_json`,
+for the httpx fallback), and `content.normalize_draft` (the body node
+both writer paths converge on). Like `maybe_unwrap_json`, it is a no-op
+on clean output.
 
 ## What still slips through
 

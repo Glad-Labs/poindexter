@@ -57,6 +57,7 @@ from typing import Any
 
 from plugins.llm_provider import Completion, Token
 from services.cost_guard import is_local_base_url
+from services.llm_providers.thinking_models import strip_reasoning_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -543,6 +544,26 @@ class LiteLLMProvider:
         if choice is not None:
             msg = getattr(choice, "message", None)
             text = (getattr(msg, "content", None) or "") if msg else ""
+            # Strip leaked reasoning / chat-template control tokens a
+            # mis-templated or reasoning-channel model inlines into the main
+            # content channel (e.g. "<|channel>thought<channel|>…" — two real
+            # prod leaks 2026-06-09). This is the single chokepoint every
+            # dispatcher call converges on, so one strip here covers the
+            # writer / title / SEO / QA prose paths uniformly. Runs BEFORE the
+            # empty-content fallback so an all-control-token body still
+            # triggers reasoning_content recovery. Fence-aware + no-op on
+            # clean prose (see strip_reasoning_artifacts).
+            #
+            # SKIP for JSON-mode calls: the stripper is a PROSE cleaner, and a
+            # structured response_format=json_object payload can legitimately
+            # carry a control-token literal inside a string value (e.g. a
+            # topic-ranking explanation about chat templates). The JSON path is
+            # already covered by maybe_unwrap_json downstream; mutating string
+            # values here would be a silent data-quality regression.
+            _rf = kwargs.get("response_format")
+            _json_mode = isinstance(_rf, dict) and _rf.get("type") == "json_object"
+            if not _json_mode:
+                text = strip_reasoning_artifacts(text)
             finish_reason = getattr(choice, "finish_reason", "") or ""
             # Reasoning-model fallback: a thinking model under json mode can
             # return empty ``content`` with all tokens in ``reasoning_content``.
