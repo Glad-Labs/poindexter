@@ -261,8 +261,8 @@ async def _generate_images_for_video(
         f"Generate exactly {num_images} Stable Diffusion XL image prompts for a video slideshow "
         f"about: {title}\n\n"
         f"Context: {content[:400]}\n\n"
-        "Each prompt should describe a DIFFERENT photorealistic scene related to the topic. "
-        "Requirements: cinematic lighting, no people, no text, no faces, no hands. "
+        "Each prompt should describe a DIFFERENT stylized cinematic scene related to the topic. "
+        "Style: dark tech aesthetic, neon/cyan lighting, no people, no text, no faces, no hands. "
         "Output ONLY the prompts, one per line, numbered 1-{num_images}. No other text."
     )
 
@@ -315,14 +315,15 @@ async def _generate_images_for_video(
         # resolver couldn't find a model (notify_operator has already paged
         # the operator in the latter case).
         prompts = [
-            f"photorealistic {title} concept, cinematic lighting, 4k, detailed",
-            f"futuristic technology scene related to {title}, blue lighting, photorealistic",
-            "modern server infrastructure, glowing connections, cinematic, photorealistic",
-            "abstract data visualization with flowing light particles, cinematic, 4k",
+            f"stylized {title} concept, dark tech aesthetic, cyan neon lighting, 4k, detailed",
+            f"futuristic technology scene related to {title}, teal holographic lighting, digital art",
+            "modern server infrastructure, glowing data connections, cinematic dark aesthetic",
+            "abstract data visualization, flowing light particles, cyberpunk palette, cinematic",
         ][:num_images]
 
     # Generate images via SDXL
-    neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
+    _neg_default = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
+    neg = site_config.get("video_negative_prompt", "") or _neg_default
     output_dir = VIDEO_DIR / "frames"
     output_dir.mkdir(parents=True, exist_ok=True)
 
