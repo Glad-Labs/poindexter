@@ -60,6 +60,19 @@ jobs:
     # protect the CI-minutes win). Advisory either way (no --cov-fail-under).
     env:
       COV: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '--cov=cofounder_agent --cov-append --cov-report=' || '' }}
+      # Public-mirror CI-minutes dedup. Every pytest step runs through $PYTEST.
+      # On the source repo it's a normal run; on the force-pushed public mirror
+      # (Glad-Labs/poindexter) it degrades to `--collect-only`. Rationale: the
+      # mirror is rebuilt + force-pushed on every sync, so its status checks
+      # gate NOTHING (the commit is already public) — re-running the full suite
+      # there just re-tests code the source already gated. A collect-only smoke
+      # still IMPORTS every test module, so it catches the one mirror-specific
+      # failure mode — a sync-filter strip that leaves an unresolvable import
+      # (e.g. #1277's modules.finance leak) — and keeps the required
+      # `test-backend` check green. Source behavior is byte-identical (the
+      # ternary resolves to plain `python -m pytest`), so this PR's own CI fully
+      # exercises the real suite.
+      PYTEST: ${{ github.repository == 'Glad-Labs/glad-labs-stack' && 'python -m pytest' || 'python -m pytest --collect-only' }}
 
     steps:
       # Free up GitHub-hosted runner disk space. The ubuntu-latest image ships
@@ -242,22 +255,22 @@ jobs:
       - name: Unit tests — middleware
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/middleware/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/middleware/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — routes
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/routes/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/routes/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — plugins
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/plugins/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — cli
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/cli/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/cli/ -q --tb=short -p no:cacheprovider $COV
 
       # `--forked` isolates ServiceContainer / site_config singletons that
       # leak across tests in the services directory.
@@ -274,12 +287,12 @@ jobs:
       - name: Unit tests — services (forked)
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/services/ -q --tb=short --forked -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/services/ -q --tb=short --forked -p no:cacheprovider $COV
 
       - name: Unit tests — utils
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/utils/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/utils/ -q --tb=short -p no:cacheprovider $COV
 
       # Brain-daemon probe/dispatcher tests. Previously omitted from the
       # matrix, so brain regressions (e.g. the findings/anomaly probes and
@@ -287,7 +300,7 @@ jobs:
       - name: Unit tests — brain
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/brain/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/brain/ -q --tb=short -p no:cacheprovider $COV
 
       # #641: the matrix previously ran only 7 of the 12 backend test
       # subdirs (middleware/routes/plugins/cli/services/utils/brain). The
@@ -307,7 +320,7 @@ jobs:
         # source repo the dir has tests, so this is a no-op here. (Public-mirror
         # CI fix — only modules/ goes empty; every other tier keeps its tests.)
         run: |
-          python -m pytest tests/unit/modules/ -q --tb=short -p no:cacheprovider $COV || code=$?
+          $PYTEST tests/unit/modules/ -q --tb=short -p no:cacheprovider $COV || code=$?
           if [ "${code:-0}" -eq 5 ]; then
             echo "::notice::no module tests collected (expected on the filtered public mirror) — treating as pass"
             exit 0
@@ -317,22 +330,22 @@ jobs:
       - name: Unit tests — poindexter
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/poindexter/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/poindexter/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — prompts
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/prompts/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/prompts/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — schemas
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/schemas/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/schemas/ -q --tb=short -p no:cacheprovider $COV
 
       - name: Unit tests — scripts
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/scripts/ -q --tb=short -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/scripts/ -q --tb=short -p no:cacheprovider $COV
 
       # Root-level tests/unit/test_*.py (test_main / test_app_container_wireup
       # / test_bootstrap / approval-service suites). These exercise the
@@ -343,7 +356,7 @@ jobs:
       - name: Unit tests — root-level
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/test_*.py -q --tb=short --forked -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/test_*.py -q --tb=short --forked -p no:cacheprovider $COV
 
       # #994: tests/integration/ was never run by any CI workflow, so the
       # strongest content-pipeline regression guards ran against nothing.
@@ -368,7 +381,7 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
         run: >-
-          python -m pytest
+          $PYTEST
           tests/integration/test_graphdef_pipeline.py
           tests/integration/test_approval_workflow.py
           tests/integration/test_task_lifecycle.py

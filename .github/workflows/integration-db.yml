@@ -47,6 +47,13 @@ permissions:
 
 jobs:
   integration-db:
+    # Source-repo only. The public Glad-Labs/poindexter mirror is rebuilt and
+    # force-pushed on every sync, so its status checks gate nothing (the commit
+    # is already public) and integration-db is NOT one of its required checks.
+    # Re-running the full poetry env + Postgres service + integration suite on
+    # every sync just re-tests code the source already gated — pure CI-minutes
+    # waste (~15 min/sync). Skip on the mirror; run normally on the source.
+    if: github.repository == 'Glad-Labs/glad-labs-stack'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
