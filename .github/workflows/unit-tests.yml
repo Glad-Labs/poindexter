@@ -62,6 +62,21 @@ jobs:
       COV: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '--cov=cofounder_agent --cov-append --cov-report=' || '' }}
 
     steps:
+      # Free up GitHub-hosted runner disk space. The ubuntu-latest image ships
+      # ~7 GB of pre-installed tooling (Android SDK, .NET, Haskell GHC, etc.)
+      # that this job never uses. The --forked pytest step spawns one process
+      # per test in the services dir (~8 k tests) and the combined temp-file
+      # churn fills the remaining space, crashing the runner worker mid-run.
+      # Removing the known-large bloat directories runs in ~20s and frees
+      # enough headroom for the full forked suite to complete.
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
         with:
           # Need >=2 so `git diff` against the previous commit works on

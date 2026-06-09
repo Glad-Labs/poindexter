@@ -100,6 +100,90 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
     return dict(row)
 
 
+@task(
+    name="reclaim_stale_inprogress_tasks",
+    cache_policy=NO_CACHE,
+)
+async def reclaim_stale_inprogress_tasks(
+    database_service: Any,
+    site_config: Any,
+) -> dict[str, int]:
+    """Reclaim pipeline_tasks stranded in_progress by a previous killed/crashed flow run.
+
+    Runs at the start of each flow invocation, before ``claim_pending_task``,
+    so any tasks reset to ``pending`` by the sweep are immediately eligible
+    for the current run to pick up. Delegates to
+    ``database_service.sweep_stale_tasks`` which resets recoverable rows back
+    to ``pending``, fails rows that have exhausted retries, and clears any
+    associated LangGraph checkpoints.
+
+    Best-effort — never raises into the calling flow.
+    """
+    pool = getattr(database_service, "pool", None)
+    if pool is None:
+        logger.warning(
+            "[CONTENT_FLOW] reclaim_stale_inprogress_tasks: database_service "
+            "has no .pool — skipping stale reclaim this run"
+        )
+        return {"reset": 0, "failed": 0}
+
+    # Read threshold from site_config; warn loudly on missing/unparseable
+    # (per feedback_no_silent_defaults — required settings fail loudly).
+    threshold: int = 30
+    raw: Any = None
+    if site_config is not None:
+        raw = site_config.get("content_flow_stale_inprogress_minutes")
+    if raw is None:
+        logger.warning(
+            "[CONTENT_FLOW] reclaim_stale_inprogress_tasks: "
+            "content_flow_stale_inprogress_minutes not set — using default %dm",
+            threshold,
+        )
+    else:
+        try:
+            threshold = int(raw)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[CONTENT_FLOW] reclaim_stale_inprogress_tasks: "
+                "content_flow_stale_inprogress_minutes=%r is not a valid int "
+                "— using default %dm",
+                raw,
+                threshold,
+            )
+
+    result: dict[str, int] = {"reset": 0, "failed": 0}
+    try:
+        result = await database_service.sweep_stale_tasks(
+            timeout_minutes=threshold
+        )
+    except Exception:  # noqa: BLE001 — best-effort; never blocks the flow
+        logger.warning(
+            "[CONTENT_FLOW] reclaim_stale_inprogress_tasks: "
+            "sweep_stale_tasks raised — stale tasks may remain in_progress",
+            exc_info=True,
+        )
+        return {"reset": 0, "failed": 0}
+
+    if result.get("reset", 0) > 0 or result.get("failed", 0) > 0:
+        msg = (
+            f"[CONTENT_FLOW] stale reclaim: reset={result.get('reset', 0)}, "
+            f"failed={result.get('failed', 0)} (threshold={threshold}m)"
+        )
+        logger.warning(msg)
+        try:
+            from services.integrations.operator_notify import notify_operator
+
+            await notify_operator(msg)
+        except Exception:  # noqa: BLE001 — notification is best-effort
+            logger.warning(
+                "[CONTENT_FLOW] reclaim_stale_inprogress_tasks: "
+                "notify_operator raised — alert not delivered",
+                exc_info=True,
+            )
+
+    return {"reset": result.get("reset", 0), "failed": result.get("failed", 0)}
+
+
 @flow(
     name="content_generation",
     description=(
@@ -228,6 +312,12 @@ async def content_generation_flow(
     if _wired_site_config is not None and _pool is not None:
         from services.di_wiring import build_platform_for_subprocess
         _platform = build_platform_for_subprocess(_pool, _wired_site_config)
+
+    # Reclaim pipeline_tasks stranded in_progress by a previous killed/crashed
+    # flow run. Runs before claim_pending_task so any reclaimed tasks appear as
+    # pending for this run to pick up. Best-effort — sweep errors are logged
+    # by the task itself and never raise into this flow.
+    await reclaim_stale_inprogress_tasks(database_service, _wired_site_config)
 
     # Schedule-driven: no task_id → claim from queue.
     if task_id is None and topic is None:
@@ -477,6 +567,7 @@ async def _build_default_database_service() -> Any:
 
 __all__ = [
     "claim_pending_task",
+    "reclaim_stale_inprogress_tasks",
     "content_generation_flow",
     "_mark_task_failed_on_flow_crash",
 ]

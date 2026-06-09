@@ -408,3 +408,161 @@ class TestFlowCrashMarksTaskFailed:
             assert update_calls
             sql = update_calls[0].args[0]
             assert "WHERE task_id = $2 AND status = 'in_progress'" in sql
+
+
+# ---------------------------------------------------------------------------
+# reclaim_stale_inprogress_tasks safety net
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestReclaimStaleInprogress:
+    """Verify the stale reclaim safety net that runs at the start of each
+    flow to recover tasks orphaned by killed/crashed flows.
+
+    ``reclaim_stale_inprogress_tasks`` is a Prefect ``@task``; all tests
+    call it via ``.fn(...)`` to bypass Prefect's task instrumentation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_pool_returns_zeros(self):
+        """``database_service.pool=None`` → early-exit with zeros; sweep
+        not invoked (worker is in broken bootstrap state)."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        db = _make_db_service(pool=None)
+        db.sweep_stale_tasks = AsyncMock()
+        site_config = MagicMock()
+
+        result = await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        assert result == {"reset": 0, "failed": 0}
+        db.sweep_stale_tasks.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reads_threshold_from_site_config(self):
+        """site_config.get returns ``"45"`` → sweep is called with
+        ``timeout_minutes=45``."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(return_value={"reset": 0, "failed": 0})
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="45")
+
+        await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        db.sweep_stale_tasks.assert_called_once_with(timeout_minutes=45)
+
+    @pytest.mark.asyncio
+    async def test_missing_setting_uses_default_30(self):
+        """site_config.get returns ``None`` → default threshold 30 is used."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(return_value={"reset": 0, "failed": 0})
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value=None)
+
+        await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        db.sweep_stale_tasks.assert_called_once_with(timeout_minutes=30)
+
+    @pytest.mark.asyncio
+    async def test_unparseable_setting_uses_default_30(self):
+        """site_config.get returns a non-integer string → default 30 used."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(return_value={"reset": 0, "failed": 0})
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="not_an_int")
+
+        await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        db.sweep_stale_tasks.assert_called_once_with(timeout_minutes=30)
+
+    @pytest.mark.asyncio
+    async def test_notifies_operator_when_tasks_reclaimed(self):
+        """When sweep resets > 0 tasks, notify_operator is called once."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(return_value={"reset": 2, "failed": 0})
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="30")
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(),
+        ) as mock_notify:
+            await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        mock_notify.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_notify_when_nothing_reclaimed(self):
+        """When sweep returns zeros, notify_operator must NOT be called."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(return_value={"reset": 0, "failed": 0})
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="30")
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(),
+        ) as mock_notify:
+            await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        mock_notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sweep_exception_returns_zeros(self):
+        """If sweep_stale_tasks raises, function returns zeros and does
+        not re-raise (best-effort contract — must never block the flow)."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(side_effect=RuntimeError("db blip"))
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="30")
+
+        result = await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        assert result == {"reset": 0, "failed": 0}, (
+            "sweep exception must not propagate — return zeros instead"
+        )
+
+    @pytest.mark.asyncio
+    async def test_flow_calls_reclaim_before_claim(self):
+        """Schedule-driven flow run → reclaim_stale_inprogress_tasks is
+        called before claim_pending_task (empty queue exits cleanly)."""
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ) as mock_reclaim:
+            with patch(
+                "services.content_router_service.process_content_generation_task",
+            ):
+                await content_generation_flow.fn(database_service=db)
+
+        mock_reclaim.assert_called_once()

@@ -529,6 +529,13 @@ DEFAULTS: dict[str, str] = {
     # exhaustion); raise the ceiling only on a bigger GPU.
     'prefect_content_flow_concurrency': '3',
     'content_flow_max_concurrency': '3',
+    # Minutes after which a pipeline_tasks row stuck in status='in_progress'
+    # is treated as orphaned (killed flow / OOM / container restart mid-graph).
+    # The reclaim step in content_generation_flow resets orphaned rows to
+    # 'pending' (or 'failed' if retry_count >= max_retries) and clears the
+    # poisoned LangGraph checkpoint so the retry runs a fresh graph.
+    # 30 min = ~15 missed 2-min Prefect polling cycles — clearly orphaned.
+    'content_flow_stale_inprogress_minutes': '30',
 
     # ----- Title originality / SEO -----
     'google_sitemap_ping_url': 'https://www.google.com/ping',
