@@ -418,6 +418,71 @@ async def test_update_task_failure_during_error_path_does_not_raise():
 
 
 # ---------------------------------------------------------------------------
+# LangGraph channel seeding regression (#674 variant — 2026-06-08)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_media_channels_seeded_in_initial_state():
+    """Regression: media artifact channels must be present in the initial
+    state dict passed to TemplateRunner.run().
+
+    LangGraph 1.1.10 silently drops node return-value updates for channels
+    that were not registered in channel_versions at graph construction
+    (step 0).  Without seeding, generate_media_scripts' podcast_script /
+    video_scenes / short_summary_script updates are swallowed → checkpoint
+    has zero blobs for those channels → generate_video_shot_list never
+    receives them → Stage-2 dispatch never fires.
+
+    The fix (content_router_service.py) seeds all eight media-artifact keys
+    with empty defaults alongside ``stages: {}``.  This test pins those seeds
+    so a future refactor can't accidentally remove them.
+    """
+    from services.content_router_service import process_content_generation_task
+
+    db = _make_db()
+    overrides, tmpl_runner, site_config_obj = _patch_externals()
+
+    with _ImportPatchContext(overrides, site_config_obj):
+        await process_content_generation_task(
+            topic="Seeding test",
+            style="technical",
+            tone="informative",
+            target_length=1000,
+            database_service=db,
+            task_id="seed-test-task",
+            site_config=site_config_obj,
+        )
+
+    tmpl_runner.run.assert_awaited_once()
+    _args, _kwargs = tmpl_runner.run.call_args
+    initial_state: dict = _args[1]
+
+    # All eight media-artifact channels must be present (even as empty defaults)
+    # so LangGraph registers them in channel_versions at step 0.
+    expected_media_channels = {
+        "podcast_script": "",
+        "video_scenes": [],
+        "short_summary_script": "",
+        "video_shot_list": {},
+        "short_shot_list": {},
+        "video_ambient_audio_path": "",
+        "podcast_audio_path": "",
+        "podcast_intro_audio_path": "",
+    }
+    for key, expected_default in expected_media_channels.items():
+        assert key in initial_state, (
+            f"Media channel '{key}' missing from initial state — "
+            f"LangGraph will silently drop updates for it (#674 variant)"
+        )
+        assert initial_state[key] == expected_default, (
+            f"Media channel '{key}' should be seeded as {expected_default!r}, "
+            f"got {initial_state[key]!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Dry-run severity demote (Glad-Labs/poindexter#260)
 # ---------------------------------------------------------------------------
 
