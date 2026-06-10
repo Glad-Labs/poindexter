@@ -153,6 +153,7 @@ export default async function CategoryPage({
       {/* Posts Grid */}
       <section className="px-4 sm:px-6 lg:px-8 pb-20">
         <div className="container mx-auto max-w-6xl">
+          <h2 className="sr-only">Posts in this category</h2>
           {posts.length === 0 ? (
             <Card accent="amber" className="text-center py-12">
               <Card.Meta>NO ARTICLES FOUND</Card.Meta>

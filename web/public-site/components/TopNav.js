@@ -57,6 +57,7 @@ export default function TopNavigation() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
+  const searchToggleRef = useRef(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -90,6 +91,7 @@ export default function TopNavigation() {
       setSearchOpen(false);
       setMenuOpen(false);
       setQuery('');
+      searchToggleRef.current?.focus();
     }
   }
 
@@ -97,6 +99,7 @@ export default function TopNavigation() {
     if (e.key === 'Escape') {
       setSearchOpen(false);
       setQuery('');
+      searchToggleRef.current?.focus();
     }
   }
 
@@ -104,7 +107,7 @@ export default function TopNavigation() {
     <>
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-cyan-600 focus:text-white focus:rounded-lg focus:outline-none"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-[var(--gl-cyan)] focus:text-[var(--gl-on-cyan)] focus:rounded-lg focus:outline-none"
       >
         Skip to main content
       </a>
@@ -183,6 +186,7 @@ export default function TopNavigation() {
               </form>
             ) : (
               <button
+                ref={searchToggleRef}
                 onClick={() => setSearchOpen(true)}
                 aria-label="Open search"
                 className="gl-focus-ring"
@@ -243,6 +247,7 @@ export default function TopNavigation() {
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setMenuOpen(false); setQuery(''); } }}
                   placeholder="Search…"
                   aria-label="Search articles"
                   className="gl-focus-ring flex-1"

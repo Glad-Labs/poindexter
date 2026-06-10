@@ -65,6 +65,7 @@ export default async function PostsPage() {
       {/* Content */}
       <section className="px-4 sm:px-6 lg:px-8 pb-20">
         <div className="container mx-auto max-w-6xl">
+          <h2 className="sr-only">All posts</h2>
           {error ? (
             <Card accent="amber" className="text-center py-12">
               <Card.Meta>SERVICE UNAVAILABLE</Card.Meta>
