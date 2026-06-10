@@ -234,11 +234,11 @@ const nextConfig = {
             value:
               [
                 "default-src 'self'",
-                `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''} https://www.googletagmanager.com https://pagead2.googlesyndication.com https://giscus.app https://va.vercel-scripts.com https://static.cloudflareinsights.com https://lmsqueezy.com https://assets.lemonsqueezy.com`,
+                `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''} https://www.googletagmanager.com https://pagead2.googlesyndication.com https://giscus.app https://static.cloudflareinsights.com https://lmsqueezy.com https://assets.lemonsqueezy.com`,
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
+                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
               ].join('; ') + ';',
           },
@@ -384,10 +384,10 @@ const nextConfig = {
     NEXT_TELEMETRY_DISABLED: '1',
   },
 
-  // ESLint configuration — ignore during Vercel builds (CI runs lint separately)
+  // ESLint configuration — run during Vercel builds so TS/TSX lint errors are caught
   eslint: {
     dirs: ['app', 'components', 'lib', 'styles'],
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
 
   // TypeScript configuration

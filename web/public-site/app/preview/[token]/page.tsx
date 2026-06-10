@@ -4,6 +4,27 @@ import { notFound } from 'next/navigation';
 import sanitizeHtml from 'sanitize-html';
 import { Eyebrow } from '@glad-labs/brand';
 
+// Shared brand-tokenized prose class string — kept in sync with
+// app/posts/[slug]/page.tsx PROSE_CLASSES (#1328 item 5).
+const PROSE_CLASSES =
+  'prose prose-invert max-w-none mt-8 ' +
+  'prose-headings:font-[family-name:var(--gl-font-display)] ' +
+  'prose-headings:font-bold ' +
+  'prose-h1:text-4xl prose-h1:text-white prose-h1:mt-8 prose-h1:mb-4 ' +
+  'prose-h2:text-3xl prose-h2:text-white prose-h2:mt-10 prose-h2:mb-4 ' +
+  'prose-h2:tracking-tight ' +
+  'prose-h3:text-2xl prose-h3:text-white prose-h3:mt-6 prose-h3:mb-3 ' +
+  'prose-p:text-[color:var(--gl-text-muted)] prose-p:leading-relaxed prose-p:mb-6 ' +
+  'prose-strong:text-white prose-strong:font-semibold ' +
+  'prose-a:text-[color:var(--gl-cyan)] prose-a:hover:opacity-80 prose-a:underline ' +
+  'prose-code:text-[color:var(--gl-cyan)] prose-code:bg-[color:var(--gl-hairline)] prose-code:px-2 prose-code:py-1 prose-code:rounded-none ' +
+  'prose-pre:bg-[color:var(--gl-hairline)] prose-pre:border prose-pre:border-[color:var(--gl-hairline-strong)] prose-pre:rounded-none ' +
+  'prose-blockquote:border-l-[3px] prose-blockquote:border-[color:var(--gl-cyan)] prose-blockquote:pl-4 prose-blockquote:text-[color:var(--gl-text-muted)] prose-blockquote:not-italic ' +
+  'prose-ul:text-[color:var(--gl-text-muted)] prose-ol:text-[color:var(--gl-text-muted)] ' +
+  'prose-li:text-[color:var(--gl-text-muted)] prose-li:marker:text-[color:var(--gl-cyan)] ' +
+  'prose-img:rounded-none prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full ' +
+  'prose-hr:border-[color:var(--gl-hairline-strong)]';
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.NEXT_PUBLIC_FASTAPI_URL ||
@@ -221,23 +242,7 @@ export default async function PreviewPage({
 
         {/* Article content — brand-tokenized prose (same as /posts/[slug]) */}
         <article
-          className="prose prose-invert max-w-none mt-8
-            prose-headings:font-[family-name:var(--gl-font-display)]
-            prose-headings:font-bold
-            prose-h1:text-4xl prose-h1:text-white prose-h1:mt-8 prose-h1:mb-4
-            prose-h2:text-3xl prose-h2:text-white prose-h2:mt-10 prose-h2:mb-4
-            prose-h2:tracking-tight
-            prose-h3:text-2xl prose-h3:text-white prose-h3:mt-6 prose-h3:mb-3
-            prose-p:text-[color:var(--gl-text-muted)] prose-p:leading-relaxed prose-p:mb-6
-            prose-strong:text-white prose-strong:font-semibold
-            prose-a:text-[color:var(--gl-cyan)] prose-a:hover:opacity-80 prose-a:underline
-            prose-code:text-[color:var(--gl-cyan)] prose-code:bg-[color:var(--gl-hairline)] prose-code:px-2 prose-code:py-1 prose-code:rounded-none
-            prose-pre:bg-[color:var(--gl-hairline)] prose-pre:border prose-pre:border-[color:var(--gl-hairline-strong)] prose-pre:rounded-none
-            prose-blockquote:border-l-[3px] prose-blockquote:border-[color:var(--gl-cyan)] prose-blockquote:pl-4 prose-blockquote:text-[color:var(--gl-text-muted)] prose-blockquote:not-italic
-            prose-ul:text-[color:var(--gl-text-muted)] prose-ol:text-[color:var(--gl-text-muted)]
-            prose-li:text-[color:var(--gl-text-muted)] prose-li:marker:text-[color:var(--gl-cyan)]
-            prose-img:rounded-none prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full
-            prose-hr:border-[color:var(--gl-hairline-strong)]"
+          className={PROSE_CLASSES}
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
       </div>

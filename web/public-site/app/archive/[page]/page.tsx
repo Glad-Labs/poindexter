@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import {
   getPosts,
@@ -36,7 +37,10 @@ export async function generateMetadata({
   params,
 }: ArchivePageProps): Promise<Metadata> {
   const { page } = await params;
-  const pageNum = parseInt(page) || 1;
+  const parsed = parseInt(page);
+  // Negative page numbers (e.g. /archive/-1) are invalid — treat as 404.
+  if (!isNaN(parsed) && parsed < 1) notFound();
+  const pageNum = parsed || 1;
 
   return {
     title: `Article Archive — Page ${pageNum} | ${SITE_NAME}`,
@@ -62,7 +66,11 @@ export async function generateStaticParams() {
 
 export default async function ArchivePage({ params }: ArchivePageProps) {
   const { page } = await params;
-  const pageNum = parseInt(page) || 1;
+  const parsed = parseInt(page);
+  // Negative page numbers (e.g. /archive/-1) are invalid — 404 rather than
+  // silently rendering an empty or wrong page (#1328 item 7).
+  if (!isNaN(parsed) && parsed < 1) notFound();
+  const pageNum = parsed || 1;
   const { posts, total } = await getArchivePosts(pageNum);
   const totalPages = Math.ceil(total / POSTS_PER_PAGE);
 
@@ -105,7 +113,7 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
                       <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
                         <Image
                           src={imageUrl}
-                          alt={title}
+                          alt=""
                           fill
                           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"

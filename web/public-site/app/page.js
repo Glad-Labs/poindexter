@@ -68,7 +68,11 @@ async function getPosts() {
     // Issue #1 (audit): index.json order is pipeline-dependent; the featured
     // slot showed a stale post above newer ones. Same defensive sort as
     // lib/posts.ts so "FEATURED · LATEST" is actually the latest.
-    return { posts: sortPostsNewestFirst(data.posts || []), error: null };
+    const allPosts = sortPostsNewestFirst(data.posts || []);
+    // Exclude dev_diary from the main feed — it has its own /dev-diary page
+    // and publishing daily would otherwise flood the homepage (#1339).
+    const posts = allPosts.filter((p) => p.niche_slug !== 'dev_diary');
+    return { posts, error: null };
   } catch (error) {
     Sentry.captureException(error);
     return { posts: [], error: 'network' };
@@ -170,14 +174,14 @@ export default async function HomePage() {
                     {heroImage ? (
                       <Image
                         src={heroImage}
-                        alt={featuredTitle || 'Featured Post'}
+                        alt=""
                         fill
                         sizes="(min-width: 1024px) 50vw, 100vw"
                         className="object-cover"
                         priority
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center gl-mono gl-mono--upper opacity-50">
+                      <div className="w-full h-full flex items-center justify-center gl-mono gl-mono--upper text-[color:var(--gl-text-muted)]">
                         No image available
                       </div>
                     )}
@@ -213,7 +217,7 @@ export default async function HomePage() {
                       className="flex items-center justify-between pt-6 mt-6"
                       style={{ borderTop: '1px solid var(--gl-hairline)' }}
                     >
-                      <div className="gl-mono gl-mono--upper opacity-70 text-xs">
+                      <div className="gl-mono gl-mono--upper text-[color:var(--gl-text-muted)] text-xs">
                         {currentPost?.published_at && (
                           <time dateTime={currentPost.published_at}>
                             {new Date(
@@ -261,7 +265,7 @@ export default async function HomePage() {
                           <div className="relative aspect-video overflow-hidden bg-slate-800">
                             <Image
                               src={cardImage}
-                              alt={cardTitle}
+                              alt=""
                               fill
                               sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                               className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
@@ -322,6 +326,15 @@ export default async function HomePage() {
             </div>
           </section>
         )}
+
+        {/* Dev Diary teaser — links to the dedicated /dev-diary feed (#1339) */}
+        <section className="py-6 px-4 sm:px-6 lg:px-8">
+          <div className="container mx-auto max-w-6xl text-center">
+            <a href="/dev-diary" className="text-[color:var(--gl-cyan)] hover:underline text-sm gl-mono">
+              Read the Dev Diary — daily founder notes from building Glad Labs →
+            </a>
+          </div>
+        </section>
 
         {/* Browse All Articles CTA */}
         <section className="py-16 px-4 sm:px-6 lg:px-8">

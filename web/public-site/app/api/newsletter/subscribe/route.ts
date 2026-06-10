@@ -23,6 +23,7 @@
  * Body: { email, first_name?, last_name?, company?, marketing_consent? }
  */
 
+import * as Sentry from '@sentry/nextjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { SITE_NAME, SITE_URL, NEWSLETTER_EMAIL } from '@/lib/site.config';
 
@@ -40,7 +41,7 @@ const BACKEND_BASE_URL = (
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, first_name, last_name, company, marketing_consent } = body;
+    const { email, first_name, last_name, company, marketing_consent, interest_categories } = body;
 
     if (!email || !email.includes('@')) {
       return NextResponse.json(
@@ -62,23 +63,24 @@ export async function POST(request: NextRequest) {
             last_name,
             company,
             marketing_consent,
+            interest_categories,
           }),
         });
         dbStored = res.ok;
         if (!res.ok) {
-          console.error(
-            '[Newsletter] backend store failed:',
-            res.status,
-            await res.text()
-          );
+          const detail = await res.text();
+          const err = new Error(`[Newsletter] backend store failed: ${res.status} ${detail}`);
+          Sentry.captureException(err);
+          console.error(err.message);
         }
       } catch (err) {
+        Sentry.captureException(err);
         console.error('[Newsletter] backend store error:', err);
       }
     } else {
-      console.error(
-        '[Newsletter] NEXT_PUBLIC_API_BASE_URL not set — cannot persist signup to backend DB'
-      );
+      const err = new Error('[Newsletter] NEXT_PUBLIC_API_BASE_URL not set — cannot persist signup to backend DB');
+      Sentry.captureException(err);
+      console.error(err.message);
     }
 
     // --- 2. Resend audience (for broadcast sends) ---------------------------
@@ -117,10 +119,9 @@ export async function POST(request: NextRequest) {
 
     // --- Fail LOUD if the subscriber landed nowhere durable -----------------
     if (!dbStored && !audienceStored) {
-      console.error(
-        '[Newsletter] subscriber NOT captured in any durable store:',
-        email
-      );
+      const captureErr = new Error(`[Newsletter] subscriber NOT captured in any durable store: ${email}`);
+      Sentry.captureException(captureErr);
+      console.error(captureErr.message);
       return NextResponse.json(
         {
           success: false,
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
       message: 'Successfully subscribed!',
     });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('[Newsletter] Subscribe error:', error);
     return NextResponse.json(
       { success: false, detail: 'Internal server error' },

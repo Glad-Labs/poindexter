@@ -62,7 +62,7 @@ export default function PrivacyPolicy() {
         <Eyebrow>GLAD LABS · LEGAL</Eyebrow>
       <h1>Privacy Policy</h1>
 
-      <p className="gl-mono gl-mono--upper text-xs opacity-70">
+      <p className="gl-mono gl-mono--upper text-xs text-[color:var(--gl-text-muted)]">
         Last Updated · {lastUpdated}
       </p>
 
@@ -368,7 +368,7 @@ export default function PrivacyPolicy() {
           Data Requests: <a href="/legal/data-requests">Submit a request</a>
         </p>
       </blockquote>
-      <p className="gl-mono gl-mono--upper text-xs opacity-70">
+      <p className="gl-mono gl-mono--upper text-xs text-[color:var(--gl-text-muted)]">
         Response Time · 30 days per GDPR. If you&apos;re not satisfied, you may
         lodge a complaint with your local data protection authority.
       </p>

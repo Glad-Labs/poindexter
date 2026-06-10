@@ -36,6 +36,12 @@ export default function CookieConsentBanner() {
         setConsent(parsed);
         setTempConsent(parsed);
         setIsVisible(false);
+        // Fire loaders for returning visitors who already consented (#1318)
+        if (typeof window !== 'undefined') {
+          window.__cookieConsent = parsed;
+          if (parsed.analytics) loadGoogleAnalytics();
+          if (parsed.advertising) loadAdSense();
+        }
       } catch (_e) {
         setIsVisible(true);
       }
@@ -166,7 +172,6 @@ export default function CookieConsentBanner() {
               <div className="flex gap-4 mt-2">
                 <Link
                   href="/legal/privacy"
-                  target="_blank"
                   className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80 transition-opacity"
                   style={{ fontSize: '0.6875rem' }}
                 >
@@ -174,7 +179,6 @@ export default function CookieConsentBanner() {
                 </Link>
                 <Link
                   href="/legal/cookie-policy"
-                  target="_blank"
                   className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80 transition-opacity"
                   style={{ fontSize: '0.6875rem' }}
                 >
@@ -279,7 +283,7 @@ export default function CookieConsentBanner() {
                   <label htmlFor="essential" className="gl-mono gl-mono--upper gl-mono--amber block">
                     Essential Cookies
                   </label>
-                  <p className="gl-body gl-body--sm mt-1 opacity-70">
+                  <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">
                     Required for site functionality. Cannot be disabled.
                   </p>
                 </div>
@@ -312,7 +316,7 @@ export default function CookieConsentBanner() {
                   <span className="gl-mono gl-mono--upper gl-mono--accent block">
                     Analytics Cookies
                   </span>
-                  <p className="gl-body gl-body--sm mt-1 opacity-80">
+                  <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">
                     Help us understand how you use the site so we can improve
                     performance and UX.
                   </p>
@@ -346,7 +350,7 @@ export default function CookieConsentBanner() {
                   <span className="gl-mono gl-mono--upper gl-mono--accent block">
                     Advertising Cookies
                   </span>
-                  <p className="gl-body gl-body--sm mt-1 opacity-80">
+                  <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">
                     Enable personalized ads and marketing based on your
                     interests.
                   </p>

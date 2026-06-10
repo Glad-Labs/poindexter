@@ -29,8 +29,8 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    site: '@_gladlabs',
-    creator: '@_gladlabs',
+    site: '@GladLabsAI',
+    creator: '@GladLabsAI',
   },
   verification: {
     google:
@@ -48,7 +48,7 @@ export const metadata = {
     types: {
       'application/rss+xml': [
         { url: '/feed.xml', title: `${SITE_NAME} Blog` },
-        { url: '/api/podcast', title: PODCAST_NAME },
+        { url: '/podcast-feed.xml', title: PODCAST_NAME },
       ],
     },
   },

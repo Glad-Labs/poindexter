@@ -45,7 +45,7 @@ export async function POST(request) {
         ? paths
         : [
             '/', // Homepage (featured post)
-            '/archive', // Archive pages
+            '/archive/1', // Archive page 1 — /archive is a redirect, not a real route (#1328 item 8)
             '/posts', // Posts listing
           ];
 

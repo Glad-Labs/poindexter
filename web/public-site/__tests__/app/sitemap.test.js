@@ -106,14 +106,13 @@ describe('sitemap()', () => {
     expect(urls).toContain('https://example.com/posts/second-post');
   });
 
-  it('should return only static pages when fetch fails', async () => {
+  // Network errors propagate so Next.js ISR keeps the stale full sitemap
+  // instead of replacing it with a static-only subset (#1319).
+  it('should throw when fetch fails so ISR keeps the stale sitemap', async () => {
     global.fetch.mockRejectedValue(new Error('Network error'));
 
     const sitemap = await loadSitemap();
-    const result = await sitemap();
-
-    // Should have exactly 8 static + legal pages
-    expect(result.length).toBe(8);
+    await expect(sitemap()).rejects.toThrow('Network error');
   });
 
   it('should set priority=1 for the homepage', async () => {

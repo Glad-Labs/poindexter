@@ -27,7 +27,7 @@ export default function CookiePolicy() {
       <Eyebrow>GLAD LABS · LEGAL</Eyebrow>
       <h1>Cookie Policy</h1>
 
-      <p className="gl-mono gl-mono--upper text-xs opacity-70">
+      <p className="gl-mono gl-mono--upper text-xs text-[color:var(--gl-text-muted)]">
         Last Updated · {lastUpdated}
       </p>
 

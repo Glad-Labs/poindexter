@@ -56,7 +56,16 @@ function resolveApiBaseUrl() {
   return raw.replace(/\/$/, '');
 }
 
-const FASTAPI_URL = resolveApiBaseUrl();
+// Lazy singleton — resolves on first call so a missing env var doesn't throw
+// at module import time (which would break any importer in prod even when the
+// function that uses this URL is never called). #1325
+let _fastapiUrlCache = null;
+function getResolvedApiBaseUrl() {
+  if (_fastapiUrlCache === null) {
+    _fastapiUrlCache = resolveApiBaseUrl();
+  }
+  return _fastapiUrlCache;
+}
 
 /**
  * Construct absolute URL for API calls and image assets
@@ -65,7 +74,7 @@ const FASTAPI_URL = resolveApiBaseUrl();
  * @returns {string} - Absolute URL
  */
 export function getAbsoluteURL(path = '') {
-  if (!path) return FASTAPI_URL;
+  if (!path) return getResolvedApiBaseUrl();
 
   // If already an absolute URL (http:// or https://), return as-is
   if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -73,7 +82,7 @@ export function getAbsoluteURL(path = '') {
   }
 
   // If relative path, prepend base URL
-  return `${FASTAPI_URL}${path}`;
+  return `${getResolvedApiBaseUrl()}${path}`;
 }
 
 /**
@@ -81,7 +90,7 @@ export function getAbsoluteURL(path = '') {
  * @returns {string} - Base API URL
  */
 export function getAPIBaseURL() {
-  return FASTAPI_URL;
+  return getResolvedApiBaseUrl();
 }
 
 /**
@@ -98,5 +107,5 @@ export function getAPIBaseURL() {
 export function getImageURL(path) {
   if (!path) return null;
   if (path.startsWith('http')) return path;
-  return `${FASTAPI_URL}${path}`;
+  return `${getResolvedApiBaseUrl()}${path}`;
 }

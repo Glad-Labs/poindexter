@@ -175,7 +175,6 @@ export default function DataRequests() {
             <select
               id="request-type"
               name="requestType"
-              aria-label="Type of GDPR request (access, deletion, portability, correction, restriction, objection, or other)"
               required
               className={INPUT_CLASS}
               style={INPUT_STYLE}
@@ -199,13 +198,12 @@ export default function DataRequests() {
               type="email"
               id="email"
               name="email"
-              aria-label="Your email address for identity verification and response"
               required
               placeholder="you@example.com"
               className={INPUT_CLASS}
               style={INPUT_STYLE}
             />
-            <p className="gl-body gl-body--sm opacity-70 mt-1">
+            <p className="gl-body gl-body--sm text-[color:var(--gl-text-muted)] mt-1">
               We&apos;ll use this to verify your identity and respond to your
               request.
             </p>
@@ -219,7 +217,6 @@ export default function DataRequests() {
               type="text"
               id="name"
               name="name"
-              aria-label="Your full name (optional)"
               placeholder="Matt Gladding"
               className={INPUT_CLASS}
               style={INPUT_STYLE}
@@ -233,7 +230,6 @@ export default function DataRequests() {
             <textarea
               id="details"
               name="details"
-              aria-label="Additional details about your request"
               rows={5}
               placeholder="If you're requesting deletion, specify what data. If requesting correction, explain what's inaccurate."
               className={INPUT_CLASS}
@@ -283,7 +279,6 @@ export default function DataRequests() {
                 type="checkbox"
                 id="consent"
                 name="consent"
-                aria-label="I understand my request will be verified via email"
                 required
                 className="w-4 h-4 cursor-pointer"
                 style={{ accentColor: 'var(--gl-cyan)' }}

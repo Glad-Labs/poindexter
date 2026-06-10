@@ -1,4 +1,4 @@
-import logger from './logger';
+import * as Sentry from '@sentry/nextjs';
 /**
  * Posts API Functions
  *
@@ -29,6 +29,7 @@ export interface Post {
   seo_title?: string;
   seo_description?: string;
   seo_keywords?: string;
+  niche_slug?: string;
 }
 
 export interface PostsResponse {
@@ -166,23 +167,30 @@ export function postExcerpt(
  * the featured slot, and prev/next adjacency all depend on this order.
  */
 async function fetchPostIndex(): Promise<Post[]> {
-  try {
-    const response = await fetch(`${STATIC_URL}/posts/index.json`, {
-      // Tag-based cache: invalidated by revalidateTag('posts') on publish.
-      // No TTL — stays fresh until an explicit invalidation fires.
-      next: { tags: ['posts', 'post-index'] },
-    });
+  const response = await fetch(`${STATIC_URL}/posts/index.json`, {
+    // Tag-based cache: invalidated by revalidateTag('posts') on publish.
+    // No TTL — stays fresh until an explicit invalidation fires.
+    next: { tags: ['posts', 'post-index'] },
+  });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch post index: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return sortPostsNewestFirst(data.posts || []);
-  } catch (error) {
-    logger.error('Error fetching post index:', error);
+  if (response.status === 404) {
+    // Index not yet published — treat as empty, not an error.
     return [];
   }
+
+  if (!response.ok) {
+    // 5xx or unexpected status: throw so ISR keeps the stale cache instead
+    // of replacing it with an empty array (which would poison every listing page).
+    const err = new Error(
+      `fetchPostIndex: R2 returned ${response.status} ${response.statusText}`,
+    );
+    console.error('[posts] fetchPostIndex failed:', err.message);
+    Sentry.captureException(err);
+    throw err;
+  }
+
+  const data = await response.json();
+  return sortPostsNewestFirst(data.posts || []);
 }
 
 /**
@@ -206,23 +214,30 @@ export async function getPosts(page: number = 1): Promise<PostsResponse> {
  * Fetch a single post by slug (with full content)
  */
 export async function getPostBySlug(slug: string): Promise<Post | null> {
-  try {
-    const response = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
-      // Tag-based cache: invalidated by revalidateTag('post:<slug>') on publish.
-      // This fixes the "post not found for 5 minutes" issue where null
-      // responses were TTL-cached for 300s after approval.
-      next: { tags: ['posts', `post:${slug}`] },
-    });
+  const response = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
+    // Tag-based cache: invalidated by revalidateTag('post:<slug>') on publish.
+    // This fixes the "post not found for 5 minutes" issue where null
+    // responses were TTL-cached for 300s after approval.
+    next: { tags: ['posts', `post:${slug}`] },
+  });
 
-    if (!response.ok) {
-      return null;
-    }
-
-    return await response.json();
-  } catch (error) {
-    logger.error(`Error fetching post with slug ${slug}:`, error);
+  if (response.status === 404) {
+    // Genuinely missing post — caller renders notFound().
     return null;
   }
+
+  if (!response.ok) {
+    // 5xx or unexpected status: throw so ISR keeps the stale cached post
+    // instead of serving a 404 to readers during an R2 outage.
+    const err = new Error(
+      `getPostBySlug(${slug}): R2 returned ${response.status} ${response.statusText}`,
+    );
+    console.error('[posts] getPostBySlug failed:', err.message);
+    Sentry.captureException(err);
+    throw err;
+  }
+
+  return await response.json();
 }
 
 /**
@@ -268,6 +283,24 @@ export async function getAllPublishedPosts(): Promise<Post[]> {
 }
 
 /**
+ * Fetch dev_diary posts only (the daily founder log).
+ * Dev diary has its own /dev-diary route and is excluded from the main feed.
+ */
+export async function getDevDiaryPosts(): Promise<Post[]> {
+  const allPosts = await fetchPostIndex();
+  return allPosts.filter((p) => p.niche_slug === 'dev_diary');
+}
+
+/**
+ * Fetch the main feed posts — all published posts EXCLUDING dev_diary.
+ * Dev diary has its own /dev-diary route so it doesn't flood the homepage.
+ */
+export async function getMainFeedPosts(): Promise<Post[]> {
+  const allPosts = await fetchPostIndex();
+  return allPosts.filter((p) => p.niche_slug !== 'dev_diary');
+}
+
+/**
  * Fetch posts by author. The autonomous content site has one
  * primary byline (poindexter-ai); this still goes through the same
  * filter so /author/<id> can render a real list instead of a
@@ -293,47 +326,3 @@ export async function getPostsByAuthor(
   };
 }
 
-/**
- * Get both the previous and next posts in a single fetch.
- * Index is newest-first, so `previous` = newer post, `next` = older post.
- */
-export async function getAdjacentPosts(currentSlug: string): Promise<{
-  previous: Post | null;
-  next: Post | null;
-}> {
-  try {
-    const allPosts = await fetchPostIndex();
-    const currentIndex = allPosts.findIndex((p) => p.slug === currentSlug);
-
-    if (currentIndex === -1) {
-      return { previous: null, next: null };
-    }
-
-    return {
-      previous: currentIndex > 0 ? allPosts[currentIndex - 1] : null,
-      next:
-        currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null,
-    };
-  } catch (error) {
-    logger.error('Error fetching adjacent posts:', error);
-    return { previous: null, next: null };
-  }
-}
-
-/**
- * Get the next post (older) — prefer getAdjacentPosts() when both needed
- */
-export async function getNextPost(currentSlug: string): Promise<Post | null> {
-  const { next } = await getAdjacentPosts(currentSlug);
-  return next;
-}
-
-/**
- * Get the previous post (newer) — prefer getAdjacentPosts() when both needed
- */
-export async function getPreviousPost(
-  currentSlug: string
-): Promise<Post | null> {
-  const { previous } = await getAdjacentPosts(currentSlug);
-  return previous;
-}

@@ -277,6 +277,10 @@ async def update_task_status_validated(
             "updated_by": user_id,
         }
 
+    except HTTPException:
+        # Preserve intentional 404/403/4xx — the broad handler below would
+        # otherwise collapse them into a generic 500 (poindexter#741).
+        raise
     except Exception as e:
         logger.error("Error in enhanced status update for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(
@@ -442,6 +446,9 @@ async def get_task_status_history(
             "history": history if history else [],
         }
 
+    except HTTPException:
+        # Preserve intentional 404/403/4xx (poindexter#741).
+        raise
     except Exception as e:
         logger.error("Error fetching status history for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch status history") from e
@@ -514,6 +521,9 @@ async def get_task_validation_failures(
 
         return failures
 
+    except HTTPException:
+        # Preserve intentional 404/403/4xx (poindexter#741).
+        raise
     except Exception as e:
         logger.error("Error fetching validation failures for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch validation failures") from e
