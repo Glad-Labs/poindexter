@@ -32,7 +32,7 @@ Apache 2.0 grants:
 - **No copyleft requirement** — derived works don't have to ship source
 
 This matches the rest of the modern AI/ML stack (Prefect, Ragas, DeepEval,
-guardrails-ai, sentence-transformers, Anthropic SDK, OpenAI SDK, Kubernetes,
+sentence-transformers, Anthropic SDK, OpenAI SDK, Kubernetes,
 TensorFlow, PyTorch — all Apache 2.0).
 
 ---
@@ -57,7 +57,7 @@ or compatible with Apache 2.0):
 - **FastAPI**: MIT License
 - **PostgreSQL**: PostgreSQL License (permissive)
 - **Prefect**: Apache 2.0
-- **Ragas / DeepEval / guardrails-ai**: Apache 2.0
+- **Ragas / DeepEval**: Apache 2.0
 - **Langfuse / LangChain / LiteLLM / BERTopic**: MIT License
 - See individual component repositories for complete license information
 
