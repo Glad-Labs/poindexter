@@ -143,7 +143,7 @@ const Footer = () => {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Follow Glad Labs on X (Twitter)"
-                className="gl-focus-ring transition-colors hover:text-[color:var(--gl-cyan)]"
+                className="gl-focus-ring p-1 transition-colors hover:text-[color:var(--gl-cyan)]"
                 style={{ color: 'var(--gl-text-muted)' }}
               >
                 <svg
@@ -160,7 +160,7 @@ const Footer = () => {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Glad Labs on GitHub"
-                className="gl-focus-ring transition-colors hover:text-[color:var(--gl-cyan)]"
+                className="gl-focus-ring p-1 transition-colors hover:text-[color:var(--gl-cyan)]"
                 style={{ color: 'var(--gl-text-muted)' }}
               >
                 <svg
@@ -181,7 +181,7 @@ const Footer = () => {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Listen to the Glad Labs Podcast on Spotify"
-                className="gl-focus-ring transition-colors hover:text-[color:var(--gl-cyan)]"
+                className="gl-focus-ring p-1 transition-colors hover:text-[color:var(--gl-cyan)]"
                 style={{ color: 'var(--gl-text-muted)' }}
               >
                 <svg

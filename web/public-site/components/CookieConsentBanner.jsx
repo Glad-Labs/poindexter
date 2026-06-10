@@ -172,7 +172,6 @@ export default function CookieConsentBanner() {
               <div className="flex gap-4 mt-2">
                 <Link
                   href="/legal/privacy"
-                  target="_blank"
                   className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80 transition-opacity"
                   style={{ fontSize: '0.6875rem' }}
                 >
@@ -180,7 +179,6 @@ export default function CookieConsentBanner() {
                 </Link>
                 <Link
                   href="/legal/cookie-policy"
-                  target="_blank"
                   className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80 transition-opacity"
                   style={{ fontSize: '0.6875rem' }}
                 >

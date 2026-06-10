@@ -28,6 +28,14 @@ function SearchContent() {
   // Keep a single derived isLoading value for the status region.
   const isLoading = isPending;
 
+  // WCAG 2.4.2: update the page title to reflect the active query so
+  // screen readers and browser history show a meaningful title.
+  useEffect(() => {
+    document.title = query
+      ? `Search: ${query} — Glad Labs`
+      : 'Search — Glad Labs';
+  }, [query]);
+
   useEffect(() => {
     const loadPosts = async () => {
       if (allPosts.length > 0) return;
@@ -181,7 +189,7 @@ function SearchContent() {
                     <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
                       <Image
                         src={imageUrl}
-                        alt={post.title}
+                        alt=""
                         fill
                         className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"

@@ -170,7 +170,7 @@ export default async function HomePage() {
                     {heroImage ? (
                       <Image
                         src={heroImage}
-                        alt={featuredTitle || 'Featured Post'}
+                        alt=""
                         fill
                         sizes="(min-width: 1024px) 50vw, 100vw"
                         className="object-cover"
@@ -261,7 +261,7 @@ export default async function HomePage() {
                           <div className="relative aspect-video overflow-hidden bg-slate-800">
                             <Image
                               src={cardImage}
-                              alt={cardTitle}
+                              alt=""
                               fill
                               sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                               className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
