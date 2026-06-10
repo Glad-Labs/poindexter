@@ -73,26 +73,34 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     try:
         from services.pipeline_db import PipelineDB
+        # content.persist_task assembles the full task_metadata and publishes
+        # it on this channel one node earlier; we re-assert the same blob.
         task_metadata = state.get("task_metadata") or {}
-        await PipelineDB(database_service.pool).upsert_version(
-            task_id,
-            {
-                "title": final_title,
-                "content": content_text,
-                "excerpt": excerpt_text,
-                "featured_image_url": state.get("featured_image_url"),
-                "seo_title": seo_title,
-                "seo_description": seo_description,
-                "seo_keywords": seo_keywords_string,
-                "quality_score": final_quality_score,
-                "qa_feedback": qa_feedback_text,
-                "models_used_by_phase": state.get("models_used_by_phase", {}),
-                "metadata": task_metadata,
-                "task_metadata": task_metadata,
-                "featured_image_prompt": state.get("featured_image_prompt"),
-                "tags": state.get("tags"),
-            },
-        )
+        version_data = {
+            "title": final_title,
+            "content": content_text,
+            "excerpt": excerpt_text,
+            "featured_image_url": state.get("featured_image_url"),
+            "seo_title": seo_title,
+            "seo_description": seo_description,
+            "seo_keywords": seo_keywords_string,
+            "quality_score": final_quality_score,
+            "qa_feedback": qa_feedback_text,
+            "models_used_by_phase": state.get("models_used_by_phase", {}),
+            "featured_image_prompt": state.get("featured_image_prompt"),
+            "tags": state.get("tags"),
+        }
+        # Only write the metadata blobs when populated. upsert_version merges
+        # via ``stage_data || EXCLUDED.stage_data`` (jsonb shallow-merge, right
+        # side wins) and an empty ``{}`` is ``not None`` — so passing an empty
+        # dict here would clobber the full metadata persist_task just wrote,
+        # wiping preview_token / pre_approve_content off the approval-queue row
+        # (Glad-Labs/poindexter#693). Skipping the keys leaves the prior write
+        # intact.
+        if task_metadata:
+            version_data["metadata"] = task_metadata
+            version_data["task_metadata"] = task_metadata
+        await PipelineDB(database_service.pool).upsert_version(task_id, version_data)
         stages = state.get("stages") or {}
         stages["5_version_recorded"] = True
         logger.info("[content.record_pipeline_version] pipeline_versions upserted for %s", task_id)

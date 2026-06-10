@@ -41,9 +41,10 @@ ATOM_META = AtomMeta(
         FieldSpec(name="approval_status", type="str", description="pending"),
         FieldSpec(name="post_id", type="str", description="None — posts created on approve"),
         FieldSpec(name="post_slug", type="str", description="None — posts created on approve"),
+        FieldSpec(name="task_metadata", type="dict", description="assembled finalize metadata for content.record_pipeline_version (#693)"),
     ),
     requires=("task_id", "content"),
-    produces=("status", "approval_status", "post_id", "post_slug"),
+    produces=("status", "approval_status", "post_id", "post_slug", "task_metadata"),
     capability_tier=None,
     cost_class="free",
     idempotent=False,
@@ -237,6 +238,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "post_id": None,
         "post_slug": None,
         "stages": stages,
+        # Publish the assembled metadata onto the pipeline state so the
+        # downstream content.record_pipeline_version atom re-asserts the SAME
+        # full blob. Without this, record reads an empty task_metadata channel
+        # and its upsert shallow-merge-clobbers metadata->>'preview_token'
+        # (and pre_approve_content / video_shot_list / featured-image meta)
+        # back to {} on the canonical_blog approval-queue row
+        # (Glad-Labs/poindexter#693).
+        "task_metadata": task_metadata,
     }
 
 
