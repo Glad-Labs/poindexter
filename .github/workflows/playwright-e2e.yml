@@ -2,9 +2,9 @@
 #
 # Before this workflow there was NO Playwright run in CI — the public
 # site's e2e/ suite only ran on someone's machine, so a layout/route
-# regression on www.gladlabs.io could merge green. (The Jest unit run +
-# JS lint are hook-only; Vercel ignores them. See the "ESLint hook broken"
-# / "JS lint is hook-only" notes.)
+# regression on www.gladlabs.io could merge green. (The Jest unit run now has
+# its own CI gate — jest-unit.yml, poindexter#1290 — so it is no longer
+# hook-only. JS lint remains hook-only; Vercel ignores both.)
 #
 # Scope (intentional): this job runs the FRONTEND-ONLY specs — the ones
 # that exercise statically-served Next.js pages and need no FastAPI

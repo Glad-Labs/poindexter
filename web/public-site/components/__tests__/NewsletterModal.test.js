@@ -203,7 +203,7 @@ describe('NewsletterModal submission success', () => {
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
       target: { value: 'user@test.com', name: 'email', type: 'email' },
     });
-    fireEvent.change(screen.getByPlaceholderText('Matt'), {
+    fireEvent.change(screen.getByPlaceholderText('Jane'), {
       target: { value: 'Alice', name: 'firstName', type: 'text' },
     });
 
