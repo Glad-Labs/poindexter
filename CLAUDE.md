@@ -14,15 +14,28 @@ If this is a new session, read these in order:
 
 Glad Labs is an AI-operated content business — a solo founder using AI to run an autonomous content pipeline that generates, reviews, publishes, and monetizes blog content.
 
-**Architecture inspired by human brain anatomy:**
+**Architecture vocabulary — kernel / module / capability.** The code's real
+structure is **kernel** (the substrate everything rents — plugin registry, DI
+container, pipeline engine, settings; `plugins/`, `services/`), **modules**
+(manifested business functions — `modules/content/`, `modules/finance/`; Module
+v1), and **capabilities** (the 20 entry-point plugin groups modules compose —
+llm / image / video / audio / tts). New work answers "where does this go?" in
+those terms; the kitchen-metaphor and brain-region framings in older docs map
+onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 
-- **Brainstem** (`brain/`) — standalone daemon (local), monitors all services, self-heals
-- **Cerebrum** (`src/cofounder_agent/`) — FastAPI backend, content pipeline, business logic
-- **Cerebellum** — anticipation engine + QA registry (learned patterns, quality calibration)
-- **Limbic System** — brain_knowledge graph + revenue engine (memory, motivation, rewards)
-- **Thalamus** — process composer + API layer (routes all inputs to the right processor)
-- **Hypothalamus** — settings service + cost guard (homeostasis, budget regulation)
-- **Spinal Cord** — PostgreSQL (all components communicate through shared DB)
+- **Brainstem** (`brain/`) — standalone self-healing watchdog daemon, genuinely
+  independent of the FastAPI app (only needs Python + asyncpg).
+- **Spinal Cord** — PostgreSQL as the bus: components really do communicate
+  through shared DB tables, not imports.
+
+> _Historical note._ The system was originally framed entirely in brain
+> anatomy. Five of those labels no longer pay rent: **Cerebrum** (the FastAPI
+> backend), **Cerebellum** (anticipation engine and QA registry), **Limbic
+> System** (brain_knowledge graph and revenue engine), **Thalamus** (process
+> composer and API layer), and **Hypothalamus** (settings service and cost
+> guard). They were doc labels over arbitrary groupings that business modules
+> cut straight across, so new code shouldn't reach for them — they're kept
+> here only for reading older docs and commits.
 
 ### Production URLs
 
@@ -70,7 +83,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 - **Atom-cutover (#355, 2026-06-02)**: `canonical_blog` cut over from the hand-coded LangGraph factory to a DB-stored `graph_def` (21 nodes: 13 `stage.*` + 5 `qa.*` rail atoms + 3 `seo.*` atoms), compiled by `services/pipeline_architect.py::build_graph_from_spec`; `pipeline_use_graph_def=true` is the prod default. The `cross_model_qa` stage was **deleted** (`services/stages/cross_model_qa.py`, 733 LOC; ~1,220 with its tests) and replaced by five composable QA atoms (`qa.critic` / `qa.deepeval` / `qa.guardrails` / `qa.ragas` → `qa.aggregate`) in `services/atoms/` that delegate to the retained `multi_model_qa.py` rail library. New `atom_runs` table + `services/atom_runs.py` capture per-atom run + outcome (gated by `atom_runs_capture_enabled`).
 - **Migration files** — `0000_baseline.py` (the squashed history) plus the post-baseline migrations under `services/migrations/`. Latest as of 2026-06-07: `20260607_020000_seed_audio_gen_engine_settings.py` (seeds 4 app_settings keys for Stable Audio Open music/SFX generation via `StableAudioOpenProvider` — `audio_gen_engine` / `stable_audio_open_server_url` / `stable_audio_open_default_duration_s` / `stable_audio_open_output_format`; default-off until operator sets `audio_gen_engine=stable-audio-open-1.0`; #621), `20260607_010000_seed_podcast_tts_settings.py` (seeds 5 app_settings for Speaches Kokoro TTS narration of podcast scripts — `podcast_tts_enabled` / `podcast_tts_base_url` / `podcast_tts_voice` / `podcast_tts_model` / `podcast_tts_format`; default-off; #621), and `20260607_000000_seed_qa_self_consistency_settings.py` (seeds 3 app_settings + 1 qa_gates row for the new `qa.self_consistency` atom — `self_consistency_enabled` / `self_consistency_sample_count` / `self_consistency_threshold`; advisory-first, execution_order 310, backed by `services/self_consistency_rail.py`; #621). Before those, `20260604_143000_seed_voice_speaches_sidecar_keys.py` (seeds 6 app*settings keys for the Speaches STT/TTS warm-sidecar path — `voice_agent_stt_mode` / `voice_agent_stt_base_url` / `voice_agent_stt_model` / `voice_agent_tts_mode` / `voice_agent_tts_base_url` / `voice_agent_tts_model` — both `*\_mode`keys default to`inprocess`so this is a behavior no-op until an operator flips to`sidecar`, targeting the ~12s Whisper cold-start; #1088) and `20260604_120000_drop_orphan_plugin_job_telemetry.py`(deletes 4 orphaned`plugin_job_last\*{run,status}\_{sync_newsletter_subscribers,sync_page_views}`app_settings rows — the sync jobs were removed in #571 and #955; PluginScheduler auto-writes these rows on job registration but never cleans up after unregistration). Before those, a 5-migration voice-infrastructure batch (#1006/#1000) —`20260604_020000_drop_legacy_voice_agent_brain_key.py`(drops the retired`voice_agent_brain`legacy key — superseded by`voice_agent_brain_mode`; the soft-transition fallback in `\_resolve_brain_mode`was removed so the row is dead config),`20260604_030000_seed_voice_claude_code_room_keys_1006.py`(seeds the 3 operational knobs for the`claude-code`two-room split:`voice_agent_claude_code_enabled`/`voice_agent_claude_code_room_name`/`voice_agent_claude_code_identity`— mirrors the poindexter room's keys so the room is phone-tunable from the DB),`20260604_040000_seed_livekit_creds_app_settings_1000.py`(moves LiveKit`api_key`+`api_secret`into`app_settings`as empty-default secrets — empty = fall back to env so the migration is a no-op until an operator populates, collapsing the scattered env/file copies that caused a rotation desync 2026-06-02),`20260604_051500_seed_voice_claude_code_tts_voice_override.py`(seeds`voice_agent_claude_code_tts_voice`per-room Kokoro voice override — empty default = fall back to the shared`voice_agent_tts_voice`, so the two rooms can now run distinct voices without affecting each other), and `20260604_060000_seed_voice_transcript_discord_keys_1006.py`(seeds`voice_agent_claude_code_transcript_enabled`master switch +`voice_transcript_discord_webhook_url`secret — moves the claude-code room's turn-by-turn transcript mirror from Telegram to Discord ops channel; empty webhook falls back to the existing`discord_ops_webhook_url`). Before that, a 5-migration audit-cleanup wave — `20260603_010000_rewire_programmatic_validator_gate.py`(re-seeds`canonical_blog`graph_def v4 to restore the dropped programmatic anti-hallucination hard gate as`qa.programmatic`; demotes `url_verifier`to advisory),`20260603_010500_disable_dead_guardrails_rails.py`(sets`guardrails_enabled=false`+ disables both`qa_gates`rows — guardrails-ai was uninstalled 2026-05-12 and the rails were fail-open no-ops),`20260603_011000_reconcile_dormant_ragas_flag.py`(flips`ragas_enabled=false`to match the already-disabled`qa_gates.ragas_eval`row),`20260603_042715_drop_orphan_cloudflare_beacon_url.py`(deletes the orphan`cloudflare_beacon_url`app_setting — no production readers; Vercel`NEXT_PUBLIC_BEACON_URL`is the real gate), and`20260603_043447_drop_legacy_logs_table.py`(drops the empty`logs`table and its dead`admin_db.add_log_entry`/`get_logs`references). Before that, the atom-cutover (#355) trio —`20260602_010711_create_atom_runs_table.py`(new`atom_runs`capture table; seeds`atom_runs_capture_enabled=true`), `20260602_023250_seed_canonical_blog_graph_def.py`(seeds`CANONICAL_BLOG_GRAPH_DEF`into`pipeline_templates.graph_def`), and `20260602_034251_flip_pipeline_use_graph_def_to_true.py`(flips the prod cutover flag). Before that, the 2026-05-10 batch:`20260510_065631_drop_experiments_tables.py`(closes #202 — A/B harness moved from SQL tables to Langfuse Datasets/Traces/Scores,`services/langfuse_experiments.py`is the new home; legacy`services/experiment_service.py`deleted). Preceded by`20260510_044707_seed_default_template_slug.py`(Lane C cutover seam) and`20260510_040315_seed_rag_engine_master_switch.py`(Lane D #329 sub-issue 4). Lane D landed 4/4 sub-issues over 2026-05-09 → 2026-05-10: DeepEval / Ragas / Guardrails / LlamaIndex. The 169 historical migrations were squashed 2026-05-08 — see`services/migrations/0000_baseline.py`for the rationale. New schema changes still go in fresh`YYYYMMDD_HHMMSS\*<slug>.py`files; the runner sorts`0000_baseline.py`first because`0`<`2` lexically.
 - 12 Grafana dashboards (Mission Control / Pipeline / Cost / Observability / System Health / Integrations / QA Rails / Findings / Revenue / Experiments & Dry-Run / Database / Hardware & Power), 18 Prometheus alert rules across 6 groups + 14 Grafana-managed rules; Pyroscope app-profiles ship from worker/brain/voice agents under `service_name` tags (poindexter#406). The dashboard set was restructured 2026-06-03 (poindexter#654): the dev-blog-only Auto-Publish Gate board was folded into the new **Experiments & Dry-Run** board, and the 75-panel System Health "junk drawer" was split — its Postgres internals → new **Database** board, its GPU/power panels → new **Hardware & Power** board (GPU single-sourced to Prometheus `nvidia_gpu_*`, #653) — leaving a slim ~45-panel System Health. Of the 18 Prometheus rules, 9 are static repo rules in `infrastructure/prometheus/alerts/*.yml` (3 groups — including the disk-space rules that replaced a broken Grafana SQL rule); the remaining 9 (`poindexter-business` / `poindexter-content` / `poindexter-infra`) are DB-sourced, rendered into `rules/*.yml` by `RenderPrometheusRulesJob` every 5 min — so the live count is the repo files plus whatever the DB currently seeds.
-- 8,748 Python unit tests across ~546 test files (some skipped in container due to host/container path-depth quirks at `Path(__file__).parents[5]` — works on host; collection picks up ~21 errors as of 2026-05-27, tracked for cleanup)
+- 10,177 test functions across 574 test files (546 unit + the integration/benchmark trees) — latest nightly: 10,352 passed, 84 skipped, 1 xfailed, 0 failures, **0 collection errors** (counts verified 2026-06-09). A handful still skip in-container due to the `Path(__file__).parents[5]` path-depth quirk and run on host; the prior "~21 collection errors" line described a since-fixed problem.
 - 901 app_settings keys (66 secret) plus 4 cost_tier mappings (`cost_tier.{free,budget,standard,premium}.model`) wired 2026-05-09 — the baseline seeds the non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml. (Cost-guard key rename 2026-05-27 closed a silent fallthrough on `daily_spend_limit_usd` / `monthly_spend_limit_usd` — see #598.)
 - PluginScheduler boots 39 jobs (taps + retention + memory hygiene + content surfaces) — see `plugins/registry.py:_SAMPLES`
 - 5 declarative-data-plane tables (`external_taps` / `retention_policies` / `webhook_endpoints` / `publishing_adapters` / `qa_gates`) feeding the integrations handler registry's 14 handlers across 5 surfaces (`tap` / `retention` / `webhook` / `outbound` / `publishing`)
@@ -157,13 +170,25 @@ relocations, enabled by Phase 5's presence-based discovery. **Generic pipeline
 engine stays in substrate** (`template_runner`, `pipeline_architect`,
 `prompt_manager`, `llm_text`, `atom_registry`) — content rents it via the DB
 `graph_def` seam, so the engine never imports content. `canonical_blog_spec`
-also stays (it's imported by historical migrations). The substrate→content
-imports the moves introduced (`main.py` → `quality_service`,
-`post_pipeline_actions` → `auto_publish`, `routes/task_routes` → `stages`) are a
-transitional state for a later holistic **thin-adapter / interface pass** that
-routes substrate's use of content through the module's public surface. NOTE for
-path lookups: many `services/<name>.py` references elsewhere in this file are
-historical narrative; the live content code is under `modules/content/`.
+also stays (it's imported by historical migrations). **The substrate still
+reaches into content in more places than a clean module boundary should — the
+honest baseline for the planned thin-adapter / interface pass through
+`modules/content/api.py`** (which will route substrate's use of content through
+the module's public surface): **10 executable imports across 8 substrate
+files** — `main.py:22` (`quality_service`);
+`services/post_pipeline_actions.py:396,446,522` (`auto_publish_gate` /
+`auto_publish` / `multi_model_qa`); `services/publish_service.py:941`
+(`auto_publish_gate`); `services/deepeval_rails.py:164` +
+`services/guardrails_rails.py:90` (`content_validator`);
+`services/research_context.py:146` (`internal_link_coherence`);
+`services/topic_proposal_service.py:405` (`stages.topic_decision_gate`); and
+`services/pipeline_templates/__init__.py:106` (`atoms.narrate_bundle`) — **plus
+3 string-path registries** that name content modules without importing them:
+`plugins/registry.py` `_SAMPLES` (14 `modules.content.stages.*` paths),
+`services/atom_registry.py:100` (the `modules.content.atoms` walk-root), and
+`services/http_client.py` `WIRED_HTTP_CLIENT_MODULES` (2 content paths). NOTE
+for path lookups: many `services/<name>.py` references elsewhere in this file
+are historical narrative; the live content code is under `modules/content/`.
 
 **Key services (22 load-bearing):**
 
@@ -178,7 +203,7 @@ historical narrative; the live content code is under `modules/content/`.
 | `template_runner.py`                      | LangGraph-backed dynamic-pipeline orchestrator (TemplateRunner). **PRIMARY PIPELINE PATH** (`default_template_slug=canonical_blog` on prod). `run()` prefers the DB-stored `graph_def` (compiled by `pipeline_architect.build_graph_from_spec` via `load_active_graph_def`) when `pipeline_use_graph_def=true` — **the prod default since #355** — else the legacy Python `TEMPLATES` factory (now `dev_diary`-only; the hand-coded `canonical_blog` factory + `_CANONICAL_BLOG_ORDER` were deleted). Postgres checkpointer enabled via `template_runner_use_postgres_checkpointer=true`.                                                                                                                                                                                                                                                                                                                                                                       |
 | `prompt_manager.py`                       | UnifiedPromptManager — Langfuse-first, then YAML defaults (poindexter#47). Edits land in the Langfuse UI. **Lane A complete 2026-05-09:** all 7 inline production prompt constants migrated to YAML keys.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `settings_service.py`                     | DB-backed config (app_settings, ~685 active keys in-cache; ~717 with secrets)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `site_config.py`                          | DI seam over settings — `class SiteConfig` constructed by `main.py` and DI'd via `Depends(get_site_config_dependency)`. Per-module utilities own their own `site_config: SiteConfig` attribute that `main.py`'s lifespan wires via `set_site_config(loaded_instance)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `site_config.py`                          | DI seam over settings — `class SiteConfig` constructed once per entry point and reached through the `AppContainer` composition root (`services/container.py`). Route handlers DI it via `Depends(get_site_config_dependency)`; services take `site_config` as a constructor arg. The legacy per-module `set_site_config(loaded_instance)` fan-out is retired (#272 / #788 capstone — `di_wiring.WIRED_MODULES` is empty); do **not** add new `set_site_config` setters.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `cost_guard.py`                           | Daily/monthly spend limits + energy estimates (watt-hours per 1K tokens) for the cost dashboard. Lines 72-100 are ENERGY defaults — NOT USD prices. Operators tune per-model via `plugin.llm_provider.<provider>.model.<model>.energy_per_1k_wh`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `cost_lookup.py`                          | LiteLLM-backed cost lookup (wraps `litellm.model_cost`). The `model_router.py` / `usage_tracker.py` / `model_constants.py` trio is **deleted** (Phase 2 cleanup, 2026-05-08). Lane B introduced the `cost_tier` API: callers do `model = await resolve_tier_model(pool, "standard")` (in `services/llm_providers/dispatcher.py`); operators tune via `app_settings.cost_tier.<tier>.model` rows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `llm_providers/litellm_provider.py`       | LiteLLM-backed `LLMProvider` plugin (provider routing + cost tracking + retries via mature OSS). **PRIMARY LLM ROUTER as of 2026-05-16** — `plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'` on prod. All `dispatch_complete` calls route through it. Direct `httpx` callers against `/api/chat` + `/api/generate` were retired 2026-05-16 (cleanup sweep PR #4); every LLM call now flows through dispatcher. Langfuse callback auto-traces every call.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -288,28 +313,42 @@ Then call methods on the instance:
   (secrets are filtered out of the cache, so `is_secret=true` keys
   MUST be fetched via this method)
 
-**Singleton deleted 2026-05-09 (glad-labs-stack#330).** All production
-code uses the DI seam in all new code; there is no longer a module-level
-`site_config` instance to import. The
-[glad-labs-stack#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)
-sweep retired the singleton + lifespan-rebind shim entirely; per-module
-utilities now own their own `site_config: SiteConfig` attribute that
-`main.py`'s lifespan wires via `set_site_config(loaded_instance)`.
+**Singleton AND the per-module `set_site_config` fan-out are both retired
+(glad-labs-stack#330 → #272 / #788).** GH#330 first deleted the module-level
+`site_config` singleton. The #272 SiteConfig-DI migration then moved every
+service to **constructor DI**, and its **#788 capstone** (commit `55b6f751e`)
+migrated the last four ambient-singleton modules (`gpu_scheduler`,
+`ollama_client`, `prompt_manager`, `route_utils`) onto the process-wide
+**`AppContainer`** accessor — leaving `services.di_wiring.WIRED_MODULES` an
+**empty tuple**. `AppContainer` (`services/container.py`) is the composition
+root: constructed once per entry point (worker lifespan, Prefect subprocess,
+CLI, brain, test fixture) by `services.bootstrap.build_container`, it holds the
+one loaded `SiteConfig` and exposes each migrated service as a `cached_property`.
+The old `set_site_config(loaded_instance)` lifespan loop survives only as a
+near-dead seam — `wire_site_config_modules` now wires 0 modules and merely
+re-publishes the instance to `services.integrations.shared_context` for
+`notify_operator` secret resolution (a separate concern, pending its own cleanup).
 
-A scheduled `reload_site_config` job refreshes the DB-loaded values
-every minute (verified live — worker logs show `site_config refreshed
-(685 keys)`). The job receives the lifespan-bound SiteConfig via
-`config["_site_config"]`, so calling `.reload(pool)` on it propagates
-fresh values to every wired module that points at the same instance.
+A scheduled `reload_site_config` job refreshes the DB-loaded values every minute
+(verified live — worker logs show `site_config refreshed (685 keys)`). The job
+receives the entry point's `SiteConfig` via `config["_site_config"]` and calls
+`.reload(pool)` on it; because `AppContainer` holds that same instance by
+reference, fresh DB values propagate to every service the container constructed.
 
-For NEW code, always use the DI seam (route handlers via
-`Depends(get_site_config_dependency)`, services via constructor
-injection, stages via `context.get("site_config")`, leaf utilities
-via the per-module `site_config` attr seeded by `set_site_config`).
+For NEW code, reach `SiteConfig` through the container/DI — never through a
+`set_site_config` setter: route handlers via `Depends(get_site_config_dependency)`
+or `Depends(get_container_dependency)`, services via **constructor injection**
+(`def __init__(self, *, site_config: SiteConfig, ...)`), stages via
+`context.get("site_config")`. Adding a new module-level `site_config` global +
+`set_site_config` setter reproduces the retired seam — don't.
 
-Tests construct their own `SiteConfig(initial_config={...})` instance
-or use the shared instance in `tests/unit/conftest.py` (which fans out
-to every module via `set_site_config` at collection time).
+Tests construct their own `SiteConfig(initial_config={...})` and pass it via
+constructor DI (`Service(site_config=...)` / `fn(site_config=...)`), or rely on
+`tests/unit/conftest.py`'s `default_container_active` fixture, which registers a
+seeded `SiteConfig` on an `AppContainer` so the container-accessor modules
+(`prompt_manager`, `gpu_scheduler`, …) see the brand seed. The old
+`_SHARED_TEST_MODULES` `set_site_config` fan-out is now empty — every module on
+it migrated to constructor DI.
 
 For SaaS / A/B-testing readiness, every tunable should be a
 DB-backed setting. Background algorithm windows (anomaly detection,
@@ -327,7 +366,7 @@ Source of truth: `docs/operations/ci-deploy-chain.md`. Two-remote model (post-20
 - **`origin` = `Glad-Labs/glad-labs-stack`** (private GitHub) — full tree (public + Glad Labs operator/premium overlay). Vercel watches this and deploys `www.gladlabs.io`. Push your day-to-day work here.
 - **`github` = `Glad-Labs/poindexter`** (public GitHub) — open-source product subset. Refreshed from origin via `scripts/sync-to-github.sh`, which strips private files (web/public-site, web/storefront, mcp-server-gladlabs, marketing, premium dashboards, writing_samples, gladlabs-config, .shared-context, CLAUDE.md, etc.).
 
-**Cross-repo sync is automatic.** GitHub Actions workflow `.github/workflows/sync-to-public-poindexter.yml` runs on every push to `origin/main` and mirrors the filtered subset to Glad-Labs/poindexter in ~30s, using a write-enabled deploy key (private key stored as `POINDEXTER_DEPLOY_KEY` secret on glad-labs-stack). Just `git push origin main` and the public mirror updates itself.
+**Cross-repo sync is automatic.** GitHub Actions workflow `.github/workflows/sync-to-public-poindexter.yml` runs on every push to `origin/main` and mirrors the filtered subset to Glad-Labs/poindexter in ~30s, authenticating with a fine-grained PAT scoped to Glad-Labs/poindexter (Contents: read+write) stored as the `POINDEXTER_SYNC_TOKEN` secret on glad-labs-stack — switched 2026-05-09 from the prior SSH deploy key after an enterprise policy disabled deploy keys org-wide. Just `git push origin main` and the public mirror updates itself.
 
 **Mirror force-push posture (intentional):** Glad-Labs/poindexter has `allow_force_pushes: true` in its classic branch protection AND no `non_fast_forward` rule in its ruleset. The mirror is rebuilt from scratch on every sync (filter → force-push), so force-push protection on a derived branch would just keep the mirror permanently stale. The classic protection still requires the public-side CI checks (test-backend, migrations-smoke, Mintlify Deployment, link-rot) to pass on the resulting commit. **Do not re-enable force-push protection on the public mirror — it will silently break the sync workflow.**
 
@@ -340,7 +379,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 ## Key Principles
 
 - **Async-everywhere:** FastAPI uses async/await throughout; never block the event loop
-- **Brain architecture:** System modeled after human brain anatomy — each region independent
+- **Kernel / module / capability:** New code goes in as a business **module** on the kernel substrate, composing **capability** plugins — see the architecture-vocabulary note in Project Overview ("brainstem" and "spinal cord" are the only load-bearing anatomy labels left)
 - **PostgreSQL as spinal cord:** All components communicate through shared DB tables, not imports
 - **Anti-hallucination:** Three layers — prompts, LLM QA, programmatic validator. See [`docs/architecture/anti-hallucination.md`](docs/architecture/anti-hallucination.md) for the full layer-by-layer breakdown (rule groups, reviewers, prompts, aggregation logic).
 - **Config in DB, not code:** `app_settings` table replaces environment variables AND hardcoded constants. If you write a literal in production code, ask "could a customer tune this?" — if yes, it goes in app_settings.
