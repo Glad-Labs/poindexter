@@ -41,6 +41,9 @@ import httpx
 # repo layout. Docker image COPYs them into /app.
 # ---------------------------------------------------------------------------
 
+_ALERT_COOLDOWN_FILE = Path.home() / ".gladlabs" / "auto-embed-last-alert.txt"
+_ALERT_COOLDOWN_SECONDS = 6 * 3600
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 for _candidate in (
     _REPO_ROOT / "src" / "cofounder_agent",
@@ -128,6 +131,52 @@ logger.addHandler(_stdout)
 # ---------------------------------------------------------------------------
 
 
+def _read_discord_webhook() -> str:
+    """Read discord_ops_webhook_url from bootstrap.toml without touching the DB."""
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return ""
+    bootstrap = Path.home() / ".poindexter" / "bootstrap.toml"
+    if not bootstrap.exists():
+        return ""
+    try:
+        with bootstrap.open("rb") as fh:
+            data = tomllib.load(fh)
+        return data.get("discord_ops_webhook_url", "")
+    except Exception:
+        return ""
+
+
+def _notify_db_failure(error: str) -> None:
+    """POST a Discord alert if outside the cooldown window."""
+    import time
+    now = time.time()
+    if _ALERT_COOLDOWN_FILE.exists():
+        try:
+            last = float(_ALERT_COOLDOWN_FILE.read_text().strip())
+            if now - last < _ALERT_COOLDOWN_SECONDS:
+                return
+        except Exception:
+            pass
+
+    webhook = _read_discord_webhook()
+    if not webhook:
+        return
+
+    import urllib.request, json as _json
+    payload = _json.dumps({"content": f":warning: **auto-embed DB failure** — `{error}`\nCheck `~/.gladlabs/auto-embed.log` and `docker ps` for postgres-local."}).encode()
+    try:
+        req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+        _ALERT_COOLDOWN_FILE.write_text(str(now))
+    except Exception as e:
+        logger.warning("Could not send Discord alert: %s", e)
+
+
 async def check_ollama(client: httpx.AsyncClient) -> bool:
     """Return True if Ollama is reachable and the embed model is present."""
     try:
@@ -174,6 +223,7 @@ async def main() -> None:
         pool = await asyncpg.create_pool(LOCAL_DSN, min_size=1, max_size=4)
     except Exception as e:
         logger.error("Could not connect to local pgvector DB: %s", e)
+        _notify_db_failure(str(e))
         await http.aclose()
         return
 

@@ -185,10 +185,20 @@ def _scan_intree_modules() -> dict[str, list[Any]]:
     ``_intree_module_names`` that fails to load raises
     ``ModuleDiscoveryError`` (present-but-broken = loud); an absent
     directory is simply never listed (expected-absent = silent, but the
-    final discovered set is logged)."""
+    final discovered set is logged).
+
+    If the ``modules`` package itself is not on ``sys.path`` (e.g.
+    lightweight satellite runners like auto-embed that ship only
+    ``services/taps/``) the scan returns empty lists rather than
+    crashing — absent-root is not the same as present-but-broken."""
+    try:
+        names = _intree_module_names()
+    except ImportError:
+        logger.debug("module discovery: 'modules' package absent — skipping in-tree scan")
+        return {"modules": [], "jobs": []}
     modules_out: list[Any] = []
     jobs_out: list[Any] = []
-    for name in _intree_module_names():
+    for name in names:
         try:
             modules_out.append(_load_intree_module(name))
             jobs_out.extend(_load_intree_module_jobs(name))

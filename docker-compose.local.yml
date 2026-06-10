@@ -1164,15 +1164,6 @@ services:
       dockerfile: scripts/Dockerfile.auto-embed
     container_name: poindexter-auto-embed
     restart: unless-stopped
-    # PARKED 2026-06-07 (Matt): the host Scheduled Task "Glad Labs Auto-Embed"
-    # is the SOLE auto-embed runner. The current DI-seam services/taps/memory.py
-    # resolves claude_projects_dir from the home default (~/.claude/projects),
-    # which only the host satisfies — in-container it falls back to
-    # /root/.claude/projects (the mount is /memory/claude-projects) and embeds
-    # zero memory. Profiled out so `docker compose up` won't start it. To revive
-    # as the runner: mount projects at /root/.claude/projects (or have the
-    # auto-embed runner inject _site_config) and drop this profile.
-    profiles: ["parked"]
     environment:
       # Only DATABASE_URL is an env var by policy; everything else — ollama_url,
       # gitea_url, etc. — lives in the app_settings DB and is loaded at runtime.
@@ -1180,10 +1171,6 @@ services:
       # it detects it's running inside Docker (IN_DOCKER=true).
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       IN_DOCKER: "true"
-      # Point the script at the container-mount locations instead of Path.home().
-      # Mounting the whole projects/ dir means every C--* scope gets embedded
-      # automatically — no more silent skips when cwd changes (2026-04-18 incident).
-      CLAUDE_PROJECTS_DIR: /memory/claude-projects
       # OpenClaw memory embedding retired 2026-06-07 (Matt): operations memories
       # live in the DB as structured data, not in pgvector. The "__skip__"
       # sentinel makes the memory tap's _resolve() return a non-existent path,
@@ -1196,7 +1183,7 @@ services:
     volumes:
       - ./scripts/auto-embed.py:/app/auto-embed.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
-      - ${USERPROFILE:-.}/.claude/projects:/memory/claude-projects:ro
+      - ${USERPROFILE:-.}/.claude/projects:/home/embedder/.claude/projects:ro
       - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
       # Persist ~/.gladlabs/auto-embed.log to the host so `tail -f` works
       # without needing `docker exec`. Script writes to Path.home()/.gladlabs
