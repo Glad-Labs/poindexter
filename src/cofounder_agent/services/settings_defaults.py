@@ -79,7 +79,7 @@ DEFAULTS: dict[str, str] = {
     'monthly_spend_limit_usd': '100.0',
 
     # ----- LLM model selection -----
-    'default_ollama_model': 'gemma3:27b',
+    'default_ollama_model': 'auto',
     'embed_model': 'nomic-embed-text',
     'embedding_model': '',
     'inline_image_prompt_model': 'llama3:latest',
@@ -92,14 +92,14 @@ DEFAULTS: dict[str, str] = {
     # operators on 80+GB hardware can flip to 'false' to skip the
     # ~3-5s reload tax (see services/llm_providers/ollama_unload.py).
     'pipeline_explicit_writer_unload_before_sdxl': 'true',
-    'pipeline_fallback_model': 'gemma3:27b',
-    'pipeline_writer_model': 'gemma3:27b',
+    'pipeline_fallback_model': 'ollama/gemma-4-31B-it-qat:latest',
+    'pipeline_writer_model': 'ollama/glm-4.7-5090:latest',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
     # releases VRAM before the inline-image /generate lands. 2s is the
     # sweet spot — long enough for the kernel to free, short enough to
     # stay invisible in pipeline latency.
     'pipeline_writer_unload_grace_seconds': '2',
-    'qa_fallback_writer_model': 'gemma3:27b',
+    'qa_fallback_writer_model': 'gemma-4-31B-it-qat:latest',
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
@@ -107,7 +107,7 @@ DEFAULTS: dict[str, str] = {
     # whole topic-discovery sweep (2026-05-28 content-gen stall). Kept
     # separate + DB-configurable so operators can pin a writing model
     # without breaking structured extraction.
-    'structured_extraction_model': 'gemma3:27b',
+    'structured_extraction_model': 'gemma-4-31B-it-qat:latest',
     'use_ollama': 'false',
 
     # ----- LLM providers / endpoints -----

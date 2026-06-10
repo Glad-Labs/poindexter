@@ -592,7 +592,7 @@ class CollapseOldEmbeddingsJob:
         cluster_size: int,
         age_days: int,
         summary_provider: str = "joined_preview",
-        summary_model: str = "gemma3:27b-it-qat",
+        summary_model: str = "gemma-4-31B-it-qat:latest",
         summary_timeout_s: int = 60,
     ) -> dict[str, int]:
         result = {"candidates": 0, "collapsed": 0, "summaries": 0, "clusters": 0}

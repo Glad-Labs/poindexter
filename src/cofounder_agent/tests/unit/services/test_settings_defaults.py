@@ -254,3 +254,70 @@ class TestGroupingMakesSense:
             f"qa_ keys span {span} lines — likely split across non-adjacent "
             "sections of the registry file (regression in GROUPS classifier)."
         )
+
+
+# ---------------------------------------------------------------------------
+# No dangling (uninstalled) model defaults
+# ---------------------------------------------------------------------------
+
+# The local Ollama ``gemma3`` family (``gemma3:27b`` / ``gemma3:27b-it-qat``)
+# was upgraded to ``gemma4`` around 2026-06-08/09 and uninstalled. Any default
+# still pointing at it would fail or silently CPU-offload budget / fallback /
+# writer / structured-extraction calls on a FRESH install or a settings reset.
+# See the ops memory note ``ollama-model-settings-dangle-after-upgrade``.
+_UNINSTALLED_MODEL_SUBSTR = "gemma3"
+
+
+class TestNoDanglingModelDefaults:
+    """Guard both surfaces that re-seed ``*_model`` app_settings on a clean
+    boot: the Python ``DEFAULTS`` registry (the settings-reset path) and the
+    squashed ``0000_baseline.seeds.sql`` (the fresh-install path that actually
+    wins, because migrations run before ``seed_all_defaults`` and both use
+    ``ON CONFLICT DO NOTHING``).
+    """
+
+    def test_registry_defaults_have_no_uninstalled_model(self):
+        from services.settings_defaults import DEFAULTS
+
+        offenders = {
+            k: v for k, v in DEFAULTS.items()
+            if _UNINSTALLED_MODEL_SUBSTR in v
+        }
+        assert offenders == {}, (
+            "settings_defaults.DEFAULTS still seed the uninstalled "
+            f"'{_UNINSTALLED_MODEL_SUBSTR}' model family: {offenders}. Repoint "
+            "to an installed successor (gemma-4-31B-it-qat:latest / gemma4:31b "
+            "/ glm-4.7-5090:latest)."
+        )
+
+    def test_baseline_seed_values_have_no_uninstalled_model(self):
+        import re
+        from pathlib import Path
+
+        from services import settings_defaults
+
+        seeds = (
+            Path(settings_defaults.__file__).parent
+            / "migrations"
+            / "0000_baseline.seeds.sql"
+        )
+        text = seeds.read_text(encoding="utf-8")
+
+        # Pull (key, value) from each app_settings INSERT. The key and value
+        # are the first two single-quoted fields and never contain embedded
+        # quotes; descriptions (which may legitimately reference model
+        # history) come later and are deliberately ignored.
+        row_re = re.compile(
+            r"INSERT INTO app_settings \([^)]*\) VALUES \('([^']*)',\s*'([^']*)'"
+        )
+        offenders = {
+            key: value
+            for key, value in row_re.findall(text)
+            if _UNINSTALLED_MODEL_SUBSTR in value
+        }
+        assert offenders == {}, (
+            "0000_baseline.seeds.sql seeds the uninstalled "
+            f"'{_UNINSTALLED_MODEL_SUBSTR}' model family on fresh installs "
+            f"(baseline wins over settings_defaults): {offenders}. Repoint "
+            "each seeded value to an installed successor."
+        )
