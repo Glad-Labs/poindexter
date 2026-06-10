@@ -172,7 +172,7 @@ groups:
                   reducer:
                     type: last
 
-      # 4. DB SIZE WARNING — database exceeds 1 GB
+      # 4. DB SIZE WARNING — database exceeds 5 GB
       - uid: brain-db-size-warning
         title: DB Size Warning
         condition: C
@@ -190,8 +190,8 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Brain database exceeds 1 GB"
-          description: "poindexter_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or increasing storage allocation."
+          summary: "Brain database exceeds 5 GB"
+          description: "poindexter_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or pruning retention_policies rows (sensor_samples, cost_logs, embeddings)."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -225,7 +225,7 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 1
+                      - 5
                   operator:
                     type: and
                   reducer:
