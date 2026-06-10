@@ -479,7 +479,25 @@ async def probe_public_site(_pool) -> dict:
 async def probe_scheduled_tasks(_pool) -> dict:
     """Probe: Check Windows scheduled tasks for failures (non-zero last result)."""
     if platform.system() != "Windows":
-        return {"ok": True, "detail": "skipped (not Windows)"}
+        # Post-containerization the brain daemon runs in a Linux container, so
+        # this branch is taken every cycle. It cannot see host Windows Task
+        # Scheduler entries from inside the container — so reporting ok:True
+        # here is fake-healthy: it tells the operator this surface is covered
+        # when it isn't (the autonomous-session schtasks + host daemons go
+        # unwatched). Report the gap honestly instead (#704).
+        #
+        # This pages only ONCE: run_health_probes alerts when the failure
+        # count first hits ALERT_AFTER_FAILURES, then the probe sits
+        # visibly-degraded on the health surface (no chronic re-paging). Real
+        # host-side coverage (a completion-beacon / schtasks textfile-collector
+        # heartbeat → Prometheus absence rule) is the part-2 follow-up.
+        return {
+            "ok": False,
+            "detail": (
+                "needs migration — probe cannot see host scheduled tasks "
+                "from inside the container"
+            ),
+        }
     try:
         # Query Poindexter scheduled tasks via schtasks
         result = subprocess.run(

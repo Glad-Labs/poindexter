@@ -181,11 +181,15 @@ class TestRestartContainer:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestScheduledTasksProbe:
-    async def test_skipped_on_non_windows(self):
+    async def test_reports_unwatched_on_non_windows(self):
+        # Post-containerization the brain runs in Linux, so this is the live
+        # branch every cycle. It must report the gap honestly (ok:False) rather
+        # than fake-healthy — a fake-healthy probe claims coverage of the host
+        # scheduled tasks that doesn't exist from inside the container (#704).
         with patch("platform.system", return_value="Linux"):
             r = await hp.probe_scheduled_tasks(None)
-        assert r.get("ok") is True
-        assert "skipped" in r.get("detail", "")
+        assert r.get("ok") is False
+        assert "cannot see host scheduled tasks" in r.get("detail", "")
 
 
 @pytest.mark.unit
