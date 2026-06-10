@@ -117,11 +117,12 @@ ATOM_META = AtomMeta(
     ),
     outputs=(
         FieldSpec(name="content", type="str", description="full post body (markdown)"),
+        FieldSpec(name="title", type="str", description="derived post headline (never a bare date)"),
         FieldSpec(name="model_used", type="str", description="resolved model name"),
         FieldSpec(name="_narrate_bundle_ran", type="bool", description="set to True once executed"),
     ),
     requires=("context_bundle",),
-    produces=("content",),
+    produces=("content", "title"),
     capability_tier="dev_diary_narrator",
     cost_class="compute",
     idempotent=False,  # stochastic LLM
@@ -174,6 +175,13 @@ def _resolve_system_prompt() -> tuple[str, str | None, int | None]:
     UI; the next get_prompt call picks up the new version (60s SDK
     cache) and the new version int flows onto every subsequent
     outcome row.
+
+    NOTE: the inline fallback was updated 2026-06-10 to require a
+    ``TITLE:`` prefix on the first output line. If the Langfuse /
+    YAML prompt still has the old ``OUTPUT: emit only the narrative
+    paragraphs`` instruction, the title extraction will fall back to
+    the heuristic (first sentence of prose). Update the DB prompt to
+    match the new OUTPUT FORMAT section in _NARRATIVE_SYSTEM_PROMPT_FALLBACK.
     """
     try:
         from services.prompt_manager import get_prompt_manager
@@ -316,10 +324,14 @@ VOICE TIGHTENING (positive directives — what good looks like):
 - Match the register of an indie-dev blog post that draws readers
   in — short paragraphs, real arcs, peer-to-peer voice.
 
-OUTPUT: emit only the narrative paragraphs. The caller appends a
-deterministic header + footer. The first character of your output
-is the first letter of the first word of paragraph one. Plain
-markdown prose, no headings, no lists, no surrounding JSON.
+OUTPUT FORMAT: Start your response with exactly one line:
+  TITLE: [a punchy, specific headline — never a date, never "Dev diary
+  for ...", never "What we shipped on ..." — names the most interesting
+  thing shipped today in plain English]
+
+Then a blank line, then the narrative paragraphs. The caller appends the
+deterministic header + footer. Plain markdown prose, no headings, no
+lists, no surrounding JSON.
 """
 
 
@@ -407,6 +419,63 @@ def _bundle_is_empty(bundle: dict[str, Any]) -> bool:
     return not (bundle.get("merged_prs") or bundle.get("notable_commits"))
 
 
+def _parse_title_and_prose(raw: str, bundle: dict[str, Any], date: str) -> tuple[str, str]:
+    """Split the model's ``TITLE: ...\\n\\nprose`` output into (title, prose).
+
+    The prompt asks for a ``TITLE:`` prefix on the first line. When the
+    model follows the format, the title is extracted verbatim and the
+    prose is everything after the first blank line. When the model ignores
+    the format instruction, a heuristic title is derived from:
+    1. First sentence of the prose (clipped to 80 chars), or
+    2. A bundle-derived summary ("Shipped N PRs on {date}").
+
+    The heuristic guarantees the structural gate's title check always has
+    something to evaluate — the date-only pattern check in
+    auto_publish_gate._check_structural_requirements will still block a
+    title like "2026-06-09", but the heuristic title coming from real
+    prose won't look like a date.
+    """
+    text = raw.strip()
+    if not text:
+        prs = bundle.get("merged_prs") or []
+        n = len(prs)
+        return (f"Shipped {n} PR{'s' if n != 1 else ''} today" if n else f"Dev notes — {date}"), ""
+
+    first_line = text.splitlines()[0]
+    if first_line.upper().startswith("TITLE:"):
+        title = first_line[6:].strip()
+        # Everything after the first line is the prose; strip leading blank lines.
+        rest = text[len(first_line):].lstrip("\n").strip()
+        if title:
+            return title, rest
+        # Model emitted "TITLE:" with nothing after it — fall through to heuristic.
+        text = rest
+
+    # Heuristic: first real sentence from the prose, clipped to 80 chars.
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("_"):
+            continue
+        # Clip at first sentence-ending punctuation within 80 chars.
+        clip = line[:80]
+        for i, ch in enumerate(clip):
+            if ch in ".!?" and i > 15:
+                clip = clip[:i + 1]
+                break
+        else:
+            # No sentence end — clip at last space.
+            if len(line) > 80:
+                space = clip.rfind(" ")
+                clip = clip[:space] if space > 20 else clip
+        title = clip.strip().rstrip(".!?,:;")
+        if title:
+            return title, text
+    # Last resort: bundle-derived.
+    prs = bundle.get("merged_prs") or []
+    n = len(prs)
+    return (f"Shipped {n} PR{'s' if n != 1 else ''} today" if n else f"Dev notes — {date}"), text
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """LangGraph node entrypoint.
 
@@ -470,7 +539,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             f"Quiet day — no shipped work to report.\n\n"
             f"{_FOOTER}\n"
         )
-        return {"content": body, "model_used": "none"}
+        return {"content": body, "model_used": "none", "title": f"Quiet day — {date}"}
 
     # DI seam (glad-labs-stack#330) — atoms read site_config from state.
     # 2026-05-12 (poindexter#485): replaced the three-place hardcoded
@@ -517,16 +586,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         f"these specific PRs and commits, NOT about any title or topic "
         f"string outside this block):\n\n{bundle_text}\n\n"
         f"---\n\n"
-        f"Now write the dev_diary post. Open by referencing a specific "
-        f"merged PR from the BUNDLE above by its actual title and "
-        f"number — quote the title verbatim or paraphrase tightly from "
-        f"the PR body. Every claim about what shipped today comes from "
-        f"a PR or commit in the BUNDLE. Cite PRs inline as plain text "
-        f"`(PR #N)` — do NOT emit URLs or markdown links to GitHub, "
-        f"the source repo is private. Follow the system prompt's "
-        f"voice + grounding rules. Output starts with the first letter "
-        f"of paragraph one and ends with the last letter of the "
-        f"closing paragraph."
+        f"Now write the dev_diary post. First line must be:\n"
+        f"TITLE: [specific headline — not a date, not 'Dev diary for ...']\n\n"
+        f"Then a blank line, then the narrative. Open the narrative by "
+        f"referencing a specific merged PR from the BUNDLE above by its "
+        f"actual title and number — quote the title verbatim or "
+        f"paraphrase tightly from the PR body. Every claim about what "
+        f"shipped today comes from a PR or commit in the BUNDLE. Cite "
+        f"PRs inline as plain text `(PR #N)` — do NOT emit URLs or "
+        f"markdown links to GitHub, the source repo is private. Follow "
+        f"the system prompt's voice + grounding rules."
     )
 
     # Route through the shared helper so this atom honors the
@@ -553,7 +622,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         )
         raw = ""
 
-    prose = _scrub_private_repo_refs(_maybe_unwrap_json(raw).strip())
+    cleaned_raw = _scrub_private_repo_refs(_maybe_unwrap_json(raw).strip())
+    post_title, prose = _parse_title_and_prose(cleaned_raw, bundle, date)
     if not prose:
         # Graceful fallback so the post still ships. Instead of a single
         # "we shipped N PRs" sentence (which produced visibly thin posts
@@ -574,6 +644,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             parts.append(f"{commit_n} notable commit{'s' if commit_n != 1 else ''}")
         if not parts:
             prose = "Quiet day — no shipped work to report."
+            post_title = f"Quiet day — {date}"
         else:
             header_line = (
                 f"The narrative writer was unavailable this run, so here's the "
@@ -605,6 +676,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 sections.extend(commit_lines)
                 sections.append("")
             prose = "\n".join(sections).rstrip()
+            post_title = f"Shipped {' and '.join(parts)} — {date}"
 
     body = (
         f"{_HEADER_PREFIX}{date}\n\n"
@@ -616,6 +688,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "content": body,
+        "title": post_title,
         "model_used": model,
         "_narrate_bundle_ran": True,
         # Deterministic quality_score for downstream finalize_task +

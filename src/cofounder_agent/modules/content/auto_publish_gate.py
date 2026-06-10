@@ -59,10 +59,93 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Structural requirement constants (template-level, no LLM)
+# ---------------------------------------------------------------------------
+
+# Title patterns that look like a bare date with no substantive heading.
+# Matched case-insensitively against the stripped title.
+_DATE_ONLY_PATTERNS = (
+    re.compile(r"^\d{4}-\d{2}-\d{2}$"),
+    re.compile(
+        r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+        r",?\s+\w+\s+\d{1,2},?\s*\d{0,4}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(january|february|march|april|may|june|july|august|"
+        r"september|october|november|december)\s+\d{1,2},?\s+\d{4}$",
+        re.IGNORECASE,
+    ),
+    # dev_diary header used verbatim as title
+    re.compile(r"^what\s+we\s+shipped\s+on\s+", re.IGNORECASE),
+)
+
+# Substrings that identify boilerplate-only lines (case-insensitive).
+_BOILERPLATE_SUBSTRINGS = (
+    "auto-compiled by poindexter",
+    "see the work: github.com/glad-labs",
+)
+
+# Minimum real-prose word count after stripping H1 headers + boilerplate.
+_MIN_BODY_WORDS = 30
+
+
+def _check_structural_requirements(
+    title: str | None,
+    content: str | None,
+    excerpt: str | None,
+) -> tuple[bool, str]:
+    """Deterministic structural checks — no LLM, cannot flake.
+
+    Returns ``(passed, reason)``. Called by :func:`evaluate` as Gate
+    condition 2.5 — after the score clears the threshold, before the
+    (potentially DB-hitting) trailing clean-run history fetch.
+
+    Three checks:
+    1. Excerpt must be non-empty (proxy for "body has real prose").
+    2. Body must have >= _MIN_BODY_WORDS words after stripping H1
+       headers and known boilerplate lines (header + footer).
+    3. Title must not look like a bare date.
+    """
+    excerpt_s = (excerpt or "").strip()
+    content_s = (content or "").strip()
+    title_s = (title or "").strip()
+
+    # Check 1: excerpt must exist — empty excerpt means no extractable prose.
+    if not excerpt_s:
+        return False, (
+            "excerpt is empty — body likely contains no prose beyond boilerplate"
+        )
+
+    # Check 2: body must have real content beyond header/footer.
+    real_lines = [
+        line
+        for line in content_s.splitlines()
+        if line.strip()
+        and not line.strip().startswith("# ")
+        and not any(b in line.lower() for b in _BOILERPLATE_SUBSTRINGS)
+    ]
+    word_count = len(" ".join(real_lines).split())
+    if word_count < _MIN_BODY_WORDS:
+        return False, (
+            f"body has only {word_count} real word(s) beyond boilerplate "
+            f"(minimum {_MIN_BODY_WORDS})"
+        )
+
+    # Check 3: title must not be just a date.
+    if title_s:
+        for pat in _DATE_ONLY_PATTERNS:
+            if pat.match(title_s):
+                return False, f"title looks like a bare date: {title_s!r}"
+
+    return True, "structural checks passed"
 
 
 @dataclass
@@ -79,8 +162,8 @@ class AutoPublishDecision:
     would_fire is true."""
 
     gate_state: str
-    """One of 'pass', 'block_threshold', 'block_unclean', 'disabled',
-    'no_history'."""
+    """One of 'pass', 'block_threshold', 'block_structural',
+    'block_unclean', 'disabled', 'no_history'."""
 
     reason: str
     """Human-readable reason — surfaces in audit_log + Discord."""
@@ -100,6 +183,9 @@ async def evaluate(
     category: str | None,
     quality_score: float,
     platform: Any = None,
+    title: str | None = None,
+    content: str | None = None,
+    excerpt: str | None = None,
 ) -> AutoPublishDecision:
     """Evaluate the auto-publish gate for a task. Best-effort —
     exceptions return a 'disabled' decision rather than blocking
@@ -111,6 +197,11 @@ async def evaluate(
     None, returns the 'disabled' decision because every threshold
     defaults to "off" without operator-tuned settings — preserving
     the prior ``site_config``-None seam behaviour.
+
+    ``title`` / ``content`` / ``excerpt`` feed Gate condition 2.5 —
+    cheap structural checks (no LLM) that run after the score clears
+    the threshold. Defaulting to None skips the structural check for
+    callers that don't pass content, preserving backwards compatibility.
     """
     if platform is None:
         logger.debug("[auto_publish_gate] no platform handle — gate disabled")
@@ -180,6 +271,18 @@ async def evaluate(
             f"quality_score {quality_score:.1f} below threshold {threshold:.1f}"
         )
         return base
+
+    # Gate condition 2.5: structural requirements — cheap, deterministic,
+    # no LLM. Only evaluated when content was provided; callers that omit
+    # it (backwards compat) skip this gate silently.
+    if content is not None or excerpt is not None or title is not None:
+        struct_ok, struct_reason = _check_structural_requirements(
+            title, content, excerpt,
+        )
+        if not struct_ok:
+            base.gate_state = "block_structural"
+            base.reason = struct_reason
+            return base
 
     # Gate condition 3: trailing clean-run count for this niche.
     clean_runs = 0

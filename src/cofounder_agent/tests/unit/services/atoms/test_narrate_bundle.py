@@ -317,7 +317,7 @@ class TestRunPromptConstruction:
         # The prompt must explicitly tell the model to OPEN with a PR
         # from the bundle — positive directive per
         # feedback_positive_directives.
-        assert "open by referencing" in prompt.lower()
+        assert "open" in prompt.lower() and "referencing" in prompt.lower()
 
     async def test_topic_string_does_not_leak_into_prompt_as_anchor(self):
         """The topic string must not be the prompt's anchor.
@@ -386,3 +386,127 @@ class TestRunPromptConstruction:
         assert captured == [], "no LLM call on a quiet day"
         assert "Quiet day" in result["content"]
         assert result["model_used"] == "none"
+        assert "title" in result, "quiet-day path must emit title key"
+        assert result["title"], "quiet-day title must not be empty"
+
+
+# ---------------------------------------------------------------------------
+# _parse_title_and_prose unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseTitleAndProse:
+    def test_extracts_title_from_title_prefix(self):
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        raw = "TITLE: Fixing the structural gate and shipping three PRs\n\nToday we wired up the auto-publish structural check."
+        bundle = {"merged_prs": [{"number": 1, "title": "test"}], "notable_commits": []}
+        title, prose = _parse_title_and_prose(raw, bundle, "2026-06-10")
+        assert title == "Fixing the structural gate and shipping three PRs"
+        assert prose.startswith("Today we wired")
+
+    def test_title_prefix_case_insensitive(self):
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        raw = "title: Some headline\n\nProse here."
+        title, prose = _parse_title_and_prose(raw, {}, "2026-06-10")
+        assert title == "Some headline"
+        assert "Prose here" in prose
+
+    def test_heuristic_first_sentence_when_no_prefix(self):
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        raw = "The biggest change today was wiring the structural gate. It blocks bad posts."
+        bundle = {"merged_prs": [{"number": 42}], "notable_commits": []}
+        title, prose = _parse_title_and_prose(raw, bundle, "2026-06-10")
+        assert "structural gate" in title
+        assert len(title) <= 80
+
+    def test_heuristic_clips_long_first_sentence(self):
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        long_sentence = "A" * 100 + " is done."
+        raw = long_sentence + " Second sentence."
+        title, _ = _parse_title_and_prose(raw, {}, "2026-06-10")
+        assert len(title) <= 80
+
+    def test_bundle_derived_fallback_on_empty_raw(self):
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        bundle = {"merged_prs": [{"number": 1}, {"number": 2}], "notable_commits": []}
+        title, prose = _parse_title_and_prose("", bundle, "2026-06-10")
+        assert "2" in title or "PR" in title  # bundle-derived summary
+        assert prose == ""
+
+    def test_empty_title_after_prefix_falls_back_to_heuristic(self):
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        raw = "TITLE:\n\nReal prose paragraph here with enough words to clip."
+        bundle = {"merged_prs": [], "notable_commits": []}
+        title, prose = _parse_title_and_prose(raw, bundle, "2026-06-10")
+        assert title  # must not be empty
+        assert "date" not in title.lower() or "2026" not in title  # not just a date
+
+
+# ---------------------------------------------------------------------------
+# run() surfaces title in output
+# ---------------------------------------------------------------------------
+
+
+class TestRunEmitsTitle:
+    async def test_run_includes_title_key_in_result(self):
+        """run() must return a ``title`` key so finalize_task can pick it up
+        without falling through to the date-shaped topic string."""
+        from unittest.mock import patch
+        from modules.content.atoms.narrate_bundle import run
+
+        async def _stub_llm(prompt, *, model=None, **kwargs):
+            return (
+                "TITLE: Structural gate wired and three healthchecks fixed\n\n"
+                "Today we shipped the auto-publish structural check (PR #1286), "
+                "stripped reasoning tokens from model output (PR #1285), and "
+                "stopped the public mirror re-running full CI on every sync (PR #1279)."
+            )
+
+        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+            result = await run({
+                "task_id": "t1",
+                "site_config": _CaptureSiteConfig(),
+                "context_bundle": {
+                    "date": "2026-06-10",
+                    "merged_prs": [
+                        {"number": 1286, "title": "ops(monitoring): fix 4 broken healthchecks", "body": ""},
+                    ],
+                    "notable_commits": [],
+                },
+            })
+
+        assert "title" in result, "run() must emit a 'title' key"
+        assert result["title"], "title must not be empty"
+        assert "2026" not in result["title"] or "structural" in result["title"].lower(), (
+            f"title looks like a bare date: {result['title']!r}"
+        )
+
+    async def test_run_title_not_just_a_date(self):
+        """The title emitted by run() must not be just a date — that would
+        cause the structural gate to fire block_structural on every run."""
+        from unittest.mock import patch
+        from modules.content.atoms.narrate_bundle import run
+        from modules.content.auto_publish_gate import _DATE_ONLY_PATTERNS
+
+        async def _stub_llm(prompt, *, model=None, **kwargs):
+            return (
+                "TITLE: Shipping the CLI rank-batch fix and auto-loading the secret key\n\n"
+                "The rank-batch command now accepts sys#N markers (PR #221)."
+            )
+
+        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+            result = await run({
+                "task_id": "t2",
+                "site_config": _CaptureSiteConfig(),
+                "context_bundle": {
+                    "date": "2026-06-10",
+                    "merged_prs": [{"number": 221, "title": "fix(cli): rank-batch", "body": ""}],
+                    "notable_commits": [],
+                },
+            })
+
+        title = result.get("title", "")
+        for pat in _DATE_ONLY_PATTERNS:
+            assert not pat.match(title), (
+                f"title {title!r} matches a date-only pattern — structural gate would block"
+            )

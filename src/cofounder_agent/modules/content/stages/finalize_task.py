@@ -394,6 +394,9 @@ class FinalizeTaskStage:
                 category=category,
                 quality_score=float(final_quality_score or 0),
                 platform=platform,
+                title=final_title,
+                content=content_text,
+                excerpt=excerpt_text,
             )
             # Seam 1 Wave 3c (#667) — audit through the capability handle.
             # platform is already extracted above (Wave 3e).

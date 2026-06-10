@@ -193,7 +193,7 @@
       "id": 5,
       "type": "piechart",
       "title": "Gate state distribution (last 7 days)",
-      "description": "Where the gate landed per evaluation: pass means it would have auto-published; block_threshold/block_unclean/no_history/disabled mean it correctly held back.",
+      "description": "Where the gate landed per evaluation: pass means it would have auto-published; block_threshold/block_structural/block_unclean/no_history/disabled mean it correctly held back.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -422,6 +422,9 @@
                       },
                       "block_threshold": {
                         "color": "yellow"
+                      },
+                      "block_structural": {
+                        "color": "red"
                       },
                       "block_unclean": {
                         "color": "orange"

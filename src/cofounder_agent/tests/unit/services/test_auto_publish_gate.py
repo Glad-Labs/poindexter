@@ -468,3 +468,173 @@ async def test_history_query_filters_on_niche_OR_category() -> None:
     assert args[1] == "engineering"
     # LIMIT is max(min_clean, 1) = 3.
     assert args[2] == 3
+
+
+# ---------------------------------------------------------------------------
+# Structural requirements (_check_structural_requirements unit tests)
+# ---------------------------------------------------------------------------
+
+_REAL_CONTENT = (
+    "# What we shipped on 2026-06-09\n\n"
+    "Today we wired the auto-publish structural gate. The check strips boilerplate "
+    "headers and footers and counts real prose words, so a diary entry that consists "
+    "of nothing but the template scaffolding can't slip through to auto-publish. "
+    "Three PRs landed: #1286 (healthcheck fixes), #1285 (reasoning-token strip), "
+    "and #1279 (CI mirror dedup). Each one is worth a sentence of context.\n\n"
+    "_Auto-compiled by Poindexter from today's commits and PRs. "
+    "[See the work: github.com/Glad-Labs/poindexter](https://github.com/Glad-Labs/poindexter)._"
+)
+_REAL_EXCERPT = "Today we wired the auto-publish structural gate, adding three cheap deterministic checks."
+_REAL_TITLE = "Wiring the structural gate and shipping three healthcheck fixes"
+
+
+def test_structural_pass_with_real_content() -> None:
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    ok, reason = _check_structural_requirements(_REAL_TITLE, _REAL_CONTENT, _REAL_EXCERPT)
+    assert ok is True, f"expected pass, got: {reason}"
+
+
+def test_structural_fails_on_empty_excerpt() -> None:
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    ok, reason = _check_structural_requirements(_REAL_TITLE, _REAL_CONTENT, "")
+    assert ok is False
+    assert "excerpt" in reason.lower()
+
+
+def test_structural_fails_on_short_body() -> None:
+    """A post that's just the boilerplate header + footer has too few real words."""
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    boilerplate_only = (
+        "# What we shipped on 2026-06-09\n\n"
+        "_Auto-compiled by Poindexter from today's commits and PRs. "
+        "[See the work: github.com/Glad-Labs/poindexter]._"
+    )
+    ok, reason = _check_structural_requirements(_REAL_TITLE, boilerplate_only, _REAL_EXCERPT)
+    assert ok is False
+    assert "boilerplate" in reason.lower()
+
+
+def test_structural_fails_on_iso_date_title() -> None:
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    ok, reason = _check_structural_requirements("2026-06-09", _REAL_CONTENT, _REAL_EXCERPT)
+    assert ok is False
+    assert "date" in reason.lower()
+
+
+def test_structural_fails_on_weekday_date_title() -> None:
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    ok, reason = _check_structural_requirements("Monday, June 9", _REAL_CONTENT, _REAL_EXCERPT)
+    assert ok is False
+    assert "date" in reason.lower()
+
+
+def test_structural_fails_on_shipped_on_title() -> None:
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    ok, reason = _check_structural_requirements(
+        "What we shipped on 2026-06-09", _REAL_CONTENT, _REAL_EXCERPT
+    )
+    assert ok is False
+    assert "date" in reason.lower()
+
+
+def test_structural_fails_on_month_day_year_title() -> None:
+    from modules.content.auto_publish_gate import _check_structural_requirements
+    ok, reason = _check_structural_requirements("June 9, 2026", _REAL_CONTENT, _REAL_EXCERPT)
+    assert ok is False
+    assert "date" in reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# Structural gate wired through evaluate()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_block_structural_on_empty_excerpt() -> None:
+    """Gate condition 2.5: empty excerpt → block_structural before history fetch."""
+    from modules.content.auto_publish_gate import evaluate
+
+    site_config = _make_platform({
+        "dev_diary_auto_publish_threshold": "70",
+        "dev_diary_auto_publish_dry_run": "false",
+        "dev_diary_auto_publish_min_clean_runs": "3",
+        "dev_diary_auto_publish_max_edit_distance": "50",
+    })
+
+    decision = await evaluate(
+        _make_pool(),
+        task_id="t1",
+        niche_slug="dev_diary",
+        category="dev",
+        quality_score=92.0,
+        platform=site_config,
+        title=_REAL_TITLE,
+        content=_REAL_CONTENT,
+        excerpt="",  # empty excerpt → block
+    )
+
+    assert decision.would_fire is False
+    assert decision.gate_state == "block_structural"
+    assert "excerpt" in decision.reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_block_structural_on_date_only_title() -> None:
+    from modules.content.auto_publish_gate import evaluate
+
+    site_config = _make_platform({
+        "dev_diary_auto_publish_threshold": "70",
+        "dev_diary_auto_publish_dry_run": "false",
+        "dev_diary_auto_publish_min_clean_runs": "3",
+        "dev_diary_auto_publish_max_edit_distance": "50",
+    })
+
+    decision = await evaluate(
+        _make_pool(),
+        task_id="t1",
+        niche_slug="dev_diary",
+        category="dev",
+        quality_score=92.0,
+        platform=site_config,
+        title="2026-06-09",
+        content=_REAL_CONTENT,
+        excerpt=_REAL_EXCERPT,
+    )
+
+    assert decision.would_fire is False
+    assert decision.gate_state == "block_structural"
+
+
+@pytest.mark.asyncio
+async def test_evaluate_skips_structural_check_when_args_omitted() -> None:
+    """Backwards compat: callers that don't pass title/content/excerpt must not
+    suddenly get block_structural. The gate skips the check when all three are None."""
+    from modules.content.auto_publish_gate import evaluate
+
+    site_config = _make_platform({
+        "dev_diary_auto_publish_threshold": "70",
+        "dev_diary_auto_publish_dry_run": "false",
+        "dev_diary_auto_publish_min_clean_runs": "3",
+        "dev_diary_auto_publish_max_edit_distance": "50",
+    })
+
+    pool = _make_pool([
+        {"char_diff_count": 5},
+        {"char_diff_count": 10},
+        {"char_diff_count": 15},
+    ])
+
+    decision = await evaluate(
+        pool,
+        task_id="t1",
+        niche_slug="dev_diary",
+        category="dev",
+        quality_score=92.0,
+        platform=site_config,
+        # title/content/excerpt omitted → structural check skipped
+    )
+
+    assert decision.gate_state != "block_structural", (
+        "Structural check fired with all-None inputs — breaks backwards compat"
+    )
+    assert decision.gate_state == "pass"
