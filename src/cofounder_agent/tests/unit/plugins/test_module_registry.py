@@ -155,6 +155,38 @@ def test_get_modules_drops_duplicate_names(caplog):
 
 
 @pytest.mark.unit
+def test_merge_dedups_core_sample_and_entry_point_module_silently(caplog):
+    """A module discovered via BOTH the imperative core-samples fallback
+    AND a ``poindexter.modules`` entry-point — the steady state once the
+    package is editable-installed — must merge to ONE instance, silently.
+
+    Regression for the ``duplicate module ... already registered`` WARNING
+    that printed on every CLI invocation (content + finance). The merge
+    de-dups capability plugins by their ``.name`` attribute, but Modules
+    expose their name via ``manifest().name``; before the fix they keyed on
+    ``id()``, never collided across the two sources, and both survived into
+    ``_validate_modules`` which warned. The entry-point instance must win —
+    same installed/third-party-override precedence as every other plugin.
+    """
+    sample = _make_module(name="content", version="0.1.0")  # core-sample fallback
+    ep = _make_module(name="content", version="9.9.9")       # entry-point (installed)
+    with patch("plugins.registry.get_core_samples", return_value={"modules": [sample]}), \
+         patch("plugins.registry._cached", return_value=(ep,)):
+        with caplog.at_level("WARNING", logger="plugins.registry"):
+            result = get_modules()
+    # Exactly one survivor, and it's the entry-point instance (precedence).
+    assert len(result) == 1
+    assert result[0] is ep
+    assert result[0].manifest().version == "9.9.9"
+    # The whole point: NO duplicate-module warning reaches the operator.
+    dup_warnings = [
+        r for r in caplog.records
+        if r.name == "plugins.registry" and "duplicate module" in r.message
+    ]
+    assert dup_warnings == []
+
+
+@pytest.mark.unit
 def test_get_modules_includes_in_tree_content_module():
     """Phase 3-lite contract — ``ContentModule`` (registered as a
     core sample in ``plugins/registry.py:_SAMPLES``) shows up in

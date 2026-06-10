@@ -255,6 +255,35 @@ def _cached(group: str) -> tuple[Any, ...]:
     return tuple(_load_group(group))
 
 
+def _dedup_key(inst: Any) -> Any:
+    """De-dup identity for a discovered plugin/module instance.
+
+    Capability plugins (LLMProvider, Tap, Stage, …) carry a ``.name``
+    attribute, so that's the key — the entry_point copy and the core-sample
+    copy collapse to one entry (entry_point wins, see ``_merge_with_core_samples``).
+
+    ``Module`` instances are the exception: their canonical slug lives on
+    ``manifest().name``, not a ``.name`` attribute (see ``_validate_modules``).
+    Falling back to ``manifest().name`` keeps Modules on the same de-dup path
+    as everything else. Without it a Module keys on ``id()`` — which never
+    collides across the two discovery sources — so ``content`` / ``finance``
+    survived twice and tripped the 'duplicate module' WARNING in
+    ``_validate_modules`` on every boot once the package was editable-installed.
+    """
+    name = getattr(inst, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    manifest_fn = getattr(inst, "manifest", None)
+    if callable(manifest_fn):
+        try:
+            mname = getattr(manifest_fn(), "name", None)
+        except Exception:
+            mname = None
+        if isinstance(mname, str) and mname:
+            return mname
+    return id(inst)
+
+
 def _merge_with_core_samples(group_key: str, ep_group: str) -> list[Any]:
     """Merge entry_point-discovered plugins with imperatively-loaded
     core samples.
@@ -268,17 +297,19 @@ def _merge_with_core_samples(group_key: str, ep_group: str) -> list[Any]:
     ``get_topic_sources()``, etc.) silently sees an empty list — which
     is how niche topic discovery has been quietly broken.
 
-    De-dup is by ``.name`` attribute: an entry_point provider with the
-    same name as a core sample wins, so third-party overrides still
-    take precedence when packaging is fixed.
+    De-dup is by :func:`_dedup_key` (``.name`` attribute, falling back to
+    ``manifest().name`` for Modules): an entry_point instance with the same
+    key as a core sample wins, so third-party overrides still take precedence
+    once the package is editable-installed. Modules MUST share this path or
+    they survive twice and warn — see :func:`_dedup_key`.
     """
     ep_instances = list(_cached(ep_group))
     samples = get_core_samples().get(group_key, [])
     by_name: dict[Any, Any] = {}
     for inst in samples:
-        by_name[getattr(inst, "name", id(inst))] = inst
+        by_name[_dedup_key(inst)] = inst
     for inst in ep_instances:
-        by_name[getattr(inst, "name", id(inst))] = inst
+        by_name[_dedup_key(inst)] = inst
     return list(by_name.values())
 
 
