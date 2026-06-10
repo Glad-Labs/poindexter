@@ -12,12 +12,20 @@ free helpers to constructor DI. ``WebResearcher`` now takes
 """
 
 import asyncio
+import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.site_config import SiteConfig
 from services.web_research import WebResearcher
+
+# getaddrinfo result that resolves any hostname to a public IP, so the
+# url_scraper SSRF guard (run before every fetch + after every redirect)
+# lets the request through. Shape matches socket.getaddrinfo's 5-tuples.
+_PUBLIC_ADDRINFO = [
+    (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 443)),
+]
 
 
 class TestSearchSimple:
@@ -63,9 +71,11 @@ class TestDDGSearch:
 class TestExtractContent:
     async def test_extracts_from_html(self):
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
+            mock_response.headers = {}
             mock_response.text = """
             <html><body>
             <article>
@@ -85,9 +95,11 @@ class TestExtractContent:
 
     async def test_handles_404(self):
         researcher = WebResearcher(site_config=SiteConfig())
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 404
+            mock_response.headers = {}
             mock_instance = AsyncMock()
             mock_instance.get = AsyncMock(return_value=mock_response)
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -100,6 +112,42 @@ class TestExtractContent:
     async def test_empty_url_returns_empty(self):
         researcher = WebResearcher(site_config=SiteConfig())
         content = await researcher._extract_content("")
+        assert content == ""
+
+
+class TestExtractContentSSRF:
+    """#1289 — DuckDuckGo result URLs are attacker-influenceable, so
+    ``_extract_content`` routes every fetch through the shared url_scraper
+    SSRF guard. Internal targets must be refused (degrade to "") instead of
+    302-ing into the localhost admin plane. Literal-IP cases need no network:
+    the denylist rejects before DNS, so if the guard regressed these tests
+    would actually try to reach Prometheus / the metadata endpoint."""
+
+    async def test_blocks_loopback_literal(self):
+        researcher = WebResearcher(site_config=SiteConfig())
+        content = await researcher._extract_content("http://127.0.0.1:9091/metrics")
+        assert content == ""
+
+    async def test_blocks_cloud_metadata_literal(self):
+        researcher = WebResearcher(site_config=SiteConfig())
+        content = await researcher._extract_content(
+            "http://169.254.169.254/latest/meta-data/"
+        )
+        assert content == ""
+
+    async def test_blocks_redirect_to_internal(self):
+        """A public result page that 302s to localhost is refused at the hop."""
+        researcher = WebResearcher(site_config=SiteConfig())
+        redirect = MagicMock()
+        redirect.status_code = 302
+        redirect.headers = {"location": "http://127.0.0.1:9091/metrics"}
+        mock_instance = AsyncMock()
+        mock_instance.get = AsyncMock(return_value=redirect)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO), \
+                patch("httpx.AsyncClient", return_value=mock_instance):
+            content = await researcher._extract_content("https://attacker.example/post")
         assert content == ""
 
 

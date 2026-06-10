@@ -34,6 +34,7 @@ from bs4 import BeautifulSoup
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from services.url_scraper import URLScrapeError, _safe_get
 
 logger = get_logger(__name__)
 
@@ -174,7 +175,20 @@ class WebResearcher:
         return []
 
     async def _extract_content(self, url: str) -> str:
-        """Fetch a URL and extract clean text content."""
+        """Fetch a URL and extract clean text content.
+
+        Fetches go through the shared SSRF guard (``url_scraper._safe_get``):
+        redirects are followed manually with an IP-denylist re-check on every
+        hop (loopback / RFC1918 / link-local / cloud-metadata / CGNAT / IPv6
+        ULA). DuckDuckGo search results are attacker-influenceable open-web
+        pages, and the worker co-hosts Prometheus / pgAdmin / Postgres on
+        localhost — so without this a result page can 302 us into the internal
+        admin plane and bleed those responses into draft research text (#1289).
+
+        A blocked or failed fetch degrades to "" exactly like any other fetch
+        miss, so legitimate URLs are unaffected. Operators who genuinely need
+        internal scraping flip ``app_settings.url_scraper_allow_internal_ips``.
+        """
         if not url:
             return ""
 
@@ -182,14 +196,15 @@ class WebResearcher:
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(_fetch_timeout, connect=3.0),
-                follow_redirects=True,
+                follow_redirects=False,  # _safe_get does manual redirects + per-hop IP re-check
             ) as client:
-                resp = await client.get(
+                resp = await _safe_get(
+                    client,
                     url,
-                    headers={
+                    self._site_config,
+                    extra_headers={
                         "User-Agent": "Mozilla/5.0 (compatible; ContentResearcher/1.0)",
                     },
-                    timeout=_fetch_timeout,
                 )
                 if resp.status_code != 200:
                     return ""
@@ -214,6 +229,12 @@ class WebResearcher:
 
                 return clean[: self._web_research_int("max_content_chars", MAX_CONTENT_CHARS)]
 
+        except URLScrapeError as e:
+            # SSRF guard fired (internal IP / non-http redirect) or DNS/redirect
+            # failure. Log louder than a generic miss so a blocked fetch is
+            # visible on the surface, then degrade to "" like any failed fetch.
+            logger.warning("[RESEARCH] Refused/failed fetch for %s: %s", url[:80], e)
+            return ""
         except Exception as e:
             logger.debug("[RESEARCH] Content extraction failed for %s: %s", url[:50], e)
             return ""
