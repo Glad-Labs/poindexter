@@ -279,8 +279,16 @@ def _discover_network(worker: str = WORKER_CONTAINER) -> str | None:
 
 
 def _remove_container(name: str) -> None:
-    """`docker rm -f` — idempotent, errors ignored (may not exist)."""
-    _run_cmd(["docker", "rm", "-f", name], _DOCKER_CMD_TIMEOUT)
+    """`docker rm -f -v` — idempotent, errors ignored (may not exist).
+
+    ``-v`` removes the container's anonymous volumes too. The throwaway runs
+    on the stock ``pgvector`` image, which declares ``VOLUME
+    /var/lib/postgresql/data``, so each run spawns a fresh ~1.3 GB anonymous
+    volume. Without ``-v`` every daily run orphaned one (poindexter#441 disk
+    leak). ``-v`` only deletes *anonymous* volumes — named volumes are never
+    touched — so it can't endanger the real ``postgres-local`` data.
+    """
+    _run_cmd(["docker", "rm", "-f", "-v", name], _DOCKER_CMD_TIMEOUT)
 
 
 def _start_container(name: str, image: str, network: str | None,

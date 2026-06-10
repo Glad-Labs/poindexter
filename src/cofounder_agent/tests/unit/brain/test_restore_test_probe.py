@@ -189,6 +189,19 @@ def test_table_count_none_on_nonzero(monkeypatch):
     assert rt._table_count("c", "db", "missing") is None
 
 
+def test_remove_container_passes_volume_flag(monkeypatch):
+    """Teardown must include ``-v`` so the throwaway's anonymous pgvector data
+    volume is deleted along with the container. ``docker rm -f`` WITHOUT ``-v``
+    orphans a ~1.3 GB volume on every daily run — the poindexter#441 disk
+    leak. ``-v`` only removes anonymous volumes, so named volumes are safe."""
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        rt, "_run_cmd",
+        lambda cmd, timeout: captured.append(cmd) or (0, "", ""))
+    rt._remove_container("poindexter-restore-test")
+    assert captured == [["docker", "rm", "-f", "-v", "poindexter-restore-test"]]
+
+
 # ---------------------------------------------------------------------------
 # Verdict policy
 # ---------------------------------------------------------------------------
