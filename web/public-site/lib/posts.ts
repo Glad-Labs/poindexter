@@ -1,4 +1,5 @@
 import logger from './logger';
+import * as Sentry from '@sentry/nextjs';
 /**
  * Posts API Functions
  *
@@ -166,23 +167,30 @@ export function postExcerpt(
  * the featured slot, and prev/next adjacency all depend on this order.
  */
 async function fetchPostIndex(): Promise<Post[]> {
-  try {
-    const response = await fetch(`${STATIC_URL}/posts/index.json`, {
-      // Tag-based cache: invalidated by revalidateTag('posts') on publish.
-      // No TTL — stays fresh until an explicit invalidation fires.
-      next: { tags: ['posts', 'post-index'] },
-    });
+  const response = await fetch(`${STATIC_URL}/posts/index.json`, {
+    // Tag-based cache: invalidated by revalidateTag('posts') on publish.
+    // No TTL — stays fresh until an explicit invalidation fires.
+    next: { tags: ['posts', 'post-index'] },
+  });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch post index: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return sortPostsNewestFirst(data.posts || []);
-  } catch (error) {
-    logger.error('Error fetching post index:', error);
+  if (response.status === 404) {
+    // Index not yet published — treat as empty, not an error.
     return [];
   }
+
+  if (!response.ok) {
+    // 5xx or unexpected status: throw so ISR keeps the stale cache instead
+    // of replacing it with an empty array (which would poison every listing page).
+    const err = new Error(
+      `fetchPostIndex: R2 returned ${response.status} ${response.statusText}`,
+    );
+    console.error('[posts] fetchPostIndex failed:', err.message);
+    Sentry.captureException(err);
+    throw err;
+  }
+
+  const data = await response.json();
+  return sortPostsNewestFirst(data.posts || []);
 }
 
 /**
@@ -206,23 +214,30 @@ export async function getPosts(page: number = 1): Promise<PostsResponse> {
  * Fetch a single post by slug (with full content)
  */
 export async function getPostBySlug(slug: string): Promise<Post | null> {
-  try {
-    const response = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
-      // Tag-based cache: invalidated by revalidateTag('post:<slug>') on publish.
-      // This fixes the "post not found for 5 minutes" issue where null
-      // responses were TTL-cached for 300s after approval.
-      next: { tags: ['posts', `post:${slug}`] },
-    });
+  const response = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
+    // Tag-based cache: invalidated by revalidateTag('post:<slug>') on publish.
+    // This fixes the "post not found for 5 minutes" issue where null
+    // responses were TTL-cached for 300s after approval.
+    next: { tags: ['posts', `post:${slug}`] },
+  });
 
-    if (!response.ok) {
-      return null;
-    }
-
-    return await response.json();
-  } catch (error) {
-    logger.error(`Error fetching post with slug ${slug}:`, error);
+  if (response.status === 404) {
+    // Genuinely missing post — caller renders notFound().
     return null;
   }
+
+  if (!response.ok) {
+    // 5xx or unexpected status: throw so ISR keeps the stale cached post
+    // instead of serving a 404 to readers during an R2 outage.
+    const err = new Error(
+      `getPostBySlug(${slug}): R2 returned ${response.status} ${response.statusText}`,
+    );
+    console.error('[posts] getPostBySlug failed:', err.message);
+    Sentry.captureException(err);
+    throw err;
+  }
+
+  return await response.json();
 }
 
 /**

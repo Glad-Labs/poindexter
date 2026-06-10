@@ -22,6 +22,11 @@ jest.mock('./logger', () => ({
   },
 }));
 
+// Mock Sentry so captureException calls don't fail in tests
+jest.mock('@sentry/nextjs', () => ({
+  captureException: jest.fn(),
+}));
+
 // Mock fetch
 global.fetch = jest.fn();
 
@@ -110,11 +115,23 @@ describe('Posts API (lib/posts.ts)', () => {
       expect(calledUrl).toContain('/posts/index.json');
     });
 
-    it('should return empty result on API error', async () => {
+    it('should throw on R2 5xx so ISR keeps stale cache', async () => {
+      // fetchPostIndex now throws on 5xx — ISR keeps the stale page instead
+      // of replacing it with an empty array (#1319).
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
+      });
+
+      await expect(getPosts()).rejects.toThrow('R2 returned 500');
+    });
+
+    it('should return empty result on 404 (index not yet published)', async () => {
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
       });
 
       const result = await getPosts();
@@ -123,13 +140,10 @@ describe('Posts API (lib/posts.ts)', () => {
       expect(result.total).toBe(0);
     });
 
-    it('should return empty result on network error', async () => {
+    it('should propagate network errors so ISR keeps stale cache', async () => {
       (fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
-      const result = await getPosts();
-
-      expect(result.posts).toEqual([]);
-      expect(result.total).toBe(0);
+      await expect(getPosts()).rejects.toThrow('Network error');
     });
 
     it('should calculate totalPages correctly', async () => {
@@ -170,7 +184,7 @@ describe('Posts API (lib/posts.ts)', () => {
       );
     });
 
-    it('should return null on post not found', async () => {
+    it('should return null on true 404 (post does not exist)', async () => {
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -180,6 +194,16 @@ describe('Posts API (lib/posts.ts)', () => {
       const result = await getPostBySlug('nonexistent');
 
       expect(result).toBeNull();
+    });
+
+    it('should throw on R2 5xx so ISR keeps stale post page (#1319)', async () => {
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+      });
+
+      await expect(getPostBySlug('my-post')).rejects.toThrow('R2 returned 503');
     });
 
     it('should include post content', async () => {

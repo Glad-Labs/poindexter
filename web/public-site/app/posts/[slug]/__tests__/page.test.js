@@ -204,14 +204,16 @@ describe('Post Detail Page', () => {
   });
 
   describe('API error', () => {
-    it('calls notFound() when fetch throws', async () => {
+    // Network errors and 5xx propagate as thrown errors so Next.js ISR keeps
+    // the stale cached page instead of replacing it with a 404 (#1319).
+    it('propagates the error when fetch throws (ISR keeps stale cache)', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
 
       await expect(
         PostPage({ params: Promise.resolve({ slug: 'ai-in-healthcare' }) })
-      ).rejects.toThrow('NEXT_NOT_FOUND');
+      ).rejects.toThrow('Network error');
 
-      expect(mockNotFound).toHaveBeenCalled();
+      expect(mockNotFound).not.toHaveBeenCalled();
     });
   });
 });

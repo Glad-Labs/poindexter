@@ -1,4 +1,5 @@
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site.config';
 
@@ -41,52 +42,59 @@ const STATIC_URL =
  */
 
 async function fetchPublishedContent() {
-  try {
-    // Fetch posts, categories, and sitemap data in parallel
-    // Tag-based cache — all three JSON blobs are regenerated on publish, so
-    // they share the 'posts' tag and get killed by revalidateTag('posts')
-    // instead of waiting out a 300s TTL (#967).
-    const [postsRes, categoriesRes, sitemapRes] = await Promise.all([
-      fetch(`${STATIC_URL}/posts/index.json`, {
-        next: { tags: ['posts', 'post-index'] },
-      }),
-      fetch(`${STATIC_URL}/categories.json`, {
-        next: { tags: ['posts', 'post-index'] },
-      }),
-      fetch(`${STATIC_URL}/sitemap.json`, {
-        next: { tags: ['posts', 'post-index'] },
-      }),
-    ]);
+  // Fetch posts, categories, and sitemap data in parallel.
+  // Tag-based cache — all three JSON blobs are regenerated on publish, so
+  // they share the 'posts' tag and get killed by revalidateTag('posts')
+  // instead of waiting out a 300s TTL (#967).
+  const [postsRes, categoriesRes, sitemapRes] = await Promise.all([
+    fetch(`${STATIC_URL}/posts/index.json`, {
+      next: { tags: ['posts', 'post-index'] },
+    }),
+    fetch(`${STATIC_URL}/categories.json`, {
+      next: { tags: ['posts', 'post-index'] },
+    }),
+    fetch(`${STATIC_URL}/sitemap.json`, {
+      next: { tags: ['posts', 'post-index'] },
+    }),
+  ]);
 
-    const allPosts: Post[] = postsRes.ok
-      ? (await postsRes.json()).posts || []
-      : [];
-
-    let allCategories: Category[] = [];
-    if (categoriesRes.ok) {
-      const catData = await categoriesRes.json();
-      allCategories = catData.categories || catData || [];
-    }
-
-    // Extract unique tags from sitemap.json tag URLs, or fall back to empty
-    let allTags: Tag[] = [];
-    if (sitemapRes.ok) {
-      const sitemapData = await sitemapRes.json();
-      const urls: { loc: string }[] = sitemapData.urls || sitemapData || [];
-      allTags = urls
-        .filter((u) => u.loc && u.loc.includes('/tag/'))
-        .map((u) => {
-          const slug = u.loc.split('/tag/').pop()?.replace(/\/$/, '') || '';
-          return { slug };
-        })
-        .filter((t) => t.slug);
-    }
-
-    return { allPosts, allCategories, allTags };
-  } catch (error) {
-    logger.error('Error fetching content for sitemap:', error);
-    return { allPosts: [], allCategories: [], allTags: [] };
+  // For each response: throw on 5xx (ISR keeps stale sitemap), empty on 404.
+  function assertOkOrEmpty(res: Response, label: string): boolean {
+    if (res.ok) return true;
+    if (res.status === 404) return false;
+    const err = new Error(
+      `fetchPublishedContent(${label}): R2 returned ${res.status} ${res.statusText}`,
+    );
+    console.error('[sitemap] fetchPublishedContent failed:', err.message);
+    Sentry.captureException(err);
+    throw err;
   }
+
+  const allPosts: Post[] = assertOkOrEmpty(postsRes, 'posts/index.json')
+    ? (await postsRes.json()).posts || []
+    : [];
+
+  let allCategories: Category[] = [];
+  if (assertOkOrEmpty(categoriesRes, 'categories.json')) {
+    const catData = await categoriesRes.json();
+    allCategories = catData.categories || catData || [];
+  }
+
+  // Extract unique tags from sitemap.json tag URLs, or fall back to empty.
+  let allTags: Tag[] = [];
+  if (assertOkOrEmpty(sitemapRes, 'sitemap.json')) {
+    const sitemapData = await sitemapRes.json();
+    const urls: { loc: string }[] = sitemapData.urls || sitemapData || [];
+    allTags = urls
+      .filter((u) => u.loc && u.loc.includes('/tag/'))
+      .map((u) => {
+        const slug = u.loc.split('/tag/').pop()?.replace(/\/$/, '') || '';
+        return { slug };
+      })
+      .filter((t) => t.slug);
+  }
+
+  return { allPosts, allCategories, allTags };
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

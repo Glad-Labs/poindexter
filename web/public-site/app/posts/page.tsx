@@ -10,16 +10,9 @@ import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 // publish path skips the on-demand revalidate (poindexter#575).
 export const revalidate = 3600;
 
-const POSTS_PER_PAGE = 12;
-
-async function getAllPublishedPosts() {
-  try {
-    const data = await getPosts(1);
-    return { posts: data.posts, total: data.total, error: null };
-  } catch {
-    return { posts: [], total: 0, error: 'network' };
-  }
-}
+// Must match the POSTS_PER_PAGE constant in lib/posts.ts so that totalPages
+// and the displayed slice are computed from the same denominator (#1322).
+const POSTS_PER_PAGE = 10;
 
 export const metadata: Metadata = {
   title: `All Articles | ${SITE_NAME}`,
@@ -38,7 +31,19 @@ export const metadata: Metadata = {
 };
 
 export default async function PostsPage() {
-  const { posts, total, error } = await getAllPublishedPosts();
+  // Use getPosts from lib directly — no local shadow (#1322).
+  // getPosts throws on 5xx (ISR keeps stale page); catch here to render the
+  // error card instead of a hard crash.
+  let posts: Awaited<ReturnType<typeof getPosts>>['posts'] = [];
+  let total = 0;
+  let error: string | null = null;
+  try {
+    const data = await getPosts(1);
+    posts = data.posts;
+    total = data.total;
+  } catch {
+    error = 'network';
+  }
   const totalPages = Math.ceil(total / POSTS_PER_PAGE);
 
   return (
