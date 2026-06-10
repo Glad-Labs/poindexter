@@ -13,9 +13,10 @@ Also tests the already-covered endpoints for completeness:
 
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 
-NOTE: The validated, status-history, and failures endpoints have a known bug where
-`except Exception` catches HTTPException (404/403), turning them into 500s.
-Tests reflect actual behavior and document this with comments.
+NOTE: The validated, status-history, and failures endpoints previously had a bug
+where `except Exception` caught HTTPException (404/403) and turned it into a 500.
+Fixed in poindexter#741 by adding the `except HTTPException: raise` guard the
+sibling endpoints already had — the not-found tests below now assert 404.
 """
 
 from datetime import datetime, timezone
@@ -143,9 +144,9 @@ class TestUpdateTaskStatusValidated:
         assert data["updated_by"] == "operator"
         assert "timestamp" in data
 
-    def test_task_not_found_returns_500(self):
-        """NOTE: This endpoint has a bug — HTTPException(404) is caught by
-        `except Exception` and re-raised as 500. Test documents actual behavior."""
+    def test_task_not_found_returns_404(self):
+        """poindexter#741 — a missing task must surface as 404, not be
+        swallowed into a generic 500 by the broad `except Exception`."""
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
 
@@ -159,8 +160,7 @@ class TestUpdateTaskStatusValidated:
         finally:
             patcher.stop()
 
-        # Bug: should be 404 but broad except catches HTTPException
-        assert resp.status_code == 500
+        assert resp.status_code == 404
 
     def test_ownership_bypass_in_solo_operator_mode(self):
         """NOTE: Same broad-except bug — 403 becomes 500."""
@@ -455,14 +455,13 @@ class TestGetTaskStatusHistory:
         assert data["history_count"] == 0
         assert data["history"] == []
 
-    def test_task_not_found_returns_500(self):
-        """Bug: HTTPException(404) caught by broad except -> 500."""
+    def test_task_not_found_returns_404(self):
+        """poindexter#741 — missing task surfaces as 404, not a broad-except 500."""
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
 
         resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
-        # Bug: should be 404 but broad except catches HTTPException
-        assert resp.status_code == 500
+        assert resp.status_code == 404
 
     def test_ownership_bypass_in_solo_operator_mode(self):
         """Bug: HTTPException(403) caught by broad except -> 500."""
@@ -525,7 +524,8 @@ class TestGetTaskStatusHistory:
 class TestGetTaskValidationFailures:
     """Tests for the validation failures endpoint.
 
-    NOTE: Same broad-except bug as status-history — 404/403 become 500.
+    poindexter#741 fixed the broad-except bug here — 404/403 are now preserved
+    (see test_task_not_found_returns_404 below).
     """
 
     def test_success_with_failures(self):
@@ -587,8 +587,8 @@ class TestGetTaskValidationFailures:
         assert data["failure_count"] == 0
         assert data["failures"] == []
 
-    def test_task_not_found_returns_500(self):
-        """Bug: HTTPException(404) caught by broad except -> 500."""
+    def test_task_not_found_returns_404(self):
+        """poindexter#741 — missing task surfaces as 404, not a broad-except 500."""
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
 
@@ -599,8 +599,7 @@ class TestGetTaskValidationFailures:
         finally:
             patcher.stop()
 
-        # Bug: should be 404 but broad except catches HTTPException
-        assert resp.status_code == 500
+        assert resp.status_code == 404
 
     def test_ownership_bypass_in_solo_operator_mode(self):
         """Solo-operator mode: ownership check bypassed, returns validation failures."""

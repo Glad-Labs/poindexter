@@ -1342,6 +1342,11 @@ async def process_command(
             task_id=response.get("task_id"),
             metadata=response.get("metadata"),
         )
+    except HTTPException:
+        # Preserve the deliberate 503 (orchestrator not initialized) and any
+        # other intentional HTTP status — the broad handler below would
+        # otherwise collapse it into a generic 500 (poindexter#741).
+        raise
     except Exception as e:  # pylint: disable=broad-except
         logger.error(
             f"Error processing command: {e!s} | command={command.command}", exc_info=True

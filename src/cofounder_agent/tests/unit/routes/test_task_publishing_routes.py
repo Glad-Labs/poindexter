@@ -584,6 +584,59 @@ class TestPublishTask:
         # Should still succeed despite post creation failure
         assert resp.status_code == 200
 
+    def test_publish_failure_fails_loud_not_false_success(self):
+        """poindexter#740 — when publish_post_from_task reports failure, the
+        endpoint must fail loud (502), NOT return 200 with a hardcoded
+        'published'. The task stays 'approved'; the MCP publish tool layered
+        on this response then inherits truthful reporting for free."""
+        mock_db = make_mock_db()
+        task = _make_task(status="approved", content="Body here.")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        failed = MagicMock(
+            success=False,
+            error="R2 upload failed",
+            post_id=None,
+            post_slug=None,
+            published_url=None,
+            revalidation_success=False,
+            staged=False,
+        )
+        app = _build_app(mock_db)
+        # Overrides the autouse success=True mock for this test only.
+        with patch(
+            "services.publish_service.publish_post_from_task",
+            new_callable=AsyncMock,
+            return_value=failed,
+        ):
+            client = TestClient(app)
+            resp = self._post_publish(client)
+
+        assert resp.status_code == 502
+        assert "publish failed" in resp.json()["detail"].lower()
+
+    def test_fallback_response_echoes_real_status_not_hardcoded(self):
+        """poindexter#740 — when response-model conversion fails after a
+        successful publish, the minimal fallback must echo the task's real DB
+        status (re-fetched), not a hardcoded 'published'."""
+        mock_db = make_mock_db()
+        task = _make_task(status="approved", content="Body.")
+        # The re-fetched task carries the real post-publish status. Use a
+        # distinct value so a regression that hardcodes 'published' fails here.
+        updated = _make_task(status="scheduled", content="Body.")
+        mock_db.get_task = AsyncMock(side_effect=[task, updated])
+
+        app = _build_app(mock_db)
+        with patch(
+            "routes.task_publishing_routes.ModelConverter.task_response_to_unified",
+            side_effect=RuntimeError("converter boom"),
+        ):
+            client = TestClient(app)
+            resp = self._post_publish(client)
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "scheduled"
+
 
 @pytest.mark.unit
 class TestGenerateTaskImage:

@@ -233,6 +233,20 @@ class TestGetPendingApprovals:
         resp = client.get("/api/tasks/pending-approval?limit=999")
         assert resp.status_code == 422
 
+    def test_db_failure_fails_loud_not_empty_200(self):
+        """poindexter#744 — a DB failure must surface as a 5xx, never a 200
+        with an empty queue. This is the primary HITL surface: 'database down'
+        must not be indistinguishable from 'healthy and nothing pending', or
+        work silently piles up unreviewed."""
+        mock_db = make_mock_db()
+        mock_db.get_tasks_paginated = AsyncMock(
+            side_effect=RuntimeError("connection refused")
+        )
+        client = TestClient(_build_app(mock_db), raise_server_exceptions=False)
+
+        resp = client.get("/api/tasks/pending-approval")
+        assert resp.status_code >= 500
+
 
 # ---------------------------------------------------------------------------
 # Integration-level approval lifecycle tests (Issue #560)

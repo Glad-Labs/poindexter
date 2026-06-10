@@ -661,26 +661,37 @@ async def publish_task(
 
         if not pub_result.success:
             logger.error("[publish_task] Post creation failed: %s", pub_result.error)
-            # Task stays in approved state — don't fail the request entirely
-            # but warn about the issue
-        else:
-            # Record the distribution so `content_tasks` view resolves
-            # post_id / post_slug / published_at non-NULL.
-            try:
-                from services.pipeline_db import PipelineDB
-                await PipelineDB(db_service.pool).add_distribution(
-                    task_id=task_id,
-                    target="gladlabs.io",
-                    post_id=pub_result.post_id,
-                    post_slug=pub_result.post_slug,
-                    external_url=pub_result.published_url,
-                    status="published",
-                )
-            except Exception as dist_err:
-                logger.warning(
-                    "[publish_task] pipeline_distributions write failed for %s: %s",
-                    task_id, dist_err,
-                )
+            # Fail loud (poindexter#740): the publish did NOT happen and the
+            # task is still 'approved'. Returning 200 here would make this
+            # response — and the MCP publish tool layered on it — lie about the
+            # post going live. 502: the downstream delivery (post create / ISR
+            # revalidation) failed.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Publish failed: {pub_result.error}"
+                    if pub_result.error
+                    else "Publish failed: downstream delivery error"
+                ),
+            )
+
+        # Record the distribution so `content_tasks` view resolves
+        # post_id / post_slug / published_at non-NULL.
+        try:
+            from services.pipeline_db import PipelineDB
+            await PipelineDB(db_service.pool).add_distribution(
+                task_id=task_id,
+                target="gladlabs.io",
+                post_id=pub_result.post_id,
+                post_slug=pub_result.post_slug,
+                external_url=pub_result.published_url,
+                status="published",
+            )
+        except Exception as dist_err:
+            logger.warning(
+                "[publish_task] pipeline_distributions write failed for %s: %s",
+                task_id, dist_err,
+            )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
@@ -706,9 +717,22 @@ async def publish_task(
                 "[publish_task] Response model conversion failed (%s); returning minimal response",
                 resp_err, exc_info=True,
             )
+            # Source truthful fields from the re-fetched task, falling back to
+            # the pre-publish task (always a dict — a missing task 404s above).
+            # The minimal dict MUST satisfy UnifiedTaskResponse's required
+            # fields (status, created_at, updated_at) or response-model
+            # validation turns this fallback into a 500 (poindexter#740).
+            src = updated_task if isinstance(updated_task, dict) else task
             return {  # type: ignore[return-value]
                 "id": task_id,
-                "status": "published",
+                # Echo the real DB status — never hardcode 'published'. We only
+                # reach this fallback on a successful publish (failures raise
+                # 502 above), so this reflects what actually landed (e.g.
+                # 'published', or 'approved' for a staged post) rather than
+                # asserting success blindly.
+                "status": src.get("status", "published"),
+                "created_at": src.get("created_at"),
+                "updated_at": src.get("updated_at"),
                 "published_url": pub_result.published_url,
                 "post_id": pub_result.post_id,
                 "post_slug": pub_result.post_slug,

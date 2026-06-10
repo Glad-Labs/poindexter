@@ -261,25 +261,24 @@ async def get_pending_approvals(
     try:
         get_operator_identity()  # Verify operator identity is resolvable
 
-        try:
-            result = await db_service.get_tasks_paginated(
-                offset=offset,
-                limit=limit,
-                status="awaiting_approval",
-                category=task_type,  # task_type is stored as category in database
-                light=True,  # this list only renders a 200-char content_preview (#619)
-            )
-            # get_tasks_paginated returns tuple of (tasks, total)
-            if isinstance(result, tuple):
-                pending_tasks, total = result
-            else:
-                # Fallback for dict response format
-                pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
-                total = result.get("total", 0) if isinstance(result, dict) else 0
-        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-            logger.error("Pending approval query failed: %s", e, exc_info=True)
-            pending_tasks = []
-            total = 0
+        # A DB failure here must propagate to the outer handler (→ 5xx), NOT be
+        # swallowed into an empty 200. This is the primary HITL surface: making
+        # 'database down' indistinguishable from 'healthy and nothing pending'
+        # lets work pile up silently unreviewed (poindexter#744, fail-loud).
+        result = await db_service.get_tasks_paginated(
+            offset=offset,
+            limit=limit,
+            status="awaiting_approval",
+            category=task_type,  # task_type is stored as category in database
+            light=True,  # this list only renders a 200-char content_preview (#619)
+        )
+        # get_tasks_paginated returns tuple of (tasks, total)
+        if isinstance(result, tuple):
+            pending_tasks, total = result
+        else:
+            # Fallback for dict response format
+            pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
+            total = result.get("total", 0) if isinstance(result, dict) else 0
 
         # Build response
         # Note: Database pagination is already applied by get_tasks_paginated
