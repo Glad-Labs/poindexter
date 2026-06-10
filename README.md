@@ -260,16 +260,14 @@ If any of those would block your use case, that's worth knowing before you start
 
 The engine is free and open-source under Apache 2.0. **Pro** is a subscription for operators who want production-grade output without tuning from scratch.
 
-| Tier     | Price                                                 | What you get                                                                                                                                                                 |
-| -------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free** | $0                                                    | Full pipeline engine, baseline prompts, 1 Grafana dashboard (Pipeline Operations), GitHub issues support                                                                     |
-| **Pro**  | $9/mo or $89/year (save ~17%)<br>**7-day free trial** | Production-tuned prompts (anti-hallucination, SEO, QA, research), additional Grafana dashboards, prompt updates as Matt tunes them, private VIP Discord, the Poindexter book |
+| Tier     | Price                                      | What you get                                                                                                                                                                         |
+| -------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Free** | $0                                         | Full pipeline engine, baseline prompts, 1 Grafana dashboard (Pipeline Operations), GitHub issues support                                                                             |
+| **Pro**  | See [gladlabs.ai](https://www.gladlabs.ai) | Production-tuned prompt packs exported from the live system, additional Grafana dashboards, prompt refreshes as the system is tuned, private VIP Discord, the Poindexter book (perk) |
 
 Pro exists for the obvious case: you've installed the OSS, you've seen output that's _almost_ there, and you want the version that's actually shipping content on gladlabs.io daily. Pro gives you the months of prompt tuning in a single install.
 
-- **[Start your 7-day Pro trial — $9/mo](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)**
-- [Subscribe annually — $89/year](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
-- [Compare tiers on gladlabs.io/product](https://www.gladlabs.io/product)
+- **[See Poindexter Pro → gladlabs.ai](https://www.gladlabs.ai)**
 
 ## Documentation
 

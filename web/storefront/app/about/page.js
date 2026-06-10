@@ -54,9 +54,10 @@ export default function AboutPage() {
               about.
             </p>
             <p>
-              Poindexter Pro is how you get there fastest — tuned prompts,
-              premium dashboards, and the full operator book. The Writing &amp;
-              Research site (
+              Poindexter Pro is how you get there fastest — the production-tuned
+              prompt packs, configuration, and premium dashboards from the live
+              system, the VIP Discord, and the full operator book. The Writing
+              &amp; Research site (
               <Link
                 href="https://www.gladlabs.io"
                 style={{
@@ -103,9 +104,10 @@ export default function AboutPage() {
               <em>Direct</em>
             </div>
             <p className="sf-fact__body">
-              Engine is free and open-source. Pro is $9/mo or $89/yr with a
-              7-day free trial. Cancel anytime, keep everything downloaded.
-              Stripe-less — checkout runs on Lemon Squeezy.
+              Engine is free and open-source. Poindexter Pro is $19/mo or
+              $180/yr (Founding Member rate, locked for life). Cancel anytime,
+              keep everything downloaded. Stripe-less — checkout runs on Lemon
+              Squeezy.
             </p>
           </div>
 

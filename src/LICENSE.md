@@ -45,7 +45,7 @@ premium prompts, premium seeding scripts, and VIP Discord access. Pro is
 delivered out-of-band (license-key-gated download); it does not affect
 the Apache 2.0 license terms of this repository.
 
-For Pro details: https://gladlabs.io/product
+For Pro details: https://gladlabs.ai
 
 ---
 

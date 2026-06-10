@@ -15,7 +15,7 @@ export function SiteNav() {
         </Link>
         <div className="sf-nav__links">
           <Link href="/guide" className="sf-nav__link">
-            The Guide
+            Pricing
           </Link>
           <Link href="/about" className="sf-nav__link">
             About

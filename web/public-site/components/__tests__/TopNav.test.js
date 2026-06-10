@@ -44,6 +44,15 @@ describe('TopNavigation', () => {
     expect(screen.getByRole('link', { name: 'Explore' })).toBeInTheDocument();
   });
 
+  it('renders the Poindexter store cross-link to gladlabs.ai', () => {
+    render(<TopNavigation />);
+    const storeLinks = screen.getAllByRole('link', { name: /Poindexter/i });
+    expect(storeLinks.length).toBeGreaterThan(0);
+    storeLinks.forEach((link) =>
+      expect(link).toHaveAttribute('href', 'https://www.gladlabs.ai')
+    );
+  });
+
   it('renders home logo link', () => {
     render(<TopNavigation />);
     expect(

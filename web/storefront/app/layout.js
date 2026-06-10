@@ -9,7 +9,7 @@ export const metadata = {
     template: `%s · ${SITE_NAME}`,
   },
   description:
-    'Local-first AI publishing pipeline. Free OSS engine, optional Pro subscription ($9/mo, 7-day free trial) for tuned prompts, premium dashboards, and the full book.',
+    'Local-first AI publishing pipeline. Free OSS engine, optional Poindexter Pro ($19/mo · $180/yr, Founding Member rate) for production-tuned prompts, premium dashboards, and the VIP Discord.',
   metadataBase: new URL(SITE_URL),
   openGraph: {
     type: 'website',

@@ -38,6 +38,12 @@ describe('Footer Component', () => {
     expect(aboutLink).toBeInTheDocument();
   });
 
+  it('should display the "published by Poindexter" proof link to gladlabs.ai', () => {
+    render(<Footer />);
+    const proofLink = screen.getByRole('link', { name: /Poindexter/i });
+    expect(proofLink).toHaveAttribute('href', 'https://www.gladlabs.ai');
+  });
+
   it('should display privacy policy link', () => {
     render(<Footer />);
     const privacyLinks = screen.getAllByRole('link', {

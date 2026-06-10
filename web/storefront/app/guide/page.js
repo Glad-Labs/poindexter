@@ -1,17 +1,12 @@
 import Link from 'next/link';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
-import { LemonSqueezyOverlay } from '@/components/LemonSqueezyOverlay';
-import {
-  LS_PRO_URL,
-  PRO_MONTHLY_USD,
-  PRO_ANNUAL_USD,
-  PRO_TRIAL_DAYS,
-} from '@/lib/site.config';
+import { ProCTA } from '@/components/ProCTA';
+import { PRO_MONTHLY_USD, PRO_ANNUAL_USD } from '@/lib/site.config';
 
 export const metadata = {
   title: 'Poindexter Pro',
   description:
-    'Poindexter Pro — tuned prompts, the full book, premium dashboards, and the VIP Discord. $9/month or $89/year with a 7-day free trial.',
+    'Poindexter Pro — production-tuned prompt packs, premium dashboards, the VIP Discord, and the operator book. $19/month or $180/year, Founding Member rate.',
 };
 
 export default function GuidePage() {
@@ -24,7 +19,7 @@ export default function GuidePage() {
               <span className="dot" aria-hidden="true" /> PRODUCT · PRO
             </span>
             <span>PROMPTS · DASHBOARDS · BOOK · DISCORD</span>
-            <span>{PRO_TRIAL_DAYS}-DAY FREE TRIAL</span>
+            <span>FOUNDING MEMBER RATE</span>
           </div>
 
           <div
@@ -79,10 +74,10 @@ export default function GuidePage() {
             </li>
             <li>
               <span>
-                <strong>THE POINDEXTER BOOK</strong> — 18 chapters plus
-                appendices covering architecture, hardware, models, prompts,
-                quality gates, operations, distribution, and the DB-driven
-                config plane. New chapters ship as the system evolves.
+                <strong>THE POINDEXTER BOOK</strong> — the full operator book
+                covering architecture, hardware, models, prompts, quality gates,
+                operations, distribution, and the DB-driven config plane. New
+                chapters ship as the system evolves.
               </span>
             </li>
             <li>
@@ -131,12 +126,11 @@ export default function GuidePage() {
                 <span className="sf-pricing__cents">/mo</span>
               </div>
               <div className="sf-pricing__tagline">
-                {PRO_TRIAL_DAYS}-day free trial · no card on most gateways.
+                Founding Member rate — locked for life as the standard rate
+                rises.
               </div>
             </div>
-            <LemonSqueezyOverlay productUrl={LS_PRO_URL} variant="primary">
-              ▶ Start free trial
-            </LemonSqueezyOverlay>
+            <ProCTA variant="primary" />
           </div>
 
           <div
@@ -148,7 +142,7 @@ export default function GuidePage() {
             }}
           >
             <div>
-              <div className="sf-pricing__label">// Annual · save ~17%</div>
+              <div className="sf-pricing__label">// Annual · save ~21%</div>
               <div className="sf-pricing__amount">
                 ${PRO_ANNUAL_USD}
                 <span className="sf-pricing__cents">/yr</span>
@@ -158,9 +152,7 @@ export default function GuidePage() {
                 /month.
               </div>
             </div>
-            <LemonSqueezyOverlay productUrl={LS_PRO_URL} variant="secondary">
-              Go annual
-            </LemonSqueezyOverlay>
+            <ProCTA variant="secondary" />
           </div>
         </section>
 

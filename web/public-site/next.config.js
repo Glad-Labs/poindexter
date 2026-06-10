@@ -301,6 +301,10 @@ const nextConfig = {
   // Redirects for URL structure changes
   redirects: async () => {
     return [
+      // gladlabs.io is the blog/proof; the product/store lives on gladlabs.ai.
+      // The old on-blog storefront at /product is consolidated there so there's
+      // exactly one store. 308 permanent — passes link equity to the store.
+      { source: '/product', destination: 'https://www.gladlabs.ai', permanent: true },
       // Common URLs Google tries that don't exist — redirect to real pages
       { source: '/blog', destination: '/archive/1', permanent: true },
       { source: '/blog/:slug', destination: '/posts/:slug', permanent: true },

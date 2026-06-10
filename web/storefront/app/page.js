@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
-import { LemonSqueezyOverlay } from '@/components/LemonSqueezyOverlay';
-import { LS_PRO_URL, PRO_MONTHLY_USD, PRO_TRIAL_DAYS } from '@/lib/site.config';
+import { ProCTA } from '@/components/ProCTA';
+import { PRO_MONTHLY_USD, PRO_ANNUAL_USD } from '@/lib/site.config';
 
 export default function Landing() {
   return (
@@ -37,9 +37,7 @@ export default function Landing() {
             </p>
 
             <div className="sf-reveal sf-reveal--4 sf-hero__ctas">
-              <LemonSqueezyOverlay productUrl={LS_PRO_URL} variant="primary">
-                ▶ Start {PRO_TRIAL_DAYS}-day free trial
-              </LemonSqueezyOverlay>
+              <ProCTA variant="primary" />
               <Button as={Link} href="/guide" variant="secondary">
                 What&apos;s in Pro
               </Button>
@@ -52,20 +50,21 @@ export default function Landing() {
                 opacity: 0.7,
               }}
             >
-              Pro — ${PRO_MONTHLY_USD}/month or $89/year · cancel anytime · free
-              OSS engine doesn&apos;t require a subscription.
+              Poindexter Pro — ${PRO_MONTHLY_USD}/mo or ${PRO_ANNUAL_USD}/yr ·
+              Founding Member rate, locked for life. The free OSS engine never
+              needs a subscription.
             </p>
           </div>
 
           <div className="sf-cards">
             <article className="sf-card">
-              <div className="sf-card__num">01 · PLAYBOOK</div>
-              <h3 className="sf-card__title">The Playbook</h3>
+              <div className="sf-card__num">01 · TUNING</div>
+              <h3 className="sf-card__title">Production Tuning</h3>
               <p className="sf-card__body">
-                A 120-page opinionated walkthrough: how to stand up an
-                autonomous publishing agent end-to-end on your own hardware.
-                Architecture, prompt engineering, quality gates, failure modes —
-                the actual decisions, not the marketing ones.
+                The prompt packs, QA configuration, and tuned settings that run
+                Matt&apos;s live content business — exported from the system as
+                it&apos;s tuned, not a frozen snapshot. Import it and skip the
+                months of trial and error. This is the product.
               </p>
             </article>
 
@@ -81,13 +80,13 @@ export default function Landing() {
             </article>
 
             <article className="sf-card">
-              <div className="sf-card__num">03 · SOURCE</div>
-              <h3 className="sf-card__title">The Source</h3>
+              <div className="sf-card__num">03 · COMPANION</div>
+              <h3 className="sf-card__title">Book &amp; Community</h3>
               <p className="sf-card__body">
-                Full access to the Poindexter repository — pipelines, plugins,
-                MCP servers, observability, CI. Apache 2.0. Fork it, run it,
-                modify it, ship a competing SaaS if you want — the moat is
-                ongoing tuning, not the code.
+                A long-form operator book on the architecture and the decisions
+                behind it, plus the VIP Discord where live tuning knowledge
+                accrues. Both ride alongside the engine — which stays free and
+                Apache-2.0.
               </p>
             </article>
           </div>

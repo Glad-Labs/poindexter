@@ -147,13 +147,15 @@ export default function TopNavigation() {
             <Link href="/about" className="gl-focus-ring nav-link">
               About
             </Link>
-            <Link
-              href="/product"
+            <a
+              href="https://www.gladlabs.ai"
+              target="_blank"
+              rel="noopener noreferrer"
               className="gl-focus-ring nav-link"
               style={{ color: 'var(--gl-amber)' }}
             >
-              Premium
-            </Link>
+              Poindexter ↗
+            </a>
           </div>
           <div className="hidden md:flex items-center gap-4">
             {searchOpen ? (
@@ -290,16 +292,18 @@ export default function TopNavigation() {
                 >
                   About
                 </Link>
-                <Link
-                  href="/product"
+                <a
+                  href="https://www.gladlabs.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="gl-focus-ring nav-link py-3"
                   style={{
                     color: 'var(--gl-amber)',
                     borderBottom: '1px solid var(--gl-hairline)',
                   }}
                 >
-                  Premium
-                </Link>
+                  Poindexter ↗
+                </a>
               </div>
 
               {/* Primary CTA — full width */}

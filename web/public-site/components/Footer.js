@@ -51,6 +51,23 @@ const Footer = () => {
               AI, hardware, and the edges where they meet. Locally-published,
               human-reviewed, free to read.
             </p>
+            <p className="gl-body gl-body--sm mb-3">
+              Every post here is researched, written, and published autonomously
+              by{' '}
+              <a
+                href="https://www.gladlabs.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="gl-focus-ring"
+                style={{
+                  color: 'var(--gl-cyan)',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: '3px',
+                }}
+              >
+                Poindexter →
+              </a>
+            </p>
             <p className="gl-mono gl-mono--upper" style={{ fontSize: '0.6875rem' }}>
               Built for innovation · Powered by AI
             </p>
