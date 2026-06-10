@@ -1,4 +1,3 @@
-import logger from './logger';
 import * as Sentry from '@sentry/nextjs';
 /**
  * Posts API Functions
@@ -308,47 +307,3 @@ export async function getPostsByAuthor(
   };
 }
 
-/**
- * Get both the previous and next posts in a single fetch.
- * Index is newest-first, so `previous` = newer post, `next` = older post.
- */
-export async function getAdjacentPosts(currentSlug: string): Promise<{
-  previous: Post | null;
-  next: Post | null;
-}> {
-  try {
-    const allPosts = await fetchPostIndex();
-    const currentIndex = allPosts.findIndex((p) => p.slug === currentSlug);
-
-    if (currentIndex === -1) {
-      return { previous: null, next: null };
-    }
-
-    return {
-      previous: currentIndex > 0 ? allPosts[currentIndex - 1] : null,
-      next:
-        currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null,
-    };
-  } catch (error) {
-    logger.error('Error fetching adjacent posts:', error);
-    return { previous: null, next: null };
-  }
-}
-
-/**
- * Get the next post (older) — prefer getAdjacentPosts() when both needed
- */
-export async function getNextPost(currentSlug: string): Promise<Post | null> {
-  const { next } = await getAdjacentPosts(currentSlug);
-  return next;
-}
-
-/**
- * Get the previous post (newer) — prefer getAdjacentPosts() when both needed
- */
-export async function getPreviousPost(
-  currentSlug: string
-): Promise<Post | null> {
-  const { previous } = await getAdjacentPosts(currentSlug);
-  return previous;
-}
