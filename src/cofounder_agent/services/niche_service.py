@@ -161,3 +161,21 @@ def _row_to_niche(row: Any) -> Niche:
         discovery_cadence_minute_floor=row["discovery_cadence_minute_floor"],
         default_template_slug=default_template_slug,
     )
+
+
+async def get_active_niche_slugs(pool) -> set[str]:
+    """Active niche slugs -- the publish allowlist (#729).
+
+    Best-effort: returns an empty set on any failure (or ``pool=None``)
+    so callers can fail-open rather than brick publishing on a transient
+    DB error. The caller decides how to treat an empty allowlist.
+    """
+    if pool is None:
+        return set()
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT slug FROM niches WHERE active")
+        return {r["slug"] for r in rows if r["slug"]}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[niche_service] active-niche fetch failed: %s", exc)
+        return set()

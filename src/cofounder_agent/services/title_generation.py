@@ -22,6 +22,7 @@ import re
 from difflib import SequenceMatcher
 
 from services.site_config import SiteConfig
+from utils.text_utils import strip_title_label
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,9 @@ def choose_canonical_title(
                 source, distance, cleaned_topic, chosen,
             )
 
-    return chosen
+    # Defense in depth (#728): strip any ``Title:``/``Headline:`` label
+    # regardless of which source (llm / h1 / topic) produced the title.
+    return strip_title_label(chosen)
 
 
 def sanitize_generated_title(raw: str) -> str | None:
@@ -216,6 +219,9 @@ def sanitize_generated_title(raw: str) -> str | None:
         # markers are gone, in case it survived the top-of-function pass
         # (e.g. the suffix arrived on a deeper line).
         stripped = strip_qa_batch_suffix(stripped)
+        # Strip a leaked ``Title:`` / ``Headline:`` label (#728) so it
+        # never reaches the persisted title or the slug derived from it.
+        stripped = strip_title_label(stripped)
         if not stripped or len(stripped) < 5 or len(stripped) > 200:
             continue
         lower = stripped.lower()

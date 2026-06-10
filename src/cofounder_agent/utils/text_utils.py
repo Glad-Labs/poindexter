@@ -282,6 +282,34 @@ def extract_title_from_content(content: str) -> tuple[str | None, str | None]:
     return None, content
 
 
+_TITLE_LABEL_RE = re.compile(r"^\s*(?:title|headline)\s*:\s*", re.IGNORECASE)
+
+
+def strip_title_label(title: str | None) -> str:
+    """Strip a leading ``Title:`` / ``Headline:`` label that an LLM
+    sometimes prefixes onto the title it returns
+    (e.g. ``"Title: Best Eats..."`` -> ``"Best Eats..."``).
+
+    Only a label immediately followed by a colon is removed, so legit
+    compounds like ``"Title-Case Guide"`` and interior colons like
+    ``"My Take: A Guide"`` are preserved. Idempotent.
+
+    Examples:
+        >>> strip_title_label("Title: Best Eats in the Northeast")
+        'Best Eats in the Northeast'
+        >>> strip_title_label("Title-Case Guide")
+        'Title-Case Guide'
+    """
+    if not title:
+        return title or ""
+    out = title.strip()
+    while True:
+        collapsed = _TITLE_LABEL_RE.sub("", out, count=1).strip()
+        if collapsed == out:
+            return out
+        out = collapsed
+
+
 def normalize_seo_keywords(keywords: str | list | None) -> str:
     """
     Normalise an SEO keyword value to a comma-separated string for DB storage.

@@ -564,6 +564,11 @@ DEFAULTS: dict[str, str] = {
     'dev_diary_auto_publish_max_edit_distance': '50',
     'dev_diary_auto_publish_min_clean_runs': '3',
     'dev_diary_auto_publish_threshold': '-1',
+    # Niche allowlist publish gate (#729). When 'true', publish_service
+    # refuses to publish a task whose niche_slug is not an active niche
+    # (the manual-approve backstop; auto_publish_gate already blocks the
+    # auto path). Set 'false' to disable the gate.
+    'enforce_niche_allowlist': 'true',
 
     # ----- Gitea / external integrations -----
     'publish_quiet_hours': '',

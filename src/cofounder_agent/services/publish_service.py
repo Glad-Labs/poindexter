@@ -24,7 +24,7 @@ from typing import Any
 from services.logger_config import get_logger
 from services.media_policy import resolve_media_to_generate
 from services.site_config import SiteConfig
-from utils.text_utils import extract_title_from_content
+from utils.text_utils import extract_title_from_content, strip_title_label
 
 # #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
 # setter (and the ``_resolve_site_config`` fallback shim) are DELETED.
@@ -63,7 +63,48 @@ def sanitize_published_title(title: str | None) -> str:
     """
     if not title:
         return title or ""
-    return _TITLE_SUFFIX_RE.sub("", title).strip()
+    cleaned = _TITLE_SUFFIX_RE.sub("", title).strip()
+    # #728: also strip a leaked ``Title:``/``Headline:`` label so it can
+    # never reach a live title or the slug derived from it.
+    return strip_title_label(cleaned)
+
+
+def build_post_slug(title: str, task_id: str) -> str:
+    """Derive a URL slug from *title* + *task_id*.
+
+    Collapses runs of hyphens to a single hyphen (#728) so titles with
+    an em-dash or a double-hyphen (e.g. ``"windows -- why"`` or
+    ``"windows -- why"``) don't yield ``"windows----why"`` slugs. The
+    transform is generator-only -- existing slugs are untouched.
+    """
+    base = re.sub(r"[^\w\s-]", "", title or "").lower().replace(" ", "-")
+    base = re.sub(r"-{2,}", "-", base).strip("-")[:50].rstrip("-")
+    return f"{base or 'post'}-{task_id[:8]}"
+
+
+def choose_excerpt(
+    *,
+    task_metadata: dict | None,
+    merged: dict | None,
+    seo_description: str | None,
+    title: str | None,
+) -> str:
+    """Pick the best excerpt for a post, never echoing the title (#728).
+
+    Prefers the pipeline-computed excerpt (``task_metadata``/``merged``),
+    falling back to the SEO description (the prior behaviour). Returns
+    ``""`` when the only candidate is a verbatim copy of the title -- an
+    empty excerpt is honest, a title-as-excerpt is not.
+    """
+    candidate = (
+        (task_metadata or {}).get("excerpt")
+        or (merged or {}).get("excerpt")
+        or seo_description
+        or ""
+    ).strip()
+    if candidate.casefold() == (title or "").strip().casefold():
+        return ""
+    return candidate
 
 
 # Strong references to fire-and-forget background tasks. Without this,
@@ -1253,6 +1294,34 @@ async def publish_post_from_task(
         return _existing_result
 
     # ---------------------------------------------------------------
+    # 1c. Niche allowlist gate (#729) -- a post whose task has no
+    # resolved/active niche must never reach readers. ``auto_publish_gate``
+    # already blocks the auto path; this is the hard backstop on the
+    # manual approve/publish path. Drafts (WIP) are exempt; already-
+    # published promotions returned above. Toggle via
+    # ``enforce_niche_allowlist`` (default true).
+    # ---------------------------------------------------------------
+    if _sc.get_bool("enforce_niche_allowlist", True) and not draft_mode:
+        from services.niche_service import get_active_niche_slugs
+
+        _task_niche = (task.get("niche_slug") or "").strip()
+        _allowed = await get_active_niche_slugs(pool)
+        # Fail-open on an empty allowlist (niches table unreadable) so a
+        # transient DB error can't halt all publishing; block only when we
+        # positively know the niche isn't active.
+        if _allowed and _task_niche not in _allowed:
+            from services.integrations.operator_notify import notify_operator
+            _msg = (
+                f"publish blocked (#729): task {task_id} "
+                f"niche={_task_niche or '<none>'} not in active "
+                f"allowlist {sorted(_allowed)}"
+            )
+            logger.error("[publish_service] %s", _msg)
+            with suppress(Exception):
+                await notify_operator(_msg, critical=False, site_config=_sc)
+            return PublishResult(success=False, error=_msg)
+
+    # ---------------------------------------------------------------
     # 2. Extract title from content (LLM often puts # Title at top)
     # ---------------------------------------------------------------
     extracted_title, cleaned_content = extract_title_from_content(draft_content)
@@ -1269,8 +1338,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 3. Create slug
     # ---------------------------------------------------------------
-    slug = re.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
-    slug = f"{slug}-{task_id[:8]}"
+    slug = build_post_slug(post_title, task_id)
 
     # ---------------------------------------------------------------
     # 4. Get author + category
@@ -1346,7 +1414,12 @@ async def publish_post_from_task(
         "title": post_title,
         "slug": slug,
         "content": post_content,
-        "excerpt": seo_description,
+        "excerpt": choose_excerpt(
+            task_metadata=task_metadata,
+            merged=merged,
+            seo_description=seo_description,
+            title=post_title,
+        ),
         "featured_image_url": featured_image_url,
         "cover_image_url": featured_image_url,
         "author_id": author_id,
