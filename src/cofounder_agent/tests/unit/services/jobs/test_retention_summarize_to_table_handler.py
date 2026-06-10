@@ -58,10 +58,14 @@ class FakePool:
         settings: dict[str, str] | None = None,
         raw_rows: list[dict[str, Any]] | None = None,
         fail_insert: bool = False,
+        missing_summary_table: bool = False,
     ):
         self.settings = dict(settings or {})
         self.raw_rows = list(raw_rows or [])
         self.fail_insert = fail_insert
+        # When True, the to_regclass existence guard sees the summary table as
+        # absent (#694) — exercises the fail-loud path.
+        self.missing_summary_table = missing_summary_table
         self.inserted: list[dict[str, Any]] = []
         self.deleted_ids: list[list[Any]] = []
         self.insert_calls = 0
@@ -122,6 +126,16 @@ class _RecordingConn:
 
     def transaction(self):
         return _TxCtx(self)
+
+    async def fetchval(self, query: str, *args: Any) -> Any:
+        # to_regclass summary-table existence guard (#694). Returns the
+        # resolved table name (truthy) when present, None when the pool is
+        # configured to simulate a missing destination table.
+        if "to_regclass" in query:
+            if self.pool.missing_summary_table:
+                return None
+            return args[0] if args else "exists"
+        return None
 
     async def fetch(self, query: str, *args: Any) -> list[dict[str, Any]]:
         if "date_trunc" in query and "GROUP BY" in query:
@@ -300,6 +314,23 @@ class TestValidation:
                 None, site_config=None,
                 row=_audit_policy_row(config=cfg), pool=pool,
             )
+
+    @pytest.mark.asyncio
+    async def test_missing_summary_table_fails_loud(self):
+        """#694 — a nonexistent summary table must raise (not silently no-op
+        every pass while RetentionJanitor hard-deletes the source rows). No
+        bucket work happens: no SELECT, no INSERT, no DELETE."""
+        pool = FakePool(
+            raw_rows=_two_days_of_audit_rows(),
+            missing_summary_table=True,
+        )
+        with pytest.raises(RuntimeError, match="does not exist"):
+            await mod.summarize_to_table(
+                None, site_config=None, row=_audit_policy_row(), pool=pool,
+            )
+        assert pool.insert_calls == 0
+        assert pool.inserted == []
+        assert pool.deleted_ids == []
 
     @pytest.mark.asyncio
     async def test_unknown_bucket_rejected(self):

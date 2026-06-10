@@ -350,6 +350,23 @@ async def summarize_to_table(
     summary_table = _validate_identifier(
         config.get("summary_table") or "", "summary_table",
     )
+
+    # Fail loud if the destination table is missing. A nonexistent summary
+    # table makes the INSERT roll back every pass (silently — the txn aborts
+    # before the DELETE, so no *immediate* data loss), but RetentionJanitor
+    # runs a SEPARATE hard delete on the same SOURCE table, so rows that never
+    # got compressed are eventually destroyed. Surface it with a remediation
+    # rather than no-op forever (Glad-Labs/poindexter#694).
+    async with pool.acquire() as conn:
+        if await conn.fetchval("SELECT to_regclass($1::text)", summary_table) is None:
+            raise RuntimeError(
+                f"retention.summarize_to_table: summary_table {summary_table!r} "
+                "does not exist — refusing to run. Compression would silently "
+                "roll back every pass while RetentionJanitor later hard-deletes "
+                "the uncompressed source rows. Create it via a migration "
+                "(see services/migrations/*_create_retention_summary_tables.py)."
+            )
+
     text_columns = _validate_identifier_list(
         config.get("text_columns") or [], "text_columns",
     )
