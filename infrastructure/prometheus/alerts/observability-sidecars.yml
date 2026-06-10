@@ -1,0 +1,83 @@
+# Observability-sidecar liveness — promtail (log shipping), langfuse-worker
+# (LLM trace processing), glitchtip-worker (error ingest).
+#
+# Closes the monitoring blind spot in Glad-Labs/glad-labs-stack#1154: these
+# three async sidecars had no liveness signal, so a silent crash went unnoticed
+# until someone happened to read the logs. Each is escalated to
+# `severity: critical` (issue action item #3) because a dead one takes a whole
+# observability axis dark — logs, LLM traces, or runtime errors respectively.
+#
+# Delivery: severity=critical is routed to Telegram by the brain's
+# alert_dispatch_loop (warning → Discord), identical to PoindexterWorkerDown in
+# infrastructure.yml. No alertmanager.yml change is needed — everything funnels
+# through the worker webhook and the brain dispatches on the severity label.
+#
+# Two probe strategies, by what each service exposes:
+#   - promtail IS Prometheus-native (the new `promtail` scrape job), so
+#     up{job="promtail"}==0 is the direct signal — it catches both a crashed
+#     container and a wedged HTTP server (which fails the scrape).
+#   - the two workers expose no Prometheus metrics (langfuse-worker's /api/health
+#     is JSON, not exposition), so we lean on cAdvisor's container_last_seen.
+#     absent() fires when cAdvisor stops reporting the container — i.e. it
+#     stopped/crashed and `restart: unless-stopped` did NOT bring it back within
+#     the `for:` window. A transient crash self-heals before 5m, so this only
+#     pages on a stuck-down worker. NOTE: a wedged-but-running worker is caught
+#     locally by its docker healthcheck (marks unhealthy) but not paged here;
+#     paging on wedge would need a blackbox probe of the worker's health
+#     endpoint — a documented future enhancement. NOTE: absent() depends on
+#     cAdvisor being up; if cAdvisor itself dies these two would false-fire, but
+#     the "check docker ps" remediation makes that immediately self-evident.
+groups:
+  - name: poindexter-observability-sidecars
+    interval: 30s
+    rules:
+      # --- Promtail (container-log shipping → Loki) ---
+      - alert: PromtailDown
+        expr: up{job="promtail"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Promtail is down — container logs are not reaching Loki"
+          description: |
+            Prometheus has failed to scrape promtail (:9080) for 3+ minutes.
+            Container-log shipping to Loki has stopped, so Grafana Explore and
+            the Loki-backed dashboards are going blind. This also catches a
+            wedged promtail whose HTTP server stopped responding.
+            Check `docker ps` for poindexter-promtail and
+            `docker logs poindexter-promtail --tail 100`.
+
+      # --- Langfuse worker (async LLM trace processing) ---
+      - alert: LangfuseWorkerDown
+        expr: absent(container_last_seen{name="poindexter-langfuse-worker"})
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Langfuse worker is down — LLM trace processing has stalled"
+          description: |
+            cAdvisor has not reported poindexter-langfuse-worker for 5+ minutes
+            and `restart: unless-stopped` has not recovered it; the async
+            trace-processing queue is not draining. Reviewer LLM calls still run
+            but their Langfuse traces won't land, so QA drill-downs go stale.
+            Check `docker ps` and
+            `docker logs poindexter-langfuse-worker --tail 100`.
+
+      # --- GlitchTip worker (Celery error ingest + beat) ---
+      - alert: GlitchtipWorkerDown
+        expr: absent(container_last_seen{name="poindexter-glitchtip-worker"})
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "GlitchTip worker is down — error ingest has stopped"
+          description: |
+            cAdvisor has not reported poindexter-glitchtip-worker for 5+ minutes
+            and `restart: unless-stopped` has not recovered it; the Celery
+            error-ingest/beat worker is not processing. Runtime exceptions from
+            worker / brain / voice will not surface in GlitchTip until it's back.
+            Check `docker ps` and
+            `docker logs poindexter-glitchtip-worker --tail 100`.

@@ -99,6 +99,18 @@ scrape_configs:
     static_configs:
       - targets: ["pyroscope:4040"]
 
+  # Promtail self-metrics + liveness (Glad-Labs/glad-labs-stack#1154).
+  # Exposes promtail_* (sent entries, active targets, read/encode failures)
+  # and — critically — gives us up{job="promtail"} so the PromtailDown alert
+  # can page when the log shipper crashes OR wedges (a wedged HTTP server
+  # fails the scrape → up=0). This is the EXTERNAL liveness signal that
+  # replaces promtail's docker healthcheck: its image ships no in-container
+  # HTTP client, so it can't probe its own /ready (see docker-compose.local.yml).
+  - job_name: promtail
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["promtail:9080"]
+
   # Prometheus self-scrape — closes poindexter#649 (Prometheus self-monitoring
   # gap). Exposes tsdb compaction, rule evaluation latency / errors,
   # Alertmanager notification success/failure, and engine query throughput.
