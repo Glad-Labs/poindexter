@@ -9,6 +9,11 @@
 
 import { NextResponse } from 'next/server';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import {
+  sortPostsNewestFirst,
+  cleanPostTitle,
+  postExcerpt,
+} from '@/lib/posts';
 
 // Time-based ISR backstop (1h), matching podcast-feed.xml / video-feed.xml.
 // On-demand revalidateTag('posts') on publish is primary; this floor
@@ -55,9 +60,15 @@ export async function GET() {
     let posts: Post[] = [];
     if (response.ok) {
       const data = await response.json();
-      posts = (data.posts || [])
-        .filter((p: Post) => p.distributed_at && (p.published_at || '') >= FEED_CUTOFF)
-        .slice(0, 20);
+      // Audit #1: sort before slicing — index.json order is
+      // pipeline-dependent, and this feed drives social auto-posting.
+      // Unsorted, the 20-item window and <lastBuildDate> (posts[0])
+      // could both miss the actual latest posts.
+      posts = sortPostsNewestFirst(
+        ((data.posts || []) as Post[]).filter(
+          (p) => p.distributed_at && (p.published_at || '') >= FEED_CUTOFF
+        )
+      ).slice(0, 20);
     }
 
     const now = new Date().toUTCString();
@@ -72,12 +83,23 @@ export async function GET() {
         const pubDate = post.published_at
           ? new Date(post.published_at).toUTCString()
           : now;
-        const description = post.seo_description || post.excerpt || post.title;
+        // Audit #2/#5: clean titles before they hit feed readers and
+        // social auto-posters; never use the title as the description
+        // (dlvr.it would post the headline twice). postExcerpt returns
+        // null when nothing real exists — fall back to empty, not filler.
+        const title = cleanPostTitle(post.title);
+        const description =
+          post.seo_description ||
+          postExcerpt(
+            { title: post.title, excerpt: post.excerpt, content: post.content },
+            300
+          ) ||
+          '';
         const link = `${SITE_URL}/posts/${post.slug}`;
 
         return `
     <item>
-      <title><![CDATA[${post.title}]]></title>
+      <title><![CDATA[${title}]]></title>
       <link>${link}</link>
       <guid isPermaLink="true">${link}</guid>
       <description><![CDATA[${description}]]></description>

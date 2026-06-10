@@ -59,8 +59,111 @@ export function postFeaturedImage(
 }
 
 /**
+ * Issue #1 (audit): the pipeline's index.json is not reliably ordered, so
+ * "latest" surfaces (featured slot, archive page 1, prev/next links) showed
+ * stale posts. Sort defensively here — newest first by published_at, falling
+ * back to created_at — instead of trusting upstream order. Posts with no
+ * parseable date sink to the end rather than masquerading as new.
+ *
+ * Exported so callers that fetch the index themselves (app/page.js does its
+ * own fetch to keep Sentry error states) apply the identical order.
+ */
+// Structural types (not Pick<Post,…>) so route-local interfaces — e.g.
+// feed.xml's trimmed Post — can use these helpers without created_at.
+interface DatedPost {
+  published_at?: string;
+  created_at?: string;
+}
+
+function postTimestamp(post: DatedPost): number {
+  const t = Date.parse(post.published_at || post.created_at || '');
+  return Number.isNaN(t) ? 0 : t;
+}
+
+export function sortPostsNewestFirst<T extends DatedPost>(posts: T[]): T[] {
+  // Copy before sorting — callers may hold the original array.
+  return [...posts].sort((a, b) => postTimestamp(b) - postTimestamp(a));
+}
+
+/**
+ * Issue #5 (audit): raw pipeline artifacts were reaching readers — literal
+ * "Title:" prefixes, "--" surviving into headlines, wrapping quotes. This is
+ * the display-layer guard; the pipeline should also clean at write time, but
+ * the frontend must not render artifacts regardless of upstream state.
+ */
+export function cleanPostTitle(title?: string): string {
+  if (!title) return '';
+  let t = title.trim();
+  // Strip a leading "Title:" / "Title -" label (case-insensitive).
+  t = t.replace(/^title\s*[:\-–—]\s*/i, '');
+  // "--" is a pipeline artifact (also produces ugly slugs); render as em dash.
+  t = t.replace(/\s*--+\s*/g, ' — ');
+  // Strip one matched pair of wrapping quotes.
+  if (
+    t.length > 1 &&
+    ((t.startsWith('"') && t.endsWith('"')) ||
+      (t.startsWith("'") && t.endsWith("'")))
+  ) {
+    t = t.slice(1, -1);
+  }
+  return t.trim();
+}
+
+/**
+ * Issue #2 (audit): the homepage shipped a hardcoded fallback excerpt
+ * ("Read this insightful article") and a raw content.substring() that could
+ * leak HTML/markdown into cards. Single canonical excerpt resolver:
+ *
+ *   1. Use post.excerpt unless it's empty, a known placeholder, or just the
+ *      title repeated (a recurring pipeline artifact).
+ *   2. Otherwise derive from content: strip tags/markdown, drop a leading
+ *      repeat of the title, truncate at a word boundary.
+ *   3. Otherwise return null — callers omit the element. Never filler copy.
+ */
+const EXCERPT_PLACEHOLDERS = new Set(['read this insightful article']);
+
+export function postExcerpt(
+  post: { title: string; excerpt?: string; content?: string },
+  maxLength: number = 200,
+): string | null {
+  const title = cleanPostTitle(post.title);
+  let excerpt = (post.excerpt || '').trim();
+
+  if (
+    !excerpt ||
+    EXCERPT_PLACEHOLDERS.has(excerpt.toLowerCase()) ||
+    excerpt.toLowerCase() === title.toLowerCase()
+  ) {
+    excerpt = '';
+  }
+
+  if (!excerpt && post.content) {
+    excerpt = post.content
+      .replace(/<[^>]+>/g, ' ') // strip HTML tags
+      .replace(/[#*_>`]/g, '') // strip common markdown punctuation
+      .replace(/\s+/g, ' ')
+      .trim();
+    // Drop a leading repeat of the title so cards don't read title twice.
+    if (title && excerpt.toLowerCase().startsWith(title.toLowerCase())) {
+      excerpt = excerpt.slice(title.length).replace(/^[\s:—–-]+/, '');
+    }
+  }
+
+  if (!excerpt) return null;
+
+  if (excerpt.length > maxLength) {
+    const cut = excerpt.slice(0, maxLength);
+    const lastSpace = cut.lastIndexOf(' ');
+    excerpt = cut.slice(0, lastSpace > 60 ? lastSpace : maxLength).trimEnd() + '…';
+  }
+  return excerpt;
+}
+
+/**
  * Fetch the full post index from static JSON.
  * Cached and reused by all listing functions.
+ * Always returns newest-first (see sortPostsNewestFirst above) — pagination,
+ * the featured slot, and prev/next adjacency all depend on this order.
  */
 async function fetchPostIndex(): Promise<Post[]> {
   try {
@@ -75,7 +178,7 @@ async function fetchPostIndex(): Promise<Post[]> {
     }
 
     const data = await response.json();
-    return data.posts || [];
+    return sortPostsNewestFirst(data.posts || []);
   } catch (error) {
     logger.error('Error fetching post index:', error);
     return [];
@@ -192,6 +295,7 @@ export async function getPostsByAuthor(
 
 /**
  * Get both the previous and next posts in a single fetch.
+ * Index is newest-first, so `previous` = newer post, `next` = older post.
  */
 export async function getAdjacentPosts(currentSlug: string): Promise<{
   previous: Post | null;

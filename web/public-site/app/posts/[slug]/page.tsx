@@ -20,6 +20,8 @@ import {
   getRelatedPosts,
   getAllPublishedPosts,
   postFeaturedImage,
+  cleanPostTitle,
+  postExcerpt,
   type Post,
 } from '../../../lib/posts';
 import { SITE_NAME, SITE_URL, ADSENSE_SLOT_ID } from '@/lib/site.config';
@@ -64,8 +66,11 @@ export async function generateMetadata({
 
   const imageUrl =
     post.featured_image_url || post.cover_image_url || '/og-image.jpg';
-  const description = post.seo_description || post.excerpt || '';
-  const title = post.seo_title || post.title;
+  // Audit #2/#5: same display-layer guards as the page body — no "Title:"
+  // prefixes or placeholder excerpts in <title>, OG, or Twitter cards.
+  const description =
+    post.seo_description || postExcerpt(post, 200) || '';
+  const title = cleanPostTitle(post.seo_title || post.title);
   const canonicalUrl = generateCanonicalURL(post.slug, SITE_URL);
   const publishDate = post.published_at || post.created_at;
 
@@ -93,7 +98,7 @@ export async function generateMetadata({
           height: 630,
           // Prefer the vision-generated alt (describes the actual image);
           // fall back to the title when absent.
-          alt: post.featured_image_alt || post.title,
+          alt: post.featured_image_alt || title,
         },
       ],
       publishedTime: publishDate,
@@ -135,10 +140,24 @@ export default async function PostPage({
   const imageUrl = postFeaturedImage(post);
   const publishDate = post.published_at || post.created_at;
 
+  // Audit #5: one cleaned title, used everywhere the reader (or a crawler)
+  // sees it — h1, breadcrumb, JSON-LD, share intents, comments.
+  const title = cleanPostTitle(post.title);
+
+  // Hero excerpt: content-derived fallback is intentionally disabled here
+  // (content: '') — the article body starts right below, so a derived
+  // excerpt would duplicate the opening paragraph. Real excerpts only;
+  // placeholder/title-repeat artifacts resolve to null and the element
+  // is omitted (audit #2).
+  const heroExcerpt = postExcerpt(
+    { title: post.title, excerpt: post.excerpt, content: '' },
+    300
+  );
+
   const breadcrumbs = [
     { label: 'Home', url: '/' },
     { label: 'Articles', url: '/archive/1' },
-    { label: post.title, url: `/posts/${post.slug}` },
+    { label: title, url: `/posts/${post.slug}` },
   ];
 
   // Reading time estimate (avg 238 words/min for technical content)
@@ -197,11 +216,12 @@ export default async function PostPage({
   );
 
   const shareUrl = `${SITE_URL}/posts/${post.slug}`;
-  const shareTitle = encodeURIComponent(post.title);
+  const shareTitle = encodeURIComponent(title);
 
   const structuredData = generateBlogPostingSchema(
     {
       ...post,
+      title,
       coverImage: imageUrl ? { url: imageUrl } : undefined,
       date: publishDate,
     },
@@ -256,7 +276,7 @@ export default async function PostPage({
                 className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-[-0.02em]"
                 style={{ letterSpacing: '-0.02em' }}
               >
-                {post.title}
+                {title}
               </h1>
 
               {/* Meta row */}
@@ -278,14 +298,11 @@ export default async function PostPage({
                 )}
               </div>
 
-              {/* Excerpt — strip stale markdown artifacts from older posts */}
-              {post.excerpt && (
+              {/* Excerpt — canonical resolver handles markdown artifacts,
+                  placeholder copy, and title-repeats (audit #2/#5) */}
+              {heroExcerpt && (
                 <p className="gl-body gl-body--lg gl-body--primary mt-6">
-                  {post.excerpt
-                    .replace(/^\s*[*\-#]+\s*/gm, '')
-                    .replace(/\*\*/g, '')
-                    .replace(/\n+/g, ' ')
-                    .trim()}
+                  {heroExcerpt}
                 </p>
               )}
             </div>
@@ -456,7 +473,7 @@ export default async function PostPage({
                           href={`/posts/${rp.slug}`}
                           className="hover:text-[color:var(--gl-cyan)] transition-colors"
                         >
-                          {rp.title}
+                          {cleanPostTitle(rp.title)}
                         </Link>
                       </Card.Title>
                     </div>
@@ -478,7 +495,7 @@ export default async function PostPage({
         {/* Comments */}
         <div className="px-4 sm:px-6 lg:px-8 pb-20">
           <div className="container mx-auto max-w-4xl">
-            <GiscusWrapper postSlug={post.slug} postTitle={post.title} />
+            <GiscusWrapper postSlug={post.slug} postTitle={title} />
           </div>
         </div>
       </div>

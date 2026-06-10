@@ -2,7 +2,12 @@ import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
-import { getPosts, postFeaturedImage } from '@/lib/posts';
+import {
+  getPosts,
+  postFeaturedImage,
+  cleanPostTitle,
+  postExcerpt,
+} from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
 // Time-based ISR backstop (1h) — see app/page.js. On-demand
@@ -89,13 +94,18 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
                 {posts.map((post) => {
                   const imageUrl = postFeaturedImage(post);
+                  // Audit #5: display-layer guards — never render raw
+                  // pipeline artifacts ("Title:" prefixes, "--", excerpts
+                  // that just repeat the title).
+                  const title = cleanPostTitle(post.title);
+                  const excerpt = postExcerpt(post, 140);
                   return (
                   <Card key={post.id} className="group flex flex-col h-full overflow-hidden p-0">
                     {imageUrl && (
                       <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
                         <Image
                           src={imageUrl}
-                          alt={post.title}
+                          alt={title}
                           fill
                           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -129,12 +139,12 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
                             href={`/posts/${post.slug}`}
                             className="hover:text-[color:var(--gl-cyan)] transition-colors"
                           >
-                            {post.title}
+                            {title}
                           </Link>
                         </Card.Title>
-                        {post.excerpt ? (
+                        {excerpt ? (
                           <Card.Body className="line-clamp-3 mt-2">
-                            {post.excerpt}
+                            {excerpt}
                           </Card.Body>
                         ) : null}
                       </div>

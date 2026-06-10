@@ -4,7 +4,12 @@ import * as Sentry from '@sentry/nextjs';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { OrganizationSchema } from '../components/StructuredData';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
-import { postFeaturedImage } from '@/lib/posts';
+import {
+  postFeaturedImage,
+  sortPostsNewestFirst,
+  cleanPostTitle,
+  postExcerpt,
+} from '@/lib/posts';
 
 // Time-based ISR backstop (1h). Primary refresh is on-demand
 // revalidateTag('posts') on publish; this floor self-heals the index if a
@@ -60,7 +65,10 @@ async function getPosts() {
     }
 
     const data = await response.json();
-    return { posts: data.posts || [], error: null };
+    // Issue #1 (audit): index.json order is pipeline-dependent; the featured
+    // slot showed a stale post above newer ones. Same defensive sort as
+    // lib/posts.ts so "FEATURED · LATEST" is actually the latest.
+    return { posts: sortPostsNewestFirst(data.posts || []), error: null };
   } catch (error) {
     Sentry.captureException(error);
     return { posts: [], error: 'network' };
@@ -71,6 +79,10 @@ export default async function HomePage() {
   const { posts, error } = await getPosts();
   const currentPost = posts[0];
   const heroImage = currentPost ? postFeaturedImage(currentPost) : null;
+  const featuredTitle = currentPost ? cleanPostTitle(currentPost.title) : '';
+  // Issue #2 (audit): null when no real excerpt exists — we omit the
+  // element rather than ship placeholder copy to production.
+  const featuredExcerpt = currentPost ? postExcerpt(currentPost, 200) : null;
 
   // WebSite structured data for Google sitelinks search box
   const websiteSchema = {
@@ -158,7 +170,7 @@ export default async function HomePage() {
                     {heroImage ? (
                       <Image
                         src={heroImage}
-                        alt={currentPost.title || 'Featured Post'}
+                        alt={featuredTitle || 'Featured Post'}
                         fill
                         sizes="(min-width: 1024px) 50vw, 100vw"
                         className="object-cover"
@@ -187,15 +199,14 @@ export default async function HomePage() {
                         className="gl-h2 mt-4"
                         style={{ fontSize: 'clamp(1.75rem, 3vw, 2.25rem)' }}
                       >
-                        {currentPost?.title}
+                        {featuredTitle}
                       </h2>
 
-                      <p className="gl-body gl-body--lg mt-4">
-                        {currentPost?.excerpt ||
-                          (currentPost?.content
-                            ? currentPost.content.substring(0, 200) + '...'
-                            : 'Read this insightful article')}
-                      </p>
+                      {featuredExcerpt && (
+                        <p className="gl-body gl-body--lg mt-4">
+                          {featuredExcerpt}
+                        </p>
+                      )}
                     </div>
 
                     <div
@@ -236,6 +247,11 @@ export default async function HomePage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {posts.slice(1, 7).map((post) => {
                       const cardImage = postFeaturedImage(post);
+                      const cardTitle = cleanPostTitle(post.title);
+                      // Issue #2/#5 (audit): canonical excerpt resolver — no
+                      // raw content.substring() leaking HTML into cards, no
+                      // title-repeated-as-excerpt. Omits cleanly when empty.
+                      const cardExcerpt = postExcerpt(post, 140);
                       return (
                       <Card
                         key={post.id || post.slug}
@@ -245,7 +261,7 @@ export default async function HomePage() {
                           <div className="relative aspect-video overflow-hidden bg-slate-800">
                             <Image
                               src={cardImage}
-                              alt={post.title}
+                              alt={cardTitle}
                               fill
                               sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                               className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
@@ -273,15 +289,12 @@ export default async function HomePage() {
                                 href={`/posts/${post.slug}`}
                                 className="hover:text-[color:var(--gl-cyan)] transition-colors"
                               >
-                                {post.title}
+                                {cardTitle}
                               </Link>
                             </Card.Title>
-                            {(post.excerpt || post.content) && (
+                            {cardExcerpt && (
                               <Card.Body className="line-clamp-3 mt-2">
-                                {post.excerpt ||
-                                  (post.content
-                                    ? post.content.substring(0, 100) + '...'
-                                    : '')}
+                                {cardExcerpt}
                               </Card.Body>
                             )}
                           </div>
