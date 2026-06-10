@@ -94,7 +94,9 @@ async def _upload_json(
 async def _fetch_published_posts(pool, include_content: bool = False) -> list[dict]:
     """Fetch all published posts, newest first. Includes tag slugs aggregated
     from the post_tags junction so the static export can populate
-    posts.tags[] (drives frontend /tag/[slug] pages — internal tracker)."""
+    posts.tags[] (drives frontend /tag/[slug] pages — internal tracker).
+    Also joins pipeline_tasks to surface niche_slug for frontend feed filtering
+    (the posts table has no niche_slug column — it lives on pipeline_tasks)."""
     content_col = ", p.content" if include_content else ""
     async with pool.acquire() as conn:
         rows = await conn.fetch(f"""
@@ -103,6 +105,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
                    p.seo_keywords, p.published_at, p.created_at, p.updated_at,
                    p.distributed_at,
                    p.metadata->>'featured_image_alt' AS featured_image_alt,
+                   COALESCE(MAX(ptask.niche_slug), '') AS niche_slug,
                    COALESCE(
                        ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
                        ARRAY[]::text[]
@@ -111,6 +114,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
             FROM posts p
             LEFT JOIN post_tags pt ON pt.post_id = p.id
             LEFT JOIN tags t ON t.id = pt.tag_id
+            LEFT JOIN pipeline_tasks ptask ON p.metadata->>'pipeline_task_id' = ptask.task_id
             WHERE p.status = 'published'
               AND (p.published_at IS NULL OR p.published_at <= NOW())
             GROUP BY p.id
@@ -175,6 +179,7 @@ def _post_summary(post: dict) -> dict:
         "seo_title": post.get("seo_title"),
         "seo_description": post.get("seo_description"),
         "seo_keywords": post.get("seo_keywords"),
+        "niche_slug": post.get("niche_slug") or "",
         "tags": list(post.get("tags") or []),
         "published_at": post["published_at"].isoformat() if post.get("published_at") else None,
         "created_at": post["created_at"].isoformat() if post.get("created_at") else None,

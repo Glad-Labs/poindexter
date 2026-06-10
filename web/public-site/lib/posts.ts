@@ -29,6 +29,7 @@ export interface Post {
   seo_title?: string;
   seo_description?: string;
   seo_keywords?: string;
+  niche_slug?: string;
 }
 
 export interface PostsResponse {
@@ -279,6 +280,24 @@ export async function getPostsByCategory(
  */
 export async function getAllPublishedPosts(): Promise<Post[]> {
   return await fetchPostIndex();
+}
+
+/**
+ * Fetch dev_diary posts only (the daily founder log).
+ * Dev diary has its own /dev-diary route and is excluded from the main feed.
+ */
+export async function getDevDiaryPosts(): Promise<Post[]> {
+  const allPosts = await fetchPostIndex();
+  return allPosts.filter((p) => p.niche_slug === 'dev_diary');
+}
+
+/**
+ * Fetch the main feed posts — all published posts EXCLUDING dev_diary.
+ * Dev diary has its own /dev-diary route so it doesn't flood the homepage.
+ */
+export async function getMainFeedPosts(): Promise<Post[]> {
+  const allPosts = await fetchPostIndex();
+  return allPosts.filter((p) => p.niche_slug !== 'dev_diary');
 }
 
 /**

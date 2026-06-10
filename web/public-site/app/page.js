@@ -68,7 +68,11 @@ async function getPosts() {
     // Issue #1 (audit): index.json order is pipeline-dependent; the featured
     // slot showed a stale post above newer ones. Same defensive sort as
     // lib/posts.ts so "FEATURED · LATEST" is actually the latest.
-    return { posts: sortPostsNewestFirst(data.posts || []), error: null };
+    const allPosts = sortPostsNewestFirst(data.posts || []);
+    // Exclude dev_diary from the main feed — it has its own /dev-diary page
+    // and publishing daily would otherwise flood the homepage (#1339).
+    const posts = allPosts.filter((p) => p.niche_slug !== 'dev_diary');
+    return { posts, error: null };
   } catch (error) {
     Sentry.captureException(error);
     return { posts: [], error: 'network' };
@@ -322,6 +326,15 @@ export default async function HomePage() {
             </div>
           </section>
         )}
+
+        {/* Dev Diary teaser — links to the dedicated /dev-diary feed (#1339) */}
+        <section className="py-6 px-4 sm:px-6 lg:px-8">
+          <div className="container mx-auto max-w-6xl text-center">
+            <a href="/dev-diary" className="text-[color:var(--gl-cyan)] hover:underline text-sm gl-mono">
+              Read the Dev Diary — daily founder notes from building Glad Labs →
+            </a>
+          </div>
+        </section>
 
         {/* Browse All Articles CTA */}
         <section className="py-16 px-4 sm:px-6 lg:px-8">
