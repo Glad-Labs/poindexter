@@ -186,49 +186,24 @@ class FinalizeTaskStage:
         import secrets as _secrets
         preview_token = (context.get("preview_token") or "").strip() or _secrets.token_hex(16)
 
-        task_metadata = {
-            "preview_token": preview_token,
-            "featured_image_url": context.get("featured_image_url"),
-            "featured_image_alt": context.get("featured_image_alt", ""),
-            "featured_image_width": context.get("featured_image_width"),
-            "featured_image_height": context.get("featured_image_height"),
-            "featured_image_photographer": context.get("featured_image_photographer"),
-            "featured_image_source": context.get("featured_image_source"),
-            "content": content_text,
-            # Pre-approve snapshot for the auto_publish_gate edit-distance
-            # signal. publish_service.publish_post_from_task diffs this
-            # against the post-approve content (which may include operator
-            # edits) when writing published_post_edit_metrics. The snapshot
-            # is only written here on the awaiting_approval terminal step
-            # so any operator edits made between this row landing and the
-            # operator pressing approve land in `content` and produce a
-            # real diff against this snapshot.
-            "pre_approve_content": content_text,
-            "seo_title": seo_title,
-            "seo_description": seo_description,
-            "seo_keywords": seo_keywords_list,
-            "topic": topic,
-            "style": style,
-            "tone": tone,
-            "category": category,
-            "target_audience": target_audience or "General",
-            "post_id": None,
-            "quality_score": final_quality_score,
-            "quality_score_early_eval": early_eval_score,
-            "qa_final_score": context.get("qa_final_score"),
-            "content_length": len(content_text),
-            "word_count": len(content_text.split()),
-            "podcast_script": context.get("podcast_script", ""),
-            "video_scenes": context.get("video_scenes", []),
-            "short_summary_script": context.get("short_summary_script", ""),
-            # Glad-Labs/glad-labs-stack#649 PR 2 — propagate the director's
-            # shot list through to publish_service so it lands on
-            # posts.video_shot_list. Absent when the director stage
-            # skipped (no pool / no podcast script / etc.) — downstream
-            # consumers (the shot-list renderer) treat absent the same
-            # as "fall back to legacy slideshow".
-            "video_shot_list": context.get("video_shot_list"),
-        }
+        # Shared assembly with content.persist_task — see
+        # modules/content/task_metadata.py. Derived fields (preview_token,
+        # normalized content/seo, scores) are computed above and passed in;
+        # passthrough fields (topic/style/tone/category/target_audience, the
+        # featured_image_* group, and the media keys) are read from `context`
+        # by the helper. Keeps the dev_diary and canonical_blog finalize
+        # paths' metadata key sets identical (Glad-Labs/poindexter#693).
+        from modules.content.task_metadata import build_task_metadata
+        task_metadata = build_task_metadata(
+            context,
+            preview_token=preview_token,
+            content_text=content_text,
+            seo_title=seo_title,
+            seo_description=seo_description,
+            seo_keywords_list=seo_keywords_list,
+            final_quality_score=final_quality_score,
+            early_eval_score=early_eval_score,
+        )
 
         # poindexter#471: the title chain here historically allowed the raw
         # ``topic`` to land in ``pipeline_versions.title`` when the upstream

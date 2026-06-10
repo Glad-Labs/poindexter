@@ -60,8 +60,8 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Write the awaiting_approval record to content_tasks."""
-    from services.text_utils import normalize_text as _normalize_text
     from services.quality_models import ensure_quality_assessment
+    from services.text_utils import normalize_text as _normalize_text
 
     task_id = state.get("task_id")
     database_service = state.get("database_service")
@@ -104,39 +104,22 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         state.get("title") or seo_title or strip_qa_batch_suffix(topic)
     )
 
-    task_metadata = {
-        "preview_token": preview_token,
-        "featured_image_url": state.get("featured_image_url"),
-        "featured_image_alt": state.get("featured_image_alt", ""),
-        "featured_image_width": state.get("featured_image_width"),
-        "featured_image_height": state.get("featured_image_height"),
-        "featured_image_photographer": state.get("featured_image_photographer"),
-        "featured_image_source": state.get("featured_image_source"),
-        "content": content_text,
-        "pre_approve_content": content_text,
-        "seo_title": seo_title,
-        "seo_description": seo_description,
-        "seo_keywords": seo_keywords_list,
-        "topic": topic,
-        "style": style,
-        "tone": tone,
-        "category": category,
-        "target_audience": target_audience or "General",
-        "post_id": None,
-        "quality_score": final_quality_score,
-        "quality_score_early_eval": early_eval_score,
-        "qa_final_score": state.get("qa_final_score"),
-        "content_length": len(content_text),
-        "word_count": len(content_text.split()),
-        "podcast_script": state.get("podcast_script", ""),
-        "video_scenes": state.get("video_scenes", []),
-        "short_summary_script": state.get("short_summary_script", ""),
-        "video_shot_list": state.get("video_shot_list"),
-        "short_shot_list": state.get("short_shot_list"),
-        "video_ambient_audio_path": state.get("video_ambient_audio_path", ""),
-        "podcast_audio_path": state.get("podcast_audio_path", ""),
-        "podcast_intro_audio_path": state.get("podcast_intro_audio_path", ""),
-    }
+    # Shared assembly with FinalizeTaskStage — see
+    # modules/content/task_metadata.py. Derived fields (preview_token,
+    # normalized content/seo, scores) are computed above and passed in;
+    # passthrough fields are read from `state` by the helper. Keeps the
+    # two finalize paths' key sets identical (Glad-Labs/poindexter#693).
+    from modules.content.task_metadata import build_task_metadata
+    task_metadata = build_task_metadata(
+        state,
+        preview_token=preview_token,
+        content_text=content_text,
+        seo_title=seo_title,
+        seo_description=seo_description,
+        seo_keywords_list=seo_keywords_list,
+        final_quality_score=final_quality_score,
+        early_eval_score=early_eval_score,
+    )
 
     updates = {
         "status": "awaiting_approval",
