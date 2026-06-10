@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useTransition, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -17,8 +17,16 @@ function SearchContent() {
   const query = searchParams.get('q') || '';
   const [results, setResults] = useState([]);
   const [allPosts, setAllPosts] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  // isPending from useTransition drives the loading card — unlike a plain
+  // setIsLoading(true/false) pair that resolves synchronously in the same
+  // tick, startTransition defers the filtering work so the loading state
+  // actually renders before results appear (#1328 item 11).
+  const [isPending, startTransition] = useTransition();
+  const [fetchError, setFetchError] = useState(false);
+  const [noMatchError, setNoMatchError] = useState('');
+
+  // Keep a single derived isLoading value for the status region.
+  const isLoading = isPending;
 
   useEffect(() => {
     const loadPosts = async () => {
@@ -29,7 +37,9 @@ function SearchContent() {
         const data = await resp.json();
         setAllPosts(data.items || data.posts || data);
       } catch (_err) {
-        setError('Failed to load articles.');
+        // Surface fetch failures as a distinct "Search failed" message, not
+        // "NO MATCHES" (#1328 item 11).
+        setFetchError(true);
       }
     };
     loadPosts();
@@ -38,41 +48,44 @@ function SearchContent() {
   useEffect(() => {
     if (!query.trim() || allPosts.length === 0) {
       setResults([]);
+      setNoMatchError('');
       return;
     }
 
-    setIsLoading(true);
-    setError('');
+    setNoMatchError('');
+    startTransition(() => {
+      const q = query.toLowerCase();
+      const matched = allPosts.filter((post) => {
+        const title = (post.title || '').toLowerCase();
+        const excerpt = (post.excerpt || '').toLowerCase();
+        const seoTitle = (post.seo_title || '').toLowerCase();
+        const seoDesc = (post.seo_description || '').toLowerCase();
+        const keywords = (post.seo_keywords || '').toLowerCase();
+        // Include tags[] so searching a tag slug ("local-inference") matches
+        // posts tagged with that slug even when the title/excerpt don't
+        // mention it (gitea#267 follow-up).
+        const tags = Array.isArray(post.tags)
+          ? post.tags.join(' ').toLowerCase()
+          : '';
+        return (
+          title.includes(q) ||
+          excerpt.includes(q) ||
+          seoTitle.includes(q) ||
+          seoDesc.includes(q) ||
+          keywords.includes(q) ||
+          tags.includes(q)
+        );
+      });
 
-    const q = query.toLowerCase();
-    const matched = allPosts.filter((post) => {
-      const title = (post.title || '').toLowerCase();
-      const excerpt = (post.excerpt || '').toLowerCase();
-      const seoTitle = (post.seo_title || '').toLowerCase();
-      const seoDesc = (post.seo_description || '').toLowerCase();
-      const keywords = (post.seo_keywords || '').toLowerCase();
-      // Include tags[] so searching a tag slug ("local-inference") matches
-      // posts tagged with that slug even when the title/excerpt don't
-      // mention it (gitea#267 follow-up).
-      const tags = Array.isArray(post.tags)
-        ? post.tags.join(' ').toLowerCase()
-        : '';
-      return (
-        title.includes(q) ||
-        excerpt.includes(q) ||
-        seoTitle.includes(q) ||
-        seoDesc.includes(q) ||
-        keywords.includes(q) ||
-        tags.includes(q)
-      );
+      setResults(matched);
+      if (matched.length === 0) {
+        setNoMatchError(`No articles found for "${query}"`);
+      }
     });
-
-    setResults(matched);
-    if (matched.length === 0) {
-      setError(`No articles found for "${query}"`);
-    }
-    setIsLoading(false);
   }, [query, allPosts]);
+
+  // Unified error string for the aria-live status region.
+  const error = fetchError ? 'Search failed, please try again.' : noMatchError;
 
   return (
     // Plain <div>, not a nested <main> — the global layout already renders the
@@ -135,10 +148,20 @@ function SearchContent() {
               <Card.Meta>SEARCHING</Card.Meta>
               <p className="gl-body mt-3">Searching articles...</p>
             </Card>
-          ) : error ? (
+          ) : fetchError ? (
+            <Card accent="amber" className="text-center py-12">
+              <Card.Meta>ERROR</Card.Meta>
+              <h2 className="gl-h2 mt-2">Search failed, please try again.</h2>
+              <div className="mt-6 flex justify-center">
+                <Button as={Link} href="/archive/1" variant="secondary">
+                  Browse all articles
+                </Button>
+              </div>
+            </Card>
+          ) : noMatchError ? (
             <Card accent="amber" className="text-center py-12">
               <Card.Meta>NO MATCHES</Card.Meta>
-              <h2 className="gl-h2 mt-2">{error}</h2>
+              <h2 className="gl-h2 mt-2">{noMatchError}</h2>
               <div className="mt-6 flex justify-center">
                 <Button as={Link} href="/archive/1" variant="secondary">
                   Browse all articles

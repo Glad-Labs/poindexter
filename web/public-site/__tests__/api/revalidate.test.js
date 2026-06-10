@@ -86,9 +86,9 @@ describe('POST /api/revalidate', () => {
       const req = makeRequest({ secret: 'test-secret-123', body: {} });
       await POST(req);
 
-      // Should revalidate /, /archive, /posts
+      // Should revalidate /, /archive/1, /posts (/archive is a redirect, not a real route)
       expect(revalidatePath).toHaveBeenCalledWith('/', 'page');
-      expect(revalidatePath).toHaveBeenCalledWith('/archive', 'page');
+      expect(revalidatePath).toHaveBeenCalledWith('/archive/1', 'page');
       expect(revalidatePath).toHaveBeenCalledWith('/posts', 'page');
     });
 

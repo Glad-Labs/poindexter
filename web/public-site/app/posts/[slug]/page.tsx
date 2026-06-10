@@ -26,6 +26,27 @@ import {
 } from '../../../lib/posts';
 import { SITE_NAME, SITE_URL, ADSENSE_SLOT_ID } from '@/lib/site.config';
 
+// Shared brand-tokenized prose class string. Extracted to a constant so the
+// post page and any preview surface stay in sync (#1328 item 5).
+const PROSE_CLASSES =
+  'prose prose-invert max-w-none ' +
+  'prose-headings:font-[family-name:var(--gl-font-display)] ' +
+  'prose-headings:font-bold ' +
+  'prose-h1:text-4xl prose-h1:text-white prose-h1:mt-8 prose-h1:mb-4 ' +
+  'prose-h2:text-3xl prose-h2:text-white prose-h2:mt-10 prose-h2:mb-4 ' +
+  'prose-h2:tracking-tight ' +
+  'prose-h3:text-2xl prose-h3:text-white prose-h3:mt-6 prose-h3:mb-3 ' +
+  'prose-p:text-[color:var(--gl-text-muted)] prose-p:leading-relaxed prose-p:mb-6 ' +
+  'prose-strong:text-white prose-strong:font-semibold ' +
+  'prose-a:text-[color:var(--gl-cyan)] prose-a:hover:text-[color:var(--gl-cyan)] prose-a:underline ' +
+  'prose-code:text-[color:var(--gl-cyan)] prose-code:bg-[color:var(--gl-hairline)] prose-code:px-2 prose-code:py-1 prose-code:rounded-none ' +
+  'prose-pre:bg-[color:var(--gl-hairline)] prose-pre:border prose-pre:border-[color:var(--gl-hairline-strong)] prose-pre:rounded-none ' +
+  'prose-blockquote:border-l-4 prose-blockquote:border-[color:var(--gl-cyan)] prose-blockquote:pl-4 prose-blockquote:text-[color:var(--gl-text-muted)] prose-blockquote:not-italic ' +
+  'prose-ul:text-[color:var(--gl-text-muted)] prose-ol:text-[color:var(--gl-text-muted)] ' +
+  'prose-li:text-[color:var(--gl-text-muted)] prose-li:marker:text-[color:var(--gl-cyan)] ' +
+  'prose-img:rounded-none prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full ' +
+  'prose-hr:border-[color:var(--gl-hairline-strong)]';
+
 // #945: Bounded generateStaticParams — pre-generate recent post pages at build time
 // for faster first-hit latency and better SEO indexing. Long-tail slugs still
 // work via ISR fallback (dynamicParams defaults to true in Next.js 15).
@@ -177,9 +198,11 @@ export default async function PostPage({
       .replace(/&gt;/g, '>')
       .replace(/&hellip;/g, '...')
       .replace(/&nbsp;/g, ' ')
-      .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(parseInt(code)))
+      // Use fromCodePoint (not fromCharCode) so astral-plane codepoints
+      // (emoji, etc.) round-trip correctly (#1328 item 2).
+      .replace(/&#(\d+);/g, (_m, code) => String.fromCodePoint(parseInt(code)))
       .replace(/&#x([0-9a-f]+);/gi, (_m, code) =>
-        String.fromCharCode(parseInt(code, 16))
+        String.fromCodePoint(parseInt(code, 16))
       );
   }
 
@@ -201,15 +224,31 @@ export default async function PostPage({
       /\balt\s*=/i.test(attrs) ? match : `<img${attrs} alt="">`
   );
 
+  // Dedup counter for heading IDs — if two headings produce the same slug,
+  // the second gets a -1 suffix, the third -2, etc. (#1328 item 3).
+  const seenHeadingIds: Record<string, number> = {};
+  function uniqueHeadingId(id: string): string {
+    if (!seenHeadingIds[id]) {
+      seenHeadingIds[id] = 0;
+    }
+    seenHeadingIds[id]++;
+    return seenHeadingIds[id] === 1 ? id : `${id}-${seenHeadingIds[id] - 1}`;
+  }
+
   const tocEntries: { level: number; text: string; id: string }[] = [];
+  // NOTE (#1328 item 4): the `.*?` capture already works for most headings.
+  // Genuine multiline headings (line break inside an <h2>) are extremely
+  // rare in pipeline output; the regex handles single-line headings only.
+  // Add the `s` flag here if multiline headings ever appear in practice.
   const contentWithIds = contentWithAlts.replace(
     /<h([23])([^>]*)>(.*?)<\/h\1>/gi,
     (_m: string, level: string, attrs: string, text: string) => {
       const plainText = decodeEntities(text.replace(/<[^>]+>/g, '')).trim();
-      const id = plainText
+      const baseId = plainText
         .toLowerCase()
         .replace(/[^\w]+/g, '-')
         .slice(0, 60);
+      const id = uniqueHeadingId(baseId);
       tocEntries.push({ level: parseInt(level), text: plainText, id });
       return `<h${level}${attrs} id="${id}">${text}</h${level}>`;
     }
@@ -373,25 +412,7 @@ export default async function PostPage({
               </Button>
             </div>
 
-            <article
-              className="prose prose-invert max-w-none
-                       prose-headings:font-[family-name:var(--gl-font-display)]
-                       prose-headings:font-bold
-                       prose-h1:text-4xl prose-h1:text-white prose-h1:mt-8 prose-h1:mb-4
-                       prose-h2:text-3xl prose-h2:text-white prose-h2:mt-10 prose-h2:mb-4
-                       prose-h2:tracking-tight
-                       prose-h3:text-2xl prose-h3:text-white prose-h3:mt-6 prose-h3:mb-3
-                       prose-p:text-[color:var(--gl-text-muted)] prose-p:leading-relaxed prose-p:mb-6
-                       prose-strong:text-white prose-strong:font-semibold
-                       prose-a:text-[color:var(--gl-cyan)] prose-a:hover:text-[color:var(--gl-cyan)] prose-a:underline
-                       prose-code:text-[color:var(--gl-cyan)] prose-code:bg-[color:var(--gl-hairline)] prose-code:px-2 prose-code:py-1 prose-code:rounded-none
-                       prose-pre:bg-[color:var(--gl-hairline)] prose-pre:border prose-pre:border-[color:var(--gl-hairline-strong)] prose-pre:rounded-none
-                       prose-blockquote:border-l-4 prose-blockquote:border-[color:var(--gl-cyan)] prose-blockquote:pl-4 prose-blockquote:text-[color:var(--gl-text-muted)] prose-blockquote:not-italic
-                       prose-ul:text-[color:var(--gl-text-muted)] prose-ol:text-[color:var(--gl-text-muted)]
-                       prose-li:text-[color:var(--gl-text-muted)] prose-li:marker:text-[color:var(--gl-cyan)]
-                       prose-img:rounded-none prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full
-                       prose-hr:border-[color:var(--gl-hairline-strong)]"
-            >
+            <article className={PROSE_CLASSES}>
               <div
                 dangerouslySetInnerHTML={{
                   __html: sanitizeHtml(contentWithIds, {

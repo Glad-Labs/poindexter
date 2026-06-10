@@ -97,6 +97,20 @@ export async function GET() {
           '';
         const link = `${SITE_URL}/posts/${post.slug}`;
 
+        // Derive MIME type from image URL extension (#1328 item 9).
+        // length="0" is acceptable per RSS spec when the file size is unknown.
+        // & in the URL must be XML-escaped to &amp; to produce valid XML.
+        function enclosureMimeType(url: string): string {
+          const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+          if (ext === 'png') return 'image/png';
+          if (ext === 'webp') return 'image/webp';
+          if (ext === 'gif') return 'image/gif';
+          return 'image/jpeg'; // .jpg / .jpeg / unknown → jpeg
+        }
+        function xmlAttr(val: string): string {
+          return val.replace(/&/g, '&amp;');
+        }
+
         return `
     <item>
       <title><![CDATA[${title}]]></title>
@@ -106,7 +120,7 @@ export async function GET() {
       <pubDate>${pubDate}</pubDate>${
         post.featured_image_url
           ? `
-      <enclosure url="${post.featured_image_url}" type="image/jpeg" />`
+      <enclosure url="${xmlAttr(post.featured_image_url)}" type="${enclosureMimeType(post.featured_image_url)}" length="0" />`
           : ''
       }
     </item>`;

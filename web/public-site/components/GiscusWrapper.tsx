@@ -32,7 +32,9 @@ export function GiscusWrapper({ postSlug, postTitle }: GiscusWrapperProps) {
     script.setAttribute('data-reactions-enabled', '1');
     script.setAttribute('data-emit-metadata', '0');
     script.setAttribute('data-input-position', 'bottom');
-    script.setAttribute('data-theme', 'preferred_color_scheme');
+    // Site forces dark mode — use a fixed dark theme to prevent the comments
+    // section from flashing white on load (#1328 item 12).
+    script.setAttribute('data-theme', 'dark_dimmed');
     script.setAttribute('data-lang', 'en');
     script.setAttribute('data-loading', 'lazy');
     script.setAttribute('crossorigin', 'anonymous');
