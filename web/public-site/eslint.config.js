@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
 
 export default [
@@ -40,10 +41,10 @@ export default [
   },
   {
     files: [
-      'components/**/*.{js,jsx}',
-      'pages/**/*.{js,jsx}',
-      'lib/**/*.{js,jsx}',
-      'app/**/*.{js,jsx}',
+      'components/**/*.{js,jsx,ts,tsx}',
+      'pages/**/*.{js,jsx,ts,tsx}',
+      'lib/**/*.{js,jsx,ts,tsx}',
+      'app/**/*.{js,jsx,ts,tsx}',
     ],
     languageOptions: {
       ecmaVersion: 'latest',
@@ -64,12 +65,15 @@ export default [
     },
     plugins: {
       react,
+      'react-hooks': reactHooks,
       '@next/next': nextPlugin,
     },
     rules: {
       ...js.configs.recommended.rules,
       ...react.configs.recommended.rules,
       ...nextPlugin.configs.recommended.rules,
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
       'react/display-name': 'off',
@@ -92,9 +96,9 @@ export default [
   // Test files - disable img element warning for mocks
   {
     files: [
-      '**/__tests__/**/*.{js,jsx}',
-      '**/*.test.{js,jsx}',
-      '**/*.spec.{js,jsx}',
+      '**/__tests__/**/*.{js,jsx,ts,tsx}',
+      '**/*.test.{js,jsx,ts,tsx}',
+      '**/*.spec.{js,jsx,ts,tsx}',
     ],
     rules: {
       '@next/next/no-img-element': 'off',

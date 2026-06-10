@@ -85,7 +85,7 @@ export default async function AuthorPage({
           <h2 className="gl-h2 mb-6">
             Articles by {author.name}
             {authorPostCount > 0 ? (
-              <span className="gl-mono gl-mono--upper text-base ml-3 opacity-60">
+              <span className="gl-mono gl-mono--upper text-base ml-3 text-[color:var(--gl-text-muted)]">
                 {authorPostCount}
               </span>
             ) : null}

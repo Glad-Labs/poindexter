@@ -279,7 +279,7 @@ export default function CookieConsentBanner() {
                   <label htmlFor="essential" className="gl-mono gl-mono--upper gl-mono--amber block">
                     Essential Cookies
                   </label>
-                  <p className="gl-body gl-body--sm mt-1 opacity-70">
+                  <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">
                     Required for site functionality. Cannot be disabled.
                   </p>
                 </div>
@@ -312,7 +312,7 @@ export default function CookieConsentBanner() {
                   <span className="gl-mono gl-mono--upper gl-mono--accent block">
                     Analytics Cookies
                   </span>
-                  <p className="gl-body gl-body--sm mt-1 opacity-80">
+                  <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">
                     Help us understand how you use the site so we can improve
                     performance and UX.
                   </p>
@@ -346,7 +346,7 @@ export default function CookieConsentBanner() {
                   <span className="gl-mono gl-mono--upper gl-mono--accent block">
                     Advertising Cookies
                   </span>
-                  <p className="gl-body gl-body--sm mt-1 opacity-80">
+                  <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">
                     Enable personalized ads and marketing based on your
                     interests.
                   </p>

@@ -444,7 +444,7 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                   className="w-4 h-4 mt-0.5 cursor-pointer"
                   style={{ accentColor: 'var(--gl-cyan)' }}
                 />
-                <span className="gl-body gl-body--sm opacity-80">
+                <span className="gl-body gl-body--sm text-[color:var(--gl-text-muted)]">
                   I agree to receive marketing emails and campaign updates from{' '}
                   {SITE_NAME}.
                 </span>

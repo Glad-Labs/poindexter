@@ -338,7 +338,7 @@ export default async function PostPage({
 
             {/* Social Share */}
             <div className="flex items-center gap-3 mb-8 flex-wrap">
-              <span className="gl-mono gl-mono--upper text-xs opacity-70">
+              <span className="gl-mono gl-mono--upper text-xs text-[color:var(--gl-text-muted)]">
                 Share:
               </span>
               <Button
@@ -423,7 +423,7 @@ export default async function PostPage({
             </article>
 
             {/* AI Disclosure — EU AI Act Article 50 compliance */}
-            <div className="mt-10 border-l-2 border-[color:var(--gl-hairline-strong)] pl-4 py-2 gl-mono gl-mono--upper text-xs opacity-70">
+            <div className="mt-10 border-l-2 border-[color:var(--gl-hairline-strong)] pl-4 py-2 gl-mono gl-mono--upper text-xs text-[color:var(--gl-text-muted)]">
               Generated with AI assistance · Reviewed by a human editor ·
               Published by{' '}
               <a

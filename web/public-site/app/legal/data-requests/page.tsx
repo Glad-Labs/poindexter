@@ -205,7 +205,7 @@ export default function DataRequests() {
               className={INPUT_CLASS}
               style={INPUT_STYLE}
             />
-            <p className="gl-body gl-body--sm opacity-70 mt-1">
+            <p className="gl-body gl-body--sm text-[color:var(--gl-text-muted)] mt-1">
               We&apos;ll use this to verify your identity and respond to your
               request.
             </p>

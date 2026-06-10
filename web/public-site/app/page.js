@@ -177,7 +177,7 @@ export default async function HomePage() {
                         priority
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center gl-mono gl-mono--upper opacity-50">
+                      <div className="w-full h-full flex items-center justify-center gl-mono gl-mono--upper text-[color:var(--gl-text-muted)]">
                         No image available
                       </div>
                     )}
@@ -213,7 +213,7 @@ export default async function HomePage() {
                       className="flex items-center justify-between pt-6 mt-6"
                       style={{ borderTop: '1px solid var(--gl-hairline)' }}
                     >
-                      <div className="gl-mono gl-mono--upper opacity-70 text-xs">
+                      <div className="gl-mono gl-mono--upper text-[color:var(--gl-text-muted)] text-xs">
                         {currentPost?.published_at && (
                           <time dateTime={currentPost.published_at}>
                             {new Date(
