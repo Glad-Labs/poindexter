@@ -36,6 +36,12 @@ export default function CookieConsentBanner() {
         setConsent(parsed);
         setTempConsent(parsed);
         setIsVisible(false);
+        // Fire loaders for returning visitors who already consented (#1318)
+        if (typeof window !== 'undefined') {
+          window.__cookieConsent = parsed;
+          if (parsed.analytics) loadGoogleAnalytics();
+          if (parsed.advertising) loadAdSense();
+        }
       } catch (_e) {
         setIsVisible(true);
       }

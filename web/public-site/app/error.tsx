@@ -21,18 +21,9 @@ export default function Error({ error, reset }: ErrorProps) {
     Sentry.captureException(error);
   }, [error]);
 
-  const isNetworkError =
-    error?.message?.includes('fetch') || error?.message?.includes('network');
-  const isNotFoundError = error?.message?.includes('404');
-
-  const headline = isNetworkError
-    ? 'Network connection error.'
-    : isNotFoundError
-      ? 'Page not found.'
-      : 'An unexpected error occurred.';
-
-  const detail = isNetworkError
-    ? 'Unable to connect to the server.'
+  const headline = 'An unexpected error occurred.';
+  const detail = error?.digest
+    ? `Error reference: ${error.digest}`
     : 'An unexpected error occurred.';
 
   return (
@@ -66,23 +57,10 @@ export default function Error({ error, reset }: ErrorProps) {
 
           {/* Description */}
           <div className="mt-8 gl-body gl-body--lg">
-            {isNetworkError ? (
-              <>
-                <p>Unable to load content right now. This could be due to:</p>
-                <ul className="gl-body mt-3 space-y-1 list-disc list-inside">
-                  <li>Your internet connection is unstable</li>
-                  <li>The server is temporarily unavailable</li>
-                  <li>A proxy or firewall is blocking the request</li>
-                </ul>
-              </>
-            ) : isNotFoundError ? (
-              <p>The resource you&apos;re looking for couldn&apos;t be found.</p>
-            ) : (
-              <p>
-                We&apos;ve been notified and are working on it. Try again in a
-                moment.
-              </p>
-            )}
+            <p>
+              We&apos;ve been notified and are working on it. Try again in a
+              moment.
+            </p>
           </div>
 
           {/* Actions */}

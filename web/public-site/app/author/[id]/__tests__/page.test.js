@@ -12,6 +12,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 
+// Mock fetch — getPostsByAuthor calls fetchPostIndex which uses fetch.
+// The page wraps calls in try/catch so a simple empty-list response suffices.
+global.fetch = jest.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({ posts: [], total: 0, exported_at: '2026-01-01T00:00:00Z' }),
+});
+
 // Mock next/link
 jest.mock('next/link', () => {
   return ({ children, href }) => <a href={href}>{children}</a>;

@@ -48,7 +48,7 @@ export const metadata = {
     types: {
       'application/rss+xml': [
         { url: '/feed.xml', title: `${SITE_NAME} Blog` },
-        { url: '/api/podcast', title: PODCAST_NAME },
+        { url: '/podcast-feed.xml', title: PODCAST_NAME },
       ],
     },
   },

@@ -116,11 +116,20 @@ function SearchContent() {
             ? `Search results for ${query}`
             : 'Search results'}
         </h2>
-        <div
-          className="container mx-auto max-w-6xl"
-          role="status"
-          aria-live="polite"
-        >
+        {/* Announce count/loading/error only — keeps the grid itself out of the
+            live region so screen readers don't re-read all 27 cards (#1330) */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {isLoading
+            ? 'Searching articles…'
+            : error
+            ? error
+            : results.length > 0
+            ? `Found ${results.length} article${results.length !== 1 ? 's' : ''} matching ${query}.`
+            : query
+            ? 'No matching articles found.'
+            : ''}
+        </p>
+        <div className="container mx-auto max-w-6xl">
           {isLoading ? (
             <Card accent="cyan" className="text-center py-12">
               <Card.Meta>SEARCHING</Card.Meta>
