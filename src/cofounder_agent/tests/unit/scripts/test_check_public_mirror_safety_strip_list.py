@@ -85,3 +85,64 @@ def test_docs_json_gladlabs_lines_are_in_substrate_line_strips() -> None:
         "The 'www.gladlabs.io' website is not listed in _SUBSTRATE_LINE_STRIPS['docs.json']. "
         "Add it so the CI lint skips the line that the sync filter rewrites."
     )
+
+
+# ---------------------------------------------------------------------------
+# Glad-Labs/poindexter#1287 — the operator mirror-tooling cluster must be
+# STRIPPED (not allowlisted) so the leak guard's own operator-private
+# literals stop shipping to the public mirror.
+# ---------------------------------------------------------------------------
+
+# The two scripts + their unit tests that load them. Stripping the whole
+# cluster together keeps the mirror's unit-tests run from ImportError-ing on
+# the now-absent scripts. Keep this list in lock-step with the mirror-tooling
+# block in _STRIP_FILES and the matching git-rm block in sync-to-github.sh.
+_MIRROR_TOOLING_STRIP = (
+    "scripts/ci/check_public_mirror_safety.py",
+    "scripts/regen-app-settings-doc.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
+    "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
+    "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
+)
+
+
+def test_mirror_tooling_cluster_is_in_strip_files() -> None:
+    """The leak guard, the doc generator, and their tests must all be stripped.
+
+    They carry operator-private literals inline (the blocklist of values they
+    redact). Shipping them put the guard's own ``_LEAK_PATTERNS`` figures on
+    the public mirror — the guard was itself the leak (#1287).
+    """
+    missing = [p for p in _MIRROR_TOOLING_STRIP if p not in CHECK._STRIP_FILES]
+    assert not missing, (
+        f"Operator mirror-tooling files missing from _STRIP_FILES: {missing}. "
+        "Add them here AND in scripts/sync-to-github.sh's mirror-tooling block."
+    )
+
+
+def test_would_ship_rejects_mirror_tooling_cluster() -> None:
+    """would_ship() must classify every mirror-tooling file as NOT shipping."""
+    shipping = [p for p in _MIRROR_TOOLING_STRIP if CHECK.would_ship(p)]
+    assert not shipping, (
+        f"would_ship() still classifies these as shipping to the mirror: {shipping}. "
+        "A leftover _LEAK_GUARD_ALLOW entry takes precedence over _STRIP_FILES "
+        "in would_ship() — make sure none of these are allowlisted."
+    )
+
+
+def test_leak_guard_allow_is_empty() -> None:
+    """The self-exemption list must stay empty (#1287 root-cause #1).
+
+    An allowlisted file still ships; that is exactly how the guard's own
+    operator literals leaked. Every former exemption is now a strip instead.
+    A future genuinely-public pattern-definition file may be added back here,
+    but only after it's confirmed to carry NO operator literals.
+    """
+    assert CHECK._LEAK_GUARD_ALLOW == (), (
+        "_LEAK_GUARD_ALLOW is not empty. Allowlisting a public-bound file "
+        "exempts it from the leak scan while it still SHIPS — the #1287 bug. "
+        "Strip operator-private files via _STRIP_FILES instead."
+    )

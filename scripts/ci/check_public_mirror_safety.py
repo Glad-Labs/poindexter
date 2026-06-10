@@ -33,8 +33,13 @@ How it works
    a WOULD_STRIP file is fine (that file never ships) — only flag the
    ones the public will actually see.
 
-3. **Allowlist self-referential files** (the redaction-blocklist script
-   names what it filters, so it'd self-report otherwise).
+3. **Strip operator mirror-tooling instead of allowlisting it.** The leak
+   guard + the app-settings doc generator name the operator values they
+   redact, so they'd self-report. Earlier these were ``_LEAK_GUARD_ALLOW``
+   exemptions — but an allowlisted file still SHIPS, so the guard's own
+   ``_LEAK_PATTERNS`` literals went public (Glad-Labs/poindexter#1287). They
+   are now in ``_STRIP_FILES`` (a stripped file is skipped by ``would_ship``),
+   so the self-exemption list is empty and nothing both ships and self-reports.
 
 4. **Report + exit nonzero on any violation**, with file + line + the
    pattern that matched so the PR author can fix in place.
@@ -156,6 +161,25 @@ _STRIP_FILES = (
     # and the dead Woodpecker CI (WOODPECKER_SECRET=...). poindexter setup --auto
     # covers the fresh-install flow. Stripped 2026-05-27 per security audit.
     "scripts/bootstrap.sh",
+    # === Operator mirror-sync / doc-gen tooling (Glad-Labs/poindexter#1287) ===
+    # The leak guard + the app-settings doc generator carry operator-private
+    # values INLINE (Tailnet IP, Tailscale Funnel host, bank-balance /
+    # hardware-cost figures, the operator's GitHub handle + name) as the
+    # blocklist of things they redact. They were SHIPPING to the public mirror
+    # — the guard whose job is to block operator-PII leaks was itself the leak,
+    # because its `_LEAK_GUARD_ALLOW` self-exemption masked it. Both scripts
+    # only ever execute on glad-labs-stack (the guard in CI + at sync time; the
+    # doc generator nightly), so they're dead code on the mirror. Strip them so
+    # the self-exemption below is honest, and strip their unit tests too (they
+    # load the now-stripped scripts and would break the mirror's unit-tests run).
+    "scripts/ci/check_public_mirror_safety.py",
+    "scripts/regen-app-settings-doc.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
+    "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
+    "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
     "infrastructure/grafana/dashboards/approval-queue.json",
     "infrastructure/grafana/dashboards/cost-analytics.json",
     "infrastructure/grafana/dashboards/infrastructure-data.json",
@@ -170,36 +194,22 @@ _STRIP_FILES = (
 
 
 # Files that are public-bound BUT legitimately contain leak-shaped strings
-# because they DEFINE the redaction blocklist. Without this allowlist the
-# lint would self-report on its own pattern list.
-_LEAK_GUARD_ALLOW = (
-    "scripts/regen-app-settings-doc.py",
-    # This script itself — pattern strings appear in source.
-    "scripts/ci/check_public_mirror_safety.py",
-    # Sync filter — same reason; also stripped from public sync so the
-    # public mirror doesn't see it, but CI runs against the source tree
-    # where it's present.
-    "scripts/sync-to-github.sh",
-    # Contract test for the gitea# LEAK_GUARD pattern — its fixtures
-    # have to literally contain "gitea#NNN" shapes for the assertions
-    # to verify the regex matches them. Without this allow-entry the
-    # guard self-reports on its own test.
-    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
-    # Contract test for the operator-name LEAK_GUARD regex — must contain
-    # the operator name in synthetic test strings and docstrings so the
-    # assertions can verify the pattern fires on them. Same self-referential
-    # exemption as the gitea test above.
-    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
-    # Contract test for the multi-line VALUES tuple + bare-gladlabs.io regex
-    # added in #619 — fixtures contain literal leak shapes (gladlabs.io
-    # seeded URLs, multi-line mercury_ VALUES tuples) so the assertions
-    # can verify the patterns fire on them. Same self-referential
-    # exemption as the two test files above. Closes the post-#619 main
-    # breakage where this file was added but not allowlisted. Since
-    # 2026-05-27 sync-to-github.sh delegates to this module, so this
-    # entry is the only place the allowlist needs to live.
-    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
-)
+# because they DEFINE the redaction blocklist. A genuinely-shipping
+# pattern-definition file would go here so the lint doesn't self-report on
+# its own pattern list.
+#
+# As of Glad-Labs/poindexter#1287 this is EMPTY. It used to allowlist the
+# leak guard, the doc generator, the sync filter, and three of their contract
+# tests — but those files carry operator-private literals inline, and
+# allowlist + ships = the leak the guard was supposed to prevent (its own
+# `_LEAK_PATTERNS` values were public on the mirror). The fix is to STRIP that
+# whole operator mirror-tooling cluster (see `_STRIP_FILES`) instead of
+# exempting it from the scan: a stripped file is skipped via ``would_ship()``,
+# so it needs no self-exemption. The audit's root-cause #1 — "the guard never
+# scans itself" — is moot once nothing is self-exempted. Keep the empty tuple
+# (not a removal) so a future genuinely-public pattern-definition file has an
+# obvious home, and add it to `_STRIP_FILES` first if it would carry literals.
+_LEAK_GUARD_ALLOW: tuple[str, ...] = ()
 
 
 # Line-level rewrites the sync filter applies to specific files (the
