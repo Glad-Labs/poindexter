@@ -40,7 +40,7 @@ import { Eyebrow, Display, Button, Card, Status } from '@glad-labs/brand';
 export default function Hero() {
   return (
     <section className="gl-atmosphere">
-      <Eyebrow>GLAD LABS · POINDEXTER V3.1</Eyebrow>
+      <Eyebrow>GLAD LABS · POINDEXTER V0.74.0</Eyebrow>
       <Display>
         Ship an <Display.Accent>AI writer.</Display.Accent>
         <br />
@@ -88,7 +88,7 @@ Matt is red-green deficient. Never encode information via color alone. Status co
 
 ## Signature patterns
 
-- **Mono eyebrow** — `// GLAD LABS · POINDEXTER V3.1` above every hero. The `//` + `·` separator is the connective tissue.
+- **Mono eyebrow** — `// GLAD LABS · POINDEXTER V<release>` above every hero (the version is the current Poindexter release, e.g. `V0.74.0` — surfaces that can read it should source it from a release-please-tracked constant rather than hardcoding). The `//` + `·` separator is the connective tissue.
 - **Uppercase display + amber accent word** — `SHIP AN [AMBER]AI WRITER.[/AMBER]`. One word per H1 gets the amber treatment.
 - **Left-cyan-tick cards** — `.gl-tick-left` + cyan border-left 3px. Replaces glassmorphism.
 - **Terminal logs** — `[RUN 0047] PUBLISHED · 2026-04-20 · QUALITY=82`. Use the `.gl-log` component for the styled block.

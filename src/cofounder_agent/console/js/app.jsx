@@ -3,6 +3,12 @@
    ────────────────────────────────────────────────────────────── */
 const { useState: useS, useEffect: useE, useRef: useR, useMemo } = React;
 
+// Poindexter version shown in the topbar eyebrow. release-please bumps the
+// literal below on every release (see the `generic` extra-files entry in
+// release-please-config.json) so the console tracks the real build instead of
+// drifting. Keep the `// x-release-please-version` annotation on this line.
+const POINDEXTER_VERSION = '0.74.0'; // x-release-please-version
+
 const RAIL = [
   { id: 'overview', icon: 'overview', label: 'Overview' },
   { id: 'pipeline', icon: 'pipeline', label: 'Pipeline' },
@@ -515,7 +521,7 @@ function App() {
       <header className="topbar">
         <div className="topbar__title">
           <span className="topbar__eyebrow">
-            // GLAD LABS · POINDEXTER V3.1
+            {`// GLAD LABS · POINDEXTER V${POINDEXTER_VERSION}`}
           </span>
           <span className="topbar__crumb">
             OPERATOR <em>CONSOLE</em>

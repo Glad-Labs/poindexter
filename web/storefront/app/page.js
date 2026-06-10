@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
 import { ProCTA } from '@/components/ProCTA';
-import { PRO_MONTHLY_USD, PRO_ANNUAL_USD } from '@/lib/site.config';
+import {
+  PRO_MONTHLY_USD,
+  PRO_ANNUAL_USD,
+  POINDEXTER_VERSION,
+} from '@/lib/site.config';
 
 export default function Landing() {
   return (
@@ -12,7 +16,7 @@ export default function Landing() {
             <div className="sf-reveal sf-reveal--1 sf-hero__meta">
               <span>
                 <span className="dot" aria-hidden="true" />
-                POINDEXTER · V3.1
+                POINDEXTER · V{POINDEXTER_VERSION}
               </span>
               <span>LICENSED APACHE-2.0</span>
               <span>SHIPS WITH HARDWARE SPEC</span>

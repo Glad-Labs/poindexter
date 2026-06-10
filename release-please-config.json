@@ -70,6 +70,14 @@
           "type": "toml",
           "path": "brain/pyproject.toml",
           "jsonpath": "$.tool.poetry.version"
+        },
+        {
+          "type": "generic",
+          "path": "web/storefront/lib/site.config.js"
+        },
+        {
+          "type": "generic",
+          "path": "src/cofounder_agent/console/js/app.jsx"
         }
       ]
     }
