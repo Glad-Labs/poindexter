@@ -331,15 +331,21 @@ class TestCodebaseSourceExtract:
             await source.extract(pool=pool, config={"seed_queries": seed_queries})
         elapsed = time.monotonic() - start
 
-        # If sequential: ≥4 × 20ms = 80ms. Parallel: ~20ms + overhead.
-        # Threshold is 0.5s — generous for loaded CI runners (asyncio timer
-        # jitter) while still well below any sequential execution (~80ms+).
-        assert elapsed < 0.5, (
-            f"queries appear to be running sequentially — elapsed {elapsed:.3f}s "
-            f"with {len(seed_queries)} queries of 20ms each; expected <0.5s"
-        )
         # All 4 queries actually ran.
         assert len(call_times) == len(seed_queries)
+        # Check parallelism via call-start overlap, not absolute elapsed time.
+        # Sequential: tasks start one-after-another, spread ≈ (N-1) × latency.
+        # Parallel: all tasks are launched before any finishes, spread ≈ 0ms.
+        # This is CI-load-independent — it measures relative asyncio scheduling,
+        # not absolute sleep fidelity (which degrades under runner load).
+        single_latency = 0.02
+        start_spread = max(call_times) - min(call_times)
+        assert start_spread < single_latency, (
+            f"queries appear to be running sequentially — call-start spread "
+            f"{start_spread * 1000:.1f}ms with {len(seed_queries)} queries of "
+            f"{single_latency * 1000:.0f}ms each; expected spread "
+            f"<{single_latency * 1000:.0f}ms (total elapsed was {elapsed:.3f}s)"
+        )
 
 
 class TestContract:

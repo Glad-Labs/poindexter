@@ -115,15 +115,47 @@ _background_tasks: set[asyncio.Task] = set()
 
 def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
     """Schedule a coroutine as a fire-and-forget task, keeping a strong
-    reference so asyncio doesn't collect it mid-run."""
+    reference so asyncio doesn't collect it mid-run.
+
+    Any exception raised inside the task is retrieved by the done-callback,
+    logged at ERROR level with a full traceback, and forwarded to the error
+    tracker (GlitchTip/Sentry) when the SDK is initialised.  Without this
+    Python only surfaces unretrieved exceptions at GC time as a vague
+    "Task exception was never retrieved" that is easy to miss in container
+    logs (see Glad-Labs/poindexter#708).
+    """
     task = asyncio.ensure_future(coro)
+    _task_name = name or "background_task"
     if name:
         # set_name is best-effort; some event-loop implementations don't
         # support it, but it's only used for debug visibility.
         with suppress(Exception):
             task.set_name(name)
     _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is None:
+            return
+        logger.error(
+            "[publish_service] Background task %r raised an unhandled exception: %s",
+            _task_name, exc,
+            exc_info=exc,
+        )
+        if isinstance(exc, Exception):
+            try:
+                from services.sentry_integration import SentryIntegration
+                SentryIntegration.capture_exception(
+                    exc,
+                    context={"task_name": _task_name},
+                )
+            except Exception:  # noqa: BLE001 — best effort; never mask the original error
+                pass
+
+    task.add_done_callback(_on_done)
     return task
 
 
@@ -874,12 +906,36 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
     # Give podcast/video/short generation time to complete
     _delay = int(site_config.get("media_upload_delay_seconds", "240"))
     await _aio.sleep(_delay)
-    await _r2.upload_podcast_episode(post_id)
-    await _r2.upload_video_episode(post_id)
+    # Each medium is wrapped individually so a podcast failure does not
+    # also kill the video upload (and vice versa).  Without try/except here
+    # any storage hiccup raises into the fire-and-forget task and is silently
+    # swallowed (Glad-Labs/poindexter#708).  Exceptions are logged at ERROR so
+    # they surface in Grafana/GlitchTip rather than disappearing into container
+    # logs.
+    try:
+        await _r2.upload_podcast_episode(post_id)
+    except Exception as _exc:
+        logger.error(
+            "[R2] Podcast episode upload failed for post %s: %s",
+            post_id, _exc, exc_info=True,
+        )
+    try:
+        await _r2.upload_video_episode(post_id)
+    except Exception as _exc:
+        logger.error(
+            "[R2] Video episode upload failed for post %s: %s",
+            post_id, _exc, exc_info=True,
+        )
     # Upload short video if it exists
     short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{post_id}-short.mp4"
     if short_path.exists():
-        await _r2.upload_to_r2(str(short_path), f"video/{post_id}-short.mp4", "video/mp4")
+        try:
+            await _r2.upload_to_r2(str(short_path), f"video/{post_id}-short.mp4", "video/mp4")
+        except Exception as _exc:
+            logger.error(
+                "[R2] Short video upload failed for post %s: %s",
+                post_id, _exc, exc_info=True,
+            )
     # Regenerate public podcast RSS feed on R2
     try:
         import httpx as _hx
