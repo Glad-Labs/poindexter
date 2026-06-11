@@ -737,7 +737,7 @@ class PodcastService:
                         seo_description=seo_description,
                         seo_keywords=seo_keywords,
                     )
-                    # Glad-Labs/glad-labs-stack#649 PR 2 — produce the
+                    # Glad-Labs/poindexter#649 PR 2 — produce the
                     # video-narration sibling MP3 alongside the main
                     # podcast episode. The video composer mixes this in
                     # so the slideshow doesn't open with "Welcome to

@@ -39,7 +39,7 @@ jobs:
     # workspace and `npm run test:ci` fails on every sync. The workflow
     # itself IS synced to the mirror, so the guard is on the job, not the
     # trigger. CI-minutes sweep.
-    if: github.repository == 'Glad-Labs/glad-labs-stack'
+    if: github.repository == 'Glad-Labs/poindexter'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -668,7 +668,7 @@ class StartupManager:
             # acquire would race the pool teardown. A task that is never
             # cancelled here is a real prod leak (``auto_health_check`` is an
             # infinite ``while True`` loop) and shows up in test runs as
-            # "Task was destroyed but it is pending!" (Glad-Labs/glad-labs-stack#997).
+            # "Task was destroyed but it is pending!" (Glad-Labs/poindexter#997).
             await self._cancel_background_tasks()
 
             # Close Redis connection
