@@ -54,7 +54,7 @@ export default function AboutPage() {
                   width={140}
                   height={140}
                   priority
-                  className="rounded-full border-2 border-cyan-500/30"
+                  className="rounded-full border-2 border-[var(--gl-cyan-border)]"
                 />
               </div>
               <div className="space-y-2">

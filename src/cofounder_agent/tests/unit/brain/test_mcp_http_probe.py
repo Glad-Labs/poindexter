@@ -22,6 +22,10 @@ def _default_settings() -> dict[str, str]:
         mhp.RESTART_WINDOW_MINUTES_KEY: "60",
         mhp.RECOVERY_URL_KEY: "",
         mhp.RECOVERY_TOKEN_KEY: "",
+        # Tests call the probe once and assert an alert fires — set the
+        # consecutive-failure threshold to 1 so that behaviour is preserved.
+        # The new test class below tests the default threshold of 3.
+        mhp.MIN_CONSECUTIVE_FAILURES_KEY: "1",
     }
 
 
@@ -381,3 +385,93 @@ class TestMcpHttpProbeHttpRecovery:
         )
         assert launcher_calls == ["C:\\fake\\launcher.cmd"]
         assert recovery_calls == []
+
+class TestMcpHttpProbeConsecutiveDebounce:
+    """Consecutive-failure gate: only page after N failures, not on the first."""
+
+    @pytest.mark.asyncio
+    async def test_first_failure_does_not_alert_with_threshold_3(self):
+        """A single probe failure does not write an alert_events row when
+        mcp_http_probe_min_consecutive_failures=3 (the production default)."""
+        pool = _make_pool(setting_values={mhp.MIN_CONSECUTIVE_FAILURES_KEY: "3"})
+        result = await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=503),
+            now_fn=lambda: 1000.0,
+        )
+        assert result["ok"] is False
+        assert result["status"] == "unreachable"
+        assert result.get("consecutive_failures") == 1
+        assert _alert_rows(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_second_failure_does_not_alert(self):
+        """Two consecutive failures with threshold=3 still produces no alert."""
+        pool = _make_pool(setting_values={mhp.MIN_CONSECUTIVE_FAILURES_KEY: "3"})
+        factory = _make_http_factory(status_code=503)
+        clock = [1000.0]
+        for offset in (0, 6 * 60):
+            clock[0] = 1000.0 + offset
+            await mhp.run_mcp_http_probe(
+                pool, http_client_factory=factory, now_fn=lambda: clock[0],
+            )
+        assert _alert_rows(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_third_failure_fires_alert(self):
+        """The third consecutive failure reaches the default threshold and writes the alert."""
+        pool = _make_pool(setting_values={mhp.MIN_CONSECUTIVE_FAILURES_KEY: "3"})
+        factory = _make_http_factory(status_code=503)
+        clock = [1000.0]
+        for offset in (0, 6 * 60, 12 * 60):
+            clock[0] = 1000.0 + offset
+            await mhp.run_mcp_http_probe(
+                pool, http_client_factory=factory, now_fn=lambda: clock[0],
+            )
+        rows = _alert_rows(pool)
+        assert len(rows) == 1
+        assert rows[0][1] == "mcp_http_server_unreachable"
+
+    @pytest.mark.asyncio
+    async def test_recovery_resets_counter(self):
+        """A successful probe resets the consecutive-failure counter so the
+        next single failure does not re-alert immediately."""
+        pool = _make_pool(setting_values={mhp.MIN_CONSECUTIVE_FAILURES_KEY: "3"})
+        clock = [1000.0]
+        # Two failures (below threshold — no alert)
+        for offset in (0, 6 * 60):
+            clock[0] = 1000.0 + offset
+            await mhp.run_mcp_http_probe(
+                pool,
+                http_client_factory=_make_http_factory(status_code=503),
+                now_fn=lambda: clock[0],
+            )
+        # Success — resets the counter
+        clock[0] = 1000.0 + 12 * 60
+        result = await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=200),
+            now_fn=lambda: clock[0],
+        )
+        assert result["ok"] is True
+        # One more failure — counter starts fresh, should not alert
+        clock[0] = 1000.0 + 18 * 60
+        await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=503),
+            now_fn=lambda: clock[0],
+        )
+        assert _alert_rows(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_threshold_1_alerts_on_first_failure(self):
+        """threshold=1 restores the original fire-on-first-failure behaviour."""
+        pool = _make_pool(setting_values={mhp.MIN_CONSECUTIVE_FAILURES_KEY: "1"})
+        result = await mhp.run_mcp_http_probe(
+            pool,
+            http_client_factory=_make_http_factory(status_code=503),
+            now_fn=lambda: 1000.0,
+        )
+        assert result["ok"] is False
+        rows = _alert_rows(pool)
+        assert len(rows) == 1

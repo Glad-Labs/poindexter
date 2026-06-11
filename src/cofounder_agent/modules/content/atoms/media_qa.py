@@ -52,9 +52,12 @@ logger = logging.getLogger(__name__)
 # render duration and the shot-list's planned total flags an av_desync.
 _DEFAULT_AV_SYNC_TOLERANCE_S = 2.0
 
-# Vision model for the frame human-detection check — reuse the shared
-# ``vision_alt_model`` key (qwen3-vl) that image_captioner uses.
-_DEFAULT_VISION_MODEL = "qwen3-vl:30b"
+# poindexter#716 — no hardcoded model name; "vision_alt_model" is seeded in
+# settings_defaults.py.  An empty string here means "not configured" — the
+# human-detect step below skips gracefully rather than sending an empty-model
+# request. The constant is kept for the site_config.get() default parameter so
+# callers that pass site_config=None can still reach the skip guard.
+_DEFAULT_VISION_MODEL = ""
 
 # Generous generation budget so qwen3-vl's reasoning tokens don't starve the
 # one-word answer (mirrors image_captioner's _DEFAULT_GEN_MAX_TOKENS note).
@@ -218,6 +221,14 @@ async def _detect_human_in_frame(
         if site_config is not None
         else _DEFAULT_VISION_MODEL
     )
+    if not vmodel:
+        # poindexter#716 — vision_alt_model not configured; skip human-detect
+        # rather than sending an empty-model request.
+        logger.debug(
+            "[media.qa] vision_alt_model not set; human-detect skipped for %s",
+            video_path,
+        )
+        return "unavailable"
     image_b64 = base64.b64encode(png_bytes).decode()
     messages = [
         {

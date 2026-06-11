@@ -90,7 +90,9 @@ class WebResearcher:
 
         results = []
         for r in enriched:
-            if isinstance(r, dict) and r.get("url"):
+            if isinstance(r, Exception):
+                logger.warning("[RESEARCH] Web fetch failed (non-fatal): %s", r)
+            elif isinstance(r, dict) and r.get("url"):
                 results.append(r)
 
         logger.info("[RESEARCH] Web search: %d results for '%s'", len(results), query[:50])

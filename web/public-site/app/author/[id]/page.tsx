@@ -99,7 +99,7 @@ export default async function AuthorPage({
                   className="group flex flex-col h-full overflow-hidden p-0"
                 >
                   {post.featured_image_url ? (
-                    <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
+                    <div className="relative w-full aspect-video overflow-hidden bg-[var(--gl-surface)]">
                       <Image
                         src={post.featured_image_url}
                         alt={post.title}

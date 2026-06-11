@@ -61,7 +61,13 @@ class AIGenerationProvider:
         if not topic:
             return []
 
-        prompt_model = str(config.get("prompt_model", "llama3:latest"))
+        # poindexter#716 — only honour an explicit plugin-config override; pass
+        # None when the key is missing or set to "auto" so _build_sdxl_prompt
+        # can resolve via the cost-tier router instead of pinning a literal.
+        _explicit = config.get("prompt_model") or ""
+        prompt_model: str | None = (
+            str(_explicit) if (_explicit and _explicit != "auto") else None
+        )
         generator_name = str(config.get("generator", "sdxl") or "sdxl")
 
         # DI seam (glad-labs-stack#330) — image_provider plugins receive
@@ -139,10 +145,15 @@ def _scrub_human_terms(prompt: str) -> tuple[str, bool]:
 
 
 async def _build_sdxl_prompt(
-    topic: str, model: str, *, site_config: Any = None,
+    topic: str, model: str | None, *, site_config: Any = None,
 ) -> str:
     """Ask the configured LLM to write a tailored SDXL prompt. Fall back
     to a generic photorealistic template when the model is unreachable.
+
+    ``model`` may be ``None`` when the caller has no explicit override — in
+    that case the pool is used to resolve the "standard" cost tier (poindexter
+    #716). If neither a model nor a pool is available the generic fallback
+    prompt is returned immediately.
 
     Routes through :func:`services.llm_providers.dispatcher.dispatch_complete`
     when an asyncpg pool is reachable via the ``site_config._pool`` DI seam
@@ -183,6 +194,32 @@ async def _build_sdxl_prompt(
     # the production path pick up dispatcher routing for free; tests +
     # bootstrap paths that don't wire ``_pool`` keep the httpx fallback.
     pool = getattr(site_config, "_pool", None) if site_config is not None else None
+
+    # poindexter#716 — when no explicit model was provided, resolve via the
+    # "standard" cost tier so the operator's app_settings mapping is respected.
+    if not model:
+        if pool is not None:
+            from services.llm_providers.dispatcher import resolve_tier_model
+            try:
+                model = await resolve_tier_model(pool, "standard")
+            except Exception as _exc:
+                logger.warning(
+                    "[AIGeneration] resolve_tier_model failed (%s); "
+                    "returning fallback sdxl prompt",
+                    _exc,
+                )
+                return fallback
+        else:
+            # No pool, no explicit model — return the generic fallback rather
+            # than sending an empty-model request.
+            logger.debug(
+                "[AIGeneration] no pool and no explicit model; using fallback prompt",
+            )
+            return fallback
+
+    # At this point model is guaranteed non-None: None/empty either triggered
+    # resolve_tier_model (which assigned a str) or returned the fallback above.
+    assert model is not None
 
     try:
         if pool is not None:

@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-08.**  
+> **Auto-generated from live `app_settings` table on 2026-06-11.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 843 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -454,7 +454,7 @@ The worker re-reads on every poll; no restart needed.
 | `podcast_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `prefect_content_flow_concurrency` | `3` |  |  |
 | `prefect_stuck_flow_queue_overdue_min_minutes` | `5` |  | Minimum minutes a SCHEDULED Prefect run must be overdue before it counts toward the queue-depth backlog threshold. Pr... |
-| `preferred_ollama_model` | `gemma3:27b` |  |  |
+| `preferred_ollama_model` | `gemma-4-31B-it-qat:latest` |  |  |
 | `publish_quiet_hours` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_accuracy_bad_link_max_penalty` | `2.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_accuracy_bad_link_penalty` | `0.5` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -485,7 +485,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_consistency_veto_threshold` | `30` |  |  |
 | `qa_critical_floor` | `50.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_engagement_baseline` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
-| `qa_fallback_writer_model` | `gemma3:27b` |  | Auto-seeded by services.settings_defaults (#379) |
+| `qa_fallback_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_fk_target_max` | `12.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_fk_target_min` | `8.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_gate_weight` | `0` |  |  |
@@ -574,7 +574,7 @@ The worker re-reads on every poll; no restart needed.
 | `storage_bucket` | `gladlabs-media` |  |  |
 | `storage_endpoint` | `` |  |  |
 | `storage_public_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  |  |
-| `structured_extraction_model` | `gemma3:27b` |  |  |
+| `structured_extraction_model` | `ollama/gemma-4-31B-it-qat:latest` |  |  |
 | `topic_dedup_engine` | `word_overlap` |  |  |
 | `topic_discovery_ideation_lookback_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `topic_discovery_length_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -596,7 +596,7 @@ The worker re-reads on every poll; no restart needed.
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `vision_alt_enabled` | `true` |  |  |
 | `vision_alt_max_tokens` | `2048` |  |  |
-| `vision_alt_model` | `qwen3-vl:30b` |  |  |
+| `vision_alt_model` | `ollama/qwen3-vl:30b` |  |  |
 | `voice_agent_brain` | `ollama` |  | Auto-seeded by services.settings_defaults (#379) |
 | `voice_agent_brain_mode` | `ollama` |  |  |
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
@@ -683,7 +683,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `cost_tier.budget.model` | `ollama/gemma3:27b-it-qat` |  | Model resolved when callers pass cost_tier=budget. Quantized 27B; offline retention work. |
+| `cost_tier.budget.model` | `ollama/gemma-4-31B-it-qat:latest` |  | Model resolved when callers pass cost_tier=budget. Quantized 27B; offline retention work. |
 | `cost_tier.free.model` | `ollama/qwen3:8b` |  | Model resolved when callers pass cost_tier=free. Smallest local; image-decision tier. |
 | `cost_tier.premium.model` | `anthropic/claude-haiku-4-5` |  | Model resolved when callers pass cost_tier=premium. Cloud cross-model QA; cost_guard-gated. |
 | `cost_tier.standard.model` | `ollama/glm-4.7-5090:latest` |  | Model resolved when callers pass cost_tier=standard. Default writer + critic. |
@@ -704,7 +704,7 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `podcast_cover_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px) |
 | `podcast_tts_base_url` | `http://speaches:8000/v1` |  | Speaches OpenAI-compatible base URL for podcast TTS. Compose-internal URL by default. Use http://host.docker.internal... |
-| `podcast_tts_enabled` | `false` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
+| `podcast_tts_enabled` | `true` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
 | `podcast_tts_format` | `wav` |  | Output audio format for podcast narration files. Options: wav, mp3, opus, flac. wav is lossless and universally playa... |
 | `podcast_tts_model` | `speaches-ai/Kokoro-82M-v1.0-ONNX` |  | Kokoro model id passed to Speaches for podcast TTS. Keep in sync with voice_agent_tts_model unless a different model ... |
 | `podcast_tts_voice` | `bf_emma` |  | Kokoro voice id for podcast narration. Options: bf_emma, bf_isabella, am_michael, etc. (matches voice_agent_tts_voice... |
@@ -734,11 +734,11 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `embedding_collapse_summary_model` | `gemma3:27b-it-qat` |  | Ollama model used for cluster-summary generation. Picked empirically: factually dense, no thinking-trace overhead, ~1... |
+| `embedding_collapse_summary_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Ollama model used for cluster-summary generation. Picked empirically: factually dense, no thinking-trace overhead, ~1... |
 | `embedding_collapse_summary_provider` | `ollama` |  | Summarization backend for CollapseOldEmbeddingsJob. 'ollama' calls the local LLM to produce a real summary; 'joined_p... |
 | `embedding_collapse_summary_timeout_seconds` | `60` |  | Per-call timeout for the LLM summary generation. 60s allows headroom over the ~12s typical run; on timeout the cluste... |
 | `memory_compression_excerpts_per_bucket` | `12` |  | How many sample rows feed the LLM prompt and land in the {event_type}_excerpts JSONB column for each day-bucket. 12 i... |
-| `memory_compression_summary_model` | `gemma3:27b-it-qat` |  | Ollama model used by retention.summarize_to_table for the per-day summary paragraph. Same default as embedding_collap... |
+| `memory_compression_summary_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Ollama model used by retention.summarize_to_table for the per-day summary paragraph. Same default as embedding_collap... |
 | `memory_compression_summary_timeout_seconds` | `60` |  | Per-call timeout (seconds) for the LLM summary generation in retention.summarize_to_table. On timeout the handler fal... |
 
 ## model_roles
@@ -746,14 +746,14 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft SDXL prompts for inline images in blog posts |
-| `model_role_critic` | `ollama/gemma3:27b` |  | Best at: quality scoring, detecting issues, structured JSON output. Shootout score: 96 standalone. |
-| `model_role_factchecker` | `ollama/gemma3:27b` |  | Best at: factual accuracy, catching hallucinated claims, conservative reviewer. Different training data from writer. |
+| `model_role_critic` | `ollama/gemma4:31b` |  | Best at: quality scoring, detecting issues, structured JSON output. Shootout score: 96 standalone. |
+| `model_role_factchecker` | `ollama/gemma4:31b` |  | Best at: factual accuracy, catching hallucinated claims, conservative reviewer. Different training data from writer. |
 | `model_role_image_prompt` | `ollama/qwen3:8b` |  | Best at: generating SDXL prompts, visual descriptions. Fast. |
 | `model_role_seo` | `ollama/qwen3:8b` |  | Best at: concise output, title generation, keyword extraction. Fast for metadata tasks. |
 | `model_role_summarizer` | `ollama/phi3:latest` |  | Best at: fast summaries, social media copy, short-form content. Lightweight. |
 | `model_role_writer` | `ollama/glm-4.7-5090:latest` |  | Best at: long-form content, structured output, follows instructions. Shootout score: 96 in hybrid config. |
-| `podcast_script_model` | `gemma3:27b` |  | Ollama model used to generate podcast scripts from article content |
-| `qa_fallback_critic_model` | `gemma3:27b` |  | Fallback critic model used when pipeline_critic_model returns empty or errors |
+| `podcast_script_model` | `ollama/gemma4:31b` |  | Ollama model used to generate podcast scripts from article content |
+| `qa_fallback_critic_model` | `ollama/gemma4:31b` |  | Fallback critic model used when pipeline_critic_model returns empty or errors |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |
 
 ## models
@@ -762,8 +762,8 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `cloud_api_daily_limit` | `5` |  | Max cloud API calls per day in emergency mode (hard cap) |
 | `cloud_api_mode` | `emergency_only` |  | Cloud API usage mode: disabled, emergency_only, fallback, always |
-| `pipeline_critic_model` | `ollama/gemma3:27b` |  | Model for QA/content review |
-| `pipeline_fallback_model` | `ollama/gemma3:27b` |  | Fallback model when primary is unavailable |
+| `pipeline_critic_model` | `ollama/glm-4.7-5090:latest` |  | Model for QA/content review |
+| `pipeline_fallback_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Fallback model when primary is unavailable |
 | `pipeline_seo_model` | `ollama/qwen3:8b` |  | Model for SEO title/description generation |
 | `pipeline_social_model` | `ollama/qwen3:8b` |  | Model for social media post generation |
 
@@ -869,7 +869,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `ops_triage_writer_model` | `gemma3:27b` |  | Local Ollama model used for brain alert triage (the /api/triage endpoint). Defaults to gemma3:27b because thinking-mo... |
+| `ops_triage_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Local Ollama model used for brain alert triage (the /api/triage endpoint). Defaults to gemma-4-31B-it-qat:latest beca... |
 
 ## orchestration
 
@@ -905,7 +905,7 @@ The worker re-reads on every poll; no restart needed.
 | `max_tokens_per_request` | `4000` |  | Maximum output tokens per LLM request |
 | `max_tokens_per_task` | `16000` |  | Maximum total tokens (input+output) per content task |
 | `min_curation_score` | `75` |  | Minimum QA score to surface for human review (below this = auto-reject) |
-| `pipeline_architect_model` | `glm-4.7-5090:latest` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
+| `pipeline_architect_model` | `ollama/glm-4.7-5090:latest` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
 | `pipeline_factcheck_model` | `programmatic` |  | Model for fact-checking -- programmatic or LLM provider |
 | `pipeline_gate_draft_gate` | `off` |  | HITL approval gate 'draft_gate': on/off. When on, the canonical_blog pipeline pauses after the writer stage via LangG... |

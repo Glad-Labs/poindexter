@@ -25,6 +25,9 @@ async def test_caption_image_happy_path_strips_image_of_prefix():
             budget=120,
             site_config=None,
             pool=object(),
+            # poindexter#716 — explicit model bypasses the settings lookup so
+            # the test doesn't need a DB pool for resolve_tier_model.
+            model="qwen3-vl:30b",
         )
     # dispatch_complete called with an OpenAI-style image content block
     msgs = disp.call_args.kwargs["messages"]
@@ -66,5 +69,26 @@ async def test_caption_image_fail_soft_on_dispatch_error():
             budget=120,
             site_config=None,
             pool=object(),
+            model="qwen3-vl:30b",
         )
     assert alt is None
+
+
+@pytest.mark.asyncio
+async def test_caption_image_skips_when_no_model_configured():
+    """poindexter#716: no model configured (vision_alt_model unset) → None, no dispatch."""
+    png = base64.b64encode(b"\x89PNG\r\n").decode()
+    with patch("services.image_captioner._fetch_b64", AsyncMock(return_value=png)), patch(
+        "services.image_captioner.dispatch_complete",
+        AsyncMock(return_value=_Result("some alt")),
+    ) as disp:
+        alt = await caption_image(
+            image_url="https://r2/x.png",
+            topic="CAD",
+            budget=120,
+            site_config=None,  # no site_config → falls back to _DEFAULT_VISION_MODEL=""
+            pool=object(),
+            model=None,  # no explicit model
+        )
+    assert alt is None
+    disp.assert_not_awaited()

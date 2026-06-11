@@ -297,11 +297,17 @@ async def update_setting(
         if not existing:
             raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
 
-        # Preserve existing values for fields not passed in the update
-        new_value = update_data.value if update_data.value else _setting_attr(existing, "value", "")
+        # Preserve existing values for fields not passed in the update.
+        # Use `is not None` so that the empty-string unset sentinel ("") is
+        # accepted as a deliberate write rather than treated as missing.
+        new_value = (
+            update_data.value
+            if update_data.value is not None
+            else _setting_attr(existing, "value", "")
+        )
         new_description = (
             update_data.description
-            if update_data.description
+            if update_data.description is not None
             else _setting_attr(existing, "description", "")
         )
         existing_category = _setting_attr(existing, "category")
@@ -378,6 +384,8 @@ async def toggle_setting_active(
         {"active": true}  → re-enable
         {"active": false} → soft-delete
     """
+    if db_service.admin is None:
+        raise HTTPException(status_code=503, detail="Admin database not available")
     try:
         updated = await db_service.admin.set_setting_active(setting_id, active)
         if not updated:

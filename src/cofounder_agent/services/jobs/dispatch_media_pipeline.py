@@ -41,8 +41,9 @@ from utils.findings import emit_finding
 logger = logging.getLogger(__name__)
 
 # Eligible = approved OR published (auto-publish races the 5-min cron),
-# not yet media-dispatched, and carries a persisted director shot-list
-# (only pieces that went through Stage-1 video shot-list generation qualify).
+# not yet media-dispatched, and carries a persisted Stage-1 podcast_script
+# (the minimal artifact media.load_scripts needs; shot-lists are optional —
+# the render nodes no-op gracefully when absent, per media_load_scripts._EMPTY).
 _ELIGIBLE_SQL = """
     SELECT pt.task_id
       FROM pipeline_tasks pt
@@ -52,7 +53,8 @@ _ELIGIBLE_SQL = """
            SELECT 1
              FROM pipeline_versions pv
             WHERE pv.task_id = pt.task_id
-              AND pv.stage_data -> 'task_metadata' -> 'video_shot_list' IS NOT NULL
+              AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' IS NOT NULL
+              AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' != ''
        )
      ORDER BY pt.updated_at ASC
      LIMIT $1

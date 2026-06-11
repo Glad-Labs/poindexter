@@ -59,6 +59,11 @@ export const Card: FC<CardProps> & {
   Body: FC<{ children: ReactNode; className?: string }>;
 };
 
+export interface LogoProps extends HTMLAttributes<HTMLSpanElement> {
+  className?: string;
+}
+export const Logo: FC<LogoProps>;
+
 export interface StatusProps extends HTMLAttributes<HTMLElement> {
   kind?: 'ok' | 'warn' | 'err';
   children: ReactNode;

@@ -1,6 +1,13 @@
 import { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site.config';
 
+// Content Signals (`Content-Signal: ai-train=no, search=yes, ai-input=no`)
+// cannot be injected via MetadataRoute.Robots — the type has no escape hatch
+// for custom directives. The `proxy.ts` edge proxy intercepts /robots.txt and
+// appends the directive to whatever this function generates, so the live HTTP
+// response always includes it. This file exists to satisfy Next.js's metadata
+// route system (Next.js 16 requires the default export here) and to keep the
+// Jest unit tests working against a typed return value.
 export default function robots(): MetadataRoute.Robots {
   const baseUrl = SITE_URL.replace(/\/$/, ''); // Remove trailing slash if present
 
@@ -10,13 +17,13 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: '*',
         allow: '/',
         // Do NOT disallow /_next/ — Google must fetch the CSS/JS under
-        // /_next/static to render pages (it uses them for layout,
-        // mobile-friendliness, and full-render indexing). Blocking it only
-        // walls off build assets that are never indexed as pages anyway,
-        // while degrading how Google renders the real content. Those assets
-        // were ~all of the "Blocked by robots.txt" entries in Search Console
-        // (SEO indexing audit, 2026-06-04).
-        disallow: ['/api/', '/.well-known/', '/admin/', '/private/'],
+        // /_next/static to render pages for full-render indexing.
+        //
+        // Do NOT disallow /.well-known/ — agent discovery bots need access to
+        // /.well-known/api-catalog, /.well-known/agent-skills/, and
+        // /.well-known/mcp/ to discover this site's capabilities. Blocking it
+        // here would prevent well-behaved agents from reading those endpoints.
+        disallow: ['/api/', '/admin/', '/private/'],
       },
       {
         // Block aggressive scrapers that don't contribute to SEO

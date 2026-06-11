@@ -244,14 +244,14 @@ class TestApproveTaskFlow:
         assert resp.status_code == 404
 
     def test_approve_wrong_status_returns_error(self):
-        """Cannot approve a task with an unknown/invalid status."""
+        """Cannot approve a task with an unknown/invalid status — returns 409."""
         db = _make_mock_db()
         bad_task = {**_make_awaiting_task(), "status": "unknown_garbage_status"}
         db.get_task = AsyncMock(side_effect=[bad_task, bad_task])
         with patch(_CHECK_OWNERSHIP), patch(_REVALIDATION, new=AsyncMock()), patch(_WEBHOOK, new=AsyncMock()):
             client = TestClient(_build_approval_app(db))
             resp = self._approve(client)
-        assert resp.status_code == 400
+        assert resp.status_code == 409
 
     def test_approve_fetches_updated_task(self):
         """The approve endpoint fetches the task again after updating."""
@@ -357,14 +357,15 @@ class TestRejectTaskFlow:
             resp = self._reject(client, task_id="nonexistent")
         assert resp.status_code == 404
 
-    def test_reject_wrong_status_returns_400(self):
+    def test_reject_wrong_status_returns_409(self):
+        """Rejecting a task in a non-rejectable state returns 409 Conflict."""
         db = _make_mock_db_for_reject()
         completed_task = {**_make_awaiting_task(), "status": "completed"}
         db.get_task = AsyncMock(return_value=completed_task)
         with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             resp = self._reject(client)
-        assert resp.status_code == 400
+        assert resp.status_code == 409
 
     def test_reject_broadcasts_websocket_event(self):
         db = _make_mock_db_for_reject()
@@ -484,12 +485,12 @@ class TestApproveRejectLifecycleComposed:
         update_call = db.update_task.call_args[0][1]
         assert update_call.get("approval_status") == "rejected"
 
-    def test_approve_already_approved_still_succeeds(self):
-        """The approve endpoint allows re-approving (status 'approved' is in allowed list)."""
+    def test_approve_already_approved_returns_409(self):
+        """Re-approving an already-approved task returns 409 — 'approved' is not in
+        allowed_statuses (['awaiting_approval', 'completed'])."""
         db = _make_mock_db()
         already_approved = {**_make_awaiting_task(), "status": "approved", "result": {}}
-        re_approved = {**already_approved, "approval_status": "approved", "result": {}}
-        db.get_task = AsyncMock(side_effect=[already_approved, re_approved])
+        db.get_task = AsyncMock(return_value=already_approved)
         with patch(_CHECK_OWNERSHIP), patch(_REVALIDATION, new=AsyncMock()), patch(_WEBHOOK, new=AsyncMock()):
             client = TestClient(_build_approval_app(db))
             resp = client.post(
@@ -497,7 +498,7 @@ class TestApproveRejectLifecycleComposed:
                 params=APPROVE_PARAMS,
                 headers={"Authorization": "Bearer test-token"},
             )
-        assert resp.status_code in (200, 400)  # 400 if already approved is now rejected
+        assert resp.status_code == 409
 
     def test_human_feedback_passed_as_query_param(self):
         """human_feedback query param is accepted by the approve endpoint."""

@@ -170,7 +170,7 @@ export default async function HomePage() {
               <Card className="overflow-hidden p-0">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                   {/* Featured Image */}
-                  <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-slate-800 overflow-hidden">
+                  <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-[var(--gl-surface)] overflow-hidden">
                     {heroImage ? (
                       <Image
                         src={heroImage}
@@ -262,7 +262,7 @@ export default async function HomePage() {
                         className="group flex flex-col h-full overflow-hidden p-0"
                       >
                         {cardImage && (
-                          <div className="relative aspect-video overflow-hidden bg-slate-800">
+                          <div className="relative aspect-video overflow-hidden bg-[var(--gl-surface)]">
                             <Image
                               src={cardImage}
                               alt=""

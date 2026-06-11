@@ -273,8 +273,11 @@ async def approve_task(
         ]
         if current_status not in allowed_statuses:
             raise HTTPException(
-                status_code=400,
-                detail=f"Cannot approve/reject task with status '{current_status}'. Task status is not in approvable state.",
+                status_code=409,
+                detail=(
+                    f"Cannot approve/reject task with status '{current_status}'. "
+                    f"Task must be in one of: {', '.join(sorted(allowed_statuses))}"
+                ),
             )
 
         # Prepare metadata
@@ -642,7 +645,7 @@ async def publish_task(
         current_status = task.get("status", "unknown")
         if current_status != "approved":
             raise HTTPException(
-                status_code=400,
+                status_code=409,
                 detail=f"Cannot publish task with status '{current_status}'. Must be 'approved'.",
             )
 
@@ -766,7 +769,10 @@ async def go_live(
     if not row:
         raise HTTPException(status_code=404, detail="Post not found")
     if row["status"] != "draft":
-        raise HTTPException(status_code=400, detail=f"Post is '{row['status']}', not 'draft'")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Post is '{row['status']}', not 'draft'",
+        )
 
     # Promote to published — and sync any linked pipeline_tasks row in
     # the same transaction. Drafts may not have come from a pipeline

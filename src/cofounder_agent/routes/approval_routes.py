@@ -103,7 +103,7 @@ async def reject_task(
         current_status = task.get("status")
         if current_status != "awaiting_approval":
             raise HTTPException(
-                status_code=400,
+                status_code=409,
                 detail=f"Cannot reject task with status '{current_status}' — expected 'awaiting_approval'",
             )
 

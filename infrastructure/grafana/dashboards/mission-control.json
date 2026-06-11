@@ -1113,7 +1113,7 @@
       "id": 15,
       "title": "Cloud fallback fires (window)",
       "type": "stat",
-      "description": "PAID inference calls in the window: cost_logs rows from a non-local provider AND cost_usd>0. The cost_usd>0 guard is essential — litellm is the LOCAL router (routes to local Ollama at $0) and is NOT in the exclusion list, so counting bare non-local rows miscounted every local litellm call as a cloud fire (showed 37 at $0). Per feedback_cost_controls, any sustained nonzero = real cloud spend to inspect.",
+      "description": "PAID cloud inference calls in the window. Counts cost_logs rows where: (1) provider is not a known-local provider, AND (2) cost_usd > 0, AND (3) if provider=litellm, the model has a cloud-provider prefix (e.g. anthropic/..., openai/...) — bare names (gemma4:31b) and ollama/ prefix are local-Ollama estimates, not real cloud spend. LiteLLM assigns non-zero cost_usd to local models via its pricing table, so cost_usd>0 alone is insufficient; the model-prefix check is the real gate. Any nonzero count = real cloud spend to inspect.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1170,7 +1170,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Cloud fires\" FROM cost_logs WHERE provider NOT IN ('ollama','local','system','electricity','compositor.ffmpeg_local') AND cost_usd > 0 AND $__timeFilter(created_at);",
+          "rawSql": "SELECT COUNT(*) AS \"Cloud fires\" FROM cost_logs WHERE provider NOT IN ('ollama','local','system','electricity','compositor.ffmpeg_local') AND cost_usd > 0 AND NOT (provider = 'litellm' AND (model NOT LIKE '%/%' OR model LIKE 'ollama/%')) AND $__timeFilter(created_at);",
           "refId": "A"
         }
       ]

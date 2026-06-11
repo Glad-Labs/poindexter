@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from modules.content.content_validator import ValidationResult, validate_content
 from services.integrations.operator_notify import notify_operator
-from services.langfuse_shim import observe
+from services.langfuse_shim import observe  # type: ignore[attr-defined]
 from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
@@ -2033,7 +2033,10 @@ class MultiModelQA:
 
         # Feature flag
         enabled = False
-        model = "qwen3-vl:30b"
+        # poindexter#716 — no hardcoded fallback; qa_vision_model is seeded in
+        # settings_defaults.py so the DB always has a value. Empty means the
+        # operator deliberately cleared the key — treat as "no model".
+        model = ""
         max_images = 3
         pass_threshold = 60
         if self.settings:
@@ -2042,7 +2045,7 @@ class MultiModelQA:
                     await self.settings.get("qa_vision_check_enabled") or "false"
                 ).lower() == "true"
                 model = (
-                    await self.settings.get("qa_vision_model") or "qwen3-vl:30b"
+                    await self.settings.get("qa_vision_model") or ""
                 )
                 model = model.removeprefix("ollama/")
                 max_images = int(
@@ -2065,6 +2068,11 @@ class MultiModelQA:
                 )
 
         if not enabled:
+            return None
+        if not model:
+            # poindexter#716: no vision model configured (qa_vision_model unset)
+            # — skip silently rather than sending a request with an empty model.
+            logger.debug("[multi_model_qa] qa_vision_model not set; vision check skipped")
             return None
         if not content or not content.strip():
             return None
@@ -2262,7 +2270,9 @@ class MultiModelQA:
         import re
 
         enabled = False
-        model = "qwen3-vl:30b"
+        # poindexter#716 — no hardcoded fallback; qa_preview_vision_model is
+        # seeded in settings_defaults.py so the DB always has a value.
+        model = ""
         pass_threshold = 70
         viewport_width = 1280
         viewport_height = 1024
@@ -2272,7 +2282,7 @@ class MultiModelQA:
                     await self.settings.get("qa_preview_screenshot_enabled") or "false"
                 ).lower() == "true"
                 model = (
-                    await self.settings.get("qa_preview_vision_model") or model
+                    await self.settings.get("qa_preview_vision_model") or ""
                 )
                 model = model.removeprefix("ollama/")
                 pass_threshold = int(
@@ -2298,6 +2308,14 @@ class MultiModelQA:
                 )
 
         if not enabled or not preview_url:
+            return None
+        if not model:
+            # poindexter#716: no vision model configured
+            # (qa_preview_vision_model unset) — skip rather than crash.
+            logger.debug(
+                "[multi_model_qa] qa_preview_vision_model not set; "
+                "preview screenshot QA skipped"
+            )
             return None
 
         try:

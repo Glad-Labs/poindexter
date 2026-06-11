@@ -99,7 +99,12 @@ DEFAULTS: dict[str, str] = {
     # sweet spot — long enough for the kernel to free, short enough to
     # stay invisible in pipeline latency.
     'pipeline_writer_unload_grace_seconds': '2',
-    'qa_fallback_writer_model': 'gemma-4-31B-it-qat:latest',
+    'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # poindexter#716: vision QA model keys — seeded here so the DB always has
+    # a value and code never falls back to a hardcoded literal.  Empty string =
+    # operator deliberately cleared the key — the vision check is skipped.
+    'qa_preview_vision_model': 'qwen3-vl:30b',
+    'qa_vision_model': 'qwen3-vl:30b',
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
@@ -107,7 +112,11 @@ DEFAULTS: dict[str, str] = {
     # whole topic-discovery sweep (2026-05-28 content-gen stall). Kept
     # separate + DB-configurable so operators can pin a writing model
     # without breaking structured extraction.
-    'structured_extraction_model': 'gemma-4-31B-it-qat:latest',
+    'structured_extraction_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # poindexter#716: vision alt-text + media-qa human-detect model key.
+    # The baseline seeds this as 'qwen3-vl:30b'; seeded here too so fresh
+    # installs without the baseline seeds can still get a sensible default.
+    'vision_alt_model': 'qwen3-vl:30b',
     'use_ollama': 'false',
 
     # ----- LLM providers / endpoints -----
@@ -598,6 +607,10 @@ DEFAULTS: dict[str, str] = {
     # Empty = HTTP recovery disabled. Set to http://host.docker.internal:9841/recover
     # once the Recovery Agent Task Scheduler task is running on the host.
     'mcp_http_probe_recovery_url': '',
+    # Consecutive probe failures required before paging. Default 3 suppresses
+    # transient single-shot misses (fast restart, momentary load) while still
+    # catching genuine sustained outages (#1301).
+    'mcp_http_probe_min_consecutive_failures': '3',
 
 }
 

@@ -95,6 +95,141 @@
   color: var(--gl-red);
 }
 
+/* ─── Prose — article body (long-form HTML output) ─────────── */
+/*
+  .gl-prose styles rendered HTML from the content pipeline (headings,
+  paragraphs, links, code, blockquotes, images, lists, hr).
+
+  Equivalent to the Tailwind `prose prose-invert max-w-none` block used in
+  the post page, but authored in plain CSS against brand tokens so any
+  surface that renders article HTML (previews, newsletter, excerpts) can
+  apply the same styles without importing Tailwind's typography plugin.
+*/
+.gl-prose {
+  color: var(--gl-text);
+  line-height: 1.75;
+}
+
+/* Headings */
+.gl-prose h1,
+.gl-prose h2,
+.gl-prose h3,
+.gl-prose h4,
+.gl-prose h5,
+.gl-prose h6 {
+  font-family: var(--gl-font-display);
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.gl-prose h1 {
+  font-size: 2.25rem; /* text-4xl */
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.gl-prose h2 {
+  font-size: 1.875rem; /* text-3xl */
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  letter-spacing: -0.025em;
+}
+
+.gl-prose h3 {
+  font-size: 1.5rem; /* text-2xl */
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Paragraphs */
+.gl-prose p {
+  color: var(--gl-text-muted);
+  line-height: 1.625; /* leading-relaxed */
+  margin-bottom: 1.5rem;
+}
+
+/* Bold */
+.gl-prose strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Links */
+.gl-prose a {
+  color: var(--gl-cyan);
+  text-decoration: underline;
+}
+.gl-prose a:hover {
+  color: var(--gl-cyan);
+}
+
+/* Inline code */
+.gl-prose :not(pre) > code {
+  color: var(--gl-cyan);
+  background-color: var(--gl-hairline);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0;
+  font-size: 0.875em;
+}
+
+/* Code blocks */
+.gl-prose pre {
+  background-color: var(--gl-hairline);
+  border: 1px solid var(--gl-hairline-strong);
+  border-radius: 0;
+  overflow-x: auto;
+  padding: 1rem 1.25rem;
+}
+.gl-prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* Blockquotes */
+.gl-prose blockquote {
+  border-left: 4px solid var(--gl-cyan);
+  padding-left: 1rem;
+  color: var(--gl-text-muted);
+  font-style: normal;
+  margin: 1.5rem 0;
+}
+
+/* Lists */
+.gl-prose ul,
+.gl-prose ol {
+  color: var(--gl-text-muted);
+  padding-left: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.gl-prose li {
+  color: var(--gl-text-muted);
+  margin-bottom: 0.375rem;
+}
+.gl-prose ul > li::marker {
+  color: var(--gl-cyan);
+}
+.gl-prose ol > li::marker {
+  color: var(--gl-cyan);
+}
+
+/* Images */
+.gl-prose img {
+  border-radius: 0;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  width: 100%;
+  height: auto;
+  aspect-ratio: auto;
+}
+
+/* Horizontal rule */
+.gl-prose hr {
+  border-color: var(--gl-hairline-strong);
+  margin: 2rem 0;
+}
+
 /* ─── Log block (terminal-style metadata readout) ───────────── */
 .gl-log {
   font-family: var(--gl-font-mono);
