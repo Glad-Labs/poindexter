@@ -45,6 +45,10 @@ def _site_config(**overrides):
     cfg = {
         "media_qa_frame_detection_enabled": "true",
         "media.qa.av_sync_tolerance_s": "2.0",
+        # poindexter#716 — vision_alt_model is now required (no hardcoded
+        # fallback in production code); tests that exercise the vision path
+        # must supply it explicitly via this helper.
+        "vision_alt_model": "qwen3-vl:30b",
         **overrides,
     }
     return SimpleNamespace(get=lambda key, default=None: cfg.get(key, default))

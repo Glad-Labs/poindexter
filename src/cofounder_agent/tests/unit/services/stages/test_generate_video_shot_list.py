@@ -521,3 +521,72 @@ async def test_short_failure_does_not_break_long() -> None:
     assert result.ok
     assert "video_shot_list" in result.context_updates
     assert "short_shot_list" not in result.context_updates
+
+
+# ---------------------------------------------------------------------------
+# poindexter#716 — cost-tier resolver replaces hardcoded model fallbacks
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_auto_model_resolves_via_tier() -> None:
+    """When all config keys return 'auto', resolve_tier_model is called."""
+    db_service = _make_db_service()
+    platform = MagicMock()
+    # All config lookups return "auto" — this should trigger tier resolution.
+    platform.config.get = MagicMock(return_value="auto")
+    platform.dispatch.complete = AsyncMock(
+        return_value=MagicMock(text=_make_valid_director_output()),
+    )
+    context = {
+        "title": "t", "content": "c " * 50,
+        "podcast_script": "narration " * 40,
+        "task_id": "task-tier",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu, \
+         patch(
+             "services.llm_providers.dispatcher.resolve_tier_model",
+             new=AsyncMock(return_value="ollama/gemma3:27b"),
+         ) as mock_resolve:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    mock_resolve.assert_awaited_once()
+    # The resolved model must be passed to the LLM, not a hardcoded name.
+    dispatch_call = platform.dispatch.complete.await_args
+    assert dispatch_call is not None
+    assert dispatch_call.kwargs["model"] == "ollama/gemma3:27b"
+
+
+@pytest.mark.asyncio
+async def test_tier_resolve_failure_skips_gracefully() -> None:
+    """If resolve_tier_model raises, the stage skips (ok=True) without crash."""
+    db_service = _make_db_service()
+    platform = MagicMock()
+    platform.config.get = MagicMock(return_value=None)  # triggers tier resolution
+    platform.dispatch.complete = AsyncMock()
+    context = {
+        "title": "t", "content": "c " * 50,
+        "podcast_script": "narration " * 40,
+        "task_id": "task-no-tier",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch(
+        "services.llm_providers.dispatcher.resolve_tier_model",
+        new=AsyncMock(side_effect=RuntimeError("no cost_tier.standard.model")),
+    ):
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert result.metrics.get("skipped") is True
+    # Must not have dispatched to the LLM if model resolution failed.
+    platform.dispatch.complete.assert_not_awaited()

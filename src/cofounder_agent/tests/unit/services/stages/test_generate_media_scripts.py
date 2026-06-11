@@ -331,3 +331,64 @@ async def test_podcast_audio_paths_preserved_on_scene_failure():
     assert result.context_updates.get("podcast_script") == "R" * 600
     assert result.context_updates.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
     assert result.context_updates.get("podcast_intro_audio_path") == "/tmp/intro.wav"
+
+
+# ---------------------------------------------------------------------------
+# poindexter#716 — cost-tier resolver replaces hardcoded model fallbacks
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_auto_model_resolves_via_tier():
+    """When site_config returns 'auto', resolve_tier_model is called instead
+    of silently pinning llama3:latest."""
+    sc = MagicMock()
+    sc.get.return_value = "auto"  # video_scene_model = "auto"
+    db = SimpleNamespace(pool=MagicMock())
+    ctx = {
+        "title": "A Real Title",
+        "content": "body " * 200,
+        "site_config": sc,
+        "database_service": db,
+        "task_id": "t-tier-resolve",
+    }
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(
+        return_value=SimpleNamespace(text="1. a scene\n\nSHORT:\nsummary")
+    )
+    gpu = SimpleNamespace(lock=_fake_lock)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="S" * 500)), \
+         patch(
+             "services.llm_providers.dispatcher.resolve_tier_model",
+             new=AsyncMock(return_value="ollama/gemma3:27b"),
+         ) as mock_resolve:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    mock_resolve.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_missing_model_and_no_pool_skips_gracefully():
+    """When site_config returns nothing AND there is no DB pool, the stage
+    must skip (ok=True, skipped=True) rather than hardcode a model name."""
+    sc = MagicMock()
+    sc.get.return_value = None  # all settings keys return None
+    ctx = {
+        "title": "A Real Title",
+        "content": "body " * 200,
+        "site_config": sc,
+        "database_service": None,  # no pool
+        "task_id": "t-no-pool",
+    }
+    gpu = SimpleNamespace(lock=_fake_lock)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="T" * 500)):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert result.metrics.get("skipped") is True

@@ -32,7 +32,12 @@ from services.llm_providers.dispatcher import dispatch_complete
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_VISION_MODEL = "qwen3-vl:30b"
+# poindexter#716 — "vision_alt_model" is seeded in settings_defaults.py; the
+# empty-string sentinel here means "no model configured" (fail-soft: caption
+# returns None). Code that previously relied on this constant as a module-level
+# fallback now reads the settings key via site_config.get() and treats an empty
+# result as "not configured" rather than falling back to a pinned name.
+_DEFAULT_VISION_MODEL = ""
 
 # qwen3-vl is a *reasoning* model: it spends tokens on internal reasoning
 # before emitting the answer. A small cap (e.g. the ~120-char alt budget)
@@ -111,6 +116,14 @@ async def caption_image(
         if site_config is not None
         else _DEFAULT_VISION_MODEL
     )
+    if not vmodel:
+        # poindexter#716 — vision_alt_model not configured; skip rather than
+        # send an empty-model request that fails with an opaque Ollama error.
+        logger.debug(
+            "image_captioner: vision_alt_model not set; caption skipped for %s",
+            image_url or "<b64>",
+        )
+        return None
     # Generous generation budget so qwen3-vl's reasoning doesn't starve the
     # answer (see _DEFAULT_GEN_MAX_TOKENS note). Final length is enforced by
     # sanitize_alt_text(budget=...), NOT by this cap.

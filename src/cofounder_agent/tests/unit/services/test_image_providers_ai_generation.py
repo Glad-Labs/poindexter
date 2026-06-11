@@ -239,3 +239,51 @@ class TestBuildSDXLPrompt:
                 "GPU benchmarks", "llama3:latest", site_config=site_config,
             )
         assert "photorealistic scene related to GPU benchmarks" in result
+
+    # poindexter#716 — model=None paths
+
+    async def test_no_model_no_pool_returns_fallback_prompt(self):
+        """poindexter#716: model=None + no pool → generic fallback (no LLM call)."""
+        with patch("httpx.AsyncClient", side_effect=AssertionError("must not use httpx")):
+            result = await _build_sdxl_prompt("AI chip design", None, site_config=None)
+        assert "photorealistic scene related to AI chip design" in result
+
+    async def test_no_model_resolves_via_tier(self):
+        """poindexter#716: model=None + pool → resolve_tier_model, then dispatch."""
+        site_config = MagicMock()
+        pool = MagicMock()
+        site_config._pool = pool
+
+        completion = MagicMock()
+        completion.text = '"a cinematic AI chip scene, neon lighting, 4k"'
+
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            new=AsyncMock(return_value="ollama/gemma3:27b"),
+        ) as mock_resolve, patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=AsyncMock(return_value=completion),
+        ) as mock_dispatch:
+            result = await _build_sdxl_prompt(
+                "AI chip design", None, site_config=site_config,
+            )
+
+        mock_resolve.assert_awaited_once_with(pool, "standard")
+        # dispatch_complete must receive the resolved model, not a hardcoded name.
+        assert mock_dispatch.await_args is not None
+        assert mock_dispatch.await_args.kwargs["model"] == "ollama/gemma3:27b"
+        assert "AI chip scene" in result
+
+    async def test_no_model_resolve_failure_returns_fallback(self):
+        """poindexter#716: resolve_tier_model failure → fallback prompt, no crash."""
+        site_config = MagicMock()
+        site_config._pool = MagicMock()
+
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            new=AsyncMock(side_effect=RuntimeError("no tier mapping")),
+        ):
+            result = await _build_sdxl_prompt(
+                "Robotics", None, site_config=site_config,
+            )
+        assert "photorealistic scene related to Robotics" in result

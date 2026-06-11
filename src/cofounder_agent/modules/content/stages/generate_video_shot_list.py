@@ -361,17 +361,32 @@ class GenerateVideoShotListStage:
         # dance is needed — ``platform.config`` is the only config seam now.
         cfg = platform.config
 
-        # Same model resolution as generate_media_scripts — operators
-        # can pin a director model via ``video_director_model`` later
-        # if they want it different from the default ollama model.
-        model = (
+        # poindexter#716 — route through the cost-tier resolver when the
+        # operator has not set an explicit director/scene/default model.
+        # "auto" is treated as "not set" so operators can leave the key
+        # in its default state and still have their tier mapping respected.
+        _configured_model = (
             cfg.get("video_director_model")
             or cfg.get("video_scene_model")
             or cfg.get("default_ollama_model")
-            or "llama3:latest"
         )
-        if model == "auto":
-            model = "llama3:latest"
+        if not _configured_model or _configured_model == "auto":
+            from services.llm_providers.dispatcher import resolve_tier_model
+            try:
+                model = await resolve_tier_model(pool, "standard")
+            except Exception as _exc:
+                logger.warning(
+                    "generate_video_shot_list: resolve_tier_model failed (%s); "
+                    "director skipped",
+                    _exc,
+                )
+                return StageResult(
+                    ok=True,
+                    detail=f"model resolution failed: {_exc}",
+                    metrics={"skipped": True},
+                )
+        else:
+            model = _configured_model
 
         now_iso = datetime.now(timezone.utc).isoformat()
         site_name = cfg.get("site_name") or ""
