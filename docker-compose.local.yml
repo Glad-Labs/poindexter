@@ -515,6 +515,10 @@ services:
       # job can read it (the worker mounts ./src at /app:ro, not the
       # infrastructure tree, so the template needs its own mount).
       - ./infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      # RenderGrafanaAlertsJob reads the .tmpl and writes the rendered
+      # alert-rules.yml into this dir; Grafana reads it from the same host
+      # path via its existing provisioning/alerting bind mount.
+      - ./infrastructure/grafana/provisioning/alerting:/etc/grafana-alerting:rw
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Worker reads every tunable from app_settings (models, prompts, QA

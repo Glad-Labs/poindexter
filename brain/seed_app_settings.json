@@ -479,7 +479,157 @@
       "key": "prometheus.threshold.qa_rail_skip_ratio",
       "value": "1",
       "category": "prometheus",
-      "description": "Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page earlier) \u00e2\u20ac\u201d poindexter#553"
+      "description": "Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page earlier) \u2014 poindexter#553"
+    },
+    {
+      "key": "prometheus.threshold.postgres_p99_latency_seconds",
+      "value": "0.1",
+      "category": "prometheus",
+      "description": "Postgres SELECT 1 p99 latency (seconds) that fires PostgresSlowQuery (default 100ms)"
+    },
+    {
+      "key": "prometheus.threshold.embeddings_missing_posts",
+      "value": "3",
+      "category": "prometheus",
+      "description": "Number of published posts without embeddings that fires PostsNotEmbedded"
+    },
+    {
+      "key": "prometheus.threshold.gpu_temperature_celsius",
+      "value": "85",
+      "category": "prometheus",
+      "description": "GPU temperature (\u00b0C) that fires GpuTemperatureHigh \u2014 safe ceiling below the ~90\u00b0C throttle point"
+    },
+    {
+      "key": "prometheus.threshold.gpu_vram_utilization_percent",
+      "value": "95",
+      "category": "prometheus",
+      "description": "GPU VRAM utilization % that fires GpuVramHigh \u2014 95% signals OOM-imminent before Ollama/SDXL starts failing"
+    },
+    {
+      "key": "prometheus.threshold.disk_free_warning_gb",
+      "value": "20",
+      "category": "prometheus",
+      "description": "Host disk free space (GB) that fires PoindexterDiskSpaceLow warning alert"
+    },
+    {
+      "key": "prometheus.threshold.disk_free_critical_gb",
+      "value": "10",
+      "category": "prometheus",
+      "description": "Host disk free space (GB) that fires PoindexterDiskSpaceCritical alert \u2014 Postgres writes and Docker pulls start failing below this"
+    },
+    {
+      "key": "prometheus.threshold.disk_min_total_gb",
+      "value": "200",
+      "category": "prometheus",
+      "description": "Minimum total disk size (GB) for disk-space alerts \u2014 filters out USB drives and EFI partitions that are always near-full"
+    },
+    {
+      "key": "prometheus.threshold.postgres_connection_warning_ratio",
+      "value": "0.80",
+      "category": "prometheus",
+      "description": "Postgres connection utilization ratio (0\u20131) that fires PoindexterPostgresConnectionsHigh warning \u2014 0.80 gives a 5-min buffer before asyncpg starts rejecting"
+    },
+    {
+      "key": "prometheus.threshold.postgres_connection_critical_ratio",
+      "value": "0.95",
+      "category": "prometheus",
+      "description": "Postgres connection utilization ratio (0\u20131) that fires PoindexterPostgresConnectionsCritical \u2014 shed load immediately at this level"
+    },
+    {
+      "key": "grafana.threshold.error_rate_hourly_max",
+      "value": "5",
+      "category": "grafana",
+      "description": "Error count in the rolling window that fires brain-high-error-rate (alert #1)"
+    },
+    {
+      "key": "grafana.threshold.error_rate_window_hours",
+      "value": "1",
+      "category": "grafana",
+      "description": "SQL INTERVAL hours for the brain-high-error-rate rolling window (alert #1)"
+    },
+    {
+      "key": "grafana.threshold.stale_task_hours",
+      "value": "2",
+      "category": "grafana",
+      "description": "SQL INTERVAL hours before an in_progress pipeline_tasks row is considered stale (alert #2 brain-stale-tasks)"
+    },
+    {
+      "key": "grafana.threshold.embedding_lag_hours",
+      "value": "6",
+      "category": "grafana",
+      "description": "Hours since newest embedding before brain-embedding-sync-lag fires (alert #3)"
+    },
+    {
+      "key": "grafana.threshold.db_size_warning_gb",
+      "value": "5",
+      "category": "grafana",
+      "description": "Postgres DB size (GB) that fires brain-db-size-warning (alert #4)"
+    },
+    {
+      "key": "grafana.threshold.cost_spike_usd",
+      "value": "5",
+      "category": "grafana",
+      "description": "Rolling LLM spend (USD) that fires brain-daily-cost-spike (alert #5)"
+    },
+    {
+      "key": "grafana.threshold.cost_spike_window_hours",
+      "value": "24",
+      "category": "grafana",
+      "description": "SQL INTERVAL hours for the brain-daily-cost-spike rolling window (alert #5)"
+    },
+    {
+      "key": "grafana.threshold.quality_score_min",
+      "value": "70",
+      "category": "grafana",
+      "description": "Minimum average quality score before brain-content-quality-drop fires (alert #6)"
+    },
+    {
+      "key": "grafana.threshold.quality_window_days",
+      "value": "7",
+      "category": "grafana",
+      "description": "SQL INTERVAL days for the brain-content-quality-drop rolling window (alert #6)"
+    },
+    {
+      "key": "grafana.threshold.traffic_drop_ratio",
+      "value": "0.5",
+      "category": "grafana",
+      "description": "Traffic ratio below which brain-traffic-anomaly fires (0.5 = 50% drop vs prior period, alert #7)"
+    },
+    {
+      "key": "grafana.threshold.page_view_gsc_min_clicks",
+      "value": "20",
+      "category": "grafana",
+      "description": "Minimum GSC clicks required for brain-page-views-capture-dead check (alert #7b) \u2014 low-traffic pages exempt"
+    },
+    {
+      "key": "grafana.threshold.ollama_down_hours",
+      "value": "6",
+      "category": "grafana",
+      "description": "SQL INTERVAL hours without local inference before brain-ollama-down fires (alert #10)"
+    },
+    {
+      "key": "grafana.threshold.brain_heartbeat_stale_minutes",
+      "value": "15",
+      "category": "grafana",
+      "description": "Minutes since last brain_decision before brain-heartbeat-stale fires (alert #11)"
+    },
+    {
+      "key": "grafana.threshold.gpu_metrics_stale_minutes",
+      "value": "30",
+      "category": "grafana",
+      "description": "Minutes since last gpu_metrics row before brain-gpu-metrics-stale fires (alert #13)"
+    },
+    {
+      "key": "grafana.threshold.gpu_temperature_celsius",
+      "value": "85",
+      "category": "grafana",
+      "description": "GPU temperature (\u00b0C) that fires brain-gpu-temp-high SQL alert (alert #14) \u2014 complements the Prometheus GpuTemperatureHigh rule"
+    },
+    {
+      "key": "plugin.job.render_grafana_alerts",
+      "value": "{\"enabled\": true, \"interval_seconds\": 300, \"config\": {\"template_path\": \"/etc/grafana-alerting/alert-rules.yml.tmpl\", \"output_path\": \"/etc/grafana-alerting/alert-rules.yml\", \"grafana_url\": \"http://grafana:3000\", \"reload_on_change\": true}}",
+      "category": "plugins",
+      "description": "Config for RenderGrafanaAlertsJob \u2014 renders grafana.threshold.* settings into alert-rules.yml and triggers Grafana provisioning reload"
     },
     {
       "key": "qa_rail_skip_window_passes",

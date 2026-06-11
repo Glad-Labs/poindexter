@@ -11,8 +11,8 @@ groups:
     folder: Glad Labs Alerts
     interval: 1m
     rules:
-      # 1. HIGH ERROR RATE — more than 5 errors
-      #    in audit_log in the last 1 hour(s)
+      # 1. HIGH ERROR RATE — more than {threshold.error_rate_hourly_max} errors
+      #    in audit_log in the last {threshold.error_rate_window_hours} hour(s)
       - uid: brain-high-error-rate
         title: High Error Rate
         condition: C
@@ -28,7 +28,7 @@ groups:
           team: glad-labs
         annotations:
           summary: "High error rate detected in audit_log"
-          description: "More than 5 errors logged in the last 1 hour(s) (current: {{ $values.B.Value }}). Investigate recent failures in the brain pipeline."
+          description: "More than {threshold.error_rate_hourly_max} errors logged in the last {threshold.error_rate_window_hours} hour(s) (current: {{ $values.B.Value }}). Investigate recent failures in the brain pipeline."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -36,7 +36,7 @@ groups:
               from: 3600
               to: 0
             model:
-              rawSql: "SELECT count(*) as error_count FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '1 hours'"
+              rawSql: "SELECT count(*) as error_count FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '{threshold.error_rate_window_hours} hours'"
               format: table
               editorMode: code
           - refId: B
@@ -62,13 +62,13 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 5
+                      - {threshold.error_rate_hourly_max}
                   operator:
                     type: and
                   reducer:
                     type: last
 
-      # 2. STALE TASKS — tasks stuck in_progress for > 2 hours
+      # 2. STALE TASKS — tasks stuck in_progress for > {threshold.stale_task_hours} hours
       - uid: brain-stale-tasks
         title: Stale Tasks
         condition: C
@@ -83,8 +83,8 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Tasks stuck in_progress for over 2 hours"
-          description: "{{ $values.B.Value }} task(s) have been in_progress without updates for more than 2 hours. This likely indicates a hung worker or lost connection."
+          summary: "Tasks stuck in_progress for over {threshold.stale_task_hours} hours"
+          description: "{{ $values.B.Value }} task(s) have been in_progress without updates for more than {threshold.stale_task_hours} hours. This likely indicates a hung worker or lost connection."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -92,7 +92,7 @@ groups:
               from: 7200
               to: 0
             model:
-              rawSql: "SELECT count(*) as stuck_count FROM pipeline_tasks_view WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '2 hours'"
+              rawSql: "SELECT count(*) as stuck_count FROM pipeline_tasks_view WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '{threshold.stale_task_hours} hours'"
               format: table
               editorMode: code
           - refId: B
@@ -124,7 +124,7 @@ groups:
                   reducer:
                     type: last
 
-      # 3. EMBEDDING SYNC LAG — newest embedding is > 6 hours old
+      # 3. EMBEDDING SYNC LAG — newest embedding is > {threshold.embedding_lag_hours} hours old
       - uid: brain-embedding-sync-lag
         title: Embedding Sync Lag
         condition: C
@@ -135,7 +135,7 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Embedding sync is lagging - newest embedding is over 6 hours old"
+          summary: "Embedding sync is lagging - newest embedding is over {threshold.embedding_lag_hours} hours old"
           description: "The most recent embedding is {{ $values.B.Value }} hours old. Auto-embed may be stuck or the pipeline is not generating new content."
         data:
           - refId: A
@@ -170,13 +170,13 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 6
+                      - {threshold.embedding_lag_hours}
                   operator:
                     type: and
                   reducer:
                     type: last
 
-      # 4. DB SIZE WARNING — database exceeds 5 GB
+      # 4. DB SIZE WARNING — database exceeds {threshold.db_size_warning_gb} GB
       - uid: brain-db-size-warning
         title: DB Size Warning
         condition: C
@@ -194,7 +194,7 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Brain database exceeds 5 GB"
+          summary: "Brain database exceeds {threshold.db_size_warning_gb} GB"
           description: "poindexter_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or pruning retention_policies rows (sensor_samples, cost_logs, embeddings)."
         data:
           - refId: A
@@ -229,13 +229,13 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 5
+                      - {threshold.db_size_warning_gb}
                   operator:
                     type: and
                   reducer:
                     type: last
 
-      # 5. DAILY COST SPIKE — cost_logs SUM in last 24h exceeds $5
+      # 5. DAILY COST SPIKE — cost_logs SUM in last {threshold.cost_spike_window_hours}h exceeds ${threshold.cost_spike_usd}
       - uid: brain-daily-cost-spike
         title: Daily Cost Spike
         condition: C
@@ -249,8 +249,8 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "LLM spending exceeded $5 in the last 24h"
-          description: "Total cost in the last 24 hours is ${{ $values.B.Value }}. Check cost_logs for runaway API calls."
+          summary: "LLM spending exceeded ${threshold.cost_spike_usd} in the last {threshold.cost_spike_window_hours}h"
+          description: "Total cost in the last {threshold.cost_spike_window_hours} hours is ${{ $values.B.Value }}. Check cost_logs for runaway API calls."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -258,7 +258,7 @@ groups:
               from: 86400
               to: 0
             model:
-              rawSql: "SELECT COALESCE(SUM(cost_usd), 0) as daily_cost FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours'"
+              rawSql: "SELECT COALESCE(SUM(cost_usd), 0) as daily_cost FROM cost_logs WHERE created_at > NOW() - INTERVAL '{threshold.cost_spike_window_hours} hours'"
               format: table
               editorMode: code
           - refId: B
@@ -284,14 +284,14 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 5
+                      - {threshold.cost_spike_usd}
                   operator:
                     type: and
                   reducer:
                     type: last
 
       # 6. CONTENT QUALITY DROP — avg quality_score of PUBLISHED/APPROVED
-      #    tasks over last 7 days below 70.
+      #    tasks over last {threshold.quality_window_days} days below {threshold.quality_score_min}.
       #
       #    Filtering to status IN ('published','approved') is the whole point
       #    of this alert: it should measure quality of what readers actually
@@ -320,8 +320,8 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Average published-content quality score dropped below 70"
-          description: "7-day average quality score (published+approved tasks only) is {{ $values.B.Value }}. Review pipeline prompts or model performance."
+          summary: "Average published-content quality score dropped below {threshold.quality_score_min}"
+          description: "{threshold.quality_window_days}-day average quality score (published+approved tasks only) is {{ $values.B.Value }}. Review pipeline prompts or model performance."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -329,7 +329,7 @@ groups:
               from: 604800
               to: 0
             model:
-              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND status IN ('published','approved') AND updated_at > NOW() - INTERVAL '7 days'"
+              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND status IN ('published','approved') AND updated_at > NOW() - INTERVAL '{threshold.quality_window_days} days'"
               format: table
               editorMode: code
           - refId: B
@@ -355,13 +355,13 @@ groups:
                 - evaluator:
                     type: lt
                     params:
-                      - 70
+                      - {threshold.quality_score_min}
                   operator:
                     type: and
                   reducer:
                     type: last
 
-      # 7. TRAFFIC ANOMALY — page_views dropped >0.5 vs previous 24h
+      # 7. TRAFFIC ANOMALY — page_views dropped >{threshold.traffic_drop_ratio} vs previous 24h
       - uid: brain-traffic-anomaly
         title: Traffic Anomaly
         condition: C
@@ -425,7 +425,7 @@ groups:
                 - evaluator:
                     type: lt
                     params:
-                      - 0.5
+                      - {threshold.traffic_drop_ratio}
                   operator:
                     type: and
                   reducer:
@@ -472,7 +472,7 @@ groups:
                     AND date > (NOW() - INTERVAL '14 days')::date
                 )
                 SELECT CASE
-                         WHEN gsc.clicks > 20 AND pv.cnt = 0 THEN gsc.clicks
+                         WHEN gsc.clicks > {threshold.page_view_gsc_min_clicks} AND pv.cnt = 0 THEN gsc.clicks
                          ELSE 0
                        END AS capture_dead_clicks
                 FROM pv, gsc
@@ -611,7 +611,7 @@ groups:
                   reducer:
                     type: last
 
-      # 10. OLLAMA DOWN — no cost_logs from local models in last 6 hours
+      # 10. OLLAMA DOWN — no cost_logs from local models in last {threshold.ollama_down_hours} hours
       #     during active pipeline
       - uid: brain-ollama-down
         title: Ollama Unresponsive
@@ -627,8 +627,8 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "No local model inference in the last 6 hours"
-          description: "No local model inference in 6 hours while tasks are pending. Ollama may be down or unresponsive."
+          summary: "No local model inference in the last {threshold.ollama_down_hours} hours"
+          description: "No local model inference in {threshold.ollama_down_hours} hours while tasks are pending. Ollama may be down or unresponsive."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -636,7 +636,7 @@ groups:
               from: 21600
               to: 0
             model:
-              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE provider = 'ollama' AND cost_type = 'inference' AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
+              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE provider = 'ollama' AND cost_type = 'inference' AND created_at > NOW() - INTERVAL '{threshold.ollama_down_hours} hours') END as ollama_ok"
               format: table
               editorMode: code
           - refId: B
@@ -669,7 +669,7 @@ groups:
                     type: last
 
       # 11. BRAIN HEARTBEAT STALE — brain daemon hasn't logged a decision
-      #     in 15 min
+      #     in {threshold.brain_heartbeat_stale_minutes} min
       - uid: brain-heartbeat-stale
         title: Brain Daemon Stale
         condition: C
@@ -680,7 +680,7 @@ groups:
           severity: critical
           team: glad-labs
         annotations:
-          summary: "Brain daemon has not completed a cycle in 15+ minutes"
+          summary: "Brain daemon has not completed a cycle in {threshold.brain_heartbeat_stale_minutes}+ minutes"
           description: "No brain_decisions logged in {{ $values.B.Value }} minutes. The daemon may be crashed or stuck. The OS-level watchdog should auto-restart it."
         data:
           - refId: A
@@ -715,7 +715,7 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 15
+                      - {threshold.brain_heartbeat_stale_minutes}
                   operator:
                     type: and
                   reducer:
@@ -773,7 +773,7 @@ groups:
                   reducer:
                     type: last
 
-      # 13. GPU METRICS STALE — gpu_metrics not updated in 30 minutes
+      # 13. GPU METRICS STALE — gpu_metrics not updated in {threshold.gpu_metrics_stale_minutes} minutes
       - uid: brain-gpu-metrics-stale
         title: GPU Metrics Stale
         condition: C
@@ -785,7 +785,7 @@ groups:
           team: glad-labs
         annotations:
           summary: "GPU metrics scraper stopped collecting data"
-          description: "No gpu_metrics rows in the last 30 minutes. The gpu-scraper.py process may have crashed or lost its DB connection."
+          description: "No gpu_metrics rows in the last {threshold.gpu_metrics_stale_minutes} minutes. The gpu-scraper.py process may have crashed or lost its DB connection."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -819,13 +819,13 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 30
+                      - {threshold.gpu_metrics_stale_minutes}
                   operator:
                     type: and
                   reducer:
                     type: last
 
-      # 14. GPU TEMPERATURE HIGH — GPU exceeds 85°C
+      # 14. GPU TEMPERATURE HIGH — GPU exceeds {threshold.gpu_temperature_celsius}°C
       - uid: brain-gpu-temp-high
         title: GPU Temperature High
         condition: C
@@ -842,7 +842,7 @@ groups:
           severity: critical
           team: glad-labs
         annotations:
-          summary: "GPU temperature exceeded 85°C"
+          summary: "GPU temperature exceeded {threshold.gpu_temperature_celsius}°C"
           description: "GPU temperature is {{ $values.B.Value }}°C. Check cooling, fan speed, and workload. Sustained high temps can damage hardware."
         data:
           - refId: A
@@ -877,7 +877,7 @@ groups:
                 - evaluator:
                     type: gt
                     params:
-                      - 85
+                      - {threshold.gpu_temperature_celsius}
                   operator:
                     type: and
                   reducer:
