@@ -319,14 +319,22 @@ async def _api(
 # ============================================================================
 
 @mcp.tool()
-async def create_post(topic: str, category: str = "technology", target_audience: str = "developers and founders") -> str:
-    """Create a new blog post task in the content pipeline. The worker will generate it via AI."""
-    result = await _api("POST", "/api/tasks", {
+async def create_post(topic: str, category: str = "technology", target_audience: str = "developers and founders", niche: str = "") -> str:
+    """Create a new blog post task in the content pipeline. The worker will generate it via AI.
+
+    Args:
+        niche: Niche slug this post belongs to (e.g. 'glad-labs', 'dev_diary'). Required to pass
+               the publish allowlist gate — tasks with no niche are blocked at publish time.
+    """
+    payload: dict = {
         "task_name": f"Blog post: {topic}",
         "topic": topic,
         "category": category,
         "target_audience": target_audience,
-    })
+    }
+    if niche:
+        payload["niche_slug"] = niche
+    result = await _api("POST", "/api/tasks", payload)
     if "error" in result:
         return f"Failed: {result['error']}"
     return f"Task created: {result.get('task_id', '?')} — status: {result.get('status', '?')}"
