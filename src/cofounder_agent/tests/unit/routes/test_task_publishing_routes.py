@@ -641,6 +641,205 @@ class TestPublishTask:
         assert resp.json()["status"] == "scheduled"
 
 
+# ===========================================================================
+# State-confirming retries (poindexter#747)
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestApproveTaskIdempotency:
+    """Verify that state-confirming retries on approve return 200, not 409.
+
+    An LLM agent or mobile client that retries POST /{id}/approve after a
+    timeout must receive 200 (current state) so it cannot distinguish
+    "just worked" from "already done".
+    """
+
+    def _post_approve(self, client, task_id=VALID_TASK_ID, **params):
+        return client.post(f"/{task_id}/approve", params=params)
+
+    def test_already_approved_approve_returns_200(self):
+        """Second approve on an already-approved task returns 200 (not 409)."""
+        mock_db = make_mock_db()
+        task = _make_task(status="approved")
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_approve(client, approved="true")
+
+        assert resp.status_code == 200, (
+            f"Expected 200 for state-confirming retry, got {resp.status_code}: {resp.json()}"
+        )
+        data = resp.json()
+        # Response shape must match a successful first-approve shape
+        assert data.get("id") == VALID_TASK_ID or data.get("task_id") == VALID_TASK_ID
+        assert data.get("status") == "approved"
+        # The state-confirming path must NOT call update_task_status — the task
+        # is already in the target state; writing again would corrupt the timestamps.
+        mock_db.update_task_status.assert_not_called()
+
+    def test_already_approved_via_json_body_returns_200(self):
+        """State-confirming retry via JSON body also returns 200."""
+        mock_db = make_mock_db()
+        task = _make_task(status="approved")
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = client.post(
+            f"/{VALID_TASK_ID}/approve",
+            json={"approved": True, "reviewer_id": "u1"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json().get("status") == "approved"
+
+    def test_already_approved_response_shape_matches_first_approve(self):
+        """State-confirming response must carry the same required fields as a
+        successful first-approve so callers can treat both paths identically."""
+        mock_db = make_mock_db()
+        task = _make_task(
+            status="approved",
+            result={
+                "content": "Blog body",
+                "post_id": "post-abc",
+                "post_slug": "blog-body",
+                "published_url": "/posts/blog-body",
+            },
+        )
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = client.post(f"/{VALID_TASK_ID}/approve", json={"approved": True})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # All required UnifiedTaskResponse fields must be present
+        assert "status" in data
+        assert "created_at" in data
+        assert "updated_at" in data
+
+    def test_already_approved_reject_attempt_still_returns_409(self):
+        """Trying to REJECT an already-approved task is a conflicting action
+        (not a retry) and must still raise 409."""
+        mock_db = make_mock_db()
+        task = _make_task(status="approved")
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        # approved=false is a reject attempt, not a state-confirming retry
+        resp = self._post_approve(client, approved="false")
+
+        assert resp.status_code == 409
+
+
+@pytest.mark.unit
+class TestPublishTaskIdempotency:
+    """Verify that state-confirming retries on publish return 200, not 409.
+
+    An LLM agent or mobile client that retries POST /{id}/publish after a
+    timeout must receive 200 (current state) so it cannot distinguish
+    "just published" from "already published".
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_publish_service(self):
+        mock_result = MagicMock(
+            success=True, post_id="post-xyz", post_slug="great-post",
+            published_url="/posts/great-post", post_title="Great Post",
+            revalidation_success=True,
+        )
+        with patch(
+            "services.publish_service.publish_post_from_task",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            yield
+
+    def _post_publish(self, client, task_id=VALID_TASK_ID):
+        return client.post(f"/{task_id}/publish")
+
+    def test_already_published_task_returns_200(self):
+        """Second publish on an already-published task returns 200 (not 409)."""
+        mock_db = make_mock_db()
+        task = _make_task(status="published")
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_publish(client)
+
+        assert resp.status_code == 200, (
+            f"Expected 200 for state-confirming retry, got {resp.status_code}: {resp.json()}"
+        )
+        data = resp.json()
+        assert data.get("status") == "published"
+
+    def test_already_published_does_not_call_publish_service(self):
+        """State-confirming retry must NOT invoke publish_post_from_task again —
+        the post is already live and calling it again could duplicate records."""
+        mock_db = make_mock_db()
+        task = _make_task(status="published")
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        with patch(
+            "services.publish_service.publish_post_from_task",
+            new_callable=AsyncMock,
+        ) as mock_pub:
+            client = TestClient(app)
+            resp = self._post_publish(client)
+
+        assert resp.status_code == 200
+        mock_pub.assert_not_called()
+
+    def test_already_published_response_shape_matches_first_publish(self):
+        """State-confirming response must carry the same required fields as a
+        successful first-publish so callers can treat both paths identically."""
+        mock_db = make_mock_db()
+        task = _make_task(
+            status="published",
+            result={
+                "content": "Blog body",
+                "post_id": "post-xyz",
+                "post_slug": "great-post",
+                "published_url": "/posts/great-post",
+            },
+        )
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_publish(client)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # All required UnifiedTaskResponse fields must be present
+        assert "status" in data
+        assert "created_at" in data
+        assert "updated_at" in data
+        # post metadata must be present when it was stored in the result
+        assert data.get("post_id") == "post-xyz"
+        assert data.get("post_slug") == "great-post"
+        assert data.get("published_url") == "/posts/great-post"
+
+    def test_non_published_non_approved_still_returns_409(self):
+        """Wrong-state publish that is neither 'approved' nor 'published'
+        must still return 409 (regression guard)."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_publish(client)
+
+        assert resp.status_code == 409
+
+
 @pytest.mark.unit
 class TestGenerateTaskImage:
     def _post_generate(self, client, task_id=VALID_TASK_ID, body=None):

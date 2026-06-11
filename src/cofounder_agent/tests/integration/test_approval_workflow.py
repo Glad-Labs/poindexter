@@ -485,9 +485,11 @@ class TestApproveRejectLifecycleComposed:
         update_call = db.update_task.call_args[0][1]
         assert update_call.get("approval_status") == "rejected"
 
-    def test_approve_already_approved_returns_409(self):
-        """Re-approving an already-approved task returns 409 — 'approved' is not in
-        allowed_statuses (['awaiting_approval', 'completed'])."""
+    def test_approve_already_approved_returns_200(self):
+        """Re-approving an already-approved task is an idempotent state-confirming
+        retry — returns 200 (poindexter#747). The endpoint treats approved=True on
+        an already-approved task as 'confirm my prior action succeeded', not an
+        error. Only approved=False (rejecting an already-approved task) returns 409."""
         db = _make_mock_db()
         already_approved = {**_make_awaiting_task(), "status": "approved", "result": {}}
         db.get_task = AsyncMock(return_value=already_approved)
@@ -498,7 +500,9 @@ class TestApproveRejectLifecycleComposed:
                 params=APPROVE_PARAMS,
                 headers={"Authorization": "Bearer test-token"},
             )
-        assert resp.status_code == 409
+        assert resp.status_code == 200, (
+            f"Expected 200 for idempotent re-approve, got {resp.status_code}: {resp.text}"
+        )
 
     def test_human_feedback_passed_as_query_param(self):
         """human_feedback query param is accepted by the approve endpoint."""

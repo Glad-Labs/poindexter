@@ -287,14 +287,15 @@ class TestPublishWrongState409:
             f"Expected 409 for publish on awaiting_approval task, got {resp.status_code}: {resp.text}"
         )
 
-    def test_publish_already_published_returns_409(self):
+    def test_publish_already_published_returns_200(self):
+        """Re-publishing an already-published task is an idempotent retry: returns 200 (poindexter#747)."""
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_PUBLISHED_TASK)
         client = TestClient(_build_publishing_app(mock_db))
 
         resp = client.post("/api/tasks/pub-task-001/publish")
-        assert resp.status_code == 409, (
-            f"Expected 409 for publish on already-published task, got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 200, (
+            f"Expected 200 for publish on already-published task (idempotent retry), got {resp.status_code}: {resp.text}"
         )
 
 

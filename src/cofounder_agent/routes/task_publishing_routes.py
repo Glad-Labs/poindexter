@@ -271,6 +271,45 @@ async def approve_task(
             "awaiting_approval",
             "completed",  # QA-passed tasks that haven't been reviewed yet
         ]
+
+        # State-confirming retry (poindexter#747): if the task is already
+        # approved, the previous request succeeded — return current state as
+        # 200 so the caller can't distinguish "it worked this time" from "it
+        # already worked last time". Only applies when the caller is also
+        # requesting approval (approved=True); a conflicting action (trying
+        # to reject an already-approved task) still raises 409.
+        if current_status == "approved" and approved:
+            logger.info(
+                "[approve_task] Task %s is already approved — state-confirming retry, returning 200",
+                task_id,
+            )
+            task_result_data = task.get("result", {})
+            if isinstance(task_result_data, str):
+                task_result_data = json.loads(task_result_data) if task_result_data else {}
+            if not isinstance(task_result_data, dict):
+                task_result_data = {}
+            try:
+                response_data = ModelConverter.task_response_to_unified(
+                    ModelConverter.to_task_response(task)
+                )
+            except Exception:
+                _now = datetime.now(timezone.utc).isoformat()
+                response_data = {
+                    "id": task_id,
+                    "task_id": task_id,
+                    "status": current_status,
+                    "task_type": task.get("task_type", "blog_post"),
+                    "created_at": task.get("created_at", _now),
+                    "updated_at": task.get("updated_at", _now),
+                }
+            if task_result_data.get("published_url"):
+                response_data["published_url"] = task_result_data["published_url"]
+            if task_result_data.get("post_id"):
+                response_data["post_id"] = task_result_data["post_id"]
+            if task_result_data.get("post_slug"):
+                response_data["post_slug"] = task_result_data["post_slug"]
+            return UnifiedTaskResponse(**response_data)
+
         if current_status not in allowed_statuses:
             raise HTTPException(
                 status_code=409,
@@ -643,6 +682,47 @@ async def publish_task(
 
         # Check if task is approved
         current_status = task.get("status", "unknown")
+
+        # State-confirming retry (poindexter#747): if the task is already
+        # published, the previous request succeeded — return current state as
+        # 200 so LLM agents and mobile clients retrying after a timeout get an
+        # identical successful response rather than a confusing 409.
+        if current_status == "published":
+            logger.info(
+                "[publish_task] Task %s is already published — state-confirming retry, returning 200",
+                task_id,
+            )
+            task_result_data = task.get("result", {})
+            if isinstance(task_result_data, str):
+                task_result_data = json.loads(task_result_data) if task_result_data else {}
+            if not isinstance(task_result_data, dict):
+                task_result_data = {}
+            try:
+                response_data = ModelConverter.task_response_to_unified(
+                    ModelConverter.to_task_response(task)
+                )
+            except Exception:
+                _now = datetime.now(timezone.utc).isoformat()
+                response_data = {
+                    "id": task_id,
+                    "task_id": task_id,
+                    "status": current_status,
+                    "task_type": task.get("task_type", "blog_post"),
+                    "created_at": task.get("created_at", _now),
+                    "updated_at": task.get("updated_at", _now),
+                }
+            published_url = task_result_data.get("published_url")
+            post_id = task_result_data.get("post_id")
+            post_slug = task_result_data.get("post_slug")
+            if published_url:
+                response_data["published_url"] = published_url
+            if post_id:
+                response_data["post_id"] = post_id
+            if post_slug:
+                response_data["post_slug"] = post_slug
+            response_data["revalidation"] = {"triggered": False, "success": False}
+            return UnifiedTaskResponse(**response_data)
+
         if current_status != "approved":
             raise HTTPException(
                 status_code=409,
