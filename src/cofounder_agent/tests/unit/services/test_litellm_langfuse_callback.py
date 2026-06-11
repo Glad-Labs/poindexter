@@ -33,6 +33,14 @@ _litellm_stub = MagicMock(name="litellm")
 _litellm_stub.success_callback = []
 _litellm_stub.failure_callback = []
 
+# Stub the OTEL integration submodule so tests don't instantiate a real
+# OpenTelemetry exporter (which tries to connect to a collector endpoint).
+_mock_opentelemetry_cls = MagicMock(name="OpenTelemetry")
+_mock_otel_config_cls = MagicMock(name="OpenTelemetryConfig")
+_litellm_otel_stub = MagicMock(name="litellm.integrations.opentelemetry")
+_litellm_otel_stub.OpenTelemetry = _mock_opentelemetry_cls
+_litellm_otel_stub.OpenTelemetryConfig = _mock_otel_config_cls
+
 # 2026-05-06 fix: previously ``sys.modules.setdefault`` was used here,
 # which permanently wedged the MagicMock into ``sys.modules`` for every
 # subsequent test. Other test modules that import the real LiteLLM
@@ -61,6 +69,7 @@ def _reset_module_state(monkeypatch):
     and compute nonsense costs.
     """
     monkeypatch.setitem(sys.modules, "litellm", _litellm_stub)
+    monkeypatch.setitem(sys.modules, "litellm.integrations.opentelemetry", _litellm_otel_stub)
     monkeypatch.setattr(
         litellm_provider, "_LANGFUSE_CALLBACK_REGISTERED", False,
     )
@@ -68,6 +77,8 @@ def _reset_module_state(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     _litellm_stub.success_callback = []
     _litellm_stub.failure_callback = []
+    _mock_opentelemetry_cls.reset_mock()
+    _mock_otel_config_cls.reset_mock()
     yield
 
 
@@ -112,15 +123,22 @@ async def test_disabled_skips_registration_cleanly():
 async def test_enabled_with_all_credentials_registers_callback():
     """Happy path — all three credentials present + tracing enabled.
 
-    Verifies env vars get stamped (LiteLLM's Langfuse integration reads
-    them on first callback fire) AND the success/failure callback lists
-    get set to ``["langfuse"]``.
+    Verifies env vars get stamped AND the success/failure callback lists
+    are set to an OpenTelemetry instance pointed at Langfuse's OTEL endpoint.
     """
     sc = _fake_site_config()
     result = await configure_langfuse_callback(sc)
     assert result is True
-    assert _litellm_stub.success_callback == ["langfuse_otel"]
-    assert _litellm_stub.failure_callback == ["langfuse_otel"]
+    # Both lists receive the same OpenTelemetry instance.
+    assert len(_litellm_stub.success_callback) == 1
+    assert len(_litellm_stub.failure_callback) == 1
+    assert _litellm_stub.success_callback[0] is _litellm_stub.failure_callback[0]
+    # OpenTelemetryConfig was constructed with the Langfuse OTEL endpoint.
+    _mock_otel_config_cls.assert_called_once()
+    config_kwargs = _mock_otel_config_cls.call_args.kwargs
+    assert config_kwargs["exporter"] == "otlp_http"
+    assert config_kwargs["endpoint"] == "http://localhost:3010/api/public/otel"
+    assert "Authorization=Basic" in config_kwargs["headers"]
     assert os.environ["LANGFUSE_HOST"] == "http://localhost:3010"
     assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-lf-test"
     assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-lf-test"
@@ -158,7 +176,7 @@ async def test_idempotent_double_call():
     second = await configure_langfuse_callback(sc)
     assert first is True
     assert second is True
-    assert _litellm_stub.success_callback == ["langfuse_otel"]
+    assert len(_litellm_stub.success_callback) == 1
     # Should have been fetched twice (env-var refresh path).
     assert sc.get_secret.await_count == 2
 

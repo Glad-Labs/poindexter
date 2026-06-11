@@ -31,11 +31,11 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
 Observability — Langfuse tracing (poindexter#373):
 
 - ``langfuse_tracing_enabled`` (bool, default true) — when true,
-  ``configure_langfuse_callback`` registers Langfuse as LiteLLM's
-  ``success_callback`` + ``failure_callback`` so every call emits a
-  span to the Langfuse host configured via the same three credential
-  rows that the prompt manager already uses (``langfuse_host``,
-  ``langfuse_public_key``, ``langfuse_secret_key``).
+  ``configure_langfuse_callback`` registers LiteLLM's OTEL integration
+  pointed at ``{langfuse_host}/api/public/otel`` so every call emits a
+  span to Langfuse. Uses OTEL (not LiteLLM's built-in ``langfuse``
+  string callback, which is broken against langfuse SDK>=3.0 due to a
+  dropped ``sdk_integration`` constructor kwarg).
 - This is ADDITIVE — ``cost_guard.record_cost`` keeps working. The
   Langfuse SDK batches + retries spans in a background worker and
   never blocks the calling LLM request, so a Langfuse outage doesn't
@@ -49,6 +49,7 @@ and can ground decisions on that.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import re
@@ -202,10 +203,9 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
             f"langfuse_tracing_enabled=false to opt out of tracing.",
         )
 
-    # LiteLLM's Langfuse integration (litellm/integrations/langfuse.py)
-    # reads these three env vars on first callback fire. Stamping them
-    # at startup means we don't need a custom Langfuse client wired in
-    # — LiteLLM constructs its own + reuses across calls.
+    # Stamp env vars so other Langfuse SDK paths (prompt manager, @observe
+    # decorators in langfuse_shim) pick up the DB-configured credentials
+    # instead of whatever the container was started with.
     os.environ["LANGFUSE_HOST"] = host
     os.environ["LANGFUSE_PUBLIC_KEY"] = public_key
     os.environ["LANGFUSE_SECRET_KEY"] = secret_key
@@ -219,6 +219,7 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
 
     try:
         import litellm
+        from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
     except ImportError as exc:
         raise LangfuseConfigError(
             "langfuse_tracing_enabled=true but the litellm package is "
@@ -227,23 +228,24 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
             "=false.",
         ) from exc
 
-    # LiteLLM accepts callback names as strings; the integration
-    # registry turns "langfuse_otel" into a LangfuseOtelLogger instance
-    # that ships spans via OTLP to ``LANGFUSE_HOST/api/public/otel``.
-    # Per LiteLLM docs, success + failure go to the same callback
-    # (different code paths in the logger).
-    #
-    # We use ``langfuse_otel`` (not the older ``langfuse``) because the
-    # legacy integration constructs the v2 ``Langfuse`` SDK client
-    # which is incompatible with langfuse>=3.0 — passing the dropped
-    # ``sdk_integration`` kwarg raises ``TypeError`` on every call.
-    # ``langfuse_otel`` talks to the public OTEL ingest endpoint
-    # directly and reads the same three env vars we just stamped.
-    litellm.success_callback = ["langfuse_otel"]
-    litellm.failure_callback = ["langfuse_otel"]
+    # Use LiteLLM's OTEL integration rather than the built-in "langfuse"
+    # string callback. The built-in LangFuseLogger constructs the legacy
+    # Langfuse SDK client with a ``sdk_integration`` kwarg that was dropped
+    # in langfuse>=3.0, causing a TypeError on every call. The OTEL path
+    # sends standard OTLP spans to Langfuse's /api/public/otel endpoint,
+    # which the server has supported since v3.x and is SDK-version-agnostic.
+    b64_creds = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
+    otel_config = OpenTelemetryConfig(
+        exporter="otlp_http",
+        endpoint=f"{host}/api/public/otel",
+        headers=f"Authorization=Basic {b64_creds}",
+    )
+    otel_callback = OpenTelemetry(config=otel_config)
+    litellm.success_callback = [otel_callback]
+    litellm.failure_callback = [otel_callback]
     _LANGFUSE_CALLBACK_REGISTERED = True
     logger.info(
-        "[litellm_provider] Langfuse tracing active (host=%s) — every "
+        "[litellm_provider] Langfuse tracing active via OTEL (host=%s) — every "
         "LLM call routed through LiteLLMProvider will emit a span.",
         host,
     )
