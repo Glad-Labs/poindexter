@@ -30,7 +30,7 @@ import httpx
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.integrations import registry
 from services.integrations.operator_notify import notify_operator
-from services.llm_providers.dispatcher import resolve_tier_model
+from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
 from services.logger_config import get_logger
 from services.publishing_adapters_db import load_enabled_publishers
 from services.site_config import SiteConfig
@@ -278,12 +278,15 @@ async def _generate_social_text(
     *,
     site_config: SiteConfig,
 ) -> str:
-    """Call the local Ollama LLM and return the generated text, trimmed to limit."""
+    """Call the LLM and return the generated text, trimmed to limit.
+
+    Production path (pool available on site_config): routes through
+    ``dispatch_complete`` for cost tracking, Langfuse traces, and
+    provider-swappability.  Test / bootstrap fallback (no pool): delegates
+    to the supplied ``OllamaClient`` instance (or creates a transient one)
+    so the existing test suite continues to work without a live DB.
+    """
     _sc = site_config
-    # Track whether we own the client — only close clients we created here
-    # so we don't shut down a pool the caller is still using.
-    owns_client = ollama is None
-    client = ollama or OllamaClient()
     # Cost-tier API (Lane B sweep). Operators tune the standard tier via
     # app_settings.cost_tier.standard.model — no code edit per niche. The
     # social_poster_fallback_model setting remains the per-call-site
@@ -296,27 +299,52 @@ async def _generate_social_text(
             "[social_poster] could not resolve model for %s: %s",
             platform, exc,
         )
-        if owns_client:
-            with suppress(Exception):
-                await client.close()
         return ""
-    model = resolved.removeprefix("ollama/")  # OllamaClient expects bare model name
+    model = resolved.removeprefix("ollama/")  # bare model name for both paths
+
+    pool = getattr(_sc, "_pool", None)
 
     try:
-        result = await client.generate(
-            prompt=prompt,
-            model=model,
-            temperature=0.8,
-            max_tokens=_sc.get_int("social_poster_max_tokens", 300),
-            # Social copy is short — disable the model's reasoning phase. A
-            # thinking model (e.g. the 'standard' tier glm-4.7) otherwise
-            # spends the whole token budget thinking, never emits the post,
-            # and OllamaClient salvages the raw thinking trace (analysis that
-            # reads like QA results) as the "draft". think=False makes the
-            # model emit the post directly.
-            think=False,
-        )
-        text = result.get("text", "").strip()
+        if pool is not None and ollama is None:
+            # Production path — dispatch through the configured LLM provider.
+            # Social copy is short — disable reasoning phase so a thinking
+            # model emits the post directly rather than burning its whole
+            # token budget on analysis (think=False propagated via kwargs).
+            max_tokens = _sc.get_int("social_poster_max_tokens", 300)
+            messages = [{"role": "user", "content": prompt}]
+            completion = await dispatch_complete(
+                pool=pool,
+                messages=messages,
+                model=model,
+                tier="standard",
+                phase="social_poster",
+                think=False,
+                options={"num_predict": max_tokens, "temperature": 0.8},
+            )
+            text = (getattr(completion, "text", "") or "").strip()
+        else:
+            # Test / bootstrap fallback — delegate to OllamaClient.
+            owns_client = ollama is None
+            client = ollama or OllamaClient()
+            try:
+                result = await client.generate(
+                    prompt=prompt,
+                    model=model,
+                    temperature=0.8,
+                    max_tokens=_sc.get_int("social_poster_max_tokens", 300),
+                    # Social copy is short — disable the model's reasoning phase. A
+                    # thinking model (e.g. the 'standard' tier glm-4.7) otherwise
+                    # spends the whole token budget thinking, never emits the post,
+                    # and OllamaClient salvages the raw thinking trace (analysis that
+                    # reads like QA results) as the "draft". think=False makes the
+                    # model emit the post directly.
+                    think=False,
+                )
+                text = result.get("text", "").strip()
+            finally:
+                if owns_client:
+                    with suppress(Exception):
+                        await client.close()
 
         # Defense in depth: strip any residual <think>...</think> reasoning
         # block in case a model emits one inline despite think=False — the
@@ -339,10 +367,6 @@ async def _generate_social_text(
     except Exception as e:
         logger.error("[social_poster] LLM generation failed for %s: %s", platform, e, exc_info=True)
         return ""
-    finally:
-        if owns_client:
-            with suppress(Exception):
-                await client.close()
 
 
 # ---------------------------------------------------------------------------

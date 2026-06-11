@@ -796,6 +796,128 @@ class TestBumpMetricNeverRaises:
         _bump_metric("social_adapter_errors_total", platform="bluesky")
 
 
+# ---------------------------------------------------------------------------
+# dispatch_complete path (poindexter#706)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateSocialTextDispatchPath:
+    """When site_config._pool is wired, _generate_social_text routes through
+    dispatch_complete instead of OllamaClient (poindexter#706)."""
+
+    def _sc_with_pool(self) -> "SiteConfig":
+        from unittest.mock import MagicMock
+
+        class _FakeConn:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def fetchval(self, *a): return "ollama/gemma3:27b"
+
+        class _FakePool:
+            def acquire(self): return _FakeConn()
+
+        sc = MagicMock(spec=SiteConfig)
+        sc._pool = _FakePool()
+        sc.get.side_effect = lambda k, d=None: {"social_poster_max_tokens": 300}.get(k, d)
+        sc.get_int.side_effect = lambda k, d=None: {"social_poster_max_tokens": 300}.get(k, d)
+        return sc
+
+    @pytest.mark.asyncio
+    async def test_calls_dispatch_complete_not_ollama(self):
+        """When pool is wired and no explicit ollama arg, dispatch_complete is
+        called and OllamaClient is never instantiated."""
+        from unittest.mock import MagicMock
+
+        completion = MagicMock()
+        completion.text = "Great AI post! #LLM"
+
+        with patch(
+            "services.social_poster.dispatch_complete",
+            new=AsyncMock(return_value=completion),
+        ) as mock_dispatch, patch(
+            "services.social_poster.OllamaClient",
+        ) as mock_ollama_cls:
+            result = await _generate_social_text(
+                "test prompt", 280, "twitter", site_config=self._sc_with_pool()
+            )
+
+        assert result == "Great AI post! #LLM"
+        mock_dispatch.assert_awaited_once()
+        mock_ollama_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_complete_receives_correct_tier_and_phase(self):
+        """dispatch_complete must be called with tier='standard' and
+        phase='social_poster'."""
+        from unittest.mock import MagicMock
+
+        completion = MagicMock()
+        completion.text = "Tweet text"
+
+        with patch(
+            "services.social_poster.dispatch_complete",
+            new=AsyncMock(return_value=completion),
+        ) as mock_dispatch:
+            await _generate_social_text(
+                "prompt", 280, "twitter", site_config=self._sc_with_pool()
+            )
+
+        kwargs = mock_dispatch.await_args.kwargs
+        assert kwargs.get("tier") == "standard"
+        assert kwargs.get("phase") == "social_poster"
+
+    @pytest.mark.asyncio
+    async def test_explicit_ollama_arg_bypasses_dispatch(self):
+        """Callers that pass an explicit OllamaClient (legacy test / bootstrap
+        compatibility) use the OllamaClient path even when pool is wired."""
+        ollama = _make_ollama_mock("Legacy path text")
+        sc_with_pool = self._sc_with_pool()
+
+        with patch(
+            "services.social_poster.dispatch_complete",
+            new=AsyncMock(),
+        ) as mock_dispatch:
+            result = await _generate_social_text(
+                "prompt", 280, "twitter", ollama, site_config=sc_with_pool
+            )
+
+        assert result == "Legacy path text"
+        mock_dispatch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_error_returns_empty(self):
+        """Errors from dispatch_complete are caught; empty string returned."""
+        with patch(
+            "services.social_poster.dispatch_complete",
+            new=AsyncMock(side_effect=RuntimeError("provider offline")),
+        ):
+            result = await _generate_social_text(
+                "prompt", 280, "twitter", site_config=self._sc_with_pool()
+            )
+
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_strips_think_block_from_dispatch_result(self):
+        """Defense-in-depth think-block stripping still applies on the
+        dispatch_complete path."""
+        from unittest.mock import MagicMock
+
+        completion = MagicMock()
+        completion.text = "<think>analysis...</think>Clean tweet #AI"
+
+        with patch(
+            "services.social_poster.dispatch_complete",
+            new=AsyncMock(return_value=completion),
+        ):
+            result = await _generate_social_text(
+                "prompt", 280, "twitter", site_config=self._sc_with_pool()
+            )
+
+        assert result == "Clean tweet #AI"
+        assert "<think>" not in result
+
+
 class TestCountersRegisteredAtImport:
     """poindexter#455 follow-up — the adapter counters must be constructed at
     module import time (module-level singletons), so their series are exposed

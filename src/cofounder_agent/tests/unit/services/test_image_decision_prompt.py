@@ -17,7 +17,7 @@ SKILL.md loader normalizes every template to YAML ``|`` clip semantics
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -120,69 +120,52 @@ class TestImageDecisionPromptSnapshot:
 _NON_THINKING_MODEL = "gemma3:27b"  # matches no thinking-model substring
 
 
-def _sc(**overrides) -> SiteConfig:
-    """A SiteConfig wired for plan_images with no live pool/DB.
+class _FakeConn:
+    def __init__(self, value):
+        self._value = value
 
-    ``model_role_image_decision`` supplies the fallback model (pool is
-    None so the cost-tier resolver is skipped); ``database_url=""`` keeps
-    the decision-logging branch off.
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        pass
+
+    async def fetchval(self, *a):
+        return self._value
+
+
+class _FakePool:
+    """Minimal asyncpg-like pool that resolves cost_tier.budget.model."""
+
+    def __init__(self, model: str = _NON_THINKING_MODEL):
+        self._model = f"ollama/{model}"
+
+    def acquire(self):
+        return _FakeConn(self._model)
+
+
+def _completion(text: str) -> MagicMock:
+    """Return a minimal dispatch_complete completion object."""
+    c = MagicMock()
+    c.text = text
+    return c
+
+
+def _sc(**overrides) -> SiteConfig:
+    """A SiteConfig wired for plan_images with a fake pool.
+
+    ``model_role_image_decision`` supplies the fallback model;
+    ``database_url=""`` keeps the decision-logging branch off.
+    The fake pool makes dispatch_complete reachable (no-pool guard skipped).
     """
     cfg = {
         "model_role_image_decision": _NON_THINKING_MODEL,
         "database_url": "",
-        "ollama_base_url": "http://ollama.test:11434",
     }
     cfg.update(overrides)
-    return SiteConfig(initial_config=cfg, pool=None)
-
-
-class _FakeResp:
-    def __init__(self, *, status_code: int = 200, payload: dict | None = None):
-        self.status_code = status_code
-        self._payload = payload or {}
-
-    def json(self) -> dict:
-        return self._payload
-
-    def raise_for_status(self) -> None:
-        # Tests only ever drive 200s; mirror httpx's "no-op on success".
-        return None
-
-
-class _FakeClient:
-    """Stand-in for the lifespan-bound ``httpx.AsyncClient``.
-
-    ``GET /api/tags`` reports ``model`` as installed; ``POST`` returns the
-    canned generate body. Records calls so tests can assert the network
-    was (not) reached.
-    """
-
-    def __init__(self, *, generate_text: str, model: str = _NON_THINKING_MODEL):
-        self._generate_text = generate_text
-        self._model = model
-        self.get_calls: list[str] = []
-        self.post_calls: list[tuple[str, dict]] = []
-
-    async def get(self, url, timeout=None):
-        self.get_calls.append(url)
-        return _FakeResp(payload={"models": [{"name": self._model}]})
-
-    async def post(self, url, json=None, timeout=None):
-        self.post_calls.append((url, json or {}))
-        return _FakeResp(payload={"response": self._generate_text})
-
-
-class _ExplodingClient:
-    """A client that fails the test if any network method is called.
-
-    Used to prove plan_images returns BEFORE reaching the HTTP block.
-    """
-
-    async def get(self, *a, **k):  # pragma: no cover - asserts non-invocation
-        raise AssertionError("plan_images made a network call it should not have")
-
-    async def post(self, *a, **k):  # pragma: no cover
-        raise AssertionError("plan_images made a network call it should not have")
+    sc = SiteConfig(initial_config=cfg, pool=None)
+    sc._pool = _FakePool()
+    return sc
 
 
 @pytest.mark.unit
@@ -193,11 +176,15 @@ class TestPlanImagesEdgeCases:
         monkeypatch.setattr(
             "services.integrations.operator_notify.notify_operator", notify
         )
-        # Explicitly empty the fallback; pool=None means no tier resolution.
-        cfg = _sc(model_role_image_decision="")
+        # Explicitly empty the fallback; pool returns None so tier resolution fails.
+        sc = _sc(model_role_image_decision="")
+        sc._pool = _FakePool.__new__(_FakePool)
+        sc._pool._model = None  # type: ignore[attr-defined]
+        # Override acquire to return a conn that returns None for fetchval
+        sc._pool.acquire = lambda: _FakeConn(None)  # type: ignore[method-assign]
 
         result = await plan_images(
-            "## Section\n\nBody.", topic="T", category="tech", site_config=cfg
+            "## Section\n\nBody.", topic="T", category="tech", site_config=sc
         )
 
         assert isinstance(result, ImagePlanResult)
@@ -205,20 +192,23 @@ class TestPlanImagesEdgeCases:
         assert result.featured_image is None
         notify.assert_awaited_once()
 
-    async def test_no_sections_returns_empty_without_network(self, monkeypatch):
-        """Content with no headings short-circuits before any Ollama call."""
-        monkeypatch.setattr(ida, "http_client", _ExplodingClient())
-
-        result = await plan_images(
-            "Just a flat paragraph with no headings whatsoever.",
-            topic="T",
-            site_config=_sc(),
-        )
+    async def test_no_sections_returns_empty_without_dispatch(self):
+        """Content with no headings short-circuits before any dispatch_complete call."""
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(),
+        ) as mock_dispatch:
+            result = await plan_images(
+                "Just a flat paragraph with no headings whatsoever.",
+                topic="T",
+                site_config=_sc(),
+            )
 
         assert result.images == []
         assert result.featured_image is None
+        mock_dispatch.assert_not_awaited()
 
-    async def test_bold_pseudo_headings_drive_planning(self, monkeypatch):
+    async def test_bold_pseudo_headings_drive_planning(self):
         """Bold-text dividers (no real H2) are the #527 fallback section source."""
         body = (
             "**First Idea**\n\nsome prose\n\n**Second Idea**\n\nmore prose\n"
@@ -233,19 +223,21 @@ class TestPlanImagesEdgeCases:
                 ],
             }
         )
-        client = _FakeClient(generate_text=plan_json)
-        monkeypatch.setattr(ida, "http_client", client)
 
-        result = await plan_images(body, topic="T", site_config=_sc())
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(plan_json)),
+        ) as mock_dispatch:
+            result = await plan_images(body, topic="T", site_config=_sc())
 
-        assert client.post_calls, "expected an Ollama generate call"
+        assert mock_dispatch.await_count == 1, "expected a dispatch_complete call"
         assert result.featured_image is not None
         assert result.featured_image.source == "sdxl"
         assert len(result.images) == 1
         assert result.images[0].section_heading == "First Idea"
         assert result.images[0].source == "pexels"
 
-    async def test_code_fenced_json_is_stripped_and_parsed(self, monkeypatch):
+    async def test_code_fenced_json_is_stripped_and_parsed(self):
         """A ```json fenced body parses cleanly (fence-strip path)."""
         inner = {
             "featured": {"source": "pexels", "style": "editorial",
@@ -253,14 +245,17 @@ class TestPlanImagesEdgeCases:
             "inline": [],
         }
         fenced = "```json\n" + json.dumps(inner) + "\n```"
-        monkeypatch.setattr(ida, "http_client", _FakeClient(generate_text=fenced))
 
-        result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(fenced)),
+        ):
+            result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
 
         assert result.featured_image is not None
         assert result.featured_image.source == "pexels"
 
-    async def test_embedded_json_extracted_from_reasoning(self, monkeypatch):
+    async def test_embedded_json_extracted_from_reasoning(self):
         """JSON buried in reasoning prose is recovered by the regex fallback."""
         inner = {
             "featured": {"source": "sdxl", "style": "minimal",
@@ -268,25 +263,31 @@ class TestPlanImagesEdgeCases:
             "inline": [],
         }
         noisy = f"Let me think it through. {json.dumps(inner)} That is my plan."
-        monkeypatch.setattr(ida, "http_client", _FakeClient(generate_text=noisy))
 
-        result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(noisy)),
+        ):
+            result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
 
         assert result.featured_image is not None
         assert result.featured_image.style == "minimal"
 
-    async def test_unparseable_response_returns_raw_and_empty_plan(self, monkeypatch):
+    async def test_unparseable_response_returns_raw_and_empty_plan(self):
         """Non-JSON output yields an empty plan but preserves raw_response."""
         garbage = "I cannot produce a plan for this article, sorry."
-        monkeypatch.setattr(ida, "http_client", _FakeClient(generate_text=garbage))
 
-        result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(garbage)),
+        ):
+            result = await plan_images("## A\n\nbody", topic="T", site_config=_sc())
 
         assert result.images == []
         assert result.featured_image is None
         assert result.raw_response == garbage
 
-    async def test_partial_entries_get_sensible_defaults(self, monkeypatch):
+    async def test_partial_entries_get_sensible_defaults(self):
         """Missing fields fall back to defaults; featured prompt → topic."""
         partial = json.dumps(
             {
@@ -294,11 +295,14 @@ class TestPlanImagesEdgeCases:
                 "inline": [{"section": "S1"}],    # no source/style/prompt
             }
         )
-        monkeypatch.setattr(ida, "http_client", _FakeClient(generate_text=partial))
 
-        result = await plan_images(
-            "## S1\n\nbody", topic="My Topic", site_config=_sc()
-        )
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(partial)),
+        ):
+            result = await plan_images(
+                "## S1\n\nbody", topic="My Topic", site_config=_sc()
+            )
 
         assert result.featured_image is not None
         assert result.featured_image.style == "editorial"
@@ -308,7 +312,7 @@ class TestPlanImagesEdgeCases:
         assert result.images[0].style == "editorial"
         assert result.images[0].prompt == ""
 
-    async def test_inline_images_capped_at_max_images(self, monkeypatch):
+    async def test_inline_images_capped_at_max_images(self):
         """More inline entries than max_images → list is truncated."""
         inline = [
             {"section": f"S{i}", "source": "sdxl", "style": "editorial",
@@ -316,11 +320,14 @@ class TestPlanImagesEdgeCases:
             for i in range(5)
         ]
         body = json.dumps({"featured": {}, "inline": inline})
-        monkeypatch.setattr(ida, "http_client", _FakeClient(generate_text=body))
 
-        result = await plan_images(
-            "## A\n\nbody", topic="T", max_images=2, site_config=_sc()
-        )
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(body)),
+        ):
+            result = await plan_images(
+                "## A\n\nbody", topic="T", max_images=2, site_config=_sc()
+            )
 
         assert len(result.images) == 2
         # Empty featured dict is falsy → no featured image parsed.

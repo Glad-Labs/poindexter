@@ -3,12 +3,10 @@
 Covers:
 - ImagePlan and ImagePlanResult dataclasses
 - plan_images: no-sections short-circuit
-- plan_images: happy path with mocked Ollama (/api/generate path)
-- plan_images: thinking-model path (/api/chat) and JSON extraction from
-  reasoning text
-- plan_images: ollama unreachable error path
-- plan_images: model-not-found error path
-- plan_images: 404 retry-then-success
+- plan_images: happy path via dispatch_complete
+- plan_images: thinking-model JSON extraction from reasoning text
+- plan_images: no-pool guard returns empty result
+- plan_images: dispatch_complete error returns empty result
 - plan_images: malformed JSON falls back to empty result with raw_response
 - plan_images: max_images cap is honored
 - plan_images: cost-tier resolution path (Lane B sweep)
@@ -30,15 +28,14 @@ from services.image_decision_agent import (
 def _patched_site_config(model_role: str = "ollama/llama3") -> MagicMock:
     """Build a site_config mock that mimics the post-Lane-B DI shape.
 
-    ``_pool`` is set to ``None`` so the cost-tier resolution short-circuits
-    and the test exercises the ``model_role_image_decision`` per-call-site
-    fallback. Tests that want to exercise the tier path supply their own
-    pool via ``mock_site._pool = <fake_pool>``.
+    ``_pool`` is set to a _FakePool by default so dispatch_complete can be
+    exercised. Pass ``_pool=None`` explicitly to test the no-pool guard.
+    Tests that want to exercise the tier path supply their own pool via
+    ``mock_site._pool = <fake_pool>``.
     """
     mock_site = MagicMock()
-    mock_site._pool = None  # disable cost-tier branch by default
+    mock_site._pool = _FakePool("ollama/" + model_role.removeprefix("ollama/"))
     mock_site.get.side_effect = lambda k, d=None: {
-        "ollama_base_url": "http://fake:11434",
         "model_role_image_decision": model_role,
         "database_url": "",
     }.get(k, d)
@@ -67,6 +64,19 @@ class _FakePool:
 
     def acquire(self):
         return _FakeConn(self._value)
+
+
+# ---------------------------------------------------------------------------
+# Helper: build a mock dispatch_complete completion object
+# ---------------------------------------------------------------------------
+
+
+def _completion(text: str) -> MagicMock:
+    """Return a minimal completion object with a .text attribute."""
+    c = MagicMock()
+    c.text = text
+    return c
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -101,48 +111,8 @@ class TestImagePlanResultDataclass:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Short-circuit paths (no sections, no pool)
 # ---------------------------------------------------------------------------
-
-
-def _mock_client_factory(get_resp=None, post_responses=None):
-    """Build a fake httpx.AsyncClient context manager.
-
-    get_resp: response object for the /api/tags health check
-    post_responses: list of response objects to return in order from .post()
-    """
-    client = AsyncMock()
-    client.get = AsyncMock(return_value=get_resp)
-    if post_responses:
-        client.post = AsyncMock(side_effect=post_responses)
-    else:
-        client.post = AsyncMock()
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
-    return client
-
-
-def _tags_resp(model_names):
-    r = MagicMock()
-    r.status_code = 200
-    r.json.return_value = {"models": [{"name": n} for n in model_names]}
-    return r
-
-
-def _generate_resp(text, status=200):
-    r = MagicMock()
-    r.status_code = status
-    r.json.return_value = {"response": text}
-    r.raise_for_status = MagicMock()
-    return r
-
-
-def _chat_resp(text, status=200, thinking=""):
-    r = MagicMock()
-    r.status_code = status
-    r.json.return_value = {"message": {"content": text}, "thinking": thinking}
-    r.raise_for_status = MagicMock()
-    return r
 
 
 SAMPLE_CONTENT = """# Intro
@@ -163,11 +133,6 @@ Sub body.
 """
 
 
-# ---------------------------------------------------------------------------
-# plan_images
-# ---------------------------------------------------------------------------
-
-
 class TestPlanImagesShortCircuits:
     @pytest.mark.asyncio
     async def test_no_sections_returns_empty(self):
@@ -182,6 +147,18 @@ class TestPlanImagesShortCircuits:
         assert result.featured_image is None
 
     @pytest.mark.asyncio
+    async def test_no_pool_returns_empty(self):
+        """When site_config._pool is None dispatch_complete cannot be called;
+        plan_images must return an empty result rather than raise."""
+        mock_site = _patched_site_config()
+        mock_site._pool = None  # explicitly disable
+
+        result = await plan_images(SAMPLE_CONTENT, "topic", site_config=mock_site)
+        assert isinstance(result, ImagePlanResult)
+        assert result.images == []
+        assert result.featured_image is None
+
+    @pytest.mark.asyncio
     async def test_bold_pseudo_headings_do_not_short_circuit(self):
         """Regression for the 2026-05-27 finding: 12 consecutive published
         canonical_blog posts had 0 inline images because writers emit
@@ -189,9 +166,9 @@ class TestPlanImagesShortCircuits:
         ``## Section Title`` markdown. The agent's section-detection
         falls back to bold-text pseudo-headings before short-circuiting.
 
-        Verify by checking the short-circuit DOESN'T fire. The Ollama
-        path is mocked to fail fast so the test focuses on the
-        section-extraction layer, not the downstream LLM call."""
+        Verify by checking the short-circuit DOESN'T fire (dispatch_complete
+        is called). The dispatch is mocked to succeed so the test focuses on
+        the section-extraction layer."""
         content = (
             "Intro paragraph here.\n\n"
             "**First Real Section**\n\n"
@@ -199,27 +176,22 @@ class TestPlanImagesShortCircuits:
             "**Another Section**\n\n"
             "Body of the second section.\n"
         )
+        plan_json = {
+            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "inline": [],
+        }
 
-        # Force the downstream HTTP path to fail loudly — if we get past
-        # the short-circuit, the test wants to see the agent try to call
-        # Ollama (and fail). Pretty proof the short-circuit didn't fire.
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.get = AsyncMock(side_effect=RuntimeError("ollama-not-reachable"))
-            mock_client_cls.return_value.__aenter__.return_value = mock_client
-            mock_client_cls.return_value.__aexit__.return_value = None
-
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
+        ) as mock_dispatch:
             result = await plan_images(
                 content, "the topic", site_config=_patched_site_config(),
             )
 
-        # Empty result is fine — the assertion that matters is the
-        # agent attempted to reach Ollama (proof the short-circuit
-        # didn't fire on this bold-text-heading content).
-        assert mock_client.get.called, (
+        assert mock_dispatch.await_count == 1, (
             "Agent short-circuited on bold-text pseudo-headings — "
-            "the 2026-05-27 fix regressed. Expected the agent to "
-            "treat ``**Title**`` standalone lines as L2 sections."
+            "the 2026-05-27 fix regressed."
         )
         assert isinstance(result, ImagePlanResult)
 
@@ -232,9 +204,6 @@ class TestPlanImagesShortCircuits:
             "Another paragraph with **more bold text** scattered through it.\n"
         )
 
-        # Same no-headings expectation as the original short-circuit test.
-        # If this test fails by NOT short-circuiting, our regex is too
-        # permissive and would inject images mid-paragraph.
         result = await plan_images(
             content, "topic", site_config=_patched_site_config(),
         )
@@ -243,9 +212,14 @@ class TestPlanImagesShortCircuits:
         assert result.featured_image is None
 
 
+# ---------------------------------------------------------------------------
+# Happy path via dispatch_complete
+# ---------------------------------------------------------------------------
+
+
 class TestPlanImagesHappyPath:
     @pytest.mark.asyncio
-    async def test_generate_path_with_valid_json(self):
+    async def test_happy_path_with_valid_json(self):
         plan_json = {
             "featured": {
                 "source": "sdxl",
@@ -270,13 +244,12 @@ class TestPlanImagesHappyPath:
                 },
             ],
         }
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["llama3:latest"]),
-            post_responses=[_generate_resp(json.dumps(plan_json))],
-        )
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
+        ):
             result = await plan_images(SAMPLE_CONTENT, "Test Topic", category="technology", site_config=mock_site)
 
         assert result.featured_image is not None
@@ -298,35 +271,58 @@ class TestPlanImagesHappyPath:
                 for i in range(8)
             ],
         }
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["llama3:latest"]),
-            post_responses=[_generate_resp(json.dumps(plan_json))],
-        )
 
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
+        ):
             result = await plan_images(SAMPLE_CONTENT, "Test", max_images=3, site_config=mock_site)
 
         assert len(result.images) == 3
 
+    @pytest.mark.asyncio
+    async def test_routes_through_budget_tier(self):
+        """dispatch_complete must be called with tier='budget'."""
+        plan_json = {
+            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "inline": [],
+        }
+        mock_site = _patched_site_config()
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
+        ) as mock_dispatch:
+            await plan_images(SAMPLE_CONTENT, "Test", site_config=mock_site)
+
+        assert mock_dispatch.await_count == 1
+        call_kwargs = mock_dispatch.await_args
+        assert call_kwargs.kwargs.get("tier") == "budget"
+        assert call_kwargs.kwargs.get("phase") == "image_decision_agent"
+
+
+# ---------------------------------------------------------------------------
+# Thinking-model / JSON-in-reasoning
+# ---------------------------------------------------------------------------
+
 
 class TestPlanImagesThinkingModel:
     @pytest.mark.asyncio
-    async def test_chat_path_extracts_json_from_reasoning(self):
-        # Thinking model returns reasoning text wrapping the JSON object
+    async def test_extracts_json_from_reasoning_text(self):
+        """Thinking models return reasoning text wrapping the JSON object;
+        the parser must extract it."""
         thinking_output = (
             "Let me think about this article. The sections are clear...\n"
             "I'll go with these choices:\n"
             '{"featured": {"source": "sdxl", "style": "dramatic", "prompt": "moody data center", "reasoning": "ok"}, '
             '"inline": [{"section": "How It Works", "source": "sdxl", "style": "blueprint", "prompt": "neural net", "reasoning": "ok"}]}'
         )
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["qwen3:8b"]),
-            post_responses=[_chat_resp(thinking_output)],
-        )
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(thinking_output)),
+        ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is not None
@@ -334,18 +330,18 @@ class TestPlanImagesThinkingModel:
         assert len(result.images) == 1
 
     @pytest.mark.asyncio
-    async def test_chat_path_strips_think_tags(self):
+    async def test_strips_think_tags(self):
+        """<think>...</think> tags wrapping the JSON must be stripped."""
         wrapped = (
             "<think>I'm reasoning about this...</think>\n"
             '{"featured": {"source": "sdxl", "style": "editorial", "prompt": "p", "reasoning": "r"}, "inline": []}'
         )
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["qwen3:8b"]),
-            post_responses=[_chat_resp(wrapped)],
-        )
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(wrapped)),
+        ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is not None
@@ -353,76 +349,50 @@ class TestPlanImagesThinkingModel:
         assert result.images == []
 
 
+# ---------------------------------------------------------------------------
+# Error paths
+# ---------------------------------------------------------------------------
+
+
 class TestPlanImagesErrorPaths:
     @pytest.mark.asyncio
-    async def test_ollama_unreachable_returns_empty(self):
-        client = AsyncMock()
-        client.get = AsyncMock(side_effect=Exception("connection refused"))
-        client.__aenter__ = AsyncMock(return_value=client)
-        client.__aexit__ = AsyncMock(return_value=False)
-
+    async def test_dispatch_complete_error_returns_empty(self):
+        """Any exception from dispatch_complete is caught; empty result returned."""
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(side_effect=RuntimeError("provider offline")),
+        ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
-        # Graceful fallback — empty result, no exception raised
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
         assert result.featured_image is None
 
     @pytest.mark.asyncio
-    async def test_model_not_in_available_list_returns_empty(self):
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["completely-different-model:latest"]),
-        )
-
-        mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
-
-        assert isinstance(result, ImagePlanResult)
-        assert result.images == []
-
-    @pytest.mark.asyncio
-    async def test_404_then_success_retry(self):
-        # First call returns 404 (model not loaded), second succeeds
-        plan_json = {
-            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
-            "inline": [],
-        }
-        success_resp = _generate_resp(json.dumps(plan_json))
-        not_loaded = MagicMock()
-        not_loaded.status_code = 404
-        not_loaded.raise_for_status = MagicMock(side_effect=Exception("should not be called"))
-
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["llama3:latest"]),
-            post_responses=[not_loaded, success_resp],
-        )
-
-        mock_site = _patched_site_config()
-        # Patch asyncio.sleep so we don't actually wait 3s
-        with patch("httpx.AsyncClient", return_value=client), \
-             patch("asyncio.sleep", new=AsyncMock()):
-            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
-
-        assert result.featured_image is not None
-        assert client.post.await_count == 2
-
-    @pytest.mark.asyncio
     async def test_malformed_json_returns_empty_with_raw(self):
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["llama3:latest"]),
-            post_responses=[_generate_resp("not json at all, just words")],
-        )
-
         mock_site = _patched_site_config()
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion("not json at all, just words")),
+        ):
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         assert result.featured_image is None
         assert result.images == []
         assert "not json" in result.raw_response
+
+    @pytest.mark.asyncio
+    async def test_empty_response_returns_empty(self):
+        mock_site = _patched_site_config()
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion("")),
+        ):
+            result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
+
+        assert isinstance(result, ImagePlanResult)
+        assert result.images == []
 
 
 # ---------------------------------------------------------------------------
@@ -439,29 +409,26 @@ class TestPlanImagesCostTierResolution:
 
     @pytest.mark.asyncio
     async def test_cost_tier_budget_resolves_to_provider_call(self):
-        """Tier mapping is the primary path; ollama/ prefix stripped."""
+        """Tier mapping is the primary path; model passed to dispatch_complete."""
         plan_json = {
             "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["resolved-tier-model:latest"]),
-            post_responses=[_generate_resp(json.dumps(plan_json))],
-        )
 
         mock_site = _patched_site_config(model_role="ollama/should-not-be-used")
-        # Wire a fake pool that resolves cost_tier.budget.model first.
+        # Wire a pool that resolves cost_tier.budget.model to the tier model.
         mock_site._pool = _FakePool("ollama/resolved-tier-model")
 
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
+        ) as mock_dispatch:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
-        # The /api/generate body received the cost-tier-resolved model
-        # (with the ollama/ prefix stripped to match provider expectations).
-        post_call = client.post.await_args_list[0]
-        body = post_call.kwargs.get("json") or post_call.args[1]
-        assert body["model"] == "resolved-tier-model"
-        # Featured image still parsed from the canned JSON.
+        # dispatch_complete received the cost-tier-resolved model
+        # (with the ollama/ prefix stripped).
+        call_model = mock_dispatch.await_args.kwargs.get("model")
+        assert call_model == "resolved-tier-model"
         assert result.featured_image is not None
 
     @pytest.mark.asyncio
@@ -471,20 +438,18 @@ class TestPlanImagesCostTierResolution:
             "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
-        client = _mock_client_factory(
-            get_resp=_tags_resp(["per-site-fallback:latest"]),
-            post_responses=[_generate_resp(json.dumps(plan_json))],
-        )
 
         mock_site = _patched_site_config(model_role="ollama/per-site-fallback")
         mock_site._pool = _FakePool(None)  # tier mapping missing
 
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch(
+            "services.image_decision_agent.dispatch_complete",
+            new=AsyncMock(return_value=_completion(json.dumps(plan_json))),
+        ) as mock_dispatch:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
-        post_call = client.post.await_args_list[0]
-        body = post_call.kwargs.get("json") or post_call.args[1]
-        assert body["model"] == "per-site-fallback"
+        call_model = mock_dispatch.await_args.kwargs.get("model")
+        assert call_model == "per-site-fallback"
         assert result.featured_image is not None
 
     @pytest.mark.asyncio

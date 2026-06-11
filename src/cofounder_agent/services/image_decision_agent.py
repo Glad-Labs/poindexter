@@ -20,34 +20,26 @@ Usage:
 import json
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from services.langfuse_shim import observe
+from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
-
-if TYPE_CHECKING:
-    import httpx
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
 # shim were removed. ``plan_images`` now requires an explicit
 # ``site_config=`` kwarg; callers thread the run-bound instance (the
 # ``replace_inline_images`` stage → ``context.get("site_config")``). The
 # module is no longer in ``di_wiring.WIRED_MODULES``.
-
-
-# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
-# set_http_client() at startup. ``plan_images`` prefers it when wired
-# so the connection pool to Ollama stays warm across the per-task
-# image-planning calls.
-http_client: "httpx.AsyncClient | None" = None
-
-
-def set_http_client(client: "httpx.AsyncClient | None") -> None:
-    """Wire the lifespan-bound shared httpx.AsyncClient."""
-    global http_client
-    http_client = client
+#
+# Dispatcher migration (poindexter#706): the module-level ``http_client``
+# lifespan-bound pool + ``set_http_client`` setter were removed.
+# ``plan_images`` now routes through ``dispatch_complete`` when a pool is
+# available (production), so cost tracking, Langfuse traces, and
+# provider-swappability all apply automatically.  The hand-rolled httpx
+# health check + per-model availability probe were Ollama-specific
+# implementation details that the provider abstraction handles internally.
 
 
 logger = get_logger(__name__)
@@ -98,13 +90,7 @@ async def plan_images(
     Returns:
         ImagePlanResult with per-image decisions
     """
-    import httpx
-
-    from services.llm_providers.dispatcher import resolve_tier_model
-
     _sc = site_config
-
-    ollama_url = _sc.get("ollama_base_url", "http://host.docker.internal:11434")
 
     # Cost-tier API (Lane B sweep). Image decision is a small JSON-shaped
     # task — budget tier (qwen3:8b-class) is the right home, not standard.
@@ -189,102 +175,38 @@ async def plan_images(
         max_images=max_images,
     )
 
-    # Prefer the lifespan-bound shared client; fall back to a per-call
-    # client when nothing has been wired (tests, CLI). Use ``contextlib.
-    # AsyncExitStack`` so both branches end in an ``async with``-style
-    # acquisition and the original block structure stays intact.
-    from contextlib import AsyncExitStack
+    if pool is None:
+        # No pool means no DB access — we can't route through dispatch_complete
+        # (which needs DB for provider/config lookup). Production always has a
+        # pool via site_config._pool; this guard is for tests / bootstrap paths
+        # that run without a live DB.
+        logger.warning(
+            "[IMAGE_AGENT] No DB pool available — skipping image planning "
+            "(pool is required for dispatch_complete)"
+        )
+        return ImagePlanResult()
 
     try:
-        async with AsyncExitStack() as _stack:
-            if http_client is not None:
-                client = http_client
-            else:
-                client = await _stack.enter_async_context(
-                    httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=5.0))
-                )
-            # Verify Ollama is reachable AND the model exists
-            try:
-                health = await client.get(f"{ollama_url}/api/tags", timeout=5)
-                if health.status_code != 200:
-                    raise RuntimeError(f"Ollama not healthy: {health.status_code}")
-                available_models = [m["name"] for m in health.json().get("models", [])]
-                # Check model exists (match with or without :latest tag)
-                model_found = any(
-                    model == m or model == m.split(":")[0] or f"{model}:latest" == m
-                    for m in available_models
-                )
-                if not model_found:
-                    raise RuntimeError(
-                        f"Model '{model}' not found in Ollama. "
-                        f"Available: {', '.join(available_models[:10])}. "
-                        f"Pull it with: ollama pull {model}"
-                    )
-            except RuntimeError:
-                raise
-            except Exception as conn_err:
-                raise RuntimeError(f"Ollama unavailable at {ollama_url}: {conn_err}") from conn_err
+        logger.info("[IMAGE_AGENT] Calling model '%s' for image planning", model)
 
-            logger.info("[IMAGE_AGENT] Calling Ollama model '%s' for image planning", model)
+        # Route through dispatch_complete — picks up cost tracking,
+        # Langfuse traces, and provider-swappability from a single call.
+        # The hand-rolled Ollama health check + retry loop were
+        # implementation details specific to the raw httpx path; the
+        # provider layer handles connectivity and retries internally.
+        messages = [{"role": "user", "content": prompt}]
+        completion = await dispatch_complete(
+            pool=pool,
+            messages=messages,
+            model=model,
+            tier="budget",
+            phase="image_decision_agent",
+            options={"num_predict": 800, "temperature": 0.7},
+        )
+        raw = (getattr(completion, "text", "") or "").strip()
 
-            # Ollama may need to load the model into VRAM on first call.
-            # Retry with backoff on 404 (model not loaded yet).
-            # Use /nothink prefix for qwen3 thinking models to get direct JSON output.
-            from services.llm_providers.thinking_models import (
-                is_thinking_model as _is_thinking_model,
-            )
-            from services.llm_providers.thinking_models import (
-                resolve_thinking_substrings,
-            )
-            _is_thinking = _is_thinking_model(
-                model, substrings=resolve_thinking_substrings(_sc)
-            )
-            actual_prompt = f"/nothink\n{prompt}" if _is_thinking else prompt
-
-            # Per-request timeout overrides the (shared or per-call)
-            # client default so an LLM call can run up to 90s even
-            # though the shared client's default is shorter.
-            _llm_timeout = httpx.Timeout(90.0, connect=5.0)
-
-            raw = ""
-            for _attempt in range(3):
-                # Use /api/chat for thinking models (better thinking token handling)
-                if _is_thinking:
-                    resp = await client.post(f"{ollama_url}/api/chat", json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": actual_prompt}],
-                        "stream": False,
-                        "options": {"num_predict": 800, "temperature": 0.7},
-                    }, timeout=_llm_timeout)
-                else:
-                    resp = await client.post(f"{ollama_url}/api/generate", json={
-                        "model": model,
-                        "prompt": actual_prompt,
-                        "stream": False,
-                        "options": {"num_predict": 800, "temperature": 0.7},
-                    }, timeout=_llm_timeout)
-                if resp.status_code == 404 and _attempt < 2:
-                    import asyncio
-                    wait_s = 3 * (_attempt + 1)
-                    logger.info("[IMAGE_AGENT] Model not loaded yet (404), retrying in %ds...", wait_s)
-                    await asyncio.sleep(wait_s)
-                    continue
-                resp.raise_for_status()
-                resp_data = resp.json()
-                # /api/chat returns content in message.content; /api/generate in response
-                if _is_thinking:
-                    msg = resp_data.get("message", {})
-                    raw = msg.get("content", "").strip()
-                    if not raw:
-                        # Thinking models: check thinking field in message
-                        raw = resp_data.get("thinking", "").strip()
-                else:
-                    raw = resp_data.get("response", "").strip()
-                if not raw:
-                    logger.warning("[IMAGE_AGENT] Model returned empty — response=%d chars, thinking=%d chars",
-                                   len(resp_data.get("response", "") or resp_data.get("message", {}).get("content", "")),
-                                   len(resp_data.get("thinking", "")))
-                break
+        if not raw:
+            logger.warning("[IMAGE_AGENT] Model returned empty response")
 
         # Parse the JSON response
         # Strip thinking tags (qwen3 models wrap output in <think>...</think>)

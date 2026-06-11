@@ -120,7 +120,8 @@ async def get_http_client(request: Request) -> httpx.AsyncClient:
 WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     "services.citation_verifier",
     "modules.content.content_validator",
-    "services.image_decision_agent",
+    # services.image_decision_agent removed: migrated to dispatch_complete
+    # (poindexter#706) — the module no longer holds a lifespan http_client.
     "services.image_service",
     "services.image_providers.pexels",
     "services.image_providers.flux_schnell",

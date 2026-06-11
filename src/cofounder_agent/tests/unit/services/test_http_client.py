@@ -111,18 +111,19 @@ def test_wire_http_client_modules_fans_out():
     client = httpx.AsyncClient()
     wired = wire_http_client_modules(client)
 
-    # We migrated 11 modules in the first sweep (multi_model_qa has
-    # 3 instances but only one module). Assert a reasonable lower
-    # bound rather than an exact count — adding a module to
-    # WIRED_HTTP_CLIENT_MODULES shouldn't break this test.
-    assert wired >= 10
+    # We migrated 11 modules in the first sweep; image_decision_agent was
+    # removed in poindexter#706 (migrated to dispatch_complete), leaving 10.
+    # Assert a reasonable lower bound rather than an exact count — adding a
+    # module to WIRED_HTTP_CLIENT_MODULES shouldn't break this test.
+    assert wired >= 9
     assert wired <= len(WIRED_HTTP_CLIENT_MODULES)
 
     # Spot-check a few modules.
     assert citation_verifier.http_client is client
     assert content_validator.http_client is client
     assert multi_model_qa.http_client is client
-    assert image_decision_agent.http_client is client
+    # image_decision_agent is intentionally absent — it no longer participates
+    # in the http_client wiring (migrated to dispatch_complete in #706).
     assert operator_notify.http_client is client
     assert outbound_discord.http_client is client
 
