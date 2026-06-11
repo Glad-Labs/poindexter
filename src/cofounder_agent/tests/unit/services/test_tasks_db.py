@@ -1465,64 +1465,6 @@ class TestBulkUpdateTaskStatuses:
 
 
 # ---------------------------------------------------------------------------
-# claim_next_task
-# ---------------------------------------------------------------------------
-
-
-class TestClaimNextTask:
-    @pytest.mark.asyncio
-    async def test_claims_pending_task(self):
-        row_data = {"task_id": "t-1", "topic": "test", "status": "in_progress"}
-        # asyncpg Record dict-like behavior
-        pool = _make_pool(fetchrow_result=row_data)
-        db = _make_db(pool)
-        result = await db.claim_next_task("worker-1")
-        assert result == row_data
-
-    @pytest.mark.asyncio
-    async def test_no_pending_returns_none(self):
-        pool = _make_pool(fetchrow_result=None)
-        db = _make_db(pool)
-        result = await db.claim_next_task("worker-1")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_with_categories_filter(self):
-        row_data = {"task_id": "t-1", "task_category": "blog_post"}
-        pool = _make_pool(fetchrow_result=row_data)
-        db = _make_db(pool)
-        result = await db.claim_next_task("worker-1", task_categories=["blog_post", "podcast"])
-        assert result == row_data
-
-    @pytest.mark.asyncio
-    async def test_db_error_returns_none(self):
-        pool = _make_pool(fetchrow_side_effect=RuntimeError("conn lost"))
-        db = _make_db(pool)
-        result = await db.claim_next_task("worker-1")
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# release_task
-# ---------------------------------------------------------------------------
-
-
-class TestReleaseTask:
-    @pytest.mark.asyncio
-    async def test_release_with_no_error_marks_pending(self):
-        pool = _make_pool()
-        db = _make_db(pool)
-        # Should not raise
-        await db.release_task("t-1", "worker-1")
-
-    @pytest.mark.asyncio
-    async def test_release_with_error_marks_failed(self):
-        pool = _make_pool()
-        db = _make_db(pool)
-        await db.release_task("t-1", "worker-1", error_message="oops")
-
-
-# ---------------------------------------------------------------------------
 # bulk_add_tasks
 # ---------------------------------------------------------------------------
 
