@@ -307,3 +307,50 @@ class TestUpdateSetting:
         client = TestClient(_build_app(mock_db))
         resp = client.put("/api/settings/log_level", json={"value": "x"})
         assert resp.status_code == 500
+
+    def test_empty_string_value_is_accepted_not_silently_dropped(self):
+        """'' is the system unset sentinel — PUT {"value": ""} must persist
+        the empty string, not silently fall back to the existing value.
+
+        Regression for poindexter#751: the old `if update_data.value` falsy
+        check treated "" the same as None/missing and replaced it with the
+        existing value, making 'clear this setting' a silent no-op.
+        """
+        mock_db = _make_settings_db()
+        updated_setting = {**SETTING_DICT, "value": ""}
+        # First call: get existing; second call: get after update
+        mock_db.get_setting = AsyncMock(side_effect=[SETTING_DICT, updated_setting])
+        client = TestClient(_build_app(mock_db))
+        resp = client.put("/api/settings/log_level", json={"value": ""})
+        assert resp.status_code == 200
+        # The response must carry back the empty string, not the old "debug"
+        assert resp.json()["value"] == ""
+        # set_setting must have been called with value="" (not the old "debug")
+        call_kwargs = mock_db.set_setting.call_args
+        assert call_kwargs.kwargs.get("value") == "" or call_kwargs[0][1] == ""
+
+    def test_empty_string_description_is_accepted(self):
+        """Same falsy-check bug applied to description: '' should clear it."""
+        mock_db = _make_settings_db()
+        updated_setting = {**SETTING_DICT, "description": ""}
+        mock_db.get_setting = AsyncMock(side_effect=[SETTING_DICT, updated_setting])
+        client = TestClient(_build_app(mock_db))
+        resp = client.put("/api/settings/log_level", json={"description": ""})
+        assert resp.status_code == 200
+        call_kwargs = mock_db.set_setting.call_args
+        # Use explicit key lookup — avoid `or` which would treat "" as falsy
+        assert call_kwargs.kwargs["description"] == ""
+
+    def test_none_value_falls_back_to_existing(self):
+        """Omitting 'value' from the payload (None default) should still fall
+        back to the existing value — the is-not-None fix must not break this."""
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=SETTING_DICT)
+        client = TestClient(_build_app(mock_db))
+        resp = client.put("/api/settings/log_level", json={"description": "updated desc"})
+        assert resp.status_code == 200
+        call_kwargs = mock_db.set_setting.call_args
+        # value should be the existing "debug", not empty/None
+        assert call_kwargs.kwargs.get("value") == "debug" or (
+            call_kwargs[0] and call_kwargs[0][1] == "debug"
+        )
