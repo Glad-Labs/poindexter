@@ -1,7 +1,9 @@
 """DispatchMediaPipelineJob — the Gate-1 → Stage-2 trigger (#689 Plan 7).
 
 When a content piece clears **Gate 1** (``pipeline_tasks.status='approved'``)
-and has persisted Stage-1 media scripts, this scheduled job kicks off a
+or is directly auto-published (``status='published'`` — auto-publish can race
+the 5-min cron and skip the ``approved`` state entirely) and has persisted
+Stage-1 media scripts, this scheduled job kicks off a
 ``media_pipeline`` run that renders the long/short video + podcast from those
 scripts (epic poindexter#689). It is the *primary* Stage-2 producer; the
 ``media_reconciliation`` watchdog (Plan 8 — the demoted backfill jobs) is the
@@ -38,13 +40,13 @@ from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
-# Eligible = approved at Gate 1, not yet media-dispatched, and carries a
-# persisted director shot-list (only pieces that went through Stage-1 video
-# shot-list generation — which is itself niche-gated upstream — qualify).
+# Eligible = approved OR published (auto-publish races the 5-min cron),
+# not yet media-dispatched, and carries a persisted director shot-list
+# (only pieces that went through Stage-1 video shot-list generation qualify).
 _ELIGIBLE_SQL = """
     SELECT pt.task_id
       FROM pipeline_tasks pt
-     WHERE pt.status = 'approved'
+     WHERE pt.status IN ('approved', 'published')
        AND pt.media_pipeline_dispatched_at IS NULL
        AND EXISTS (
            SELECT 1

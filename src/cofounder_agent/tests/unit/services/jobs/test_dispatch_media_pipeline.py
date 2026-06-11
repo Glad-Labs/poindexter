@@ -1,10 +1,11 @@
 """Unit tests for DispatchMediaPipelineJob — the Gate-1 → Stage-2 trigger.
 
 The job is the scheduled dispatcher (#689 Plan 7): when a content piece clears
-Gate 1 (``pipeline_tasks.status='approved'``) and has persisted Stage-1 media
-scripts, it kicks off a ``media_pipeline`` run — but only when the operator has
-flipped ``media_pipeline_trigger_enabled`` on. Default-OFF means the job is
-scheduled but dormant in prod.
+Gate 1 (``pipeline_tasks.status='approved'``) or is auto-published directly
+(``status='published'`` — auto-publish can race the 5-min cron) and has
+persisted Stage-1 media scripts, it kicks off a ``media_pipeline`` run —
+but only when the operator has flipped ``media_pipeline_trigger_enabled`` on.
+Default-OFF means the job is scheduled but dormant in prod.
 
 Idempotency rides a claim-before-run marker (``media_pipeline_dispatched_at``):
 the job stamps the column first, so a concurrent cycle or a worker restart
@@ -120,6 +121,37 @@ async def test_dispatch_failure_emits_finding_and_continues():
     assert out.ok  # best-effort
     assert out.changes_made == 0  # both runs failed
     assert emit_mock.call_count == 2  # one finding per failed piece
+
+
+@pytest.mark.asyncio
+async def test_dispatches_published_task():
+    """A task that auto-published before the 5-min cron ran (status='published',
+    media_pipeline_dispatched_at IS NULL) must still be dispatched.
+
+    The _ELIGIBLE_SQL includes both 'approved' and 'published' to close the
+    race where auto-publish moves the task past 'approved' before this job fires.
+    The pool mock returns the row regardless of status — the SQL is what changed;
+    this test documents the expected behaviour and guards against regressions
+    that narrow the query back to 'approved'-only.
+    """
+    job = DispatchMediaPipelineJob()
+    # Pool returns a row as if the SQL selected a published task.
+    pool = _FakePool([{"task_id": "published-task-id"}], claim="UPDATE 1")
+    run_mock = AsyncMock()
+    with patch.object(dmp, "_run_media_pipeline", run_mock):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    assert out.changes_made == 1
+    run_mock.assert_awaited_once()
+    args, _ = run_mock.call_args
+    assert args[2] == "published-task-id"
+
+
+def test_eligible_sql_includes_published_status():
+    """Guard: _ELIGIBLE_SQL must accept published tasks, not just approved."""
+    assert "'published'" in dmp._ELIGIBLE_SQL
+    assert "IN ('approved', 'published')" in dmp._ELIGIBLE_SQL
 
 
 def test_job_protocol_shape():
