@@ -99,7 +99,7 @@ DEFAULTS: dict[str, str] = {
     # sweet spot — long enough for the kernel to free, short enough to
     # stay invisible in pipeline latency.
     'pipeline_writer_unload_grace_seconds': '2',
-    'qa_fallback_writer_model': 'gemma-4-31B-it-qat:latest',
+    'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
@@ -107,7 +107,7 @@ DEFAULTS: dict[str, str] = {
     # whole topic-discovery sweep (2026-05-28 content-gen stall). Kept
     # separate + DB-configurable so operators can pin a writing model
     # without breaking structured extraction.
-    'structured_extraction_model': 'gemma-4-31B-it-qat:latest',
+    'structured_extraction_model': 'ollama/gemma-4-31B-it-qat:latest',
     'use_ollama': 'false',
 
     # ----- LLM providers / endpoints -----
