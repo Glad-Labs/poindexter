@@ -302,7 +302,8 @@ class TestApproveTask:
 
         assert resp.status_code == 200
 
-    def test_invalid_status_returns_400(self):
+    def test_invalid_status_returns_409(self):
+        """Wrong-state approve now returns 409 Conflict (poindexter#743)."""
         mock_db = make_mock_db()
         task = _make_task(status="some_weird_status")
         mock_db.get_task = AsyncMock(return_value=task)
@@ -311,8 +312,9 @@ class TestApproveTask:
         client = TestClient(app)
         resp = self._post_approve(client)
 
-        assert resp.status_code == 400
-        assert "not in approvable state" in resp.json()["detail"]
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert "some_weird_status" in detail
 
     def test_allowed_statuses_all_accepted(self):
         """All listed allowed statuses should not trigger the 400 guard."""
@@ -480,7 +482,8 @@ class TestPublishTask:
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"]
 
-    def test_non_approved_status_returns_400(self):
+    def test_non_approved_status_returns_409(self):
+        """Wrong-state publish now returns 409 Conflict (poindexter#743)."""
         mock_db = make_mock_db()
         task = _make_task(status="pending")
         mock_db.get_task = AsyncMock(return_value=task)
@@ -489,7 +492,7 @@ class TestPublishTask:
         client = TestClient(app)
         resp = self._post_publish(client)
 
-        assert resp.status_code == 400
+        assert resp.status_code == 409
         assert "Must be 'approved'" in resp.json()["detail"]
 
     def test_invalid_task_id_returns_400(self):

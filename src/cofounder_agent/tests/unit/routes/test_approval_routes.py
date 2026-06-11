@@ -128,7 +128,8 @@ class TestRejectTask:
         )
         assert resp.status_code == 404
 
-    def test_reject_task_wrong_status_returns_400(self):
+    def test_reject_task_wrong_status_returns_409(self):
+        """Wrong-state reject now returns 409 Conflict (poindexter#743)."""
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value={**AWAITING_TASK, "status": "pending"})
         client = TestClient(_build_app(mock_db))
@@ -138,7 +139,7 @@ class TestRejectTask:
                 "/api/tasks/task-001/reject",
                 json={"reason": "x", "feedback": "y"},
             )
-        assert resp.status_code == 400
+        assert resp.status_code == 409
 
     def test_reject_missing_required_fields_returns_422(self):
         client = TestClient(_build_app())

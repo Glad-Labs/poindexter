@@ -17,6 +17,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token
 from routes.task_routes import _check_task_ownership, _normalize_seo_keywords_in_task
@@ -198,7 +199,7 @@ async def update_task_status_enterprise(
 @status_router.put(
     "/{task_id}/status/validated",
     response_model=dict[str, Any],
-    summary="Update task status with enhanced validation and audit trail",
+    summary="[DEPRECATED] Update task status with enhanced validation and audit trail",
     tags=["Task Status Management"],
 )
 async def update_task_status_validated(
@@ -215,13 +216,15 @@ async def update_task_status_validated(
     ),
 ):
     """
-    **Enhanced task status update with comprehensive validation and audit trail.**
+    **[DEPRECATED] Enhanced task status update with comprehensive validation and audit trail.**
 
-    This endpoint provides enterprise-level status management with:
-    - Comprehensive transition validation
-    - Full audit trail logging
-    - Validation error tracking
-    - Context-aware validations
+    Prefer ``PUT /{task_id}/status`` — it has the same transition validation
+    and returns a 409 Conflict on wrong-state transitions instead of
+    ``{success: false}`` with 200.  This shim is retained for backward
+    compatibility and will be removed in a future release.
+
+    Wrong-state transitions now raise 409 Conflict (previously returned
+    ``{success: false}`` with 200, poindexter#743).
 
     **Parameters:**
     - task_id: Task ID
@@ -248,6 +251,10 @@ async def update_task_status_validated(
     }
     ```
     """
+    _DEPRECATION_HEADER = (
+        "PUT /{task_id}/status/validated is deprecated; "
+        "use PUT /{task_id}/status instead (poindexter#743)"
+    )
     try:
         # Ownership check: verify user owns this task
         task = await db_service.get_task(task_id)
@@ -259,7 +266,12 @@ async def update_task_status_validated(
         # Get user ID
         user_id = "operator"
 
-        # Validate and execute status change
+        # Validate and execute status change via the enhanced service.
+        # Previously the service returned (success=False, ...) on wrong-state
+        # transitions and this handler returned 200 with {success: false} —
+        # an antipattern (poindexter#743).  Now any !success result that looks
+        # like a transition error is promoted to 409 Conflict so all wrong-state
+        # paths share the same contract.
         success, message, errors = await status_service.validate_and_change_status(
             task_id=task_id,
             new_status=update_data.status,
@@ -268,18 +280,35 @@ async def update_task_status_validated(
             user_id=user_id,
         )
 
-        return {
+        if not success:
+            # "Invalid status transition" is the marker string from
+            # EnhancedStatusChangeService.validate_and_change_status.
+            # Other !success cases (task_not_found, update_failed) keep their
+            # 200 body so this shim stays backward-compatible for non-state
+            # errors — only wrong-state transitions are promoted to 409.
+            if "transition" in message.lower() or "Invalid status transition" in message:
+                raise HTTPException(
+                    status_code=409,
+                    detail=message,
+                )
+
+        body = {
             "success": success,
             "task_id": task_id,
             "message": message,
             "errors": errors,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "updated_by": user_id,
+            "deprecated": True,
+            "deprecation_notice": _DEPRECATION_HEADER,
         }
+        return JSONResponse(
+            content=body,
+            headers={"Deprecation": _DEPRECATION_HEADER},
+        )
 
     except HTTPException:
-        # Preserve intentional 404/403/4xx — the broad handler below would
-        # otherwise collapse them into a generic 500 (poindexter#741).
+        # Preserve intentional 404/403/409/4xx (poindexter#741, #743).
         raise
     except Exception as e:
         logger.error("Error in enhanced status update for %s: %s", task_id, str(e), exc_info=True)
