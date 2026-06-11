@@ -21,7 +21,7 @@
   "tags": ["hardware", "gpu", "power", "infra"],
   "title": "Hardware & Power",
   "uid": "hardware-power",
-  "version": 1,
+  "version": 2,
   "panels": [
     {
       "type": "row",
@@ -429,7 +429,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
+          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -492,7 +492,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
+          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -605,7 +605,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"Wall Power\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "rawSql": "SELECT sampled_at AS time, metric_value AS \"Wall Power\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
           "refId": "A"
         },
         {
@@ -615,7 +615,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"DC Output\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "rawSql": "SELECT sampled_at AS time, metric_value AS \"DC Output\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
           "refId": "B"
         },
         {
@@ -686,7 +686,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, (metric_value / 1000.0 * 0.14 * 24)::float AS \"Est. Daily Cost\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "rawSql": "SELECT sampled_at AS time, (metric_value / 1000.0 * 0.14 * 24)::float AS \"Est. Daily Cost\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
           "refId": "A"
         }
       ]
@@ -769,7 +769,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"PSU VRM\" FROM sensor_samples WHERE source='corsair_csv' AND metric_name='psu_temp' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "rawSql": "SELECT sampled_at AS time, metric_value AS \"PSU VRM\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_temp' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
           "refId": "A"
         }
       ]
