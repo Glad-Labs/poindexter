@@ -519,6 +519,42 @@ class PipelineState(TypedDict, total=False):
     image_results: list              # content.generate_images output: [{num, url, alt_text, source}, ...]
     qa_feedback_formatted: str       # content.compile_meta: formatted QA rail feedback
 
+    # dev_diary / narrate_bundle seam (#753): atoms.narrate_bundle requires
+    # context_bundle — the structured dev-diary JSON assembled by
+    # run_dev_diary_post.py and stored in pipeline_tasks.stage_data. Without
+    # this declaration LangGraph would silently drop it on the graph_def path
+    # (same last-value-channel trap as the other #753 entries below).
+    context_bundle: dict               # atoms.narrate_bundle: dev-diary context assembled by the job
+
+    # Finalize-block outputs (#753): content.persist_task writes these; without
+    # declarations LangGraph silently drops them on the graph_def path — the
+    # same last-value-channel trap that hit seo_keywords_list, research_context,
+    # and preview_token in earlier incidents.
+    status: str                      # content.persist_task: 'awaiting_approval' | 'approved' | ...
+    approval_status: str             # content.persist_task: mirrors pipeline_tasks.status
+    post_id: int                     # content.persist_task: inserted posts.id
+    post_slug: str                   # content.persist_task: URL slug of the published post
+    task_metadata: dict              # content.persist_task: snapshot of pipeline_tasks metadata
+
+    # QA aggregate outputs (#753): qa.aggregate / atoms.aggregate_reviews writes these;
+    # qa_final_verdict is the string pass/fail summary read by downstream consumers.
+    qa_final_verdict: str            # qa.aggregate / aggregate_reviews: 'pass' | 'fail' | advisory summary
+    qa_aggregate_issues: list        # atoms.aggregate_reviews: aggregated issue list
+
+    # Auto-publish gate output (#753): content.evaluate_auto_publish writes this;
+    # consumed downstream to decide whether to auto-publish or halt for approval.
+    auto_publish_gate: bool          # content.evaluate_auto_publish: True = auto-publish eligible
+
+    # Media-pipeline outputs (#753): media.persist writes this confirmation flag.
+    media_assets_recorded: bool      # media.persist: True = media rows written to DB
+
+    # Programmatic validator outputs (#753): atoms.run_validators writes these;
+    # consumed by qa.aggregate for the hard-gate decision.
+    validator_passed: bool           # run_validators: True = all critical rules passed
+    validator_issues: list           # run_validators: list of ValidationIssue dicts
+    validator_critical_count: int    # run_validators: count of critical-severity issues
+    validator_warning_count: int     # run_validators: count of warning-severity issues
+
 
 # ---------------------------------------------------------------------------
 # Run record types — mirror StageRunRecord/StageRunSummary so callers that

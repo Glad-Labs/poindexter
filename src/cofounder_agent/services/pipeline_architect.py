@@ -567,6 +567,97 @@ def _has_cycle(adj: dict[str, list[str]]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Schema validation: produces/requires vs PipelineState (#753)
+# ---------------------------------------------------------------------------
+
+
+def _get_pipeline_state_keys() -> frozenset[str]:
+    """Return the set of keys declared on PipelineState.
+
+    Uses ``PipelineState.__annotations__`` (TypedDict introspection).
+    Lazy import avoids the template_runner <-> pipeline_architect cycle;
+    the result is deterministic for a process lifetime so callers may
+    cache it, but it is cheap enough to call inline.
+    """
+    from services.template_runner import PipelineState
+    return frozenset(PipelineState.__annotations__)
+
+
+def _validate_graph_schema(
+    spec: dict,
+    *,
+    state_keys: frozenset[str] | None = None,
+) -> None:
+    """Validate that every atom's ``produces`` and ``requires`` keys are
+    declared in ``PipelineState``.
+
+    LangGraph silently drops state updates whose keys are not declared in
+    the ``TypedDict`` schema (Glad-Labs/poindexter#753 — five recorded
+    production incidents). This function catches those mismatches at
+    **graph compile time** so the error surfaces immediately rather than
+    mid-pipeline at runtime.
+
+    The check runs once at ``build_graph_from_spec`` time (startup /
+    migration re-seed) — zero overhead in the hot path.
+
+    ``state_keys`` is injectable for testing; defaults to the live
+    ``PipelineState.__annotations__`` key set.
+
+    Raises:
+        ValueError: if any atom ``produces`` or ``requires`` a key not
+            declared in ``PipelineState``. The message names the atom,
+            the direction (produces / requires), and the offending key(s)
+            so the developer knows exactly what to add to PipelineState.
+    """
+    if state_keys is None:
+        state_keys = _get_pipeline_state_keys()
+
+    nodes = spec.get("nodes") or []
+    errors: list[str] = []
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        nid = node.get("id") or "<unknown>"
+        atom_name = node.get("atom") or ""
+        meta = get_atom_meta(atom_name)
+        if meta is None:
+            # Unknown atom — already caught by _validate_spec; skip here.
+            continue
+
+        # Check produces keys.
+        undeclared_produces = [k for k in meta.produces if k not in state_keys]
+        if undeclared_produces:
+            for key in undeclared_produces:
+                errors.append(
+                    f"Atom {atom_name!r} (node {nid!r}) produces key "
+                    f"{key!r} not declared in PipelineState. "
+                    f"Add it to PipelineState or fix the atom metadata."
+                )
+
+        # Check requires keys (belt-and-suspenders: _validate_spec checks
+        # reachability; this checks declaration, which is a separate concern —
+        # a required key might be satisfiable upstream yet still undeclared,
+        # causing LangGraph to silently drop it on the graph_def path).
+        undeclared_requires = [k for k in meta.requires if k not in state_keys]
+        if undeclared_requires:
+            for key in undeclared_requires:
+                errors.append(
+                    f"Atom {atom_name!r} (node {nid!r}) requires key "
+                    f"{key!r} not declared in PipelineState. "
+                    f"Add it to PipelineState or fix the atom metadata."
+                )
+
+    if errors:
+        bullet_list = "\n".join(f"  - {e}" for e in errors)
+        raise ValueError(
+            f"Graph spec {spec.get('name', '<unnamed>')!r} failed "
+            f"PipelineState schema validation "
+            f"(Glad-Labs/poindexter#753):\n{bullet_list}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Compile: spec → LangGraph factory
 # ---------------------------------------------------------------------------
 
@@ -717,6 +808,13 @@ def build_graph_from_spec(
     for nid in node_ids:
         if nid not in sources_with_edges:
             g.add_conditional_edges(nid, _halt_router_single(END), {END: END})
+
+    # Schema validation: assert every atom's produces/requires keys are
+    # declared in PipelineState (#753). Runs once at compile time — zero
+    # overhead in the hot path. Raises ValueError on mismatch so the error
+    # surfaces at startup / migration re-seed rather than silently dropping
+    # state updates mid-pipeline.
+    _validate_graph_schema(spec)
 
     return g
 
