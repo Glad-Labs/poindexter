@@ -301,6 +301,28 @@ async def content_generation_flow(
                 "LLM traces will not land in Langfuse this run",
                 exc_info=True,
             )
+        # poindexter#703: Prefect spawns this flow in a fresh Python
+        # subprocess that never runs main.py's lifespan — Sentry/GlitchTip
+        # was never initialised here, so pipeline errors (the
+        # highest-error-density process) were invisible to the error tracker.
+        # Initialise using the same DI'd site_config we already loaded above.
+        # ``SentryIntegration.initialize`` does not use the ``app`` argument
+        # (annotated FastAPI but marked ARG003 / unused) so ``None`` is safe
+        # for non-FastAPI entry points; the FastAPI-specific integrations hook
+        # globally via the SDK, not via the app instance.
+        try:
+            from services.sentry_integration import SentryIntegration
+            SentryIntegration.initialize(  # type: ignore[arg-type]
+                None,
+                _wired_site_config,
+                service_name="cofounder-agent-prefect",
+            )
+        except Exception:  # noqa: BLE001 — error tracking must never block work
+            logger.warning(
+                "[CONTENT_FLOW] Sentry init failed — "
+                "pipeline errors will not be tracked in GlitchTip this run",
+                exc_info=True,
+            )
 
     # Seam 1 Wave 3c (Glad-Labs/poindexter#667) — build content's
     # capability-scoped Platform handle for THIS subprocess. The handle bound

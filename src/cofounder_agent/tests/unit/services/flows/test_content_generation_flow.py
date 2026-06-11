@@ -566,3 +566,121 @@ class TestReclaimStaleInprogress:
                 await content_generation_flow.fn(database_service=db)
 
         mock_reclaim.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# poindexter#703: Sentry init in the Prefect subprocess
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPrefectSentryInit:
+    """Verify that the flow initialises Sentry when sentry_dsn is configured
+    (poindexter#703 — the Prefect subprocess never ran main.py's lifespan,
+    so pipeline errors were invisible to GlitchTip).
+
+    All tests call the flow body via ``.fn(...)`` to bypass Prefect's task
+    instrumentation and inject a pre-built database_service double so the
+    flow never opens a real DB connection.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sentry_init_called_when_dsn_configured(self):
+        """When site_config has a sentry_dsn, SentryIntegration.initialize
+        is called exactly once with the wired site_config and the prefect
+        service name."""
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        # site_config double that returns a DSN for sentry_dsn key
+        site_config = MagicMock()
+        site_config.get = MagicMock(
+            side_effect=lambda key, default="": (
+                "http://fake@localhost:8080/1" if key == "sentry_dsn"
+                else "true" if key == "sentry_enabled"
+                else default
+            )
+        )
+
+        with patch(
+            "services.di_wiring.build_and_wire_subprocess_with_container",
+            return_value=(site_config, MagicMock()),
+        ), patch(
+            "services.sentry_integration.SentryIntegration.initialize",
+        ) as mock_sentry_init, patch(
+            "services.telemetry.setup_telemetry",
+        ), patch(
+            "services.llm_providers.litellm_provider.configure_langfuse_callback",
+            new=AsyncMock(),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ), patch(
+            "services.di_wiring.build_platform_for_subprocess",
+            return_value=None,
+        ):
+            await content_generation_flow.fn(database_service=db)
+
+        mock_sentry_init.assert_called_once()
+        call_kwargs = mock_sentry_init.call_args
+        # Second positional arg is site_config
+        assert call_kwargs.args[1] is site_config
+        # service_name must identify the Prefect subprocess
+        assert call_kwargs.kwargs.get("service_name") == "cofounder-agent-prefect"
+
+    @pytest.mark.asyncio
+    async def test_sentry_init_not_called_when_no_site_config(self):
+        """When the subprocess SiteConfig wiring fails (no pool), the Sentry
+        init block is guarded by ``if _wired_site_config is not None:`` and
+        must NOT be attempted."""
+        from services.flows.content_generation import content_generation_flow
+
+        # Build a db_service with no pool — causes the wiring guard to skip
+        db = MagicMock()
+        db.pool = None
+
+        with patch(
+            "services.sentry_integration.SentryIntegration.initialize",
+        ) as mock_sentry_init, patch(
+            "services.content_router_service.process_content_generation_task",
+        ):
+            await content_generation_flow.fn(database_service=db)
+
+        mock_sentry_init.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sentry_init_failure_does_not_block_pipeline(self):
+        """If SentryIntegration.initialize raises (SDK not installed, bad DSN,
+        etc.) the exception is swallowed and the pipeline continues — error
+        tracking must never block content generation."""
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="")
+
+        with patch(
+            "services.di_wiring.build_and_wire_subprocess_with_container",
+            return_value=(site_config, MagicMock()),
+        ), patch(
+            "services.sentry_integration.SentryIntegration.initialize",
+            side_effect=RuntimeError("SDK import failed"),
+        ), patch(
+            "services.telemetry.setup_telemetry",
+        ), patch(
+            "services.llm_providers.litellm_provider.configure_langfuse_callback",
+            new=AsyncMock(),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ), patch(
+            "services.di_wiring.build_platform_for_subprocess",
+            return_value=None,
+        ):
+            # Must not raise — Sentry failure is best-effort
+            result = await content_generation_flow.fn(database_service=db)
+
+        # Flow exits cleanly with the empty-queue result
+        assert result == {"claimed": False, "task_id": None}
