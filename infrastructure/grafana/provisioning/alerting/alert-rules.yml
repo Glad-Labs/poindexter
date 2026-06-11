@@ -377,7 +377,7 @@ groups:
           team: glad-labs
         annotations:
           summary: "Page views dropped over 50% compared to 7-day rolling average"
-          description: "Today: {{ $values.B.Value }} ratio vs 7-day avg. Only fires when baseline >= 20 views/day (low-traffic days return ratio=1.0 to prevent false positives). Possible site issue, SEO penalty, or CDN problem."
+          description: "Today: {{ $values.B.Value }} ratio vs 7-day avg. Possible site issue, SEO penalty, or CDN problem."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -390,9 +390,7 @@ groups:
                   SELECT COUNT(*) as cnt FROM page_views
                   WHERE created_at > NOW() - INTERVAL '24 hours'
                 ), baseline AS (
-                  SELECT
-                    GREATEST(AVG(daily_cnt), 1.0) as avg_cnt,
-                    AVG(daily_cnt) >= 20 as has_sufficient_baseline
+                  SELECT GREATEST(AVG(daily_cnt), 1.0) as avg_cnt
                   FROM (
                     SELECT DATE(created_at) as day, COUNT(*) as daily_cnt
                     FROM page_views
@@ -400,11 +398,7 @@ groups:
                     GROUP BY DATE(created_at)
                   ) daily
                 )
-                SELECT
-                  CASE WHEN baseline.has_sufficient_baseline
-                    THEN today.cnt::float / baseline.avg_cnt
-                    ELSE 1.0
-                  END as ratio
+                SELECT today.cnt::float / baseline.avg_cnt as ratio
                 FROM today, baseline
               format: table
               editorMode: code
