@@ -288,6 +288,23 @@ const nextConfig = {
           },
         ],
       },
+      // RFC 8288 Link headers for agent discovery — advertises the API catalog,
+      // auth documentation, and MCP server card to crawlers and AI agents.
+      // Applied to all HTML pages so any entry point surfaces the discovery chain.
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Link',
+            value: [
+              '</.well-known/api-catalog>; rel="api-catalog"',
+              '</auth.md>; rel="describedby"',
+              '</.well-known/agent-skills/index.json>; rel="service-desc"',
+              '</.well-known/mcp/server-card.json>; rel="service-desc"',
+            ].join(', '),
+          },
+        ],
+      },
       // Cache images for 1 year
       {
         source: '/images/:path*',

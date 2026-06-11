@@ -50,6 +50,19 @@ describe('robots()', () => {
     expect(defaultRule.disallow).not.toContain('/_next/');
   });
 
+  it('should NOT disallow /.well-known/ — agent discovery bots need access to api-catalog, mcp, and agent-skills', async () => {
+    // Blocking /.well-known/ prevents agent-discovery crawlers from reaching
+    // /.well-known/api-catalog, /.well-known/mcp/server-card.json, and
+    // /.well-known/agent-skills/index.json, breaking the RFC 9727 / SEP-1649
+    // agent-readiness surface.
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://example.com';
+    const { default: robots } = await import('../../app/robots');
+    const result = robots();
+
+    const defaultRule = result.rules.find((r) => r.userAgent === '*');
+    expect(defaultRule.disallow).not.toContain('/.well-known/');
+  });
+
   it('should block DotBot and allow AhrefsBot/SemrushBot for SEO analysis', async () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://example.com';
     const { default: robots } = await import('../../app/robots');

@@ -2,6 +2,7 @@ import Script from 'next/script';
 import CookieConsentBanner from '../components/CookieConsentBanner.jsx';
 import Footer from '../components/Footer';
 import TopNavigation from '../components/TopNav.js';
+import WebMCP from '../components/WebMCP.js';
 import WebVitals from '../components/WebVitals';
 import { SITE_NAME, SITE_URL, SITE_TAGLINE, PODCAST_NAME } from '@/lib/site.config';
 import '../styles/globals.css';
@@ -94,6 +95,8 @@ export default function RootLayout({ children }) {
         <Footer />
         {/* Client-side components that need hydration */}
         <WebVitals />
+        {/* WebMCP — registers site tools with browser-based AI agent hosts */}
+        <WebMCP />
         {/*
           GDPR: GA and AdSense are NOT loaded here.
           CookieConsentBanner handles loading them ONLY after user consent.
