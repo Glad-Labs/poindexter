@@ -94,7 +94,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 post_id=post_id,
                 public_url=sdxl_url,
                 provider_plugin="image.sdxl",
-                width=1024, height=1024, mime_type="image/png",
+                # R2UploadService converts PNG→WebP at upload time (#732).
+                width=1024, height=1024, mime_type="image/webp",
                 metadata={
                     "placeholder_num": num,
                     "alt_text": alt_text,

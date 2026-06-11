@@ -360,6 +360,11 @@ DEFAULTS: dict[str, str] = {
     # key. Replaces the deprecated ``r2_public_url`` (storage_* cutover,
     # Glad-Labs/poindexter#731).
     'storage_public_url': '',
+    # Custom vanity domain for image objects (e.g. ``https://images.gladlabs.io``).
+    # When set, image URLs use this base instead of the rate-limited r2.dev
+    # public bucket URL. Empty = fall back to storage_public_url (poindexter#732).
+    # Configure via: poindexter settings set storage_image_custom_domain https://images.gladlabs.io
+    'storage_image_custom_domain': '',
     # Wait this many seconds after a post publishes before uploading
     # podcast/video/short to the object-store CDN — gives generation
     # time to finish. Storage-agnostic rename of the deprecated

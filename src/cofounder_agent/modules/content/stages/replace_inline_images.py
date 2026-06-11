@@ -406,7 +406,8 @@ async def _resolve_one_placeholder(
             provider_plugin="image.sdxl",
             width=1024,
             height=1024,
-            mime_type="image/png",
+            # R2UploadService converts PNG→WebP at upload time (#732).
+            mime_type="image/webp",
             metadata={
                 "placeholder_num": num,
                 "alt_text": alt_text,
@@ -691,6 +692,9 @@ async def _upload_to_r2_with_fallback(
                 "thread site_config from context (GH#95 / DI PR 4)",
             )
         svc = R2UploadService(site_config=site_config)
+        # R2UploadService converts PNG→WebP and rewrites the key extension
+        # automatically (poindexter#732); the .png here is the local temp
+        # file extension, not the final R2 key suffix.
         r2_key = f"images/inline/{uuid.uuid4().hex[:12]}.png"
         r2_url = await svc.upload_to_r2(tmp_path, r2_key, content_type="image/png")
         if r2_url:

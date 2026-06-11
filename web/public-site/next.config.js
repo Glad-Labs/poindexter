@@ -174,6 +174,29 @@ const nextConfig = {
         hostname: 'pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev',
         pathname: '/**',
       },
+      // Wildcard pattern covering any *.r2.dev public bucket domain so
+      // next/image can optimise images served from any R2 account-hash
+      // subdomain (poindexter#732).
+      {
+        protocol: 'https',
+        hostname: '**.r2.dev',
+        pathname: '/**',
+      },
+      // Custom image CDN domain (storage_image_custom_domain).
+      // Set NEXT_PUBLIC_IMAGE_CDN_HOST to activate (e.g. images.gladlabs.io).
+      ...(process.env.NEXT_PUBLIC_IMAGE_CDN_HOST ? [{
+        protocol: 'https',
+        hostname: process.env.NEXT_PUBLIC_IMAGE_CDN_HOST,
+        pathname: '/**',
+      }] : [
+        // Fallback: always allow the known Glad Labs image CDN domain so
+        // next/image works even before NEXT_PUBLIC_IMAGE_CDN_HOST is set.
+        {
+          protocol: 'https',
+          hostname: 'images.gladlabs.io',
+          pathname: '/**',
+        },
+      ]),
     ],
 
     // Reduced variant cardinality to mitigate CVE-2026-27980 disk cache

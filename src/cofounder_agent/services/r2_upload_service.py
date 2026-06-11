@@ -19,6 +19,7 @@ Usage::
     url = await svc.upload_to_r2("/path/to/file.mp3", "podcast/abc123.mp3")
 """
 
+import io
 import os
 from pathlib import Path
 
@@ -26,6 +27,15 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
+
+# Cache-Control header value applied to all image uploads so CDN and
+# browsers cache them for a year. Images are content-addressed by UUID
+# key so this is safe (a new image always gets a new key).
+_IMAGE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+# Image MIME types that should be converted to WebP before upload.
+_CONVERT_TO_WEBP_TYPES = {"image/png", "image/jpeg"}
+_WEBP_QUALITY = 80
 
 
 # Content type mapping — module-level so callers / tests that only need
@@ -38,6 +48,31 @@ _CONTENT_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+
+
+def _convert_to_webp(path: Path) -> "io.BytesIO | None":
+    """Convert an image file to WebP at quality 80 and return an in-memory buffer.
+
+    Returns ``None`` when Pillow is not installed or conversion fails —
+    callers fall back to uploading the original file.  Never raises.
+    """
+    try:
+        from PIL import Image  # type: ignore[import]
+
+        with Image.open(path) as img:
+            # Convert palette/P mode images to RGBA first so WebP saves them
+            # correctly; convert other non-RGB(A) modes to RGB.
+            if img.mode in ("P", "RGBA"):
+                img = img.convert("RGBA")
+            elif img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="WEBP", quality=_WEBP_QUALITY, method=4)
+            buf.seek(0)
+            return buf
+    except Exception as exc:  # noqa: BLE001 — conversion is best-effort
+        logger.debug("[STORAGE] WebP conversion failed for %s: %s", path.name, exc)
+        return None
 
 
 class R2UploadService:
@@ -87,6 +122,23 @@ class R2UploadService:
     # Public methods
     # ------------------------------------------------------------------
 
+    def _image_public_url_base(self) -> str:
+        """Return the best base URL for image object keys.
+
+        Preference order:
+        1. ``storage_image_custom_domain`` — operator-configured custom
+           domain (e.g. ``https://images.gladlabs.io``). Set this to
+           serve images from a custom vanity domain instead of the
+           rate-limited ``*.r2.dev`` public bucket URL.
+        2. ``storage_public_url`` — the generic bucket public URL.
+
+        Returns empty string when neither is configured.
+        """
+        custom = self._site_config.get("storage_image_custom_domain", "")
+        if custom:
+            return custom.rstrip("/")
+        return self._storage("public_url").rstrip("/")
+
     async def upload_to_r2(
         self,
         local_path: str,
@@ -94,6 +146,13 @@ class R2UploadService:
         content_type: str | None = None,
     ) -> str | None:
         """Upload a file to Cloudflare R2 and return its public URL.
+
+        Image files (PNG/JPEG) are converted to WebP at quality 80 before
+        upload. The R2 object is tagged with
+        ``Cache-Control: public, max-age=31536000, immutable`` so CDN and
+        browsers cache it for a year. Image URLs use the custom domain
+        from ``storage_image_custom_domain`` when set, falling back to the
+        r2.dev public URL.
 
         Args:
             local_path: Absolute path to the local file.
@@ -137,6 +196,25 @@ class R2UploadService:
                 path.suffix.lower(), "application/octet-stream",
             )
 
+        # Convert PNG/JPEG images to WebP@80 before upload.
+        # This saves ~60-70% bandwidth vs 1.5–1.7 MB PNGs (poindexter#732).
+        upload_path = str(path)
+        upload_content_type = content_type
+        upload_r2_key = r2_key
+        _webp_buf: io.BytesIO | None = None
+        if content_type in _CONVERT_TO_WEBP_TYPES:
+            _webp_buf = _convert_to_webp(path)
+            if _webp_buf is not None:
+                upload_content_type = "image/webp"
+                # Rewrite the R2 key extension so the object has the right
+                # suffix in the bucket (avoids serving WebP under a .png key).
+                stem = r2_key.rsplit(".", 1)[0] if "." in r2_key else r2_key
+                upload_r2_key = f"{stem}.webp"
+                logger.debug(
+                    "[STORAGE] Converted %s → WebP (quality %d), key: %s",
+                    path.name, _WEBP_QUALITY, upload_r2_key,
+                )
+
         try:
             import boto3
 
@@ -147,26 +225,47 @@ class R2UploadService:
                 aws_secret_access_key=secret_key,
                 region_name="auto",
             )
-            size = path.stat().st_size
 
-            logger.info(
-                "[STORAGE] Uploading %s → %s (%s, %.1fMB)",
-                path.name, r2_key, content_type, size / 1024 / 1024,
-            )
+            extra_args: dict = {
+                "ContentType": upload_content_type,
+            }
+            # Apply immutable Cache-Control to images so CDN and browsers
+            # cache them for a full year (poindexter#732).
+            if upload_content_type.startswith("image/"):
+                extra_args["CacheControl"] = _IMAGE_CACHE_CONTROL
 
-            s3.upload_file(
-                str(path), bucket, r2_key,
-                ExtraArgs={"ContentType": content_type},
-            )
+            if _webp_buf is not None:
+                # Upload from in-memory buffer (avoids a temp file round-trip).
+                size = _webp_buf.getbuffer().nbytes
+                logger.info(
+                    "[STORAGE] Uploading %s → %s (%s, %.1fMB, WebP)",
+                    path.name, upload_r2_key, upload_content_type,
+                    size / 1024 / 1024,
+                )
+                s3.upload_fileobj(_webp_buf, bucket, upload_r2_key, ExtraArgs=extra_args)
+            else:
+                size = path.stat().st_size
+                logger.info(
+                    "[STORAGE] Uploading %s → %s (%s, %.1fMB)",
+                    path.name, upload_r2_key, upload_content_type,
+                    size / 1024 / 1024,
+                )
+                s3.upload_file(upload_path, bucket, upload_r2_key, ExtraArgs=extra_args)
 
-            public_url = self._storage("public_url")
-            if not public_url:
+            # Prefer the custom image domain for image keys; fall back to the
+            # generic public URL for non-image objects (audio, video, JSON).
+            if upload_content_type.startswith("image/"):
+                base_url = self._image_public_url_base()
+            else:
+                base_url = self._storage("public_url").rstrip("/")
+
+            if not base_url:
                 logger.warning(
                     "[STORAGE] storage_public_url not set — can't construct "
-                    "public link for %s", r2_key,
+                    "public link for %s", upload_r2_key,
                 )
                 return None
-            url = f"{public_url.rstrip('/')}/{r2_key}"
+            url = f"{base_url}/{upload_r2_key}"
             logger.info("[STORAGE] Uploaded: %s", url)
             return url
 

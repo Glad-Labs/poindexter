@@ -355,7 +355,8 @@ class SourceFeaturedImageStage:
                                      "negative_prompt", "generation_time_ms")
                         },
                     },
-                    mime_type="image/png",
+                    # R2UploadService converts PNG→WebP at upload time (#732).
+                    mime_type="image/webp",
                 )
                 logger.info("Featured image generated via SDXL + R2")
                 return StageResult(
@@ -858,6 +859,8 @@ async def _upload_featured_to_r2(
             )
         svc = R2UploadService(site_config=site_config)
         r2_id = task_id or uuid.uuid4().hex[:12]
+        # R2UploadService converts JPEG/PNG→WebP and rewrites the key
+        # extension automatically (poindexter#732).
         r2_key = f"images/featured/{r2_id}.jpg"
         r2_url = await svc.upload_to_r2(output_path, r2_key, content_type="image/jpeg")
         if r2_url:

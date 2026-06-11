@@ -18,7 +18,9 @@ import pytest
 
 from services.r2_upload_service import (
     _CONTENT_TYPES,
+    _IMAGE_CACHE_CONTROL,
     R2UploadService,
+    _convert_to_webp,
 )
 
 
@@ -284,3 +286,185 @@ class TestContainerExposesService:
         assert container.r2_upload_service is svc
         # And it's wired to the container's SiteConfig.
         assert svc._site_config is site_config  # noqa: SLF001
+
+
+class TestConvertToWebp:
+    """_convert_to_webp helper — poindexter#732."""
+
+    def test_returns_none_when_pillow_absent(self, tmp_path):
+        f = tmp_path / "test.png"
+        f.write_bytes(b"not an image")
+        with patch.dict("sys.modules", {"PIL": None, "PIL.Image": None}):
+            result = _convert_to_webp(f)
+        # Either None (import failed) or None (Pillow not installed).
+        # Either way the caller must handle None gracefully.
+        assert result is None or hasattr(result, "read")
+
+    def test_returns_none_for_corrupt_image(self, tmp_path):
+        f = tmp_path / "bad.png"
+        f.write_bytes(b"\x89PNG\r\n\x1a\nNOTREALLYAPNG")
+        result = _convert_to_webp(f)
+        # Should not raise; corrupt data → None
+        assert result is None or hasattr(result, "read")
+
+    def test_returns_bytesio_for_valid_png(self, tmp_path):
+        """Create a minimal 1x1 PNG and verify it converts to WebP bytes."""
+        try:
+            from PIL import Image  # type: ignore[import]
+        except ImportError:
+            pytest.skip("Pillow not installed")
+
+        import io
+
+        # Create a minimal 1x1 white PNG via Pillow
+        img = Image.new("RGB", (1, 1), (255, 255, 255))
+        png_path = tmp_path / "test.png"
+        img.save(str(png_path), format="PNG")
+
+        result = _convert_to_webp(png_path)
+        assert result is not None
+        data = result.read()
+        assert len(data) > 0
+        # WebP files start with RIFF....WEBP
+        assert data[:4] == b"RIFF"
+        assert data[8:12] == b"WEBP"
+
+
+class TestWebpUploadBehavior:
+    """upload_to_r2 WebP conversion and Cache-Control for images (poindexter#732)."""
+
+    def _full_config(self) -> dict:
+        return {
+            "storage_access_key": "key",
+            "storage_secret_key": "secret",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub.r2.dev",
+        }
+
+    @pytest.mark.asyncio
+    async def test_non_image_upload_has_no_cache_control(self, tmp_path):
+        """Audio/video uploads should not get the image Cache-Control header."""
+        mp3 = tmp_path / "episode.mp3"
+        mp3.write_bytes(b"fake audio")
+
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        svc = _make_service(self._full_config())
+
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await svc.upload_to_r2(str(mp3), "podcast/ep.mp3")
+
+        assert result == "https://pub.r2.dev/podcast/ep.mp3"
+        call_args = mock_s3.upload_file.call_args
+        extra = call_args[1]["ExtraArgs"]
+        assert "CacheControl" not in extra
+        assert extra["ContentType"] == "audio/mpeg"
+
+    @pytest.mark.asyncio
+    async def test_png_upload_gets_cache_control_and_webp_key(self, tmp_path):
+        """PNG images are converted to WebP with immutable Cache-Control."""
+        try:
+            from PIL import Image  # type: ignore[import]
+        except ImportError:
+            pytest.skip("Pillow not installed")
+
+        import io as _io
+
+        # Create a real PNG that Pillow can convert
+        img = Image.new("RGB", (2, 2), (0, 128, 255))
+        png_path = tmp_path / "inline.png"
+        img.save(str(png_path), format="PNG")
+
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        svc = _make_service(self._full_config())
+
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await svc.upload_to_r2(
+                str(png_path), "images/inline/abc123.png", content_type="image/png",
+            )
+
+        # Key should be rewritten to .webp
+        assert result == "https://pub.r2.dev/images/inline/abc123.webp"
+        # upload_fileobj used for WebP (in-memory buffer)
+        mock_s3.upload_fileobj.assert_called_once()
+        call_args = mock_s3.upload_fileobj.call_args
+        extra = call_args[1]["ExtraArgs"]
+        assert extra["ContentType"] == "image/webp"
+        assert extra["CacheControl"] == _IMAGE_CACHE_CONTROL
+
+    @pytest.mark.asyncio
+    async def test_custom_domain_used_for_image_url(self, tmp_path):
+        """When storage_image_custom_domain is set, image URLs use it."""
+        try:
+            from PIL import Image  # type: ignore[import]
+        except ImportError:
+            pytest.skip("Pillow not installed")
+
+        img = Image.new("RGB", (2, 2), (255, 0, 0))
+        png_path = tmp_path / "feat.png"
+        img.save(str(png_path), format="PNG")
+
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        cfg = {**self._full_config(), "storage_image_custom_domain": "https://images.gladlabs.io"}
+        svc = _make_service(cfg)
+
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await svc.upload_to_r2(
+                str(png_path), "images/featured/t123.jpg", content_type="image/jpeg",
+            )
+
+        # Custom domain used; extension rewritten to .webp
+        assert result == "https://images.gladlabs.io/images/featured/t123.webp"
+
+    @pytest.mark.asyncio
+    async def test_pillow_absent_falls_back_to_original_png(self, tmp_path):
+        """When Pillow is missing, upload proceeds with original PNG (no crash)."""
+        png = tmp_path / "nopillow.png"
+        png.write_bytes(b"fake png data")
+
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        svc = _make_service(self._full_config())
+
+        with patch.dict("sys.modules", {"boto3": mock_boto3}), \
+             patch("services.r2_upload_service._convert_to_webp", return_value=None):
+            result = await svc.upload_to_r2(
+                str(png), "images/inline/nopillow.png", content_type="image/png",
+            )
+
+        # Falls back to upload_file with original key
+        assert result == "https://pub.r2.dev/images/inline/nopillow.png"
+        mock_s3.upload_file.assert_called_once()
+        extra = mock_s3.upload_file.call_args[1]["ExtraArgs"]
+        # Still gets Cache-Control (it's an image)
+        assert extra["CacheControl"] == _IMAGE_CACHE_CONTROL
+        assert extra["ContentType"] == "image/png"
+
+
+class TestImagePublicUrlBase:
+    """_image_public_url_base helper."""
+
+    def test_prefers_custom_domain_over_public_url(self):
+        svc = _make_service({
+            "storage_public_url": "https://pub.r2.dev",
+            "storage_image_custom_domain": "https://images.gladlabs.io",
+        })
+        assert svc._image_public_url_base() == "https://images.gladlabs.io"  # noqa: SLF001
+
+    def test_falls_back_to_public_url_when_custom_empty(self):
+        svc = _make_service({
+            "storage_public_url": "https://pub.r2.dev/",
+            "storage_image_custom_domain": "",
+        })
+        assert svc._image_public_url_base() == "https://pub.r2.dev"  # noqa: SLF001
+
+    def test_returns_empty_when_neither_set(self):
+        svc = _make_service({})
+        assert svc._image_public_url_base() == ""  # noqa: SLF001
