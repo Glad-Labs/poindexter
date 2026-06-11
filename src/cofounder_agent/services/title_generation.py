@@ -22,6 +22,7 @@ import re
 import string
 from difflib import SequenceMatcher
 
+from services.llm_providers.thinking_models import strip_think_blocks
 from services.site_config import SiteConfig
 from utils.text_utils import strip_title_label
 
@@ -327,9 +328,7 @@ def sanitize_generated_title(raw: str) -> str | None:
         return None
 
     text = raw.strip()
-    text = re.sub(
-        r"<think>.*?</think>", " ", text, flags=re.DOTALL | re.IGNORECASE,
-    ).strip()
+    text = strip_think_blocks(text).strip()
     # Strip the QA test-batch suffix up-front so downstream length
     # checks and the "looks like a title" branch see the cleaned form.
     text = strip_qa_batch_suffix(text)

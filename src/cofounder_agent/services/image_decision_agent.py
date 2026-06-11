@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from services.langfuse_shim import observe
 from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
+from services.llm_providers.thinking_models import strip_think_blocks
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
@@ -210,7 +211,7 @@ async def plan_images(
 
         # Parse the JSON response
         # Strip thinking tags (qwen3 models wrap output in <think>...</think>)
-        raw_clean = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+        raw_clean = strip_think_blocks(raw).strip()
         # Strip markdown code fences if present
         raw_clean = re.sub(r'^```(?:json)?\s*', '', raw_clean, flags=re.MULTILINE)
         raw_clean = re.sub(r'```\s*$', '', raw_clean, flags=re.MULTILINE).strip()

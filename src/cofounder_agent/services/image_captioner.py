@@ -29,6 +29,7 @@ import httpx
 
 from services.alt_text import sanitize_alt_text
 from services.llm_providers.dispatcher import dispatch_complete
+from services.llm_providers.thinking_models import strip_think_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +169,7 @@ async def caption_image(
 
     raw = (getattr(result, "text", "") or "").strip()
     # Some reasoning models wrap chain-of-thought in <think>…</think>.
-    if "</think>" in raw:
-        raw = raw.split("</think>", 1)[1].strip()
+    raw = strip_think_blocks(raw).strip()
     if not raw:
         return None
     raw = _strip_image_of_prefix(raw)

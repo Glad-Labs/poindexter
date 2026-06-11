@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from services.integrations.operator_notify import notify_operator
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +57,12 @@ class MorningBriefJob:
 
         # ---- Webhook required up front ----
         # Per feedback_no_silent_defaults: don't silently swallow a missing
-        # Discord webhook. Surface it as an explicit failure detail.
-        webhook_url = await _read_setting(pool, "discord_ops_webhook_url", "")
-        if not webhook_url:
+        # Discord webhook. Surface it as an explicit failure detail before
+        # spending time gathering data we can't deliver.
+        discord_url_configured = bool(
+            await _read_setting(pool, "discord_ops_webhook_url", "")
+        )
+        if not discord_url_configured:
             logger.warning(
                 "[morning_brief] discord_ops_webhook_url is empty; brief "
                 "cannot be delivered"
@@ -102,7 +106,7 @@ class MorningBriefJob:
 
         # ---- Send Discord ----
         try:
-            await _send_discord(webhook_url, message)
+            await notify_operator(message)
         except Exception as exc:  # noqa: BLE001 — surface but don't crash
             logger.exception("[morning_brief] Discord send failed: %s", exc)
             return JobResult(
@@ -117,7 +121,6 @@ class MorningBriefJob:
         telegram_pinged = False
         if criticals_present and telegram_critical_only:
             try:
-                from services.integrations.operator_notify import notify_operator
                 await notify_operator(
                     _format_telegram_summary(data, lookback_hours),
                     critical=True,
@@ -591,18 +594,3 @@ def _format_telegram_summary(data: dict[str, Any], lookback_hours: int) -> str:
     return "\n".join(parts)
 
 
-# ---------------------------------------------------------------------------
-# Discord delivery
-# ---------------------------------------------------------------------------
-
-
-async def _send_discord(webhook_url: str, message: str) -> None:
-    """POST the brief to the operator's Discord ops webhook."""
-    import httpx
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(webhook_url, json={"content": message})
-        # Treat 2xx as success; raise on anything else so the caller logs it.
-        if resp.status_code >= 300:
-            raise RuntimeError(
-                f"Discord webhook returned {resp.status_code}: {resp.text[:200]}"
-            )

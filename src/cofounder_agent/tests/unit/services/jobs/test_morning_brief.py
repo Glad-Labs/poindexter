@@ -147,19 +147,10 @@ class TestHappyPath:
             brain_cycles=1440,
         )
 
-        sent_messages: list[tuple[str, dict]] = []
-
-        async def _fake_post(self, url, json=None, **kw):  # noqa: A002 — mirroring httpx.AsyncClient.post
-            sent_messages.append((url, json))
-            resp = MagicMock()
-            resp.status_code = 204
-            resp.text = ""
-            return resp
-
         notify_mock = AsyncMock()
 
-        with patch("httpx.AsyncClient.post", new=_fake_post), patch(
-            "services.integrations.operator_notify.notify_operator", new=notify_mock,
+        with patch(
+            "services.jobs.morning_brief.notify_operator", new=notify_mock,
         ), patch(
             "services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
@@ -170,11 +161,11 @@ class TestHappyPath:
         assert result.ok is True
         assert result.changes_made == 1
         assert result.metrics["telegram_pinged"] is False
-        # Telegram must NOT have been pinged on a quiet morning.
-        notify_mock.assert_not_called()
+        # Discord brief sent once; Telegram must NOT have been pinged (no criticals).
+        assert notify_mock.call_count == 1
+        assert notify_mock.call_args.kwargs.get("critical") is not True
 
-        assert len(sent_messages) == 1
-        body = sent_messages[0][1]["content"]
+        body = notify_mock.call_args.args[0]
         # All seven sections present.
         assert "Morning brief" in body
         assert "Published (24h):** 2" in body
@@ -214,15 +205,10 @@ class TestCriticalRouting:
             cost_row={"cloud_usd": 0.0, "cloud_calls": 0, "local_calls": 100},
         )
 
-        async def _fake_post(self, url, json=None, **kw):  # noqa: A002
-            resp = MagicMock()
-            resp.status_code = 204
-            return resp
-
         notify_mock = AsyncMock()
 
-        with patch("httpx.AsyncClient.post", new=_fake_post), patch(
-            "services.integrations.operator_notify.notify_operator", new=notify_mock,
+        with patch(
+            "services.jobs.morning_brief.notify_operator", new=notify_mock,
         ), patch(
             "services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
@@ -232,8 +218,9 @@ class TestCriticalRouting:
 
         assert result.ok is True
         assert result.metrics["telegram_pinged"] is True
-        notify_mock.assert_called_once()
-        # Critical kwarg must be True — that's what routes via telegram_ops.
+        # Discord (no critical flag) + Telegram (critical=True) = 2 calls.
+        assert notify_mock.call_count == 2
+        # Last call is Telegram — critical kwarg must be True.
         _, kwargs = notify_mock.call_args
         assert kwargs.get("critical") is True
         msg = notify_mock.call_args.args[0]
@@ -253,15 +240,10 @@ class TestCriticalRouting:
             cost_row={"cloud_usd": 0.0, "cloud_calls": 0, "local_calls": 0},
         )
 
-        async def _fake_post(self, url, json=None, **kw):  # noqa: A002
-            resp = MagicMock()
-            resp.status_code = 204
-            return resp
-
         notify_mock = AsyncMock()
 
-        with patch("httpx.AsyncClient.post", new=_fake_post), patch(
-            "services.integrations.operator_notify.notify_operator", new=notify_mock,
+        with patch(
+            "services.jobs.morning_brief.notify_operator", new=notify_mock,
         ), patch(
             "services.jobs.morning_brief._gather_open_prs",
             new=AsyncMock(return_value=[]),
@@ -271,7 +253,8 @@ class TestCriticalRouting:
 
         assert result.ok is True
         assert result.metrics["telegram_pinged"] is True
-        notify_mock.assert_called_once()
+        # Discord (no critical flag) + Telegram (critical=True) = 2 calls.
+        assert notify_mock.call_count == 2
         _, kwargs = notify_mock.call_args
         assert kwargs.get("critical") is True
 
@@ -307,16 +290,11 @@ class TestDisabled:
             side_effect=AssertionError("acquire() called when job is disabled"),
         )
 
-        async def _refuse_post(self, *a, **kw):
-            raise AssertionError("Discord webhook called when job is disabled")
-
         notify_mock = AsyncMock(
-            side_effect=AssertionError("Telegram called when job is disabled"),
+            side_effect=AssertionError("notify_operator called when job is disabled"),
         )
 
-        with patch("httpx.AsyncClient.post", new=_refuse_post), patch(
-            "services.integrations.operator_notify.notify_operator", new=notify_mock,
-        ):
+        with patch("services.jobs.morning_brief.notify_operator", new=notify_mock):
             job = MorningBriefJob()
             result = await job.run(pool, {})
 
@@ -345,16 +323,11 @@ class TestWebhookMissing:
             },
         )
 
-        async def _refuse_post(self, *a, **kw):
-            raise AssertionError("Discord webhook called when URL is missing")
-
         notify_mock = AsyncMock(
-            side_effect=AssertionError("Telegram called on missing-webhook path"),
+            side_effect=AssertionError("notify_operator called on missing-webhook path"),
         )
 
-        with patch("httpx.AsyncClient.post", new=_refuse_post), patch(
-            "services.integrations.operator_notify.notify_operator", new=notify_mock,
-        ):
+        with patch("services.jobs.morning_brief.notify_operator", new=notify_mock):
             job = MorningBriefJob()
             result = await job.run(pool, {})
 

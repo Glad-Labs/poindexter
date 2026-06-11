@@ -19,7 +19,6 @@ Usage from task_executor or any post-publish hook:
     )
 """
 
-import re
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,6 +30,7 @@ from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.integrations import registry
 from services.integrations.operator_notify import notify_operator
 from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
+from services.llm_providers.thinking_models import strip_think_blocks
 from services.logger_config import get_logger
 from services.publishing_adapters_db import load_enabled_publishers
 from services.site_config import SiteConfig
@@ -349,7 +349,7 @@ async def _generate_social_text(
         # Defense in depth: strip any residual <think>...</think> reasoning
         # block in case a model emits one inline despite think=False — the
         # social draft must never surface the model's analysis.
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        text = strip_think_blocks(text).strip()
 
         # Strip wrapping quotes if the LLM added them
         if text.startswith('"') and text.endswith('"'):
