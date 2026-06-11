@@ -598,6 +598,10 @@ DEFAULTS: dict[str, str] = {
     # Empty = HTTP recovery disabled. Set to http://host.docker.internal:9841/recover
     # once the Recovery Agent Task Scheduler task is running on the host.
     'mcp_http_probe_recovery_url': '',
+    # Consecutive probe failures required before paging. Default 3 suppresses
+    # transient single-shot misses (fast restart, momentary load) while still
+    # catching genuine sustained outages (#1301).
+    'mcp_http_probe_min_consecutive_failures': '3',
 
 }
 

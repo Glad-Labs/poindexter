@@ -68,6 +68,7 @@ RESTART_CAP_KEY = "mcp_http_probe_restart_cap_per_window"
 RESTART_WINDOW_MINUTES_KEY = "mcp_http_probe_restart_window_minutes"
 RECOVERY_URL_KEY = "mcp_http_probe_recovery_url"
 RECOVERY_TOKEN_KEY = "mcp_http_probe_recovery_token"
+MIN_CONSECUTIVE_FAILURES_KEY = "mcp_http_probe_min_consecutive_failures"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 5
@@ -77,6 +78,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8004"
 DEFAULT_DISCOVERY_PATH = "/.well-known/oauth-protected-resource"
 DEFAULT_RESTART_CAP = 3
 DEFAULT_RESTART_WINDOW_MINUTES = 60
+DEFAULT_MIN_CONSECUTIVE_FAILURES = 3
 
 
 # ---------------------------------------------------------------------------
@@ -86,13 +88,15 @@ DEFAULT_RESTART_WINDOW_MINUTES = 60
 _last_real_check_at: float = 0.0
 _last_alert_at: float = 0.0
 _restart_attempts: list[float] = []  # monotonic timestamps within the rolling window
+_consecutive_failures: int = 0  # probe cycles with ok=False since last ok
 
 
 def _reset_state() -> None:
     """Test hook — drop module-level cadence + dedup + restart state."""
-    global _last_real_check_at, _last_alert_at
+    global _last_real_check_at, _last_alert_at, _consecutive_failures
     _last_real_check_at = 0.0
     _last_alert_at = 0.0
+    _consecutive_failures = 0
     _restart_attempts.clear()
 
 
@@ -289,7 +293,7 @@ async def run_mcp_http_probe(
     recovery_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Single probe cycle. Returns a summary dict."""
-    global _last_real_check_at, _last_alert_at
+    global _last_real_check_at, _last_alert_at, _consecutive_failures
     clock = now_fn or time.monotonic
 
     # Kill-switch: an uncertain read must NOT silently re-enable the probe
@@ -341,6 +345,7 @@ async def run_mcp_http_probe(
 
     if 200 <= status_code < 400:
         logger.info("[MCP_HTTP_PROBE] %s ok (HTTP %s)", probe_url, status_code)
+        _consecutive_failures = 0
         # Success-path audit_log row — per feedback_total_visibility a
         # healthy probe must leave a footprint operators can confirm.
         # Failure paths write alert_events via _handle_failure; this row
@@ -397,8 +402,37 @@ async def _handle_failure(
     launcher_fn: Callable[[str], tuple[bool, str]] | None = None,
     recovery_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
-    """Common failure path: alert (deduped) + optional auto-recover."""
-    global _last_alert_at
+    """Common failure path: alert (deduped + consecutive-failure gate) + optional auto-recover.
+
+    The consecutive-failure gate (default 3) suppresses the first N-1 isolated
+    probe misses — transient connection resets, fast restart, momentary load spike
+    — and only pages when the server has been continuously unreachable across N
+    consecutive probe cycles. Combined with the 1h dedup window this cuts the
+    ~7/day false-positive rate from single-shot failures down to genuine outages.
+    """
+    global _last_alert_at, _consecutive_failures
+
+    _consecutive_failures += 1
+
+    min_consecutive = await _read_int(
+        pool, MIN_CONSECUTIVE_FAILURES_KEY, DEFAULT_MIN_CONSECUTIVE_FAILURES,
+    )
+
+    if _consecutive_failures < max(1, min_consecutive):
+        logger.warning(
+            "[MCP_HTTP_PROBE] failure %d/%d consecutive (threshold not yet reached): %s",
+            _consecutive_failures, min_consecutive, body,
+        )
+        early_result: dict[str, Any] = {
+            "ok": False,
+            "status": "unreachable",
+            "detail": body,
+            "url": url,
+            "consecutive_failures": _consecutive_failures,
+        }
+        if status_code is not None:
+            early_result["status_code"] = status_code
+        return early_result
 
     dedup_hours = await _read_int(pool, DEDUP_HOURS_KEY, DEFAULT_DEDUP_HOURS)
     dedup_s = max(1, dedup_hours) * 3600
