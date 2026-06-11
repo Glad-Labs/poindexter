@@ -148,7 +148,7 @@ async def _build_sdxl_prompt(
     topic: str, model: str | None, *, site_config: Any = None,
 ) -> str:
     """Ask the configured LLM to write a tailored SDXL prompt. Fall back
-    to a generic photorealistic template when the model is unreachable.
+    to a generic stylistic or abstract template when the model is unreachable.
 
     ``model`` may be ``None`` when the caller has no explicit override — in
     that case the pool is used to resolve the "standard" cost tier (poindexter
@@ -177,13 +177,13 @@ async def _build_sdxl_prompt(
     # NOTE: exclusion lives in the negative prompt; the positive describes the
     # scene as unpopulated objects/environment only (no "no people" token).
     fallback = (
-        f"photorealistic scene related to {topic[:50]}, cinematic lighting, "
+        f"stylistic or abstract scene related to {topic[:50]}, cinematic lighting, "
         f"4k, detailed, objects and environment only, unpopulated"
     )
     instruction = (
         f"Write a Stable Diffusion XL prompt for a blog featured "
         f"image about: {topic[:80]}\n"
-        f"Requirements: photorealistic scene, cinematic lighting. "
+        f"Requirements: stylistic or abstract scene, cinematic lighting. "
         f"Depict objects, technology, landscapes, or abstract concepts "
         f"ONLY — absolutely no people, no humans, no faces, no hands. "
         f"1 sentence only. Output ONLY the prompt."
