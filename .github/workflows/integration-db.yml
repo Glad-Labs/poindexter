@@ -23,8 +23,6 @@
 name: integration-db
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
     # Only the backend tree can affect these tests, so skip docs-only PRs.
@@ -34,6 +32,11 @@ on:
       - "src/cofounder_agent/**"
       - ".github/workflows/integration-db.yml"
   workflow_dispatch:
+  # push: branches: [main] intentionally removed (CI-minutes sweep). Every
+  # push-to-main is a merged PR that already ran this job on the PR event —
+  # re-running it is pure duplicate spend (~15 billed min × 2 multiplier per
+  # push). Not a required status check, so removing the push trigger changes
+  # nothing about what can merge.
 
 # Cancel older in-progress runs of the same ref/PR — saves Actions minutes
 # when commits land back-to-back on the same PR.

@@ -34,6 +34,12 @@ permissions:
 
 jobs:
   jest-unit:
+    # Source-repo only. The public Glad-Labs/poindexter mirror strips
+    # web/public-site via the sync filter, so npm ci finds no public-site
+    # workspace and `npm run test:ci` fails on every sync. The workflow
+    # itself IS synced to the mirror, so the guard is on the job, not the
+    # trigger. CI-minutes sweep.
+    if: github.repository == 'Glad-Labs/glad-labs-stack'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

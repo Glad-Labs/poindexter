@@ -132,19 +132,19 @@ jobs:
             exit 0
           fi
 
-          # #534: never skip on push to main. The docs-only short-circuit is
-          # a PR-only optimization. On push, a skipped-but-"success" run on a
-          # no-test commit (release/version bump) would mask a red parent and
-          # leave HEAD falsely green — so always run the full suite here.
-          if [ "$EVENT" = "push" ]; then
-            echo "Push to main — running full suite (HEAD must be honestly green; see #534)."
-            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Push events fall through to the same HEAD^1 path-detection used
+          # for PRs. fetch-depth: 2 provides the parent commit. The old
+          # always-run-on-push (#534) was retired by the CI-minutes sweep: bot
+          # commits
+          # (release-please bumps, sync-claude-md, regen-app-settings-doc)
+          # were billing 9–14 min of the 2× private-runner multiplier despite
+          # already having passed CI before merge. All code merges go through
+          # PRs that already gate tests; the sole-committer + Telegram/Grafana
+          # alerting provides the safety net that #534 was adding.
 
-          # Only pull_request events reach here (workflow_dispatch + push
-          # returned above). GitHub checks out a virtual merge commit for
-          # pull_request events (refs/pull/N/merge), where HEAD^1 is current
+          # pull_request and push events both reach here (workflow_dispatch
+          # returned above). For pull_request GitHub checks out a virtual
+          # merge commit (refs/pull/N/merge), where HEAD^1 is current
           # main's tip and HEAD^2 is the PR head. Diffing against HEAD^1 gives
           # the PR's net changes — what would actually land on main after merge.
           #

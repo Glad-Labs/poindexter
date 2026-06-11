@@ -32,11 +32,14 @@ jobs:
   # of runner spin-up). Security is NOT a branch-protection-required check,
   # so a skipped job blocks nothing.
   #
-  # gitleaks / trivy-fs / sbom stay UNGATED — a secret or vulnerable dep can
-  # land in any file, so those always run. On the weekly baseline scan and
-  # manual dispatch, every job runs regardless (the `|| schedule ||
-  # workflow_dispatch` escape on each gated `if:`), so the comprehensive
-  # scan is never narrowed by path classification.
+  # gitleaks stays UNGATED — a secret can land in any file, so it always runs.
+  # trivy-fs is gated on `deps == 'true'` — CVE scans only matter when dep
+  # lockfiles change. On the weekly baseline scan and manual dispatch every job
+  # runs regardless (the `|| schedule || workflow_dispatch` escape), so the
+  # comprehensive drift-check is never narrowed by path classification.
+  # sbom+grype runs on schedule/dispatch ONLY — it is entirely redundant with
+  # trivy-fs on per-PR/push runs and is the most expensive job (~3–5 min).
+  # CI-minutes sweep 2026-06-10.
   changes:
     name: classify changed paths
     runs-on: ubuntu-latest
@@ -45,6 +48,7 @@ jobs:
       shell: ${{ steps.classify.outputs.shell }}
       pylock: ${{ steps.classify.outputs.pylock }}
       docker: ${{ steps.classify.outputs.docker }}
+      deps: ${{ steps.classify.outputs.deps }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
         with:
@@ -98,6 +102,11 @@ jobs:
           if echo "$changed" | grep -qE '\.(sh|bash)$'; then emit shell true; else emit shell false; fi
           if echo "$changed" | grep -qE '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$'; then emit pylock true; else emit pylock false; fi
           if echo "$changed" | grep -qiE 'dockerfile|docker-compose|(^|/)compose\.ya?ml$|^infrastructure/'; then emit docker true; else emit docker false; fi
+          # deps: fires when Python or JS lockfiles/manifests change. Used to
+          # gate trivy-fs (CVE scan only matters when deps actually change).
+          if echo "$changed" | grep -qE \
+            '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^package(-lock)?\.json$|^web/'; \
+            then emit deps true; else emit deps false; fi
 
   gitleaks:
     name: gitleaks — secret scan
@@ -145,6 +154,10 @@ jobs:
   trivy-fs:
     name: Trivy — filesystem vuln scan
     runs-on: ubuntu-latest
+    needs: changes
+    # Gate on dep changes — CVE scans only matter when lockfiles/manifests change.
+    # Weekly baseline + manual dispatch always run (drift check between PRs).
+    if: ${{ needs.changes.outputs.deps == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
       - name: Trivy filesystem scan (HIGH/CRITICAL gate)
@@ -280,6 +293,10 @@ jobs:
   sbom:
     name: SBOM + grype scan
     runs-on: ubuntu-latest
+    # Schedule/dispatch only. Grype is entirely redundant with trivy-fs on
+    # per-PR/push events and is the most expensive job (~3–5 min). The weekly
+    # scheduled run covers dep-drift CVEs between pushes. CI-minutes sweep.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
 
