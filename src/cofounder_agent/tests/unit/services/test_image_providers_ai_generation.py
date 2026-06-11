@@ -178,7 +178,7 @@ class TestBuildSDXLPrompt:
     async def test_ollama_failure_returns_fallback(self):
         with patch("httpx.AsyncClient", side_effect=RuntimeError("boom")):
             result = await _build_sdxl_prompt("X", "llama3:latest")
-        assert "photorealistic scene related to X" in result
+        assert "stylistic or abstract scene related to X" in result
 
     async def test_short_response_falls_back(self):
         resp = MagicMock()
@@ -193,7 +193,7 @@ class TestBuildSDXLPrompt:
 
         with patch("httpx.AsyncClient", return_value=ctx):
             result = await _build_sdxl_prompt("My blog post", "llama3:latest")
-        assert "photorealistic scene" in result  # fell back
+        assert "stylistic or abstract scene" in result  # fell back
 
     async def test_dispatches_when_pool_available(self):
         # poindexter#535: when site_config exposes a pool, the call routes
@@ -238,7 +238,7 @@ class TestBuildSDXLPrompt:
             result = await _build_sdxl_prompt(
                 "GPU benchmarks", "llama3:latest", site_config=site_config,
             )
-        assert "photorealistic scene related to GPU benchmarks" in result
+        assert "stylistic or abstract scene related to GPU benchmarks" in result
 
     # poindexter#716 — model=None paths
 
@@ -246,7 +246,7 @@ class TestBuildSDXLPrompt:
         """poindexter#716: model=None + no pool → generic fallback (no LLM call)."""
         with patch("httpx.AsyncClient", side_effect=AssertionError("must not use httpx")):
             result = await _build_sdxl_prompt("AI chip design", None, site_config=None)
-        assert "photorealistic scene related to AI chip design" in result
+        assert "stylistic or abstract scene related to AI chip design" in result
 
     async def test_no_model_resolves_via_tier(self):
         """poindexter#716: model=None + pool → resolve_tier_model, then dispatch."""
@@ -286,4 +286,4 @@ class TestBuildSDXLPrompt:
             result = await _build_sdxl_prompt(
                 "Robotics", None, site_config=site_config,
             )
-        assert "photorealistic scene related to Robotics" in result
+        assert "stylistic or abstract scene related to Robotics" in result

@@ -223,3 +223,41 @@ async def test_title_falls_back_to_topic():
         topic="AI Gaming Hardware",
     ))
     assert "AI Gaming Hardware" in captured["title"]
+
+
+# ── stage/percentage terminal-progress tests (#1282) ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_terminal_stage_and_percentage_in_return():
+    """content.persist_task must return stage='awaiting_approval' and percentage=100 (#1282)."""
+    _patch_pdb()
+    result = await persist_run(_base_state())
+    assert result["stage"] == "awaiting_approval", (
+        "stage not advanced to terminal value — task b8b227c6 symptom"
+    )
+    assert result["percentage"] == 100, (
+        "percentage not advanced to 100 — task b8b227c6 symptom"
+    )
+
+
+@pytest.mark.asyncio
+async def test_terminal_stage_and_percentage_in_db_update():
+    """content.persist_task must include stage and percentage=100 in the DB write (#1282)."""
+    _patch_pdb()
+    captured: dict = {}
+
+    async def _update(*, task_id, updates):
+        captured.update(updates)
+
+    db = SimpleNamespace(
+        pool=MagicMock(),
+        update_task=_update,
+        update_task_status_guarded=AsyncMock(return_value="ok"),
+    )
+    await persist_run(_base_state(database_service=db))
+    assert captured.get("stage") == "awaiting_approval", (
+        "stage not written to DB — pipeline_tasks.stage left at capture_training_data"
+    )
+    assert captured.get("percentage") == 100, (
+        "percentage not written to DB — pipeline_tasks.percentage left at 0"
+    )

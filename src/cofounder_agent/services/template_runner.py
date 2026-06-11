@@ -477,6 +477,12 @@ class PipelineState(TypedDict, total=False):
     # duration vs script-word-count estimate. All deterministic (no AI model).
     # Same last-value-channel discipline (#674 trap).
     audio_qa_result: dict
+    # Pipeline progress fields (#1282): content.persist_task stamps these on
+    # every run so the dashboard can show awaiting_approval + 100% completion.
+    # Declared as last-value channels — undeclared keys are dropped on the
+    # graph_def path (same last-value-channel lesson as seo_keywords_list).
+    stage: str
+    percentage: int
     stages: dict
     generate_metrics: dict
     cost_log: dict

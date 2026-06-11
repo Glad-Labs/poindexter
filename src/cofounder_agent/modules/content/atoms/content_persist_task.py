@@ -38,13 +38,15 @@ ATOM_META = AtomMeta(
     ),
     outputs=(
         FieldSpec(name="status", type="str", description="awaiting_approval"),
+        FieldSpec(name="stage", type="str", description="awaiting_approval — terminal progress stage (#1282)"),
+        FieldSpec(name="percentage", type="int", description="100 — terminal progress percentage (#1282)"),
         FieldSpec(name="approval_status", type="str", description="pending"),
         FieldSpec(name="post_id", type="str", description="None — posts created on approve"),
         FieldSpec(name="post_slug", type="str", description="None — posts created on approve"),
         FieldSpec(name="task_metadata", type="dict", description="assembled finalize metadata for content.record_pipeline_version (#693)"),
     ),
     requires=("task_id", "content"),
-    produces=("status", "approval_status", "post_id", "post_slug", "task_metadata"),
+    produces=("status", "stage", "percentage", "approval_status", "post_id", "post_slug", "task_metadata"),
     capability_tier=None,
     cost_class="free",
     idempotent=False,
@@ -123,6 +125,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     updates = {
         "status": "awaiting_approval",
+        "stage": "awaiting_approval",
+        "percentage": 100,
         "approval_status": "pending",
         "error_message": None,
         "quality_score": final_quality_score,
@@ -217,6 +221,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "status": "awaiting_approval",
+        "stage": "awaiting_approval",
+        "percentage": 100,
         "approval_status": "pending",
         "post_id": None,
         "post_slug": None,
