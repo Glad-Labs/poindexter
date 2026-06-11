@@ -146,3 +146,56 @@ def test_leak_guard_allow_is_empty() -> None:
         "exempts it from the leak scan while it still SHIPS — the #1287 bug. "
         "Strip operator-private files via _STRIP_FILES instead."
     )
+
+
+# ---------------------------------------------------------------------------
+# #1288 — .env.example ships to public; must NOT be in _STRIP_FILES.
+#
+# The divergence: .env.example was in _STRIP_FILES (scanner skipped it) while
+# sync-to-github.sh shipped it (poindexter#607 deliberately restored the file
+# after it was stripped, to fix the quickstart `cp .env.example .env` flow).
+# The scanner was therefore skipping a file that the public mirror actually
+# received — a blind spot closed by this fix.
+# ---------------------------------------------------------------------------
+
+
+def test_env_example_is_not_in_strip_files() -> None:
+    """.env.example must NOT appear in _STRIP_FILES.
+
+    It ships to the public mirror (poindexter#607) and must be scanned for
+    operator-private patterns. Adding it to _STRIP_FILES causes would_ship()
+    to return False and the scanner to skip it — the blind spot fixed in #1288.
+    """
+    assert ".env.example" not in CHECK._STRIP_FILES, (
+        ".env.example is in _STRIP_FILES but it intentionally SHIPS to the public "
+        "mirror (poindexter#607 restored it so `cp .env.example .env` works for "
+        "quickstart users). Remove it from _STRIP_FILES so the leak scanner "
+        "examines it. If you want to stop shipping it, also update the "
+        "'poindexter#607' comment block in scripts/sync-to-github.sh."
+    )
+
+
+def test_env_example_would_ship() -> None:
+    """would_ship('.env.example') must return True so the scanner processes it."""
+    assert CHECK.would_ship(".env.example"), (
+        "would_ship() classifies .env.example as NOT shipping to the mirror. "
+        "It is intentionally public (poindexter#607). Remove it from _STRIP_FILES "
+        "and confirm _LEAK_GUARD_ALLOW doesn't skip it either."
+    )
+
+
+def test_ships_to_public_not_in_strip_files() -> None:
+    """No file in _SHIPS_TO_PUBLIC may appear in _STRIP_FILES.
+
+    This is the coherence invariant introduced in #1288. A file listed as
+    'ships to public' and also listed in _STRIP_FILES is a contradictory state:
+    the scanner skips it (would_ship returns False) while the sync filter
+    delivers it — exactly the blind spot that caused #1288.
+    """
+    conflicts = CHECK.check_strip_coherence()
+    assert not conflicts, (
+        f"Ship/strip coherence violation — files in both _SHIPS_TO_PUBLIC and "
+        f"_STRIP_FILES: {conflicts}. Either remove the file from _STRIP_FILES "
+        f"(so the scanner examines it) or remove it from _SHIPS_TO_PUBLIC "
+        f"(if it was stripped intentionally)."
+    )

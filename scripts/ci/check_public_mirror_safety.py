@@ -156,7 +156,13 @@ _STRIP_FILES = (
     "docker-compose.local.yml",
     "skills/poindexter/gladlabs-config.json",
     "skills/openclaw/gladlabs-config.json",
-    ".env.example",
+    # .env.example intentionally SHIPS to the public mirror (poindexter#607) — it
+    # documents every ${VAR} the OSS single-container docker-compose.yml consumes,
+    # and the compose quickstart instructs `cp .env.example .env`. It is NOT listed
+    # here so would_ship() returns True and scan() examines it for leak patterns.
+    # Keep in sync with sync-to-github.sh § "poindexter#607" comment: if you ever
+    # need to stop shipping .env.example, add it back here AND add a
+    # `git rm --cached` line in sync-to-github.sh.
     # bootstrap.sh references stripped files (.env.example, docker-compose.local.yml)
     # and the dead Woodpecker CI (WOODPECKER_SECRET=...). poindexter setup --auto
     # covers the fresh-install flow. Stripped 2026-05-27 per security audit.
@@ -210,6 +216,47 @@ _STRIP_FILES = (
 # (not a removal) so a future genuinely-public pattern-definition file has an
 # obvious home, and add it to `_STRIP_FILES` first if it would carry literals.
 _LEAK_GUARD_ALLOW: tuple[str, ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# Files that SHIP to the public mirror and are deliberately scanned.
+#
+# This tuple is a cross-reference anchor that makes the ship-vs-strip decision
+# explicit and machine-checkable. ``check_strip_coherence()`` (called from
+# ``main()``) verifies that none of these files accidentally appear in
+# ``_STRIP_FILES`` — the exact divergence that caused issue #1288, where
+# ``.env.example`` was in ``_STRIP_FILES`` (skipping scan) while
+# ``sync-to-github.sh`` intentionally shipped it (poindexter#607).
+#
+# Add a file here when:
+#   - It ships to the public mirror (NOT in ``_STRIP_FILES``).
+#   - It is *notable* enough that someone might be tempted to strip it:
+#     e.g. it used to be stripped, or it contains env-var-shaped content.
+#
+# Do NOT list every shipped file — only the ones where the ship decision
+# has been deliberate and documented.
+# ---------------------------------------------------------------------------
+_SHIPS_TO_PUBLIC: tuple[str, ...] = (
+    # Quickstart template: documents every ${VAR} docker-compose.yml consumes.
+    # Deliberately shipped per poindexter#607; must be scanned for leaks.
+    ".env.example",
+    # Gitleaks false-positive baseline: contains matched strings + commit SHAs
+    # already public via git history; ships so the public CI gate works.
+    ".gitleaks-baseline.json",
+    # Public Mintlify config (rewritten at sync time to drop gladlabs.io URLs).
+    "docs.json",
+)
+
+
+def check_strip_coherence() -> list[str]:
+    """Return names of files that appear in BOTH _SHIPS_TO_PUBLIC and _STRIP_FILES.
+
+    A non-empty result means the ship/strip decision is contradictory: the file
+    is declared as intentionally public but the scanner would also skip it.
+    This is exactly the bug that caused issue #1288.
+    """
+    strip_set = set(_STRIP_FILES)
+    return [f for f in _SHIPS_TO_PUBLIC if f in strip_set]
 
 
 # Line-level rewrites the sync filter applies to specific files (the
@@ -554,6 +601,21 @@ def main() -> int:
             ["git", "rev-parse", "--show-toplevel"], text=True,
         ).strip()
     )
+    # Coherence check: fail loud if a file is both declared as "ships to public"
+    # and listed in _STRIP_FILES. That contradiction means the scanner silently
+    # skips a file that actually reaches the public mirror — the root cause of
+    # issue #1288 (.env.example was in _STRIP_FILES while sync-to-github.sh
+    # shipped it, so it left the pipeline unscanned).
+    conflicts = check_strip_coherence()
+    if conflicts:
+        print("[public-mirror-safety] FAIL — strip/ship coherence violation:")
+        for f in conflicts:
+            print(f"  {f!r} is in _SHIPS_TO_PUBLIC (ships to mirror) "
+                  "AND in _STRIP_FILES (scanner skips it).")
+        print()
+        print("Fix: remove the file from _STRIP_FILES so scan() examines it, "
+              "OR remove it from _SHIPS_TO_PUBLIC if it was stripped intentionally.")
+        return 1
     hits = scan(repo_root)
     if not hits:
         print("[public-mirror-safety] OK — no operator-private patterns "

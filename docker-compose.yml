@@ -111,8 +111,13 @@ services:
       # Database (uses the postgres service above)
       DATABASE_URL: postgresql://${POSTGRES_USER:-poindexter}:${POSTGRES_PASSWORD:-poindexter-dev}@postgres:5432/${POSTGRES_DB:-poindexter}
 
-      # Auth
-      API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
+      # Auth — OAuth 2.1 only since poindexter#249 (2026-05-05).
+      # API_TOKEN is no longer required for HTTP authentication; the static Bearer
+      # fallback was removed. Run `poindexter auth migrate-cli` to provision OAuth
+      # credentials. The env var is kept as an optional seed so the DB-sync in
+      # main.py can persist a value during migration, but blank is fine for fresh
+      # installs (the legacy bearer path no longer exists in the middleware).
+      API_TOKEN: ${API_TOKEN:-}
       DEVELOPMENT_MODE: ${DEVELOPMENT_MODE:-false}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:?REVALIDATE_SECRET must be set}
 
