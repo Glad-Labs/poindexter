@@ -240,6 +240,7 @@ class TestGenerateVideoForPost:
             )
 
         assert result.success is False
+        assert result.error is not None
         assert "Podcast not found" in result.error
 
     @pytest.mark.asyncio
@@ -263,7 +264,7 @@ class TestGenerateVideoForPost:
             )
 
         assert result.success is False
-        assert "No images" in result.error
+        assert result.error is not None and "No images" in result.error
 
     @pytest.mark.asyncio
     async def test_successful_generation(self, _seed_host_home, tmp_path):
@@ -341,7 +342,7 @@ class TestGenerateVideoForPost:
             )
 
         assert result.success is False
-        assert "GPU OOM" in result.error
+        assert result.error is not None and "GPU OOM" in result.error
 
     @pytest.mark.asyncio
     async def test_video_server_exception(self, _seed_host_home, tmp_path):
@@ -369,7 +370,7 @@ class TestGenerateVideoForPost:
             )
 
         assert result.success is False
-        assert "refused" in result.error
+        assert result.error is not None and "refused" in result.error
 
     @pytest.mark.asyncio
     async def test_default_podcast_path_lookup(self, tmp_path):
@@ -397,7 +398,7 @@ class TestGenerateVideoForPost:
 
         # It should find the podcast but fail on images
         assert result.success is False
-        assert "No images" in result.error
+        assert result.error is not None and "No images" in result.error
 
     @pytest.mark.asyncio
     async def test_host_path_conversion(self, tmp_path):
@@ -1234,12 +1235,12 @@ class TestGenerateShortSummaryAudio:
         completion = MagicMock()
         completion.text = long_script
 
-        # Fake edge_tts.Communicate that writes the file when .save() is called
-        fake_communicate = MagicMock()
-        fake_communicate.save = AsyncMock(side_effect=lambda p: Path(p).write_bytes(b"\x49\x44\x33" + b"x" * 2000))
+        audio_payload = b"\x49\x44\x33" + b"x" * 2000
 
-        fake_edge_tts = MagicMock()
-        fake_edge_tts.Communicate = MagicMock(return_value=fake_communicate)
+        async def fake_synthesize(text, *, site_config, output_path=None, voice=None):
+            if output_path:
+                Path(output_path).write_bytes(audio_payload)
+            return audio_payload
 
         sc, _ = _stub_site_config_with_pool()
 
@@ -1248,7 +1249,7 @@ class TestGenerateShortSummaryAudio:
                  "services.llm_providers.dispatcher.dispatch_complete",
                  AsyncMock(return_value=completion),
              ), \
-             patch.dict("sys.modules", {"edge_tts": fake_edge_tts}):
+             patch("services.tts_service.synthesize_speech", side_effect=fake_synthesize):
             result = await _generate_short_summary_audio("p1", "Title", "Body" * 100, site_config=sc)
 
         assert result is not None
@@ -1261,12 +1262,11 @@ class TestGenerateShortSummaryAudio:
         completion = MagicMock()
         completion.text = long_script
 
-        # Edge TTS produces a tiny (<=1000 byte) file
-        fake_communicate = MagicMock()
-        fake_communicate.save = AsyncMock(side_effect=lambda p: Path(p).write_bytes(b"tiny"))
-
-        fake_edge_tts = MagicMock()
-        fake_edge_tts.Communicate = MagicMock(return_value=fake_communicate)
+        async def fake_synthesize_tiny(text, *, site_config, output_path=None, voice=None):
+            # Speaches returns a tiny payload — file check will reject it
+            if output_path:
+                Path(output_path).write_bytes(b"tiny")
+            return b"tiny"
 
         sc, _ = _stub_site_config_with_pool()
 
@@ -1275,7 +1275,7 @@ class TestGenerateShortSummaryAudio:
                  "services.llm_providers.dispatcher.dispatch_complete",
                  AsyncMock(return_value=completion),
              ), \
-             patch.dict("sys.modules", {"edge_tts": fake_edge_tts}):
+             patch("services.tts_service.synthesize_speech", side_effect=fake_synthesize_tiny):
             result = await _generate_short_summary_audio("p1", "T", "Body" * 100, site_config=sc)
 
         assert result is None

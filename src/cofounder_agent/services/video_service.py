@@ -951,12 +951,14 @@ async def _generate_short_summary_audio(
         logger.info("[SHORT] Generated summary script: %d chars", len(summary_script))
 
         # Generate TTS audio
-        import edge_tts
+        from services import tts_service
         short_audio_path = str(VIDEO_DIR / f"{post_id}-short-audio.mp3")
-        communicate = edge_tts.Communicate(summary_script, "en-US-AndrewMultilingualNeural")
-        await communicate.save(short_audio_path)
-
-        if os.path.exists(short_audio_path) and os.path.getsize(short_audio_path) > 1000:
+        audio_bytes = await tts_service.synthesize_speech(
+            summary_script,
+            site_config=site_config,
+            output_path=short_audio_path,
+        )
+        if audio_bytes and os.path.exists(short_audio_path) and os.path.getsize(short_audio_path) > 1000:
             logger.info("[SHORT] Summary audio generated: %s", short_audio_path)
             return short_audio_path
         return None
@@ -1007,14 +1009,17 @@ async def generate_short_video_for_post(
     if pre_generated_summary and len(pre_generated_summary) > 50:
         # TTS the pre-generated summary directly
         try:
-            import edge_tts
-
+            from services import tts_service
             from services.podcast_service import _normalize_for_speech
+
             script = _normalize_for_speech(pre_generated_summary, site_config=_sc)
             short_audio_path = str(VIDEO_DIR / f"{post_id}-short-audio.mp3")
-            communicate = edge_tts.Communicate(script, "en-US-AndrewMultilingualNeural")
-            await communicate.save(short_audio_path)
-            if os.path.exists(short_audio_path) and os.path.getsize(short_audio_path) > 1000:
+            audio_bytes = await tts_service.synthesize_speech(
+                script,
+                site_config=_sc,
+                output_path=short_audio_path,
+            )
+            if audio_bytes and os.path.exists(short_audio_path) and os.path.getsize(short_audio_path) > 1000:
                 short_audio = short_audio_path
                 logger.info("[SHORT] Used pre-generated summary script for audio")
         except Exception as e:

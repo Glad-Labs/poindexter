@@ -1,8 +1,10 @@
 """
 Podcast Service — Text-to-Speech audio generation for published blog posts.
 
-Converts blog post content into MP3 podcast episodes using Microsoft Edge TTS
-(edge-tts). Fully local, free, no API keys required.
+Converts blog post content into MP3 podcast episodes using Speaches/Kokoro TTS.
+Speaches runs as the ``poindexter-speaches`` Docker container and exposes an
+OpenAI-compatible ``/v1/audio/speech`` endpoint backed by the Kokoro-82M model
+(Apache 2.0). Gated by ``podcast_tts_enabled=true`` in app_settings.
 
 Each episode includes:
 - Intro: "Welcome to the {podcast_name} podcast. Today's episode: {title}"
@@ -16,7 +18,7 @@ Spotify distribution.
 Usage:
     from services.podcast_service import PodcastService
 
-    svc = PodcastService()
+    svc = PodcastService(site_config=site_config)
     result = await svc.generate_episode(
         post_id="abc123",
         title="Why Local LLMs Beat Cloud APIs",
@@ -69,18 +71,16 @@ logger = get_logger(__name__)
 
 PODCAST_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
 
-# Voice rotation pool — cycle through for variety across episodes
+# Voice rotation pool — Kokoro voice IDs (Speaches/Kokoro TTS)
 VOICE_POOL = [
-    "en-US-AvaMultilingualNeural",       # Female, American (default)
-    "en-US-AndrewMultilingualNeural",     # Male, American
-    "en-US-BrianMultilingualNeural",      # Male, American (deeper)
-    # Removed: en-GB-RyanNeural — too robotic per Matt's feedback
-    # Removed: en-AU-WilliamNeural — accent doesn't fit brand voice
+    "bf_emma",       # Female, British (Speaches default)
+    "am_michael",    # Male, American
+    "af_heart",      # Female, American
+    "bm_george",     # Male, British
 ]
 VOICE_FALLBACKS = [
-    "en-US-GuyNeural",
-    "en-US-ChristopherNeural",
-    "en-US-EricNeural",
+    "af_bella",
+    "am_adam",
 ]
 
 
@@ -95,9 +95,8 @@ def _resolve_voice_pool(site_config: "SiteConfig | None") -> list[str]:
 
     Behavior is UNCHANGED when unset: a disabled flag OR an empty
     ``tts_voice_pool`` falls through to the module ``VOICE_POOL`` constant, so
-    existing edge-tts installs rotate exactly as before. An operator on a
-    different TTS engine supplies engine-appropriate voice names via
-    ``tts_voice_pool`` without touching code.
+    existing installs rotate exactly as before. An operator supplies
+    engine-appropriate voice names via ``tts_voice_pool`` without touching code.
     """
     if site_config is None:
         return list(VOICE_POOL)
@@ -816,15 +815,13 @@ class PodcastService:
                 )
                 return
             sibling_path = self.output_dir / f"{post_id}-narration.mp3"
-            try:
-                import edge_tts
-            except ImportError:
-                logger.debug(
-                    "[PODCAST] narration sibling skipped: edge-tts not installed",
-                )
-                return
-            communicate = edge_tts.Communicate(body_only, voice)
-            await communicate.save(str(sibling_path))
+            from services import tts_service
+            await tts_service.synthesize_speech(
+                body_only,
+                site_config=self._site_config,
+                output_path=str(sibling_path),
+                voice=voice,
+            )
             if (
                 sibling_path.exists()
                 and sibling_path.stat().st_size > 1000
@@ -889,11 +886,11 @@ class PodcastService:
         pool = getattr(self._site_config, "_pool", None)
         try:
             engine = (
-                self._site_config.get("podcast_tts_engine", "edge_tts")
-                or "edge_tts"
+                self._site_config.get("podcast_tts_engine", "speaches")
+                or "speaches"
             )
         except Exception:
-            engine = "edge_tts"
+            engine = "speaches"
         try:
             await media_asset_recorder.record_media_asset(
                 pool=pool,
@@ -926,39 +923,36 @@ class PodcastService:
     async def _generate_with_voice(
         self, script: str, voice: str, output_path: Path
     ) -> EpisodeResult:
-        """Generate audio using edge-tts with a specific voice."""
-        try:
-            import edge_tts  # type: ignore[import-not-found]
-        except ImportError:
+        """Generate audio via Speaches/Kokoro TTS with the given voice."""
+        from services import tts_service
+
+        audio_bytes = await tts_service.synthesize_speech(
+            script,
+            site_config=self._site_config,
+            output_path=str(output_path),
+            voice=voice,
+        )
+        if audio_bytes is None:
             return EpisodeResult(
                 success=False,
-                error="edge-tts not installed. Run: pip install edge-tts",
+                error=(
+                    "Speaches TTS unavailable — set podcast_tts_enabled=true "
+                    "and ensure poindexter-speaches container is running"
+                ),
             )
-
-        try:
-            communicate = edge_tts.Communicate(script, voice)
-            await communicate.save(str(output_path))
-
-            if not output_path.exists() or output_path.stat().st_size == 0:
-                return EpisodeResult(
-                    success=False,
-                    error=f"edge-tts produced empty file with voice {voice}",
-                )
-
-            size = output_path.stat().st_size
-            duration = _estimate_duration_from_text(script)
-
+        if not output_path.exists() or output_path.stat().st_size == 0:
             return EpisodeResult(
-                success=True,
-                file_path=str(output_path),
-                duration_seconds=duration,
-                file_size_bytes=size,
+                success=False,
+                error=f"Speaches produced empty file with voice {voice!r}",
             )
-        except Exception as e:
-            # Clean up partial file
-            if output_path.exists():
-                output_path.unlink(missing_ok=True)
-            return EpisodeResult(success=False, error=f"{type(e).__name__}: {e}")
+        size = output_path.stat().st_size
+        duration = _estimate_duration_from_text(script)
+        return EpisodeResult(
+            success=True,
+            file_path=str(output_path),
+            duration_seconds=duration,
+            file_size_bytes=size,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -229,17 +229,12 @@ class TestGenerateEpisode:
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
 
-            mock_communicate = MagicMock()
-            # Make save() an async function that writes a fake MP3 file
-            async def mock_save(path):
-                Path(path).write_bytes(b"fake mp3 audio data here")
+            async def mock_synthesize(text, *, site_config, output_path=None, voice=None):
+                if output_path:
+                    Path(output_path).write_bytes(b"fake mp3 audio data here")
+                return b"fake mp3 audio data here"
 
-            mock_communicate.save = mock_save
-
-            mock_edge_tts = MagicMock()
-            mock_edge_tts.Communicate.return_value = mock_communicate
-
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize):
                 result = await svc.generate_episode(
                     "post-001", "My Great Post", "# Hello\n\nSome content."
                 )
@@ -278,16 +273,12 @@ class TestGenerateEpisode:
             episode_path = Path(tmp) / "post-003.mp3"
             episode_path.write_bytes(b"old audio")
 
-            mock_communicate = MagicMock()
-            async def mock_save(path):
-                Path(path).write_bytes(b"brand new audio data")
+            async def mock_synthesize(text, *, site_config, output_path=None, voice=None):
+                if output_path:
+                    Path(output_path).write_bytes(b"brand new audio data")
+                return b"brand new audio data"
 
-            mock_communicate.save = mock_save
-
-            mock_edge_tts = MagicMock()
-            mock_edge_tts.Communicate.return_value = mock_communicate
-
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize):
                 result = await svc.generate_episode(
                     "post-003", "Title", "Content", force=True
                 )
@@ -303,22 +294,18 @@ class TestGenerateEpisode:
 
             call_count = 0
 
-            class FakeCommunicate:
-                def __init__(self, script, voice):
-                    self.voice = voice
+            async def mock_synthesize(text, *, site_config, output_path=None, voice=None):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    # First voice fails — return None (TTS unavailable / error)
+                    return None
+                # Second call succeeds
+                if output_path:
+                    Path(output_path).write_bytes(b"fallback audio")
+                return b"fallback audio"
 
-                async def save(self, path):
-                    nonlocal call_count
-                    call_count += 1
-                    if call_count == 1:
-                        raise Exception("Primary voice unavailable")
-                    # Second call succeeds
-                    Path(path).write_bytes(b"fallback audio")
-
-            mock_edge_tts = MagicMock()
-            mock_edge_tts.Communicate = FakeCommunicate
-
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize):
                 result = await svc.generate_episode(
                     "post-004", "Title", "Some content"
                 )
@@ -328,27 +315,21 @@ class TestGenerateEpisode:
 
     @pytest.mark.asyncio
     async def test_generate_episode_all_voices_fail(self):
-        """If all voices fail, returns failure result."""
+        """If all voices fail (TTS returns None), returns failure result."""
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp), site_config=_TEST_SC)
 
-            class FailCommunicate:
-                def __init__(self, script, voice):
-                    pass
+            async def mock_synthesize_none(text, *, site_config, output_path=None, voice=None):
+                # Always return None — simulates Speaches unavailable
+                return None
 
-                async def save(self, path):
-                    raise Exception("Voice engine down")
-
-            mock_edge_tts = MagicMock()
-            mock_edge_tts.Communicate = FailCommunicate
-
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+            with patch("services.tts_service.synthesize_speech", side_effect=mock_synthesize_none):
                 result = await svc.generate_episode(
                     "post-005", "Title", "Some content"
                 )
 
             assert result.success is False
-            assert "All voices failed" in result.error
+            assert result.error is not None and "All voices failed" in result.error
 
 
 # ---------------------------------------------------------------------------
@@ -603,11 +584,11 @@ class TestUnwrapIntroOutro:
         _sc = _StubSC()
 
         body = "Here is the post body content. It has multiple sentences."
-        wrapped = _wrap_with_intro_outro(body, "My Title", site_config=_sc)
+        wrapped = _wrap_with_intro_outro(body, "My Title", site_config=_sc)  # type: ignore[arg-type]
         assert "Welcome to Test Show" in wrapped
         assert "Visit example dot com" in wrapped
 
-        recovered = _unwrap_intro_outro(wrapped, "My Title", site_config=_sc)
+        recovered = _unwrap_intro_outro(wrapped, "My Title", site_config=_sc)  # type: ignore[arg-type]
         assert recovered == body
         assert "Welcome to Test Show" not in recovered
         assert "Visit example dot com" not in recovered
@@ -630,7 +611,7 @@ class TestUnwrapIntroOutro:
         _sc = _StubSC()
 
         body = "Body only no wrappers at all."
-        recovered = _unwrap_intro_outro(body, "Title", site_config=_sc)
+        recovered = _unwrap_intro_outro(body, "Title", site_config=_sc)  # type: ignore[arg-type]
         assert recovered == body
 
 
@@ -662,19 +643,14 @@ class TestNarrationSibling:
 
         captured_scripts: list[str] = []
 
-        class _MockCommunicate:
-            def __init__(self, script, voice):
-                captured_scripts.append(script)
-                self._voice = voice
-
-            async def save(self, path):
-                Path(path).write_bytes(b"x" * 2000)
-
-        mock_edge_tts = MagicMock()
-        mock_edge_tts.Communicate = _MockCommunicate
+        async def _mock_synthesize(text, *, site_config, output_path=None, voice=None):
+            captured_scripts.append(text)
+            if output_path:
+                Path(output_path).write_bytes(b"x" * 2000)
+            return b"x" * 2000
 
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_sc)
+            svc = PodcastService(output_dir=Path(tmp), site_config=_sc)  # type: ignore[arg-type]
 
             wrapped_script = (
                 "Welcome to Test Show. Today's episode: Post Title.\n\n"
@@ -684,12 +660,12 @@ class TestNarrationSibling:
                 "and insights. See you next time."
             )
 
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+            with patch("services.tts_service.synthesize_speech", side_effect=_mock_synthesize):
                 await svc._maybe_generate_narration_sibling(
                     post_id="abc",
                     script=wrapped_script,
                     title="Post Title",
-                    voice="en-US-AvaNeural",
+                    voice="bf_emma",
                 )
 
             sibling_path = Path(tmp) / "abc-narration.mp3"
@@ -721,7 +697,7 @@ class TestNarrationSibling:
         _sc = _StubSC()
 
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_sc)
+            svc = PodcastService(output_dir=Path(tmp), site_config=_sc)  # type: ignore[arg-type]
             await svc._maybe_generate_narration_sibling(
                 post_id="abc",
                 script="Welcome to Test Show...\n\nbody.\n\nThanks for listening...",
@@ -732,7 +708,7 @@ class TestNarrationSibling:
 
     @pytest.mark.asyncio
     async def test_failure_is_non_fatal(self, monkeypatch):
-        """If edge_tts raises during the sibling pass, the call must
+        """If TTS raises during the sibling pass, the call must
         not propagate — the main episode is already done."""
         from services.podcast_service import PodcastService
 
@@ -749,16 +725,12 @@ class TestNarrationSibling:
 
         _sc = _StubSC()
 
-        class _BrokenCommunicate:
-            def __init__(self, *a, **kw):
-                raise RuntimeError("simulated edge-tts failure")
-
-        mock_edge_tts = MagicMock()
-        mock_edge_tts.Communicate = _BrokenCommunicate
+        async def _broken_synthesize(text, *, site_config, output_path=None, voice=None):
+            raise RuntimeError("simulated Speaches TTS failure")
 
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp), site_config=_sc)
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+            svc = PodcastService(output_dir=Path(tmp), site_config=_sc)  # type: ignore[arg-type]
+            with patch("services.tts_service.synthesize_speech", side_effect=_broken_synthesize):
                 # Must not raise — the sibling failure is best-effort.
                 await svc._maybe_generate_narration_sibling(
                     post_id="abc",
@@ -770,7 +742,7 @@ class TestNarrationSibling:
                         "and insights. See you next time."
                     ),
                     title="Title",
-                    voice="en-US-AvaNeural",
+                    voice="bf_emma",
                 )
 
 
@@ -780,7 +752,7 @@ class TestResolveVoicePool:
     Lifts the hardcoded ``VOICE_POOL`` to operator-tunable app_settings
     (``tts_voice_rotation_enabled`` / ``tts_voice_pool``). Behavior MUST be
     unchanged when unset — a disabled flag or an empty pool falls back to the
-    module constant, so existing edge-tts installs rotate exactly as before.
+    module constant, so existing installs rotate exactly as before.
     """
 
     def test_disabled_falls_back_to_constant(self):

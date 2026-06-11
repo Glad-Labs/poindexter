@@ -91,13 +91,6 @@ summarized below; see individual repositories for complete license texts.
 
 - PostgreSQL — primary relational database
 
-**GPL-3.0 — review required**
-
-- edge-tts — Microsoft Edge TTS voice synthesis. GPL-3.0. Used as a Python
-  library import for TTS audio generation. Whether this creates a combined work
-  under GPL terms is a nuanced question for your jurisdiction and use case;
-  consult legal counsel if you plan to redistribute Poindexter with this dep.
-
 See individual component repositories for complete license texts and NOTICE files.
 
 ---

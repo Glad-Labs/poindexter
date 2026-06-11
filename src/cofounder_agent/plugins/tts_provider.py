@@ -6,9 +6,10 @@ done by name through ``app_settings.podcast_tts_engine`` (and, when the
 video stack lands, an analogous video-side key).
 
 This is the engine-agnostic seam that lets the pipeline swap between
-``edge_tts`` (Microsoft Edge cloud-TTS, default), ``kokoro`` (the
-Apache-2.0 82M-param local model, GH-122), and any future provider
-without code changes — flip a setting, restart nothing.
+``speaches`` (the default — Speaches/Kokoro HTTP container, Apache 2.0,
+runs as ``poindexter-speaches``), ``kokoro`` (the same Kokoro model run
+in-process, Apache-2.0 82M-param local model, GH-122), and any future
+provider without code changes — flip a setting, restart nothing.
 
 All TTS-text preprocessing (``tts_pronunciations``,
 ``tts_acronym_replacements``, the regex-based speech normalizer in
@@ -21,7 +22,6 @@ Register a TTSProvider via ``pyproject.toml``:
 .. code:: toml
 
     [project.entry-points."poindexter.tts_providers"]
-    edge_tts = "cofounder_agent.services.tts_providers.edge_tts:EdgeTTSProvider"
     kokoro = "cofounder_agent.services.tts_providers.kokoro:KokoroTTSProvider"
 
 Per-install config lives in ``app_settings`` under
@@ -58,8 +58,8 @@ class TTSResult:
       podcast RSS feed uses this for ``<itunes:duration>``.
     - ``voice`` — voice identifier the provider used. Logged + stored
       in episode metadata for A/B comparisons.
-    - ``sample_rate`` — sample rate in Hz. 24000 for Kokoro, 24000 for
-      edge-tts (mp3), etc.
+    - ``sample_rate`` — sample rate in Hz. 24000 for Kokoro/Speaches,
+      etc.
     - ``audio_format`` — extension-style format tag: ``"mp3"``,
       ``"wav"``, ``"opus"``. Callers use this to decide whether to
       transcode for distribution (Apple Podcasts wants mp3).

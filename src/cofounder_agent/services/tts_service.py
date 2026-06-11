@@ -73,6 +73,7 @@ async def synthesize_speech(
     *,
     site_config: Any,
     output_path: str | None = None,
+    voice: str | None = None,
 ) -> bytes | None:
     """Convert text to speech via Speaches and return the audio bytes.
 
@@ -85,6 +86,9 @@ async def synthesize_speech(
         output_path: If provided, also write the bytes to this path
             (convenience for callers that want a file on disk). The
             bytes are still returned regardless.
+        voice: Optional voice override. When provided, takes precedence
+            over the ``podcast_tts_voice`` app_setting so callers can
+            drive per-episode voice rotation without mutating config.
     """
     if not is_tts_enabled(site_config):
         return None
@@ -94,7 +98,7 @@ async def synthesize_speech(
         return None
 
     base_url = _resolve(site_config, "podcast_tts_base_url", _DEFAULT_BASE_URL).rstrip("/")
-    voice = _resolve(site_config, "podcast_tts_voice", _DEFAULT_VOICE)
+    voice = voice or _resolve(site_config, "podcast_tts_voice", _DEFAULT_VOICE)
     model = _resolve(site_config, "podcast_tts_model", _DEFAULT_MODEL)
     fmt = _resolve(site_config, "podcast_tts_format", _DEFAULT_FORMAT).lower()
 
