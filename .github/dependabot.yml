@@ -1,4 +1,4 @@
-version: 2
+﻿version: 2
 
 updates:
   # ────────────────────────────────────
@@ -23,7 +23,7 @@ updates:
     rebase-strategy: 'auto'
 
   # ────────────────────────────────────
-  # npm (Node.js packages)
+  # npm (Node.js packages — root workspace)
   # ────────────────────────────────────
   - package-ecosystem: 'npm'
     directory: '/'
@@ -50,7 +50,59 @@ updates:
         dependency-type: 'production'
 
   # ────────────────────────────────────
-  # Python (pip / Poetry)
+  # npm — web/starter (Next.js template)
+  # ────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/web/starter'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:35'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      web-starter-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # npm — Cloudflare Workers page-views beacon
+  # ────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/infrastructure/cloudflare/page-views-beacon'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:40'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      beacon-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # Python — src/cofounder_agent (pip / Poetry)
   # ────────────────────────────────────
   - package-ecosystem: 'pip'
     directory: '/src/cofounder_agent'
@@ -71,7 +123,127 @@ updates:
     rebase-strategy: 'auto'
 
   # ────────────────────────────────────
-  # Docker (if using images)
+  # Python — brain daemon (Poetry)
+  # ────────────────────────────────────
+  - package-ecosystem: 'pip'
+    directory: '/brain'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:05'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+
+  # ────────────────────────────────────
+  # Python — root pyproject.toml (Poetry)
+  # ────────────────────────────────────
+  - package-ecosystem: 'pip'
+    directory: '/'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:10'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+
+  # ────────────────────────────────────
+  # Python — mcp-server (uv)
+  # ────────────────────────────────────
+  - package-ecosystem: 'uv'
+    directory: '/mcp-server'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:15'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      mcp-server-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # Python — mcp-server-gladlabs (uv, private operator overlay)
+  # ────────────────────────────────────
+  - package-ecosystem: 'uv'
+    directory: '/mcp-server-gladlabs'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:20'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      mcp-server-gladlabs-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # Python — mcp-server-voice (uv)
+  # ────────────────────────────────────
+  - package-ecosystem: 'uv'
+    directory: '/mcp-server-voice'
+    target-branch: 'main'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:25'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    groups:
+      mcp-server-voice-minor-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ────────────────────────────────────
+  # Docker (base images)
   # ────────────────────────────────────
   - package-ecosystem: 'docker'
     directory: '/'
