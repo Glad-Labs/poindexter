@@ -1559,7 +1559,7 @@ version = "5.2.1"
 description = "Decorators for Humans"
 optional = false
 python-versions = ">=3.8"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a"},
     {file = "decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360"},
@@ -4358,6 +4358,32 @@ packaging = ">=17.0"
 dev = ["marshmallow[tests]", "pre-commit (>=3.5,<5.0)", "tox"]
 docs = ["autodocsumm (==0.2.14)", "furo (==2024.8.6)", "sphinx (==8.1.3)", "sphinx-copybutton (==0.5.2)", "sphinx-issues (==5.0.0)", "sphinxext-opengraph (==0.9.1)"]
 tests = ["pytest", "simplejson"]
+
+[[package]]
+name = "mastodon-py"
+version = "2.2.1"
+description = "Python wrapper for the Mastodon API"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "mastodon_py-2.2.1-py3-none-any.whl", hash = "sha256:eb2a815ccc0c4b62417c531e07c02414e000c419abd319326843eb6370b772b3"},
+    {file = "mastodon_py-2.2.1.tar.gz", hash = "sha256:b52c85850272b4ff7a666b87c62432c5059f25c29fb485ffa1f608938744d8a4"},
+]
+
+[package.dependencies]
+decorator = ">=4.0.0"
+python-dateutil = "*"
+requests = ">=2.4.2"
+
+[package.extras]
+blurhash = ["blurhash (>=1.1.4)"]
+docs = ["sphinx-rtd-theme"]
+grapheme = ["graphemeu (>=0.7.2)"]
+magic = ["python-magic ; platform_system != \"Windows\"", "python-magic-bin ; platform_system == \"Windows\""]
+test = ["pytest", "pytest-cov", "pytest-mock", "pytest-recording", "pytest-retry", "pytz", "requests-mock", "vcrpy"]
+test-old = ["pytest", "pytest-cov", "pytest-mock", "pytest-recording", "pytz", "requests-mock", "vcrpy"]
+webpush = ["cryptography (>=1.6.0)", "http_ece (>=1.0.5)"]
 
 [[package]]
 name = "matplotlib-inline"
@@ -10187,4 +10213,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "bb8084261cb040f81c0f4dec50fc5d02d0ad64a03391004d1638fb72de43ae9b"
+content-hash = "81d6db53e4d3e42eeb7ace75963a50372cc697d5ed4f81d7bf688575ee98ed5a"
