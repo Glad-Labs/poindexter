@@ -60,6 +60,13 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
     """Pick the local model to call. Removes ``ollama/`` prefix and
     falls back through ``pipeline_writer_model`` → ``cost_tier.standard.model``.
 
+    **Canonical precedence reference.** This function defines the authoritative
+    lookup order for writer-model resolution. All other resolvers in the
+    codebase (``_resolve_writer_models`` and ``_resolve_rag_writer_model`` in
+    ``modules/content/ai_content_generator.py``) must follow this same order:
+    ``pipeline_writer_model`` first, ``cost_tier.standard.model`` as fallback.
+    See glad-labs-stack#1281 for the bug that had the ACG resolvers inverted.
+
     Accepts the SiteConfig instance via the DI seam (glad-labs-stack#330).
 
     2026-05-12 cleanup (poindexter#485): the hardcoded

@@ -1498,3 +1498,99 @@ class TestTryOllamaDispatcherRouting:
         assert "cost_log" in metrics
         assert metrics["cost_log"]["cost_usd"] == round(0.0042, 6)
         assert metrics["cost_log"]["model"] == "m1"
+
+
+# ---------------------------------------------------------------------------
+# Writer-model precedence — glad-labs-stack#1281
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestWriterModelPrecedence:
+    """Pins the canonical writer-model lookup order for both ACG resolvers.
+
+    Canonical order (matches llm_text.resolve_local_model):
+      pipeline_writer_model  →  cost_tier.standard.model
+
+    Regression guard for glad-labs-stack#1281 where _resolve_writer_models
+    and _resolve_rag_writer_model had these inverted.
+    """
+
+    # --- _resolve_writer_models ---
+
+    @pytest.mark.asyncio
+    async def test_resolve_writer_models_pipeline_writer_beats_cost_tier(self):
+        """pipeline_writer_model takes precedence over cost_tier.standard.model."""
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d="": {
+            "pipeline_writer_model": "my-pinned-writer",
+            "pipeline_fallback_model": "",
+        }.get(k, _d)
+        gen = _make_generator(site_config=sc)
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            return_value="ollama/cost-tier-model",
+        ):
+            ordered = await gen._resolve_writer_models(None, pool=object())
+        assert ordered[0] == "my-pinned-writer", (
+            "pipeline_writer_model must be first; got %r" % ordered
+        )
+        assert "cost-tier-model" in ordered, "cost_tier.standard.model should still appear as fallback"
+
+    @pytest.mark.asyncio
+    async def test_resolve_writer_models_cost_tier_used_when_pipeline_writer_empty(self):
+        """When pipeline_writer_model is empty, cost_tier.standard.model is used."""
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d="": {
+            "pipeline_writer_model": "",
+            "pipeline_fallback_model": "",
+        }.get(k, _d)
+        gen = _make_generator(site_config=sc)
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            return_value="ollama/cost-tier-model",
+        ):
+            ordered = await gen._resolve_writer_models(None, pool=object())
+        assert ordered == ["cost-tier-model"]
+
+    # --- _resolve_rag_writer_model ---
+
+    @pytest.mark.asyncio
+    async def test_resolve_rag_writer_model_pipeline_writer_beats_cost_tier(self):
+        """pipeline_writer_model takes precedence in the RAG resolver too."""
+        from modules.content.ai_content_generator import _resolve_rag_writer_model
+
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d=None: {
+            "pipeline_writer_model": "my-rag-writer",
+        }.get(k, _d)
+        sc._pool = object()
+
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            return_value="ollama/cost-tier-model",
+        ):
+            result = await _resolve_rag_writer_model(site_config=sc)
+
+        assert result == "my-rag-writer", (
+            "pipeline_writer_model must win; got %r" % result
+        )
+
+    @pytest.mark.asyncio
+    async def test_resolve_rag_writer_model_falls_back_to_cost_tier(self):
+        """When pipeline_writer_model is empty, cost_tier.standard.model is used."""
+        from modules.content.ai_content_generator import _resolve_rag_writer_model
+
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, _d=None: {
+            "pipeline_writer_model": "",
+        }.get(k, _d)
+        sc._pool = object()
+
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            return_value="ollama/cost-tier-fallback",
+        ):
+            result = await _resolve_rag_writer_model(site_config=sc)
+
+        assert result == "cost-tier-fallback"

@@ -190,7 +190,9 @@ class TestAIContentGeneratorResolveRAGModel:
         assert model == "gemma3:27b"
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_pipeline_writer_model(self):
+    async def test_uses_pipeline_writer_model_as_primary(self):
+        """pipeline_writer_model is primary — returned immediately, no notify needed.
+        Even when the tier resolver would fail, the result is unchanged (#1281)."""
         from modules.content.ai_content_generator import _resolve_rag_writer_model
 
         notify = AsyncMock()
@@ -205,7 +207,7 @@ class TestAIContentGeneratorResolveRAGModel:
         ):
             model = await _resolve_rag_writer_model(site_config=sc)
         assert model == "glm-4.7-5090:latest"
-        assert notify.await_count == 1
+        assert notify.await_count == 0
 
     @pytest.mark.asyncio
     async def test_raises_when_both_missing(self):

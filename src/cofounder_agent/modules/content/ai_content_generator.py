@@ -726,7 +726,20 @@ class AIContentGenerator:
         # 1. Task-row override
         _push(preferred_model)
 
-        # 2. Cost-tier resolution via dispatcher (operator-tunable).
+        # 2. pipeline_writer_model — operator-pinned writer (primary).
+        # Canonical precedence: pipeline_writer_model > cost_tier.standard.model.
+        # This matches llm_text.resolve_local_model (the canonical reference).
+        # See glad-labs-stack#1281 for the bug that had these swapped.
+        _sc = self._site_config
+        try:
+            _push(_sc.get("pipeline_writer_model", ""))
+        except Exception as e:
+            logger.debug(
+                "   pipeline_writer_model read failed: %s — falling through "
+                "to cost_tier.standard.model", e,
+            )
+
+        # 3. Cost-tier resolution via dispatcher (operator-tunable fallback).
         if pool is not None:
             try:
                 tier_model = await resolve_tier_model(pool, "standard")
@@ -734,19 +747,9 @@ class AIContentGenerator:
             except (RuntimeError, ValueError) as exc:
                 logger.warning(
                     "   cost_tier.standard resolution failed (%s); "
-                    "falling back to legacy pipeline_writer_model row",
+                    "falling back to pipeline_fallback_model",
                     exc,
                 )
-
-        # 3. Legacy per-call-site writer model
-        _sc = self._site_config
-        try:
-            _push(_sc.get("pipeline_writer_model", ""))
-        except Exception as e:
-            logger.debug(
-                "   pipeline_writer_model read failed: %s — relying on tier "
-                "+ pipeline_fallback_model", e,
-            )
 
         # 4. Legacy fallback model
         try:
@@ -1294,15 +1297,16 @@ async def _resolve_rag_writer_model(
 ) -> str:
     """Resolve writer model for the RAG ``generate_with_*`` helpers.
 
-    Lane B sweep migration. Order:
+    Canonical precedence (matches ``llm_text.resolve_local_model``):
 
-    1. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier
-       mapping (``app_settings.cost_tier.standard.model``).
-    2. ``app_settings[pipeline_writer_model]`` — legacy per-call-site
-       backstop. Pre-existing setting; the literal "glm-4.7-5090:latest"
-       default that lived in the inline lookup is removed per
-       ``feedback_no_silent_defaults.md``.
+    1. ``app_settings[pipeline_writer_model]`` — operator-pinned writer
+       (primary). This is the setting operators are directed to tune.
+    2. ``resolve_tier_model(pool, 'standard')`` — cost-tier fallback
+       (``app_settings.cost_tier.standard.model``).
     3. ``notify_operator()`` + raise — fail loud.
+
+    See glad-labs-stack#1281: the order below was previously inverted,
+    causing the cost-tier model to silently override ``pipeline_writer_model``.
 
     Returns the bare model name (``ollama/`` prefix stripped).
 
@@ -1318,32 +1322,28 @@ async def _resolve_rag_writer_model(
 
     _sc = site_config
     pool = getattr(_sc, "_pool", None)
+
+    # 1. pipeline_writer_model — primary (operator-pinned).
+    primary = (_sc.get("pipeline_writer_model") or "").strip()
+    if primary:
+        return primary.removeprefix("ollama/")
+
+    # 2. cost_tier.standard.model — fallback via dispatcher.
+    tier_exc: Exception | None = None
     if pool is not None:
         try:
             return (await resolve_tier_model(pool, "standard")).removeprefix(
                 "ollama/",
             )
         except (RuntimeError, ValueError, AttributeError) as exc:
-            tier_exc: Exception | None = exc
-        else:
-            tier_exc = None
+            tier_exc = exc
     else:
         tier_exc = RuntimeError("no asyncpg pool available")
 
-    fallback = _sc.get("pipeline_writer_model") or ""
-    if fallback:
-        await notify_operator(
-            f"ai_content_generator (RAG): cost_tier='standard' resolution "
-            f"failed ({tier_exc}); falling back to "
-            f"pipeline_writer_model={fallback!r}",
-            critical=False,
-            site_config=_sc,
-        )
-        return fallback.removeprefix("ollama/")
-
     await notify_operator(
-        f"ai_content_generator (RAG): cost_tier='standard' has no model AND "
-        f"pipeline_writer_model is empty — RAG draft generation aborted: {tier_exc}",
+        f"ai_content_generator (RAG): pipeline_writer_model is empty AND "
+        f"cost_tier='standard' resolution failed ({tier_exc}) — "
+        f"RAG draft generation aborted",
         critical=True,
         site_config=_sc,
     )

@@ -93,6 +93,32 @@ class TestResolveLocalModel:
         sc = _StubSiteConfig(model="ollama/glm-4.7:latest")
         assert resolve_local_model(site_config=sc) == "glm-4.7:latest"
 
+    def test_pipeline_writer_model_beats_cost_tier_standard(self):
+        """Canonical precedence: pipeline_writer_model > cost_tier.standard.model.
+
+        Regression guard for glad-labs-stack#1281 — this function is the
+        canonical reference that all other writer-model resolvers must follow.
+        """
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda k, d=None: {
+            "pipeline_writer_model": "my-pinned-writer",
+            "cost_tier.standard.model": "cost-tier-model",
+        }.get(k, d or ""))
+        result = resolve_local_model(site_config=sc)
+        assert result == "my-pinned-writer", (
+            "pipeline_writer_model must win over cost_tier.standard.model; got %r" % result
+        )
+
+    def test_cost_tier_standard_used_when_pipeline_writer_empty(self):
+        """cost_tier.standard.model is the correct fallback when pipeline_writer_model unset."""
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda k, d=None: {
+            "pipeline_writer_model": "",
+            "cost_tier.standard.model": "cost-tier-model",
+        }.get(k, d or ""))
+        result = resolve_local_model(site_config=sc)
+        assert result == "cost-tier-model"
+
     def test_raises_when_nothing_resolves(self):
         """Per ``feedback_no_silent_defaults``: missing config fails loud."""
         sc = MagicMock()
