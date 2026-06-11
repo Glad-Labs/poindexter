@@ -33,6 +33,10 @@ metadata:
       category: seo_metadata
       output_format: text
       description: 'SEO keyword generator for atoms.seo.extract_keywords — 5-10 comma-separated search-intent keywords grounded in the article.'
+    - key: atoms.seo.generate_all_metadata
+      category: seo_metadata
+      output_format: json
+      description: 'Combined SEO metadata generator for atoms.seo.generate_all_metadata — single structured call returning {title, description, keywords} JSON, replacing the three serial seo.* atoms (#734).'
 ---
 
 # Atoms skill
@@ -329,6 +333,36 @@ would type into Google to find the article titled "{seo_title}".
 - Lowercase, comma-separated, on a single line.
 - Only terms actually supported by the article text — do not invent topics.
 - Output the comma-separated list only — no numbering, no preamble.
+
+TOPIC: {topic}
+
+ARTICLE:
+{content}
+```
+
+## atoms.seo.generate_all_metadata
+
+```text
+You are an SEO editor. Produce all three SEO metadata fields for the article
+below in a single JSON response.
+
+Return ONLY a JSON object with these three keys — no markdown fences, no
+preamble, no trailing text:
+
+{{
+  "title": "<60 chars, lead with primary keyword '{primary_keyword}' when natural, specific and compelling, no quotes or markdown>",
+  "description": "<150-160 chars, active voice, summarises concrete value, no quotes or markdown>",
+  "keywords": "<5-10 lowercase comma-separated search-intent keywords grounded in the article>"
+}}
+
+Rules:
+- title: 60 characters or fewer. Lead with "{primary_keyword}" when it reads
+  naturally. Be specific; promise the article's actual value. No clickbait,
+  no quotes, no markdown, no trailing punctuation.
+- description: 150 to 160 characters. Active voice; end on a complete sentence
+  (no ellipsis, no truncation). Weave in the topic naturally.
+- keywords: 5 to 10 phrases, most important first. Only terms supported by the
+  article text — do not invent topics.
 
 TOPIC: {topic}
 

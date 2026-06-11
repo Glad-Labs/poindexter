@@ -12,11 +12,25 @@ This document covers the longer form: what the setup wizard does
 under the hood, how to verify each layer, and how to troubleshoot
 when something doesn't come up.
 
+## Minimum hardware
+
+| Tier        | GPU VRAM | What it unlocks                                                                                                            |
+| ----------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Minimum     | 8 GB     | Runs smaller Ollama models only; writer model will be constrained to 7B range                                              |
+| Recommended | 16 GB    | Supports Q4 quantized 7B–14B models at full quality                                                                        |
+| Optimal     | 24 GB+   | Q4_K_M 32B writer models; comfortable headroom for SDXL + Ollama simultaneously                                            |
+| CPU-only    | no GPU   | Fallback available via `pipeline_writer_model=ollama/gemma2:2b-instruct-q4_K_M` but output quality will be noticeably poor |
+
+RAM: 32 GB minimum, 64 GB recommended (the full stack including Langfuse, ClickHouse, and Grafana
+uses 8–12 GB resident at idle).
+
+Disk: 100 GB free for model weights, Docker images, and generated media.
+
 ## 1. Prerequisites
 
 | Tool           | Version  | Purpose                                  | Required?   |
 | -------------- | -------- | ---------------------------------------- | ----------- |
-| Docker Desktop | 4.26+    | Runs the entire backend stack            | Yes         |
+| Docker         | 20.10+   | Runs the entire backend stack            | Yes         |
 | Ollama         | 0.1.40+  | Local LLM inference                      | Yes         |
 | Node.js        | 22+      | Frontend (Next.js) and lint-staged hooks | Yes         |
 | Git + Git Bash | any      | start-stack.sh uses `bash`               | Yes         |
@@ -26,6 +40,15 @@ when something doesn't come up.
 **Windows note.** Run all commands from Git Bash or WSL. Native
 `cmd.exe` and PowerShell do not work with the start scripts.
 Docker Desktop must be configured to use WSL2 backend.
+
+**Linux note.** Stock Docker Engine on Linux does not automatically
+resolve `host.docker.internal` — this is a Docker Desktop feature.
+The compose files add `extra_hosts: ["host.docker.internal:host-gateway"]`
+to every service that calls a host-side endpoint (Ollama, SDXL, voice
+bridge). `host-gateway` is a Docker built-in alias that resolves to the
+host's IP and is supported on Docker Engine 20.10+. No manual
+configuration is needed; the `extra_hosts` entries are already present in
+both `docker-compose.yml` and `docker-compose.local.yml`.
 
 **GPU note.** You can run Poindexter on CPU, but content generation
 that takes 30 seconds on an RTX 4090 can take 10+ minutes on CPU.
