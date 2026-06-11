@@ -368,6 +368,7 @@ async def _handle_blog_post_creation(
         "task_name": f"Blog Post: {resolved_topic}",
         "task_type": "blog_post",
         "topic": resolved_topic,
+        "niche_slug": request.niche_slug,
         "category": request.category or "general",
         "target_audience": request.target_audience or "General",
         "primary_keyword": request.primary_keyword,

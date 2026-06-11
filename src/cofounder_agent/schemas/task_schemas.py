@@ -109,6 +109,12 @@ class UnifiedTaskRequest(BaseModel):
         description="Human-written task description (distinct from AI-generated excerpt). Useful for campaign briefs, e.g. 'Write a blog post about X for our Q1 campaign'.",
         max_length=1000,
     )
+    niche_slug: str | None = Field(
+        None,
+        description="Niche this task belongs to (e.g. 'glad-labs', 'dev_diary'). "
+        "Required for publish — tasks with no niche are blocked by the #729 allowlist gate.",
+        max_length=50,
+    )
     category: str | None = Field("general", description="Content category", max_length=50)
     target_audience: str | None = Field(
         "General",
