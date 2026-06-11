@@ -154,6 +154,14 @@ def test_eligible_sql_includes_published_status():
     assert "IN ('approved', 'published')" in dmp._ELIGIBLE_SQL
 
 
+def test_eligible_sql_gates_on_podcast_script_not_shot_list():
+    """Guard: gate must require podcast_script (minimum Stage-1 artifact), not
+    video_shot_list.  Shot lists are optional — render nodes no-op when absent.
+    Gating on the shot list would permanently block pre-shot-list tasks."""
+    assert "podcast_script" in dmp._ELIGIBLE_SQL
+    assert "video_shot_list" not in dmp._ELIGIBLE_SQL
+
+
 def test_job_protocol_shape():
     """The job satisfies the Job protocol contract used by PluginScheduler."""
     job = DispatchMediaPipelineJob()
