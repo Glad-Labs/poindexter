@@ -287,7 +287,7 @@ services:
       # bind, and the brain runs as root, so a read-only .git mount here is safe.
       # Read-only on purpose: the probe never fetches/writes; it reads local HEAD
       # and gets origin/main from the GitHub API.
-      - ./.git:/host-git:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/.git:/host-git:ro
       # Brain writes Prometheus scrape secrets here (uptime_kuma_api_key
       # etc.) — see brain/prometheus_secret_writer.py. Same host dir is
       # mounted into the prometheus container at /etc/prometheus/secrets/

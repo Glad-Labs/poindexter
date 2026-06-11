@@ -5,17 +5,20 @@
 
 .DESCRIPTION
     The worker, brain, pipeline-bot and prefect-worker containers BIND-MOUNT
-    this repository's working tree (src/cofounder_agent -> /app, brain ->
-    /opt/poindexter/brain). That means the running pipeline executes whatever
-    branch this checkout happens to be sitting on - so if the checkout is left
-    on a feature branch, merged work on main never reaches production. This was
-    the root cause of the long-running "merged != deployed" drift.
+    the dedicated deploy clone (POINDEXTER_DEPLOY_ROOT, defaulting to
+    ~/.poindexter/deploy/glad-labs-stack). That clone is what the running
+    pipeline actually executes — this dev checkout is NOT what the containers
+    run. This was the root cause of the long-running "merged != deployed" drift:
+    deploy-worker used to fast-forward the dev checkout only, leaving the deploy
+    clone (and therefore the running containers) lagging up to 10 minutes.
 
     This script makes the deploy a single guarded command:
       1. Refuses to run with a dirty working tree (so it never clobbers WIP).
       2. Tag-backs-up the current branch tip if it carries unpushed commits.
       3. Fetches, checks out main, fast-forwards to origin/main.
-      4. Verifies HEAD == origin/main (aborts otherwise).
+      3b. Syncs the deploy clone to origin/main via deploy-checkout-sync.ps1
+          (the deploy clone is what the containers bind-mount and run).
+      4. Verifies both the dev checkout AND the deploy clone HEAD == origin/main.
       5. Restarts the pipeline containers so they reload the bind-mounted code.
       6. Waits for the worker healthcheck to go healthy and confirms
          poindexter_worker_up=1 via Prometheus.
@@ -35,7 +38,7 @@
 
 .EXAMPLE
     pwsh ./scripts/deploy-worker.ps1
-    # Standard deploy: host -> main, restart pipeline containers, verify health.
+    # Standard deploy: host -> main, sync deploy clone, restart pipeline containers, verify health.
 
 .NOTES
     Companion to a deploy-drift canary that alerts when this checkout falls
@@ -94,11 +97,32 @@ Info "checking out main + fast-forwarding to origin/main"
 git checkout main | Out-Null
 git pull --ff-only origin main | Out-Null
 
-# 4. Verify HEAD == origin/main.
+# 4. Verify dev checkout HEAD == origin/main.
 $head = (git rev-parse HEAD)
 $origin = (git rev-parse origin/main)
 if ($head -ne $origin) { Fail "HEAD ($head) != origin/main ($origin) after pull - not fast-forwardable. Resolve manually." }
 Ok "checkout on main @ $($head.Substring(0,9)) == origin/main"
+
+# 3b. Sync the deploy clone to origin/main (containers bind-mount this tree).
+Info "syncing deploy clone to origin/main..."
+$syncScript = Join-Path $PSScriptRoot 'deploy-checkout-sync.ps1'
+if (Test-Path $syncScript) {
+    & pwsh $syncScript
+    Ok "deploy clone synced"
+} else {
+    Fail "deploy-checkout-sync.ps1 not found at $syncScript — run scripts/setup-deploy-checkout.sh first"
+}
+
+# 4b. Verify the deploy clone HEAD also matches origin/main.
+$deployRoot = if ($env:POINDEXTER_DEPLOY_ROOT) { $env:POINDEXTER_DEPLOY_ROOT } else { Join-Path $env:USERPROFILE '.poindexter\deploy\glad-labs-stack' }
+$deployHead = $null
+if (Test-Path (Join-Path $deployRoot '.git')) {
+    $deployHead = (git -C $deployRoot rev-parse HEAD 2>$null)
+    if ($deployHead -ne $origin) {
+        Fail "deploy clone HEAD ($deployHead) != origin/main ($origin) after sync — check deploy-checkout-sync.ps1"
+    }
+    Ok "deploy clone on main @ $($deployHead.Substring(0,9)) == origin/main"
+}
 
 if ($SkipRestart) { Info "-SkipRestart set - checkout updated, leaving containers as-is."; exit 0 }
 
@@ -126,4 +150,5 @@ try {
     Info "Prometheus liveness check skipped ($($_.Exception.Message))"
 }
 
-Ok "deploy complete - prod is on origin/main @ $($head.Substring(0,9))"
+$reportSha = if ($deployHead) { $deployHead } else { $head }
+Ok "deploy complete - prod is on origin/main @ $($reportSha.Substring(0,9))"

@@ -229,11 +229,12 @@ commit.
 ## Deploying the local worker (bringing prod up to `main`)
 
 The worker / brain / pipeline-bot / prefect-worker containers **bind-mount
-this checkout** (`src/cofounder_agent` → `/app`, `brain` →
-`/opt/poindexter/brain`), so the running pipeline executes whatever branch the
-checkout is sitting on. A merge to `main` does **not** reach the worker until
-the checkout is updated and the containers restart. Leaving the checkout on a
-feature branch is how production silently drifts behind `main`.
+the deploy clone** (`POINDEXTER_DEPLOY_ROOT`, defaulting to
+`~/.poindexter/deploy/glad-labs-stack`) � **not** this dev checkout. The deploy
+clone is what the running pipeline actually executes. A merge to `main` does
+**not** reach the worker until the deploy clone is synced and the containers
+restart. Leaving the deploy clone behind is how production silently drifts
+behind `main`.
 
 The canonical one-command deploy:
 
@@ -242,22 +243,29 @@ pwsh ./scripts/deploy-worker.ps1
 ```
 
 It refuses on a dirty tree, tag-backs-up any unpushed commits on the current
-branch, checks out `main`, fast-forwards to `origin/main`, restarts the
-pipeline containers, then waits for the worker healthcheck and
-`poindexter_worker_up=1`. There is **no image rebuild** — app code is
-bind-mounted, so a restart is the deploy (dependency / base-image changes
-still need `docker compose build`).
+branch, checks out `main` in the dev checkout, fast-forwards to `origin/main`,
+**syncs the deploy clone** (`deploy-checkout-sync.ps1`) so the containers get
+the new code, verifies both checkouts are at `origin/main`, then restarts the
+pipeline containers and waits for the worker healthcheck and
+`poindexter_worker_up=1`. There is **no image rebuild** � app code is
+bind-mounted from the deploy clone, so a sync + restart is the deploy
+(dependency / base-image changes still need `docker compose build`).
+
+> **Split-brain fix (glad-labs-stack#1295).** Before this fix, `deploy-worker.ps1`
+> only fast-forwarded the dev checkout and left the deploy clone lagging up to
+> 10 minutes behind `origin/main`. The script now explicitly syncs the deploy
+> clone before restarting containers, and verifies the deploy clone HEAD matches
+> `origin/main` before proceeding.
 
 **Deploy-drift canary (glad-labs-stack#942).** Because the worker / brain
-bind-mount the host checkout, "merged on main" does not mean "running in prod"
-until you run the deploy above. The brain's `branch_drift_probe` closes that
-loop: every ~15 min it reads the running checkout's HEAD from a read-only
-`.git` mount (`./.git:/host-git:ro` on the brain-daemon container), compares it
-to `origin/main` via the GitHub API (`gh_token`), and pages the operator
-(Telegram / Discord) when prod is behind — the signal the on-disk
-`unapplied_migrations` gauge is structurally blind to (it globs the
-bind-mounted checkout, so a migration that only exists on `origin/main` isn't
-even on disk to be counted). It is **alert-only**; the remedy it points at is
+bind-mount the deploy clone, �merged on main� does not mean �running in prod�
+until you run the deploy above. The brain�s `branch_drift_probe` closes that
+loop: every ~15 min it reads the deploy clone�s HEAD from a read-only `.git`
+mount (`${POINDEXTER_DEPLOY_ROOT:-.}/.git:/host-git:ro` on the brain-daemon
+container � **pointing at the deploy clone, not the dev checkout**, per
+glad-labs-stack#1295), compares it to `origin/main` via the GitHub API
+(`gh_token`), and pages the operator (Telegram / Discord) when prod is behind.
+It is **alert-only**; the remedy it points at is
 `pwsh ./scripts/deploy-worker.ps1`. Tunables (in `app_settings`):
 `branch_drift_probe_enabled`, `branch_drift_poll_interval_minutes`,
 `branch_drift_repo`, `branch_drift_dedup_hours`, `branch_drift_git_dir`.
