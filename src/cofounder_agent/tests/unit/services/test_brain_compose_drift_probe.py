@@ -970,3 +970,43 @@ class TestVolumeEnvVarExpansion:
         monkeypatch.delenv("METRICS_PORT", raising=False)
         ports = cdp._yaml_port_host_publishings(["${METRICS_PORT:-9090}:9090"])
         assert ports == {"9090"}
+
+
+@pytest.mark.unit
+class TestRecreateServicesFlags:
+    """Verify _recreate_services passes --force-recreate, not --no-recreate.
+
+    This guards against regressing to --no-recreate, which silently skips
+    running containers with spec drift (e.g. a new bind mount).  The bug
+    caused persistent drift to survive auto-recover cycles indefinitely.
+    """
+
+    def test_force_recreate_flag_present(self, monkeypatch):
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr(cdp.subprocess, "run", fake_run)
+
+        ok, _msg = cdp._recreate_services("/fake/docker-compose.local.yml", ["worker"])
+
+        assert ok is True
+        assert calls, "subprocess.run was never called"
+        # _recreate_services first calls `docker inspect` to copy env vars,
+        # then calls `docker compose up`. Find the compose up call.
+        compose_calls = [c for c in calls if "compose" in c]
+        assert compose_calls, f"no 'docker compose' call found; all calls: {calls}"
+        cmd = compose_calls[0]
+        assert "--force-recreate" in cmd, (
+            "--force-recreate missing — running containers with spec drift "
+            "won't be recreated without it"
+        )
+        assert "--no-recreate" not in cmd, (
+            "--no-recreate prevents recreating running containers with spec drift"
+        )

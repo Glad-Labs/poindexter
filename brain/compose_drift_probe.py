@@ -748,11 +748,13 @@ def _recreate_services(
 
         result = subprocess.run(
             # --no-build: never rebuild images (brain has no source tree).
-            # --no-recreate: don't recreate RUNNING services that have an
-            #   image-hash change (prevents compose from killing brain-daemon
-            #   when auto-recovering a stopped service from inside the brain).
+            # --force-recreate: running containers with spec drift (new mount,
+            #   changed env, etc.) won't restart without this — `docker compose
+            #   up` treats a running container as already satisfied without it.
+            #   Safe because we pass only the specific drifted service names, so
+            #   compose never touches the brain-daemon or other healthy services.
             ["docker", "compose", "-f", compose_path, "up", "-d",
-             "--no-build", "--no-recreate", *svc_list],
+             "--no-build", "--force-recreate", *svc_list],
             env=env,
             **kwargs,
         )
