@@ -132,7 +132,7 @@ export default async function PreviewPage({
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16 max-w-4xl">
         {/* Featured image */}
         {(post.featured_image_url || post.cover_image_url) && (
-          <div className="relative w-full aspect-video mb-8 overflow-hidden bg-slate-800">
+          <div className="relative w-full aspect-video mb-8 overflow-hidden bg-[var(--gl-surface)]">
             <Image
               src={post.featured_image_url || post.cover_image_url || ''}
               alt={post.title}

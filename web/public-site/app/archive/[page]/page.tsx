@@ -110,7 +110,7 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
                   return (
                   <Card key={post.id} className="group flex flex-col h-full overflow-hidden p-0">
                     {imageUrl && (
-                      <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
+                      <div className="relative w-full aspect-video overflow-hidden bg-[var(--gl-surface)]">
                         <Image
                           src={imageUrl}
                           alt=""

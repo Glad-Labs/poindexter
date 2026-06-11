@@ -47,7 +47,7 @@ export function GiscusWrapper({ postSlug, postTitle }: GiscusWrapperProps) {
     return (
       <div className="py-12">
         <h2 className="text-2xl font-bold text-white mb-6">Discussion</h2>
-        <p className="text-slate-400 text-sm">
+        <p className="text-[var(--gl-text-muted)] text-sm">
           Comments are not yet configured. Enable GitHub Discussions on the repo
           and set the GISCUS env vars in Vercel.
         </p>

@@ -1,11 +1,11 @@
 export default function Loading() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 animate-pulse">
+    <div className="min-h-screen bg-gradient-to-b from-[var(--gl-base)] via-[var(--gl-surface)] to-[var(--gl-base)] animate-pulse">
       <div className="pt-20 pb-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
-          <div className="h-6 bg-slate-700 rounded w-16 mb-4"></div>
-          <div className="h-10 bg-slate-700 rounded w-48 mb-4"></div>
-          <div className="h-5 bg-slate-700 rounded w-32"></div>
+          <div className="h-6 bg-[var(--gl-surface-2)] rounded w-16 mb-4"></div>
+          <div className="h-10 bg-[var(--gl-surface-2)] rounded w-48 mb-4"></div>
+          <div className="h-5 bg-[var(--gl-surface-2)] rounded w-32"></div>
         </div>
       </div>
       <div className="px-4 sm:px-6 lg:px-8 pb-20">
@@ -13,12 +13,12 @@ export default function Loading() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden"
+              className="bg-[var(--gl-surface)]/50 border border-[var(--gl-surface-2)] rounded-lg overflow-hidden"
             >
-              <div className="w-full h-40 bg-slate-700"></div>
+              <div className="w-full h-40 bg-[var(--gl-surface-2)]"></div>
               <div className="p-4">
-                <div className="h-5 bg-slate-700 rounded mb-3"></div>
-                <div className="h-4 bg-slate-700 rounded w-5/6"></div>
+                <div className="h-5 bg-[var(--gl-surface-2)] rounded mb-3"></div>
+                <div className="h-4 bg-[var(--gl-surface-2)] rounded w-5/6"></div>
               </div>
             </div>
           ))}

@@ -89,7 +89,7 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-slate-900/50;
+    background: color-mix(in srgb, var(--gl-base) 50%, transparent);
   }
 
   ::-webkit-scrollbar-thumb {

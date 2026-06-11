@@ -86,6 +86,25 @@ export default [
       'no-useless-escape': 'off',
       'no-unreachable': 'warn',
       'no-undef': 'warn',
+      // Brand-token guard: forbid hardcoded Tailwind palette classes that
+      // bypass the --gl-* token system. Use bg-[var(--gl-surface)],
+      // text-[var(--gl-text-muted)], border-[var(--gl-cyan-border)], etc.
+      // See packages/brand/src/tokens/colors.css for the full token list.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'JSXAttribute[name.name="className"] Literal[value=/\\bcyan-[0-9]/]',
+          message:
+            'Use a --gl-* CSS variable instead of a raw Tailwind cyan-N class (e.g. text-[var(--gl-cyan)]).',
+        },
+        {
+          selector:
+            'JSXAttribute[name.name="className"] Literal[value=/\\bslate-[0-9]/]',
+          message:
+            'Use a --gl-* CSS variable instead of a raw Tailwind slate-N class (e.g. bg-[var(--gl-surface)]).',
+        },
+      ],
     },
     settings: {
       react: {

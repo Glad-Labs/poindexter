@@ -280,7 +280,7 @@ export default async function PostPage({
                 className="object-cover"
                 sizes="100vw"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#08090a] via-[#08090a]/70 to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-[var(--gl-base)] via-[var(--gl-base)]/70 to-transparent"></div>
             </div>
           )}
 
@@ -457,7 +457,7 @@ export default async function PostPage({
                     className="group flex flex-col h-full overflow-hidden p-0"
                   >
                     {rpImage && (
-                      <div className="relative h-36 overflow-hidden bg-slate-800">
+                      <div className="relative h-36 overflow-hidden bg-[var(--gl-surface)]">
                         <Image
                           src={rpImage}
                           alt=""
