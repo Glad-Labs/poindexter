@@ -14,6 +14,7 @@ from typing import Any
 
 # Third-party imports
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
 # Import configuration
@@ -1247,10 +1248,22 @@ async def api_health():
                 "error_type": type(e).__name__,
             }
 
-        return health_data
+        # Return 503 when the service is unhealthy or degraded so that load
+        # balancers and uptime monitors can act on the status code rather than
+        # having to parse the JSON body.  "starting" keeps HTTP 200 — it is a
+        # transient state during boot that should not trigger an alert.
+        status_code = (
+            503
+            if health_data.get("status") in ("unhealthy", "degraded")
+            else 200
+        )
+        return JSONResponse(content=health_data, status_code=status_code)
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
-        return {"status": "unhealthy", "service": "poindexter", "error": "health_check_failed"}
+        return JSONResponse(
+            content={"status": "unhealthy", "service": "poindexter", "error": "health_check_failed"},
+            status_code=503,
+        )
 
 
 @app.get("/health")
@@ -1323,7 +1336,7 @@ async def prometheus_metrics_canonical():
 
 
 @app.get("/api/metrics")
-async def get_metrics_endpoint():
+async def get_metrics_endpoint(token: str = Depends(verify_api_token)):
     """
     Aggregated task and system metrics endpoint.
 
@@ -1344,32 +1357,15 @@ async def get_metrics_endpoint():
     """
     try:
         database_service = getattr(app.state, "database", None)
-        if database_service:
-            metrics = await database_service.get_metrics()
-            return metrics
-
-        # Return mock metrics if database unavailable
-        return {
-            "total_tasks": 0,
-            "completed_tasks": 0,
-            "failed_tasks": 0,
-            "pending_tasks": 0,
-            "success_rate": 0.0,
-            "avg_execution_time": 0.0,
-            "total_cost": 0.0,
-        }
+        if not database_service:
+            raise HTTPException(status_code=503, detail="metrics_unavailable")
+        metrics = await database_service.get_metrics()
+        return metrics
+    except HTTPException:
+        raise
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Metrics retrieval failed: %s", str(e), exc_info=True)
-        return {
-            "total_tasks": 0,
-            "completed_tasks": 0,
-            "failed_tasks": 0,
-            "pending_tasks": 0,
-            "success_rate": 0.0,
-            "avg_execution_time": 0.0,
-            "total_cost": 0.0,
-            "error": "metrics_retrieval_failed",
-        }
+        raise HTTPException(status_code=503, detail="metrics_unavailable") from e
 
 
 # NOTE: The legacy /api/prometheus hand-built exposition endpoint was
