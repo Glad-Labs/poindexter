@@ -42,9 +42,12 @@ ATOM_META = AtomMeta(
         "required_to_pass (True in prod → hard veto on critical fabrication)."
     ),
     inputs=(FieldSpec(name="content", type="str", description="draft to validate"),),
-    outputs=(FieldSpec(name="qa_rail_reviews", type="list[dict]", description="programmatic validator review"),),
+    outputs=(
+        FieldSpec(name="qa_rail_reviews", type="list[dict]", description="programmatic validator review"),
+        FieldSpec(name="qa_known_wrong_fact_only", type="bool", description="set True when every critical issue is a known_wrong_fact; signals qa.aggregate to attempt web-factcheck rescue (#661)"),
+    ),
     requires=("content",),
-    produces=("qa_rail_reviews",),
+    produces=("qa_rail_reviews", "qa_known_wrong_fact_only"),
     capability_tier=None,  # programmatic — no LLM tier
     cost_class="free",
     idempotent=True,
