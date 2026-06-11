@@ -381,10 +381,10 @@ class TestAutoPublish:
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.auto_publish.get_auto_publish_threshold",
+            "modules.content.api.get_auto_publish_threshold",
             AsyncMock(return_value=80.0),
         ), patch(
-            "modules.content.auto_publish.auto_publish_task",
+            "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
@@ -430,7 +430,7 @@ class TestAutoPublish:
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.auto_publish.auto_publish_task",
+            "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
@@ -468,10 +468,10 @@ class TestAutoPublish:
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.auto_publish.get_auto_publish_threshold",
+            "modules.content.api.get_auto_publish_threshold",
             AsyncMock(return_value=80.0),
         ), patch(
-            "modules.content.auto_publish.auto_publish_task",
+            "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
@@ -700,10 +700,10 @@ class TestAutoPublishGateBypass:
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.auto_publish.get_auto_publish_threshold",
+            "modules.content.api.get_auto_publish_threshold",
             threshold_mock,
         ), patch(
-            "modules.content.auto_publish.auto_publish_task",
+            "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
@@ -760,11 +760,11 @@ class TestAutoPublishGateBypass:
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.auto_publish.get_auto_publish_threshold",
+            "modules.content.api.get_auto_publish_threshold",
             # Threshold above the score → the global path also declines.
             AsyncMock(return_value=95.0),
         ), patch(
-            "modules.content.auto_publish.auto_publish_task",
+            "modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
@@ -831,9 +831,9 @@ class TestAutoPublishGateBypass:
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.auto_publish_gate.evaluate", gate_eval_mock,
+            "modules.content.api.evaluate_auto_publish_gate", gate_eval_mock,
         ), patch(
-            "modules.content.auto_publish.auto_publish_task", auto_pub_mock,
+            "modules.content.api.auto_publish_task", auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
             notify_mock,

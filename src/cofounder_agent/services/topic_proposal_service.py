@@ -402,7 +402,7 @@ async def propose_topic(
     # violate the kernel-purity seam (poindexter#666). topic_decision_gate
     # lives in modules/content/ and must not be imported at module load time
     # from kernel services.
-    from modules.content.stages.topic_decision_gate import build_topic_decision_artifact  # noqa: PLC0415
+    from modules.content.api import build_topic_decision_artifact  # noqa: PLC0415
     artifact = build_topic_decision_artifact(
         {
             "topic": topic_clean,

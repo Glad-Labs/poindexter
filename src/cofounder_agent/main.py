@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 # Import configuration
 from config import get_config
 from middleware.api_token_auth import verify_api_token
-from modules.content.quality_service import UnifiedQualityService
+from modules.content.api import UnifiedQualityService
 from services.container import service_container
 
 # Import services

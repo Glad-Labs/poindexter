@@ -103,7 +103,7 @@ def dev_diary(
     operator confirmed images are wanted on the daily build-in-public
     posts (Telegram, 2026-05-07).
     """
-    from modules.content.atoms import narrate_bundle as _narrate_atom
+    from modules.content.api import narrate_bundle as _narrate_atom
 
     stages_by_name = _registered_stages()
     g: StateGraph = StateGraph(PipelineState)

@@ -979,7 +979,7 @@ async def _record_edit_distance_metrics(
     a failure here must never fail a successful publish.
     """
     try:
-        from modules.content.auto_publish_gate import record_post_approve_metrics
+        from modules.content.api import record_post_approve_metrics
         # Pre-approve snapshot lives in task_metadata under "pre_approve_content"
         # (written by finalize_task). Falls back to "content" — same key
         # publish_service reads as the post-approve content. Falling back to

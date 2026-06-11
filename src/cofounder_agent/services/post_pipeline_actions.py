@@ -393,7 +393,7 @@ async def _maybe_auto_publish(
                 )
                 niche_slug = row["niche_slug"] if row else None
                 category = row["category"] if row else None
-                from modules.content.auto_publish_gate import evaluate as _gate_evaluate
+                from modules.content.api import evaluate_auto_publish_gate as _gate_evaluate
                 decision = await _gate_evaluate(
                     pool,
                     task_id=task_id,
@@ -443,7 +443,7 @@ async def _maybe_auto_publish(
             task_id, quality_score, gate.get("gate_state"), gate.get("reason"),
         )
 
-    from modules.content.auto_publish import auto_publish_task, get_auto_publish_threshold
+    from modules.content.api import auto_publish_task, get_auto_publish_threshold
 
     if not gate_bypass:
         try:
@@ -519,7 +519,7 @@ async def _maybe_run_preview_qa(
         # The container lookup matches the inline block's pattern;
         # MultiModelQA needs a settings_service kwarg so we resolve
         # one if the caller didn't pass it in.
-        from modules.content.multi_model_qa import MultiModelQA
+        from modules.content.api import MultiModelQA
         from services.container import get_service
 
         _settings_svc = settings_service or get_service("settings")
