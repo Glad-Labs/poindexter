@@ -89,6 +89,20 @@ class ModuleManifest:
     Empty by default: a module that declares nothing gets a handle that
     exposes nothing (untrusted-by-default)."""
 
+    atoms_package: str | None = None
+    """Dotted Python package path that the atom registry should walk to
+    discover this module's ``ATOM_META`` declarations.  ``None`` means the
+    module contributes no atoms.
+
+    Example: ``"modules.content.atoms"`` for the content module.
+
+    The atom registry iterates every module manifest at discovery time and
+    calls ``_walk_package(manifest.atoms_package)`` for each non-``None``
+    value.  This replaces the previous hardcoded
+    ``_walk_package("modules.content.atoms")`` call so that any future
+    business module can register its own atom package without editing
+    kernel code (Glad-Labs/poindexter#754)."""
+
 
 @runtime_checkable
 class Module(Protocol):

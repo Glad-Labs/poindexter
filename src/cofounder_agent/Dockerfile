@@ -43,10 +43,16 @@ RUN pip install --no-cache-dir poetry==1.8.5
 # Copy project files
 COPY pyproject.toml poetry.lock ./
 
-# Install dependencies only (--no-root skips installing the project package itself,
-# avoiding README.md not found errors in the container)
+# Install the project package so entry_points (poindexter.modules, poindexter.stages,
+# etc.) are registered in the distribution metadata and importlib.metadata.entry_points()
+# can discover them at runtime. --no-root was previously used to avoid a missing
+# README.md error, but that stale comment masked the real consequence: the absence of
+# package metadata means entry_points discovery silently falls through to the imperative
+# _SAMPLES fallback in plugins/registry.py. Without --no-root, Poetry includes the
+# package itself (editable in-place, since the code is already at /app) so all
+# poindexter.* entry-point groups resolve correctly.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --only main --no-root
+    poetry install --no-interaction --no-ansi --only main
 
 # Install Playwright's bundled chromium. This downloads ~150MB into
 # /root/.cache/ms-playwright/ during build. We skip the OS deps install

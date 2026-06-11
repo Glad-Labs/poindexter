@@ -87,17 +87,53 @@ def _walk_package(pkg_name: str) -> None:
 def discover() -> None:
     """Run discovery exactly once. Idempotent across multiple calls.
 
-    Walks ``modules.content.atoms`` for ATOM_META declarations, then
-    surfaces every registered Stage plugin as a virtual atom so the
+    Iterates every registered Module manifest and walks any package
+    declared in ``manifest.atoms_package`` for ATOM_META declarations,
+    then surfaces every registered Stage plugin as a virtual atom so the
     architect-LLM sees the full composable surface (real atoms +
-    existing stages) in one catalog. Future packages with atoms
-    (e.g. business-ops atoms in Phase 5) get added here as additional
-    package paths.
+    existing stages) in one catalog.
+
+    The ``atoms_package`` field on ``ModuleManifest`` replaces the
+    previous hardcoded ``_walk_package("modules.content.atoms")`` call so
+    any future business module can register its own atoms without editing
+    kernel code (Glad-Labs/poindexter#754).
+
+    ``get_modules`` is imported inside this function (not at the top of
+    the module) to avoid circular imports at module-load time.
+    ``atom_registry`` is imported early in many code paths; a top-level
+    import of ``plugins.registry`` would trigger the full registry
+    discovery chain before the process is ready.
     """
     global _DISCOVERED
     if _DISCOVERED:
         return
-    _walk_package("modules.content.atoms")
+
+    # Lazy import to avoid circular-import issues at module load time.
+    try:
+        from plugins.registry import get_modules  # noqa: PLC0415
+        for module in get_modules():
+            try:
+                manifest = module.manifest()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[atom_registry] could not read manifest from %r: %s",
+                    module, exc,
+                )
+                continue
+            pkg = getattr(manifest, "atoms_package", None)
+            if pkg:
+                _walk_package(pkg)
+    except Exception as exc:  # noqa: BLE001
+        # Fall back to the hardcoded path so a broken registry doesn't
+        # silently leave the atom catalog empty.  Logs a warning so the
+        # operator can see the root cause without losing content atoms.
+        logger.warning(
+            "[atom_registry] get_modules() failed (%s) — falling back to "
+            "hardcoded 'modules.content.atoms'",
+            exc,
+        )
+        _walk_package("modules.content.atoms")
+
     _surface_stages_as_atoms()
     _DISCOVERED = True
     logger.info(

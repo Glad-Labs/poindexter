@@ -48,6 +48,9 @@ _MANIFEST = ModuleManifest(
     #     any content file requires this declaration (an undeclared access
     #     raises ``CapabilityError``), so it lands with the first migrated chunk.
     capabilities=(Capability.AUDIT, Capability.DISPATCH, Capability.CONFIG),
+    # Manifest-driven atom discovery (Glad-Labs/poindexter#754): the atom registry
+    # walks this package at startup instead of hardcoding the path in kernel code.
+    atoms_package="modules.content.atoms",
 )
 
 
