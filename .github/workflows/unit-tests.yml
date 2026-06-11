@@ -184,9 +184,13 @@ jobs:
 
           # `src/cofounder_agent/**` covers all Python code, tests,
           # pyproject.toml, and poetry.lock — the whole testable surface.
+          # `brain/**` is tested by tests/unit/brain/ — brain/-only PRs
+          # were silently skipping pytest because the pattern below only
+          # matched src/cofounder_agent (Glad-Labs/glad-labs-stack#1293).
+          # `scripts/**` is tested by tests/unit/scripts/ — same gap.
           # `.github/workflows/unit-tests.yml` self-includes so workflow
           # edits get smoke-tested by actually running.
-          if echo "$changed" | grep -qE '^src/cofounder_agent/|^\.github/workflows/unit-tests\.yml$'; then
+          if echo "$changed" | grep -qE '^src/cofounder_agent/|^brain/|^scripts/|^\.github/workflows/unit-tests\.yml$'; then
             echo "Backend code or this workflow changed — running full suite."
             echo "needs_tests=true" >> "$GITHUB_OUTPUT"
           else
