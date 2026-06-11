@@ -18,7 +18,10 @@ from types import ModuleType
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 SCRIPT_PATH = REPO_ROOT / "scripts" / "regen-app-settings-doc.py"
 
 

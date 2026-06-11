@@ -25,7 +25,10 @@ import pytest
 # scripts/ci is a flat directory (no __init__.py); add it to sys.path so
 # we can import the linter module directly. Same pattern as
 # test_grafana_panels_lint.py.
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 SCRIPTS_CI = REPO_ROOT / "scripts" / "ci"
 LINTER_PATH = SCRIPTS_CI / "check-shell-line-endings.py"
 

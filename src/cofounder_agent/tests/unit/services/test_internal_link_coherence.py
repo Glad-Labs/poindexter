@@ -475,9 +475,10 @@ class TestFilterCandidates:
 # ---------------------------------------------------------------------------
 
 
-_AUDIT_SCRIPT = (
-    Path(__file__).resolve().parents[5] / "scripts" / "audit_internal_link_coherence.py"
-)
+_AUDIT_SCRIPT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+) / "scripts" / "audit_internal_link_coherence.py"
 
 
 def _load_audit_module():

@@ -33,7 +33,10 @@ import pytest
 #         <repo>/src/cofounder_agent/tests/unit/cli/test_mcp_start_voice_call.py
 # Five parents up from THIS file -> <repo>/src/cofounder_agent
 # Six parents up                  -> <repo>
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 _MCP_DIR = _REPO_ROOT / "mcp-server"
 
 

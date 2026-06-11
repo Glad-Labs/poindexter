@@ -15,7 +15,10 @@ import pytest
 
 # scripts/ci is a flat directory (no __init__.py); add it to sys.path so
 # we can import lib_grafana_panels directly.
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 SCRIPTS_CI = REPO_ROOT / "scripts" / "ci"
 sys.path.insert(0, str(SCRIPTS_CI))
 

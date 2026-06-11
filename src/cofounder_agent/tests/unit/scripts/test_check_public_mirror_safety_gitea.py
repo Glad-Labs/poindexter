@@ -22,7 +22,10 @@ from pathlib import Path
 
 
 def _load_check_module():
-    repo_root = Path(__file__).resolve().parents[5]
+    repo_root = next(
+        p for p in Path(__file__).resolve().parents
+        if (p / "pyproject.toml").exists() and (p / "src").exists()
+    )
     script = repo_root / "scripts" / "ci" / "check_public_mirror_safety.py"
     spec = spec_from_file_location("check_public_mirror_safety", script)
     assert spec is not None and spec.loader is not None

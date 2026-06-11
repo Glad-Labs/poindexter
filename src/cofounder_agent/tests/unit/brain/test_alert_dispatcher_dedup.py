@@ -35,7 +35,10 @@ import pytest
 
 # brain/ is a standalone package outside the cofounder_agent distro.
 # Mirror the path-prelude pattern from test_brain_alert_dispatcher.py.
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 _BRAIN_DIR = _REPO_ROOT / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))

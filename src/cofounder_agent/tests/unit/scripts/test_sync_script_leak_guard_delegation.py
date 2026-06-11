@@ -24,7 +24,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 _SYNC_SCRIPT = _REPO_ROOT / "scripts" / "sync-to-github.sh"
 
 

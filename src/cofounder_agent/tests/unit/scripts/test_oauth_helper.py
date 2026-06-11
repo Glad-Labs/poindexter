@@ -23,7 +23,10 @@ import pytest
 # ``scripts/`` isn't on the default test PYTHONPATH; insert it so we
 # can import the helper as a top-level module the same way the real
 # scripts do.
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 _SCRIPTS = _REPO_ROOT / "scripts"
 import sys
 

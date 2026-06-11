@@ -23,7 +23,10 @@ import pytest
 
 # Put brain/ on sys.path so we can import the brain-local module.
 # Same prelude as test_brain_alert_sync.py.
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 _BRAIN_DIR = _REPO_ROOT / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))

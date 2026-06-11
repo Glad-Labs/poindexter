@@ -36,6 +36,34 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
+
+# ---------------------------------------------------------------------------
+# Repo-root discovery (poindexter#722)
+# ---------------------------------------------------------------------------
+# Walk up from any starting file until we find a directory that contains
+# both pyproject.toml and src/ — that is the repo root.  This avoids the
+# brittle ``parents[5]`` index which breaks in containers and worktrees
+# where the bind-mount depth differs from the checkout depth.
+
+
+def find_repo_root(start: Path = Path(__file__)) -> Path:
+    """Return the repo root containing ``pyproject.toml`` and ``src/``.
+
+    Walks upward from *start* (a file or directory) until a candidate
+    directory passes both checks.  Raises ``RuntimeError`` if nothing
+    matches.
+    """
+    anchor = start.resolve()
+    candidates = [anchor] if anchor.is_dir() else [anchor.parent]
+    candidates.extend(anchor.parents)
+    for candidate in candidates:
+        if (candidate / "pyproject.toml").exists() and (candidate / "src").exists():
+            return candidate
+    raise RuntimeError(
+        f"repo root not found walking up from {start!r}; "
+        "expected a directory containing both pyproject.toml and src/"
+    )
+
 # Glad-Labs/glad-labs-stack#410 follow-up. ``services.flows.content_generation``
 # is the Prefect flow that owns dispatch (the legacy
 # ``services.task_executor`` polling daemon was deleted in Stage 4,
@@ -672,3 +700,15 @@ def default_container():
     from services.site_config import SiteConfig
 
     return AppContainer(site_config=SiteConfig(), pool=MagicMock(name="default_container.pool"))
+
+
+@pytest.fixture(scope="session")
+def repo_root() -> Path:
+    """Session-scoped fixture that returns the repo root path.
+
+    Delegates to :func:`find_repo_root` so tests never hard-code a
+    ``parents[N]`` depth.  Prefer this fixture in test functions/methods;
+    use ``find_repo_root(Path(__file__))`` at module level where a fixture
+    parameter is not available.
+    """
+    return find_repo_root()

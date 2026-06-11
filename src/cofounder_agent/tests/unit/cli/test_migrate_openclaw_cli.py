@@ -27,7 +27,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 # The bash helper lives under skills/poindexter/_lib (the OpenClaw
 # skill bundle reuses the poindexter skills tree); the docstring at
 # the top of this module is the source of truth for the path.

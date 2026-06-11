@@ -45,10 +45,10 @@ import pytest
 
 yaml = pytest.importorskip("yaml")
 
-# tests/unit/infrastructure/<this file> -> repo root is parents[5]
-# (src/cofounder_agent/tests/unit/infrastructure/<file>). Mirrors the
-# parents[5] anchor used by tests/unit/scripts/test_grafana_panels_lint.py.
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 ALERT_RULES_YML = (
     REPO_ROOT
     / "infrastructure"

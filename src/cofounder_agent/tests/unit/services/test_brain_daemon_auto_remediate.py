@@ -26,14 +26,10 @@ import pytest
 # BEFORE importing. Tests without this prelude fail to collect with
 # ``ModuleNotFoundError: No module named 'health_probes'``.
 #
-# Path: tests/unit/services/test_brain_daemon_auto_remediate.py
-# parents[0] = services/
-# parents[1] = unit/
-# parents[2] = tests/
-# parents[3] = cofounder_agent/
-# parents[4] = src/
-# parents[5] = repo root (contains brain/)
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents
+    if (p / "pyproject.toml").exists() and (p / "src").exists()
+)
 _BRAIN_DIR = _REPO_ROOT / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
