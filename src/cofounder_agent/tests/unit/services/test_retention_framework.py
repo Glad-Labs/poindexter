@@ -311,6 +311,93 @@ class TestDownsample:
                 pool=pool,
             )
 
+    # -- group_by tests -------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_group_by_columns_appear_in_insert_sql(self):
+        """group_by columns land in the INSERT column list, SELECT, GROUP BY,
+        and ON CONFLICT target — covering the sensor_samples_hourly use case.
+        """
+        pool = _FakePool()
+        pool.next_fetchval = 1
+        pool.next_insert_count = 0
+        pool.next_delete_count = 0
+        rule = {
+            **self._RULE,
+            "rollup_table": "sensor_samples_hourly",
+            "group_by": ["source", "metric_name"],
+            "aggregations": [
+                {"col": "metric_value", "fn": "avg", "as": "avg_value"},
+                {"col": "metric_value", "fn": "max", "as": "max_value"},
+            ],
+        }
+        await retention_downsample.downsample(
+            None, site_config=None,
+            row=_policy(
+                handler_name="downsample",
+                table_name="sensor_samples",
+                age_column="sampled_at",
+                ttl_days=None,
+                downsample_rule=rule,
+            ),
+            pool=pool,
+        )
+        insert_sqls = [q for q, _ in pool.executes if q.strip().upper().startswith("INSERT")]
+        assert len(insert_sqls) == 1
+        sql = insert_sqls[0]
+        # All group_by columns in the INSERT column list
+        assert "source, metric_name" in sql
+        # ON CONFLICT covers bucket_start + group_by columns
+        assert "(bucket_start, source, metric_name)" in sql
+        # GROUP BY includes the group_by columns
+        assert "GROUP BY 1, source, metric_name" in sql
+        # Aggregation aliases in the column list (not raw expressions)
+        assert "avg_value" in sql
+        assert "max_value" in sql
+
+    @pytest.mark.asyncio
+    async def test_group_by_empty_preserves_original_behaviour(self):
+        """Explicit ``group_by: []`` behaves identically to omitting group_by."""
+        pool = _FakePool()
+        pool.next_fetchval = 1
+        pool.next_insert_count = 0
+        pool.next_delete_count = 0
+        rule_with_empty = {**self._RULE, "group_by": []}
+        await retention_downsample.downsample(
+            None, site_config=None,
+            row=_policy(
+                handler_name="downsample",
+                table_name="gpu_metrics",
+                age_column="sampled_at",
+                ttl_days=None,
+                downsample_rule=rule_with_empty,
+            ),
+            pool=pool,
+        )
+        insert_sqls = [q for q, _ in pool.executes if q.strip().upper().startswith("INSERT")]
+        assert len(insert_sqls) == 1
+        sql = insert_sqls[0]
+        assert "ON CONFLICT (bucket_start) DO NOTHING" in sql
+        assert "GROUP BY 1" in sql
+        assert "(bucket_start, avg_utilization, peak_power)" in sql
+
+    @pytest.mark.asyncio
+    async def test_group_by_invalid_identifier_rejected(self):
+        pool = _FakePool()
+        pool.next_fetchval = 100
+        bad = {**self._RULE, "group_by": ["valid_col", "bad; drop table x"]}
+        with pytest.raises(ValueError, match="group_by"):
+            await retention_downsample.downsample(
+                None, site_config=None,
+                row=_policy(
+                    handler_name="downsample",
+                    table_name="gpu_metrics",
+                    ttl_days=None,
+                    downsample_rule=bad,
+                ),
+                pool=pool,
+            )
+
 
 # ---------------------------------------------------------------------------
 # retention_runner

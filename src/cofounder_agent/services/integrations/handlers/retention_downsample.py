@@ -30,10 +30,17 @@ migration — this handler doesn't auto-create. That's intentional:
 every rollup schema decision (indexes, constraints, column types)
 is a deliberate choice the operator should review.
 
-For v1, ``group_by`` is fixed to ``[]`` (no extra grouping beyond the
-time bucket) and ``aggregations`` accepts ``avg``, ``min``, ``max``,
-``sum``, ``count`` — same as the tests cover. Additional aggregation
-functions require whitelist extension below.
+``group_by`` is an optional list of extra column names to group by in
+addition to the time bucket (e.g. ``["source", "metric_name"]`` for the
+``sensor_samples_hourly`` rollup). When non-empty, those columns must
+appear in the rollup table and the rollup table's UNIQUE constraint must
+cover ``(bucket_start, <group_by columns...>)`` so the
+``ON CONFLICT DO NOTHING`` idempotency works correctly. Defaults to
+``[]`` (single time-bucket, no extra grouping).
+
+``aggregations`` accepts ``avg``, ``min``, ``max``, ``sum``, ``count``
+— same as the tests cover. Additional aggregation functions require
+whitelist extension below.
 """
 
 from __future__ import annotations
@@ -124,6 +131,12 @@ async def downsample(
     interval = _validate_interval(rule.get("rollup_interval") or "")
     select_exprs, insert_cols = _build_aggregations(rule.get("aggregations") or [])
 
+    raw_groups = rule.get("group_by") or []
+    if not isinstance(raw_groups, list):
+        raw_groups = []
+    group_cols = [_validate_identifier(str(c), "group_by") for c in raw_groups]
+    group_csv = ", ".join(group_cols)
+
     config = row.get("config") or {}
     if not isinstance(config, dict):
         config = {}
@@ -160,19 +173,32 @@ async def downsample(
 
         # (2) Insert rollup buckets that don't yet exist in the rollup
         # table. We rely on the rollup_table having a unique constraint
-        # on bucket_start (or a suitable PK) so ON CONFLICT prevents
+        # on (bucket_start[, group_by cols...]) so ON CONFLICT prevents
         # double-inserting the same bucket if the job overlaps itself.
+        if group_csv:
+            full_insert = f"bucket_start, {group_csv}, {insert_cols}"
+            full_select = (
+                f"date_trunc('hour', {age_column}) AS bucket_start, "
+                f"{group_csv}, {select_exprs}"
+            )
+            group_by_clause = f"1, {group_csv}"
+            conflict_target = f"(bucket_start, {group_csv})"
+        else:
+            full_insert = f"bucket_start, {insert_cols}"
+            full_select = f"date_trunc('hour', {age_column}) AS bucket_start, {select_exprs}"
+            group_by_clause = "1"
+            conflict_target = "(bucket_start)"
+
         insert_sql = f"""
             INSERT INTO {rollup_table}
-                (bucket_start, {insert_cols})
+                ({full_insert})
             SELECT
-                date_trunc('hour', {age_column}) AS bucket_start,
-                {select_exprs}
+                {full_select}
               FROM {table_name}
              WHERE {age_column} < now() - make_interval(days => $1)
-             GROUP BY 1
-             ON CONFLICT (bucket_start) DO NOTHING
-        """  # nosec B608  # rollup_table/age_column/table_name/insert_cols validated by _validate_identifier; select_exprs built by _build_aggregations against _ALLOWED_FNS whitelist
+             GROUP BY {group_by_clause}
+             ON CONFLICT {conflict_target} DO NOTHING
+        """  # nosec B608  # rollup_table/age_column/table_name/insert_cols/group_csv validated by _validate_identifier; select_exprs built by _build_aggregations against _ALLOWED_FNS whitelist
         insert_result = await conn.execute(insert_sql, keep_raw_days)
         try:
             rolled_up = int(insert_result.rsplit(" ", 1)[-1])
