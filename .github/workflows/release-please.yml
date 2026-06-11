@@ -44,6 +44,7 @@ jobs:
         # land here first, the sync workflow propagates the bumped
         # version files to the public mirror as part of the next push.
         # See Glad-Labs/glad-labs-stack#TBD for the full diagnosis.
+        timeout-minutes: 10
         if: |
           github.repository == 'Glad-Labs/glad-labs-stack' &&
           !contains(github.event.head_commit.message, '[skip ci]')

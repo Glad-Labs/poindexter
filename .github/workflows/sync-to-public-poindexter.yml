@@ -59,6 +59,7 @@ jobs:
   sync:
     if: ${{ !contains(github.event.head_commit.message, '[skip-public-sync]') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write  # needed for the failure-notification step (gh issue create)

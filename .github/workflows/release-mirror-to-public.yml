@@ -32,6 +32,7 @@ permissions:
 jobs:
     mirror-release:
         runs-on: ubuntu-latest
+        timeout-minutes: 10
 
         # Only fires from the source repo. Avoids any chance of recursive
         # mirror-of-mirror activity if this workflow somehow leaks onto the
