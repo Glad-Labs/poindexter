@@ -1756,3 +1756,129 @@ class TestGenuineFabricationStillHardFails:
         result = validate_content("AI Adoption", content, "ai", site_config=_SC)
         assert any(i.severity == "critical" for i in result.issues)
         assert result.passed is False
+
+
+# ---------------------------------------------------------------------------
+# Reasoning / control-token leak detection (#1283)
+# ---------------------------------------------------------------------------
+
+
+class TestReasoningTokenLeak:
+    """#1283 — defence-in-depth rule for leaked reasoning/control tokens.
+
+    The generation-boundary stripper (thinking_models.strip_reasoning_artifacts)
+    already removes these before persistence; this validator rule catches the
+    cases where the stripper is bypassed (e.g. a JSON-mode helper path).
+    """
+
+    def test_catches_glm_channel_header_in_body(self):
+        """<|channel>thought leak (GLM-4 / Harmony format) → critical finding."""
+        content = (
+            "<|channel>thought\n"
+            "<channel|>The release of local LLMs has changed how developers "
+            "think about inference costs. Running models on-device eliminates "
+            "the per-token billing that cloud APIs impose."
+        )
+        result = validate_content("LLM Inference", content, "ai-ml", site_config=_SC)
+        assert not result.passed
+        token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
+        assert token_issues, "expected at least one reasoning_token_leak issue"
+        assert all(i.severity == "critical" for i in token_issues)
+
+    def test_catches_chatml_im_start_in_body(self):
+        """<|im_start|> marker (ChatML / Qwen / Mistral) → critical finding."""
+        content = (
+            "<|im_start|>assistant\n"
+            "Modern quantization techniques allow 70B models to run on "
+            "consumer hardware with modest VRAM budgets."
+        )
+        result = validate_content("Quantization", content, "hardware", site_config=_SC)
+        token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
+        assert token_issues, "expected at least one reasoning_token_leak issue"
+        assert all(i.severity == "critical" for i in token_issues)
+
+    def test_catches_think_block_in_body(self):
+        """<think>…</think> tags (DeepSeek / QwQ) → critical finding."""
+        content = (
+            "<think>I need to explain how transformers work clearly.</think>\n"
+            "Transformer architectures replaced RNNs for sequence modelling "
+            "tasks thanks to their parallelisable attention mechanism."
+        )
+        result = validate_content("Transformers", content, "ai-ml", site_config=_SC)
+        token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
+        assert token_issues, "expected at least one reasoning_token_leak issue"
+
+    def test_catches_im_end_token(self):
+        """<|im_end|> marker → critical finding."""
+        content = (
+            "The model outputs tokens until it emits the stop sequence.\n"
+            "<|im_end|>\n"
+            "Local inference gives full control over generation parameters."
+        )
+        result = validate_content("Inference", content, "ai-ml", site_config=_SC)
+        token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
+        assert token_issues, "expected at least one reasoning_token_leak issue"
+
+    def test_no_false_positive_inside_triple_backtick_fence(self):
+        """Token inside a triple-backtick code fence must NOT fire."""
+        content = (
+            "Here is an example of the ChatML format used by Qwen:\n\n"
+            "```\n"
+            "<|im_start|>system\n"
+            "You are a helpful assistant.\n"
+            "<|im_end|>\n"
+            "```\n\n"
+            "This format tells the model where each turn begins and ends."
+        )
+        result = validate_content("ChatML Format", content, "ai-ml", site_config=_SC)
+        assert not any(
+            i.category == "reasoning_token_leak" for i in result.issues
+        ), "token inside triple-backtick fence should not fire"
+
+    def test_no_false_positive_inside_inline_backtick(self):
+        """Token inside inline backtick code must NOT fire."""
+        content = (
+            "The ``<|im_start|>`` token marks the beginning of a turn in "
+            "the ChatML template. Some models also use `<think>` and "
+            "`</think>` to delimit reasoning blocks."
+        )
+        result = validate_content("ChatML Tokens", content, "ai-ml", site_config=_SC)
+        assert not any(
+            i.category == "reasoning_token_leak" for i in result.issues
+        ), "token inside inline backtick should not fire"
+
+    def test_no_false_positive_on_clean_content(self):
+        """Normal prose with no control tokens must NOT fire."""
+        content = (
+            "Running large language models locally has become practical thanks "
+            "to advances in quantization and hardware acceleration. "
+            "A 30B-parameter model can now fit in 16 GB of VRAM with 4-bit "
+            "quantization, delivering quality close to cloud-hosted alternatives."
+        )
+        result = validate_content("Local LLMs", content, "ai-ml", site_config=_SC)
+        assert not any(i.category == "reasoning_token_leak" for i in result.issues)
+
+    def test_reasoning_token_leak_is_critical_not_warning(self):
+        """Severity must be 'critical' — this is a publishing-blocker."""
+        content = "<|im_start|>user\nExplain gradient descent simply.\n<|im_end|>"
+        result = validate_content("ML Basics", content, "ai-ml", site_config=_SC)
+        token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
+        assert token_issues, "expected at least one reasoning_token_leak issue"
+        assert all(i.severity == "critical" for i in token_issues)
+
+    def test_mid_body_token_detected_not_just_final_line(self):
+        """A control token mid-body (not just the last line) must be caught.
+
+        The json_envelope_leak rule only inspects the final line; this rule
+        must scan the entire body (#1283 motivation).
+        """
+        content = (
+            "AI hardware has matured significantly in the last two years.\n"
+            "<|channel>thought\n"
+            "<channel|>\n"
+            "The jump from 8 GB to 24 GB consumer GPUs opened up 13B-class "
+            "models for local inference without expensive cloud subscriptions."
+        )
+        result = validate_content("GPU Hardware", content, "hardware", site_config=_SC)
+        token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
+        assert token_issues, "mid-body control token must be detected"

@@ -431,6 +431,42 @@ INTERNAL_PATH_LEAK_PATTERNS = [
     r"\[(?:memory|brain|brain_knowledge|audit_log|app_settings|pipeline_versions|pipeline_tasks)/[^\]]{1,120}\](?!\()",
 ]
 
+# Leaked reasoning / chat-template control tokens (#1283).
+#
+# A generation-boundary stripper (services/llm_providers/thinking_models.py
+# ::strip_reasoning_artifacts) already removes these before persistence, but
+# that layer can be bypassed (e.g. the ``two_pass`` writer calling a JSON-mode
+# helper that skips the stripper). This rule is defence-in-depth: a draft
+# whose prose body contains these tokens after stripping is almost certainly
+# a whole-article reasoning-channel leak (quality_score can still reach 91 on
+# such drafts because no earlier rule covered them).
+#
+# Fence-aware: the rule's check function strips triple-backtick and inline
+# single-backtick spans BEFORE scanning so a technical tutorial that shows
+# ``<|im_start|>`` as a literal example in a code block does not fire.
+#
+# Does NOT exclude dev_diary — reasoning tokens are never legitimate in any
+# niche's published prose. Operators can scope via the DB applies_to_niches
+# column if a future niche proves otherwise.
+REASONING_TOKEN_LEAK_PATTERNS = [
+    # Mangled / proper Harmony channel headers (GLM-4 / ZhipuAI format).
+    r"<\|channel\|?>",
+    r"<channel\|>",
+    # Chat-turn header (broken Ollama gemma template form).
+    r"<\|turn\|?>",
+    # Generic message boundary.
+    r"<\|message\|?>",
+    # ChatML / Qwen / Mistral instruction markers.
+    r"<\|im_start\|>",
+    r"<\|im_end\|>",
+    # Open-source thinking blocks (DeepSeek, QwQ, etc.).
+    r"<think>",
+    r"</think>",
+    # Harmony thinking-channel markers.
+    r"<\|thinking\|>",
+    r"<\|/thinking\|>",
+]
+
 # Stock-LLM transition words used at sentence start (poindexter#232).
 # Local LLMs (gemma3, glm, qwen) over-use these as paragraph openers,
 # which both reads as AI-generated and chews into EEAT trust signals.
@@ -520,6 +556,41 @@ class ValidationResult:
 def _strip_html(text: str) -> str:
     """Remove HTML tags for pattern matching."""
     return re.sub(r"<[^>]+>", "", text)
+
+
+# Matches triple-backtick/tilde fenced blocks AND inline code spans
+# (double-backtick ``...`` before single-backtick `...`).
+# Used by the reasoning-token-leak rule to blank out code before scanning so
+# that ``<|im_start|>`` shown as an example in a tutorial code block does not
+# false-positive. The same logic lives in thinking_models._CODE_SPAN_RE; kept
+# here to avoid a cross-module import from a validator that must stay light.
+#
+# Order matters: triple-backtick fences must be tried before the shorter
+# alternatives; double-backtick inline spans (`` ``...`` ``) before single-
+# backtick spans (`` `...` ``) so that a double-backtick construct like
+# `` ``<|im_start|>`` `` is consumed as one unit rather than being split
+# into two single-backtick matches with `<|im_start|>` exposed in between.
+_CODE_SPAN_RE_FOR_VALIDATOR = re.compile(
+    r"```.*?```"       # triple-backtick fenced block
+    r"|~~~.*?~~~"      # triple-tilde fenced block
+    r"|``[^`]+``"      # double-backtick inline span (CommonMark ``...``)
+    r"|`[^`\n]+`",     # single-backtick inline span
+    re.DOTALL,
+)
+
+
+def _strip_code_spans(text: str) -> str:
+    """Replace code fences and inline code spans with whitespace of equal length.
+
+    Preserves byte offsets (newlines stay) so line numbers in issues remain
+    accurate. The replacement uses a space-per-char approach (not just ``""``)
+    so a multi-line fenced block does not collapse adjacent lines together.
+    """
+    def _blank(m: re.Match) -> str:
+        # Preserve newline positions; replace non-newline chars with spaces.
+        return re.sub(r"[^\n]", " ", m.group(0))
+
+    return _CODE_SPAN_RE_FOR_VALIDATOR.sub(_blank, text)
 
 
 def _check_patterns(
@@ -1560,6 +1631,40 @@ def validate_content(
             full_text, INTERNAL_PATH_LEAK_PATTERNS, "warning", "internal_path_leak",
             "Leaked internal path token in content: '{matched}'"
         ))
+
+    # 7b-septies. Leaked reasoning / chat-template control tokens (#1283).
+    #
+    # Defence-in-depth for the generation-boundary stripper: a draft whose
+    # body still contains ``<|channel>``, ``<|im_start|>``, ``<think>``, etc.
+    # after the pipeline's strip pass almost certainly had its WHOLE article
+    # inside a reasoning channel (e.g. GLM-4 wrapping output in a
+    # ``<|channel>thought`` block). Quality scoring can rate such drafts 90+
+    # because no earlier rule covers them.
+    #
+    # Fence-aware: we blank code spans (``` fences + inline `backtick` code)
+    # BEFORE scanning so a tutorial that shows ``<|im_start|>`` as an example
+    # inside a code block does not fire. We scan the RAW full_text rather than
+    # the HTML-stripped version — _strip_html removes the angle-bracket tokens
+    # we are hunting for, which is exactly the wrong thing here.
+    if _enabled("reasoning_token_leak"):
+        _scannable = _strip_code_spans(full_text)
+        for _rt_pat in REASONING_TOKEN_LEAK_PATTERNS:
+            for _rt_i, _rt_line in enumerate(_scannable.split("\n"), 1):
+                for _rt_m in re.finditer(_rt_pat, _rt_line, re.IGNORECASE):
+                    _rt_matched = _rt_m.group(0)[:100]
+                    issues.append(ValidationIssue(
+                        severity="critical",
+                        category="reasoning_token_leak",
+                        description=(
+                            f"Leaked reasoning/control token in content: "
+                            f"'{_rt_matched}' — a generation-boundary stripper "
+                            f"failed or was bypassed. The whole article may be "
+                            f"inside a reasoning channel."
+                        ),
+                        matched_text=_rt_matched,
+                        line_number=_rt_i,
+                    ))
+                    CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule="reasoning_token_leak").inc()
 
     # 7c. Known-wrong facts -- loaded from DB (fact_overrides table).
     # Each row has its own explanation so the rewrite prompt carries the
