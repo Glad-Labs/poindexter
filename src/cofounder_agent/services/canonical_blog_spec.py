@@ -24,10 +24,14 @@ atom chains (#362):
 The dev_diary template (4-node TEMPLATES factory) still uses
 ``stage.finalize_task`` directly and is unaffected.
 
-The qa.* rail block and seo.* atom chain are unchanged from #355:
+The qa.* rail block and seo.* atom chain are unchanged from #355 except
+that ``qa.guardrails`` was removed (#730): guardrails-ai was uninstalled
+2026-05-12, the native re-implementation (``guardrails_rails.py``) is
+advisory and disabled behind ``guardrails_enabled=false``, and the atom
+was a dead no-op burning execution time on every run.
 
 - ``cross_model_qa`` → qa.programmatic → qa.critic → qa.deepeval →
-  qa.guardrails → qa.ragas → qa.vision → qa.topic_delivery →
+  qa.ragas → qa.vision → qa.topic_delivery →
   qa.citations → qa.consistency → qa.self_consistency →
   qa.web_factcheck → qa.aggregate
 - ``generate_seo_metadata`` → seo.generate_title →
@@ -81,7 +85,6 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_programmatic", "atom": "qa.programmatic"},
         {"id": "qa_critic", "atom": "qa.critic"},
         {"id": "qa_deepeval", "atom": "qa.deepeval"},
-        {"id": "qa_guardrails", "atom": "qa.guardrails"},
         {"id": "qa_ragas", "atom": "qa.ragas"},
         {"id": "qa_vision", "atom": "qa.vision"},
         {"id": "qa_topic_delivery", "atom": "qa.topic_delivery"},
@@ -125,8 +128,7 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "caption_images", "to": "qa_programmatic"},
         {"from": "qa_programmatic", "to": "qa_critic"},
         {"from": "qa_critic", "to": "qa_deepeval"},
-        {"from": "qa_deepeval", "to": "qa_guardrails"},
-        {"from": "qa_guardrails", "to": "qa_ragas"},
+        {"from": "qa_deepeval", "to": "qa_ragas"},
         {"from": "qa_ragas", "to": "qa_vision"},
         {"from": "qa_vision", "to": "qa_topic_delivery"},
         {"from": "qa_topic_delivery", "to": "qa_citations"},

@@ -21,10 +21,14 @@ class TestCanonicalBlogSpec:
         # qa.vision restores the image-relevance + rendered-preview gates (#563);
         # qa.topic_delivery / qa.citations / qa.consistency / qa.web_factcheck
         # restore four more checks the cutover dropped (#658/#659/#660/#661).
-        assert {"qa.programmatic", "qa.critic", "qa.deepeval", "qa.guardrails",
+        # qa.guardrails was removed in #730: guardrails-ai was uninstalled
+        # 2026-05-12, the native re-implementation is disabled behind
+        # guardrails_enabled=false, and the atom was a dead no-op.
+        assert {"qa.programmatic", "qa.critic", "qa.deepeval",
                 "qa.ragas", "qa.vision", "qa.topic_delivery", "qa.citations",
                 "qa.consistency", "qa.self_consistency", "qa.web_factcheck",
                 "qa.aggregate"} <= node_atoms
+        assert "qa.guardrails" not in node_atoms
         # The three seo.* atoms replace generate_seo_metadata (#362).
         assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
         # The content.* atoms replace the three coarse stages decomposed in

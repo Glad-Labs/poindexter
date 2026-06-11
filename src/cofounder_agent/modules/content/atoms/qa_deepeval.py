@@ -48,13 +48,33 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from modules.content.multi_model_qa import MultiModelQA
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
-    gate_states = await resolve_gate_states(qa)
-    brand = qa._check_deepeval_brand(content, topic)           # sync
-    g_eval = await qa._check_deepeval_g_eval(content, topic)
-    faith = await qa._check_deepeval_faithfulness(content, research)
+
+    # Load gate states and run the three independent judges in parallel (#730).
+    # _check_deepeval_brand is synchronous (regex-based); run it in a thread so
+    # asyncio.gather can overlap it with the two async Ollama calls. Each judge
+    # is independent — one failing should not abort the others, so we use
+    # return_exceptions=True and treat any exception as a None (skipped rail).
+    import asyncio
+
+    gate_states, brand, g_eval, faith = await asyncio.gather(
+        resolve_gate_states(qa),
+        asyncio.to_thread(qa._check_deepeval_brand, content, topic),
+        qa._check_deepeval_g_eval(content, topic),
+        qa._check_deepeval_faithfulness(content, research),
+        return_exceptions=True,
+    )
+
+    # Normalize exception results to None (graceful skip on per-judge failure).
+    gate_states = gate_states if isinstance(gate_states, dict) else {}
 
     reviews: list[dict[str, Any]] = []
     for r in (brand, g_eval, faith):
+        if isinstance(r, BaseException):
+            import logging
+            logging.getLogger(__name__).warning(
+                "[qa.deepeval] judge raised an exception (skipping): %s", r,
+            )
+            continue
         if r is not None:
             MultiModelQA._mark_advisory_if_configured(r, gate_states, r.reviewer)
             reviews.append(reviewer_to_dict(r))
