@@ -29,8 +29,12 @@ class TestCanonicalBlogSpec:
                 "qa.consistency", "qa.self_consistency", "qa.web_factcheck",
                 "qa.aggregate"} <= node_atoms
         assert "qa.guardrails" not in node_atoms
-        # The three seo.* atoms replace generate_seo_metadata (#362).
-        assert {"seo.generate_title", "seo.generate_description", "seo.extract_keywords"} <= node_atoms
+        # The three serial seo.* atoms were collapsed into one structured call
+        # (seo.generate_all_metadata, poindexter#734) — saves ~2 min/post.
+        assert "seo.generate_all_metadata" in node_atoms
+        assert "seo.generate_title" not in node_atoms
+        assert "seo.generate_description" not in node_atoms
+        assert "seo.extract_keywords" not in node_atoms
         # The content.* atoms replace the three coarse stages decomposed in
         # the #362 atom-granularity refactor: generate_content,
         # replace_inline_images, and finalize_task.

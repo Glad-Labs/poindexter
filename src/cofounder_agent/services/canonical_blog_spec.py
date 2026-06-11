@@ -24,18 +24,24 @@ atom chains (#362):
 The dev_diary template (4-node TEMPLATES factory) still uses
 ``stage.finalize_task`` directly and is unaffected.
 
-The qa.* rail block and seo.* atom chain are unchanged from #355 except
-that ``qa.guardrails`` was removed (#730): guardrails-ai was uninstalled
-2026-05-12, the native re-implementation (``guardrails_rails.py``) is
-advisory and disabled behind ``guardrails_enabled=false``, and the atom
-was a dead no-op burning execution time on every run.
+The qa.* rail block and seo.* atom chain are unchanged from #355 except:
+
+- ``qa.guardrails`` was removed (#730): guardrails-ai was uninstalled
+  2026-05-12, the native re-implementation (``guardrails_rails.py``) is
+  advisory and disabled behind ``guardrails_enabled=false``, and the atom
+  was a dead no-op burning execution time on every run.
+
+- The three serial SEO atoms were collapsed into one structured call (#734):
+  ``seo.generate_title → seo.generate_description → seo.extract_keywords``
+  replaced by ``seo.generate_all_metadata``. Saves ~2 min/post by making
+  one LLM call returning ``{title, description, keywords}`` as JSON.
+  The three individual atom files are retained as standalone importable units.
 
 - ``cross_model_qa`` → qa.programmatic → qa.critic → qa.deepeval →
   qa.ragas → qa.vision → qa.topic_delivery →
   qa.citations → qa.consistency → qa.self_consistency →
   qa.web_factcheck → qa.aggregate
-- ``generate_seo_metadata`` → seo.generate_title →
-  seo.generate_description → seo.extract_keywords
+- ``generate_seo_metadata`` → seo.generate_all_metadata (collapsed, #734)
 
 All chains are sequential for cutover robustness.
 """
@@ -47,8 +53,9 @@ from typing import Any
 CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
     "name": "canonical_blog",
     "description": (
-        "Canonical blog pipeline (atom-composed, #362): 11 content.* atoms "
-        "replace 3 coarse stage nodes + qa.* rail block + seo.* atom chain."
+        "Canonical blog pipeline (atom-composed, #362/#734): 11 content.* atoms "
+        "replace 3 coarse stage nodes + qa.* rail block + seo.generate_all_metadata "
+        "(single structured call replacing 3 serial seo.* atoms, #734)."
     ),
     "entry": "verify_task",
     "nodes": [
@@ -93,11 +100,12 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_self_consistency", "atom": "qa.self_consistency"},
         {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
-        # seo.* atom chain (replaces the generate_seo_metadata stage, #362) —
-        # linear so description + keywords read the freshly-generated seo_title.
-        {"id": "seo_title", "atom": "seo.generate_title"},
-        {"id": "seo_description", "atom": "seo.generate_description"},
-        {"id": "seo_keywords", "atom": "seo.extract_keywords"},
+        # seo.* collapsed into one structured call (#734) — replaces the
+        # three-atom serial chain (seo.generate_title → seo.generate_description
+        # → seo.extract_keywords) with a single LLM round-trip that returns
+        # {title, description, keywords} as JSON, saving ~2 min/post.
+        # The three individual atoms are retained as standalone importable units.
+        {"id": "seo_all_metadata", "atom": "seo.generate_all_metadata"},
         {"id": "generate_media_scripts", "atom": "stage.generate_media_scripts"},
         {"id": "generate_video_shot_list", "atom": "stage.generate_video_shot_list"},
         {"id": "capture_training_data", "atom": "stage.capture_training_data"},
@@ -136,11 +144,9 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_consistency", "to": "qa_self_consistency"},
         {"from": "qa_self_consistency", "to": "qa_web_factcheck"},
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},
-        # seo.* atom chain
-        {"from": "qa_aggregate", "to": "seo_title"},
-        {"from": "seo_title", "to": "seo_description"},
-        {"from": "seo_description", "to": "seo_keywords"},
-        {"from": "seo_keywords", "to": "generate_media_scripts"},
+        # seo.* collapsed (#734) — single structured call
+        {"from": "qa_aggregate", "to": "seo_all_metadata"},
+        {"from": "seo_all_metadata", "to": "generate_media_scripts"},
         {"from": "generate_media_scripts", "to": "generate_video_shot_list"},
         {"from": "generate_video_shot_list", "to": "capture_training_data"},
         # finalize_task atom chain
