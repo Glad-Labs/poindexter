@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { Logo } from '@glad-labs/brand';
 import { SITE_NAME } from '@/lib/site.config';
 
 function SearchIcon({ className }) {
@@ -127,16 +128,8 @@ export default function TopNavigation() {
             href="/"
             aria-label={`${SITE_NAME} — Home`}
             className="gl-focus-ring"
-            style={{
-              fontFamily: 'var(--gl-font-display)',
-              fontWeight: 700,
-              fontSize: '1.25rem',
-              letterSpacing: '0.05em',
-              color: 'var(--gl-cyan)',
-              textTransform: 'uppercase',
-            }}
           >
-            GL
+            <Logo />
           </Link>
 
           {/* Desktop nav + CTAs — hidden on mobile */}

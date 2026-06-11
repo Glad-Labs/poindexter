@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Button, Eyebrow } from '@glad-labs/brand';
+import { Button, Eyebrow, Logo } from '@glad-labs/brand';
 import NewsletterModal from './NewsletterModal';
 import { SITE_NAME } from '@/lib/site.config';
 
@@ -36,16 +36,8 @@ const Footer = () => {
               href="/"
               aria-label={`${SITE_NAME} — Home`}
               className="gl-focus-ring inline-block mb-5"
-              style={{
-                fontFamily: 'var(--gl-font-display)',
-                fontWeight: 700,
-                fontSize: '1.25rem',
-                letterSpacing: '0.05em',
-                color: 'var(--gl-cyan)',
-                textTransform: 'uppercase',
-              }}
             >
-              GL
+              <Logo />
             </Link>
             <p className="gl-body gl-body--sm mb-3">
               AI, hardware, and the edges where they meet. Locally-published,

@@ -16,4 +16,5 @@ export { Eyebrow } from './components/Eyebrow.jsx';
 export { Display } from './components/Display.jsx';
 export { Button } from './components/Button.jsx';
 export { Card } from './components/Card.jsx';
+export { Logo } from './components/Logo.jsx';
 export { Status } from './components/Status.jsx';
