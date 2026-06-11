@@ -416,6 +416,12 @@ services:
       # ~/.poindexter/bootstrap.toml (poindexter#413).
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
+      # Langfuse 3.14.6 serializer recursion bug — @observe decorators hang
+      # the event loop on cyclic object graphs. Disable at SDK level until
+      # upstream fixes cycle detection on dict/list/__slots__ paths.
+      # See memory: reference_langfuse_serializer_recursion_bug.md
+      # Re-applied 2026-06-11 after recurrence within hours of lifting.
+      LANGFUSE_TRACING_ENABLED: "false"
       # LiveKit credentials — voice_routes.py mints a 7-day JWT for the
       # phone-tap-to-join HTML page (poindexter#389). Same key/secret as
       # the livekit + voice-agent-livekit containers; LIVEKIT_PUBLIC_WSS_URL
@@ -747,6 +753,8 @@ services:
       LANGFUSE_HOST: "http://langfuse-web:3000"
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
+      # Langfuse 3.14.6 serializer recursion bug — same fix as worker block.
+      LANGFUSE_TRACING_ENABLED: "false"
       # OpenTelemetry — mirror of the FastAPI worker's setup so pipeline
       # stages emit spans to Tempo. Without these the prefect-worker
       # (which actually runs the canonical_blog template) was invisible
