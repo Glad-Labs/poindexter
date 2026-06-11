@@ -82,6 +82,17 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # catches OOM-imminent before Ollama/SDXL allocations start failing.
     "gpu_temperature_celsius": "85",
     "gpu_vram_utilization_percent": "95",
+    # Host disk space. Absolute GB thresholds (not percentage) because what
+    # hurts is absolute headroom — Docker images, Postgres growth, model files.
+    # min_total_gb filters out USB drives / EFI partitions that always hover
+    # near the low cutoffs and have no bearing on pipeline health.
+    "disk_free_warning_gb": "20",
+    "disk_free_critical_gb": "10",
+    "disk_min_total_gb": "200",
+    # Postgres connection-pool saturation. Ratios so they scale with any
+    # max_connections value (currently 300 in docker-compose.local.yml).
+    "postgres_connection_warning_ratio": "0.80",
+    "postgres_connection_critical_ratio": "0.95",
 }
 
 
@@ -284,12 +295,92 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "reduce concurrent model residency."
         ),
     },
-    # NOTE: disk-free alerting lives in the STATIC rule file
-    # infrastructure/prometheus/alerts/infrastructure.yml
-    # (PoindexterDiskSpaceLow < 20 GB / PoindexterDiskSpaceCritical < 10 GB on
-    # windows_logical_disk_free_bytes) — static rules fire even when the DB is
-    # down, which is the right place for infra alerts. No DB-rendered duplicate
-    # here.
+    # Host disk space. Previously static in infrastructure.yml — moved here so
+    # operators can tune the 20/10 GB and 200 GB total-size cutoffs via DB.
+    # Binary up/down rules (Worker, Postgres, Ollama) remain static because
+    # they have no operator-tunable numbers and must fire even when the DB is
+    # down (which is when dynamic rendering would fail).
+    "PoindexterDiskSpaceLow": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            '(windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            " < {threshold.disk_free_warning_gb})"
+            " and on(volume) "
+            '(windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            " > {threshold.disk_min_total_gb})"
+        ),
+        "for": "10m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Host disk {{ $labels.volume }} has under 20 GB free",
+        "description": (
+            "Volume {{ $labels.volume }} on the worker host has "
+            "{{ $value | humanize }} GB free (warning threshold: "
+            "prometheus.threshold.disk_free_warning_gb, default 20 GB). Run "
+            "`powershell scripts/docker-prune.ps1`, clear old model files, "
+            "or archive cost_logs / page_views."
+        ),
+    },
+    "PoindexterDiskSpaceCritical": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            '(windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            " < {threshold.disk_free_critical_gb})"
+            " and on(volume) "
+            '(windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            " > {threshold.disk_min_total_gb})"
+        ),
+        "for": "5m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Host disk {{ $labels.volume }} has under 10 GB free — imminent",
+        "description": (
+            "Volume {{ $labels.volume }} on the worker host is down to "
+            "{{ $value | humanize }} GB free. Postgres writes, Docker pulls, "
+            "and image generation will start failing. Free space now: "
+            "`powershell scripts/docker-prune.ps1`."
+        ),
+    },
+    # Postgres connection-pool saturation. Previously static in
+    # postgres-connections.yml — moved here so operators can tune the
+    # 0.80/0.95 ratio thresholds via DB.
+    "PoindexterPostgresConnectionsHigh": {
+        "enabled": True,
+        "group": "poindexter-postgres-connections",
+        "interval": "30s",
+        "expr": "(pg_connections_used / pg_connections_max) >= {threshold.postgres_connection_warning_ratio}",
+        "for": "5m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Postgres connection utilization over 80%",
+        "description": (
+            "Postgres is using {{ $value | humanizePercentage }} of max_connections. "
+            "The stress test that motivated GH-92 failed at 100% of the old "
+            "100-connection cap; firing at 80% gives a 5-minute buffer. "
+            "Check: `docker exec poindexter-postgres-local psql -U poindexter "
+            "-d poindexter_brain -c \"SELECT application_name, COUNT(*) FROM "
+            "pg_stat_activity GROUP BY application_name ORDER BY 2 DESC;\"`"
+        ),
+    },
+    "PoindexterPostgresConnectionsCritical": {
+        "enabled": True,
+        "group": "poindexter-postgres-connections",
+        "interval": "30s",
+        "expr": "(pg_connections_used / pg_connections_max) >= {threshold.postgres_connection_critical_ratio}",
+        "for": "2m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Postgres connection utilization over 95% — imminent exhaustion",
+        "description": (
+            "Postgres is at {{ $value | humanizePercentage }} of max_connections. "
+            "At this level new asyncpg acquires will start failing within minutes. "
+            "Shed load or restart offending services immediately."
+        ),
+    },
     "OllamaNoModelsLoaded": {
         "enabled": True,
         "group": "poindexter-infra",

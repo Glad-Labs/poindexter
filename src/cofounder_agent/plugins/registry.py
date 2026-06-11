@@ -605,6 +605,7 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.render_alertmanager_config",
             "RenderAlertmanagerConfigJob",
         ),
+        ("jobs", "services.jobs.render_grafana_alerts", "RenderGrafanaAlertsJob"),
         ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
         ("jobs", "services.jobs.check_published_links", "CheckPublishedLinksJob"),
         ("jobs", "services.jobs.flag_missing_seo", "FlagMissingSeoJob"),
