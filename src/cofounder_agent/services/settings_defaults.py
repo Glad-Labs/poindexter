@@ -241,6 +241,7 @@ DEFAULTS: dict[str, str] = {
     'qa_seo_baseline': '6.0',
     'qa_title_originality_enabled': 'true',
     'qa_title_similarity_threshold': '0.6',
+    'title_max_length': '90',
     'qa_topic_dedup_hours': '48',
 
     # ----- Topic discovery / dedup / ranking -----

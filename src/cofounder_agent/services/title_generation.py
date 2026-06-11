@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+import string
 from difflib import SequenceMatcher
 
 from services.site_config import SiteConfig
@@ -113,10 +114,105 @@ def extract_h1_title(content: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Junk-title guard (#1280)
+# ---------------------------------------------------------------------------
+
+# Patterns that identify LLM "thinking out loud" or instructional meta-text
+# that slipped through as a title candidate (case-insensitive prefix or
+# substring checks).  Real failures captured 2026-06-09:
+#   - "Intent-Based: They signal to the reader exactly what they will get..."
+#   - "SEO Keywords: They lead with high-volume terms like *"Mastering..."
+_JUNK_TITLE_PREFIX_PATTERNS: tuple[str, ...] = (
+    "intent-based:",
+    "seo keywords:",
+    "heading:",
+    "they signal",
+    "they lead with",
+)
+
+_JUNK_TITLE_SUBSTRING_PATTERNS: tuple[str, ...] = (
+    " they signal to the reader",
+    " they lead with high-volume",
+)
+
+# Characters that represent a cleanly terminated title.
+_CLEAN_END_CHARS: frozenset[str] = frozenset(
+    string.ascii_letters + string.digits + '"' + "'" + "!" + "?" + "."
+)
+
+# Default maximum title length (SEO-safe cap).  Overrideable via the
+# ``title_max_length`` app_settings key.
+_DEFAULT_TITLE_MAX_LENGTH: int = 90
+
+
+def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> bool:
+    """Return True when ``title`` looks like LLM meta-text rather than a real title.
+
+    Checks (all case-insensitive):
+
+    1. **Truncated ending** — last non-whitespace char is not a clean terminal
+       character (letter, digit, ``"``, ``'``, ``!``, ``?``, ``.``).
+       Covers tails like ``, o...`` or ``-style truncation``.
+    2. **Length cap** — exceeds ``max_length`` characters (default 90, but
+       callers pass the DB-configured ``title_max_length`` value).
+    3. **Prefix patterns** — starts with any of the known instructional
+       prefixes (e.g. ``Intent-Based:``, ``SEO Keywords:``, ``Heading:``).
+    4. **Substring patterns** — contains any of the known instructional
+       substrings (e.g. `` they signal to the reader``).
+    5. **Topic verbatim** — intentionally NOT handled here; that case is
+       already covered by the ``choose_canonical_title`` fallback logic.
+
+    Pure function — no LLM calls, no I/O.
+    """
+    if not title or not title.strip():
+        return False  # Empty titles are handled elsewhere; not "junk" per se.
+
+    stripped = title.strip()
+
+    # 1. Truncated ending.
+    last_char = stripped[-1] if stripped else ""
+    if last_char not in _CLEAN_END_CHARS:
+        return True
+
+    # 2. Length cap.
+    if len(stripped) > max_length:
+        return True
+
+    lower = stripped.lower()
+
+    # 3. Instructional prefix patterns.
+    for prefix in _JUNK_TITLE_PREFIX_PATTERNS:
+        if lower.startswith(prefix):
+            return True
+
+    # 4. Instructional substring patterns.
+    for substr in _JUNK_TITLE_SUBSTRING_PATTERNS:
+        if substr in lower:
+            return True
+
+    return False
+
+
+def _sanitize_topic_fallback(topic: str) -> str:
+    """Derive a clean title string from ``topic`` when the LLM title is junk.
+
+    Strips the QA batch suffix, trims whitespace, and applies title-casing
+    so the fallback reads like a proper headline.  Does NOT touch the topic
+    further — operators tune the topic; we should faithfully represent it.
+    """
+    cleaned = strip_qa_batch_suffix(topic or "").strip()
+    # title() is crude but deterministic and good enough for a fallback; the
+    # content validator / approver will catch anything weird.
+    return cleaned.title() if cleaned else cleaned
+
+
 def choose_canonical_title(
     topic: str,
     content: str,
     llm_title: str | None = None,
+    *,
+    site_config: "SiteConfig | None" = None,
 ) -> str:
     """Pick the cleanest canonical title for ``pipeline_versions.title``.
 
@@ -124,7 +220,9 @@ def choose_canonical_title(
 
     1. ``llm_title`` when the title-generation LLM produced something
        (already passed through :func:`sanitize_generated_title`, which
-       now also strips the QA batch suffix).
+       now also strips the QA batch suffix) AND it passes the junk-title
+       guard (:func:`_is_junk_title`).  When the guard fires the LLM
+       title is discarded and we fall through to (2) or (3) — no retry.
     2. The first H1/H2 heading from ``content`` — the writer commonly
        produces a cleanly-cased title there even when the LLM
        title-gen call fails.
@@ -133,19 +231,52 @@ def choose_canonical_title(
     poindexter#471: previously the fallback was just the raw topic. The
     QA batch suffix leaked into sitemaps / OG cards via this path.
 
+    poindexter#1280: LLM instructional meta-text (e.g. "Intent-Based: They
+    signal to the reader…" / "SEO Keywords: They lead with high-volume…")
+    used to be accepted verbatim.  :func:`_is_junk_title` now rejects such
+    candidates and we degrade gracefully to topic-derived fallback.
+
     Emits a WARN when the chosen title diverges sharply (>50% character
     distance) from the cleaned topic — that drift signals the writer
     model produced a wildly different angle than what was requested, and
     the operator should review the post before approval.
+
+    ``site_config`` is optional; when supplied the DB-configured
+    ``title_max_length`` key is used as the length cap for the junk
+    guard (default 90 if absent or not set).
     """
     cleaned_topic = strip_qa_batch_suffix(topic or "").strip()
+
+    # Read DB-configured max length when a site_config is available.
+    max_title_length: int = _DEFAULT_TITLE_MAX_LENGTH
+    if site_config is not None:
+        try:
+            max_title_length = site_config.get_int(
+                "title_max_length", _DEFAULT_TITLE_MAX_LENGTH
+            )
+        except Exception:
+            pass  # Silently fall back to module default; not a critical path.
 
     chosen: str
     source: str
     if llm_title and llm_title.strip():
-        chosen = strip_qa_batch_suffix(llm_title).strip()
-        source = "llm"
-    else:
+        candidate = strip_qa_batch_suffix(llm_title).strip()
+        if _is_junk_title(candidate, max_length=max_title_length):
+            logger.warning(
+                "[TITLE] Junk-guard rejected LLM title — falling back to H1/topic "
+                "(title_max_length=%d): %r",
+                max_title_length,
+                candidate[:120],
+            )
+            # Fall through to H1 / topic paths below.
+            llm_title = None
+            chosen = ""  # will be overwritten
+            source = "topic"  # placeholder; overwritten
+        else:
+            chosen = candidate
+            source = "llm"
+
+    if not (llm_title and llm_title.strip()):
         h1 = extract_h1_title(content or "")
         if h1 and h1 != cleaned_topic:
             chosen = h1

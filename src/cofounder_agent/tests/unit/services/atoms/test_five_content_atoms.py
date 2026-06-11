@@ -89,7 +89,7 @@ class TestContentGenerateTitle:
         )
         monkeypatch.setattr(
             "services.title_generation.choose_canonical_title",
-            lambda topic, content, llm_title: llm_title,
+            lambda topic, content, llm_title, **kw: llm_title,
         )
         monkeypatch.setattr(
             "services.title_generation.check_title_originality",
@@ -145,7 +145,7 @@ class TestContentGenerateTitle:
             return next(checks)
 
         monkeypatch.setattr("services.title_generation.generate_canonical_title", _gen)
-        monkeypatch.setattr("services.title_generation.choose_canonical_title", lambda t, c, l: l)
+        monkeypatch.setattr("services.title_generation.choose_canonical_title", lambda t, c, l, **kw: l)
         monkeypatch.setattr("services.title_generation.check_title_originality", _check)
 
         mock_conn = AsyncMock()
@@ -169,7 +169,7 @@ class TestContentGenerateTitle:
         orig = _originality_result()
 
         monkeypatch.setattr("services.title_generation.generate_canonical_title", AsyncMock(return_value=expected_title))
-        monkeypatch.setattr("services.title_generation.choose_canonical_title", lambda t, c, l: l)
+        monkeypatch.setattr("services.title_generation.choose_canonical_title", lambda t, c, l, **kw: l)
         monkeypatch.setattr("services.title_generation.check_title_originality", AsyncMock(return_value=orig))
 
         db = _make_db()

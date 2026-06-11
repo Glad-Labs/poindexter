@@ -77,7 +77,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         existing_titles=existing_titles,
         site_config=site_config,  # type: ignore[arg-type]
     )
-    title = _choose_canonical_title(topic, content_text, llm_title)
+    title = _choose_canonical_title(
+        topic, content_text, llm_title, site_config=site_config,
+    )
     logger.info("Title generated: %s", title)
 
     # Title originality check + optional regeneration.
