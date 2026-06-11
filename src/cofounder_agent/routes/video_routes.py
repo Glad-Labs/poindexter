@@ -12,12 +12,13 @@ from datetime import datetime, timezone
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.video_service import VIDEO_DIR
+from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -191,7 +192,9 @@ async def stream_video(post_id: str):
 
 
 @router.post("/generate/{post_id}", dependencies=[Depends(verify_api_token)])
+@limiter.limit(_settings_limit("rate_limit_video_generate_per_ip", "5/minute"))
 async def generate_video(
+    request: Request,
     post_id: str,
     site_config: Any = Depends(get_site_config_dependency),
 ):

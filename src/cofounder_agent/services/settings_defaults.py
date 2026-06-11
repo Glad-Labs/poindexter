@@ -613,6 +613,16 @@ DEFAULTS: dict[str, str] = {
     # catching genuine sustained outages (#1301).
     'mcp_http_probe_min_consecutive_failures': '3',
 
+    # ----- API rate limits (slowapi — poindexter#748) -----
+    # slowapi limit strings: "<count>/<period>" e.g. "5/minute", "100/hour".
+    # Limits are read at request time so operators can tune via app_settings
+    # without redeploying. All keys use per-IP keying (get_remote_address).
+    'rate_limit_token_per_ip': '10/minute',         # POST /token — OAuth token mint
+    'rate_limit_triage_per_ip': '20/minute',        # POST /api/triage — LLM per call
+    'rate_limit_topics_from_url_per_ip': '10/minute',  # POST /api/topics/from-url — outbound fetch
+    'rate_limit_podcast_generate_per_ip': '5/minute',  # POST /api/podcast/generate/{id} — GPU
+    'rate_limit_video_generate_per_ip': '5/minute',    # POST /api/video/generate/{id} — GPU
+
 }
 
 

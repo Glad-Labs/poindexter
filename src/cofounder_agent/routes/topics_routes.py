@@ -8,11 +8,9 @@ Both modes fetch the URLs, extract title + content, and queue content
 tasks with the URL as the research seed so the research stage uses it.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
@@ -21,6 +19,7 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from services.topic_discovery import pick_target_length
 from services.url_scraper import URLScrapeError, URLScraper
+from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -59,8 +58,10 @@ class FromUrlsRequest(BaseModel):
     summary="Seed a content task from a single URL",
     status_code=201,
 )
+@limiter.limit(_settings_limit("rate_limit_topics_from_url_per_ip", "10/minute"))
 async def from_url(
-    request: FromUrlRequest,
+    request: Request,
+    body: FromUrlRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config: SiteConfig = Depends(get_site_config_dependency),
@@ -74,7 +75,7 @@ async def from_url(
     # (#272 DI migration). Cheap to construct — holds only the SiteConfig.
     scraper = URLScraper(site_config=site_config)
     try:
-        scraped = await scraper.scrape_url(request.url)
+        scraped = await scraper.scrape_url(body.url)
     except URLScrapeError as e:
         raise HTTPException(status_code=400, detail=f"Could not scrape URL: {e}") from e
     except Exception as e:
@@ -84,22 +85,22 @@ async def from_url(
     if not scraped.get("title") or scraped["title"] == "Untitled":
         raise HTTPException(
             status_code=422,
-            detail=f"Could not extract a title from {request.url}",
+            detail=f"Could not extract a title from {body.url}",
         )
 
     # Build the topic from the scraped title
     topic = scraped["title"]
 
     # Classify category if not provided
-    category = request.category or _guess_category(scraped)
+    category = body.category or _guess_category(scraped)
 
     metadata = {
-        "source_url": request.url,
+        "source_url": body.url,
         "source_type": scraped.get("content_type", "article"),
         "source_preview": scraped.get("content_preview", "")[:500],
         "source_author": scraped.get("author"),
         "source_published_at": scraped.get("published_at"),
-        "angle_hint": request.angle,
+        "angle_hint": body.angle,
         "discovered_by": "url_seed",
     }
 
@@ -112,21 +113,21 @@ async def from_url(
         "status": "pending",
         "topic": topic,
         "category": category,
-        "style": request.style or "narrative",
-        "tone": request.tone or "professional",
+        "style": body.style or "narrative",
+        "tone": body.tone or "professional",
         # Vary length when the caller didn't specify one (#542) via the
         # shared DB-configurable weighted picker; an explicit request value
         # always wins.
         "target_length": (
-            request.target_length
-            if request.target_length is not None
+            body.target_length
+            if body.target_length is not None
             else pick_target_length(site_config)
         ),
         "metadata": metadata,
     })
     logger.info(
         "[URL_SEED] Task created: %s from %s (%d words scraped)",
-        returned_task_id, request.url, scraped.get("word_count", 0),
+        returned_task_id, body.url, scraped.get("word_count", 0),
     )
 
     return {
@@ -135,7 +136,7 @@ async def from_url(
         "status": "pending",
         "topic": topic,
         "category": category,
-        "source_url": request.url,
+        "source_url": body.url,
         "content_type": scraped.get("content_type"),
         "word_count": scraped.get("word_count"),
         "message": "Content task queued from URL",

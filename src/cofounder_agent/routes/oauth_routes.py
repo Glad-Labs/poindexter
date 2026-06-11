@@ -53,6 +53,7 @@ from services.auth.oauth_issuer import (
 from services.auth.oauth_provider import PoindexterOAuthProvider
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
+from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -312,6 +313,7 @@ async def revoke(
 
 
 @authorization_router.post("/token")
+@limiter.limit(_settings_limit("rate_limit_token_per_ip", "10/minute"))
 async def token(
     request: Request,
     db_service: DatabaseService = Depends(get_database_dependency),

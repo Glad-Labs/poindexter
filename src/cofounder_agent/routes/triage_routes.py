@@ -53,18 +53,17 @@ Design notes:
   module-level singletons — Phase H rules.
 """
 
-from __future__ import annotations
-
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
 from services.firefighter_service import build_triage_context, run_triage
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -319,7 +318,9 @@ async def _cost_guard_check(site_config: SiteConfig) -> None:
         503: {"description": "Triage disabled or no provider for the configured tier"},
     },
 )
+@limiter.limit(_settings_limit("rate_limit_triage_per_ip", "20/minute"))
 async def post_triage(
+    request: Request,
     payload: TriageRequest,
     _token: str = Depends(verify_api_token),
     site_config: SiteConfig = Depends(get_site_config_dependency),

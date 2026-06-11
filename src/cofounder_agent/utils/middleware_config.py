@@ -59,7 +59,7 @@ class MiddlewareConfig:
         # Profiling should execute FIRST, so it's added LAST
         self._setup_cache_control(app)
         self._setup_input_validation(app)
-        self._setup_rate_limiting(app)
+        self._setup_rate_limiting(app, site_config=site_config)
         self._setup_token_validation(app)
         self._setup_security_headers(app)
         self._setup_cors(app, site_config=site_config)
@@ -264,7 +264,7 @@ class MiddlewareConfig:
         app.add_middleware(SecurityHeadersMiddleware)
         logger.info("✅ Security headers middleware initialized")
 
-    def _setup_rate_limiting(self, app: FastAPI) -> None:
+    def _setup_rate_limiting(self, app: FastAPI, *, site_config: Any = None) -> None:
         """
         Setup rate limiting middleware to protect against:
         - DDoS attacks
@@ -278,12 +278,18 @@ class MiddlewareConfig:
 
             # Use the shared singleton so route @limiter.limit() decorators
             # reference the same instance that is registered with app.state.
-            from utils.rate_limiter import limiter as _limiter
+            from utils.rate_limiter import configure_rate_limiter, limiter as _limiter
 
             self.limiter = _limiter
 
             # Store limiter in app state for use in route decorators
             app.state.limiter = self.limiter
+
+            # Wire site_config so _settings_limit() callables can read live
+            # DB-backed rate limits. SiteConfig.reload() updates the object
+            # in place, so the reference stays valid across reloads.
+            if site_config is not None:
+                configure_rate_limiter(site_config)
 
             # Register rate limit exceeded handler
             @app.exception_handler(RateLimitExceeded)
