@@ -71,7 +71,7 @@ services:
   # Prometheus — scrapes nvidia-smi exporter for GPU metrics
   # ===========================================
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.11.3
     container_name: poindexter-prometheus
     restart: unless-stopped
     # Startup sidecar: chmod the shared rules volume world-writable so
@@ -114,7 +114,7 @@ services:
   # (reader). The startup sidecar chmods the dir + seeds a minimal config
   # so Alertmanager can boot before the first render lands (≤5 min).
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.32.1
     container_name: poindexter-alertmanager
     restart: unless-stopped
     user: root
@@ -160,7 +160,7 @@ services:
       retries: 3
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:13.0.1
     container_name: poindexter-grafana
     restart: unless-stopped
     ports:
@@ -1081,7 +1081,7 @@ services:
   # (the whole point of #1088 — move the ~12s cold-start to Speaches' boot).
   # ===========================================
   speaches:
-    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    image: ghcr.io/speaches-ai/speaches@sha256:6ec12ebf890a17e0d4b242a8ba9e0eb1fb836e60e8a3c857aea9838d541579ac
     container_name: poindexter-speaches
     restart: unless-stopped
     ports:
@@ -1114,7 +1114,7 @@ services:
   # pgAdmin — PostgreSQL web UI
   # ===========================================
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4@sha256:ff557f69d9808085dc3554f56c1b06a36ac8cddabe4485212920b9604261abdb
     container_name: poindexter-pgadmin
     restart: unless-stopped
     # Optional DB GUI — start with: docker compose --profile operator up -d pgadmin
@@ -1345,7 +1345,7 @@ services:
   # On Docker Desktop for Windows the mounts resolve inside the Linux VM,
   # not on the Windows host filesystem — this is correct behaviour.
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
+    image: gcr.io/cadvisor/cadvisor@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
     container_name: poindexter-cadvisor
     restart: unless-stopped
     privileged: true
@@ -1372,7 +1372,7 @@ services:
   # No host port — only Prometheus needs to reach it on the Docker network.
   # Natural home for its panels: the Database dashboard (/d/database).
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
+    image: prometheuscommunity/postgres-exporter:v0.19.1
     container_name: poindexter-postgres-exporter
     restart: unless-stopped
     environment:
@@ -1424,7 +1424,7 @@ services:
       retries: 5
 
   glitchtip-web:
-    image: glitchtip/glitchtip:latest
+    image: glitchtip/glitchtip:v6.1.6
     container_name: poindexter-glitchtip-web
     restart: unless-stopped
     ports:
@@ -1453,7 +1453,7 @@ services:
       start_period: 60s
 
   glitchtip-worker:
-    image: glitchtip/glitchtip:latest
+    image: glitchtip/glitchtip:v6.1.6
     container_name: poindexter-glitchtip-worker
     restart: unless-stopped
     command: ./bin/run-celery-with-beat.sh
@@ -1849,7 +1849,7 @@ services:
   # bootstrap.toml before exposing the port outside the tailnet.
   # ===========================================
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.11.0
     container_name: poindexter-livekit
     restart: unless-stopped
     # --node-ip pins what LiveKit advertises to clients in the SDP
