@@ -76,7 +76,7 @@ if ($Install) {
     if (-not $pwshExe) { $pwshExe = (Get-Command powershell).Source }
 
     $action = New-ScheduledTaskAction -Execute $pwshExe `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+        -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`""
     # Every 10 minutes, indefinitely, starting at the next round minute.
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
         -RepetitionInterval (New-TimeSpan -Minutes 10)

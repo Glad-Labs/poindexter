@@ -228,28 +228,45 @@ function Run-Session {
 }
 
 function Install-Sessions {
-    $wrapper = "$WorkDir\scripts\run-claude-session.cmd"
+    # Use Windows PowerShell 5.1 directly — points to powershell.exe in system32.
+    # pwsh (PS7) is preferred for interactive use but we need the exe to be stable
+    # across updates; WindowsPowerShell path is guaranteed present.
+    $pwshExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $scriptFile = $PSCommandPath  # full path to this script, baked into the task action
+
+    $dayMap = @{
+        "MON" = "Monday"; "TUE" = "Tuesday"; "WED" = "Wednesday"
+        "THU" = "Thursday"; "FRI" = "Friday"; "SAT" = "Saturday"; "SUN" = "Sunday"
+    }
 
     foreach ($name in $Sessions.Keys) {
         $s = $Sessions[$name]
         $taskName = "$TaskPrefix - $name"
 
-        # Remove existing if present
-        $null = schtasks /Delete /TN $taskName /F 2>&1
+        # Direct powershell.exe invocation with -WindowStyle Hidden — no cmd wrapper
+        # needed. Child processes (claude.exe, git, etc.) inherit the hidden console
+        # and never spawn visible windows.
+        $action = New-ScheduledTaskAction `
+            -Execute $pwshExe `
+            -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptFile`" -Session $name"
 
-        $tr = "`"$wrapper`" $name"
-        $st = "$($s.TimeHH):$($s.TimeMM)"
-
-        if ($s.Days -eq "daily") {
-            schtasks /Create /TN "$taskName" /TR $tr /SC DAILY /ST $st /F 2>&1 | Out-Null
+        $timeStr = "$($s.TimeHH):$($s.TimeMM)"
+        $trigger = if ($s.Days -eq "daily") {
+            New-ScheduledTaskTrigger -Daily -At $timeStr
         } else {
-            schtasks /Create /TN "$taskName" /TR $tr /SC WEEKLY /D $($s.Days) /ST $st /F 2>&1 | Out-Null
+            New-ScheduledTaskTrigger -Weekly -DaysOfWeek $dayMap[$s.Days] -At $timeStr
         }
 
-        # Verify it was created
-        $check = schtasks /Query /TN "$taskName" 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Registered: $taskName ($($s.Days) at $st)"
+        $settings = New-ScheduledTaskSettingsSet `
+            -StartWhenAvailable `
+            -ExecutionTimeLimit (New-TimeSpan -Minutes $s.MaxMinutes) `
+            -MultipleInstances IgnoreNew
+
+        $null = Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+
+        if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+            Write-Host "Registered: $taskName ($($s.Days) at $timeStr)"
         } else {
             Write-Host "FAILED to register: $taskName"
         }
