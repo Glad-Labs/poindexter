@@ -189,7 +189,19 @@ class ReplaceInlineImagesStage:
         )
 
         used_image_ids: set[str] = set()
-        for num, desc in placeholders:
+        # poindexter#733 — batch GPU work into two phases:
+        #   Phase 1: one Ollama lock → generate ALL prompts
+        #   Phase 2: one SDXL lock → render ALL images
+        # This eliminates N×2 GPU lock acquisitions (6 for 3 images) and
+        # the Ollama↔SDXL model-swap churn that caused ~95 s avg stage time.
+        sdxl_urls = await _batch_generate_all_sdxl_images(
+            placeholders=placeholders,
+            topic=topic,
+            site_config=site_config,
+            task_id=task_id,
+            platform=platform,
+        )
+        for (num, desc), img_url in zip(placeholders, sdxl_urls):
             content_text = await _resolve_one_placeholder(
                 num=num,
                 desc=desc,
@@ -201,6 +213,7 @@ class ReplaceInlineImagesStage:
                 task_id=task_id,
                 post_id=post_id,
                 platform=platform,
+                pregenerated_sdxl_url=img_url,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -356,6 +369,7 @@ async def _resolve_one_placeholder(
     task_id: str | None,
     post_id: Any = None,
     platform: Any = None,
+    pregenerated_sdxl_url: str | None = None,
 ) -> str:
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
 
@@ -367,6 +381,11 @@ async def _resolve_one_placeholder(
     ``media_assets`` row pinned to the post it belongs to (Glad-Labs/
     poindexter#161). When ``post_id`` is None (early-pipeline calls
     before the post is persisted), the row is skipped.
+
+    ``pregenerated_sdxl_url`` accepts an already-generated SDXL URL so
+    the batched two-phase path (poindexter#733) can skip the per-placeholder
+    GPU lock cycle. When set to a non-None non-empty string, Strategy 1
+    uses this URL directly instead of calling ``_try_sdxl``.
     """
     from services.alt_text import sanitize_alt_text
     search_query = desc.strip() if desc else topic
@@ -388,10 +407,16 @@ async def _resolve_one_placeholder(
     )
 
     # Strategy 1: SDXL.
-    img_url = await _try_sdxl(
-        num, search_query, topic, site_config=site_config, task_id=task_id,
-        platform=platform,
-    )
+    # Use the pre-generated URL when available (poindexter#733 batch path);
+    # fall back to the per-image _try_sdxl call when not (legacy path, used
+    # when callers don't go through the batched execute() loop).
+    if pregenerated_sdxl_url is not None:
+        img_url = pregenerated_sdxl_url or None
+    else:
+        img_url = await _try_sdxl(
+            num, search_query, topic, site_config=site_config, task_id=task_id,
+            platform=platform,
+        )
     if img_url and img_url not in used_image_ids:
         used_image_ids.add(img_url)
         content_text = _inject_html_image(
@@ -502,6 +527,134 @@ async def _record_inline_image_asset(
         storage_provider=storage_provider,
         metadata=metadata,
     )
+
+
+async def _batch_generate_all_sdxl_images(
+    placeholders: list[tuple[str, str]],
+    topic: str,
+    *,
+    site_config: Any,
+    task_id: str | None,
+    platform: Any,
+) -> list[str | None]:
+    """Generate SDXL images for all placeholders using two batched GPU locks.
+
+    poindexter#733 — eliminates the per-placeholder Ollama↔SDXL swap churn.
+
+    Phase 1 (one Ollama lock): generate ALL SDXL prompts sequentially.
+    Phase 2 (one SDXL lock): render ALL images sequentially.
+
+    Returns a list of URLs (or None on failure) in the same order as
+    ``placeholders``. A per-placeholder failure never stops the others —
+    None in the result triggers the Pexels fallback in
+    ``_resolve_one_placeholder``.
+
+    Falls back to returning a list of None values when:
+    - No DB pool is available (tests / bootstrap without DB)
+    - Either GPU lock acquisition fails
+    """
+    from services.gpu_scheduler import gpu
+
+    n = len(placeholders)
+    if n == 0:
+        return []
+
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+    if pool is None:
+        logger.debug("[IMAGE-BATCH] no DB pool — skipping batched SDXL generation")
+        return [None] * n
+
+    if platform is None:
+        logger.debug("[IMAGE-BATCH] no platform handle — skipping batched SDXL generation")
+        return [None] * n
+
+    sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+    model = site_config.get("inline_image_prompt_model", "llama3:latest")
+
+    # ------------------------------------------------------------------ #
+    # Phase 1: generate ALL prompts under a single Ollama lock            #
+    # ------------------------------------------------------------------ #
+    sdxl_prompts: list[str | None] = []
+    try:
+        async with gpu.lock(
+            "ollama", model=model, task_id=task_id, phase="inline_image_prompt_batch",
+        ):
+            for num, desc in placeholders:
+                search_query = desc.strip() if desc else topic
+                inline_style = random.choice(INLINE_STYLES)
+                img_prompt_req = (
+                    f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
+                    f"Article topic: {topic}\n\n"
+                    f"Requirements: {inline_style}, no people, no text, no faces. "
+                    "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
+                )
+                try:
+                    result = await platform.dispatch.complete(
+                        pool=pool,
+                        messages=[{"role": "user", "content": img_prompt_req}],
+                        model=model,
+                        tier="standard",
+                        timeout_s=90,
+                        temperature=0.8,
+                        max_tokens=100,
+                    )
+                    sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+                    if sdxl_prompt and len(sdxl_prompt) > 20:
+                        logger.info(
+                            "  [IMAGE-%s] SDXL prompt (batch): %s...", num, sdxl_prompt[:60],
+                        )
+                        sdxl_prompts.append(sdxl_prompt)
+                    else:
+                        logger.warning("  [IMAGE-%s] SDXL prompt too short/empty — Pexels fallback", num)
+                        sdxl_prompts.append(None)
+                except Exception as err:
+                    logger.warning("  [IMAGE-%s] SDXL prompt generation failed: %s", num, err)
+                    sdxl_prompts.append(None)
+    except Exception as err:
+        logger.warning("[IMAGE-BATCH] Ollama lock acquire failed: %s — falling back per-image", err)
+        return [None] * n
+
+    # ------------------------------------------------------------------ #
+    # Phase 2: render ALL images under a single SDXL lock                #
+    # ------------------------------------------------------------------ #
+    sdxl_urls: list[str | None] = []
+    try:
+        async with gpu.lock(
+            "sdxl", model="sdxl_lightning", task_id=task_id, phase="inline_image_batch",
+        ):
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+                for (num, _desc), sdxl_prompt in zip(placeholders, sdxl_prompts):
+                    if sdxl_prompt is None:
+                        sdxl_urls.append(None)
+                        continue
+                    try:
+                        img_resp = await client.post(
+                            f"{sdxl_url}/generate",
+                            json={
+                                "prompt": sdxl_prompt,
+                                "negative_prompt": SDXL_NEGATIVE_PROMPT,
+                                "steps": 8, "guidance_scale": 2.0,
+                            },
+                            timeout=60,
+                        )
+                        if img_resp.status_code != 200:
+                            logger.warning(
+                                "  [IMAGE-%s] SDXL returned %s (batch)", num, img_resp.status_code,
+                            )
+                            sdxl_urls.append(None)
+                            continue
+                        tmp_path = await _resolve_sdxl_response(img_resp, sdxl_url=sdxl_url)
+                        img_url = await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
+                        logger.info("  [IMAGE-%s] SDXL generated + uploaded (batch)", num)
+                        sdxl_urls.append(img_url)
+                    except Exception as err:
+                        logger.warning("  [IMAGE-%s] SDXL render failed (batch): %s", num, err)
+                        sdxl_urls.append(None)
+    except Exception as err:
+        logger.warning("[IMAGE-BATCH] SDXL lock acquire failed: %s — no SDXL images this run", err)
+        return [None] * n
+
+    return sdxl_urls
 
 
 async def _try_sdxl(
