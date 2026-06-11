@@ -20,11 +20,12 @@
 #
 # The backend-dependent specs (auth / author / task-workflow /
 # manual-publish-pipeline / workflow-capability / integration-tests /
-# fixtures-validation / tag) are STAGED behind a separate, manually-
-# dispatched job that sets SKIP_SERVER_START=true and expects an
-# operator-provided backend — they can't run in stock GitHub-hosted CI
-# because they need a live worker + Postgres. Until that harness exists,
-# the default push/PR path runs only the frontend-only block.
+# fixtures-validation / tag) are STAGED behind a separate job that sets
+# SKIP_SERVER_START=true and points PLAYWRIGHT_TEST_BASE_URL at
+# www.gladlabs.io (production). The scheduled weekly run exercises the
+# read-only backend-dependent specs against production; the full suite
+# (including write-heavy manual-publish-pipeline) is workflow_dispatch-only.
+# (glad-labs-stack#1291 — backend-e2e was never dispatched until this change.)
 #
 # Third-party actions are pinned by SHA (repo convention — see
 # unit-tests.yml / migrations-smoke.yml).
@@ -56,6 +57,11 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/playwright-e2e.yml'
+  # Weekly scheduled run: Monday 06:00 UTC — runs backend-e2e (read-only specs)
+  # against production (www.gladlabs.io). Not a PR gate; quality signal only.
+  # Fixes Glad-Labs/glad-labs-stack#1291.
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 concurrency:
@@ -68,6 +74,10 @@ permissions:
 jobs:
   frontend-e2e:
     name: Frontend-only Playwright specs
+    # Skip on the weekly scheduled run — that trigger exists only to fire
+    # backend-e2e (production read-only checks). Frontend specs need a built
+    # Next.js binary which is only warranted on push/PR/workflow_dispatch.
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -134,29 +144,39 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # Backend-dependent specs — staged, manual-dispatch only.
+  # Backend-dependent specs — scheduled weekly + manual-dispatch.
   #
-  # These specs (auth/author/task-workflow/manual-publish-pipeline/
-  # workflow-capability/integration-tests/fixtures-validation/tag) drive the
-  # full content pipeline and need a live FastAPI worker + Postgres, which
-  # stock GitHub-hosted runners don't provide. SKIP_SERVER_START=true tells
-  # the config NOT to boot its own Next.js webServer — the operator running
-  # this dispatch is expected to point PLAYWRIGHT_TEST_BASE_URL /
-  # PLAYWRIGHT_API_URL at a reachable stack (e.g. a self-hosted runner on the
-  # Tailnet). Left as workflow_dispatch-only until that harness is wired so it
-  # never gates push/PR on infra we can't provision in CI.
+  # Scheduled run (Monday 06:00 UTC — glad-labs-stack#1291):
+  #   Runs the READ-ONLY backend-dependent specs against production
+  #   (https://www.gladlabs.io). SKIP_SERVER_START=true so no local Next.js
+  #   server is booted; the specs hit the live site directly. This is a
+  #   quality signal — NOT a PR gate.
+  #
+  #   Read-only specs safe to run against production (no task creation):
+  #     auth / author / integration-tests / fixtures-validation / tag
+  #
+  # workflow_dispatch:
+  #   Runs the FULL suite including write-heavy specs (task-workflow /
+  #   manual-publish-pipeline / workflow-capability). The operator is expected
+  #   to provide PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL pointing at a
+  #   reachable stack (e.g. Tailnet-accessible local worker). Write-heavy
+  #   specs use `Bearer dev-token` + DEVELOPMENT_MODE=true which are NOT
+  #   present on production, so they are excluded from the scheduled run.
   # ---------------------------------------------------------------------------
   backend-e2e:
-    name: Backend-dependent Playwright specs (manual)
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    name: Backend-dependent Playwright specs (scheduled + manual)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     env:
       CI: "true"
-      # Don't boot a Next.js server — the operator points the base URLs at
-      # an already-running stack.
+      # Don't boot a local Next.js server — point at an already-running stack.
+      # For the scheduled run this is www.gladlabs.io (production).
       SKIP_SERVER_START: "true"
+      # Scheduled run: target production. workflow_dispatch: operator overrides
+      # via env inputs to point at a local/staging stack for write-heavy specs.
+      PLAYWRIGHT_TEST_BASE_URL: ${{ github.event_name == 'schedule' && 'https://www.gladlabs.io' || vars.PLAYWRIGHT_TEST_BASE_URL || 'https://www.gladlabs.io' }}
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4.3.1 as of 2026-05-12
@@ -174,10 +194,27 @@ jobs:
       - name: Install Playwright browsers (chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Run backend-dependent Playwright specs (chromium)
-        # Base URLs default to localhost:3000 / :8000; override via the
-        # PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL env vars when
-        # pointing at a remote stack.
+      - name: Run read-only backend specs against production (scheduled)
+        # Scheduled weekly run: exercises the read-only backend-dependent specs
+        # against https://www.gladlabs.io. No task creation; no dev-token auth.
+        # Covers: auth resilience / author rendering / integration health /
+        # fixtures sanity / tag archive pages.
+        if: ${{ github.event_name == 'schedule' }}
+        run: >
+          npx playwright test
+          --project=chromium
+          web/public-site/e2e/auth.spec.ts
+          web/public-site/e2e/author.spec.ts
+          web/public-site/e2e/integration-tests.spec.ts
+          web/public-site/e2e/fixtures-validation.spec.ts
+          web/public-site/e2e/tag.spec.ts
+
+      - name: Run full backend-dependent specs (manual dispatch)
+        # workflow_dispatch: full suite including write-heavy specs. Operator
+        # should set PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL (or set
+        # vars.PLAYWRIGHT_TEST_BASE_URL in repo/org settings) to a local stack
+        # reachable on the Tailnet with DEVELOPMENT_MODE=true.
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: >
           npx playwright test
           --project=chromium
