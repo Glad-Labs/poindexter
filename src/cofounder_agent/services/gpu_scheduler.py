@@ -10,6 +10,21 @@ This module provides an async lock so that:
   - Small models (embeddings) can coexist and skip the lock
   - If a game or external app is using the GPU, the pipeline pauses automatically
 
+Cross-process locking (poindexter#731):
+  The in-process ``asyncio.Lock`` only serializes within one Python process.
+  When ``poindexter-worker`` and ``poindexter-prefect-worker`` both need the
+  GPU they race — SDXL model-loads evict each other's Ollama models.
+
+  The fix: a PostgreSQL ``pg_advisory_lock`` held on a DEDICATED connection
+  (not a pool checkout) acts as the cross-process barrier.  Session-level
+  advisory locks are tied to the connection — returning a pooled connection
+  to the pool while the lock is held would silently release it and let a
+  second process acquire it.  A dedicated connection is opened before each
+  ``pg_advisory_lock`` call and closed in the ``finally`` block.
+
+  The ``asyncio.Lock`` is retained as an in-process guard so coroutines
+  within the same event loop still serialize cheaply without hitting PG.
+
 Gaming detection:
   Queries the nvidia-smi prometheus exporter (host.docker.internal:9835) for GPU
   utilization. If utilization is above the threshold and we don't hold the lock,
@@ -28,6 +43,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+# Stable int64 constant used as the pg_advisory_lock key.  Chosen to be
+# unique across the application (no other caller uses this value).
+# int64 range: -9223372036854775808 .. 9223372036854775807
+GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
@@ -154,7 +174,15 @@ def _emit_cfg_fetch_finding(
 
 
 class GPUScheduler:
-    """Async-safe GPU resource coordinator with gaming detection."""
+    """Async-safe GPU resource coordinator with gaming detection.
+
+    Cross-process locking (poindexter#731):
+        ``_lock`` (asyncio.Lock) serializes within one Python process.
+        ``_pg_lock_conn`` holds a dedicated asyncpg connection that holds
+        ``pg_advisory_lock(GPU_ADVISORY_LOCK_KEY)`` for the duration of a
+        GPU session.  Two containers sharing one physical GPU will block on
+        this Postgres-level lock even though they run in separate processes.
+    """
 
     def __init__(self):
         self._lock = asyncio.Lock()
@@ -164,6 +192,12 @@ class GPUScheduler:
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
         self._total_gaming_paused_s: float = 0  # cumulative for metrics
+        # Dedicated asyncpg connection that holds the cross-process
+        # pg_advisory_lock for the duration of each GPU session.
+        # None when the lock is not held.  Must NOT be a pool checkout —
+        # session-level advisory locks are released when the connection
+        # is returned to the pool.
+        self._pg_lock_conn: "asyncpg.Connection | None" = None  # type: ignore[name-defined]
         # Lazily-initialised shared httpx client. Every public-API call
         # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
         # (nvidia-smi exporter, Ollama /api/ps, SDXL /unload) — that's
@@ -188,11 +222,108 @@ class GPUScheduler:
         return self._http_client
 
     async def aclose(self) -> None:
-        """Close the shared httpx client. Idempotent. Called from main.py
-        on app shutdown; safe to call when no client was ever built."""
+        """Close shared resources. Idempotent. Called from main.py on app
+        shutdown; safe to call when no client was ever built.
+
+        If the pg advisory-lock connection is still open (e.g. shutdown
+        during an active GPU session), it is closed here — Postgres will
+        automatically release any session-level advisory locks held by a
+        closing connection.
+        """
         if self._http_client is not None and not self._http_client.is_closed:
             await self._http_client.aclose()
         self._http_client = None
+        if self._pg_lock_conn is not None:
+            try:
+                await self._pg_lock_conn.close()
+            except Exception:
+                pass
+            self._pg_lock_conn = None
+
+    # ------------------------------------------------------------------
+    # Cross-process pg_advisory_lock helpers (poindexter#731)
+    # ------------------------------------------------------------------
+
+    async def _acquire_pg_advisory_lock(self) -> None:
+        """Open a dedicated asyncpg connection and acquire the session-level
+        GPU advisory lock.
+
+        A DEDICATED connection (not a pool checkout) is required because
+        session-level advisory locks are tied to the connection lifetime.
+        Returning a connection to a pool while holding an advisory lock
+        silently releases the lock — another process could then acquire it
+        while our session still believes it holds the lock.
+
+        The connection is stored on ``self._pg_lock_conn`` so
+        ``_release_pg_advisory_lock`` can unlock + close it.
+
+        If Postgres is unavailable (DSN not resolved, network error) this
+        logs a warning and falls back to the in-process asyncio.Lock only —
+        the scheduler must remain functional in test environments and on
+        first-boot before the DB is reachable.
+        """
+        try:
+            import asyncpg
+            from brain.bootstrap import resolve_database_url
+        except ImportError:
+            logger.debug("[GPU] asyncpg/brain.bootstrap unavailable — skipping pg advisory lock")
+            return
+
+        dsn = resolve_database_url()
+        if not dsn:
+            logger.warning(
+                "[GPU] database_url not resolved — cross-process GPU lock unavailable; "
+                "two containers may race. Configure database_url in bootstrap.toml."
+            )
+            return
+
+        conn = None
+        try:
+            conn = await asyncpg.connect(dsn)
+            await conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY)
+            self._pg_lock_conn = conn
+            logger.debug("[GPU] pg_advisory_lock acquired (key=%d)", GPU_ADVISORY_LOCK_KEY)
+        except Exception as exc:
+            logger.warning(
+                "[GPU] pg_advisory_lock acquire failed (%s: %s) — "
+                "falling back to process-local lock only",
+                type(exc).__name__, exc,
+            )
+            # If we opened a connection before the lock call failed, close it
+            # so it doesn't leak.
+            if conn is not None:
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
+
+    async def _release_pg_advisory_lock(self) -> None:
+        """Release the session-level GPU advisory lock and close the dedicated
+        connection.
+
+        Idempotent — safe to call when no connection is held.
+        """
+        conn = self._pg_lock_conn
+        self._pg_lock_conn = None
+        if conn is None:
+            return
+        try:
+            await conn.execute("SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY)
+            logger.debug("[GPU] pg_advisory_lock released (key=%d)", GPU_ADVISORY_LOCK_KEY)
+        except Exception as exc:
+            logger.warning(
+                "[GPU] pg_advisory_unlock failed (%s: %s) — closing connection anyway",
+                type(exc).__name__, exc,
+            )
+        finally:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # Public lock context manager
+    # ------------------------------------------------------------------
 
     @asynccontextmanager
     async def lock(
@@ -203,6 +334,13 @@ class GPUScheduler:
         phase: str | None = None,
     ):
         """Acquire exclusive GPU access.
+
+        Two-tier locking (poindexter#731):
+          1. asyncio.Lock — in-process serialization (cheap, fast).
+          2. pg_advisory_lock — cross-process serialization via Postgres
+             (blocks a second container from acquiring the GPU while the
+             first holds it).  Held on a dedicated asyncpg connection for
+             the full duration of the GPU session.
 
         Waits for any gaming/external workload to finish before acquiring.
 
@@ -229,7 +367,13 @@ class GPUScheduler:
             )
             waited = True
 
+        # Acquire in-process lock first (fast path for same-process callers)
         await self._lock.acquire()
+
+        # Then acquire the cross-process pg advisory lock so a second
+        # container blocks here until we release.
+        await self._acquire_pg_advisory_lock()
+
         wait_msg = " (waited)" if waited else ""
         logger.info("GPU acquired%s", wait_msg, owner=owner, model=model)
 
@@ -248,6 +392,9 @@ class GPUScheduler:
             logger.info("GPU released", owner=owner, model=model, duration_s=round(duration, 1))
             self._current_owner = None
             self._current_model = None
+            # Release pg advisory lock BEFORE releasing the in-process lock
+            # so that the cross-process barrier stays up until we are done.
+            await self._release_pg_advisory_lock()
             self._lock.release()
             # internal tracker Phase 3.A3 — record the session so model/phase
             # compute economics are queryable per task. Best-effort; a
@@ -564,6 +711,9 @@ class GPUScheduler:
             "gaming_detected": self._gaming_detected,
             "gaming_paused_s": current_pause,
             "total_gaming_paused_s": round(self._total_gaming_paused_s + current_pause, 1),
+            # poindexter#731 — cross-process lock observability
+            "pg_advisory_lock_held": self._pg_lock_conn is not None,
+            "pg_advisory_lock_key": GPU_ADVISORY_LOCK_KEY,
             "config": {
                 "threshold_percent": _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD),
                 "check_interval_s": _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL),

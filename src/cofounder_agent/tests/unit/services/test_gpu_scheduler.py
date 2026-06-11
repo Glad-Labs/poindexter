@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.gpu_scheduler import GPUScheduler
+from services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
 
 
 class TestGPUScheduler:
@@ -568,3 +568,221 @@ class TestPropertiesAndConfig:
             result = gpu_scheduler._cfg_int("threshold", 30)
 
         assert result == 30  # scheduler keeps running even when observability breaks
+
+
+# ===========================================================================
+# Cross-process pg_advisory_lock (poindexter#731)
+# ===========================================================================
+
+
+def _make_mock_pg_conn(*, lock_raise=None):
+    """Return a mock asyncpg connection with advisory-lock calls instrumented."""
+    conn = AsyncMock()
+    if lock_raise:
+        conn.execute.side_effect = lock_raise
+    else:
+        conn.execute.return_value = None  # pg_advisory_lock returns void
+    conn.close = AsyncMock()
+    return conn
+
+
+def _patch_pg(dsn: str | None = "postgresql://test/db", conn=None):
+    """Return a context-manager stack that injects mock asyncpg + resolve_database_url.
+
+    Because asyncpg and brain.bootstrap are imported INLINE inside
+    _acquire_pg_advisory_lock, we patch sys.modules so the ``import``
+    statements inside the function see our mocks.
+    """
+    import sys
+
+    mock_asyncpg = MagicMock()
+    if conn is not None:
+        mock_asyncpg.connect = AsyncMock(return_value=conn)
+    else:
+        mock_asyncpg.connect = AsyncMock(side_effect=OSError("no conn"))
+
+    mock_brain_bootstrap = MagicMock()
+    mock_brain_bootstrap.resolve_database_url = MagicMock(return_value=dsn)
+
+    return patch.dict(
+        "sys.modules",
+        {
+            "asyncpg": mock_asyncpg,
+            "brain": MagicMock(),
+            "brain.bootstrap": mock_brain_bootstrap,
+        },
+    ), mock_asyncpg, mock_brain_bootstrap
+
+
+class TestPgAdvisoryLock:
+    """poindexter#731 — cross-process GPU lock via pg_advisory_lock."""
+
+    @pytest.mark.asyncio
+    async def test_acquire_calls_pg_advisory_lock_with_correct_key(self):
+        """_acquire_pg_advisory_lock opens a dedicated conn and calls pg_advisory_lock."""
+        mock_conn = _make_mock_pg_conn()
+        ctx, mock_asyncpg, _ = _patch_pg(conn=mock_conn)
+
+        with ctx:
+            scheduler = GPUScheduler()
+            await scheduler._acquire_pg_advisory_lock()
+
+        mock_asyncpg.connect.assert_awaited_once_with("postgresql://test/db")
+        mock_conn.execute.assert_awaited_once_with(
+            "SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY
+        )
+        assert scheduler._pg_lock_conn is mock_conn
+
+    @pytest.mark.asyncio
+    async def test_release_calls_pg_advisory_unlock_and_closes_conn(self):
+        """_release_pg_advisory_lock calls pg_advisory_unlock then closes the conn."""
+        mock_conn = _make_mock_pg_conn()
+        scheduler = GPUScheduler()
+        scheduler._pg_lock_conn = mock_conn
+
+        await scheduler._release_pg_advisory_lock()
+
+        mock_conn.execute.assert_awaited_once_with(
+            "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
+        )
+        mock_conn.close.assert_awaited_once()
+        assert scheduler._pg_lock_conn is None
+
+    @pytest.mark.asyncio
+    async def test_release_is_idempotent_when_no_conn_held(self):
+        """_release_pg_advisory_lock is a no-op when no connection is held."""
+        scheduler = GPUScheduler()
+        assert scheduler._pg_lock_conn is None
+        # Must not raise
+        await scheduler._release_pg_advisory_lock()
+
+    @pytest.mark.asyncio
+    async def test_acquire_falls_back_gracefully_when_dsn_missing(self):
+        """When database_url is None, pg lock is skipped; scheduler stays functional."""
+        ctx, _, _ = _patch_pg(dsn=None, conn=_make_mock_pg_conn())
+        with ctx:
+            scheduler = GPUScheduler()
+            await scheduler._acquire_pg_advisory_lock()
+
+        # No connection was stored — graceful fallback to process-local lock
+        assert scheduler._pg_lock_conn is None
+
+    @pytest.mark.asyncio
+    async def test_acquire_falls_back_gracefully_when_pg_connect_fails(self):
+        """If asyncpg.connect raises, pg lock is skipped; no connection leaked."""
+        ctx, _, _ = _patch_pg(conn=None)  # conn=None → connect raises OSError
+        with ctx:
+            scheduler = GPUScheduler()
+            await scheduler._acquire_pg_advisory_lock()
+
+        assert scheduler._pg_lock_conn is None
+
+    @pytest.mark.asyncio
+    async def test_lock_context_manager_acquires_and_releases_pg_lock(self):
+        """The lock() context manager calls both acquire and release helpers."""
+        scheduler = GPUScheduler()
+        scheduler._acquire_pg_advisory_lock = AsyncMock()
+        scheduler._release_pg_advisory_lock = AsyncMock()
+        scheduler._wait_for_gaming_clear = AsyncMock()
+        scheduler._unload_ollama_models = AsyncMock()
+
+        async with scheduler.lock("ollama", model="glm4"):
+            scheduler._acquire_pg_advisory_lock.assert_awaited_once()
+            scheduler._release_pg_advisory_lock.assert_not_awaited()
+
+        scheduler._release_pg_advisory_lock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lock_releases_pg_lock_on_exception(self):
+        """pg advisory lock is released even when the body raises."""
+        scheduler = GPUScheduler()
+        scheduler._acquire_pg_advisory_lock = AsyncMock()
+        scheduler._release_pg_advisory_lock = AsyncMock()
+        scheduler._wait_for_gaming_clear = AsyncMock()
+        scheduler._unload_ollama_models = AsyncMock()
+
+        with pytest.raises(ValueError, match="body error"):
+            async with scheduler.lock("sdxl"):
+                raise ValueError("body error")
+
+        scheduler._release_pg_advisory_lock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_two_concurrent_acquires_serialize_via_pg_lock(self):
+        """Two concurrent lock() calls execute sequentially (poindexter#731 core scenario).
+
+        This test simulates the cross-process race by verifying that the
+        in-process asyncio.Lock (which the pg_advisory_lock wraps) correctly
+        serializes concurrent callers.  The pg_advisory_lock helpers are mocked
+        so that we don't need a real Postgres connection, but the asyncio.Lock
+        ordering guarantees hold for the pg_advisory_lock layer as well —
+        pg_advisory_lock is a blocking call that returns only after the previous
+        holder calls pg_advisory_unlock.
+        """
+        acquire_calls: list[str] = []
+        release_calls: list[str] = []
+
+        scheduler = GPUScheduler()
+        scheduler._wait_for_gaming_clear = AsyncMock()
+        scheduler._unload_ollama_models = AsyncMock()
+
+        async def _fake_acquire(self_inner=None):
+            acquire_calls.append("pg_acquire")
+
+        async def _fake_release(self_inner=None):
+            release_calls.append("pg_release")
+
+        scheduler._acquire_pg_advisory_lock = _fake_acquire
+        scheduler._release_pg_advisory_lock = _fake_release
+
+        order: list[str] = []
+
+        async def holder(name: str, hold_seconds: float) -> None:
+            async with scheduler.lock(name):
+                order.append(f"{name}_start")
+                await asyncio.sleep(hold_seconds)
+                order.append(f"{name}_end")
+
+        await asyncio.gather(
+            holder("worker", 0.05),
+            holder("prefect", 0.01),
+        )
+
+        # Verify the two holders never interleaved
+        assert len(order) == 4
+        first, second = order[0].split("_")[0], order[2].split("_")[0]
+        assert order[0] == f"{first}_start"
+        assert order[1] == f"{first}_end"
+        assert order[2] == f"{second}_start"
+        assert order[3] == f"{second}_end"
+
+        # pg acquire and release must each have been called twice (once per holder)
+        assert acquire_calls.count("pg_acquire") == 2
+        assert release_calls.count("pg_release") == 2
+
+    @pytest.mark.asyncio
+    async def test_status_includes_pg_lock_observability(self):
+        """status dict exposes pg_advisory_lock_held and pg_advisory_lock_key."""
+        scheduler = GPUScheduler()
+        status = scheduler.status
+        assert "pg_advisory_lock_held" in status
+        assert status["pg_advisory_lock_held"] is False
+        assert status["pg_advisory_lock_key"] == GPU_ADVISORY_LOCK_KEY
+
+    @pytest.mark.asyncio
+    async def test_aclose_closes_pg_conn_if_held(self):
+        """aclose() closes any held pg advisory lock connection."""
+        mock_conn = _make_mock_pg_conn()
+        scheduler = GPUScheduler()
+        scheduler._pg_lock_conn = mock_conn
+
+        await scheduler.aclose()
+
+        mock_conn.close.assert_awaited_once()
+        assert scheduler._pg_lock_conn is None
+
+    def test_gpu_advisory_lock_key_is_int64(self):
+        """GPU_ADVISORY_LOCK_KEY must fit in int64 for pg_advisory_lock."""
+        # pg_advisory_lock accepts int8 (int64): -9223372036854775808 .. 9223372036854775807
+        assert isinstance(GPU_ADVISORY_LOCK_KEY, int)
+        assert -(2**63) <= GPU_ADVISORY_LOCK_KEY <= (2**63 - 1)
