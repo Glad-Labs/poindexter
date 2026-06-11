@@ -208,6 +208,20 @@ class StartupManager:
             # Step 10: Register services with routes
             await self._register_route_services()
 
+            # Step 10b: Validate *_model / cost_tier.*.model settings against
+            # installed Ollama models (glad-labs-stack#1284). Best-effort --
+            # never aborts startup; only alerts the operator.
+            if self.database_service and self.database_service.pool:
+                try:
+                    await self._validate_ollama_model_settings(
+                        self.database_service.pool
+                    )
+                except Exception as vm_err:
+                    logger.warning(
+                        "[startup] Ollama model validation raised unexpectedly: %s",
+                        vm_err, exc_info=True,
+                    )
+
             # Step 13b: Start retention janitor (internal tracker Phase 4.1) —
             # periodically prunes unbounded high-churn tables. Runs in the
             # background; retention windows configurable per table via
@@ -556,6 +570,223 @@ class StartupManager:
         if self.database_service:
             logger.debug(
                 "   Database service available via dependency injection (get_database_dependency)"
+            )
+
+    async def _validate_ollama_model_settings(self, pool: Any) -> None:
+        """Validate *_model and cost_tier.*.model settings against installed Ollama models.
+
+        Reads every ``app_settings`` key matching ``*_model`` or
+        ``cost_tier.*.model``, then:
+
+        1. Fetches the installed model list from Ollama (``GET /api/tags``).
+        2. For each configured model value: strips an ``ollama/`` prefix if
+           present (the DB stores ``ollama/gemma3:27b``; Ollama reports
+           ``gemma3:27b``).
+        3. Warns if the model is not in the installed list.
+        4. Fetches ``POST /api/show`` for installed models and checks for
+           suspicious chat-template tokens (``<|turn>``, ``<turn|>``,
+           ``<|im_turn|>``) without any established delimiter pattern
+           (``<start_of_turn>``, ``<|im_start|>``, ``[INST]``, ``<|user|>``).
+        5. If any model is uninstalled or has a suspect template, calls
+           :func:`notify_operator` to alert via Discord/Telegram.
+
+        Gated by ``ollama_model_validation_enabled`` (default ``true``).
+        Never hard-fails -- startup continues even when Ollama is unreachable.
+
+        Root cause for which this was added: ``cost_tier.standard.model`` was
+        set to ``gemma-4-31B-it-qat:latest`` with a malformed Modelfile
+        template using ``<|turn>`` pseudo-tokens (should be
+        ``<start_of_turn>``) that caused reasoning-channel bleed into all
+        canonical_blog drafts for hours (2026-06-09 incident).
+        Glad-Labs/glad-labs-stack#1284.
+        """
+        sc = self._site_config
+        if sc is None:
+            logger.debug("[model_validator] No SiteConfig -- skipping")
+            return
+
+        enabled = sc.get("ollama_model_validation_enabled", "true")
+        if enabled.lower() not in ("true", "1", "yes"):
+            logger.debug("[model_validator] Disabled via ollama_model_validation_enabled")
+            return
+
+        ollama_base_url = sc.get(
+            "ollama_base_url", "http://host.docker.internal:11434"
+        ).rstrip("/")
+        logger.info("[model_validator] Validating model settings against %s", ollama_base_url)
+
+        # ------------------------------------------------------------------ #
+        # Collect configured model values                                     #
+        # ------------------------------------------------------------------ #
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT key, value FROM app_settings"
+                    " WHERE (key LIKE '%_model' OR key LIKE 'cost_tier.%.model')"
+                    " AND value IS NOT NULL AND value != ''"
+                    " ORDER BY key"
+                )
+        except Exception as db_err:
+            logger.warning("[model_validator] DB query failed: %s", db_err)
+            return
+
+        if not rows:
+            logger.debug("[model_validator] No *_model / cost_tier.*.model keys found")
+            return
+
+        # key -> raw value (may include ollama/ prefix)
+        configured: dict[str, str] = {row["key"]: row["value"] for row in rows}
+        logger.debug("[model_validator] %d model key(s) to validate", len(configured))
+
+        # ------------------------------------------------------------------ #
+        # Fetch installed Ollama models                                       #
+        # ------------------------------------------------------------------ #
+        import httpx as _httpx
+        from services.integrations.operator_notify import notify_operator
+
+        # Prefer the lifespan-bound shared client; create a per-call client
+        # only when one has not been wired yet (early-boot / tests).
+        from services.integrations import operator_notify as _on_mod
+        _shared = getattr(_on_mod, "http_client", None)
+
+        installed_names: set[str] = set()
+        tags_url = f"{ollama_base_url}/api/tags"
+
+        try:
+            if _shared is not None:
+                resp = await _shared.get(tags_url, timeout=10.0)
+            else:
+                async with _httpx.AsyncClient(timeout=10.0) as _cli:
+                    resp = await _cli.get(tags_url)
+            resp.raise_for_status()
+            data = resp.json()
+            for m in data.get("models", []):
+                name = m.get("name", "")
+                if name:
+                    installed_names.add(name)
+            logger.debug(
+                "[model_validator] Ollama reports %d installed model(s)",
+                len(installed_names),
+            )
+        except Exception as reach_err:
+            msg = (
+                f"[model_validator] Ollama unreachable at {tags_url}: {reach_err}\n"
+                "Cannot validate model settings -- check that Ollama is running."
+            )
+            logger.warning(msg)
+            try:
+                await notify_operator(msg)
+            except Exception:
+                pass
+            return
+
+        # ------------------------------------------------------------------ #
+        # Suspicious template tokens (chat-template quality check)           #
+        # ------------------------------------------------------------------ #
+        _SUSPECT_TOKENS = ("<|turn>", "<turn|>", "<|im_turn|>")
+        _ESTABLISHED_DELIMITERS = (
+            "<start_of_turn>", "<|im_start|>", "[INST]", "<|user|>"
+        )
+
+        async def _fetch_template(model_name: str):
+            """Return the raw Modelfile template string for an installed model."""
+            show_url = f"{ollama_base_url}/api/show"
+            try:
+                payload = {"name": model_name}
+                if _shared is not None:
+                    r = await _shared.post(show_url, json=payload, timeout=15.0)
+                else:
+                    async with _httpx.AsyncClient(timeout=15.0) as _cli:
+                        r = await _cli.post(show_url, json=payload)
+                r.raise_for_status()
+                d = r.json()
+                return d.get("template") or ""
+            except Exception as te:
+                logger.debug(
+                    "[model_validator] /api/show failed for %r: %s", model_name, te
+                )
+                return None
+
+        # ------------------------------------------------------------------ #
+        # Validate each configured model                                      #
+        # ------------------------------------------------------------------ #
+        missing_models: list[str] = []
+        suspect_models: list[tuple] = []  # (model, reason)
+
+        for key, raw_value in configured.items():
+            # Strip the ollama/ prefix that the DB uses but Ollama itself does not
+            model_name = raw_value.strip()
+            if model_name.startswith("ollama/"):
+                model_name = model_name[len("ollama/"):]
+
+            if not model_name:
+                continue
+
+            # Skip non-Ollama model references (e.g. "openai/gpt-4o") --
+            # only validate Ollama-destined values.
+            raw_lower = raw_value.lower()
+            non_ollama_prefixes = (
+                "openai/", "anthropic/", "gemini/",
+                "groq/", "fireworks/", "together/",
+            )
+            if (
+                not raw_value.startswith("ollama/")
+                and any(p in raw_lower for p in non_ollama_prefixes)
+            ):
+                logger.debug(
+                    "[model_validator] Skipping non-Ollama model key=%r value=%r",
+                    key, raw_value,
+                )
+                continue
+
+            if model_name not in installed_names:
+                missing_models.append(model_name)
+                logger.warning(
+                    "[model_validator] MISSING: key=%r references model %r "
+                    "which is not installed in Ollama",
+                    key, model_name,
+                )
+            else:
+                # Model is installed -- check its chat template
+                template = await _fetch_template(model_name)
+                if template is None:
+                    continue
+                has_suspect = any(tok in template for tok in _SUSPECT_TOKENS)
+                has_established = any(delim in template for delim in _ESTABLISHED_DELIMITERS)
+                if has_suspect and not has_established:
+                    suspect_toks = [t for t in _SUSPECT_TOKENS if t in template]
+                    reason = f"template uses {suspect_toks} without established delimiters"
+                    suspect_models.append((model_name, reason))
+                    logger.warning(
+                        "[model_validator] SUSPECT TEMPLATE: key=%r model=%r -- %s",
+                        key, model_name, reason,
+                    )
+
+        # ------------------------------------------------------------------ #
+        # Notify operator if anything is wrong                                #
+        # ------------------------------------------------------------------ #
+        if missing_models or suspect_models:
+            lines = ["**Ollama model validation warning at startup:**"]
+            if missing_models:
+                lines.append(f"Missing (not installed): {', '.join(missing_models)}")
+            if suspect_models:
+                for sm, sr in suspect_models:
+                    lines.append(f"Suspect template -- {sm}: {sr}")
+            lines.append(
+                "Fix: `ollama pull <model>` for missing models, or correct the "
+                "Modelfile template for suspect ones. Then update the relevant "
+                "app_settings *_model / cost_tier.*.model keys."
+            )
+            msg = "\n".join(lines)
+            logger.warning("[model_validator] %s", msg)
+            try:
+                await notify_operator(msg)
+            except Exception as ne:
+                logger.warning("[model_validator] notify_operator failed: %s", ne)
+        else:
+            logger.info(
+                "[model_validator] All %d configured model(s) validated OK",
+                len(configured),
             )
 
     async def _warmup_sdxl_models(self) -> None:

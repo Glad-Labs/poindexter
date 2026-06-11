@@ -118,6 +118,11 @@ DEFAULTS: dict[str, str] = {
     # installs without the baseline seeds can still get a sensible default.
     'vision_alt_model': 'qwen3-vl:30b',
     'use_ollama': 'false',
+    # Boot-time validation of *_model / cost_tier.*.model keys against
+    # installed Ollama models (glad-labs-stack#1284). Flip to 'false' on
+    # non-Ollama deployments or when Ollama is deliberately unreachable at
+    # startup (e.g. remote-only LiteLLM routing).
+    'ollama_model_validation_enabled': 'true',
 
     # ----- LLM providers / endpoints -----
     'flux_schnell_server_url': '',
