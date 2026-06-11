@@ -916,6 +916,107 @@ logger.info("[STARTUP] Registering routes for deployment mode: %s", _deployment_
 register_all_routes(app, deployment_mode=_deployment_mode)
 logger.info("[STARTUP] ✅ Routes registered (mode=%s)", _deployment_mode)
 
+# ===== OPENAPI SPEC TRUTHFULNESS OVERRIDE (poindexter#742) =====
+# FastAPI auto-generates a ``422 + HTTPValidationError`` response on every
+# operation that has a request body or path/query parameters. That is
+# misleading here because:
+#
+#  1. The global ``RequestValidationError`` handler in
+#     ``utils/exception_handlers.py`` converts all validation failures to
+#     **400** with a ``{error_code, message, errors, request_id}`` envelope.
+#
+#  2. The ``422`` status code is *intentionally* repurposed by the app to
+#     mean ``INVALID_STATE`` (see ``_STATUS_TO_ERROR_CODE`` in the same
+#     module). A client reading the auto-generated 422 spec entry would
+#     confuse the two.
+#
+# The override below is applied once at module load (not on every request —
+# FastAPI caches the result after the first call). It:
+#   * strips the auto-generated ``422`` entry from every path operation, and
+#   * injects a ``400`` entry with the real validation-error envelope schema.
+#
+# The ``422`` entry is **not** added back anywhere: the actual INVALID_STATE
+# 422s are raised via ``HTTPException(status_code=422, ...)`` and are already
+# documented on the individual endpoints that can produce them. This override
+# only affects the *default* validation-error documentation, not hand-authored
+# response declarations.
+
+import copy as _copy
+import json as _json
+
+
+def _patched_openapi() -> dict:
+    """Return a truthful OpenAPI schema: 422 stripped, 400 documented."""
+    # FastAPI lazily builds and caches the schema in app.openapi_schema the
+    # first time. We must clear it before each call to avoid serving a stale
+    # cached version that still contains 422 entries (the cache is populated
+    # after the first get_openapi() call, so clearing it here is a no-op on
+    # first invocation and ensures the patch always runs on subsequent ones).
+    if app.openapi_schema:
+        return app.openapi_schema  # already patched and cached — return fast
+
+    # Build the raw schema via FastAPI's default generator.
+    from fastapi.openapi.utils import get_openapi
+
+    raw = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        contact=app.contact,
+        license_info=app.license_info,
+    )
+
+    # Define the real 400 validation-error response component once so we can
+    # $ref it from every operation rather than inlining the full schema each
+    # time (keeps the spec compact and consistent with how FastAPI handles the
+    # HTTPValidationError component).
+    _VALIDATION_400_SCHEMA = {
+        "description": "Request validation failed",
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "required": ["error_code", "message", "request_id"],
+                    "properties": {
+                        "error_code": {
+                            "type": "string",
+                            "example": "VALIDATION_ERROR",
+                        },
+                        "message": {"type": "string"},
+                        "errors": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                            "description": "Field-level validation errors (field path → message)",
+                        },
+                        "request_id": {"type": "string", "format": "uuid"},
+                    },
+                }
+            }
+        },
+    }
+
+    # Walk every path operation and swap 422 → 400.
+    for _path_item in raw.get("paths", {}).values():
+        for _op in _path_item.values():
+            if not isinstance(_op, dict):
+                continue
+            responses = _op.get("responses", {})
+            # Remove the auto-generated 422 / HTTPValidationError entry.
+            responses.pop("422", None)
+            # Add our truthful 400 entry (only if not already hand-authored).
+            if "400" not in responses:
+                responses["400"] = _VALIDATION_400_SCHEMA
+
+    app.openapi_schema = raw
+    return app.openapi_schema
+
+
+# Only patch when the OpenAPI endpoint is actually enabled (it's disabled in
+# production via ``openapi_url=None``).
+if not _is_production:
+    app.openapi = _patched_openapi  # type: ignore[method-assign]
+
 # ===== OPERATOR CONSOLE (static SPA) =====
 # Mounted after API routes so it never shadows /api/... paths.
 # html=True serves index.html for bare /console/ requests.
