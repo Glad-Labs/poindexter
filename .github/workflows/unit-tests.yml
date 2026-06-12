@@ -51,7 +51,13 @@ permissions:
 
 jobs:
   test-backend:
-    runs-on: ubuntu-latest
+    # runs-on seam. When the `CI_RUNNER` repo variable is set (a JSON array of
+    # runner labels — configured only on the private source repo) this job runs
+    # on those self-hosted labels for $0 cloud minutes; when it's unset — the
+    # default, and the case on any public mirror or fork — it falls back to
+    # ubuntu-latest. The `&&`/`||` short-circuit means fromJSON never receives
+    # an empty string. Runbook: docs/operations/self-hosted-ci-runner.md.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 25
 
     # Coverage args applied to every pytest step — ONLY on the nightly schedule
@@ -92,6 +98,10 @@ jobs:
       # Removing the known-large bloat directories runs in ~20s and frees
       # enough headroom for the full forked suite to complete.
       - name: Free runner disk space
+        # Hosted-image cleanup only. These ubuntu-latest preinstall paths don't
+        # exist on the self-hosted container, and `sudo` may be unavailable
+        # there, so skip the whole step when CI_RUNNER is set (self-hosted).
+        if: ${{ !vars.CI_RUNNER }}
         run: |
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /usr/share/dotnet
@@ -224,7 +234,9 @@ jobs:
       # GHC/Haskell ~5GB) reclaims ~15GB+ of headroom. Inline rm (no third-party
       # action) keeps the SHA-pin allowlist clean; `|| true` + df are advisory.
       - name: Free up runner disk
-        if: steps.changes.outputs.needs_tests == 'true'
+        # Hosted-only (see the "Free runner disk space" step above) AND only
+        # when tests actually run. `!vars.CI_RUNNER` skips it on self-hosted.
+        if: ${{ steps.changes.outputs.needs_tests == 'true' && !vars.CI_RUNNER }}
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
           df -h /

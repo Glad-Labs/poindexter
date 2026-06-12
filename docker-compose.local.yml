@@ -1881,6 +1881,81 @@ services:
       timeout: 5s
       retries: 3
 
+  # ===========================================
+  # GitHub Actions self-hosted CI runners (cloud CI minutes → $0)
+  # ===========================================
+  # One persistent runner that executes the `unit-tests` workflow on this PC
+  # instead of paying GitHub-hosted minutes — unit-tests alone was ~60% of a
+  # ~30k-min/month bill. Scope is deliberately just unit-tests; every other
+  # workflow stays on ubuntu-latest. The runner stays registered and runs jobs
+  # back-to-back; the Actions agent cleans the workspace between runs and the
+  # pip/poetry cache volume stays warm so multi-GB wheels (torch /
+  # sentence-transformers) download once. (Sized for one runner because the
+  # WSL2 VM is the real budget — see the cpus/mem_limit note below.)
+  #
+  # Opt-in by design: the `ci-runner` profile keeps this OUT of the default
+  # `docker compose -f docker-compose.local.yml up -d`, so the stack is
+  # unaffected until you enable it (COMPOSE_PROFILES=ci-runner in .env).
+  #
+  # GH_RUNNER_PAT is a fine-grained PAT on Glad-Labs/glad-labs-stack with
+  # Administration: Read+write (register runners) and Variables: Read+write
+  # (the runner-healthcheck workflow flips the `CI_RUNNER` variable that the
+  # unit-tests runs-on seam reads). The SAME PAT also goes in as the repo
+  # secret CI_RUNNER_ADMIN_PAT for that workflow. Full setup, kill-switch
+  # (CI_RUNNER_MODE=off) and tuning: docs/operations/self-hosted-ci-runner.md.
+  #
+  # ---- SECURITY (load-bearing) ---------------------------------------------
+  #  Self-hosted runners must NEVER serve a PUBLIC repo: a fork PR would run
+  #  arbitrary code on this machine. The public mirror (Glad-Labs/poindexter)
+  #  has no CI_RUNNER variable, so its workflows resolve runs-on to
+  #  ubuntu-latest by construction. Do NOT register this runner against
+  #  poindexter, and do NOT hardcode `self-hosted` in any workflow file.
+  github-runner-1:
+    image: myoung34/github-runner:latest
+    container_name: poindexter-ci-runner-1
+    profiles: ["ci-runner"]
+    restart: unless-stopped
+    # IMPORTANT — caps are relative to the WSL2 VM, NOT the 64 GB host.
+    # `.wslconfig` pins WSL2 to 24 GB / 16 procs, and the ENTIRE Docker stack
+    # (postgres, grafana, sdxl, worker, langfuse, observability…) shares that
+    # VM — ~14-15 GB is already in use, leaving ~8-9 GB free (less when SDXL
+    # spikes). So this is ONE runner sized to fit that headroom, not two at
+    # 16 GB. unit-tests is a SERIAL workload (pytest --forked runs one
+    # subprocess at a time, no xdist), so its real peak is only a few GB and a
+    # single runner suffices — a second concurrent run just queues behind it.
+    # Want true concurrency? Raise `.wslconfig` memory (you have 64 GB
+    # physical) and add a github-runner-2 — see the runbook.
+    cpus: ${CI_RUNNER_CPUS:-8}
+    mem_limit: ${CI_RUNNER_MEM:-8g}
+    environment:
+      # PAT (Administration: read+write) — the image mints fresh, short-lived
+      # registration tokens from it on every (re)register. `:-` not `:?` so an
+      # unset value can never break parsing of the rest of this compose file;
+      # the profile keeps the runner from starting until you've set it anyway.
+      ACCESS_TOKEN: ${GH_RUNNER_PAT:-}
+      REPO_URL: https://github.com/Glad-Labs/glad-labs-stack
+      RUNNER_SCOPE: repo
+      RUNNER_NAME_PREFIX: glads-pc
+      LABELS: self-hosted,linux,x64
+      # Pin the agent version to what the stack was tested against; no
+      # surprise self-updates mid-job.
+      DISABLE_AUTO_UPDATE: "true"
+    volumes:
+      # Warm pip/poetry cache so torch & friends download once, not per job.
+      # The myoung34 image runs jobs as root, so HOME=/root and the cache lives
+      # at /root/.cache (verified on the runner). Best-effort optimization;
+      # correctness does not depend on it.
+      - ci-runner-1-cache:/root/.cache
+      # NOTE: the host Docker socket is intentionally NOT mounted. unit-tests
+      # is pure pytest with no GitHub Actions `services:`/`container:` jobs, so
+      # the runner never needs to drive host Docker — keeping the socket out is
+      # least-privilege. If you later move a service-container workflow (e.g.
+      # integration-db) onto the runner, add `/var/run/docker.sock:/var/run/docker.sock`.
+    extra_hosts:
+      # Lets a job reach host-native services (e.g. Ollama on 11434) the same
+      # way the rest of the stack does.
+      - "host.docker.internal:host-gateway"
+
 # Volumes deliberately keep the gladlabs-* prefix from the pre-rebrand era.
 # Renaming a docker volume in compose creates a fresh empty volume and
 # orphans the old one — that means data loss for any existing instance.
@@ -1928,3 +2003,8 @@ volumes:
     name: gladlabs-glitchtip-redis-data
   pyroscope-data:
     name: gladlabs-pyroscope-data
+  # Warm cache (pip/poetry/tool-cache) so torch & sentence-transformers
+  # download once and persist across jobs. (Add ci-runner-2-cache if you ever
+  # scale to a second runner — see the runbook.)
+  ci-runner-1-cache:
+    name: gladlabs-ci-runner-1-cache

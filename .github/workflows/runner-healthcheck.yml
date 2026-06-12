@@ -1,0 +1,112 @@
+# runner-healthcheck — self-healing control loop for the unit-tests
+# self-hosted runner (docs/operations/self-hosted-ci-runner.md).
+#
+# WHY THIS IS HOSTED: it is the one workflow that must run in GitHub's cloud.
+# A "is Matt's PC reachable?" probe cannot run on Matt's PC. It reconciles the
+# `CI_RUNNER` repo variable — which ONLY the `unit-tests` runs-on seam reads —
+# against the live status of the self-hosted runners:
+#
+#   >=1 self-hosted runner online  ->  set CI_RUNNER   (unit-tests runs on the PC, $0 minutes)
+#   none online                    ->  unset CI_RUNNER (unit-tests falls back to ubuntu-latest,
+#                                                        so a PR's required check can't hang)
+#
+# Operator override via the `CI_RUNNER_MODE` repo variable:
+#   auto (default / unset) = liveness-driven, as above (self-heal both directions)
+#   on                     = force self-hosted (never auto-revert, even if probe can't see it)
+#   off                    = force GitHub-hosted (the kill-switch: never auto-enable)
+#
+# COST: each run bills ~1 rounded-up hosted minute. The 6-hour cron is ~120
+# min/month — a rounding artifact, not real work. Bump the cron for faster
+# failover, drop it for fewer minutes. `workflow_dispatch` reconciles instantly
+# (run it right after you start or stop the runners).
+name: runner-healthcheck
+
+on:
+  schedule:
+    # Every 6 hours. Failover latency <= 6h in `auto` mode; manual dispatch is
+    # instant. Tune in docs/operations/self-hosted-ci-runner.md.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+# The PAT (CI_RUNNER_ADMIN_PAT) carries all privilege; the default GITHUB_TOKEN
+# needs nothing here.
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-healthcheck
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    # Never run on the public mirror (Glad-Labs/poindexter): it has no
+    # self-hosted runner and no admin PAT, and its unit-tests seam is always
+    # ubuntu-latest by construction. The job no-ops there.
+    if: github.repository == 'Glad-Labs/glad-labs-stack'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.CI_RUNNER_ADMIN_PAT }}
+      REPO: ${{ github.repository }}
+      RUNNER_LABELS: '["self-hosted","linux","x64"]'
+      DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
+    steps:
+      - name: Reconcile CI_RUNNER against live runner status
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Dormant until the runner feature is configured. A green skip (not a
+          # red failure) keeps the scheduled run quiet before first setup.
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::CI_RUNNER_ADMIN_PAT not set — self-hosted runner not configured yet; nothing to reconcile."
+            echo "self-hosted runner not configured (no admin PAT)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          read_var() { gh api "/repos/$REPO/actions/variables/$1" --jq .value 2>/dev/null || echo ''; }
+
+          mode="$(read_var CI_RUNNER_MODE)"; mode="${mode:-auto}"
+          current="$(read_var CI_RUNNER)"
+          online="$(gh api "/repos/$REPO/actions/runners" \
+            --jq '[.runners[] | select(.status=="online")] | length' 2>/dev/null || echo 0)"
+
+          # Guard against a transient blip (container restart after a stack
+          # update): if we see zero, wait briefly and re-sample once before
+          # deciding to revert.
+          if [ "$online" -eq 0 ]; then
+            sleep 30
+            online="$(gh api "/repos/$REPO/actions/runners" \
+              --jq '[.runners[] | select(.status=="online")] | length' 2>/dev/null || echo 0)"
+          fi
+          echo "mode=$mode  online_runners=$online  CI_RUNNER='${current}'"
+
+          case "$mode" in
+            on)  desired="set"   ;;
+            off) desired="unset" ;;
+            *)   if [ "$online" -ge 1 ]; then desired="set"; else desired="unset"; fi ;;
+          esac
+
+          change="none"
+          if [ "$desired" = "set" ] && [ -z "$current" ]; then
+            gh variable set CI_RUNNER --repo "$REPO" --body "$RUNNER_LABELS"
+            change="ENABLED — unit-tests → self-hosted"
+          elif [ "$desired" = "unset" ] && [ -n "$current" ]; then
+            gh variable delete CI_RUNNER --repo "$REPO"
+            change="REVERTED — unit-tests → ubuntu-latest"
+          fi
+
+          echo "result: $change"
+          {
+            echo "### runner-healthcheck"
+            echo "- mode: \`$mode\`"
+            echo "- online self-hosted runners: **$online**"
+            echo "- action: **$change**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Routine ops ping on a state change only (Discord, not Telegram —
+          # this is graceful failover, not an outage). No-op if unconfigured.
+          if [ "$change" != "none" ] && [ -n "${DISCORD_OPS_WEBHOOK_URL:-}" ]; then
+            payload="$(printf '{"content":"⚙️ CI runner auto-flip: %s (mode=%s, online=%s)"}' "$change" "$mode" "$online")"
+            curl -fsS -H 'Content-Type: application/json' -d "$payload" "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
+          fi
