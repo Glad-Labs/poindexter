@@ -66,14 +66,18 @@ async def test_empty_reviews_no_ops():
 
 @pytest.mark.asyncio
 async def test_unknown_reviewer_skipped():
-    """Inline reviewers without a qa_gates row (e.g. citation_verifier,
-    rendered_preview) must NOT trigger a UPDATE — there's no row to
-    bump."""
+    """Inline reviewers without a qa_gates row must NOT trigger an UPDATE
+    — there's no row to bump.
+
+    ``rendered_preview`` is the finalize-time preview reviewer (minted via
+    the preview_token AFTER the qa.* chain), so it genuinely has no
+    qa_gates row. NB: citation_verifier / topic_delivery USED to belong
+    here, but they were given gate rows on 2026-06-03 (#659/#658) and now
+    bump counters — see test_restored_rail_gates_bump_their_counters."""
     pool = _FakePool()
     await record_chain_run(pool, [
-        _Review("citation_verifier"),
         _Review("rendered_preview"),
-        _Review("topic_delivery"),
+        _Review("some_reviewer_with_no_gate_row"),
     ])
     assert pool.executes == []
 
@@ -149,9 +153,11 @@ async def test_full_chain_writes_one_update_per_gate():
         _Review("internal_consistency", approved=True),
         _Review("web_factcheck", approved=True),
         _Review("url_verifier", approved=True),
-        # Inline-only reviewers (no qa_gates row) must be ignored:
+        # citation_verifier + topic_delivery now HAVE gate rows (seeded
+        # #659/#658 on 2026-06-03) so they bump too:
         _Review("citation_verifier", approved=True),
         _Review("topic_delivery", approved=True),
+        # rendered_preview is the only genuinely rowless reviewer here:
         _Review("rendered_preview", approved=True),
     ])
     bumped_gates = {args[0] for _, args in pool.executes}
@@ -161,6 +167,8 @@ async def test_full_chain_writes_one_update_per_gate():
         "consistency",
         "web_factcheck",
         "url_verifier",
+        "citation_verifier",
+        "topic_delivery",
     }
 
 
@@ -178,9 +186,12 @@ def test_alias_table_covers_every_known_inline_reviewer():
     """
     inline_reviewers_with_row = set(_REVIEWER_TO_GATE)
     inline_reviewers_without_row = {
-        # Hardcoded-stage gates with no qa_gates row by design:
-        "citation_verifier",
-        "topic_delivery",
+        # Finalize-time preview reviewer — minted via the preview_token
+        # AFTER the qa.* chain, so it has no qa_gates row by design.
+        # (citation_verifier / topic_delivery were moved OUT of this set on
+        # 2026-06-11: they were given gate rows on 2026-06-03 (#659/#658),
+        # so they MUST be aliased — leaving them here is what let the
+        # third alias-drop recurrence pass CI.)
         "rendered_preview",
     }
     documented = inline_reviewers_with_row | inline_reviewers_without_row
@@ -209,6 +220,13 @@ def test_alias_table_covers_every_known_inline_reviewer():
         "guardrails_brand",
         "guardrails_competitor",
         "ragas_eval",
+        # Restoration rails — qa_gates rows seeded #659/#658 (2026-06-03)
+        # and #621 (2026-06-07). They emit ReviewerResults on the live
+        # graph_def path; missing entries here = the gates ran but the
+        # dashboard showed last_run_at=NEVER (third recurrence, 2026-06-11).
+        "citation_verifier",
+        "topic_delivery",
+        "self_consistency",
     }
     missing = must_be_documented - documented
     assert not missing, (
@@ -244,6 +262,30 @@ async def test_new_oss_rails_bump_their_gate_counters():
         "guardrails_brand",
         "guardrails_competitor",
         "ragas_eval",
+    }
+
+
+@pytest.mark.asyncio
+async def test_restored_rail_gates_bump_their_counters():
+    """Regression for the 2026-06-11 alias-drop recurrence (the THIRD).
+
+    The citation_verifier / topic_delivery / self_consistency rails were
+    restored/added as qa.* atoms (#659 / #658 / #621) and seeded their own
+    qa_gates rows, but their reviewer names were never added to
+    _REVIEWER_TO_GATE — so record_chain_run silently dropped the counter
+    and `poindexter qa-gates list` showed total_runs=0 while audit_log
+    proved 97 / 49 / 24 real runs. Pin the wiring so it can't regress."""
+    pool = _FakePool()
+    await record_chain_run(pool, [
+        _Review("citation_verifier", approved=True, advisory=True),
+        _Review("topic_delivery", approved=True, advisory=True),
+        _Review("self_consistency", approved=True, advisory=False),
+    ])
+    bumped_gates = {args[0] for _, args in pool.executes}
+    assert bumped_gates == {
+        "citation_verifier",
+        "topic_delivery",
+        "self_consistency",
     }
 
 

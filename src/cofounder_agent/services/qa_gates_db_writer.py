@@ -60,6 +60,24 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     "guardrails_brand": "guardrails_brand",
     "guardrails_competitor": "guardrails_competitor",
     "ragas_eval": "ragas_eval",
+    # 2026-06-11 fix — THIRD recurrence of the same alias-drop class. The
+    # citation_verifier / topic_delivery / self_consistency rails were
+    # restored/added as qa.* atoms (Glad-Labs/poindexter#659 / #658 / #621)
+    # and SEEDED their own qa_gates rows (citation_verifier + topic_delivery
+    # 2026-06-03; self_consistency 2026-06-07). Each runs on the live
+    # graph_def path and feeds the weighted QA score, but record_chain_run()
+    # silently dropped the counter because the reviewer name had no alias
+    # here — so `poindexter qa-gates list` + the /d/qa-rails dashboard showed
+    # total_runs=0 / last_run_at=NEVER while audit_log proved 97 / 49 / 24
+    # real runs (last seen the same day). Reviewer names match the gate
+    # names exactly (identity alias). When these atoms shipped, the guard
+    # test still listed citation_verifier/topic_delivery in
+    # inline_reviewers_without_row (true before the rows were seeded, stale
+    # after) so it passed while certifying the bug. Pinned by
+    # test_restored_rail_gates_bump_their_counters.
+    "citation_verifier": "citation_verifier",
+    "topic_delivery": "topic_delivery",
+    "self_consistency": "self_consistency",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",
