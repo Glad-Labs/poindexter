@@ -550,7 +550,6 @@ DEFAULTS: dict[str, str] = {
     'findings.topic_gap.delivery': 'discord',
     'findings.topic_gap.fallback': 'log_only',
     'findings.topic_gap.cooldown_minutes': '1440',
-    'findings.topic_gap.min_severity': 'info',
     'findings.media_drift.delivery': 'log_only',
     'findings.r2_static_drift.delivery': 'discord',
     'findings.r2_static_drift.fallback': 'log_only',

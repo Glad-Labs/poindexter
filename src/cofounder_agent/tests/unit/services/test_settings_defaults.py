@@ -320,3 +320,38 @@ class TestNoDanglingModelDefaults:
             f"(baseline wins over settings_defaults): {offenders}. Repoint "
             "each seeded value to an installed successor."
         )
+
+
+# ---------------------------------------------------------------------------
+# Retired settings must stay retired
+# ---------------------------------------------------------------------------
+
+class TestRetiredSettings:
+    """Pin settings that were deliberately removed so they can't creep back.
+
+    ``findings.topic_gap.min_severity`` was seeded as ``'info'`` in the
+    baseline, but that value was always wrong: ``findings_alert_router``
+    has a SQL floor that drops ``info`` findings BEFORE per-kind
+    ``min_severity`` policy is consulted, so the row was inert and
+    misleading. ``glad-labs-stack#1471`` fixed the emit site
+    (``analyze_topic_gaps.py``) to emit at ``severity="warn"``;
+    migration ``20260612_060000_drop_topic_gap_min_severity`` deletes the
+    stale row from prod. The key must not re-appear in the seeder.
+
+    If you need to add a CORRECT ``findings.topic_gap.min_severity``
+    value (e.g. ``"warning"`` or ``"critical"``), delete this test and
+    explain why in the PR — the current correct behaviour is to rely on
+    ``_delivery_for``'s default floor (``"warning"``), which is right
+    for a Discord-routed finding.
+    """
+
+    def test_topic_gap_min_severity_absent_from_defaults(self):
+        from services.settings_defaults import DEFAULTS
+
+        assert "findings.topic_gap.min_severity" not in DEFAULTS, (
+            "findings.topic_gap.min_severity must NOT be seeded — the default "
+            "'info' was inert (SQL floor drops info before per-kind policy runs) "
+            "and the 'warn' emit in analyze_topic_gaps.py makes it redundant. "
+            "See glad-labs-stack#1471 and migration "
+            "20260612_060000_drop_topic_gap_min_severity."
+        )
