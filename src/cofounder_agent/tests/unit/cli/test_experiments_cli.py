@@ -167,8 +167,6 @@ class TestList:
             experiments_group, ["list", "--status", "active"],
         )
         assert result.exit_code == 0, result.output
-        sql, args = fake_asyncpg["conn"].fetch.await_args.args[0:2], \
-                    fake_asyncpg["conn"].fetch.await_args.args[1:]
         # SQL contains "e.status = $1" and args includes 'active'
         assert "e.status" in fake_asyncpg["conn"].fetch.await_args.args[0]
         assert "active" in fake_asyncpg["conn"].fetch.await_args.args

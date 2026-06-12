@@ -21,7 +21,7 @@ seed app_settings reads via the ``setting_values`` dict passed to
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -465,7 +465,7 @@ class TestDedupSuppression:
         )
 
         # Cycle 1
-        s1 = await sm.run_smart_monitor_probe(
+        await sm.run_smart_monitor_probe(
             pool, run_fn=run_fn, which_fn=lambda _n: "/usr/sbin/smartctl",
             notify_fn=lambda **k: None, now_fn=now_fn,
         )

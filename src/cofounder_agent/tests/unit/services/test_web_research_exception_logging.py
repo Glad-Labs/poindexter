@@ -6,7 +6,6 @@ return_exceptions=True) in WebResearcher.search() are logged as warnings
 rather than silently discarded (#1301 QaRailFullySkipped root cause).
 """
 
-import asyncio
 import logging
 from unittest.mock import AsyncMock, patch
 

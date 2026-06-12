@@ -882,7 +882,7 @@ class TestPostTagsInsertCast:
         # Capture the SQL the create_post path sends.
         captured_sql: list[str] = []
         # Get the conn we yielded — re-wrap so `execute` records.
-        captured_execute = AsyncMock(return_value=None)
+        AsyncMock(return_value=None)
 
         async def _capture_acquire():
             class _Ctx:

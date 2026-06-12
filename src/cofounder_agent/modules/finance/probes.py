@@ -47,8 +47,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
-from typing import Any, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("finance.poll_staleness_probe")
 

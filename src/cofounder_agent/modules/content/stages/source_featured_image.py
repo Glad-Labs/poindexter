@@ -191,7 +191,6 @@ class SourceFeaturedImageStage:
         # DI seam (glad-labs-stack#330) — content_router_service seeds
         # site_config into the stage context.
         site_config = context.get("site_config")
-        platform = context.get("platform")
 
         stages = context.setdefault("stages", {})
 

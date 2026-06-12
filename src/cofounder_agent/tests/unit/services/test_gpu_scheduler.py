@@ -593,7 +593,6 @@ def _patch_pg(dsn: str | None = "postgresql://test/db", conn=None):
     _acquire_pg_advisory_lock, we patch sys.modules so the ``import``
     statements inside the function see our mocks.
     """
-    import sys
 
     mock_asyncpg = MagicMock()
     if conn is not None:

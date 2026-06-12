@@ -314,7 +314,6 @@ class TestConvertToWebp:
         except ImportError:
             pytest.skip("Pillow not installed")
 
-        import io
 
         # Create a minimal 1x1 white PNG via Pillow
         img = Image.new("RGB", (1, 1), (255, 255, 255))
@@ -370,7 +369,6 @@ class TestWebpUploadBehavior:
         except ImportError:
             pytest.skip("Pillow not installed")
 
-        import io as _io
 
         # Create a real PNG that Pillow can convert
         img = Image.new("RGB", (2, 2), (0, 128, 255))

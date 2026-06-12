@@ -20,8 +20,6 @@ content-quality issue (he wants a mix of SDXL + pexels, not pexels-only).
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 

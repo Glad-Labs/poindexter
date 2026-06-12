@@ -13,7 +13,6 @@ only, and doesn't need the worker roundtrip.
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from typing import Any
 

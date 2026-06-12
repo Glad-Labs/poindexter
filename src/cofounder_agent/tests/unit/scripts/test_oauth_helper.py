@@ -15,7 +15,6 @@ import base64
 import json
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -36,8 +35,6 @@ if str(_SCRIPTS) not in sys.path:
 from _oauth_helper import (  # noqa: E402
     ScriptsOAuthClient,
     _decode_jwt_exp,
-    _read_bootstrap_value,
-    resolve_credentials,
 )
 
 # ---------------------------------------------------------------------------

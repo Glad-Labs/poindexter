@@ -23,7 +23,7 @@ reaching a module-level singleton. ``scrape_url`` is a method on
 from __future__ import annotations
 
 import socket
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest

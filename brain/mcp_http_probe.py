@@ -38,7 +38,7 @@ import os
 import subprocess
 import time
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx

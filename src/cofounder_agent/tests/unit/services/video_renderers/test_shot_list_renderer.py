@@ -298,7 +298,6 @@ class TestRenderShotList:
             return [MagicMock(file_path=config["output_path"])]
 
         # Mock the compositor.
-        from services.video_renderers import shot_list_renderer as renderer_mod
 
         captured_request = {}
 

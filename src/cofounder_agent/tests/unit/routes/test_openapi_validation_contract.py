@@ -291,7 +291,6 @@ class TestOpenApiPatchBehaviour:
         from fastapi import FastAPI as _FastAPI
         from fastapi import HTTPException
         from fastapi.testclient import TestClient
-        from fastapi.exceptions import RequestValidationError
         from fastapi.responses import JSONResponse
 
         ta = _FastAPI()

@@ -6,7 +6,6 @@ return_exceptions=True) in TopicDiscovery.discover() are logged as warnings
 with the source name included, rather than silently discarded (#725).
 """
 
-import asyncio
 import logging
 from unittest.mock import AsyncMock, patch
 
@@ -165,7 +164,7 @@ class TestTopicDiscoveryGatherExceptionLogging:
             patch("services.topic_discovery.asyncio.gather", side_effect=_fake_gather),
             caplog.at_level(logging.WARNING, logger="services.topic_discovery"),
         ):
-            results = await d.discover(max_topics=10)
+            await d.discover(max_topics=10)
 
         warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
 

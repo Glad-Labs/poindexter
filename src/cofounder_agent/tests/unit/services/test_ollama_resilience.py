@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import random
-import time
 from unittest.mock import patch
 
 import httpx

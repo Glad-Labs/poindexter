@@ -605,7 +605,6 @@ class TestDistributeToAdapters:
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_empty_enabled_returns_empty(self, mock_load):
         """Legacy ``enabled=set()`` with NO DB rows returns empty + logs INFO."""
-        import logging
 
         from services.social_poster import _distribute_to_adapters
 

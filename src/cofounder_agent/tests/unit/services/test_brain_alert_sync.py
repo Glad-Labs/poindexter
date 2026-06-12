@@ -304,7 +304,7 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
         fake_module = types.ModuleType("brain_daemon")
         fake_module.notify = fake_notify  # type: ignore[attr-defined]
         with patch.dict(sys.modules, {"brain_daemon": fake_module}):
-            pool = _mock_pool(settings={"grafana_api_token": ""})
+            _mock_pool(settings={"grafana_api_token": ""})
             with patch("urllib.request.urlopen"):
                 summaries = []
                 for _ in range(4):

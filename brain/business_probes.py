@@ -13,7 +13,6 @@ Probes:
 """
 
 import inspect
-import json
 import logging
 import time
 from typing import Any

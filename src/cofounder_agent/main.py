@@ -942,8 +942,6 @@ logger.info("[STARTUP] ✅ Routes registered (mode=%s)", _deployment_mode)
 # only affects the *default* validation-error documentation, not hand-authored
 # response declarations.
 
-import copy as _copy
-import json as _json
 
 
 def _patched_openapi() -> dict:

@@ -21,7 +21,7 @@ The pool is a MagicMock with AsyncMock methods, seeded via the
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

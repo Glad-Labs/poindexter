@@ -54,9 +54,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
     import httpx

@@ -19,7 +19,6 @@ and the brain_daemon ``send_followup`` helper. No network, no sleeps.
 
 from __future__ import annotations
 
-import io
 import json
 import sys
 from typing import Any

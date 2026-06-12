@@ -1687,7 +1687,7 @@ def _is_brand_relevant(text: str) -> bool:
 async def _handle_topic_suggestion(pool, item):
     """Validate a suggested topic and queue as content task if on-brand."""
     topic = item["content"]
-    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
+    json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
 
     if not _is_brand_relevant(topic):
         logger.info("[BRAIN] Topic rejected (off-brand): %s", topic[:80])
@@ -1703,8 +1703,6 @@ async def _handle_topic_suggestion(pool, item):
         return {"action": "rejected", "reason": "duplicate_topic"}
 
     # Queue as a content task
-    metadata = json.dumps({"source": ctx.get("source", "brain_queue"), "suggested_by": ctx.get("suggested_by", "unknown")})
-
     # Resolve template_slug inline — brain daemon is standalone and
     # cannot import services/, so we replicate the resolver chain
     # (app_settings → fail loud) here for the niche-less brain-queue

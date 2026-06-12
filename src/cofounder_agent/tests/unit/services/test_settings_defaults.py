@@ -19,7 +19,6 @@ import asyncio
 import re
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 
 def _run(coro):

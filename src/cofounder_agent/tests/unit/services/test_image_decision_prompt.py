@@ -21,7 +21,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import services.image_decision_agent as ida
 from services.image_decision_agent import ImagePlanResult, plan_images
 from services.prompt_manager import UnifiedPromptManager
 from services.site_config import SiteConfig

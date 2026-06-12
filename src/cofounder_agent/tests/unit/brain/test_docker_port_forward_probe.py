@@ -31,7 +31,7 @@ seed app_settings reads via the ``setting_values`` dict passed to
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

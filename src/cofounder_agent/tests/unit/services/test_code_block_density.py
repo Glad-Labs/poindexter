@@ -16,7 +16,6 @@ unit-test conftest snapshots + restores that dict between tests
 
 from __future__ import annotations
 
-import pytest
 
 from modules.content.content_validator import (
     _check_code_block_density,

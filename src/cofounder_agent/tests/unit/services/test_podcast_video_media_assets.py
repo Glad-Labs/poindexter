@@ -11,7 +11,6 @@ on the success path. Failures should NOT call the recorder.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any

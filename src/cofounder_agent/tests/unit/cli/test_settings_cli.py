@@ -23,8 +23,6 @@ Tests use mocked asyncpg connections — no real DB.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

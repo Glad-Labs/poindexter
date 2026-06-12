@@ -26,7 +26,6 @@ Coverage:
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -242,7 +241,7 @@ class TestRejectBatchFailureHandling:
             "poindexter.cli.tasks._post_action",
             side_effect=_fake_post_action_alternating,
         ) as mock_post:
-            result = runner.invoke(
+            runner.invoke(
                 tasks_group,
                 ["reject-batch", "task-1", "task-2", "task-3", "task-4",
                  "--feedback", "test", "--yes"],

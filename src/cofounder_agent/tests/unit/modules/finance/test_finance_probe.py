@@ -18,7 +18,6 @@ records audit_log inserts. ``notify_fn`` is a spy so no network is touched.
 
 from __future__ import annotations
 
-from typing import Any
 
 import pytest
 

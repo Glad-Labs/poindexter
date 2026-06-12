@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from services.audit_log import audit_log_bg
 from services.gate_machinery import (

@@ -12,7 +12,6 @@ from services.site_config import SiteConfig
 _SC = SiteConfig()
 
 from modules.content.content_validator import (
-    GLAD_LABS_FACTS,
     ValidationResult,
     _get_company_facts,
     validate_content,

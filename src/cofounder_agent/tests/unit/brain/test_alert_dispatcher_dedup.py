@@ -800,7 +800,7 @@ class TestSuppressWindowVsGrafanaRepeatInterval:
             "summarize_threshold_minutes": 30,
         }
 
-        decision1 = await ad._evaluate_dedup_decision(
+        await ad._evaluate_dedup_decision(
             pool, message="x", severity="warning", alertname="X",
             category="c", config=config, now_fn=lambda: base,
         )

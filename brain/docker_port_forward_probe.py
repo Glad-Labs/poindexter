@@ -57,7 +57,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator

@@ -25,7 +25,6 @@ _SC = SiteConfig()
 
 from modules.content import content_validator as cv
 from modules.content.content_validator import (
-    ValidationIssue,
     _extract_library_candidates,
     _is_known_reference,
     _load_known_list,
@@ -188,7 +187,7 @@ class TestVerifyContentUrls:
         # external links are HEAD-checked exactly as before.
         with patch("httpx.AsyncClient", return_value=ctx):
             content = "Internal: [api](http://service.localhost/api)"
-            issues = await verify_content_urls(content, site_config=_SC)
+            await verify_content_urls(content, site_config=_SC)
         # service.localhost ends with '.localhost' -> skip
         assert client.head.await_count == 0
 
@@ -202,7 +201,7 @@ class TestVerifyContentUrls:
         # external links are HEAD-checked exactly as before.
         with patch("httpx.AsyncClient", return_value=ctx):
             content = "Visit https://bare.example.com/path for more."
-            issues = await verify_content_urls(content, site_config=_SC)
+            await verify_content_urls(content, site_config=_SC)
         # Should have HEAD'd the bare URL
         assert client.head.await_count == 1
 
