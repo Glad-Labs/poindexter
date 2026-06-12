@@ -97,6 +97,35 @@ class TestRun:
         assert "1 empty" in title
 
     @pytest.mark.asyncio
+    async def test_finding_emitted_at_warn_severity(self):
+        """topic_gap must emit at ``warn`` so ``findings_alert_router``
+        routes it to Discord.
+
+        The router's ``_fetch_unrouted_findings`` SQL floor only selects
+        ``severity in ('warn','warning','critical')`` BEFORE any per-kind
+        policy is consulted, so an ``info`` finding (the ``emit_finding``
+        default) is filtered out before the seeded
+        ``findings.topic_gap.delivery='discord'`` policy ever applies.
+        Emitting at ``warn`` clears the floor and lets the discord policy
+        fire — matching the severity→channel model in ``utils/findings``
+        (critical→Telegram, warn→Discord, info→log-only).
+        """
+        pool, _ = _make_pool(
+            categories=[{"name": "Abandoned", "posts": 0}],
+            stale=[],
+        )
+        job = AnalyzeTopicGapsJob()
+        with patch(
+            "services.jobs.analyze_topic_gaps.emit_finding",
+            new=MagicMock(),
+        ) as mock_emit:
+            await job.run(pool, {})
+        mock_emit.assert_called_once()
+        # emit_finding is keyword-only; severity must be explicitly 'warn',
+        # not the 'info' default that the router's SQL floor discards.
+        assert mock_emit.call_args.kwargs.get("severity") == "warn"
+
+    @pytest.mark.asyncio
     async def test_low_coverage_flagged(self):
         pool, _ = _make_pool(
             categories=[

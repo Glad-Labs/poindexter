@@ -98,6 +98,14 @@ class AnalyzeTopicGapsJob:
             emit_finding(
                 source="analyze_topic_gaps",
                 kind="topic_gap",
+                # 'warn' (not the emit_finding 'info' default) so
+                # findings_alert_router's SQL floor
+                # (severity in warn/warning/critical) lets the finding
+                # through to the seeded findings.topic_gap.delivery='discord'
+                # policy — info findings are filtered out before any
+                # per-kind routing. Matches utils/findings' severity→channel
+                # model: warn → Discord (a routine, actionable ping).
+                severity="warn",
                 title=(
                     f"content: topic gaps — {len(empty)} empty, "
                     f"{len(low)} low, {len(stale_names)} stale"
