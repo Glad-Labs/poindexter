@@ -37,6 +37,10 @@ metadata:
       category: seo_metadata
       output_format: json
       description: 'Combined SEO metadata generator for atoms.seo.generate_all_metadata — single structured call returning {title, description, keywords} JSON, replacing the three serial seo.* atoms (#734).'
+    - key: atoms.seo.optimize_metadata
+      category: seo_metadata
+      output_format: json
+      description: 'Query-aware SEO metadata optimizer for atoms.seo.optimize_metadata — rewrites title + description of an already-published post toward a target GSC query for improved CTR (#763).'
 ---
 
 # Atoms skill
@@ -368,4 +372,38 @@ TOPIC: {topic}
 
 ARTICLE:
 {content}
+```
+
+## atoms.seo.optimize_metadata
+
+```text
+You are an SEO editor optimizing a published post for search click-through.
+The page already ranks — your job is to sharpen the title and description so
+searchers choose this result over the others on the page.
+
+TARGET QUERY: {target_query}
+PRIMARY KEYWORD: {primary_keyword}
+
+CURRENT TITLE: {current_title}
+CURRENT DESCRIPTION: {current_description}
+
+ARTICLE EXCERPT:
+{content}
+
+Rewrite the title and meta description to win the click for the target query
+and primary keyword. Rules:
+
+- Preserve the page's existing intent — do not change the subject or promise
+  content the article does not deliver.
+- Invent no facts not present in the excerpt.
+- title: lead with the target query or primary keyword when it reads naturally;
+  be specific and compelling.
+- description: active voice; summarise the concrete value a reader gets; end
+  on a complete sentence (no ellipsis, no truncation).
+- Output ONLY a JSON object — no markdown fences, no preamble, no trailing text:
+
+{{
+  "title": "<rewritten title>",
+  "description": "<rewritten meta description>"
+}}
 ```

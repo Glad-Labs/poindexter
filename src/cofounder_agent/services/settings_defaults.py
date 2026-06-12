@@ -655,7 +655,17 @@ DEFAULTS: dict[str, str] = {
     'seo.low_ctr.min_impressions': '100',
     'seo.low_ctr.max_ctr': '0.01',
     'seo.opportunity.target_ctr': '0.05',
-    # Phase-2 / Task-8 forward-decls (unused in Phase 1; seeded for completeness):
+    # ----- SEO Harvest Loop (Phase 2 — seo_refresh, #763) -----
+    # meta_only: re-optimize seo_title + seo_description only; never the body.
+    'seo.refresh.scope': 'meta_only',
+    # Approval-FIRST: the refresh_gate ships ENABLED, so re-publishing a live
+    # post pauses for operator sign-off (unlike draft_gate, which ships off).
+    # is_gate_enabled reads pipeline_gate_<gate_name>; gate_name='seo_refresh_gate'.
+    # Lock-2 graduation flips this to auto-publish once the trailing clean-run
+    # count below is met.
+    'pipeline_gate_seo_refresh_gate': 'true',
+    'seo.refresh.auto_publish_after_clean_runs': '5',
+    # Phase-2 / Task-8 forward-decls (seeded for completeness):
     'seo.query_ingestion.enabled': 'false',
     'seo.refresh.outcome_measure_after_days': '14',
 

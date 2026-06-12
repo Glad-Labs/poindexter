@@ -75,6 +75,7 @@ See also
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from services.logger_config import get_logger
@@ -154,6 +155,47 @@ async def _load_niche_slug(
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
     return None
+
+
+async def _load_task_metadata(
+    database_service: DatabaseService, task_id: str,
+) -> dict[str, Any]:
+    """Surface per-task hydration metadata for graph templates that start from
+    an existing row instead of a topic (``seo_refresh`` and future kin).
+
+    Reads ``pipeline_versions.stage_data -> 'task_metadata'`` — where
+    ``tasks_db.add_task`` persists a task's metadata at version 1 — and returns
+    only the hydration keys the ``seo_refresh`` graph needs (``post_id`` /
+    ``seo_opportunity_id`` / ``target_query`` / ``seo_refresh_scope``). Returns
+    ``{}`` on miss so the ``canonical_blog`` path — which carries none of these
+    — is completely unaffected. Mirrors ``_load_template_slug`` /
+    ``_load_niche_slug``.
+    """
+    keys = ("post_id", "seo_opportunity_id", "target_query", "seo_refresh_scope")
+    try:
+        async with database_service.pool.acquire() as conn:
+            raw = await conn.fetchval(
+                "SELECT stage_data FROM pipeline_versions "
+                "WHERE task_id = $1 ORDER BY version DESC LIMIT 1",
+                str(task_id),
+            )
+    except Exception as exc:
+        logger.warning(
+            "[BG-TASK] task metadata lookup failed for %s: %s", task_id, exc,
+        )
+        return {}
+    # asyncpg returns a JSONB column as a str unless a codec is registered;
+    # tolerate both shapes.
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+    data = raw if isinstance(raw, dict) else {}
+    meta = data.get("task_metadata")
+    if not isinstance(meta, dict):
+        return {}
+    return {k: meta[k] for k in keys if meta.get(k) not in (None, "")}
 
 
 async def process_content_generation_task(
@@ -336,6 +378,14 @@ async def process_content_generation_task(
     niche_slug = await _load_niche_slug(database_service, task_id)
     if niche_slug:
         result["niche_slug"] = niche_slug
+
+    # seo_refresh (and future graph templates that hydrate from an existing
+    # row) carry their inputs — post_id, target_query, … — in the task's
+    # metadata rather than as topic/style args. Surface those onto the initial
+    # state so the entry atom (content.load_existing_post) can read post_id.
+    # Empty for canonical_blog, so that path is unaffected.
+    for _k, _v in (await _load_task_metadata(database_service, task_id)).items():
+        result[_k] = _v
 
     # Per ``feedback_no_silent_defaults``: a missing slug is a config
     # error, not a fallback. The legacy chunked StageRunner flow was

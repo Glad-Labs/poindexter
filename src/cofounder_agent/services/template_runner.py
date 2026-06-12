@@ -561,6 +561,14 @@ class PipelineState(TypedDict, total=False):
     validator_critical_count: int    # run_validators: count of critical-severity issues
     validator_warning_count: int     # run_validators: count of warning-severity issues
 
+    # SEO Harvest Loop Phase 2 (#763): the seo_refresh graph hydrates these
+    # from the source posts row + its seo_opportunities row at entry. Declared
+    # so build_graph_from_spec's #753 schema gate accepts the new atoms'
+    # requires/produces (undeclared keys raise ValueError at seed time).
+    target_query: str            # the GSC query the refresh optimizes toward ('' = page-level only)
+    seo_opportunity_id: str      # seo_opportunities.id (uuid) — stamped on republish for outcome tracking
+    seo_refresh_scope: str       # 'meta_only' | 'meta_and_intro' | 'full' (default meta_only)
+
 
 # ---------------------------------------------------------------------------
 # Run record types — mirror StageRunRecord/StageRunSummary so callers that
