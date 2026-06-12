@@ -21,6 +21,7 @@ export const metadata = {
     card: 'summary_large_image',
     site: '@_gladlabs',
   },
+  manifest: '/manifest.json',
   robots: {
     index: true,
     follow: true,

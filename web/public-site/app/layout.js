@@ -38,6 +38,7 @@ export const metadata = {
       process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION ||
       'C-pZ-_sOD4wRU9OVPAcG-1TVQAYEwZfdaApx-BxkgsM',
   },
+  manifest: '/manifest.json',
   robots: {
     index: true,
     follow: true,
