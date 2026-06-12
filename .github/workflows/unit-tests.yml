@@ -81,7 +81,7 @@ jobs:
       # `test-backend` check green. Source behavior is byte-identical (the
       # ternary resolves to plain `python -m pytest`), so this PR's own CI fully
       # exercises the real suite.
-      PYTEST: ${{ github.repository == 'Glad-Labs/glad-labs-stack' && 'python -m pytest' || 'python -m pytest --collect-only' }}
+      PYTEST: ${{ github.repository == 'Glad-Labs/poindexter' && 'python -m pytest' || 'python -m pytest --collect-only' }}
 
     steps:
       # Free up GitHub-hosted runner disk space. The ubuntu-latest image ships
@@ -186,7 +186,7 @@ jobs:
           # pyproject.toml, and poetry.lock — the whole testable surface.
           # `brain/**` is tested by tests/unit/brain/ — brain/-only PRs
           # were silently skipping pytest because the pattern below only
-          # matched src/cofounder_agent (Glad-Labs/glad-labs-stack#1293).
+          # matched src/cofounder_agent (Glad-Labs/poindexter#1293).
           # `scripts/**` is tested by tests/unit/scripts/ — same gap.
           # `.github/workflows/unit-tests.yml` self-includes so workflow
           # edits get smoke-tested by actually running.
@@ -426,7 +426,7 @@ jobs:
         # advisory there to avoid a permanently-red nightly that gates nothing.
         run: |
           coverage combine 2>/dev/null || true
-          if [ "${{ github.repository }}" = "Glad-Labs/glad-labs-stack" ]; then
+          if [ "${{ github.repository }}" = "Glad-Labs/poindexter" ]; then
             coverage report
             coverage xml
           else
@@ -448,5 +448,5 @@ jobs:
           # machinery produced nothing — fail the upload (and the job) so the
           # regression is loud. The mirror's --collect-only nightly legitimately
           # has no xml, so it only `warn`s there.
-          if-no-files-found: ${{ github.repository == 'Glad-Labs/glad-labs-stack' && 'error' || 'warn' }}
+          if-no-files-found: ${{ github.repository == 'Glad-Labs/poindexter' && 'error' || 'warn' }}
           retention-days: 14
