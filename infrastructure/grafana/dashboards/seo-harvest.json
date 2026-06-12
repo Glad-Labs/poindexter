@@ -1,0 +1,139 @@
+{
+  "uid": "seo-harvest",
+  "title": "SEO Harvest",
+  "tags": ["seo", "harvest"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1h",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Page-1-Push Candidates",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE tier = 'page1_push' AND status = 'open'"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Striking Distance",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE tier = 'striking_distance' AND status = 'open'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Low-CTR Posts",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE tier = 'low_ctr' AND status = 'open'"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Top Opportunities — fix these first",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 5 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "gap_score", "desc": true }]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT slug, tier, current_position, impressions, ctr, gap_score FROM seo_opportunities WHERE status = 'open' ORDER BY gap_score DESC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Sitewide CTR Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT date_trunc('day', measured_at) AS time, SUM(google_clicks)::float / NULLIF(SUM(google_impressions), 0) AS ctr FROM post_performance WHERE measured_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    }
+  ]
+}

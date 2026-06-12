@@ -628,6 +628,25 @@ DEFAULTS: dict[str, str] = {
     'rate_limit_podcast_generate_per_ip': '5/minute',  # POST /api/podcast/generate/{id} — GPU
     'rate_limit_video_generate_per_ip': '5/minute',    # POST /api/video/generate/{id} — GPU
 
+    # ----- SEO Harvest Loop (Phase 1) -----
+    # The read-only analyzer is safe-on so the opportunity list populates day
+    # one. Content-mutating refresh (Phase 2) gates separately on
+    # seo.refresh.enabled (default off). See
+    # docs/superpowers/specs/2026-06-11-seo-harvest-loop-design.md.
+    'seo.harvest.analyzer_enabled': 'true',
+    'seo.refresh.enabled': 'false',
+    'seo.striking_distance.position_min': '5',
+    'seo.striking_distance.position_max': '20',
+    'seo.push_candidate.position_min': '3',
+    'seo.push_candidate.position_max': '10',
+    'seo.push_candidate.min_impressions': '100',
+    'seo.low_ctr.min_impressions': '100',
+    'seo.low_ctr.max_ctr': '0.01',
+    'seo.opportunity.target_ctr': '0.05',
+    # Phase-2 / Task-8 forward-decls (unused in Phase 1; seeded for completeness):
+    'seo.query_ingestion.enabled': 'false',
+    'seo.refresh.outcome_measure_after_days': '14',
+
 }
 
 
