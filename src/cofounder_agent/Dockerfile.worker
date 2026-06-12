@@ -112,8 +112,7 @@ COPY pyproject.toml poetry.lock ./
 # which actually runs the backfill_videos publish dispatch — needs them
 # baked in or the publishing.youtube handler ImportErrors at dispatch.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-root --no-dev --no-interaction --extras "profiling youtube" || \
-    poetry install --no-root --no-interaction --extras "profiling youtube"
+    poetry install --no-root --only main --no-interaction --extras "profiling youtube"
 
 # Fail-fast verification — confirm the pyroscope-io wheel actually
 # landed in the image. If `[profiling]` was silently dropped (resolver
