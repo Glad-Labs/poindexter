@@ -104,8 +104,10 @@ async def test_enqueues_capped_and_parks(monkeypatch):
             added.append(data)
             return f"task-{len(added)}"
 
+    findings = []
+
     monkeypatch.setattr(mod, "TasksDatabase", _Tasks)
-    monkeypatch.setattr(mod, "emit_finding", lambda **k: None)
+    monkeypatch.setattr(mod, "emit_finding", lambda **k: findings.append(k))
 
     job = mod.EnqueueSeoRefreshesJob()
     res = await job.run(
@@ -123,3 +125,9 @@ async def test_enqueues_capped_and_parks(monkeypatch):
     assert {d["task_metadata"]["post_id"] for d in added} == {"post-1", "post-2"}
     # Both opportunities parked to queued.
     assert set(parked) == {"opp-1", "opp-2"}
+    # The queued-for-sign-off finding MUST emit at 'warn' so
+    # findings_alert_router fetches it (it filters out 'info') and the
+    # findings.seo_refresh_queued.delivery='discord' policy can route it.
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "seo_refresh_queued"
+    assert findings[0]["severity"] == "warn"

@@ -569,6 +569,21 @@ DEFAULTS: dict[str, str] = {
     'findings.cloud_sync_returned_false.fallback': 'log_only',
     'findings.cloud_sync_returned_false.cooldown_minutes': '360',
     'findings.cloud_sync_returned_false.min_severity': 'warn',
+    # SEO Harvest Loop (#763) — routine operator notifications, NOT pages.
+    # enqueue_seo_refreshes emits seo_refresh_queued when N refresh tasks are
+    # parked at seo_refresh_gate awaiting per-post sign-off; measure_seo_refresh
+    # _outcomes emits seo_refresh_outcome when post-refresh GSC deltas land.
+    # Both emit at severity='warn' so the router fetches them (it filters out
+    # 'info'); delivery='discord' pins the Glad Labs ops channel per
+    # feedback_telegram_vs_discord (Telegram=critical, Discord=routine).
+    'findings.seo_refresh_queued.delivery': 'discord',
+    'findings.seo_refresh_queued.fallback': 'log_only',
+    'findings.seo_refresh_queued.cooldown_minutes': '360',
+    'findings.seo_refresh_queued.min_severity': 'warn',
+    'findings.seo_refresh_outcome.delivery': 'discord',
+    'findings.seo_refresh_outcome.fallback': 'log_only',
+    'findings.seo_refresh_outcome.cooldown_minutes': '1440',
+    'findings.seo_refresh_outcome.min_severity': 'warn',
 
     # ----- Findings issue labels (content-derived from kind; cite-or-surface) -----
     # Comma-separated labels stamped on the GitHub issue a github_issue-delivery

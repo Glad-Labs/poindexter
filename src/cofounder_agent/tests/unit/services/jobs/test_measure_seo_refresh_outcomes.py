@@ -68,7 +68,8 @@ async def test_measures_due_rows_and_writes_outcome(monkeypatch):
         def acquire(self):
             return _Conn()
 
-    monkeypatch.setattr(mod, "emit_finding", lambda **k: None)
+    findings = []
+    monkeypatch.setattr(mod, "emit_finding", lambda **k: findings.append(k))
 
     job = mod.MeasureSeoRefreshOutcomesJob()
     res = await job.run(
@@ -80,6 +81,11 @@ async def test_measures_due_rows_and_writes_outcome(monkeypatch):
     # outcome_position = 5.0, outcome_ctr = 30/1000 = 0.03
     assert writes and writes[0][1] == 5.0
     assert abs(writes[0][2] - 0.03) < 1e-9
+    # 'warn' severity is required for findings_alert_router to route it to
+    # the findings.seo_refresh_outcome.delivery='discord' channel.
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "seo_refresh_outcome"
+    assert findings[0]["severity"] == "warn"
 
 
 @pytest.mark.asyncio

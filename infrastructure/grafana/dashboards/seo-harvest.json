@@ -212,6 +212,32 @@
           "rawSql": "SELECT slug, baseline_position, outcome_position, (baseline_position - outcome_position) AS position_gain, baseline_ctr, outcome_ctr, (outcome_ctr - baseline_ctr) AS ctr_gain, refreshed_at, outcome_measured_at FROM seo_opportunities WHERE outcome_measured_at IS NOT NULL ORDER BY outcome_measured_at DESC LIMIT 50"
         }
       ]
+    },
+    {
+      "id": 9,
+      "title": "Awaiting sign-off — seo_refresh gate (proposed title + meta)",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 42 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "gate_paused_at", "desc": false }]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT LEFT(task_id::text, 8) AS task, gate_artifact->>'post_slug' AS slug, gate_artifact->>'seo_title' AS proposed_title, gate_artifact->>'seo_description' AS proposed_description, gate_artifact->>'target_query' AS target_query, gate_paused_at FROM pipeline_tasks WHERE awaiting_gate = 'seo_refresh_gate' ORDER BY gate_paused_at ASC"
+        }
+      ]
     }
   ]
 }

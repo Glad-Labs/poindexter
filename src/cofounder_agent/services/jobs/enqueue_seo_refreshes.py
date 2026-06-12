@@ -112,6 +112,10 @@ class EnqueueSeoRefreshesJob:
                 kind="seo_refresh_queued",
                 title=f"SEO: {len(queued)} refresh task(s) queued for sign-off",
                 body=body,
+                # 'warn' so findings_alert_router fetches it (it filters out
+                # 'info'); findings.seo_refresh_queued.delivery='discord' then
+                # pins the ops channel. Routine notification, not a page.
+                severity="warn",
                 extra={"count": len(queued)},
             )
 

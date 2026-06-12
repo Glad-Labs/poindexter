@@ -25,3 +25,19 @@ def test_no_seo_refresh_default_is_empty():
     for key, value in DEFAULTS.items():
         if key.startswith("seo.refresh.") or key == "pipeline_gate_seo_refresh_gate":
             assert value != "", f"{key} must have a non-empty default"
+
+
+def test_seo_refresh_findings_route_to_discord():
+    # The queued-for-sign-off + outcome-measured findings are routine operator
+    # notifications (Discord, not Telegram) per feedback_telegram_vs_discord.
+    # delivery='discord' pins the channel; min_severity must admit the 'warn'
+    # severity the jobs emit at (the router floors out 'info' at the SQL layer,
+    # so 'warn' is the load-bearing contract — see the job tests).
+    for kind, cooldown in (
+        ("seo_refresh_queued", "360"),
+        ("seo_refresh_outcome", "1440"),
+    ):
+        assert DEFAULTS[f"findings.{kind}.delivery"] == "discord"
+        assert DEFAULTS[f"findings.{kind}.fallback"] == "log_only"
+        assert DEFAULTS[f"findings.{kind}.min_severity"] == "warn"
+        assert DEFAULTS[f"findings.{kind}.cooldown_minutes"] == cooldown

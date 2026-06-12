@@ -131,6 +131,10 @@ class MeasureSeoRefreshOutcomesJob:
                 kind="seo_refresh_outcome",
                 title=f"SEO: {len(measured)} refresh outcome(s) measured",
                 body=body,
+                # 'warn' so findings_alert_router fetches it (it filters out
+                # 'info'); findings.seo_refresh_outcome.delivery='discord' then
+                # pins the ops channel. Routine notification, not a page.
+                severity="warn",
                 extra={"count": len(measured)},
             )
 
