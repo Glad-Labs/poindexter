@@ -240,6 +240,35 @@ CITATION_ARTIFACT_PATTERNS = [
     r"\([A-Z][A-Za-z]+\s+(?:et\s+al\.?|and\s+[A-Z][A-Za-z]+|&\s+[A-Z][A-Za-z]+),?\s+\d{4}[a-z]?\)",
 ]
 
+# Placeholder citation artifacts (#766) — the niche writer (glm-4.7), told to
+# cite the SOURCES / internal snippets "inline as markdown links", invents a
+# *placeholder* citation when it has a claim but no real URL: a bracketed label
+# echoing the prompt's own vocabulary ("[INTERNAL SNIPPET]") or a markdown link
+# whose href is a placeholder word ("[text](internal_context_link)",
+# "[text](url)") rather than a real URL. Unlike the advisory citation_artifact /
+# unlinked_citation rules above, these are UNAMBIGUOUS draft artifacts — no
+# reader-facing prose ever contains them — so they hard-reject (critical). The
+# rule is scanned with code spans blanked (see the call site) so a markdown
+# tutorial that shows "[text](url)" as an EXAMPLE does not fire. Closes the gap
+# that shipped "[INTERNAL SNIPPET]" + a dead "[...](internal_context_link)" past
+# the advisory LLM critic on a 2026-06-11 niche rerun.
+PLACEHOLDER_CITATION_PATTERNS = [
+    # Bracketed label echoing the writer prompt's "internal snippet(s)" /
+    # "internal source(s)" vocabulary. "internal" is REQUIRED so the bare word
+    # "snippet"/"source" as legitimate link text ("[snippet](real-url)") never
+    # fires; the optional trailing index covers "[INTERNAL SNIPPET 2]".
+    r"\[\s*internal\s+snippets?(?:\s+\d{1,3})?\s*\]",
+    r"\[\s*internal\s+sources?(?:\s+\d{1,3})?\s*\]",
+    # Wikipedia-style unresolved-citation placeholder.
+    r"\[\s*citation\s+needed\s*\]",
+    # Markdown link whose href is a placeholder word rather than a real
+    # URL/path: "[text](url)" "[text](link)" "[text](source)" "[text](citation)"
+    # "[text](internal_context_link)" "[text](insert url here)"
+    # "[text](your link here)". The href is anchored between ``(`` and ``)`` so a
+    # real link such as "(https://x/url)" never matches.
+    r"\]\(\s*(?:url|link|source|citation|internal[_\s\-]?(?:context[_\s\-]?)?link|insert[_\s\-]?(?:url|link)(?:[_\s\-]?here)?|your[_\s\-]?(?:url|link)[_\s\-]?here)\s*\)",
+]
+
 # Leaked internal path tokens (#532) — poindexter's OWN source identifiers must
 # never appear in published niche content (AI/gaming/hardware). Their presence
 # means the writer regurgitated system/repo context. Kept to UNAMBIGUOUS
@@ -1590,6 +1619,20 @@ def validate_content(
         issues.extend(_check_patterns(
             full_text, PLACEHOLDER_MARKER_PATTERNS, "critical", "unresolved_placeholder",
             "Unresolved internal-link placeholder leaked to content: '{matched}'"
+        ))
+
+    # 7b-bis-2. Placeholder citation artifacts (#766) — bracketed labels echoing
+    # the writer prompt's "internal snippet(s)" vocabulary, or markdown links
+    # with a placeholder href ("[text](url)", "[text](internal_context_link)").
+    # Critical + zero-false-positive (no reader-facing prose contains these), so
+    # they hard-reject rather than join the advisory citation_artifact /
+    # unlinked_citation warnings below. Scanned with code spans blanked so a
+    # markdown tutorial showing "[text](url)" as an example does not fire.
+    if _enabled("placeholder_citation"):
+        issues.extend(_check_patterns(
+            _strip_code_spans(full_text), PLACEHOLDER_CITATION_PATTERNS,
+            "critical", "placeholder_citation",
+            "Placeholder citation left in content (needs a real link or removal): '{matched}'"
         ))
 
     # 7b-ter. Citation artifacts (#532) — bracketed numeric / parenthetical

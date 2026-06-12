@@ -186,6 +186,81 @@ class TestImagePlaceholders:
         assert all(i.severity == "critical" for i in image_issues)
 
 
+class TestPlaceholderCitation:
+    """#766 — hard-reject placeholder citations the writer invents (e.g. glm-4.7
+
+    echoing the prompt's "internal snippets" vocabulary as "[INTERNAL SNIPPET]",
+    or a markdown link whose href is a placeholder word like "(url)").
+    """
+
+    def test_catches_internal_snippet_label(self):
+        content = "Token expansion is a common mistake [INTERNAL SNIPPET]."
+        result = validate_content("Memory", content, "AI", site_config=_SC)
+        assert not result.passed
+        assert any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_catches_internal_snippets_plural_and_indexed(self):
+        for token in ("[INTERNAL SNIPPETS]", "[INTERNAL SNIPPET 2]"):
+            content = f"As discussed {token}, the approach scales."
+            result = validate_content("Scaling", content, "AI", site_config=_SC)
+            assert any(i.category == "placeholder_citation" for i in result.issues), token
+
+    def test_catches_internal_source_label(self):
+        content = "The benchmark figures [INTERNAL SOURCE] show a 2x gain."
+        result = validate_content("Benchmarks", content, "AI", site_config=_SC)
+        assert any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_catches_citation_needed(self):
+        content = "GPUs draw more power than CPUs [citation needed]."
+        result = validate_content("Power", content, "hardware", site_config=_SC)
+        assert any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_catches_placeholder_link_href_url(self):
+        content = "Read [the original analysis](url) for the full breakdown."
+        result = validate_content("Analysis", content, "AI", site_config=_SC)
+        assert any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_catches_internal_context_link_href(self):
+        content = "See [our earlier post](internal_context_link) on this."
+        result = validate_content("Earlier", content, "AI", site_config=_SC)
+        assert any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_placeholder_citation_is_critical(self):
+        content = "A claim with no source [INTERNAL SNIPPET]."
+        result = validate_content("Claim", content, "AI", site_config=_SC)
+        pc = [i for i in result.issues if i.category == "placeholder_citation"]
+        assert pc and all(i.severity == "critical" for i in pc)
+
+    def test_no_false_positive_on_real_link(self):
+        content = "Read [the paper](https://arxiv.org/abs/2401.00001) for details."
+        result = validate_content("Paper", content, "AI", site_config=_SC)
+        assert not any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_no_false_positive_snippet_as_link_text(self):
+        # "snippet" is legitimate link text when the href is a real URL; the
+        # rule requires the "internal" prefix, so this must NOT fire.
+        content = "Here's a handy [snippet](https://gist.github.com/x) to copy."
+        result = validate_content("Snippet", content, "tech", site_config=_SC)
+        assert not any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_no_false_positive_on_relative_post_link(self):
+        content = "See [our related guide](/posts/related-guide) for more."
+        result = validate_content("Related", content, "AI", site_config=_SC)
+        assert not any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_no_false_positive_markdown_tutorial_in_code_block(self):
+        # A markdown tutorial may show "[text](url)" as an EXAMPLE inside a
+        # fenced code block. Code spans are blanked before scanning, so it
+        # must NOT fire.
+        content = (
+            "Markdown links use this syntax:\n\n"
+            "```\n[text](url)\n```\n\n"
+            "Inline, you can also write `[text](url)` to link out."
+        )
+        result = validate_content("Markdown 101", content, "tech", site_config=_SC)
+        assert not any(i.category == "placeholder_citation" for i in result.issues)
+
+
 class TestUnresolvedPlaceholders:
     """poindexter#489 — catch [posts/...] template tokens leaking to publish."""
 

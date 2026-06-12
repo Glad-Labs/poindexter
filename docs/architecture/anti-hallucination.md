@@ -235,6 +235,45 @@ deterministic coverage first. `test_citation_match.py` (matching core),
 `test_citation_atoms.py` (both atoms), and `test_canonical_blog_spec.py`
 (wiring) pin it.
 
+#### Placeholder citations: programmatic hard-gate + prompt tightening (#766)
+
+A related but distinct failure: glm-4.7, told to "cite the SOURCES / internal
+snippets **inline as markdown links**", invents a _placeholder_ citation when it
+has a claim but no real URL — a bracketed label echoing the prompt's own
+vocabulary (`[INTERNAL SNIPPET]`), a bare `` `source` `` tag, or a markdown link
+whose href is a placeholder word (`[the analysis](internal_context_link)`,
+`[x](url)`). These are draft artifacts, not real attributions, so the #765
+reconciler (which links _named_ sources to corpus URLs) doesn't touch them, and
+the advisory rails let them through: the `unlinked_citation` /
+`citation_artifact` validator rules are `warning`-level (they only veto once a
+per-category count threshold is exceeded), the dead-link check only validates
+`http(s)://` hrefs so a `(internal_context_link)` target slips past, and the LLM
+critic flags them in prose but scores above the gate. A 2026-06-11 niche rerun
+shipped `[INTERNAL SNIPPET]` repeatedly plus a dead `(internal_context_link)` to
+preview this way.
+
+Two layers close it:
+
+- **`placeholder_citation`** (programmatic, `content_validator.py`): a
+  **critical** rule (so it bypasses the warning-promotion threshold and
+  hard-rejects on the first match at `qa.programmatic`). Patterns:
+  `[INTERNAL SNIPPET(S)]` / `[INTERNAL SOURCE(S)]` (the `internal` prefix is
+  required so the bare word "snippet" as legitimate link text never fires),
+  `[citation needed]`, and markdown links whose href is a placeholder word
+  (`url` / `link` / `source` / `citation` / `internal[_ ]context[_ ]link` / …).
+  Scanned over **code-span-blanked** text so a markdown tutorial showing
+  `[text](url)` as an example doesn't false-positive. Zero-false-positive by
+  construction — no reader-facing prose contains these tokens.
+
+- **Writer-prompt tightening** (`atoms/two_pass_writer.py::_draft_node`): the
+  base + SOURCES instructions now state that `[EXTERNAL_NEEDED: …]` is the ONLY
+  permitted placeholder and that an ungroundable claim must be written plainly
+  **with no citation marker** — reducing the emission rate at the source while
+  the hard-gate guarantees none reach preview.
+
+`test_content_validator.py::TestPlaceholderCitation` pins the catches and the
+false-positive guards.
+
 ## Layer 1 — Prompt-level guards
 
 Files:
@@ -313,6 +352,7 @@ separately by the orchestrator (see Layer 3 below).
 | `title_diversity`        | warning            | Title starts with an overused opener — "Beyond the", "Unlocking", "The Ultimate", "Mastering", etc.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `hallucinated_reference` | warning (advisory) | Library / API names that don't appear in the Python stdlib, top-500 PyPI packages, or known Ollama models (`_detect_hallucinated_references`, line 611). Pulls candidates from backtick-wrapped tokens and narrative prose ("explore CadQuery to see..."). Also fires when a known library is mentioned in a topic-mismatched post. Source lists live in `brain/hallucination-check/` (`stdlib-python-312.txt`, `pypi-top-500.txt`, `ollama-models.txt`, `library-topics.json`). **Internal project files / repo paths are exempt** (`_looks_like_file_or_path`): a backtick token ending in a source/config extension (`api_token_auth.py`, `Component.tsx`) or containing a path separator is the author referencing a repo file, not a library, and is skipped before any list lookup. **Demoted to a non-promotable warning 2026-06-09 (Glad-Labs/poindexter#692):** the pattern can't tell a fabricated lib from a brand-new post-cutoff product (`Claude Mythos 5`), so count-promotion default is now `0` (never); re-arm via `content_validator_hallucinated_reference_warning_threshold` > 0. |
 | `citation_artifact`      | warning            | Bracketed numeric citations (`[12]`) and parenthetical academic citations (`(Smith, 2023)`, `(Smith et al., 2024)`) the LLM emits from training on papers/Wikipedia — real sources must be Markdown links, not dangling markers (`CITATION_ARTIFACT_PATTERNS`). poindexter#532.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `placeholder_citation`   | critical           | Placeholder citations the writer invents when it lacks a real URL — bracketed labels echoing the prompt vocabulary (`[INTERNAL SNIPPET]` / `[INTERNAL SOURCE]`), `[citation needed]`, and markdown links with a placeholder href (`(url)` / `(link)` / `(source)` / `(internal_context_link)`) (`PLACEHOLDER_CITATION_PATTERNS`). The `internal` prefix is required on the snippet/source labels so "snippet" as legitimate link text never fires; scanned over code-span-blanked text so a markdown tutorial showing `[text](url)` as an example doesn't false-positive. Zero-false-positive by construction → critical (hard-reject on first match). Closes the #765-adjacent gap that shipped `[INTERNAL SNIPPET]` + a dead `(internal_context_link)` past the advisory rails (a 2026-06-11 niche rerun). #766.                                                                                                                                                                                                                                                                                     |
 | `leaked_path_token`      | warning            | poindexter's own source identifiers leaking into published niche content — `src/cofounder_agent`, `cofounder_agent`, `glad-labs-stack` (`LEAKED_PATH_TOKEN_PATTERNS`). Kept to unambiguous internal tokens so generic coding prose doesn't false-positive; dev_diary opts out via `applies_to_niches`. poindexter#532.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `orphaned_attribution`   | warning → critical | Orphaned attribution fragment — the writer dropped the named source, leaving a sentence that opens with a lowercase attribution verb ("... is enough. points out that this approach misses the mark.") (`ORPHANED_ATTRIBUTION_PATTERNS`). Case-sensitive (`(?-i:...)`) so well-formed "He points out that..." prose doesn't fire; requires a trailing "that". Distinct from `citation_artifact` above (numeric/parenthetical refs). Warning first per poindexter#532; the GH-91 per-category threshold promotes to critical once several fire in one post.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `internal_path_leak`     | warning            | Internal reference tokens like `[memory/...]` / `[brain/...]` bleeding into reader-facing prose (`INTERNAL_PATH_LEAK_PATTERNS`). Sibling of `unresolved_placeholder` (which owns `[posts/...]`); anchored on a known internal-store namespace + slash so genuine prose brackets don't fire, and skips real Markdown links via `(?!\()`. poindexter#532.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

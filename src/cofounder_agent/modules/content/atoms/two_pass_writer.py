@@ -293,7 +293,12 @@ async def _draft_node(state: _State) -> _State:
         "Write a first-draft blog post drawing ONLY from the provided internal "
         "snippets. Do NOT make up external facts, statistics, or quotes you cannot "
         "ground in a snippet. If you need an outside fact you don't have, mark it "
-        "[EXTERNAL_NEEDED: <description>] in the draft so a follow-up pass can fill it in."
+        "[EXTERNAL_NEEDED: <description>] in the draft so a follow-up pass can fill it in. "
+        "[EXTERNAL_NEEDED: ...] is the ONLY placeholder you may emit. Never invent a "
+        "citation stand-in: do not write labels like [INTERNAL SNIPPET], a bare `source` "
+        "tag, or a markdown link whose target is not a real URL (e.g. (url), (link), "
+        "(internal_context_link)). If you cannot cite a real URL for a claim, state the "
+        "claim plainly with no citation marker at all."
     )
     # Prepend the niche-level writer prompt override (when present) so
     # niche-specific anti-hallucination rules / brand voice / scope
@@ -335,7 +340,10 @@ async def _draft_node(state: _State) -> _State:
             f"article — use these IN ADDITION to the internal snippets: ground "
             f"your key claims in them and cite them inline as markdown links "
             f"using the exact URLs provided. Do not invent other external facts "
-            f"or sources beyond these and the snippets):\n\n{research_context}"
+            f"or sources beyond these and the snippets. If a claim has no matching "
+            f"SOURCE URL, write it without any citation marker — never a placeholder "
+            f"like [INTERNAL SNIPPET] or a link whose target is not a real URL"
+            f"):\n\n{research_context}"
         )
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
