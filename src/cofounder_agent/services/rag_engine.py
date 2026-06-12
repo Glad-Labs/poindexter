@@ -667,7 +667,7 @@ def _build_rerank_retriever_class():
                 )
                 return candidates[: self._top_k]
 
-            scored = list(zip(candidates, [float(s) for s in scores]))
+            scored = list(zip(candidates, [float(s) for s in scores], strict=False))
             scored.sort(key=lambda cs: cs[1], reverse=True)
             return [
                 NodeWithScore(node=c.node, score=score)

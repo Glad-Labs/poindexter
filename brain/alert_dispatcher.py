@@ -90,7 +90,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger("brain.alert_dispatcher")
@@ -176,7 +176,7 @@ def _default_now() -> datetime:
     datetime)`` checks elsewhere in the module). Production code calls
     this exactly once per dispatch decision.
     """
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _normalize_message(message: str) -> str:
@@ -1153,13 +1153,13 @@ def _coerce_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
 
 

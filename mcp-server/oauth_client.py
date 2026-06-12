@@ -35,7 +35,6 @@ import base64
 import json
 import logging
 import os
-import sys
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -123,10 +122,7 @@ def _bootstrap_secret_key() -> str:
     "can't decrypt → default" degradation.
     """
     try:
-        if sys.version_info >= (3, 11):
-            import tomllib as _toml
-        else:  # pragma: no cover — tomli only on 3.10
-            import tomli as _toml  # type: ignore[import-not-found]
+        import tomllib as _toml
     except Exception:  # noqa: BLE001
         return ""
     path = os.path.expanduser("~/.poindexter/bootstrap.toml")

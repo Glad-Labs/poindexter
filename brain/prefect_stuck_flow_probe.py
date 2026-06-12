@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
@@ -361,8 +361,8 @@ def _age_minutes(start_time_iso: str | None) -> int | None:
     except (TypeError, ValueError):
         return None
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    delta = datetime.now(timezone.utc) - start
+        start = start.replace(tzinfo=UTC)
+    delta = datetime.now(UTC) - start
     return int(delta.total_seconds() // 60)
 
 

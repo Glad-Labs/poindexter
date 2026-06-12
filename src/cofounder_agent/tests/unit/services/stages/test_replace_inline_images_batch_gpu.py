@@ -34,7 +34,6 @@ from modules.content.stages.replace_inline_images import (
 )
 from plugins.fake_platform import FakePlatform
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

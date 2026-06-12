@@ -106,7 +106,7 @@ class TestResolveLocalModel:
         }.get(k, d or ""))
         result = resolve_local_model(site_config=sc)
         assert result == "my-pinned-writer", (
-            "pipeline_writer_model must win over cost_tier.standard.model; got %r" % result
+            f"pipeline_writer_model must win over cost_tier.standard.model; got {result!r}"
         )
 
     def test_cost_tier_standard_used_when_pipeline_writer_empty(self):

@@ -10,7 +10,7 @@
     "dev": "next dev --port 3334",
     "build": "next build",
     "start": "next start --port 3334",
-    "lint": "next lint"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@glad-labs/brand": "*",

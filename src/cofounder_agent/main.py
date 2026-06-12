@@ -1020,8 +1020,9 @@ if not _is_production:
 # Mounted after API routes so it never shadows /api/... paths.
 # html=True serves index.html for bare /console/ requests.
 # Not behind verify_api_token — the page loads freely; its /api/... calls carry the bearer token.
-from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
 from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
 
 app.mount(
     "/console",

@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import sys
+
 import click
 
 from ._api_client import WorkerClient

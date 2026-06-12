@@ -39,7 +39,7 @@ import logging
 import os
 import subprocess
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
@@ -297,7 +297,7 @@ async def _is_deduped(pool: Any, *, fingerprint: str, now_utc: datetime, dedup_h
     if not isinstance(last_seen, datetime):
         return False
     if last_seen.tzinfo is None:
-        last_seen = last_seen.replace(tzinfo=timezone.utc)
+        last_seen = last_seen.replace(tzinfo=UTC)
     return (now_utc - last_seen) < timedelta(hours=dedup_hours)
 
 
@@ -388,7 +388,7 @@ async def run_branch_drift_probe(
     git_runner: Callable[[str], tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     """One execution of the branch-drift canary; returns a structured summary."""
-    now_fn = now_fn or (lambda: datetime.now(timezone.utc))
+    now_fn = now_fn or (lambda: datetime.now(UTC))
     notify_fn = notify_fn or notify_operator
     git_runner = git_runner or _read_local_head
 
@@ -403,7 +403,7 @@ async def run_branch_drift_probe(
     last = _state["last_real_pass_at"]
     if isinstance(last, datetime):
         if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
+            last = last.replace(tzinfo=UTC)
         if (now_utc - last) < timedelta(minutes=config["poll_interval_minutes"]):
             return {"ok": True, "status": "skipped", "behind": 0, "alert_emitted": False,
                     "detail": "within poll interval"}

@@ -38,10 +38,10 @@ from .retention import retention_group
 from .schedule import publish_at_command, schedule_group
 from .settings import settings_group
 from .setup import setup_command
+from .skills import skills_group
 from .stores import stores_group
 from .taps import taps_group
 from .tasks import tasks_group
-from .skills import skills_group
 from .topics import topics_group
 from .validators import validators_group
 from .vercel import vercel_group

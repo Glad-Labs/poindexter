@@ -18,6 +18,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC
 from typing import Any
 
 try:
@@ -586,10 +587,10 @@ async def probe_gpu_temperature(pool) -> dict:
             stale_minutes = 15
         ts = row["timestamp"]
         if ts is not None and stale_minutes > 0:
-            from datetime import datetime, timezone
+            from datetime import datetime
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            age_min = (datetime.now(timezone.utc) - ts).total_seconds() / 60.0
+                ts = ts.replace(tzinfo=UTC)
+            age_min = (datetime.now(UTC) - ts).total_seconds() / 60.0
             if age_min > stale_minutes:
                 return {
                     "ok": False,
@@ -849,12 +850,12 @@ async def probe_cost_freshness(pool) -> dict:
             """)
         if not row or not row["last_any"]:
             return {"ok": True, "detail": "no cost_logs entries yet (pipeline idle)"}
-        from datetime import datetime, timezone
+        from datetime import datetime
         # Check inference costs specifically (electricity logs every 5 min)
         last = row["last_inference"] or row["last_any"]
         if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+            last = last.replace(tzinfo=UTC)
+        age_hours = (datetime.now(UTC) - last).total_seconds() / 3600
         approval_queue = row["approval_queue"] or 0
         stale = age_hours > 24
 
@@ -891,10 +892,10 @@ async def probe_podcast_health(pool) -> dict:
             return {"ok": True, "detail": "no podcast tasks found (feature may not be active)"}
         last = row["last_gen"]
         if last:
-            from datetime import datetime, timezone
+            from datetime import datetime
             if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            age_days = (datetime.now(timezone.utc) - last).total_seconds() / 86400
+                last = last.replace(tzinfo=UTC)
+            age_days = (datetime.now(UTC) - last).total_seconds() / 86400
             stale = age_days > 7
             return {
                 "ok": not stale,
@@ -929,11 +930,11 @@ async def probe_newsletter_health(pool) -> dict:
                 "subscribers": subs,
                 "detail": f"{subs} subscribers but no sends recorded — check newsletter service",
             }
-        from datetime import datetime, timezone
+        from datetime import datetime
         last = send_row["last_sent"]
         if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        age_days = (datetime.now(timezone.utc) - last).total_seconds() / 86400
+            last = last.replace(tzinfo=UTC)
+        age_days = (datetime.now(UTC) - last).total_seconds() / 86400
         stale = age_days > 7
         return {
             "ok": not stale,
@@ -969,10 +970,10 @@ async def probe_embeddings_freshness(pool) -> dict:
         stale = gap > 3  # Allow small buffer
         detail = f"{embedded}/{total} posts embedded"
         if last:
-            from datetime import datetime, timezone
+            from datetime import datetime
             if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+                last = last.replace(tzinfo=UTC)
+            age_hours = (datetime.now(UTC) - last).total_seconds() / 3600
             detail += f", last {age_hours:.0f}h ago"
         if stale:
             detail += f" — {gap} posts missing embeddings"

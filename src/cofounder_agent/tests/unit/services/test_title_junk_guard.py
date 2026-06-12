@@ -23,7 +23,6 @@ from services.title_generation import (
     choose_canonical_title,
 )
 
-
 # ---------------------------------------------------------------------------
 # Real failure captures (poindexter#1280 root-cause evidence)
 # ---------------------------------------------------------------------------

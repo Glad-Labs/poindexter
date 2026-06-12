@@ -97,8 +97,9 @@ async def test_happy_path_propagates_podcast_script_and_scenes():
 async def test_audio_gen_intro_called_when_enabled():
     """When audio_gen is enabled and podcast_script is long enough,
     generate_audio must be called with kind='intro'."""
-    from plugins.audio_gen_provider import AudioGenResult
     from types import SimpleNamespace
+
+    from plugins.audio_gen_provider import AudioGenResult
 
     gpu = SimpleNamespace(lock=_fake_lock)
     audio_calls = []
@@ -246,7 +247,7 @@ class _FakeNamedTmp:
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def __enter__(self) -> "_FakeNamedTmp":
+    def __enter__(self) -> _FakeNamedTmp:
         return self
 
     def __exit__(self, *_a: Any) -> bool:

@@ -472,13 +472,18 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by black)
+    "E402",  # conditional/guard imports after module-level constants are intentional
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
+    "C408",  # dict() vs {} is a style preference; both are idiomatic
+    "E741",  # ambiguous variable names (l/O/I) exist in legacy helpers
+    "ARG001",  # handler callbacks receive a fixed positional signature
+    "ARG002",  # handler callbacks receive a fixed positional signature
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"tests/*" = ["ARG"]
+"tests/**" = ["ARG", "B017"]
 # FastAPI routes: Depends(...) parameters intentionally hold auth/db handles
 # without being referenced in the body. request: Request is often supplied
 # by middleware for downstream handlers. Don't flag those.

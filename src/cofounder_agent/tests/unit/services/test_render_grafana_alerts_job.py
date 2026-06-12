@@ -11,7 +11,6 @@ import pytest
 from plugins.job import Job
 from services.jobs.render_grafana_alerts import RenderGrafanaAlertsJob, _reload_grafana
 
-
 # ---------------------------------------------------------------------------
 # Protocol / metadata
 # ---------------------------------------------------------------------------
@@ -220,6 +219,7 @@ class TestReloadGrafana:
 
     async def test_http_error_returns_false(self, monkeypatch):
         import httpx
+
         import services.jobs.render_grafana_alerts as job_module
 
         class _ErrorClient:

@@ -452,6 +452,7 @@ class TestRunEmitsTitle:
         """run() must return a ``title`` key so finalize_task can pick it up
         without falling through to the date-shaped topic string."""
         from unittest.mock import patch
+
         from modules.content.atoms.narrate_bundle import run
 
         async def _stub_llm(prompt, *, model=None, **kwargs):
@@ -485,6 +486,7 @@ class TestRunEmitsTitle:
         """The title emitted by run() must not be just a date — that would
         cause the structural gate to fire block_structural on every run."""
         from unittest.mock import patch
+
         from modules.content.atoms.narrate_bundle import run
         from modules.content.auto_publish_gate import _DATE_ONLY_PATTERNS
 

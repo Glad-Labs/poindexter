@@ -14,7 +14,6 @@ Covers:
 """
 from unittest.mock import AsyncMock, MagicMock
 
-
 from modules.content.atoms import _seo_common as sc
 from modules.content.atoms import seo_generate_all_metadata as atom
 

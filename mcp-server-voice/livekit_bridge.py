@@ -98,7 +98,6 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("livekit-bridge")
 
@@ -488,7 +487,7 @@ async def _drain_out_pipe(state: BridgeState) -> None:
     if size <= state.out_offset:
         return
     try:
-        with open(paths["out"], "r", encoding="utf-8") as fh:
+        with open(paths["out"], encoding="utf-8") as fh:
             fh.seek(state.out_offset)
             new_data = fh.read()
             state.out_offset = fh.tell()
@@ -577,7 +576,7 @@ async def _bridge_main(state: BridgeState) -> None:
             await _drain_out_pipe(state)
             try:
                 await asyncio.wait_for(state.leave_event.wait(), timeout=poll)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
     finally:
         try:
@@ -754,7 +753,7 @@ async def stop_bridge(session_id: str, *, timeout: float = 5.0) -> bool:
     if state.task is not None:
         try:
             await asyncio.wait_for(state.task, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Bridge session %s did not exit within %.1fs — cancelling",
                 session_id, timeout,

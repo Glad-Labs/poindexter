@@ -596,7 +596,7 @@ async def assign_batch(
     scheduled: list[dict[str, Any]] = []
     async with pool.acquire() as conn:
         async with conn.transaction():
-            for row, slot in zip(rows, slots):
+            for row, slot in zip(rows, slots, strict=False):
                 await conn.execute(
                     """
                     UPDATE posts

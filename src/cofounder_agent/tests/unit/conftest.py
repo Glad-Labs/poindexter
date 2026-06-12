@@ -36,7 +36,6 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-
 # ---------------------------------------------------------------------------
 # Repo-root discovery (poindexter#722)
 # ---------------------------------------------------------------------------

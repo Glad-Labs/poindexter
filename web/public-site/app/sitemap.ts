@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 import * as Sentry from '@sentry/nextjs';
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site.config';
@@ -65,7 +64,6 @@ async function fetchPublishedContent() {
     const err = new Error(
       `fetchPublishedContent(${label}): R2 returned ${res.status} ${res.statusText}`,
     );
-    console.error('[sitemap] fetchPublishedContent failed:', err.message);
     Sentry.captureException(err);
     throw err;
   }

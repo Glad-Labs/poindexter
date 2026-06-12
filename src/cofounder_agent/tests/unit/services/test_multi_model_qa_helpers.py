@@ -13,8 +13,6 @@ Targets:
 
 from __future__ import annotations
 
-
-
 from modules.content.content_validator import ValidationIssue, ValidationResult
 from modules.content.multi_model_qa import (
     MultiModelResult,

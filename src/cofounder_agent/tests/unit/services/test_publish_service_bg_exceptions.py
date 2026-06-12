@@ -25,7 +25,6 @@ import pytest
 from services.publish_service import _spawn_background, _upload_media_to_r2_bg
 from services.site_config import SiteConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------

@@ -9,7 +9,9 @@ podcast_tts_enabled=false after applying this migration.
 """
 
 from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
 
 async def up(pool) -> None:

@@ -158,6 +158,35 @@ exclude = '''
   | tests
 )/
 '''
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# E4/E7/E9: pycodestyle imports/comparisons/runtime. F: pyflakes. I: isort.
+# B: flake8-bugbear. UP: pyupgrade. C4: comprehensions. ARG: unused-arguments.
+# Deliberately excludes E5 (line-length) — line lengths are enforced by Black.
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "ARG"]
+ignore = [
+    # Handler callbacks receive a fixed positional signature (pool, payload,
+    # site_config) regardless of whether each handler uses every arg.
+    "ARG001",
+    "ARG002",
+    # Conditional / guard imports after module-level constants are intentional
+    # throughout (e.g. gpu_scheduler, telemetry, topic_ranking). Not a bug.
+    "E402",
+    # dict() vs {} is a style preference; both are idiomatic in this codebase.
+    "C408",
+    # Ambiguous single-letter names (l/O/I) exist in legacy helpers; rename
+    # when touching, don't block CI on them.
+    "E741",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest.raises without a match= pattern is acceptable in frozen-dataclass
+# tests where we just want "any exception, not a specific message".
+"tests/**" = ["B017"]
+"src/cofounder_agent/tests/**" = ["B017"]
+
 [dependency-groups]
 dev = [
     "pytest (>=9.0.3,<10.0.0)",

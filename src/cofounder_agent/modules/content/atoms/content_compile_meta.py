@@ -66,8 +66,8 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Run all pure meta-compilation transforms."""
-    from services.text_utils import normalize_text as _normalize_text
     from services.quality_models import ensure_quality_assessment
+    from services.text_utils import normalize_text as _normalize_text
 
     content_text = state.get("content") or ""
     topic = state.get("topic", "")

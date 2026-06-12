@@ -294,7 +294,7 @@ def dev_diary(
         return g
 
     g.set_entry_point(nodes_added[0])
-    for src, dst in zip(nodes_added, nodes_added[1:]):
+    for src, dst in zip(nodes_added, nodes_added[1:], strict=False):
         g.add_conditional_edges(src, halt_or_continue(dst), {dst: dst, END: END})
     g.add_conditional_edges(
         nodes_added[-1], halt_or_continue(END), {END: END},

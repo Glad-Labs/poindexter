@@ -20,7 +20,6 @@ import re
 from unittest.mock import AsyncMock, MagicMock
 
 
-
 def _run(coro):
     return asyncio.run(coro)
 

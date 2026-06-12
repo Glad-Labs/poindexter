@@ -273,7 +273,7 @@ class TestRedactorRobustness:
         # not crash, and the outer levels MUST still be processed.
         event: dict = {"token": "outermost_secret"}
         current = event
-        for i in range(20):
+        for _ in range(20):
             current["nested"] = {}
             current = current["nested"]
         current["token"] = "deeply_nested_secret"

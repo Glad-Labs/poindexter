@@ -23,7 +23,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -37,7 +37,6 @@ from mcp.server.fastmcp import FastMCP
 from oauth_client import (  # noqa: E402 — local module
     MCP_CLIENT_ID_KEY,
     MCP_CLIENT_SECRET_KEY,
-    MCP_DEFAULT_SCOPES,
     McpOAuthClient,
     oauth_client_from_pool,
 )
@@ -671,7 +670,7 @@ async def set_setting(key: str, value: str) -> str:
                     json.dumps({"key": bare_key, "value": value}),
                 )
                 return f"Permission denied: change to {bare_key} queued for approval"
-            return f"Permission denied: mcp_server cannot write to app_settings"
+            return "Permission denied: mcp_server cannot write to app_settings"
     except Exception as e:
         return _format_tool_error("set_setting [permission_check]", e)
 
@@ -872,7 +871,7 @@ async def store_memory(
         if not source_id:
             # Generate a stable-ish id so duplicate calls in quick succession
             # get a unique row. Use writer + epoch seconds + hash of text.
-            epoch = int(datetime.now(timezone.utc).timestamp())
+            epoch = int(datetime.now(UTC).timestamp())
             short = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
             source_id = f"{writer}/adhoc-{epoch}-{short}.md"
 
@@ -885,14 +884,14 @@ async def store_memory(
             "origin": writer,
             "writer": writer,
             "stored_via": "mcp.store_memory",
-            "stored_at": datetime.now(timezone.utc).isoformat(),
+            "stored_at": datetime.now(UTC).isoformat(),
         }
         if tags:
             metadata["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
 
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
         preview = text[:500].replace("\n", " ").strip()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         pool = await _get_pool()
         await pool.execute(

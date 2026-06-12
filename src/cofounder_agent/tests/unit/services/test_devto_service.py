@@ -714,7 +714,7 @@ class TestCrossPostByPostIdDedup:
         ]
         assert len(update_sqls) == 1, (
             "Expected exactly one metadata UPDATE marking the post "
-            "as already_exists; got %r" % executions
+            f"as already_exists; got {executions!r}"
         )
         patch_json = update_sqls[0][1][0]
         assert (
@@ -808,5 +808,5 @@ class TestCrossPostByPostIdDedup:
         ]
         assert update_sqls == [], (
             "5xx must leave metadata untouched so the next cron tick "
-            "retries; saw %r" % update_sqls
+            f"retries; saw {update_sqls!r}"
         )

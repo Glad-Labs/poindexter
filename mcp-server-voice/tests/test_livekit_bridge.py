@@ -827,7 +827,7 @@ class TestTerminateBridgeProcess:
         # the test is host-independent.
         monkeypatch.setattr(
             livekit_bridge.subprocess, "run",
-            lambda *a, **k: type("R", (), {"returncode": 0})(),
+            lambda *_a, **_k: type("R", (), {"returncode": 0})(),
         )
 
         result = livekit_bridge.terminate_bridge_process(sid)
@@ -845,7 +845,7 @@ class TestTerminateBridgeProcess:
         killed: list[int] = []
         monkeypatch.setattr(
             livekit_bridge.os, "kill",
-            lambda pid, sig: killed.append(pid),
+            lambda pid, _sig: killed.append(pid),
         )
         result = livekit_bridge.terminate_bridge_process("vb-term-nolock")
         assert result is False
@@ -859,7 +859,7 @@ class TestTerminateBridgeProcess:
         paths["lock"].write_text("not-a-pid")
         monkeypatch.setattr(
             livekit_bridge.os, "kill",
-            lambda pid, sig: (_ for _ in ()).throw(AssertionError("kill called")),
+            lambda _pid, _sig: (_ for _ in ()).throw(AssertionError("kill called")),
         )
         result = livekit_bridge.terminate_bridge_process(sid)
         assert result is False

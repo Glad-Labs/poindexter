@@ -71,7 +71,8 @@ try:
     # Langfuse 4.x: observe lives at the top-level package; langfuse.decorators
     # was removed. get_client() returns the process-wide Langfuse client whose
     # update_current_generation() replaces the old update_current_observation().
-    from langfuse import get_client as _lf_get_client, observe  # type: ignore[import-not-found]
+    from langfuse import get_client as _lf_get_client  # type: ignore[import-not-found]
+    from langfuse import observe
 
     class _LangfuseContextCompat:
         """Maps Langfuse v3 langfuse_context API to the v4 get_client() surface.

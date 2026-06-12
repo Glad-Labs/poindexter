@@ -28,7 +28,6 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -290,8 +289,8 @@ class TestOpenApiPatchBehaviour:
         """
         from fastapi import FastAPI as _FastAPI
         from fastapi import HTTPException
-        from fastapi.testclient import TestClient
         from fastapi.responses import JSONResponse
+        from fastapi.testclient import TestClient
 
         ta = _FastAPI()
 

@@ -52,12 +52,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not image_plans:
         return {"image_results": []}
 
-    from services.image_service import get_image_service
     from modules.content.stages.replace_inline_images import (
-        _try_sdxl,
-        _try_pexels,
         _record_inline_image_asset,
+        _try_pexels,
+        _try_sdxl,
     )
+    from services.image_service import get_image_service
 
     topic = state.get("topic", "")
     task_id = state.get("task_id")
@@ -141,6 +141,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 def _build_alt_text(desc: str, topic: str, site_config: Any) -> str:
     """Build alt text from desc or topic."""
     import re
+
     from services.alt_text import sanitize_alt_text
     alt = desc if desc else f"{topic} illustration"
     alt = alt.replace("[", "").replace("]", "").replace("\n", " ")

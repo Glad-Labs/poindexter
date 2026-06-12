@@ -278,7 +278,8 @@ class MiddlewareConfig:
 
             # Use the shared singleton so route @limiter.limit() decorators
             # reference the same instance that is registered with app.state.
-            from utils.rate_limiter import configure_rate_limiter, limiter as _limiter
+            from utils.rate_limiter import configure_rate_limiter
+            from utils.rate_limiter import limiter as _limiter
 
             self.limiter = _limiter
 

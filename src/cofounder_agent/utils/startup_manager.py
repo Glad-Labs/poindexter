@@ -667,11 +667,11 @@ class StartupManager:
         # Fetch installed Ollama models                                       #
         # ------------------------------------------------------------------ #
         import httpx as _httpx
-        from services.integrations.operator_notify import notify_operator
 
         # Prefer the lifespan-bound shared client; create a per-call client
         # only when one has not been wired yet (early-boot / tests).
         from services.integrations import operator_notify as _on_mod
+        from services.integrations.operator_notify import notify_operator
         _shared = getattr(_on_mod, "http_client", None)
 
         installed_names: set[str] = set()

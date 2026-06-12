@@ -201,7 +201,7 @@ class ReplaceInlineImagesStage:
             task_id=task_id,
             platform=platform,
         )
-        for (num, desc), img_url in zip(placeholders, sdxl_urls):
+        for (num, desc), img_url in zip(placeholders, sdxl_urls, strict=False):
             content_text = await _resolve_one_placeholder(
                 num=num,
                 desc=desc,
@@ -623,7 +623,7 @@ async def _batch_generate_all_sdxl_images(
             "sdxl", model="sdxl_lightning", task_id=task_id, phase="inline_image_batch",
         ):
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
-                for (num, _desc), sdxl_prompt in zip(placeholders, sdxl_prompts):
+                for (num, _desc), sdxl_prompt in zip(placeholders, sdxl_prompts, strict=False):
                     if sdxl_prompt is None:
                         sdxl_urls.append(None)
                         continue

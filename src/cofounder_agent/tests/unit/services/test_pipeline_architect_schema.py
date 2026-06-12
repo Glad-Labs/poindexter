@@ -16,7 +16,6 @@ import pytest
 from plugins.atom import AtomMeta
 from services import pipeline_architect
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

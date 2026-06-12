@@ -334,6 +334,7 @@ class TestWindowsExporterDownStaticRule:
     @pytest.fixture
     def infra_rules(self) -> list[dict]:
         import pathlib
+
         import yaml
 
         alerts_path = (

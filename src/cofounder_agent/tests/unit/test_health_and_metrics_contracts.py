@@ -10,10 +10,9 @@ Covers poindexter#749:
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Minimal stubs mirroring the real handler implementations

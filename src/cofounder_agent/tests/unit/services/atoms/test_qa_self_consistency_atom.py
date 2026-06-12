@@ -14,7 +14,6 @@ from modules.content.atoms import qa_self_consistency
 from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 from modules.content.multi_model_qa import MultiModelQA
 
-
 # Advisory-first restore: self_consistency seeded required_to_pass=false.
 _ADVISORY_STATES = {"self_consistency": (True, False)}
 # Operator-graduated: required_to_pass=true → hard veto.

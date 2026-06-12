@@ -53,7 +53,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Generate and persist the canonical title, including originality check."""
     from services.title_generation import (
         check_title_originality as _check_title_originality,
+    )
+    from services.title_generation import (
         choose_canonical_title as _choose_canonical_title,
+    )
+    from services.title_generation import (
         generate_canonical_title as _generate_canonical_title,
     )
 

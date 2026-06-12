@@ -213,7 +213,7 @@ def choose_canonical_title(
     content: str,
     llm_title: str | None = None,
     *,
-    site_config: "SiteConfig | None" = None,
+    site_config: SiteConfig | None = None,
 ) -> str:
     """Pick the cleanest canonical title for ``pipeline_versions.title``.
 

@@ -233,7 +233,7 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     _mod(
         "pipecat.pipeline.task",
         PipelineTask=_make_task,
-        PipelineParams=type("PipelineParams", (), {"__init__": lambda self, **kw: None}),
+        PipelineParams=type("PipelineParams", (), {"__init__": lambda _self, **_kw: None}),
     )
     _mod(
         "pipecat.frames.frames",
@@ -247,38 +247,38 @@ def fake_pipecat(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     )
     _mod(
         "pipecat.processors.aggregators.llm_context",
-        LLMContext=type("LLMContext", (), {"__init__": lambda self, **kw: None}),
+        LLMContext=type("LLMContext", (), {"__init__": lambda _self, **_kw: None}),
     )
     _mod(
         "pipecat.processors.aggregators.llm_response_universal",
         LLMContextAggregatorPair=_FakeAggregatorPair,
         LLMUserAggregatorParams=type(
-            "LLMUserAggregatorParams", (), {"__init__": lambda self, **kw: None}
+            "LLMUserAggregatorParams", (), {"__init__": lambda _self, **_kw: None}
         ),
     )
     _mod(
         "pipecat.turns.user_start.vad_user_turn_start_strategy",
         VADUserTurnStartStrategy=type(
-            "VADUserTurnStartStrategy", (), {"__init__": lambda self, **kw: None}
+            "VADUserTurnStartStrategy", (), {"__init__": lambda _self, **_kw: None}
         ),
     )
     _mod(
         "pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy",
         SpeechTimeoutUserTurnStopStrategy=type(
-            "SpeechTimeoutUserTurnStopStrategy", (), {"__init__": lambda self, **kw: None}
+            "SpeechTimeoutUserTurnStopStrategy", (), {"__init__": lambda _self, **_kw: None}
         ),
     )
     _mod(
         "pipecat.turns.user_turn_strategies",
-        UserTurnStrategies=type("UserTurnStrategies", (), {"__init__": lambda self, **kw: None}),
+        UserTurnStrategies=type("UserTurnStrategies", (), {"__init__": lambda _self, **_kw: None}),
     )
     _mod(
         "pipecat.audio.vad.silero",
-        SileroVADAnalyzer=type("SileroVADAnalyzer", (), {"__init__": lambda self, **kw: None}),
+        SileroVADAnalyzer=type("SileroVADAnalyzer", (), {"__init__": lambda _self, **_kw: None}),
     )
     _mod(
         "pipecat.audio.vad.vad_analyzer",
-        VADParams=type("VADParams", (), {"__init__": lambda self, **kw: None}),
+        VADParams=type("VADParams", (), {"__init__": lambda _self, **_kw: None}),
     )
 
     return spy

@@ -184,7 +184,6 @@ async function fetchPostIndex(): Promise<Post[]> {
     const err = new Error(
       `fetchPostIndex: R2 returned ${response.status} ${response.statusText}`,
     );
-    console.error('[posts] fetchPostIndex failed:', err.message);
     Sentry.captureException(err);
     throw err;
   }
@@ -232,7 +231,6 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
     const err = new Error(
       `getPostBySlug(${slug}): R2 returned ${response.status} ${response.statusText}`,
     );
-    console.error('[posts] getPostBySlug failed:', err.message);
     Sentry.captureException(err);
     throw err;
   }

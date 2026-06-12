@@ -50,10 +50,23 @@ prevented by keeping this file a pure re-export shim.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# quality_service
+# content_validator (also used as a whole-module alias ``cv``)
 # ---------------------------------------------------------------------------
-from modules.content.quality_service import (
-    UnifiedQualityService as UnifiedQualityService,
+from modules.content import content_validator  # noqa: F401 — whole-module alias
+
+# ---------------------------------------------------------------------------
+# atoms.narrate_bundle (also used as a whole-module alias ``_narrate_atom``)
+# ---------------------------------------------------------------------------
+from modules.content.atoms import narrate_bundle  # noqa: F401 — whole-module alias
+
+# ---------------------------------------------------------------------------
+# auto_publish
+# ---------------------------------------------------------------------------
+from modules.content.auto_publish import (
+    auto_publish_task as auto_publish_task,
+)
+from modules.content.auto_publish import (
+    get_auto_publish_threshold as get_auto_publish_threshold,
 )
 
 # ---------------------------------------------------------------------------
@@ -61,37 +74,21 @@ from modules.content.quality_service import (
 # ---------------------------------------------------------------------------
 from modules.content.auto_publish_gate import (
     AutoPublishDecision as AutoPublishDecision,
+)
+from modules.content.auto_publish_gate import (
     evaluate as evaluate_auto_publish_gate,
+)
+from modules.content.auto_publish_gate import (
     record_post_approve_metrics as record_post_approve_metrics,
 )
-
-# ---------------------------------------------------------------------------
-# auto_publish
-# ---------------------------------------------------------------------------
-from modules.content.auto_publish import (
-    auto_publish_task as auto_publish_task,
-    get_auto_publish_threshold as get_auto_publish_threshold,
+from modules.content.content_validator import (
+    ValidationIssue as ValidationIssue,
 )
-
-# ---------------------------------------------------------------------------
-# multi_model_qa
-# ---------------------------------------------------------------------------
-from modules.content.multi_model_qa import (
-    MultiModelQA as MultiModelQA,
-    ReviewerResult as ReviewerResult,
-    MultiModelResult as MultiModelResult,
-    format_qa_feedback_from_reviews as format_qa_feedback_from_reviews,
+from modules.content.content_validator import (
+    ValidationResult as ValidationResult,
 )
-
-# ---------------------------------------------------------------------------
-# content_validator (also used as a whole-module alias ``cv``)
-# ---------------------------------------------------------------------------
-from modules.content import content_validator  # noqa: F401 — whole-module alias
-
 from modules.content.content_validator import (
     validate_content as validate_content,
-    ValidationResult as ValidationResult,
-    ValidationIssue as ValidationIssue,
 )
 
 # ---------------------------------------------------------------------------
@@ -99,7 +96,32 @@ from modules.content.content_validator import (
 # ---------------------------------------------------------------------------
 from modules.content.internal_link_coherence import (
     InternalLinkCoherenceFilter as InternalLinkCoherenceFilter,
+)
+from modules.content.internal_link_coherence import (
     LinkCandidate as LinkCandidate,
+)
+
+# ---------------------------------------------------------------------------
+# multi_model_qa
+# ---------------------------------------------------------------------------
+from modules.content.multi_model_qa import (
+    MultiModelQA as MultiModelQA,
+)
+from modules.content.multi_model_qa import (
+    MultiModelResult as MultiModelResult,
+)
+from modules.content.multi_model_qa import (
+    ReviewerResult as ReviewerResult,
+)
+from modules.content.multi_model_qa import (
+    format_qa_feedback_from_reviews as format_qa_feedback_from_reviews,
+)
+
+# ---------------------------------------------------------------------------
+# quality_service
+# ---------------------------------------------------------------------------
+from modules.content.quality_service import (
+    UnifiedQualityService as UnifiedQualityService,
 )
 
 # ---------------------------------------------------------------------------
@@ -108,11 +130,6 @@ from modules.content.internal_link_coherence import (
 from modules.content.stages.topic_decision_gate import (
     build_topic_decision_artifact as build_topic_decision_artifact,
 )
-
-# ---------------------------------------------------------------------------
-# atoms.narrate_bundle (also used as a whole-module alias ``_narrate_atom``)
-# ---------------------------------------------------------------------------
-from modules.content.atoms import narrate_bundle  # noqa: F401 — whole-module alias
 
 __all__ = [
     # quality_service

@@ -1533,7 +1533,7 @@ class TestWriterModelPrecedence:
         ):
             ordered = await gen._resolve_writer_models(None, pool=object())
         assert ordered[0] == "my-pinned-writer", (
-            "pipeline_writer_model must be first; got %r" % ordered
+            f"pipeline_writer_model must be first; got {ordered!r}"
         )
         assert "cost-tier-model" in ordered, "cost_tier.standard.model should still appear as fallback"
 
@@ -1573,7 +1573,7 @@ class TestWriterModelPrecedence:
             result = await _resolve_rag_writer_model(site_config=sc)
 
         assert result == "my-rag-writer", (
-            "pipeline_writer_model must win; got %r" % result
+            f"pipeline_writer_model must win; got {result!r}"
         )
 
     @pytest.mark.asyncio

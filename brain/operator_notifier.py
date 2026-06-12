@@ -39,7 +39,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -120,7 +120,7 @@ def _append_alerts_log(text: str) -> tuple[bool, str]:
     """Append to ~/.poindexter/alerts.log. Never raises."""
     try:
         _ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         with _ALERTS_LOG.open("a", encoding="utf-8") as f:
             f.write(f"[{ts}] {text}\n\n")
         return True, f"alerts.log ({_ALERTS_LOG})"

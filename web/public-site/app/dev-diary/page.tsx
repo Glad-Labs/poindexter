@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 export default async function DevDiaryPage() {
-  let posts: Awaited<ReturnType<typeof getDevDiaryPosts>> = [];
+  let posts: Awaited<ReturnType<typeof getDevDiaryPosts>>;
   try {
     posts = await getDevDiaryPosts();
   } catch {

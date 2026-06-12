@@ -113,6 +113,7 @@ class TestSettingsLimit:
 
     def test_callable_takes_no_args(self):
         import inspect
+
         from utils.rate_limiter import _settings_limit
 
         fn = _settings_limit("rate_limit_token_per_ip", "10/minute")

@@ -28,10 +28,10 @@ import signal
 import subprocess
 import sys
 import time
-from typing import Literal
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Literal
 
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
@@ -1583,7 +1583,7 @@ async def monitor_services(pool) -> list:
                         # Check cooldown
                         in_cooldown = False
                         if action["last_triggered_at"]:
-                            elapsed = (datetime.now(timezone.utc) - action["last_triggered_at"]).total_seconds() / 60
+                            elapsed = (datetime.now(UTC) - action["last_triggered_at"]).total_seconds() / 60
                             in_cooldown = elapsed < action["cooldown_minutes"]
 
                         if not in_cooldown:
@@ -1875,7 +1875,7 @@ async def auto_remediate(pool):
             # so operators can grep/alert on individual IDs instead of a single
             # summary line. Also bump the Prometheus metric so the dashboard
             # surfaces the rate of sweeper cancellations over time.
-            for _tid, _topic in zip(task_ids, topics):
+            for _tid, _topic in zip(task_ids, topics, strict=False):
                 logger.warning(
                     "[BRAIN][auto-cancel] task_id=%s topic=%r reason='stuck in_progress > %dm'",
                     _tid, _topic, stale_minutes,
@@ -1914,10 +1914,10 @@ async def auto_remediate(pool):
             active = row["active"] or 0
             last_task = row["last_task"]
             if pending == 0 and active == 0 and last_task:
-                from datetime import datetime, timezone
+                from datetime import datetime
                 if last_task.tzinfo is None:
-                    last_task = last_task.replace(tzinfo=timezone.utc)
-                hours_idle = (datetime.now(timezone.utc) - last_task).total_seconds() / 3600
+                    last_task = last_task.replace(tzinfo=UTC)
+                hours_idle = (datetime.now(UTC) - last_task).total_seconds() / 3600
                 if hours_idle > 48:
                     actions_taken.append(f"pipeline idle {hours_idle:.0f}h — no pending/active tasks")
                     # Store in knowledge graph for trend tracking
@@ -1968,8 +1968,8 @@ async def generate_daily_digest(pool):
             SELECT value FROM brain_knowledge
             WHERE entity = 'digest' AND attribute = 'last_sent'
         """)
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
+        from datetime import datetime
+        now = datetime.now(UTC)
         _digest_h = await _setting_int(pool, "brain_digest_window_hours", 6)
 
         if row:
@@ -2307,7 +2307,7 @@ async def alert_dispatch_loop(pool, shutdown_event):
                 shutdown_event.wait(),
                 timeout=ALERT_DISPATCH_INTERVAL_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Normal — interval elapsed, continue polling.
 
     logger.info("[BRAIN] Alert dispatcher loop stopping")
@@ -2653,7 +2653,7 @@ async def run_cycle(pool):
                 "internal_issues": len(issues),
                 "external_issues": len(ext_issues),
                 "probe_status": probe_status_map,
-                "cycle_completed_at": datetime.now(timezone.utc).isoformat(),
+                "cycle_completed_at": datetime.now(UTC).isoformat(),
             }),
             "info",
         )
@@ -2669,7 +2669,7 @@ async def run_cycle(pool):
         VALUES ($1, $2, $3::jsonb, $4)
     """, f"Cycle complete: {len(all_issues)} issues ({len(issues)} internal, {len(ext_issues)} external), {len(probe_results)} probes ({len(probe_failures)} failed)",
         f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, ran {len(probe_results)} probes, processed queue, updated metrics",
-        json.dumps({"issues": issues, "external_issues": ext_issues, "probe_failures": probe_failures, "timestamp": datetime.now(timezone.utc).isoformat()}),
+        json.dumps({"issues": issues, "external_issues": ext_issues, "probe_failures": probe_failures, "timestamp": datetime.now(UTC).isoformat()}),
         1.0,
     )
 
@@ -2912,7 +2912,7 @@ async def main():
         """Write structured heartbeat — timestamp + cycle stats."""
         data = json.dumps({
             "ts": time.time(),
-            "iso": datetime.now(timezone.utc).isoformat(),
+            "iso": datetime.now(UTC).isoformat(),
             "pid": os.getpid(),
             "cycle_ok": cycle_issues == 0 and probe_failures == 0,
             "issues": cycle_issues,
@@ -3002,14 +3002,14 @@ async def main():
 
         try:
             await asyncio.wait_for(shutdown.wait(), timeout=CYCLE_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Normal — timeout means no shutdown signal, continue loop
 
     logger.info("[BRAIN] Shutting down gracefully")
     if alert_dispatch_task is not None:
         try:
             await asyncio.wait_for(alert_dispatch_task, timeout=5)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except (TimeoutError, asyncio.CancelledError):
             alert_dispatch_task.cancel()
         except Exception as e:  # noqa: BLE001
             logger.debug("[BRAIN] alert_dispatch_task close failed: %s", e)

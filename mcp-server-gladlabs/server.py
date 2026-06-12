@@ -42,7 +42,6 @@ from mcp.server.fastmcp import FastMCP
 from oauth_client import (  # noqa: E402 — local module
     MCP_GLADLABS_CLIENT_ID_KEY,
     MCP_GLADLABS_CLIENT_SECRET_KEY,
-    MCP_GLADLABS_DEFAULT_SCOPES,
     GladlabsMcpOAuthClient,
     oauth_client_from_pool,
 )

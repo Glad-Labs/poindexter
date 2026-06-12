@@ -46,8 +46,8 @@ export default async function AuthorPage({
   const { id } = await params;
   const author = authorProfiles[id] || authorProfiles.default;
 
-  let authorPosts: Awaited<ReturnType<typeof getPostsByAuthor>>['posts'] = [];
-  let authorPostCount = 0;
+  let authorPosts: Awaited<ReturnType<typeof getPostsByAuthor>>['posts'];
+  let authorPostCount: number;
   try {
     const result = await getPostsByAuthor(id, 1);
     authorPosts = result.posts;

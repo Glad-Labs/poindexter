@@ -23,7 +23,6 @@ from plugins.atom import AtomMeta
 from services import pipeline_architect
 from services.template_runner import PipelineState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

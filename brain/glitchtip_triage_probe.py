@@ -37,6 +37,7 @@ import json
 import logging
 import re
 import time
+from datetime import UTC
 from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
@@ -325,14 +326,14 @@ def _is_fresh(last_seen_iso: str | None, max_age_hours: int) -> bool:
     if not last_seen_iso:
         return True
     try:
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         # GlitchTip returns ISO 8601 with "Z" or "+00:00"; Python 3.11+
         # handles both via fromisoformat. Older Pythons need a Z→+00:00
         # swap; the brain image is 3.13 so fromisoformat alone is fine.
         ts = datetime.fromisoformat(last_seen_iso.replace("Z", "+00:00"))
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        age = datetime.now(timezone.utc) - ts
+            ts = ts.replace(tzinfo=UTC)
+        age = datetime.now(UTC) - ts
         return age <= timedelta(hours=max_age_hours)
     except (ValueError, TypeError):
         return True
@@ -515,7 +516,7 @@ def _issue_meets_min_age(issue: dict[str, Any], min_age_days: Any) -> bool:
     if not raw:
         return False
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
         # GlitchTip / Sentry returns ISO 8601 with trailing 'Z'. Python's
         # fromisoformat accepts the offset form natively in 3.11+; we
         # normalise the Z just to keep it deterministic on older runtimes.
@@ -524,10 +525,9 @@ def _issue_meets_min_age(issue: dict[str, Any], min_age_days: Any) -> bool:
     except (TypeError, ValueError):
         return False
     if first_seen.tzinfo is None:
-        from datetime import timezone
-        first_seen = first_seen.replace(tzinfo=timezone.utc)
-    from datetime import datetime, timezone
-    age_days = (datetime.now(timezone.utc) - first_seen).total_seconds() / 86400.0
+        first_seen = first_seen.replace(tzinfo=UTC)
+    from datetime import datetime
+    age_days = (datetime.now(UTC) - first_seen).total_seconds() / 86400.0
     return age_days >= floor
 
 

@@ -1,5 +1,7 @@
 import pytest
+
 from modules.content.atoms import content_load_existing_post as atom
+
 
 class _Conn:
     def __init__(self, post, opp):

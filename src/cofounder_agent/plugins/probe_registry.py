@@ -126,7 +126,7 @@ class BrainProbeRegistry:
         if not module or not name:
             raise ValueError(
                 "BrainProbeRegistry.register: both module and name "
-                "are required (got module=%r, name=%r)" % (module, name)
+                f"are required (got module={module!r}, name={name!r})"
             )
         probe = RegisteredProbe(
             module=module,

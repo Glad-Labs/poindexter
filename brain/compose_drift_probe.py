@@ -253,7 +253,7 @@ def _load_compose_yaml(path: str) -> dict[str, Any] | None:
         )
         return None
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = _yaml.safe_load(fh)
         if not isinstance(data, dict):
             logger.warning(
@@ -805,7 +805,7 @@ def _recreate_services(
         effective_dir = project_directory or derived_dir
         # Stub any remaining `:?` sentinel vars so compose can parse the file.
         try:
-            with open(compose_path, "r") as f:
+            with open(compose_path) as f:
                 compose_content = f.read()
             for var in re.findall(r"\$\{([A-Z_][A-Z0-9_]*):\?", compose_content):
                 if var not in env:

@@ -3,6 +3,7 @@ import globals from 'globals';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
+import tsParser from '@typescript-eslint/parser';
 
 export default [
   {
@@ -108,7 +109,19 @@ export default [
     },
     settings: {
       react: {
-        version: 'detect',
+        // Explicit version avoids the auto-detect path in eslint-plugin-react
+        // that calls the removed ESLint 10 `getFilename()` API.
+        version: '19',
+      },
+    },
+  },
+  // TypeScript files — use the TS parser so ESLint can handle type syntax
+  {
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
       },
     },
   },

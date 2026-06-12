@@ -55,7 +55,7 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 try:  # pragma: no cover — only fails when the dep is uninstalled
@@ -260,7 +260,7 @@ async def _is_pr_deduped(
     if not isinstance(last_seen, datetime):
         return False
     if last_seen.tzinfo is None:
-        last_seen = last_seen.replace(tzinfo=timezone.utc)
+        last_seen = last_seen.replace(tzinfo=UTC)
     return (now_utc - last_seen) < timedelta(hours=dedup_hours)
 
 
@@ -357,7 +357,7 @@ async def _emit_stale_alert(
     # dedup is handled separately via alert_dedup_state lookups before
     # we get here.
     fingerprint = (
-        f"pr-staleness-{alertname}-{int(datetime.now(timezone.utc).timestamp())}"
+        f"pr-staleness-{alertname}-{int(datetime.now(UTC).timestamp())}"
     )
     try:
         await pool.execute(
@@ -468,7 +468,7 @@ def _parse_iso8601_utc(raw: Any) -> datetime | None:
     except (TypeError, ValueError):
         return None
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+        ts = ts.replace(tzinfo=UTC)
     return ts
 
 
@@ -540,7 +540,7 @@ async def run_pr_staleness_probe(
             ``httpx.AsyncClient`` context manager — supplied by tests so
             they can inject a mock client without monkeypatching httpx.
     """
-    now_fn = now_fn or (lambda: datetime.now(timezone.utc))
+    now_fn = now_fn or (lambda: datetime.now(UTC))
     notify_fn = notify_fn or notify_operator
 
     config = await _read_config(pool)

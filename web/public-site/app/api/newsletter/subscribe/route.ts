@@ -23,6 +23,7 @@
  * Body: { email, first_name?, last_name?, company?, marketing_consent? }
  */
 
+/* eslint-disable no-console */
 import * as Sentry from '@sentry/nextjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { SITE_NAME, SITE_URL, NEWSLETTER_EMAIL } from '@/lib/site.config';

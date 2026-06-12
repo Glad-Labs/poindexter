@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import asyncpg
 
@@ -62,7 +62,7 @@ def _seed_path() -> Path:
     )
 
 
-def load_seed_file() -> List[Dict[str, Any]]:
+def load_seed_file() -> list[dict[str, Any]]:
     """Read and validate the core seed file. Returns the list of setting rows."""
     path = _seed_path()
     with path.open("r", encoding="utf-8") as f:
@@ -115,7 +115,7 @@ async def _ensure_app_settings_table(conn: asyncpg.Connection) -> None:
     )
 
 
-async def seed_app_settings(conn: asyncpg.Connection) -> Dict[str, int]:
+async def seed_app_settings(conn: asyncpg.Connection) -> dict[str, int]:
     """Apply the core seed. Idempotent; safe to call on every boot.
 
     Returns a summary dict: {"inserted": N, "skipped_existing": M, "total_seed": K}.

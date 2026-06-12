@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -64,8 +63,8 @@ class TestContentGenerateDraft:
         assert "db_write" in ATOM_META.side_effects
 
     async def test_run_delegates_to_stage(self, monkeypatch):
-        from plugins.stage import StageResult
         from modules.content.atoms import content_generate_draft as atom
+        from plugins.stage import StageResult
 
         fake_result = StageResult(
             ok=True,
@@ -97,8 +96,9 @@ class TestContentGenerateDraft:
 
     async def test_run_raises_on_stage_failure(self, monkeypatch):
         import pytest
-        from plugins.stage import StageResult
+
         from modules.content.atoms import content_generate_draft as atom
+        from plugins.stage import StageResult
 
         fail_result = StageResult(ok=False, detail="no content produced")
         mock_stage = MagicMock()
@@ -388,6 +388,7 @@ class TestContentPersistTask:
 
     async def test_raises_when_status_guard_returns_none(self, monkeypatch):
         import pytest
+
         from modules.content.atoms import content_persist_task as atom
 
         monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
@@ -401,6 +402,7 @@ class TestContentPersistTask:
 
     async def test_missing_task_id_raises(self):
         import pytest
+
         from modules.content.atoms import content_persist_task as atom
         state = _base_state()
         state.pop("task_id")

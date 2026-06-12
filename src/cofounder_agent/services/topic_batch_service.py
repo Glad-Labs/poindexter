@@ -483,11 +483,11 @@ class TopicBatchService:
             # ``data`` is either an InternalCandidate dataclass (fresh) or a
             # row dict (carry-forward). Reach in via getattr-with-fallback
             # so both shapes work.
-            def _field(name: str, default: str = "") -> str:
-                if hasattr(data, name):
-                    return getattr(data, name) or default
-                if isinstance(data, dict):
-                    return data.get(name) or default
+            def _field(name: str, default: str = "", _d: Any = data) -> str:
+                if hasattr(_d, name):
+                    return getattr(_d, name) or default
+                if isinstance(_d, dict):
+                    return _d.get(name) or default
                 return default
 
             topic = _field("distilled_topic", "")

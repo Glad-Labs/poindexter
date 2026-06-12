@@ -1,5 +1,7 @@
 import pytest
+
 from modules.content.atoms import seo_optimize_metadata as atom
+
 
 @pytest.mark.asyncio
 async def test_optimizes_toward_target_query(monkeypatch):

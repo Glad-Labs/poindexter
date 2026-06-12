@@ -862,7 +862,7 @@ _HALLUCINATION_WHITELIST_BASE = {
     # programmatic gate 0/100 on this alone (2026-06-09 false positive).
     "source", "sources", "target", "targets", "content", "contents",
     "audience", "audiences", "topic", "topics", "draft", "drafts",
-    "article", "articles", "post", "posts", "claim", "claims",
+    "article", "articles", "posts", "claim", "claims",
     "fact", "facts", "citation", "citations", "quote", "quotes",
     "summary", "section", "sections", "paragraph", "heading", "headings",
     "title", "titles", "reader", "readers", "author", "authors",

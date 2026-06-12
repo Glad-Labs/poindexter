@@ -22,7 +22,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parents[3]))
 from utils.startup_manager import StartupManager
 
-
 # ---------------------------------------------------------------------------
 # _scan_syntax_errors — pure walk + compile, testable without mocking
 # ---------------------------------------------------------------------------

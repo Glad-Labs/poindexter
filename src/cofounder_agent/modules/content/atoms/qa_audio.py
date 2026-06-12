@@ -167,7 +167,7 @@ async def _detect_silences(
         r"silence_end:\s*([\d.]+)\s*[|]\s*silence_duration:\s*([\d.]+)", err
     )
     segments = []
-    for s, (e, d) in zip(starts, end_dur_pairs):
+    for s, (e, d) in zip(starts, end_dur_pairs, strict=False):
         segments.append(
             {"start_s": float(s), "end_s": float(e), "duration_s": float(d)}
         )

@@ -197,7 +197,7 @@ class GPUScheduler:
         # None when the lock is not held.  Must NOT be a pool checkout —
         # session-level advisory locks are released when the connection
         # is returned to the pool.
-        self._pg_lock_conn: "asyncpg.Connection | None" = None  # type: ignore[name-defined]
+        self._pg_lock_conn: "asyncpg.Connection | None" = None  # type: ignore[name-defined]  # noqa: UP037, F821
         # Lazily-initialised shared httpx client. Every public-API call
         # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
         # (nvidia-smi exporter, Ollama /api/ps, SDXL /unload) — that's

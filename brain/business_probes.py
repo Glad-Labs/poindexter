@@ -15,6 +15,7 @@ Probes:
 import inspect
 import logging
 import time
+from datetime import UTC
 from typing import Any
 
 logger = logging.getLogger("brain.business_probes")
@@ -89,9 +90,9 @@ async def _row_age_days(pool, table: str, column: str = "created_at") -> float |
         # treats it as "long since last delivery".
         return float("inf")
     import datetime as _dt
-    now = _dt.datetime.now(_dt.timezone.utc)
+    now = _dt.datetime.now(_dt.UTC)
     if last.tzinfo is None:
-        last = last.replace(tzinfo=_dt.timezone.utc)
+        last = last.replace(tzinfo=_dt.UTC)
     delta = now - last
     return delta.total_seconds() / 86400.0
 
@@ -256,8 +257,8 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
         logger.warning("[BUSINESS_PROBE] silent_alerter DB read failed: %s", e)
         return {"ok": False, "detail": f"db read failed: {e}"}
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime
+    now = datetime.now(UTC)
     candidates = [t for t in (last_received, last_paged) if t is not None]
     last_signal = max(candidates) if candidates else None
     if last_signal is None:
