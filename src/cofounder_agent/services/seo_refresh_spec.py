@@ -51,7 +51,23 @@ SEO_REFRESH_GRAPH_DEF: dict[str, Any] = {
         {
             "id": "refresh_gate",
             "atom": "atoms.approval_gate",
-            "config": {"gate_name": "seo_refresh_gate"},
+            # gate_artifact_keys surfaces the PROPOSED meta in pipeline_tasks.gate_artifact
+            # so the operator reviews the actual change (the default artifact keys —
+            # topic/title/excerpt/… — don't include seo_title/seo_description, which
+            # ARE the thing being approved on a meta refresh). post_slug + title give
+            # the reviewer the post identity; the live DB row holds the pre-edit meta
+            # for comparison. Node `config` seeds the atom's state (see
+            # pipeline_architect.build_graph_from_spec).
+            "config": {
+                "gate_name": "seo_refresh_gate",
+                "gate_artifact_keys": [
+                    "title",
+                    "post_slug",
+                    "seo_title",
+                    "seo_description",
+                    "target_query",
+                ],
+            },
         },
         {"id": "republish", "atom": "content.republish_post"},
     ],

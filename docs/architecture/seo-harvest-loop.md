@@ -66,11 +66,18 @@ Four linear nodes:
 2. **`seo.optimize_metadata`** — a query-aware rewrite of `seo_title` +
    `seo_description` for click-through, using the post's `target_query` when
    present (falling back to its topic/primary keyword when not). Reuses the
-   shared `_seo_common` LLM-call-with-retry + fallbacks. On LLM/parse failure it
-   **keeps the existing live meta** — a failed refresh must never worsen a
-   published post.
+   shared `_seo_common` LLM-call-with-retry + fallbacks. The title goes through
+   `_seo_common.clean_title` (the title twin of `clamp_words`): it drops embedded
+   double-quote artifacts and, on a length-truncated clip, trims any dangling
+   trailing connective so a 60-char cut never ends on a stray `&`. On LLM/parse
+   failure it **keeps the existing live meta** — a failed refresh must never
+   worsen a published post.
 3. **`atoms.approval_gate`** (`gate_name='seo_refresh_gate'`) — pauses for
-   operator sign-off (see below).
+   operator sign-off (see below). Its `config.gate_artifact_keys` surface the
+   **proposed** `seo_title` / `seo_description` (plus `title` / `post_slug` /
+   `target_query`) in `pipeline_tasks.gate_artifact`, so the operator reviews the
+   actual change — the default artifact keys omit the SEO fields that a meta
+   refresh is all about.
 4. **`content.republish_post`** — applies the optimized meta (`seo_title` /
    `seo_description` / `seo_keywords` — never `content`), re-exports the static
    JSON to R2, fires ISR revalidation (a DB update alone does not reach the live

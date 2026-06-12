@@ -46,3 +46,15 @@ def test_approval_first_gate_present():
         n for n in SEO_REFRESH_GRAPH_DEF["nodes"] if n["atom"] == "atoms.approval_gate"
     )
     assert gate["config"]["gate_name"] == "seo_refresh_gate"
+
+
+def test_gate_surfaces_proposed_meta_for_review():
+    # The gate must surface the PROPOSED seo_title/seo_description in its review
+    # artifact — the default artifact keys omit them, so the operator would have
+    # nothing to review on a meta refresh (regression from the validation run).
+    gate = next(
+        n for n in SEO_REFRESH_GRAPH_DEF["nodes"] if n["atom"] == "atoms.approval_gate"
+    )
+    keys = gate["config"].get("gate_artifact_keys") or []
+    assert "seo_title" in keys
+    assert "seo_description" in keys

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 from services.llm_text import ollama_chat_text
@@ -45,6 +46,43 @@ def clamp_words(text: str, limit: int) -> str:
         return t
     cut = t[:limit].rsplit(" ", 1)[0] or t[:limit]
     return cut.rstrip(",.;:- ")
+
+
+# A word-boundary clip can leave a dangling connective ("... Micro-SaaS &").
+# We only strip these when the title was actually truncated — a short title that
+# legitimately ends in a preposition ("What to Look For") must be left alone.
+_TRAILING_CONNECTIVE = re.compile(
+    r"\s+(?:and|or|the|a|an|to|for|with|of|in|on|at|by|vs|&)$", re.IGNORECASE
+)
+_TRAILING_SYMBOLS = " &/|:;,-–—"
+
+
+def clean_title(text: str, limit: int) -> str:
+    """SEO-title hygiene — the title twin of :func:`clamp_words`.
+
+    ``clean_oneline`` strips only *surrounding* quotes and ``derive_seo_title``
+    (unlike ``clamp_words``) keeps trailing punctuation, so an LLM title can
+    arrive with an embedded quote or a 60-char clip ending on a dangling ``&``.
+    This: (1) removes embedded double-quote artifacts (apostrophes are kept),
+    (2) emoji-strips + truncates at a word boundary via ``derive_seo_title``,
+    and (3) only when the input had to be truncated, drops a trailing dangling
+    connective; trailing stray symbols are dropped either way.
+    """
+    t = clean_oneline(text)
+    for q in ('"', "“", "”"):  # straight + curly DOUBLE quotes only
+        t = t.replace(q, "")
+    t = " ".join(t.split())
+    was_truncated = len(t) > limit
+    t = derive_seo_title(t, max_len=limit)  # emoji strip + word-boundary truncate
+    if was_truncated:
+        prev = None
+        while prev != t:
+            prev = t
+            t = _TRAILING_CONNECTIVE.sub("", t)
+            t = t.rstrip(_TRAILING_SYMBOLS)
+    else:
+        t = t.rstrip(_TRAILING_SYMBOLS)
+    return t.strip()
 
 
 async def run_seo_llm(
@@ -118,6 +156,7 @@ __all__ = [
     "content_excerpt",
     "clean_oneline",
     "clamp_words",
+    "clean_title",
     "run_seo_llm",
     "degraded",
     "fallback_title",

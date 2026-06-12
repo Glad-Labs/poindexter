@@ -22,7 +22,6 @@ from typing import Any
 
 from modules.content.atoms import _seo_common as sc
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.title_utils import derive_seo_title
 
 ATOM_META = AtomMeta(
     name="seo.optimize_metadata",
@@ -109,7 +108,7 @@ async def optimize(state: dict[str, Any]) -> tuple[str, str]:
 
     raw_title = str(parsed.get("title") or "").strip()
     raw_desc = str(parsed.get("description") or "").strip()
-    title = derive_seo_title(sc.clean_oneline(raw_title), max_len=60) if raw_title else (
+    title = sc.clean_title(raw_title, 60) if raw_title else (
         state.get("seo_title") or state.get("title") or ""
     )
     desc = sc.clamp_words(raw_desc, 160) if raw_desc else (state.get("seo_description") or "")
