@@ -16,8 +16,15 @@ WORKDIR /app
 # repo to inspect; `gh` reads its auth token from the GH_TOKEN env
 # var which the worker injects from app_settings('gh_token') at
 # subprocess time. Closes Glad-Labs/poindexter#348.
+#
+# ffmpeg supplies the system binary the media compositor shells out to
+# (plugin.media_compositor.ffmpeg_local.binary_path, default `ffmpeg`) when the
+# Stage-2 media_pipeline renders podcast / long-form / short-form video. Without
+# it the render_long_video / render_short_video atoms fail at the compositing
+# step and Stage-2 silently produces no video assets. See Glad-Labs/poindexter#689.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl postgresql-client \
+    ffmpeg \
     ca-certificates \
     git \
     gnupg \
