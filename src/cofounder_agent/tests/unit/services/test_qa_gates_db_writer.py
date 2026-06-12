@@ -227,6 +227,9 @@ def test_alias_table_covers_every_known_inline_reviewer():
         "citation_verifier",
         "topic_delivery",
         "self_consistency",
+        # poindexter#765 — advisory unlinked-attribution rail, gate row seeded
+        # in 20260611_190000_seed_citation_reconciliation_765.
+        "unlinked_attribution",
     }
     missing = must_be_documented - documented
     assert not missing, (
@@ -280,12 +283,16 @@ async def test_restored_rail_gates_bump_their_counters():
         _Review("citation_verifier", approved=True, advisory=True),
         _Review("topic_delivery", approved=True, advisory=True),
         _Review("self_consistency", approved=True, advisory=False),
+        # poindexter#765 — the new advisory unlinked-attribution rail seeds its
+        # own gate row and must bump its counter too.
+        _Review("unlinked_attribution", approved=True, advisory=True),
     ])
     bumped_gates = {args[0] for _, args in pool.executes}
     assert bumped_gates == {
         "citation_verifier",
         "topic_delivery",
         "self_consistency",
+        "unlinked_attribution",
     }
 
 

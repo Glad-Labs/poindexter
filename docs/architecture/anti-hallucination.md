@@ -20,8 +20,8 @@ to the LLM and HTTP reviewers.
 `graph_def` path the cross-model review runs as composable atoms in
 `src/cofounder_agent/services/atoms/` — `qa.programmatic` → `qa.critic` →
 `qa.deepeval` → `qa.guardrails` → `qa.ragas` → `qa.vision` →
-`qa.topic_delivery` → `qa.citations` → `qa.consistency` →
-`qa.web_factcheck` → `qa.aggregate`. Each rail atom delegates
+`qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
+`qa.consistency` → `qa.web_factcheck` → `qa.aggregate`. Each rail atom delegates
 to the matching `MultiModelQA` rail methods (the `_review_with_cloud_model`
 critic plus the per-rail DeepEval, guardrails, Ragas, vision,
 topic-delivery, citation, consistency, and web-factcheck checks) and
@@ -195,6 +195,45 @@ This rescue only ever PREVENTS a wrong hard-reject; it never introduces a new
 veto. `test_qa_web_factcheck_atom.py` (rail + rescue helper + end-to-end
 aggregation), `test_qa_programmatic_atom.py` (the flag), and
 `test_qa_aggregate_atom.py` (the state-read) pin it.
+
+#### Named-source attributions: deterministic repair + advisory flag (#765)
+
+The writer is told to cite the research corpus inline as markdown links but
+does so **inconsistently** — naming a source in prose while dropping its URL
+("as noted by M. Huzaifa Rizwan…", "GetMaxim points out…", "(Ai Insights)") even
+as it links others correctly in the same post. Nothing in Layers 2–3 catches
+this: `citation_verifier` (`qa.citations`) only HTTP-HEAD-checks URLs that
+_already exist_ (a missing link is invisible to it), the `unlinked_citation`
+validator rule is defanged + misses these phrasings, and the LLM critic reads
+right past them. Because the corpus (name→URL) is still in `state['research_context']`
+at draft time, the fix is a deterministic lookup, not a guess:
+
+- **`content.reconcile_citations`** (repair, after the writer block, before
+  `quality_evaluation`/`qa.*`): parses the corpus back out of `research_context`,
+  then at every _attribution site_ whose named subject matches a corpus source by
+  its distinctive **domain handle** (`getmaxim.ai` → "GetMaxim"), wraps the
+  subject in a markdown link to that source's URL. Matching is tied to attribution
+  grammar (a verb/preposition frame) — prose outside attribution sites is never
+  touched, so a corpus domain like `python.org` can't turn every "python" into a
+  link. High precision by construction; the inserted links then flow through
+  `qa.citations`' dead-link check. Gated by `citation_reconcile_enabled` (default
+  on). The pure matching core is `modules/content/atoms/_citation_match.py`.
+
+- **`qa.unlinked_attribution`** (advisory rail, after `qa.citations`): sees the
+  RESIDUAL — attribution subjects that match no corpus source and aren't already
+  linked (author names / unknown brands a deterministic linker can't safely
+  repair). It scores that density (gentle penalty, floored) and lists the
+  offenders in its feedback (→ `qa_feedback` + the QA Rails dashboard, which
+  groups by reviewer dynamically). **Advisory** via
+  `qa_gates.unlinked_attribution.required_to_pass` (seeded `false`) — it nudges
+  the weighted QA mean but never vetoes; graduate it with the poindexter#454
+  lever. Returns nothing when there's no corpus (real-vs-fabricated is then the
+  deferred grounded-LLM pass's job).
+
+A grounded LLM citation pass is intentionally deferred — measure the
+deterministic coverage first. `test_citation_match.py` (matching core),
+`test_citation_atoms.py` (both atoms), and `test_canonical_blog_spec.py`
+(wiring) pin it.
 
 ## Layer 1 — Prompt-level guards
 

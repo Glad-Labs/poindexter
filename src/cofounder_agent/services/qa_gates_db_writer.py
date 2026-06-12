@@ -78,6 +78,10 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     "citation_verifier": "citation_verifier",
     "topic_delivery": "topic_delivery",
     "self_consistency": "self_consistency",
+    # poindexter#765 — same identity-alias requirement for the new advisory
+    # unlinked-attribution rail (named-source-cited-without-link); it emits a
+    # ReviewerResult on every graph_def QA pass and seeds its own qa_gates row.
+    "unlinked_attribution": "unlinked_attribution",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",

@@ -39,8 +39,13 @@ The qa.* rail block and seo.* atom chain are unchanged from #355 except:
 
 - ``cross_model_qa`` → qa.programmatic → qa.critic → qa.deepeval →
   qa.ragas → qa.vision → qa.topic_delivery →
-  qa.citations → qa.consistency → qa.self_consistency →
-  qa.web_factcheck → qa.aggregate
+  qa.citations → qa.unlinked_attribution → qa.consistency →
+  qa.self_consistency → qa.web_factcheck → qa.aggregate
+
+A deterministic citation-repair atom (``content.reconcile_citations``, #765)
+runs after the writer block (before quality_evaluation), and an advisory rail
+(``qa.unlinked_attribution``, #765) runs after qa.citations — together they
+re-link named sources the writer dropped the URL for and flag the residual.
 - ``generate_seo_metadata`` → seo.generate_all_metadata (collapsed, #734)
 
 All chains are sequential for cutover robustness.
@@ -78,6 +83,11 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
          "config": {"gate_name": "draft_gate"}},
         {"id": "writer_self_review", "atom": "stage.writer_self_review"},
         {"id": "resolve_internal_link_placeholders", "atom": "stage.resolve_internal_link_placeholders"},
+        # Deterministic citation repair (#765): re-link named sources the writer
+        # dropped the URL for, matching them against the research corpus by
+        # domain handle. Placed BEFORE quality_evaluation/url_validation/qa.* so
+        # the inserted links flow through the dead-link check like any citation.
+        {"id": "reconcile_citations", "atom": "content.reconcile_citations"},
         {"id": "quality_evaluation", "atom": "stage.quality_evaluation"},
         {"id": "url_validation", "atom": "stage.url_validation"},
         # content.replace_inline_images decomposition (#362):
@@ -96,6 +106,9 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_vision", "atom": "qa.vision"},
         {"id": "qa_topic_delivery", "atom": "qa.topic_delivery"},
         {"id": "qa_citations", "atom": "qa.citations"},
+        # Advisory rail (#765): flags named-source attributions left unlinked +
+        # unmatched against the corpus AFTER reconcile_citations did its repair.
+        {"id": "qa_unlinked_attribution", "atom": "qa.unlinked_attribution"},
         {"id": "qa_consistency", "atom": "qa.consistency"},
         {"id": "qa_self_consistency", "atom": "qa.self_consistency"},
         {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
@@ -124,7 +137,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "normalize_draft", "to": "draft_gate"},
         {"from": "draft_gate", "to": "writer_self_review"},
         {"from": "writer_self_review", "to": "resolve_internal_link_placeholders"},
-        {"from": "resolve_internal_link_placeholders", "to": "quality_evaluation"},
+        {"from": "resolve_internal_link_placeholders", "to": "reconcile_citations"},
+        {"from": "reconcile_citations", "to": "quality_evaluation"},
         {"from": "quality_evaluation", "to": "url_validation"},
         # replace_inline_images atom chain
         {"from": "url_validation", "to": "plan_image_markers"},
@@ -140,7 +154,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_ragas", "to": "qa_vision"},
         {"from": "qa_vision", "to": "qa_topic_delivery"},
         {"from": "qa_topic_delivery", "to": "qa_citations"},
-        {"from": "qa_citations", "to": "qa_consistency"},
+        {"from": "qa_citations", "to": "qa_unlinked_attribution"},
+        {"from": "qa_unlinked_attribution", "to": "qa_consistency"},
         {"from": "qa_consistency", "to": "qa_self_consistency"},
         {"from": "qa_self_consistency", "to": "qa_web_factcheck"},
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},

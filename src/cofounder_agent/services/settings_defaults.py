@@ -291,6 +291,18 @@ DEFAULTS: dict[str, str] = {
     'ragas_enabled': 'true',
     'ragas_judge_model': '',
     'self_consistency_enabled': 'false',
+    # Citation reconciliation + advisory unlinked-attribution rail (#765).
+    # why: deterministic repair that re-links named sources the writer dropped
+    # the URL for, matched against the research corpus by domain handle — free,
+    # high-precision, on by default.
+    'citation_reconcile_enabled': 'true',
+    # why: advisory rail scoring named-source attributions left unlinked +
+    # unmatched against the corpus; on by default, feeds qa_feedback + Grafana.
+    'unlinked_attribution_enabled': 'true',
+    # Gentle score: each unmatched attribution shaves N points down to a floor,
+    # so a single missing link nudges the weighted QA mean without sinking a post.
+    'unlinked_attribution_penalty_per': '8',
+    'unlinked_attribution_score_floor': '60',
 
     # ----- Image generation -----
     'enable_sdxl_warmup': '',

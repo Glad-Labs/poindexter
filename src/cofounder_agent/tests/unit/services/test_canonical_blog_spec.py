@@ -91,13 +91,31 @@ class TestCanonicalBlogSpec:
         edges = {(e["from"], e["to"]) for e in CANONICAL_BLOG_GRAPH_DEF["edges"]}
         assert ("qa_vision", "qa_topic_delivery") in edges
         assert ("qa_topic_delivery", "qa_citations") in edges
-        assert ("qa_citations", "qa_consistency") in edges
+        # qa_unlinked_attribution (#765) is inserted between citations and
+        # consistency — so the old qa_citations → qa_consistency edge is gone.
+        assert ("qa_citations", "qa_unlinked_attribution") in edges
+        assert ("qa_unlinked_attribution", "qa_consistency") in edges
+        assert ("qa_citations", "qa_consistency") not in edges
         # qa_self_consistency is inserted between consistency and web_factcheck
         assert ("qa_consistency", "qa_self_consistency") in edges
         assert ("qa_self_consistency", "qa_web_factcheck") in edges
         assert ("qa_web_factcheck", "qa_aggregate") in edges
         # The old direct qa_vision → qa_aggregate edge must be gone (re-routed).
         assert ("qa_vision", "qa_aggregate") not in edges
+
+    def test_citation_reconciliation_nodes_wired(self):
+        """#765: content.reconcile_citations sits after the writer block (before
+        quality_evaluation) so its inserted links flow through the dead-link
+        check; qa.unlinked_attribution sits after qa.citations."""
+        spec = CANONICAL_BLOG_GRAPH_DEF
+        node_atoms = {n["atom"] for n in spec["nodes"]}
+        assert "content.reconcile_citations" in node_atoms
+        assert "qa.unlinked_attribution" in node_atoms
+        edges = {(e["from"], e["to"]) for e in spec["edges"]}
+        assert ("resolve_internal_link_placeholders", "reconcile_citations") in edges
+        assert ("reconcile_citations", "quality_evaluation") in edges
+        # The old direct edge must be re-routed through reconcile_citations.
+        assert ("resolve_internal_link_placeholders", "quality_evaluation") not in edges
 
     def test_passes_plan1_validator(self):
         discover()  # surfaces stage.* + registers qa.* atoms (idempotent)
