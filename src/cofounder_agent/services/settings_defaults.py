@@ -689,6 +689,11 @@ DEFAULTS: dict[str, str] = {
     # Phase-2 / Task-8 forward-decls (seeded for completeness):
     'seo.query_ingestion.enabled': 'false',
     'seo.refresh.outcome_measure_after_days': '14',
+    # Phase 2b (#763) — cap on refresh tasks auto-enqueued per run. Conservative:
+    # each refresh still needs operator sign-off at seo_refresh_gate. The job
+    # schedules themselves are auto-persisted by PluginScheduler from each job's
+    # `schedule` class attribute (plugin.job.<name>), not seeded here.
+    'seo.refresh.max_per_run': '3',
 
 }
 

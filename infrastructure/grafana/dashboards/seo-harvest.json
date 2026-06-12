@@ -134,6 +134,84 @@
           "rawSql": "SELECT date_trunc('day', measured_at) AS time, SUM(google_clicks)::float / NULLIF(SUM(google_impressions), 0) AS ctr FROM post_performance WHERE measured_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1"
         }
       ]
+    },
+    {
+      "id": 6,
+      "title": "Refresh Queue",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 25 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE status = 'queued'"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Refreshed (lifetime)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 25 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE status = 'refreshed'"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Refresh Outcomes — position/CTR delta (proves the loop)",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 30 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "outcome_measured_at", "desc": true }]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT slug, baseline_position, outcome_position, (baseline_position - outcome_position) AS position_gain, baseline_ctr, outcome_ctr, (outcome_ctr - baseline_ctr) AS ctr_gain, refreshed_at, outcome_measured_at FROM seo_opportunities WHERE outcome_measured_at IS NOT NULL ORDER BY outcome_measured_at DESC LIMIT 50"
+        }
+      ]
     }
   ]
 }

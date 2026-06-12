@@ -27,7 +27,7 @@ async def test_republish_updates_meta_exports_and_stamps(monkeypatch):
                 calls["update"] = (sql, args)
                 assert "content" not in sql.lower().split("set", 1)[1]  # body untouched
             elif "UPDATE seo_opportunities" in sql:
-                calls["stamp"] = args
+                calls["stamp"] = (sql, args)
             elif "UPDATE pipeline_tasks" in sql:
                 calls["task_done"] = (sql, args)
 
@@ -71,6 +71,8 @@ async def test_republish_updates_meta_exports_and_stamps(monkeypatch):
     assert calls["reval"] == "old-title"
     assert out["status"] == "refreshed"
     assert calls["stamp"] is not None  # baseline + status stamped
+    stamp_sql, _ = calls["stamp"]
+    assert "refreshed_at" in stamp_sql.lower(), "refresh timestamp not stamped"
 
     # The source task must be marked terminal — keyed by task_id, flipped off
     # in_progress so reclaim_stale_inprogress_tasks can't re-run the refresh.

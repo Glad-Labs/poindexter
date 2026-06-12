@@ -670,6 +670,13 @@ def get_core_samples() -> dict[str, list[Any]]:
         # SEO Harvest Loop Phase 1 — read-only analyzer that classifies
         # published posts into opportunity tiers from the latest GSC snapshot.
         ("jobs", "services.jobs.run_seo_opportunity_analyzer", "RunSeoOpportunityAnalyzerJob"),
+        # SEO Harvest Loop Phase 2b — auto-enqueue seo_refresh tasks from the
+        # analyzer's ranked open opportunities. Gated on seo.refresh.enabled
+        # (default off); fires every 6h but no-ops until the operator opts in.
+        ("jobs", "services.jobs.enqueue_seo_refreshes", "EnqueueSeoRefreshesJob"),
+        # SEO Harvest Loop Phase 2c — measure GSC position/CTR delta N days after
+        # a refresh (read-only). Proves the loop works.
+        ("jobs", "services.jobs.measure_seo_refresh_outcomes", "MeasureSeoRefreshOutcomesJob"),
         # Niche topic-discovery sweep — calls TopicBatchService.run_sweep
         # per active niche on a 30-min cadence. Per-niche cadence floor
         # (niches.discovery_cadence_minute_floor) gates the actual work.

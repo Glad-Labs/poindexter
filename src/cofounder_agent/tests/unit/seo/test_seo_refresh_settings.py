@@ -13,6 +13,13 @@ def test_seo_refresh_settings_seeded():
     assert DEFAULTS["seo.refresh.enabled"] == "false"
 
 
+def test_max_per_run_default_seeded():
+    # Phase 2b auto-enqueue cap (#763). The job schedules are auto-persisted by
+    # PluginScheduler from the job class `schedule` attribute, so they are NOT in
+    # DEFAULTS — only this tunable is.
+    assert DEFAULTS["seo.refresh.max_per_run"] == "3"
+
+
 def test_no_seo_refresh_default_is_empty():
     # app_settings.value is NOT NULL; '' is the unset sentinel and would crash CI.
     for key, value in DEFAULTS.items():

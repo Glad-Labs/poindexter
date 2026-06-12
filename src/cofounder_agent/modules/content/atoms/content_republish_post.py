@@ -82,11 +82,13 @@ _STAMP_OPP_SQL = """
 UPDATE seo_opportunities
    SET status            = 'refreshed',
        baseline_position = current_position,
-       baseline_ctr      = ctr
+       baseline_ctr      = ctr,
+       refreshed_at      = NOW()
  WHERE id = $1::uuid
 """
 # Baseline is stamped self-referentially from the opportunity's own current
 # metrics — no need to thread current_position/ctr through PipelineState.
+# refreshed_at anchors the N-days-later outcome measurement (#763 Phase 2c).
 
 _MARK_TASK_DONE_SQL = """
 UPDATE pipeline_tasks

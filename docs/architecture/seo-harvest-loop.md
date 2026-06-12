@@ -114,6 +114,7 @@ Sign-off first, autonomy earned.
 | `pipeline_gate_seo_refresh_gate`            | `true`      | Approval-first gate.                            |
 | `seo.refresh.auto_publish_after_clean_runs` | `5`         | Clean-run count before auto-publish graduation. |
 | `seo.refresh.outcome_measure_after_days`    | `14`        | Delay before measuring the refresh's effect.    |
+| `seo.refresh.max_per_run`                   | `3`         | Max refresh tasks auto-enqueued per run.        |
 
 ### Running one refresh by hand
 
@@ -143,10 +144,17 @@ doing.
 
 ## Status
 
-- **Shipped:** the Phase 1 analyzer; the Phase 2 `seo_refresh` graph (4 atoms),
-  its entry seam, the approval-first gate, the settings, and full unit coverage
-  (analyzer classification, each atom, the graph compile gates, and an in-memory
-  end-to-end run).
-- **Next:** auto-enqueue from the analyzer (gated on `seo.refresh.enabled`), the
-  outcome-measurement job, and Search Console query-dimension ingestion for
-  sharper query targeting.
+- **Shipped (Phase 1 + Phase 2a):** the analyzer; the `seo_refresh` graph (4
+  atoms), its entry seam, the approval-first gate, the settings, and full unit
+  coverage. Validated live on a real production post.
+- **Shipped (Milestone B — Phase 2b/2c, #763):** auto-enqueue from the analyzer
+  (`enqueue_seo_refreshes`, gated on `seo.refresh.enabled`, capped by
+  `seo.refresh.max_per_run`); the outcome-measurement job
+  (`measure_seo_refresh_outcomes`, read-only, gated on
+  `seo.refresh.outcome_measure_after_days`); the `refreshed_at` anchor + the
+  analyzer status-latch (so refreshed opportunities aren't re-opened and
+  re-refreshed); and the Grafana refresh-queue + outcome-delta panels. Ships
+  inert — `enqueue_seo_refreshes` no-ops until `seo.refresh.enabled=true`.
+- **Next:** Search Console query-dimension ingestion (#764) for sharper query
+  targeting, and auto-publish graduation (republish without sign-off once the
+  edit-distance trust threshold is met).

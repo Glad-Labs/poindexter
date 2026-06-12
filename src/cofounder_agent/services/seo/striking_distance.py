@@ -122,9 +122,16 @@ ON CONFLICT (post_id, target_query) DO UPDATE
         impressions      = EXCLUDED.impressions,
         ctr              = EXCLUDED.ctr,
         gap_score        = EXCLUDED.gap_score,
-        status           = 'open',
+        status           = CASE
+            WHEN seo_opportunities.status IN ('queued','refreshed','dismissed')
+            THEN seo_opportunities.status
+            ELSE 'open'
+        END,
         detected_at      = NOW()
 """
+# status latch (#763): a daily re-upsert must NOT revert a queued/refreshed/
+# dismissed row to 'open' — that would let auto-enqueue re-refresh it forever.
+# Metric columns still refresh every run; only the status is preserved.
 
 
 async def analyze(pool: Any, thresholds: dict[str, float]) -> list[dict[str, Any]]:
