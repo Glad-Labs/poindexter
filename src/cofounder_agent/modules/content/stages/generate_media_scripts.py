@@ -326,19 +326,39 @@ def _build_scene_prompt(title: str, clean_content: str, site_name: str) -> str:
     )
 
 
-_SHORT_SPLIT = re.compile(r'(?:^|\n)\s*SHORT:\s*\n', re.IGNORECASE)
+# Tolerant SHORT: marker (Glad-Labs/poindexter#689). The original
+# ``SHORT:\s*\n`` required the marker to sit ALONE on its line, so the Shorts
+# narration was never extracted: the local phi4:14b writer puts the narration
+# INLINE after the marker (``SHORT: Ever wondered...``) — or decorates it
+# (``**SHORT:**``, ``PART 2 - SHORT:``). On 100% of prod runs the split
+# returned 1 part and ``short_summary`` fell back to "", so the video director
+# never built a short_shot_list and ``render_short_video`` no-opped. Same
+# tolerant-parse philosophy as the #1445 director reconcile: meet the model's
+# real output rather than reject it.
+#
+# Matches a ``SHORT:`` marker at the start of any line, allowing (all optional):
+#   - a ``PART 2`` lead-in with a ``-`` / ``--`` / ``:`` separator,
+#   - markdown decoration around the word (``**SHORT:**``, ``## SHORT:``),
+#   - whitespace before the colon.
+# Whatever follows on the SAME or NEXT line is captured as the narration
+# (``re.split`` drops the matched marker; the caller ``.strip()``s the rest).
+_SHORT_SPLIT = re.compile(
+    r'(?:^|\n)[^\S\n]*'                       # line start + optional indent
+    r'(?:part[^\S\n]*2[^\S\n]*[-–—:]*[^\S\n]*)?'  # optional "PART 2" lead-in
+    r'[#>*_]*[^\S\n]*'                        # optional markdown decoration
+    r'short[*_]*[^\S\n]*:[*_]*[ \t]*',        # SHORT, optional bold, colon, trailing hspace
+    re.IGNORECASE,
+)
+
+# A numbered scene line, e.g. ``3. ...`` / ``3) ...`` / ``3: ...`` / ``3- ...``.
+_SCENE_LINE = re.compile(r'^[^\S\n]*\d+[.):\-]')
+
+# Paragraph break: a blank line (optionally containing horizontal whitespace).
+_PARA_BREAK = re.compile(r'\n[^\S\n]*\n')
 
 
-def _parse_scene_output(
-    scene_output: str,
-    normalize_for_speech: Any,
-) -> tuple[list[str], str]:
-    """Split the LLM output into (video_scenes, short_summary)."""
-    parts = _SHORT_SPLIT.split(scene_output, maxsplit=1)
-    scenes_raw = parts[0].strip()
-    short_summary = (
-        normalize_for_speech(parts[1].strip()) if len(parts) >= 2 else ""
-    )
+def _extract_scene_lines(scenes_raw: str) -> list[str]:
+    """Strip numbering/quotes off each line and keep the substantive ones."""
     scenes: list[str] = []
     for line in scenes_raw.split("\n"):
         line = line.strip()
@@ -347,4 +367,37 @@ def _parse_scene_output(
         cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
         if len(cleaned) > 20:
             scenes.append(cleaned)
-    return scenes, short_summary
+    return scenes
+
+
+def _fallback_split_trailing_prose(scene_output: str) -> tuple[str, str]:
+    """No explicit ``SHORT:`` marker — recover the narration the model wrote
+    without the label by peeling off the trailing prose paragraph.
+
+    Returns ``(scenes_raw, short_raw)``. Only fires when the output has a blank
+    line AND the trailing block is prose (no numbered scene lines); otherwise
+    returns ``(scene_output, "")`` so an all-scenes output keeps an empty
+    short_summary rather than fabricating one from a scene line.
+    """
+    blocks = _PARA_BREAK.split(scene_output.strip())
+    if len(blocks) < 2:
+        return scene_output, ""
+    last = blocks[-1].strip()
+    last_lines = [ln for ln in last.split("\n") if ln.strip()]
+    if not last_lines or any(_SCENE_LINE.match(ln) for ln in last_lines):
+        return scene_output, ""
+    return "\n\n".join(blocks[:-1]), last
+
+
+def _parse_scene_output(
+    scene_output: str,
+    normalize_for_speech: Any,
+) -> tuple[list[str], str]:
+    """Split the LLM output into (video_scenes, short_summary)."""
+    parts = _SHORT_SPLIT.split(scene_output, maxsplit=1)
+    if len(parts) >= 2:
+        scenes_raw, short_raw = parts[0], parts[1].strip()
+    else:
+        scenes_raw, short_raw = _fallback_split_trailing_prose(scene_output)
+    short_summary = normalize_for_speech(short_raw) if short_raw else ""
+    return _extract_scene_lines(scenes_raw), short_summary

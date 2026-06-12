@@ -15,7 +15,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.generate_media_scripts import GenerateMediaScriptsStage
+from modules.content.stages.generate_media_scripts import (
+    GenerateMediaScriptsStage,
+    _parse_scene_output,
+)
 
 
 @contextlib.asynccontextmanager
@@ -392,3 +395,96 @@ async def test_missing_model_and_no_pool_skips_gracefully():
 
     assert result.ok
     assert result.metrics.get("skipped") is True
+
+
+# ---------------------------------------------------------------------------
+# Tolerant SHORT: marker parsing (Glad-Labs/poindexter#689)
+#
+# Stage-2 short-form video (``video_short``) never rendered on prod because the
+# Shorts narration was never extracted: ``_SHORT_SPLIT`` required the ``SHORT:``
+# marker to sit ALONE on its line (trailing ``\s*\n``), but the local phi4:14b
+# writer puts the narration inline after the marker — or decorates it
+# (``**SHORT:**``, ``PART 2 - SHORT:``). The split then returned 1 part and
+# ``short_summary`` fell back to "" on 100% of prod runs (5/5 recent
+# pipeline_versions: video_scenes populated, short_summary_script 0 chars).
+# Same tolerant-parse philosophy as the #1445 director reconcile.
+# ---------------------------------------------------------------------------
+
+
+def _identity(text: str) -> str:
+    """Stand-in for ``_normalize_for_speech`` — isolates the splitter."""
+    return text
+
+
+# Scene descriptions must clear the >20-char floor in _parse_scene_output.
+_SCENE_A = "a cinematic wide shot of misty mountains at dawn"
+_SCENE_B = "a glowing server rack in a dark data center"
+_NARRATION = (
+    "Ever wondered how AI writes blogs? Here are three takeaways you can use "
+    "today. Full article at our site."
+)
+
+
+def test_short_marker_inline_same_line():
+    """phi4:14b writes the narration INLINE: ``SHORT: <text>``. The real prod
+    failure mode — must capture the narration, not drop it."""
+    output = f"1. {_SCENE_A}\n2. {_SCENE_B}\n\nSHORT: {_NARRATION}"
+
+    scenes, short = _parse_scene_output(output, _identity)
+
+    assert short == _NARRATION
+    assert scenes == [_SCENE_A, _SCENE_B]
+
+
+def test_short_marker_own_line_still_works():
+    """The original happy path (marker alone on its line) must NOT regress."""
+    output = f"1. {_SCENE_A}\n2. {_SCENE_B}\n\nSHORT:\n{_NARRATION}"
+
+    scenes, short = _parse_scene_output(output, _identity)
+
+    assert short == _NARRATION
+    assert scenes == [_SCENE_A, _SCENE_B]
+
+
+def test_short_marker_bold_decorated():
+    """Models often bold the marker: ``**SHORT:**``. Tolerate the markdown."""
+    output = f"1. {_SCENE_A}\n\n**SHORT:** {_NARRATION}"
+
+    scenes, short = _parse_scene_output(output, _identity)
+
+    assert short == _NARRATION
+    assert scenes == [_SCENE_A]
+
+
+def test_short_marker_with_part2_prefix():
+    """``PART 2 - SHORT:`` echoes the prompt's PART labels — tolerate the
+    lead-in and the dash separator."""
+    output = f"1. {_SCENE_A}\n\nPART 2 — SHORT: {_NARRATION}"
+
+    scenes, short = _parse_scene_output(output, _identity)
+
+    assert short == _NARRATION
+    assert scenes == [_SCENE_A]
+
+
+def test_no_marker_falls_back_to_trailing_paragraph():
+    """No SHORT: marker at all — fall back to the trailing prose paragraph
+    rather than returning an empty short_summary, and don't mistake that prose
+    for a scene."""
+    output = f"1. {_SCENE_A}\n2. {_SCENE_B}\n\n{_NARRATION}"
+
+    scenes, short = _parse_scene_output(output, _identity)
+
+    assert short == _NARRATION
+    assert scenes == [_SCENE_A, _SCENE_B]
+
+
+def test_no_marker_no_trailing_prose_leaves_short_empty():
+    """All numbered scenes, no narration, no marker — short stays empty rather
+    than fabricating one from a scene line."""
+    output = f"1. {_SCENE_A}\n2. {_SCENE_B}"
+
+    scenes, short = _parse_scene_output(output, _identity)
+
+    assert short == ""
+    assert scenes == [_SCENE_A, _SCENE_B]
