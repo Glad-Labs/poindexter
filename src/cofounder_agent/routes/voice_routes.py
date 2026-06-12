@@ -101,15 +101,14 @@ _DEV_PLACEHOLDER_SECRET = "devsecret_change_me_change_me_change_me"
 _ALLOWED_VOICE_ROOMS = ("poindexter", "claude-code")
 
 
-def _resolve_voice_room(requested: str | None) -> str:
+def _resolve_voice_room(requested: str | None, default_room: str = "poindexter") -> str:
     """Pick the LiveKit room for a join request (#1006 two-room split).
 
     Allow-listed against :data:`_ALLOWED_VOICE_ROOMS`; whitespace/case are
-    normalised. An unknown or absent value falls back to the operator default
-    (``LIVEKIT_ROOM`` env, itself defaulting to ``poindexter``) so a typo can't
-    mint a token for an arbitrary room.
+    normalised. An unknown or absent value falls back to ``default_room``
+    (caller-supplied, typically the DB-seeded ``voice_agent_room_name``) so
+    a typo can't mint a token for an arbitrary room.
     """
-    default_room = os.environ.get("LIVEKIT_ROOM", "poindexter")
     req = (requested or "").strip().lower()
     return req if req in _ALLOWED_VOICE_ROOMS else default_room
 
@@ -181,11 +180,12 @@ async def voice_join(
 ) -> HTMLResponse:
     """Render the LiveKit web client with a freshly-minted JWT.
 
-    Resolves LIVEKIT_API_KEY + LIVEKIT_API_SECRET **DB-first** (#1000): from
-    ``app_settings`` (``livekit_api_key`` / ``livekit_api_secret``) via the
-    lifespan-bound SiteConfig, falling back to the env vars when those rows are
-    empty — so rotation is one place instead of every minter copy.
-    ``LIVEKIT_PUBLIC_WSS_URL`` still points at the funneled wss endpoint.
+    Resolves all LiveKit config **DB-first** (#1000, #717): creds from
+    ``app_settings`` (``livekit_api_key`` / ``livekit_api_secret``), room from
+    ``voice_agent_room_name``, identity from ``voice_agent_default_identity``,
+    and the WSS URL from ``voice_agent_livekit_url`` — all via the
+    lifespan-bound SiteConfig, falling back to env vars when those rows are
+    empty so rotation and room config are one place instead of every minter.
 
     Requires a tailnet caller — the ``Tailscale-User-Login`` header set
     by Tailscale Serve, verified by ``require_tailnet`` (NOT an OAuth
@@ -199,7 +199,7 @@ async def voice_join(
     from services.voice_pipecat import resolve_livekit_creds_async
 
     site_config = getattr(getattr(request.app, "state", None), "site_config", None)
-    _url, api_key, api_secret = await resolve_livekit_creds_async(site_config)
+    wss_url, api_key, api_secret = await resolve_livekit_creds_async(site_config)
     if (
         not api_secret
         or api_secret == _DEV_PLACEHOLDER_SECRET
@@ -220,8 +220,12 @@ async def voice_join(
             ),
         )
 
-    # Room routing (#1006 two-room split): the phone picks via ?room=.
-    room = _resolve_voice_room(room)
+    # DB-first room, identity, wss_url (#717).  site_config.get() returns ''
+    # for unseeded keys; treat '' as unset so the env (or hard default) wins.
+    default_room = (
+        site_config.get("voice_agent_room_name", "") if site_config is not None else ""
+    ) or os.environ.get("LIVEKIT_ROOM", "poindexter")
+    room = _resolve_voice_room(room, default_room)
     # UNIQUE identity per device/page-load (#1006). LiveKit requires a unique
     # identity per room — two clients sharing one identity collide
     # (DUPLICATE_IDENTITY) and flap, each kicking the other every few seconds
@@ -231,15 +235,12 @@ async def voice_join(
     # identity, so this is transparent to it. A LiveKit auto-reconnect reuses
     # the same minted token (same suffix → resumes); only a fresh page-load
     # gets a new identity. ``name`` keeps a clean human-facing label.
-    display_name = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "operator")
+    display_name = (
+        site_config.get("voice_agent_default_identity", "") if site_config is not None else ""
+    ) or os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "operator")
     identity = f"{display_name}-{secrets.token_hex(3)}"
-    # Default to the local LiveKit signal endpoint. Operators exposing
-    # voice over a Tailscale Funnel or other public hostname override
-    # with their wss URL via the ``LIVEKIT_PUBLIC_WSS_URL`` env var.
-    wss_url = os.environ.get(
-        "LIVEKIT_PUBLIC_WSS_URL",
-        "ws://localhost:7880",
-    )
+    # wss_url: already resolved DB-first by resolve_livekit_creds_async above
+    # via voice_agent_livekit_url (app_settings) → LIVEKIT_URL → ws://localhost:7880.
 
     secret_warn = ""
 

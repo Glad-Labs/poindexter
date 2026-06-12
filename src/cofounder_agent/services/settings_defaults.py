@@ -370,6 +370,7 @@ DEFAULTS: dict[str, str] = {
     # ----- Voice agent -----
     'voice_agent_brain': 'ollama',
     'voice_agent_brain_mode': 'ollama',
+    'voice_agent_default_identity': 'operator',
     'voice_agent_identity': 'poindexter-bot',
     'voice_agent_livekit_enabled': 'true',
     'voice_agent_livekit_url': '',
