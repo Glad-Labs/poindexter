@@ -19,7 +19,9 @@ from modules.content.stages.generate_video_shot_list import (
     _estimate_short_duration,
     _estimate_target_duration,
     _extract_json_object,
+    _reconcile_shot_list,
 )
+from schemas.video_shot_list import VideoShotList
 
 # ---------------------------------------------------------------------------
 # Pure helpers — _estimate_target_duration + _extract_json_object
@@ -273,14 +275,21 @@ async def test_invalid_json_output_records_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_invalid_schema_output_records_failure() -> None:
-    """Director returning JSON that fails schema validation → failure."""
+    """Director returning genuinely-broken JSON → failure recorded.
+
+    The example is an ``sdxl`` shot with no ``prompt`` — a per-shot source
+    violation that ``_reconcile_shot_list`` deliberately does NOT repair (it
+    never fabricates creative fields). Arithmetic / count slips are now
+    reconciled instead (see ``test_stage_recovers_arithmetic_slip_via_reconcile``),
+    so this test uses an unrepairable case to keep exercising the failure path.
+    """
     bad_output = json.dumps({
         "version": 1,
-        "total_duration_s": 100.0,  # Won't match shot durations
+        "total_duration_s": 5.0,
         "shots": [
             {
                 "idx": 0, "duration_s": 5.0, "intent": "x",
-                "source": "pexels", "query": "test",
+                "source": "sdxl",  # requires a non-empty prompt — none given
                 "narration_offset_s": 0.0,
             },
         ],
@@ -590,3 +599,151 @@ async def test_tier_resolve_failure_skips_gracefully() -> None:
     assert result.metrics.get("skipped") is True
     # Must not have dispatched to the LLM if model resolution failed.
     platform.dispatch.complete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# _reconcile_shot_list — deterministic repair of the director's mechanical
+# slips (total-duration arithmetic, >30 shot cap, non-contiguous idx, same-
+# source pacing streaks) BEFORE schema validation. The local LLM reliably
+# botches this bookkeeping (audit: 11 shot_list_failed / 0 produced over 10d),
+# so every shot list was rejected and Stage-2 video rendering silently
+# no-opped on every post. We COMPUTE the bookkeeping rather than reject the
+# director's otherwise-usable creative output ("calculated vs generated").
+# ---------------------------------------------------------------------------
+
+
+def _raw_shot(idx: int, source: str, duration: float = 5.0, **extra) -> dict:
+    """A director shot dict with the source-appropriate input field set."""
+    shot = {
+        "idx": idx,
+        "duration_s": duration,
+        "intent": "establish",
+        "source": source,
+        "narration_offset_s": float(idx) * duration,
+    }
+    if source == "pexels":
+        shot["query"] = "data center server room"
+    elif source in ("sdxl", "sdxl_kenburns", "wan21"):
+        shot["prompt"] = "an abstract neon circuit board, faceless"
+    shot.update(extra)
+    return shot
+
+
+def _raw_list(shots: list[dict], total: float) -> dict:
+    return {
+        "version": 1,
+        "total_duration_s": total,
+        "shots": shots,
+        "director_model": "test-model",
+        "director_prompt_version": "v1",
+        "director_decided_at": "2026-06-11T00:00:00+00:00",
+    }
+
+
+def test_reconcile_sets_total_duration_to_sum_of_shots() -> None:
+    """The #1 observed failure: total_duration_s=300 but shots sum to 15."""
+    raw = _raw_list(
+        [_raw_shot(0, "pexels"), _raw_shot(1, "sdxl"), _raw_shot(2, "pexels")],
+        total=300.0,
+    )
+    fixed = _reconcile_shot_list(raw)
+    assert fixed["total_duration_s"] == 15.0
+    # Reconciled output must now pass the strict schema.
+    VideoShotList.model_validate(fixed)
+
+
+def test_reconcile_caps_shots_to_30_and_reindexes() -> None:
+    """>30 shots (schema max) — keep the first 30, idx 0..29 contiguous."""
+    shots = [
+        _raw_shot(i, "pexels" if i % 2 == 0 else "sdxl") for i in range(33)
+    ]
+    fixed = _reconcile_shot_list(_raw_list(shots, total=999.0))
+    assert len(fixed["shots"]) == 30
+    assert [s["idx"] for s in fixed["shots"]] == list(range(30))
+    VideoShotList.model_validate(fixed)
+
+
+def test_reconcile_reindexes_noncontiguous_idx() -> None:
+    """Director skipped/duplicated idx values — renormalize to 0..n-1."""
+    shots = [_raw_shot(0, "pexels"), _raw_shot(7, "sdxl"), _raw_shot(99, "pexels")]
+    fixed = _reconcile_shot_list(_raw_list(shots, total=15.0))
+    assert [s["idx"] for s in fixed["shots"]] == [0, 1, 2]
+
+
+def test_reconcile_breaks_same_source_streak_with_holdover() -> None:
+    """4 consecutive wan21 shots would trip the pacing rule once duration is
+    fixed — insert a holdover transition to break the run."""
+    shots = [_raw_shot(i, "wan21") for i in range(4)]
+    fixed = _reconcile_shot_list(_raw_list(shots, total=20.0))
+    # No schema rejection (the pacing model_validator passes).
+    VideoShotList.model_validate(fixed)
+    assert any(s["source"] == "holdover" for s in fixed["shots"])
+
+
+def test_reconcile_tolerates_non_numeric_duration() -> None:
+    """A non-numeric duration_s must not crash reconcile — it contributes 0.0
+    to the recomputed total (the per-shot schema validator rejects the shot
+    later). Guards the recovery path that replaced the bare except."""
+    shots = [_raw_shot(0, "pexels", duration=5.0), _raw_shot(1, "sdxl")]
+    shots[1]["duration_s"] = "not-a-number"
+    fixed = _reconcile_shot_list(_raw_list(shots, total=999.0))
+    # 5.0 (valid) + 0.0 (the bad one) = 5.0
+    assert fixed["total_duration_s"] == 5.0
+    assert [s["idx"] for s in fixed["shots"]] == [0, 1]
+
+
+def test_reconcile_passthrough_when_not_a_dict() -> None:
+    assert _reconcile_shot_list("not a dict") == "not a dict"
+    assert _reconcile_shot_list(None) is None
+
+
+def test_reconcile_passthrough_when_shots_empty() -> None:
+    """A genuinely empty director output is left untouched so the stage's
+    director-failure path still fires (no fabricated success)."""
+    assert _reconcile_shot_list({}) == {}
+    assert _reconcile_shot_list({"shots": []}) == {"shots": []}
+
+
+@pytest.mark.asyncio
+async def test_stage_recovers_arithmetic_slip_via_reconcile() -> None:
+    """End-to-end: a director output with a wrong total AND 31 shots — which
+    previously failed validation and produced NO shot list (Stage-2 no-op
+    root cause) — now yields a valid 30-shot list via reconcile."""
+    shots = []
+    for i in range(31):
+        src = "pexels" if i % 3 else "sdxl"
+        shot = {
+            "idx": i, "duration_s": 5.0, "intent": "x", "source": src,
+            "narration_offset_s": float(i) * 5,
+        }
+        shot["query" if src == "pexels" else "prompt"] = "neon faceless circuit"
+        shots.append(shot)
+    bad_output = json.dumps(_raw_list(shots, total=300.0))  # 155 != 300
+
+    db_service = _make_db_service()
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "task_id": "task-recover",
+        "database_service": db_service,
+        "platform": _platform_with_dispatch(
+            returns=MagicMock(text=bad_output), model="director-model-x",
+        ),
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert "video_shot_list" in result.context_updates
+    assert len(result.context_updates["video_shot_list"]["shots"]) == 30
+    # Success audit event, not failure.
+    audit_events = [c.args[1] for c in db_service.pool.execute.call_args_list]
+    assert any("video_director.shot_list_produced" in e for e in audit_events)

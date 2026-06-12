@@ -122,6 +122,95 @@ def _extract_json_object(text: str) -> str | None:
     return None
 
 
+_MAX_SHOTS = 30  # Mirror VideoShotList.shots max_length — cap before validation.
+
+
+def _reconcile_shot_list(parsed: Any) -> Any:
+    """Deterministically repair the director's mechanical slips before schema
+    validation.
+
+    The local "standard"-tier LLM reliably botches three pieces of bookkeeping
+    the ``VideoShotList`` schema enforces as hard gates — and every botch
+    rejected the WHOLE shot list, so Stage-2 video rendering silently no-opped
+    on every post (audit: ``shot_list_failed`` 11 / ``shot_list_produced`` 0
+    over 10 days). These constraints are *calculated*, not creative, so we
+    compute them here rather than throw away the director's otherwise-usable
+    shot choices (``feedback_calculated_vs_generated``). Creative fields
+    (sources, prompts, queries, intents) are never touched.
+
+    Repairs, in order:
+
+    1. **Pacing** — break runs of >2 consecutive same-source non-holdover shots
+       by inserting a ``holdover`` transition (a pure cross-fade, no asset).
+    2. **Count** — cap to the schema max (30 shots); the director front-loads
+       the hook, so dropping the tail is the least-bad truncation.
+    3. **Index** — renormalize ``idx`` to a contiguous ``0..n-1`` (the renderer
+       concats in idx order; the schema requires no gaps).
+    4. **Total duration** — set ``total_duration_s`` to the sum of shot
+       durations so the director can never disagree with its own arithmetic.
+
+    A non-dict input, or a dict with no usable ``shots`` list, is returned
+    untouched — so a genuinely-empty director output still flows to the
+    stage's failure path rather than being fabricated into a fake success.
+    """
+    if not isinstance(parsed, dict):
+        return parsed
+    raw_shots = parsed.get("shots")
+    if not isinstance(raw_shots, list):
+        return parsed
+    shots = [s for s in raw_shots if isinstance(s, dict)]
+    if not shots:
+        return parsed
+
+    # 1. Break same-source streaks with holdover transitions.
+    paced: list[dict[str, Any]] = []
+    streak_src: str | None = None
+    streak = 0
+    for shot in shots:
+        src = shot.get("source")
+        if src == "holdover":
+            streak_src, streak = None, 0
+            paced.append(shot)
+            continue
+        if src == streak_src:
+            streak += 1
+            if streak > 2:
+                paced.append({
+                    "duration_s": 0.5,
+                    "intent": "transition",
+                    "source": "holdover",
+                    "narration_offset_s": shot.get("narration_offset_s", 0.0) or 0.0,
+                })
+                streak = 1  # this shot opens a fresh run after the transition
+        else:
+            streak_src, streak = src, 1
+        paced.append(shot)
+
+    # 2. Cap to the schema max.
+    paced = paced[:_MAX_SHOTS]
+
+    # 3 + 4. Reindex contiguously and recompute the total from the durations.
+    total = 0.0
+    for i, shot in enumerate(paced):
+        shot["idx"] = i
+        raw_duration = shot.get("duration_s")
+        try:
+            total += float(raw_duration or 0.0)
+        except (TypeError, ValueError):
+            # A non-numeric duration_s contributes 0.0 to the total — the
+            # per-shot schema validator rejects the shot downstream anyway, so
+            # we don't fail reconciliation here. Log it so the bad director
+            # output is diagnosable rather than silently swallowed.
+            logger.debug(
+                "[VIDEO_DIRECTOR] reconcile: non-numeric duration_s %r at "
+                "idx=%d — counting as 0.0", raw_duration, i,
+            )
+
+    parsed["shots"] = paced
+    parsed["total_duration_s"] = round(total, 1)
+    return parsed
+
+
 async def _log_audit(
     pool: Any,
     *,
@@ -239,7 +328,11 @@ class GenerateVideoShotListStage:
                     tier="standard",
                     timeout_s=120,
                     temperature=0.4,  # Lower temp — director should be decisive
-                    max_tokens=3072,
+                    # A full 30-shot list serializes past 3072 tokens, which
+                    # truncated the JSON mid-list (json_extract failures) — the
+                    # reconcile pass caps the shot count, but only if the model
+                    # was allowed to finish emitting valid JSON first.
+                    max_tokens=6144,
                 )
             director_output = (getattr(result, "text", "") or "").strip()
         except Exception as exc:
@@ -277,6 +370,11 @@ class GenerateVideoShotListStage:
 
         try:
             parsed = json.loads(json_body)
+            # Repair the director's mechanical/arithmetic slips (count cap,
+            # idx, total-duration sum, pacing streaks) BEFORE validation — the
+            # local LLM botches this bookkeeping every run, and an unrepaired
+            # reject silently no-ops Stage-2 video. Creative fields untouched.
+            parsed = _reconcile_shot_list(parsed)
             shot_list = VideoShotList.model_validate(parsed)
         except Exception as exc:
             await _log_audit(
