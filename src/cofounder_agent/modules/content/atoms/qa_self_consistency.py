@@ -18,8 +18,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from modules.content.atoms._qa_rail_common import reviewer_to_dict
-from modules.content.multi_model_qa import ReviewerResult
+from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 from plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -93,10 +93,23 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         provider="self_consistency_gate",
     )
 
-    # Advisory status is DB-driven via qa_gates.self_consistency.required_to_pass.
-    # We don't call _mark_advisory_if_configured here — the gate row seeds with
-    # required_to_pass=false (advisory), and the aggregate atom reads that.
-    # If an operator graduates it, qa.aggregate will enforce the veto.
+    # Advisory status is DB-driven via qa_gates.self_consistency.required_to_pass,
+    # and we MUST apply it to the review here — mirroring qa.citations /
+    # qa.topic_delivery. qa.aggregate vetoes on any review with approved=False
+    # AND advisory=False; it does NOT read required_to_pass back onto the review.
+    # So without this call a FAILING run hard-vetoes the post even though the
+    # gate is seeded advisory (required_to_pass=false) — the exact bug this
+    # restores. required_to_pass=true leaves it a real veto.
+    pool = getattr(state.get("database_service"), "pool", None)
+    settings_service = state.get("settings_service")
+    qa = MultiModelQA(
+        pool=pool,
+        settings_service=settings_service,
+        site_config=site_config,
+        platform=state.get("platform"),
+    )
+    gate_states = await resolve_gate_states(qa)
+    MultiModelQA._mark_advisory_if_configured(review, gate_states, "self_consistency")
 
     return {"qa_rail_reviews": [reviewer_to_dict(review)]}
 

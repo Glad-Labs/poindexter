@@ -11,6 +11,20 @@ import pytest
 
 # Import will fail until the atom file is created.
 from modules.content.atoms import qa_self_consistency
+from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+from modules.content.multi_model_qa import MultiModelQA
+
+
+# Advisory-first restore: self_consistency seeded required_to_pass=false.
+_ADVISORY_STATES = {"self_consistency": (True, False)}
+# Operator-graduated: required_to_pass=true → hard veto.
+_HARD_GATE_STATES = {"self_consistency": (True, True)}
+
+
+def _patch_gates(monkeypatch, states):
+    async def gates(self):
+        return states
+    monkeypatch.setattr(MultiModelQA, "_load_gate_states", gates)
 
 
 class _Cfg:
@@ -99,3 +113,40 @@ class TestQaSelfConsistencyAtom:
         # Should not raise
         result = await qa_self_consistency.run(_state())
         assert result == {}
+
+    async def test_advisory_first_does_not_veto(self, monkeypatch):
+        """Seeded advisory (required_to_pass=false) → a FAILING self-consistency
+        run scores but must NOT veto the pass.
+
+        Regression for the advisory-veto bug: the atom skipped
+        _mark_advisory_if_configured (assuming qa.aggregate read the gate
+        row — it doesn't), so a failing run hard-rejected a post despite the
+        gate being configured advisory in qa_gates."""
+        async def mock_evaluate(*, content, topic, site_config):
+            return (False, 0.31, "mean_similarity=0.31 < threshold=0.55")
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            mock_evaluate,
+        )
+        _patch_gates(monkeypatch, _ADVISORY_STATES)
+        out = await qa_self_consistency.run(_state())
+        rev = out["qa_rail_reviews"][0]
+        assert rev["advisory"] is True
+        decision = aggregate_rail_reviews(out["qa_rail_reviews"])
+        assert "self_consistency" not in decision["vetoed_by"]
+
+    async def test_graduated_to_hard_veto(self, monkeypatch):
+        """required_to_pass=true → the gate becomes a real veto on a failing run."""
+        async def mock_evaluate(*, content, topic, site_config):
+            return (False, 0.20, "mean_similarity=0.20 < threshold=0.55")
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            mock_evaluate,
+        )
+        _patch_gates(monkeypatch, _HARD_GATE_STATES)
+        out = await qa_self_consistency.run(_state())
+        rev = out["qa_rail_reviews"][0]
+        assert rev["advisory"] is False
+        decision = aggregate_rail_reviews(out["qa_rail_reviews"])
+        assert "self_consistency" in decision["vetoed_by"]
+        assert decision["approved"] is False
