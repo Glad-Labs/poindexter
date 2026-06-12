@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+## [0.77.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.76.0...v0.77.0) (2026-06-12)
+
+
+### Features
+
+* **content:** deterministic citation reconciliation + advisory unlinked-attribution rail ([#765](https://github.com/Glad-Labs/glad-labs-stack/issues/765)) ([#1448](https://github.com/Glad-Labs/glad-labs-stack/issues/1448)) ([48faf04](https://github.com/Glad-Labs/glad-labs-stack/commit/48faf04abe50074100becacae54fa655ae975607))
+* **media:** Stage-3 podcast pipeline — fix the Spotify freeze ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1458](https://github.com/Glad-Labs/glad-labs-stack/issues/1458)) ([78f0e46](https://github.com/Glad-Labs/glad-labs-stack/commit/78f0e46a5982d4e5903cf05dfff752b858ca6d41))
+* **ops:** validate *_model settings against installed Ollama models at boot ([#1430](https://github.com/Glad-Labs/glad-labs-stack/issues/1430)) ([82e88d7](https://github.com/Glad-Labs/glad-labs-stack/commit/82e88d75a4c1a8aab95db8aa61bc59acf973f0c1))
+* **ops:** validate *_model settings against installed Ollama models at boot ([#1441](https://github.com/Glad-Labs/glad-labs-stack/issues/1441)) ([ef2b394](https://github.com/Glad-Labs/glad-labs-stack/commit/ef2b3942d925e303c89edbe4b39adb8b7ac9b43f))
+* **security:** settings-driven rate limits on 5 expensive endpoints ([#748](https://github.com/Glad-Labs/glad-labs-stack/issues/748)) ([#1439](https://github.com/Glad-Labs/glad-labs-stack/issues/1439)) ([ecbc2ba](https://github.com/Glad-Labs/glad-labs-stack/commit/ecbc2bae7cf9bf997e1aa88a59cf1beea0284d7b))
+* **seo:** SEO Harvest Loop — Phase 1 (read-only opportunity analyzer) ([#1444](https://github.com/Glad-Labs/glad-labs-stack/issues/1444)) ([604816e](https://github.com/Glad-Labs/glad-labs-stack/commit/604816efbfec5d1e9cb95db52df53c22d1c9a62d))
+* **seo:** SEO Harvest Loop Phase 2A — seo_refresh graph (hand-triggerable, default-off) ([#1451](https://github.com/Glad-Labs/glad-labs-stack/issues/1451)) ([2e1eeb8](https://github.com/Glad-Labs/glad-labs-stack/commit/2e1eeb84b01cfd44791efc53e0e23ab85ec04d5d))
+* **site:** branded favicon — Glad Labs controller logo ([#1454](https://github.com/Glad-Labs/glad-labs-stack/issues/1454)) ([613d513](https://github.com/Glad-Labs/glad-labs-stack/commit/613d513c86b6590e4cff94c5cb5f4a87de4b5561))
+
+
+### Bug Fixes
+
+* **ai_generation:** update fallback prompt description to include stylistic or abstract options ([76ff656](https://github.com/Glad-Labs/glad-labs-stack/commit/76ff65658900b92f2f67e3a6ed58d0eda210284d))
+* **alerts+mcp:** WindowsExporterDown + absent() guards; set_setting fail-closed + REST delegation ([#1455](https://github.com/Glad-Labs/glad-labs-stack/issues/1455)) ([e60f083](https://github.com/Glad-Labs/glad-labs-stack/commit/e60f0830e0bcdf605795ae0cc8416cc2fb4435e7))
+* **alerts:** remove obsolete alert rules and clean up provisioning configuration ([b75a9e1](https://github.com/Glad-Labs/glad-labs-stack/commit/b75a9e1b3e468c1c3c125069e5f2f60524f2fa06))
+* **api:** /api/health returns 503 when unhealthy/degraded; /api/metrics adds auth + no-DB 503 ([#1412](https://github.com/Glad-Labs/glad-labs-stack/issues/1412)) ([a5638aa](https://github.com/Glad-Labs/glad-labs-stack/commit/a5638aa405a4d82e79cdee7b5b39724298da1fe0))
+* **api:** publish/approve state-confirming retries return 200 instead of 409 ([#1418](https://github.com/Glad-Labs/glad-labs-stack/issues/1418)) ([efcaa10](https://github.com/Glad-Labs/glad-labs-stack/commit/efcaa109f11dcdd7cd8da9af86a6b6e2d9e08b54))
+* **brain:** resolve relative bind-mounts in compose drift auto-recover via --project-directory ([#1443](https://github.com/Glad-Labs/glad-labs-stack/issues/1443)) ([4378859](https://github.com/Glad-Labs/glad-labs-stack/commit/4378859da043bca0a5e63a2ef0abb132b30852a1))
+* **content:** add junk-guard to title generator — reject instructional meta-text ([#1280](https://github.com/Glad-Labs/glad-labs-stack/issues/1280)) ([#1423](https://github.com/Glad-Labs/glad-labs-stack/issues/1423)) ([08200fa](https://github.com/Glad-Labs/glad-labs-stack/commit/08200faa6c65e1c61191b6e1972d47410c7dfd22))
+* **content:** hard-gate placeholder citations + tighten writer prompt ([#766](https://github.com/Glad-Labs/glad-labs-stack/issues/766)) ([#1453](https://github.com/Glad-Labs/glad-labs-stack/issues/1453)) ([3300d96](https://github.com/Glad-Labs/glad-labs-stack/commit/3300d96c92850175f48e3ebaaed526283038906b))
+* **content:** make pipeline_writer_model primary in all three writer resolvers ([#1281](https://github.com/Glad-Labs/glad-labs-stack/issues/1281)) ([#1426](https://github.com/Glad-Labs/glad-labs-stack/issues/1426)) ([9dde182](https://github.com/Glad-Labs/glad-labs-stack/commit/9dde182bdd4d5b8c7995884bbe59516e002f2665))
+* **css:** remove pre-E3 animations and align global p/a rules to tokens ([#1415](https://github.com/Glad-Labs/glad-labs-stack/issues/1415)) ([2073fbc](https://github.com/Glad-Labs/glad-labs-stack/commit/2073fbcb472c76f1043c9c8f3b8588cc2ea0d38d))
+* **css:** replace hardcoded cyan/slate values with brand tokens; add lint guard ([#1421](https://github.com/Glad-Labs/glad-labs-stack/issues/1421)) ([6015770](https://github.com/Glad-Labs/glad-labs-stack/commit/6015770144a2a0bf6c322916025d84f82f11ebbe))
+* **deps:** bump web/starter Next.js floor ^15.5.14 → ^15.5.18 (poindexter[#738](https://github.com/Glad-Labs/glad-labs-stack/issues/738)) ([#1438](https://github.com/Glad-Labs/glad-labs-stack/issues/1438)) ([b472ab3](https://github.com/Glad-Labs/glad-labs-stack/commit/b472ab3cad25c7c915a631655c794b6567b66ddc))
+* **deps:** correct glitchtip image tag v6.1.6 → 6.1.6 (no v-prefix) ([#1440](https://github.com/Glad-Labs/glad-labs-stack/issues/1440)) ([f0bfdfe](https://github.com/Glad-Labs/glad-labs-stack/commit/f0bfdfe1719b5fe2072bcf68d278475c4cbb8f6a))
+* **deps:** declare Mastodon.py in backend pyproject — fixes phantom dep in worker image ([#1413](https://github.com/Glad-Labs/glad-labs-stack/issues/1413)) ([43acd6e](https://github.com/Glad-Labs/glad-labs-stack/commit/43acd6ee5e977b9fa3985303c10be173bf3397cd))
+* **grafana:** add deleteRules for zombie brain-disk-space-low + fold api-provenance pdx-* rules ([#1429](https://github.com/Glad-Labs/glad-labs-stack/issues/1429)) ([3902c08](https://github.com/Glad-Labs/glad-labs-stack/commit/3902c083c55080dd0953031cd491f182e0d2a028))
+* **infra:** add host-gateway extra_hosts for Linux Docker + hardware spec in docs (poindexter[#759](https://github.com/Glad-Labs/glad-labs-stack/issues/759)) ([#1425](https://github.com/Glad-Labs/glad-labs-stack/issues/1425)) ([a67050f](https://github.com/Glad-Labs/glad-labs-stack/commit/a67050f9957d0b238ebd940dcd0bdf7faa554f64))
+* **llm:** remove hardcoded model-name fallbacks, route through cost-tier resolver ([#1407](https://github.com/Glad-Labs/glad-labs-stack/issues/1407)) ([16f6e08](https://github.com/Glad-Labs/glad-labs-stack/commit/16f6e081f058d2ff2f8b49b9001f1c9593fd1651))
+* **mcp:** pass site_config + UUID(batch_id) to TopicBatchService topic tools ([#1457](https://github.com/Glad-Labs/glad-labs-stack/issues/1457)) ([3cd6051](https://github.com/Glad-Labs/glad-labs-stack/commit/3cd6051b0286f5622fc5d43d6c94cefb91c4b814))
+* **media:** bake ffmpeg into worker image for Stage-2 media rendering ([#1449](https://github.com/Glad-Labs/glad-labs-stack/issues/1449)) ([63faf2c](https://github.com/Glad-Labs/glad-labs-stack/commit/63faf2c05ee9409ca597446d5eb5f29d614eac5c))
+* **media:** reconcile director shot lists so Stage-2 video actually renders ([#1445](https://github.com/Glad-Labs/glad-labs-stack/issues/1445)) ([f10f0a5](https://github.com/Glad-Labs/glad-labs-stack/commit/f10f0a58e62fabac99ef49286fce6e7e59eb1f5d))
+* **media:** tolerant SHORT: parse so Stage-2 short_summary_script populates ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1450](https://github.com/Glad-Labs/glad-labs-stack/issues/1450)) ([d545cdc](https://github.com/Glad-Labs/glad-labs-stack/commit/d545cdca3a44bb93c08a9a7fd705f5ae79f87002))
+* **pipeline:** finalize atoms advance stage/percentage to terminal values ([#1282](https://github.com/Glad-Labs/glad-labs-stack/issues/1282)) ([#1422](https://github.com/Glad-Labs/glad-labs-stack/issues/1422)) ([747318d](https://github.com/Glad-Labs/glad-labs-stack/commit/747318d0238a7242523bee4c38a58d6c8b70fc64))
+* **qa:** add reasoning_token_leak programmatic validator rule ([#1283](https://github.com/Glad-Labs/glad-labs-stack/issues/1283)) ([#1427](https://github.com/Glad-Labs/glad-labs-stack/issues/1427)) ([82d756a](https://github.com/Glad-Labs/glad-labs-stack/commit/82d756ae227c7162001c84402f7cbb3656a3c89a))
+* **qa:** alias citation_verifier/topic_delivery/self_consistency so qa_gates counters bump ([#1446](https://github.com/Glad-Labs/glad-labs-stack/issues/1446)) ([50e62bf](https://github.com/Glad-Labs/glad-labs-stack/commit/50e62bffc2e55e91a496dd7d54d491e6939a738d))
+* **qa:** mark self_consistency review advisory so a failing run can't hard-veto ([#1447](https://github.com/Glad-Labs/glad-labs-stack/issues/1447)) ([2fc5609](https://github.com/Glad-Labs/glad-labs-stack/commit/2fc5609d3881fbaa55aa6b347c83c1975f9eff14))
+* **seo:** mark seo_refresh task terminal in content.republish_post ([#763](https://github.com/Glad-Labs/glad-labs-stack/issues/763)) ([#1461](https://github.com/Glad-Labs/glad-labs-stack/issues/1461)) ([0444fe4](https://github.com/Glad-Labs/glad-labs-stack/commit/0444fe4ef99091a116fe284a42becbfd2cbdb26b))
+* **seo:** sanitize optimizer titles + surface proposed meta at the gate ([#1456](https://github.com/Glad-Labs/glad-labs-stack/issues/1456)) ([b7d33a1](https://github.com/Glad-Labs/glad-labs-stack/commit/b7d33a1f2fd8ec28c27364c1c9b7eec8f8b84a9f))
+* **settings:** allow empty-string value writes via PUT /api/settings/{id} ([#1406](https://github.com/Glad-Labs/glad-labs-stack/issues/1406)) ([16767f2](https://github.com/Glad-Labs/glad-labs-stack/commit/16767f2c0461fa0df2b74c159414fc9ca26cc581))
+* **tasks:** surface swallowed exceptions in background task handlers ([#1408](https://github.com/Glad-Labs/glad-labs-stack/issues/1408)) ([a4975b1](https://github.com/Glad-Labs/glad-labs-stack/commit/a4975b1d4a5a9ceaf921fd3c16148555757a509d))
+* three alerting/reliability hardening fixes ([#705](https://github.com/Glad-Labs/glad-labs-stack/issues/705), [#750](https://github.com/Glad-Labs/glad-labs-stack/issues/750), [#697](https://github.com/Glad-Labs/glad-labs-stack/issues/697)) ([#1459](https://github.com/Glad-Labs/glad-labs-stack/issues/1459)) ([c2f45a0](https://github.com/Glad-Labs/glad-labs-stack/commit/c2f45a091c5cfbaece7f911f2e0dd664a7bc7fb2))
+
+
+### Performance Improvements
+
+* **inline-images:** batch GPU locks — one Ollama + one SDXL lock for all placeholders ([#733](https://github.com/Glad-Labs/glad-labs-stack/issues/733)) ([#1435](https://github.com/Glad-Labs/glad-labs-stack/issues/1435)) ([098c035](https://github.com/Glad-Labs/glad-labs-stack/commit/098c03505a4a657d4372bce48a40135ec50c092d))
+* **seo:** collapse 3 serial SEO atoms into one structured call — saves ~2 min/post ([#1417](https://github.com/Glad-Labs/glad-labs-stack/issues/1417)) ([a75420d](https://github.com/Glad-Labs/glad-labs-stack/commit/a75420d620584d72176b10be7a84ee3d04d2a99c))
+
 ## [0.76.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.75.0...v0.76.0) (2026-06-11)
 
 
