@@ -23,7 +23,6 @@ python = ">=3.13,<3.14"
 fastapi = ">=0.115.0"
 uvicorn = {version = ">=0.43,<0.49", extras = ["standard"]}
 pydantic = {extras = ["email"], version = "^2.12.5"}
-pydantic-settings = "^2.0"
 
 # CLI — the `poindexter` operator CLI (poindexter/cli/) is built on click.
 # Declared explicitly because the CLI imports it directly; it was relying on
@@ -54,7 +53,6 @@ aiolimiter = "^1.2"
 # pandas, numpy removed — never imported in production code. Legacy memory_system.py superseded by pgvector.
 
 # Logging & Monitoring
-python-json-logger = "^2.0"
 setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#3932)
 # sentry-sdk re-added 2026-04-21 — GlitchTip DSN now configured in
 # app_settings.sentry_dsn, error tracking is active for the cofounder-agent
@@ -109,7 +107,6 @@ beautifulsoup4 = "^4.12"
 boto3 = "^1.42.84"
 cloudinary = "^1.41"
 playwright = "^1.47"
-pyasn1 = ">=0.6.3"
 mcp = ">=1.23.0"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.2"
@@ -124,6 +121,10 @@ pyroscope-io = { version = "^0.8.5", optional = true, markers = "sys_platform !=
 # msgpack deserialization in <1.0.10. langgraph 1.x is API-compatible
 # with the StateGraph + END + MemorySaver surface used in
 # services/writer_rag_modes/two_pass.py.
+# Declare langchain-core explicitly: template_runner.py, pipeline_architect.py,
+# and pipeline_templates/__init__.py all import it directly. It was riding in
+# transitively via langgraph; declaring it lets us own the floor (poindexter#739).
+langchain-core = ">=1.3.3,<2.0"
 langgraph = ">=1.0.10,<2.0"
 # Explicit floor — langgraph 1.x's resolver allows <5.0.0 but Poetry
 # prefers the older 3.x without prodding. <4.0 has a BaseCache RCE
@@ -213,7 +214,6 @@ sentence-transformers = "^3.4"
 # caret was bumping the worker past the server's 3.6.x). Bump together
 # when upgrading.
 prefect = ">=3.6.29,<3.8.0"
-langchain-openai = ">=1.2"
 
 # YouTube Data API v3 — used by services/publish_adapters/youtube.py
 # for the videos.insert resumable upload path. Declared as an optional
@@ -227,6 +227,10 @@ langchain-openai = ">=1.2"
 google-auth = { version = "^2.36.0", optional = true }
 google-auth-oauthlib = { version = "^1.2.1", optional = true }
 google-api-python-client = { version = "^2.151.0", optional = true }
+# pyasn1 is a transitive dep of google-auth but only needed for the YouTube
+# upload path — moved from unconditional main group to the youtube extra
+# so prod images without --extras youtube don't carry the extra wheel.
+pyasn1 = { version = ">=0.6.3", optional = true }
 atproto = "^0.0.67"
 # Mastodon/Fediverse cross-posting (poindexter#737). Mastodon.py was
 # present in the root-level dev-harness pyproject but missing here,
@@ -240,7 +244,7 @@ profiling = ["pyroscope-io"]
 # YouTube publishing — the operator opts in once they've run the OAuth
 # consent flow (`poindexter integrations youtube setup`). See
 # services/publish_adapters/youtube.py + Glad-Labs/poindexter#40.
-youtube = ["google-auth", "google-auth-oauthlib", "google-api-python-client"]
+youtube = ["google-auth", "google-auth-oauthlib", "google-api-python-client", "pyasn1"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing
