@@ -177,8 +177,9 @@ def _sortable_path_mock(name: str):
 
 @pytest.mark.unit
 class TestRunMigrationsFailure:
-    def test_failed_migration_continues_and_returns_false(self):
-        """A failing migration does not halt subsequent ones; overall result is False."""
+    def test_failing_migration_halts_before_subsequent_migrations(self):
+        """#697 regression: a failing migration must re-raise so subsequent
+        migrations never apply and the caller can halt the process."""
         from services.migrations import run_migrations
 
         file1 = _sortable_path_mock("0001_fail.py")
@@ -187,7 +188,6 @@ class TestRunMigrationsFailure:
         pool, conn = _make_pool(already_applied=None)
         db = _make_db_service(pool=pool)
 
-        # Module 1 raises, module 2 succeeds
         failing_module = types.SimpleNamespace(up=AsyncMock(side_effect=RuntimeError("SQL error")))
         success_module = types.SimpleNamespace(up=AsyncMock(return_value=None))
 
@@ -209,23 +209,23 @@ class TestRunMigrationsFailure:
                 with patch(
                     "services.migrations.importlib.util.module_from_spec", side_effect=fake_module
                 ):
-                    result = _run(run_migrations(db))
+                    with pytest.raises(RuntimeError, match="SQL error"):
+                        _run(run_migrations(db))
 
-        assert result is False  # At least one migration failed
-        # Second migration still ran
-        success_module.up.assert_awaited_once_with(pool)
+        # Second migration must NOT have been attempted
+        success_module.up.assert_not_called()
 
-    def test_outer_exception_returns_false(self):
-        """Top-level exception in run_migrations returns False rather than propagating."""
+    def test_outer_exception_propagates(self):
+        """Top-level exception in run_migrations propagates so startup can halt."""
         from services.migrations import run_migrations
 
         db = _make_db_service(pool=MagicMock())
-        # Make pool.acquire raise immediately
+        # Make pool.acquire raise immediately (e.g. tracking table creation fails)
         db.pool.acquire.return_value.__aenter__ = AsyncMock(side_effect=RuntimeError("pool dead"))
         db.pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        result = _run(run_migrations(db))
-        assert result is False
+        with pytest.raises(RuntimeError, match="pool dead"):
+            _run(run_migrations(db))
 
 
 @pytest.mark.unit

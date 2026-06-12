@@ -243,7 +243,9 @@ class TestRunMigrations:
 
         mock_migrations.run_migrations.assert_awaited_once()
 
-    def test_migration_ok_false_warns_not_raises(self):
+    def test_migration_returns_false_skips_not_raises(self):
+        """run_migrations returning False means no pool / skipped — not a failure.
+        startup_manager must NOT exit in this case (#697)."""
         mgr = _make_manager()
         mgr.database_service = self._mock_db()
 
@@ -259,14 +261,17 @@ class TestRunMigrations:
                 "services.content_router_service": mock_content,
             },
         ):
-            _run(mgr._run_migrations())  # Must not raise
+            _run(mgr._run_migrations())  # False = skip, must not raise
 
-    def test_migration_exception_warns_not_raises(self):
+    def test_migration_exception_raises_system_exit(self):
+        """run_migrations raising means a migration failed — startup_manager must
+        call notify_operator and raise SystemExit(1), same posture as a missing
+        DB connection (#697)."""
         mgr = _make_manager()
         mgr.database_service = self._mock_db()
 
         mock_migrations = MagicMock()
-        mock_migrations.run_migrations = AsyncMock(side_effect=Exception("migration error"))
+        mock_migrations.run_migrations = AsyncMock(side_effect=RuntimeError("migration error"))
         mock_content = MagicMock()
         mock_content.get_content_task_store = MagicMock()
 
@@ -275,9 +280,11 @@ class TestRunMigrations:
             {
                 "services.migrations": mock_migrations,
                 "services.content_router_service": mock_content,
+                "brain.operator_notifier": MagicMock(notify_operator=MagicMock()),
             },
         ):
-            _run(mgr._run_migrations())  # Must not raise
+            with pytest.raises(SystemExit):
+                _run(mgr._run_migrations())
 
     def test_content_task_store_failure_warns_not_raises(self):
         mgr = _make_manager()

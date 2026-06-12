@@ -121,7 +121,14 @@ async def run_migrations(database_service) -> bool:
         database_service: The DatabaseService instance with pool access
 
     Returns:
-        bool: True if all migrations completed successfully, False otherwise
+        True if all migrations completed (or skipped as already-applied).
+        False only if ``database_service`` or its pool is unavailable (skip,
+        not failure).
+
+    Raises:
+        Exception: Re-raises the original exception on the first migration
+        failure — fail CLOSED (#697).  The failed migration is NOT recorded
+        in ``schema_migrations``, so it will be retried on next startup.
     """
     try:
         if not database_service or not database_service.pool:
@@ -145,7 +152,6 @@ async def run_migrations(database_service) -> bool:
 
         applied_count = 0
         skipped_count = 0
-        failed_count = 0
 
         for migration_file in migration_files:
             migration_name = migration_file.name
@@ -193,17 +199,15 @@ async def run_migrations(database_service) -> bool:
                 applied_count += 1
 
             except Exception:
-                # Log and continue — do NOT halt on first failure so subsequent migrations can apply
                 logger.error(f"Migration failed: {migration_name}", exc_info=True)
-                failed_count += 1
+                raise  # fail CLOSED — halt on first failure (#697)
 
         logger.info(
             f"Migrations finished — {applied_count} applied, "
-            f"{skipped_count} already up-to-date, {failed_count} failed"
+            f"{skipped_count} already up-to-date"
         )
-        # Return False only if any migration failed, so callers know the DB may be in a partial state
-        return failed_count == 0
+        return True
 
     except Exception:
         logger.error("Migration runner error", exc_info=True)
-        return False
+        raise

@@ -399,15 +399,40 @@ class StartupManager:
         try:
             from services.migrations import run_migrations
 
-            migrations_ok = await run_migrations(self.database_service)
-            if migrations_ok:
-                logger.info("   [OK] Database migrations completed successfully")
-            else:
-                logger.warning("   [WARNING] Database migrations failed (proceeding anyway)")
+            await run_migrations(self.database_service)
+            logger.info("   [OK] Database migrations completed successfully")
         except Exception as e:
-            logger.warning(
-                f"   [WARNING] Migration error: {e!s} (proceeding anyway)", exc_info=True
-            )
+            startup_error = f"FATAL: Database migration failed: {e!s}"
+            logger.error(f"  {startup_error}", exc_info=True)
+            try:
+                import sys as _sys
+                from pathlib import Path as _Path
+
+                _here = _Path(__file__).resolve()
+                for _candidate in list(_here.parents) + [_Path("/opt/poindexter")]:
+                    if (_candidate / "brain").is_dir():
+                        if str(_candidate) not in _sys.path:
+                            _sys.path.insert(0, str(_candidate))
+                        break
+                from brain.operator_notifier import notify_operator
+
+                notify_operator(
+                    title="Worker cannot start — database migration failed",
+                    detail=(
+                        f"{startup_error}\n\n"
+                        "A failed migration is NOT recorded in schema_migrations so it "
+                        "will be retried on next startup. Fix the migration, then restart "
+                        "the worker.\n\n"
+                        "Review logs for the full traceback."
+                    ),
+                    source="worker.startup_manager",
+                    severity="critical",
+                )
+            except Exception as notify_err:
+                logger.error(
+                    "  operator_notifier failed: %s", notify_err, exc_info=True
+                )
+            raise SystemExit(1) from e
 
         # Seed any code-side defaults that migrations didn't cover (#379).
         # Best-effort — a failure here doesn't abort startup; the lazy
