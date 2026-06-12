@@ -2,14 +2,17 @@
 
 Applies the optimized meta to the live post (meta_only: seo_title/
 seo_description/seo_keywords — NEVER content), re-exports the static JSON to R2,
-fires ISR revalidation (a DB update alone does NOT reach the live site), and
-stamps the seo_opportunities row with the pre-refresh baseline + status='refreshed'
-for later outcome measurement.
+fires ISR revalidation (a DB update alone does NOT reach the live site), stamps
+the seo_opportunities row with the pre-refresh baseline + status='refreshed' for
+later outcome measurement, and marks the source pipeline_tasks row terminal
+('completed') — seo_refresh has no later finalize node, so without this the task
+stays 'in_progress' and the stale-sweep would re-claim and re-refresh it (#763).
 
 Only reached after atoms.approval_gate passes, so execution implies sign-off.
 
 Issue: Glad-Labs/poindexter#763 (epic #762).
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +34,11 @@ ATOM_META = AtomMeta(
         "only after approval_gate."
     ),
     inputs=(
+        FieldSpec(
+            name="task_id",
+            type="str",
+            description="pipeline_tasks.task_id — marked terminal on success",
+        ),
         FieldSpec(name="post_id", type="str", description="posts.id (uuid)"),
         FieldSpec(name="post_slug", type="str", description="post slug for export/revalidate"),
         FieldSpec(name="seo_title", type="str", description="optimized title"),
@@ -50,10 +58,8 @@ ATOM_META = AtomMeta(
         FieldSpec(name="database_service", type="object", description="DB service"),
         FieldSpec(name="site_config", type="object", description="SiteConfig"),
     ),
-    outputs=(
-        FieldSpec(name="status", type="str", description="'refreshed' on success"),
-    ),
-    requires=("post_id", "post_slug"),
+    outputs=(FieldSpec(name="status", type="str", description="'refreshed' on success"),),
+    requires=("task_id", "post_id", "post_slug"),
     produces=("status",),
     capability_tier=None,
     cost_class="free",
@@ -82,18 +88,36 @@ UPDATE seo_opportunities
 # Baseline is stamped self-referentially from the opportunity's own current
 # metrics — no need to thread current_position/ctr through PipelineState.
 
+_MARK_TASK_DONE_SQL = """
+UPDATE pipeline_tasks
+   SET status     = 'completed',
+       updated_at = NOW()
+ WHERE task_id = $1
+   AND status   = 'in_progress'
+"""
+# Mark the source task terminal. seo_refresh ends here (canonical_blog does this
+# in content.evaluate_auto_publish); without it the row stays 'in_progress' and
+# reclaim_stale_inprogress_tasks would re-claim and re-refresh the same post on a
+# loop (#763 defect #3). 'completed' is recognized-terminal and NOT in the claim
+# set ('pending'/'rejected_retry') or the stale-sweep set ('in_progress'); it
+# implies no new publish (unlike 'published'). The status guard makes the flip
+# idempotent and won't clobber a manually-set terminal status.
+
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
+    task_id = state.get("task_id")
     post_id = state.get("post_id")
     slug = state.get("post_slug") or ""
     db = state.get("database_service")
     pool = getattr(db, "pool", None)
     site_config = state.get("site_config")
 
-    if not post_id or not slug or pool is None:
+    if not task_id or not post_id or not slug or pool is None:
+        # Fail loud — task_id is required to mark the task terminal; skipping it
+        # silently would leave the row in_progress for the stale-sweep to re-run.
         raise RuntimeError(
-            f"content.republish_post: post_id+post_slug+pool required "
-            f"(post_id={post_id!r}, slug={slug!r})"
+            f"content.republish_post: task_id+post_id+post_slug+pool required "
+            f"(task_id={task_id!r}, post_id={post_id!r}, slug={slug!r})"
         )
 
     seo_title = state.get("seo_title") or ""
@@ -105,13 +129,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         opp_id = state.get("seo_opportunity_id")
         if opp_id:
             await conn.execute(_STAMP_OPP_SQL, str(opp_id))
+        # Terminal task close-out — seo_refresh has no later finalize node.
+        await conn.execute(_MARK_TASK_DONE_SQL, str(task_id))
 
     # Propagation — a DB update alone does NOT reach the live site (R2 JSON +
     # ISR). Await inline (export) per the cancelled-bg-task lesson in publish_service.
     exported = await export_post(pool, slug, site_config=site_config)
     revalidated = await trigger_isr_revalidate(slug, site_config=site_config)
     logger.info(
-        "[content.republish_post] post=%s slug=%s exported=%s revalidated=%s",
+        "[content.republish_post] task=%s post=%s slug=%s exported=%s revalidated=%s status=completed",
+        task_id,
         post_id,
         slug,
         exported,
