@@ -175,6 +175,31 @@ SKIP_SERVICES_SETTING_KEY = "compose_drift_skip_services"
 # the same directory on both host and brain.
 COMPOSE_PROJECT_NAME_SETTING_KEY = "compose_project_name"
 
+# Host directory that owns ``docker-compose.local.yml`` — the value passed to
+# ``docker compose --project-directory``. Sibling to compose_project_name and
+# the SECOND half of the same brain-cwd-vs-host-dir mismatch problem.
+#
+# The brain bind-mounts ONLY the compose file (at /app/docker-compose.local.yml),
+# not the repo tree. Docker Compose resolves *relative* bind-mount sources
+# (``./infrastructure/prometheus/prometheus.yml``) against the compose file's
+# directory as the brain process sees it = ``/app``. It then asks the host
+# daemon to mount ``/app/infrastructure/...`` — a path that doesn't exist on the
+# host, so Docker auto-creates it as an empty directory and silently wipes the
+# service's real config (grafana provisioning, alertmanager secrets, pgadmin
+# servers.json, the speaches HF cache). ``--project-directory <host_dir>`` makes
+# relative sources resolve against the correct HOST path instead; compose only
+# passes the source string to the daemon (with --no-build + pre-pulled images it
+# never stats it itself), so a host path absent inside the brain container is
+# fine. Leave empty to auto-derive from the running container's
+# ``com.docker.compose.project.working_dir`` label (zero-config). Services with
+# absolute / ${VAR}-expanded / named-volume mounts are unaffected either way.
+COMPOSE_PROJECT_DIRECTORY_SETTING_KEY = "compose_project_directory"
+
+# Compose stamps the host project working directory onto every container it
+# creates as this label. We read it back to auto-derive
+# ``--project-directory`` when the operator hasn't set one explicitly.
+COMPOSE_WORKING_DIR_LABEL = "com.docker.compose.project.working_dir"
+
 # Comma-separated list of services that legitimately run on-demand
 # (spun up only when needed, then shut down to free GPU/CPU resources).
 # When such a service is missing, we suppress the `container_missing`
@@ -660,6 +685,13 @@ async def _read_compose_project_name(pool) -> str:
     return val.strip()
 
 
+async def _read_compose_project_directory(pool) -> str:
+    val = await _read_setting(
+        pool, COMPOSE_PROJECT_DIRECTORY_SETTING_KEY, default=""
+    )
+    return val.strip()
+
+
 async def _emit_audit_event(
     pool,
     event: str,
@@ -694,13 +726,42 @@ async def _emit_audit_event(
 # ---------------------------------------------------------------------------
 
 
+def _derive_project_directory(inspect: dict[str, Any] | None) -> str:
+    """Read the host-side compose working dir from a container's labels.
+
+    Compose stamps ``com.docker.compose.project.working_dir`` onto every
+    container it creates — the absolute HOST path it was invoked from, which
+    is exactly the ``--project-directory`` value that makes relative
+    bind-mount sources resolve correctly. Returns "" when the label is
+    absent (container not compose-managed, or inspect failed), so the caller
+    can decide to omit the flag rather than pass an empty one.
+    """
+    if not inspect:
+        return ""
+    labels = (inspect.get("Config") or {}).get("Labels") or {}
+    if not isinstance(labels, dict):
+        return ""
+    val = labels.get(COMPOSE_WORKING_DIR_LABEL)
+    return val.strip() if isinstance(val, str) else ""
+
+
 def _recreate_services(
     compose_path: str,
     services: Iterable[str],
     *,
     project_name: str = "",
+    project_directory: str = "",
 ) -> tuple[bool, str]:
-    """Run ``docker compose -f <path> up -d <services>``.
+    """Run ``docker compose -f <path> [--project-directory <dir>] up -d <services>``.
+
+    ``project_directory`` is the HOST path that owns the compose file. It's
+    passed to ``--project-directory`` so compose resolves *relative*
+    bind-mount sources (``./infrastructure/...``) against the host repo dir
+    rather than the brain container's ``/app`` cwd — without it, those
+    sources resolve to non-existent ``/app/...`` paths that Docker
+    auto-creates as empty dirs, silently wiping the service's real config.
+    When empty, we auto-derive it from the running container's
+    ``com.docker.compose.project.working_dir`` label (zero-config).
 
     Returns (ok, message). Never raises — caller handles the bool.
     """
@@ -727,15 +788,21 @@ def _recreate_services(
         if project_name:
             env["COMPOSE_PROJECT_NAME"] = project_name
         # Pull real env values from each running target container so the
-        # recreated service gets the correct values, not stubs.
+        # recreated service gets the correct values, not stubs. Same loop
+        # opportunistically derives the host project-directory from the first
+        # container's compose label when the operator didn't pin one.
+        derived_dir = ""
         for svc in svc_list:
             info = _docker_inspect(f"poindexter-{svc}")
             if info:
+                if not project_directory and not derived_dir:
+                    derived_dir = _derive_project_directory(info)
                 for entry in (info.get("Config", {}).get("Env") or []):
                     if "=" in entry:
                         k, _, v = entry.partition("=")
                         if k not in env:
                             env[k] = v
+        effective_dir = project_directory or derived_dir
         # Stub any remaining `:?` sentinel vars so compose can parse the file.
         try:
             with open(compose_path, "r") as f:
@@ -746,23 +813,38 @@ def _recreate_services(
         except Exception:
             pass
 
-        result = subprocess.run(
+        # --project-directory <host_dir> (when known) so relative bind-mount
+        # sources resolve against the host repo dir, not the brain's /app cwd.
+        # Top-level flag — must precede the `up` subcommand. Omitted when empty
+        # so compose falls back to its default (the compose file's dir), which
+        # is correct only when host and brain share a working dir.
+        argv = ["docker", "compose", "-f", compose_path]
+        if effective_dir:
+            argv += ["--project-directory", effective_dir]
+        argv += [
             # --no-build: never rebuild images (brain has no source tree).
             # --force-recreate: running containers with spec drift (new mount,
             #   changed env, etc.) won't restart without this — `docker compose
             #   up` treats a running container as already satisfied without it.
             #   Safe because we pass only the specific drifted service names, so
             #   compose never touches the brain-daemon or other healthy services.
-            ["docker", "compose", "-f", compose_path, "up", "-d",
-             "--no-build", "--force-recreate", *svc_list],
-            env=env,
-            **kwargs,
-        )
+            "up", "-d", "--no-build", "--force-recreate", *svc_list,
+        ]
+        result = subprocess.run(argv, env=env, **kwargs)
+        stderr = (result.stderr or "").strip()
         if result.returncode == 0:
-            return True, f"Recreated: {', '.join(svc_list)}"
+            msg = f"Recreated: {', '.join(svc_list)}"
+            if effective_dir:
+                msg += f" (--project-directory {effective_dir})"
+            # Surface stderr even on exit 0 — compose can warn-and-no-op
+            # (e.g. orphan-container notices) while still reporting success,
+            # so this is the only place that detail survives to the
+            # downstream 'drift persists' escalation.
+            if stderr:
+                msg += f" | compose stderr: {stderr[:200]}"
+            return True, msg
         return False, (
-            f"docker compose up exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
+            f"docker compose up exit {result.returncode}: {stderr[:200]}"
         )
     except FileNotFoundError:
         return False, "docker CLI not on PATH"
@@ -820,12 +902,17 @@ async def run_compose_drift_probe(
     on_demand_services = await _read_on_demand_services(pool)
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
     project_name = await _read_compose_project_name(pool)
+    project_directory = await _read_compose_project_directory(pool)
 
-    # Bind project_name into the default recreate_fn. Injected fns (tests)
-    # keep their own signature — they don't call real docker compose.
+    # Bind project_name + project_directory into the default recreate_fn.
+    # Injected fns (tests) keep their own signature — they don't call real
+    # docker compose.
     _pn = project_name
+    _pd = project_directory
     _effective_recreate_fn = recreate_fn if recreate_fn is not None else (
-        lambda path, svcs: _recreate_services(path, svcs, project_name=_pn)
+        lambda path, svcs: _recreate_services(
+            path, svcs, project_name=_pn, project_directory=_pd
+        )
     )
 
     # ---- 0) Pre-flight: docker daemon reachable? ----------------------------
@@ -1132,11 +1219,15 @@ async def run_compose_drift_probe(
             ),
             detail=(
                 f"{persistent_detail}\n\n"
+                f"compose recreate reported: {recreate_msg}\n\n"
                 f"`docker compose up -d` ran successfully but the running "
                 f"containers still don't match the spec. This may mean the "
                 f"compose file references a build that's failing, an image "
                 f"tag that can't be pulled, or a mount source that doesn't "
-                f"exist on the host.\n\n"
+                f"exist on the host. If the recreate output above mentions a "
+                f"path under the brain's `/app` cwd, set "
+                f"`{COMPOSE_PROJECT_DIRECTORY_SETTING_KEY}` to the host repo "
+                f"directory so relative bind-mounts resolve correctly.\n\n"
                 f"Auto-recover will not retry this cycle. Disable it with "
                 f"`poindexter set {AUTO_RECOVER_SETTING_KEY} false` if "
                 f"you don't want it to retry next cycle either."
@@ -1153,6 +1244,7 @@ async def run_compose_drift_probe(
         extra={
             "previous_drifted_services": sorted(drifted),
             "still_drifted_services": sorted(post_drifted),
+            "recreate_msg": recreate_msg,
         },
     )
     _last_notified_drifted = frozenset(post_drifted.keys())

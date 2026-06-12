@@ -16,6 +16,7 @@ runs and no test sleeps for real.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -404,6 +405,30 @@ class TestDriftAutoRecoverEnabled:
         assert len(notifies) == 1
         assert notifies[0]["severity"] == "critical"
         assert "PERSISTS" in notifies[0]["title"]
+
+    @pytest.mark.asyncio
+    async def test_persist_escalation_surfaces_recreate_message(self):
+        # When recreate exits 0 but drift persists (the observed silent no-op),
+        # the escalation page must carry the recreate message — which now
+        # includes compose's stderr — so the operator gets root-cause detail
+        # instead of a bare "drift persists".
+        pool = _make_pool({"compose_drift_auto_recover_enabled": "true"})
+
+        notifies: list[dict] = []
+
+        recreate_msg = "Recreated: worker (compose stderr: mount source missing)"
+        summary = await cdp.run_compose_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
+            recreate_fn=lambda _p, _s: (True, recreate_msg),
+            yaml_loader=lambda _p: _compose_spec(),
+            sleep_fn=lambda _s: None,
+        )
+
+        assert summary["status"] == "recover_drift_persists"
+        assert len(notifies) == 1
+        assert "compose stderr: mount source missing" in notifies[0]["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -1010,3 +1035,264 @@ class TestRecreateServicesFlags:
         assert "--no-recreate" not in cmd, (
             "--no-recreate prevents recreating running containers with spec drift"
         )
+
+    def test_project_directory_flag_present_when_set(self, monkeypatch):
+        """When compose_project_directory is set, the compose argv must carry
+        ``--project-directory <host_dir>`` BEFORE the ``up`` subcommand so
+        relative bind-mount sources (``./infrastructure/...``) resolve against
+        the host repo dir, not the brain container's ``/app`` cwd.
+
+        Regression guard for the relative-mount corruption bug: without this
+        flag, ``docker compose -f /app/docker-compose.local.yml up`` resolves
+        ``./x`` to ``/app/x`` (non-existent on the host), which Docker
+        auto-creates as an empty dir and wipes the service's real config.
+        """
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""  # docker inspect → [] → None; no env/derive
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr(cdp.subprocess, "run", fake_run)
+
+        ok, _msg = cdp._recreate_services(
+            "/app/docker-compose.local.yml",
+            ["worker"],
+            project_directory="/host/glad-labs-website",
+        )
+
+        assert ok is True
+        compose_calls = [c for c in calls if "compose" in c]
+        assert compose_calls, f"no 'docker compose' call found; all calls: {calls}"
+        cmd = compose_calls[0]
+        assert "--project-directory" in cmd, (
+            "--project-directory missing — relative bind-mount sources will "
+            "resolve against the brain's /app cwd and corrupt mounts"
+        )
+        idx = cmd.index("--project-directory")
+        assert cmd[idx + 1] == "/host/glad-labs-website"
+        # Must be a top-level flag, before the `up` subcommand.
+        assert cmd.index("--project-directory") < cmd.index("up")
+
+    def test_project_directory_flag_absent_when_empty(self, monkeypatch):
+        """No setting and no derivable label → don't pass an empty
+        ``--project-directory`` (that would itself break resolution)."""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""  # inspect → None, no label to derive from
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr(cdp.subprocess, "run", fake_run)
+
+        ok, _msg = cdp._recreate_services(
+            "/app/docker-compose.local.yml", ["worker"]
+        )
+
+        assert ok is True
+        cmd = [c for c in calls if "compose" in c][0]
+        assert "--project-directory" not in cmd
+
+    def test_project_directory_derived_from_container_label(self, monkeypatch):
+        """Zero-config: when compose_project_directory is empty, derive the
+        host project dir from the running container's
+        ``com.docker.compose.project.working_dir`` label so auto-recover works
+        out of the box without an operator setting it."""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            result.stderr = ""
+            if "inspect" in cmd:
+                result.stdout = json.dumps([
+                    {
+                        "Config": {
+                            "Labels": {
+                                "com.docker.compose.project.working_dir": (
+                                    "/host/derived-repo"
+                                )
+                            },
+                            "Env": [],
+                        }
+                    }
+                ])
+            else:
+                result.stdout = ""
+            return result
+
+        monkeypatch.setattr(cdp.subprocess, "run", fake_run)
+
+        ok, _msg = cdp._recreate_services(
+            "/app/docker-compose.local.yml", ["worker"]  # no project_directory
+        )
+
+        assert ok is True
+        cmd = [c for c in calls if "compose" in c][0]
+        assert "--project-directory" in cmd
+        assert cmd[cmd.index("--project-directory") + 1] == "/host/derived-repo"
+
+    def test_explicit_project_directory_overrides_derived_label(self, monkeypatch):
+        """An explicit setting must win over the derived label."""
+
+        def fake_run(cmd, **_kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stderr = ""
+            if "inspect" in cmd:
+                result.stdout = json.dumps([
+                    {
+                        "Config": {
+                            "Labels": {
+                                "com.docker.compose.project.working_dir": "/derived"
+                            },
+                            "Env": [],
+                        }
+                    }
+                ])
+            else:
+                result.stdout = ""
+            return result
+
+        monkeypatch.setattr(cdp.subprocess, "run", fake_run)
+        captured: list[list[str]] = []
+        orig = fake_run
+
+        def capture(cmd, **kwargs):
+            captured.append(cmd)
+            return orig(cmd, **kwargs)
+
+        monkeypatch.setattr(cdp.subprocess, "run", capture)
+
+        ok, _msg = cdp._recreate_services(
+            "/app/docker-compose.local.yml",
+            ["worker"],
+            project_directory="/explicit",
+        )
+
+        assert ok is True
+        cmd = [c for c in captured if "compose" in c][0]
+        assert cmd[cmd.index("--project-directory") + 1] == "/explicit"
+
+    def test_recreate_surfaces_compose_stderr_on_success(self, monkeypatch):
+        """Compose can exit 0 while printing warnings/errors to stderr (and,
+        per the observed bug, recreate nothing). Surface that stderr in the
+        success message so the downstream 'drift persists' escalation carries
+        root-cause detail instead of a bare 'Recreated'."""
+
+        def fake_run(cmd, **_kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""
+            # Only the compose call emits the warning; inspect is clean.
+            result.stderr = (
+                "" if "inspect" in cmd else "found orphan containers for project"
+            )
+            return result
+
+        monkeypatch.setattr(cdp.subprocess, "run", fake_run)
+
+        ok, msg = cdp._recreate_services(
+            "/app/docker-compose.local.yml", ["worker"]
+        )
+
+        assert ok is True
+        assert "orphan containers" in msg, (
+            "compose stderr must be surfaced even on exit 0 so a silent no-op "
+            "is diagnosable"
+        )
+
+
+@pytest.mark.unit
+class TestDeriveProjectDirectory:
+    """Direct coverage of the compose-working-dir label derivation helper."""
+
+    def test_reads_working_dir_label(self):
+        assert cdp._derive_project_directory(
+            {"Config": {"Labels": {
+                "com.docker.compose.project.working_dir": "/host/x"
+            }}}
+        ) == "/host/x"
+
+    def test_missing_label_returns_empty(self):
+        assert cdp._derive_project_directory({"Config": {"Labels": {}}}) == ""
+
+    def test_no_config_or_none_returns_empty(self):
+        assert cdp._derive_project_directory({}) == ""
+        assert cdp._derive_project_directory(None) == ""
+
+    def test_strips_whitespace(self):
+        assert cdp._derive_project_directory(
+            {"Config": {"Labels": {
+                "com.docker.compose.project.working_dir": "  /host/x  "
+            }}}
+        ) == "/host/x"
+
+
+@pytest.mark.unit
+class TestReadComposeProjectDirectory:
+    @pytest.mark.asyncio
+    async def test_default_empty_when_unset(self):
+        pool = _make_pool({})
+        assert await cdp._read_compose_project_directory(pool) == ""
+
+    @pytest.mark.asyncio
+    async def test_strips_whitespace(self):
+        pool = _make_pool({"compose_project_directory": "  /host/repo  "})
+        assert await cdp._read_compose_project_directory(pool) == "/host/repo"
+
+
+@pytest.mark.unit
+class TestProjectDirectoryWiring:
+    @pytest.mark.asyncio
+    async def test_setting_threaded_to_default_recreate(self, monkeypatch):
+        """run_compose_drift_probe must read compose_project_directory and bind
+        it into the default _recreate_services call (the seam that injected
+        fns bypass)."""
+        cdp._last_notified_drifted = frozenset()
+        pool = _make_pool({
+            "compose_drift_auto_recover_enabled": "true",
+            "compose_project_directory": "/host/repo",
+            "compose_project_name": "glad-labs-website",
+        })
+
+        captured: dict = {}
+
+        def fake_recreate(path, services, *, project_name="", project_directory=""):
+            captured["path"] = path
+            captured["project_name"] = project_name
+            captured["project_directory"] = project_directory
+            return True, "Recreated"
+
+        monkeypatch.setattr(cdp, "_recreate_services", fake_recreate)
+
+        # First inspect drifts; re-probe after recreate is clean → recovered.
+        inspect_results = iter([_matching_inspect(mount_targets=())])
+
+        def fake_inspect(_name):
+            try:
+                return next(inspect_results)
+            except StopIteration:
+                return _matching_inspect()
+
+        summary = await cdp.run_compose_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            inspect_fn=fake_inspect,
+            # No recreate_fn → exercise the default-bound lambda path.
+            yaml_loader=lambda _p: _compose_spec(),
+            sleep_fn=lambda _s: None,
+        )
+
+        assert summary["status"] == "recovered"
+        assert captured["project_directory"] == "/host/repo"
+        assert captured["project_name"] == "glad-labs-website"
