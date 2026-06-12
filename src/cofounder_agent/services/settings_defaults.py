@@ -322,6 +322,26 @@ DEFAULTS: dict[str, str] = {
     # published post + seeds Gate-2 approvals; caps assets linked per cycle.
     # Gated on the same media_pipeline_trigger_enabled master switch.
     'media_distribute_max_per_cycle': '20',
+    # Stage-3 podcast lane (#689 deviation — separate isolated graph). Its own
+    # master switch so podcast goes live independently of the video media_pipeline
+    # (default off — safe for OSS forks; the operator flips prod to 'true').
+    # The dispatch job caps renders/cycle; distribute caps link+seed+deliver/cycle.
+    'podcast_pipeline_trigger_enabled': 'false',
+    'podcast_pipeline_max_per_cycle': '2',
+    'podcast_distribute_max_per_cycle': '20',
+    # Per-medium call-to-action outros (DB-tunable; ML-optimizable later).
+    # ``media.cta.podcast`` is LIVE — ``podcast.render`` appends it to the script
+    # before TTS so the episode asks for ratings/reviews. The video CTAs are
+    # seeded ahead of their reader: the video render appends them as an end beat,
+    # which lands with the deferred video-side half of #689 (the video render
+    # shares the base narration, so a spoken video CTA needs its own render path —
+    # see docs/architecture/podcast-pipeline-stage3.md §11).
+    'media.cta.podcast': (
+        'If this was useful, follow the show and leave a quick rating or review '
+        'on Spotify or Apple Podcasts — it genuinely helps us reach more people.'
+    ),
+    'media.cta.video': 'If this helped, like the video and subscribe for more.',
+    'media.cta.video_short': 'Follow for more — like and subscribe.',
     # Gate-2 earned-autonomy (#531) — automatic Tier-2 approval when the last N
     # dispatches for a (niche, medium) combo all succeeded. Disabled by default;
     # operator flips media.gate2.earned_autonomy_enabled to 'true' once they are

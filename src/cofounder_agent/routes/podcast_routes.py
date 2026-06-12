@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
@@ -89,90 +89,68 @@ async def podcast_feed(
     from utils.route_utils import get_services
 
     db = get_services().get_database()
-
-    svc = PodcastService(site_config=site_config)
-    episodes_on_disk = {ep["post_id"]: ep for ep in svc.list_episodes()}
-
-    if not episodes_on_disk:
-        # Return a valid but empty feed
-        return Response(
-            content=_build_rss_xml([], site_config),
-            media_type="application/rss+xml; charset=utf-8",
-        )
-
-    # Fetch post metadata for episodes that exist on disk
-    post_ids = list(episodes_on_disk.keys())
-    posts_meta = []
-
-    # Use cloud_pool (if configured) where published posts live
     pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+
+    # Source episodes from media_assets (#689 Stage-3) — the canonical file
+    # registry — NOT a local-disk scan, so atom-produced (task-keyed) episodes
+    # surface the same as legacy post-keyed ones. The R2 enclosure URL, byte
+    # size, and duration all ride on the asset row. Two stacked gates remain:
+    #
+    # 1. ``'podcast' = ANY(media_to_generate)`` — the canonical niche-policy
+    #    seam (``feedback_filter_on_seams_not_slugs``). dev_diary's policy is
+    #    ``{}``, excluding those posts even if a stray asset exists.
+    # 2. ``media_approvals.status='approved'`` (medium='podcast') — the
+    #    operator-approval gate (``feedback_human_approval``). Pending/rejected
+    #    audio never reaches Apple/Spotify; the fix for a missing episode is to
+    #    approve the row, not strip the gate.
+    #
+    # DISTINCT ON (p.id) collapses multiple podcast assets per post (e.g. a
+    # reconciliation row + a pipeline row) to the newest one.
+    episodes: list[dict] = []
     if pool:
         try:
             async with pool.acquire() as conn:
-                # Two stacked filters:
-                #
-                # 1. ``'podcast' = ANY(media_to_generate)`` — the
-                #    canonical niche-policy seam. Matches
-                #    ``backfill_podcasts.py``'s query so the feed and
-                #    the backfill agree on what counts as a real
-                #    podcast episode. dev_diary niche's policy is
-                #    ``{}``, which excludes those posts even when an
-                #    orphan MP3 sits on disk from before the per-niche
-                #    policy landed (2026-05-19). Slug-pattern filtering
-                #    on dev_diary post slugs is the hack Matt rejected
-                #    — see ``feedback_filter_on_seams_not_slugs``.
-                #
-                # 2. ``media_approvals.status='approved'`` — the
-                #    operator-approval gate. Per
-                #    ``feedback_human_approval``, audio that reaches
-                #    Apple Podcasts / Spotify must have an operator
-                #    decision behind it. Auto-approve at the niche
-                #    level (``niche.<slug>.media.podcast.auto_approve``)
-                #    short-circuits the manual step on niches the
-                #    operator trusts. See
-                #    ``services/media_approval_service.py``.
                 rows = await conn.fetch(
                     """
-                    SELECT id::text, title, slug, excerpt, seo_keywords, published_at
+                    SELECT DISTINCT ON (p.id)
+                           p.id::text AS post_id, p.title, p.slug, p.excerpt,
+                           p.seo_keywords, p.published_at,
+                           mas.url, mas.file_size_bytes, mas.duration_ms
                     FROM posts p
-                    WHERE id::text = ANY($1)
-                      AND status = 'published'
+                    JOIN media_assets mas
+                      ON mas.post_id = p.id AND mas.type = 'podcast'
+                    JOIN media_approvals ma
+                      ON ma.post_id = p.id
+                     AND ma.medium = 'podcast'
+                     AND ma.status = 'approved'
+                    WHERE p.status = 'published'
                       AND 'podcast' = ANY(media_to_generate)
-                      AND EXISTS (
-                          SELECT 1 FROM media_approvals ma
-                          WHERE ma.post_id = p.id
-                            AND ma.medium = 'podcast'
-                            AND ma.status = 'approved'
-                      )
-                    ORDER BY published_at DESC
+                    ORDER BY p.id, mas.created_at DESC NULLS LAST
                     """,
-                    post_ids,
                 )
-                posts_meta = [dict(r) for r in rows]
+                for r in rows:
+                    episodes.append({
+                        "post_id": r["post_id"],
+                        "title": r["title"] or "Untitled",
+                        "slug": r["slug"] or r["post_id"],
+                        "description": r["excerpt"] or "",
+                        "keywords": r["seo_keywords"] or "",
+                        "published_at": r["published_at"],
+                        "file_size_bytes": r["file_size_bytes"] or 0,
+                        "duration_seconds": int((r["duration_ms"] or 0) // 1000),
+                        "enclosure_url": r["url"] or "",
+                    })
         except Exception as e:
-            logger.warning("[PODCAST] Failed to fetch post metadata: %s", e)
+            logger.warning("[PODCAST] Failed to load feed episodes: %s", e)
 
-    # Build episode list merging DB metadata with disk info
-    episodes = []
-    for post in posts_meta:
-        pid = post["id"]
-        disk_info = episodes_on_disk.get(pid, {})
-        if not disk_info:
-            continue
-        episodes.append({
-            "post_id": pid,
-            "title": post.get("title", "Untitled"),
-            "slug": post.get("slug", pid),
-            "description": post.get("excerpt", ""),
-            "keywords": post.get("seo_keywords", "") or "",
-            "published_at": post.get("published_at"),
-            "file_size_bytes": disk_info.get("file_size_bytes", 0),
-            "duration_seconds": 0,  # Estimated on the fly if needed
-        })
+    # DISTINCT ON forced p.id ordering; present newest-first by publish date.
+    episodes.sort(
+        key=lambda ep: ep.get("published_at") or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
 
-    xml_content = _build_rss_xml(episodes, site_config)
     return Response(
-        content=xml_content,
+        content=_build_rss_xml(episodes, site_config),
         media_type="application/rss+xml; charset=utf-8",
     )
 
@@ -288,10 +266,13 @@ def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
                 pub_date = pub_date.replace(tzinfo=timezone.utc)
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
-        # Enclosure (the MP3 file)
+        # Enclosure (the MP3 file). Prefer the media_assets R2 URL (#689
+        # Stage-3 source of truth); fall back to the deterministic CDN path for
+        # callers that build episodes without an asset row (legacy/tests).
         enclosure = SubElement(item, "enclosure")
         enclosure.set(
-            "url", f"{_r2}/podcast/{_cdn_ver}/{ep['post_id']}.mp3"
+            "url",
+            ep.get("enclosure_url") or f"{_r2}/podcast/{_cdn_ver}/{ep['post_id']}.mp3",
         )
         enclosure.set("length", str(ep.get("file_size_bytes", 0)))
         enclosure.set("type", "audio/mpeg")
@@ -351,11 +332,16 @@ async def stream_episode(post_id: str):
 @router.get("/episodes")
 async def list_episodes(
     site_config: Any = Depends(get_site_config_dependency),
+    limit: int = Query(50, ge=1, le=200, description="Max episodes to return"),
+    offset: int = Query(0, ge=0, description="Episodes to skip"),
 ):
-    """List all available podcast episodes as JSON."""
+    """List podcast episodes as JSON, paginated (closes #746 — the endpoint was
+    previously unbounded and grew linearly with content volume forever)."""
     svc = PodcastService(site_config=site_config)
-    episodes = svc.list_episodes()
-    return {"episodes": episodes, "count": len(episodes)}
+    all_episodes = svc.list_episodes()
+    total = len(all_episodes)
+    page = all_episodes[offset : offset + limit]
+    return {"episodes": page, "count": len(page), "total": total, "limit": limit, "offset": offset}
 
 
 # ---------------------------------------------------------------------------

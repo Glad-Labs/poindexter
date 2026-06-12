@@ -4,6 +4,16 @@
 **Scope:** High-quality long-form **and** short-form video, plus podcast, as a first-class composable media stage behind the content pipeline.
 **Epic:** [Glad-Labs/poindexter#689](https://github.com/Glad-Labs/poindexter/issues/689).
 
+> **Deviation (2026-06-11): podcast split into its own Stage-3 graph.** This doc
+> keeps podcast as a branch inside the single `media_pipeline` graph. Per an
+> operator decision, podcast was instead split into its **own** isolated
+> `podcast_pipeline` graph_def with its own dispatcher + distribute lane, for hard
+> process-level isolation (a video-render crash can never halt podcast production)
+> and fully independent dispatch/approval/distribution lifecycles. The podcast lane
+> shipped 2026-06-12 (dormant behind `podcast_pipeline_trigger_enabled`); see
+> [`podcast-pipeline-stage3.md`](podcast-pipeline-stage3.md). The video-side
+> `video_long`→`video` consolidation in this doc is deferred to that doc's §11.
+
 ---
 
 ## 1. Goal & principles

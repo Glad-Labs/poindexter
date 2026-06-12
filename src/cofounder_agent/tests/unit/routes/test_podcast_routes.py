@@ -231,6 +231,42 @@ class TestPodcastFeed:
             assert "application/rss+xml" in resp.headers["content-type"]
             assert "<item>" not in resp.text
 
+    @patch("utils.route_utils.get_services")
+    def test_feed_lists_episode_from_media_assets(self, mock_gs):
+        """The feed sources the enclosure from media_assets (type='podcast'),
+        not a local-disk scan — so atom-produced (task-keyed) episodes surface."""
+        from datetime import datetime, timezone
+
+        mock_conn = AsyncMock()
+        mock_conn.fetch.return_value = [
+            {
+                "post_id": "11111111-1111-1111-1111-111111111111",
+                "title": "Ep One",
+                "slug": "ep-one",
+                "excerpt": "An episode.",
+                "seo_keywords": "ai,ml",
+                "published_at": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                "url": "https://cdn.example.com/podcast/v2/ep1.mp3",
+                "file_size_bytes": 12345,
+                "duration_ms": 600000,
+            }
+        ]
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.acquire.return_value = ctx
+        mock_db = MagicMock()
+        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
+        mock_gs.return_value.get_database.return_value = mock_db
+
+        resp = client.get("/api/podcast/feed.xml")
+        assert resp.status_code == 200
+        assert "<item>" in resp.text
+        assert "Ep One" in resp.text
+        assert "https://cdn.example.com/podcast/v2/ep1.mp3" in resp.text
+
     def test_feed_sql_filters_on_media_to_generate(self):
         """The RSS feed must only list posts that opted into podcasts.
 

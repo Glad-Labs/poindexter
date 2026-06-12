@@ -750,6 +750,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # posts.metadata->>'pipeline_task_id' seam) and seeds the Gate-2 approval
         # rows. Same dormant master switch (``media_pipeline_trigger_enabled``).
         ("jobs", "services.jobs.media_distribute", "MediaDistributeJob"),
+        # Stage-3 podcast lane (#689 deviation — separate isolated graph). The
+        # dispatch job runs ``podcast_pipeline`` (render+persist) for Gate-1
+        # pieces with a persisted podcast_script; the distribute job links the
+        # asset to its post, seeds the Gate-2 podcast approval (incl. backlog
+        # heal), and delivers approved episodes to R2 + RSS. Both DORMANT behind
+        # ``podcast_pipeline_trigger_enabled`` (default off).
+        ("jobs", "services.jobs.dispatch_podcast_pipeline", "DispatchPodcastPipelineJob"),
+        ("jobs", "services.jobs.podcast_distribute", "PodcastDistributeJob"),
         # Gate-2 earned-autonomy re-evaluation (#531): periodically promotes
         # pending Gate-2 rows where the niche has since met the consecutive-
         # dispatch-success threshold. Dormant behind the same

@@ -636,6 +636,67 @@ class PodcastService:
             })
         return episodes
 
+    async def synthesize(
+        self,
+        script: str,
+        *,
+        output_path: "Path | str | None" = None,
+        key: str = "",
+    ) -> tuple[str, int]:
+        """Render ``script`` to an MP3 via Kokoro/Speaches TTS with deterministic
+        voice rotation. Returns ``(file_path, duration_seconds)``; raises
+        ``RuntimeError`` when every voice fails.
+
+        Pure render core for the Stage-3 ``podcast.render`` atom — it owns the
+        voice-rotation loop over ``_generate_with_voice`` but NONE of the
+        post_id-keyed naming, ``media_assets`` recording, or narration-sibling
+        side effects that ``generate_episode`` layers on top. Voice is chosen
+        deterministically from ``key`` (e.g. ``task_id``) so a re-render of the
+        same task is stable ("calculated, not generated", #689).
+        """
+        import hashlib
+        import tempfile
+
+        if not script or not script.strip():
+            raise RuntimeError("podcast.synthesize: empty script")
+
+        if output_path is None:
+            fd, tmp = tempfile.mkstemp(suffix=".mp3", prefix="podcast-render-")
+            os.close(fd)
+            out = Path(tmp)
+        else:
+            out = Path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+
+        voice_pool = _resolve_voice_pool(self._site_config)
+        rotation_key = key or script
+        voice_index = int(
+            hashlib.md5(rotation_key.encode(), usedforsecurity=False).hexdigest(), 16,
+        ) % len(voice_pool)
+        selected = voice_pool[voice_index]
+        voices_to_try = [
+            selected,
+            *[v for v in voice_pool if v != selected],
+            *VOICE_FALLBACKS,
+        ]
+
+        last_error: str | None = None
+        for voice in voices_to_try:
+            try:
+                result = await self._generate_with_voice(script, voice, out)
+                if result.success:
+                    return str(out), int(result.duration_seconds or 0)
+                last_error = result.error
+            except Exception as e:  # noqa: BLE001 — try the next voice
+                last_error = f"{voice}: {type(e).__name__}: {e}"
+                logger.warning(
+                    "[PODCAST] synthesize voice %s failed: %s", voice, last_error,
+                )
+
+        raise RuntimeError(
+            f"podcast.synthesize: all voices failed. Last error: {last_error}"
+        )
+
     async def generate_episode(
         self,
         post_id: str,

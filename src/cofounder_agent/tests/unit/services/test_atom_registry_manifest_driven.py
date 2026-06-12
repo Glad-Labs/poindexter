@@ -43,6 +43,34 @@ def _make_module(atoms_package: str | None) -> Any:
 class TestManifestDrivenAtomDiscovery:
     """atom_registry.discover() iterates manifests, calls _walk_package per pkg."""
 
+    @pytest.fixture(autouse=True)
+    def _restore_atom_registry(self):
+        """Snapshot + restore the global atom registry around each test.
+
+        These tests deliberately ``_ATOMS.clear()`` / ``_RUNNERS.clear()`` and
+        flip ``_DISCOVERED`` to exercise discovery against patched modules. The
+        patched ``_walk_package`` is a no-op, so the registry is left EMPTY with
+        ``_DISCOVERED=True`` — which short-circuits every later real
+        ``discover()`` to a no-op. That pollution leaked into any test that runs
+        afterwards and relies on a populated catalog (``test_canonical_blog_spec``
+        / ``test_podcast_pipeline_spec`` saw ``available: []``; masked in CI only
+        because pytest-xdist happened to distribute the files apart). Save the
+        three module globals, yield, then restore them.
+        """
+        import services.atom_registry as ar
+
+        saved_atoms = dict(ar._ATOMS)
+        saved_runners = dict(ar._RUNNERS)
+        saved_discovered = ar._DISCOVERED
+        try:
+            yield
+        finally:
+            ar._ATOMS.clear()
+            ar._ATOMS.update(saved_atoms)
+            ar._RUNNERS.clear()
+            ar._RUNNERS.update(saved_runners)
+            ar._DISCOVERED = saved_discovered
+
     def _run_discover(
         self,
         modules: list[Any],
