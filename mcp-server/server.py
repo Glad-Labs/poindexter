@@ -25,6 +25,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 import asyncpg
 import httpx
@@ -182,6 +183,9 @@ _http: httpx.AsyncClient | None = None
 # app_settings (and we want to defer that until someone actually calls
 # a tool that talks to the worker).
 _oauth: McpOAuthClient | None = None
+# SiteConfig — lazy-loaded on first topic-tool call (mirrors the
+# ``_make_site_config`` helper in poindexter/cli/approval.py).
+_site_config: Any = None
 
 
 async def _get_pool() -> asyncpg.Pool:
@@ -239,6 +243,27 @@ async def _get_oauth() -> McpOAuthClient:
             scopes=None,
         )
     return _oauth
+
+
+async def _get_site_config() -> Any:
+    """Get or build a SiteConfig loaded from app_settings.
+
+    Mirrors ``_make_site_config`` in poindexter/cli/approval.py. Cached
+    for the process lifetime — the MCP server is a short-lived tool
+    caller, not the worker's long-running refresh loop.
+    src/cofounder_agent is already on sys.path via the boot block above.
+    """
+    global _site_config
+    if _site_config is None:
+        from services.site_config import SiteConfig
+
+        pool = await _get_pool()
+        _site_config = SiteConfig(pool=pool)
+        try:
+            await _site_config.load(pool)
+        except Exception:
+            pass  # fall back to empty config — gate reads still work
+    return _site_config
 
 
 async def _embed_text(text: str) -> list[float]:
@@ -1298,7 +1323,8 @@ async def topics_show_batch(niche: str) -> str:
             )
         if bid is None:
             return f"No open batch for niche {niche}."
-        view = await TopicBatchService(pool).show_batch(batch_id=bid)
+        site_config = await _get_site_config()
+        view = await TopicBatchService(pool, site_config=site_config).show_batch(batch_id=bid)
         lines = [f"Batch {view.id} (status={view.status}, niche={niche})"]
         for c in view.candidates:
             marker = f"#{c.operator_rank}" if c.operator_rank else f"sys#{c.rank_in_batch}"
@@ -1316,8 +1342,9 @@ async def topics_rank_batch(batch_id: str, ordered_candidate_ids: list[str]) -> 
     try:
         pool = await _get_pool()
         from services.topic_batch_service import TopicBatchService
-        await TopicBatchService(pool).rank_batch(
-            batch_id=batch_id, ordered_candidate_ids=ordered_candidate_ids,
+        site_config = await _get_site_config()
+        await TopicBatchService(pool, site_config=site_config).rank_batch(
+            batch_id=UUID(batch_id), ordered_candidate_ids=ordered_candidate_ids,
         )
         return f"Ranked {len(ordered_candidate_ids)} candidates in batch {batch_id}"
     except Exception as e:
@@ -1332,8 +1359,9 @@ async def topics_edit_winner(batch_id: str, topic: str = "", angle: str = "") ->
     try:
         pool = await _get_pool()
         from services.topic_batch_service import TopicBatchService
-        await TopicBatchService(pool).edit_winner(
-            batch_id=batch_id,
+        site_config = await _get_site_config()
+        await TopicBatchService(pool, site_config=site_config).edit_winner(
+            batch_id=UUID(batch_id),
             topic=topic or None,
             angle=angle or None,
         )
@@ -1348,7 +1376,8 @@ async def topics_resolve_batch(batch_id: str) -> str:
     try:
         pool = await _get_pool()
         from services.topic_batch_service import TopicBatchService
-        await TopicBatchService(pool).resolve_batch(batch_id=batch_id)
+        site_config = await _get_site_config()
+        await TopicBatchService(pool, site_config=site_config).resolve_batch(batch_id=UUID(batch_id))
         return f"Resolved {batch_id}"
     except Exception as e:
         return _format_tool_error("topics_resolve_batch", e)
@@ -1360,7 +1389,8 @@ async def topics_reject_batch(batch_id: str, reason: str = "") -> str:
     try:
         pool = await _get_pool()
         from services.topic_batch_service import TopicBatchService
-        await TopicBatchService(pool).reject_batch(batch_id=batch_id, reason=reason)
+        site_config = await _get_site_config()
+        await TopicBatchService(pool, site_config=site_config).reject_batch(batch_id=UUID(batch_id), reason=reason)
         return f"Rejected {batch_id}"
     except Exception as e:
         return _format_tool_error("topics_reject_batch", e)
