@@ -304,12 +304,16 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-infrastructure",
         "interval": "30s",
+        # absent() guard: fires (with no volume label) when windows_exporter dies
+        # and the metric family disappears entirely — belt-and-suspenders alongside
+        # the static WindowsExporterDown rule in infrastructure.yml. poindexter#705.
         "expr": (
             '(windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
             " < {threshold.disk_free_warning_gb})"
             " and on(volume) "
             '(windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
             " > {threshold.disk_min_total_gb})"
+            "\nor absent(windows_logical_disk_free_bytes)"
         ),
         "for": "10m",
         "severity": "warning",
@@ -333,6 +337,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             " and on(volume) "
             '(windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
             " > {threshold.disk_min_total_gb})"
+            "\nor absent(windows_logical_disk_free_bytes)"
         ),
         "for": "5m",
         "severity": "critical",

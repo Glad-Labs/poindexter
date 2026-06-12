@@ -644,15 +644,19 @@ async def set_setting(key: str, value: str) -> str:
     """Update a configuration setting in the database.
 
     Accepts either a bare ``key`` or the ``category/key`` form printed by
-    :func:`list_settings`. If a category prefix is supplied but does not
-    match the row's existing category, a warning is logged and the
-    update proceeds against the bare key.
+    :func:`list_settings`. The category prefix is stripped before use; only
+    the bare key is sent as the REST path parameter.
 
-    Respects agent_permissions table — checks if mcp_server is allowed to write app_settings.
+    Routes through ``PUT /api/settings/{key}`` so the service layer enforces
+    read-only protection, secret handling, and cache invalidation.
+    Respects the ``agent_permissions`` table; fails CLOSED — if the permission
+    check errors, the write is blocked rather than passed through. poindexter#750.
     """
-    bare_key, declared_category = _strip_category_prefix(key)
+    bare_key, _declared_category = _strip_category_prefix(key)
 
-    # Permission check
+    # Permission check — fail CLOSED: any exception blocks the write.
+    # The previous `except Exception: pass` silently let writes through when
+    # the agent_permissions query failed (poindexter#750).
     try:
         pool = await _get_pool()
         perm = await pool.fetchrow(
@@ -668,29 +672,16 @@ async def set_setting(key: str, value: str) -> str:
                 )
                 return f"Permission denied: change to {bare_key} queued for approval"
             return f"Permission denied: mcp_server cannot write to app_settings"
-    except Exception:
-        pass  # Permission check failed — fall through to direct DB write
-
-    try:
-        pool = await _get_pool()
-        if declared_category:
-            existing_category = await pool.fetchval(
-                "SELECT category FROM app_settings WHERE key = $1", bare_key
-            )
-            if existing_category is not None and declared_category != (existing_category or ""):
-                logger.warning(
-                    "set_setting: supplied category prefix %r does not match "
-                    "row's existing category %r for key %r — updating value anyway",
-                    declared_category, existing_category or "", bare_key,
-                )
-        await pool.execute(
-            "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            bare_key, value,
-        )
-        return f"Updated: {bare_key} = {value}"
     except Exception as e:
-        return f"Error: {e}"
+        return _format_tool_error("set_setting [permission_check]", e)
+
+    # Route through the REST API — avoids bypassing read-only protection,
+    # secret overwrite prevention, and settings-cache invalidation enforced
+    # by the service layer.  poindexter#750.
+    result = await _api("PUT", f"/api/settings/{bare_key}", {"value": value})
+    if "error" in result:
+        return f"Failed to update {bare_key}: {result['error']}"
+    return f"Updated: {bare_key} = {value}"
 
 
 @mcp.tool()

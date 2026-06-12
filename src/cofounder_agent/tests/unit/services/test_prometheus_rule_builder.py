@@ -319,3 +319,77 @@ class TestQaRailFullySkippedRule:
         ])
         out = await rb.build_current(pool)
         assert "poindexter_qa_rail_skip_ratio >= 0.9" in out
+
+
+# ---------------------------------------------------------------------------
+# WindowsExporterDown — static infrastructure.yml (poindexter#705)
+# ---------------------------------------------------------------------------
+
+
+class TestWindowsExporterDownStaticRule:
+    """WindowsExporterDown must live in the static infrastructure.yml — it is a
+    binary up/down rule with no tunable thresholds and must fire even when the
+    DB is down (when DB-rendered rules cannot be regenerated).  poindexter#705."""
+
+    @pytest.fixture
+    def infra_rules(self) -> list[dict]:
+        import pathlib
+        import yaml
+
+        alerts_path = (
+            pathlib.Path(__file__).parents[5]
+            / "infrastructure"
+            / "prometheus"
+            / "alerts"
+            / "infrastructure.yml"
+        )
+        doc = yaml.safe_load(alerts_path.read_text())
+        return [rule for group in doc["groups"] for rule in group.get("rules", [])]
+
+    def test_rule_is_present(self, infra_rules):
+        names = [r.get("alert") for r in infra_rules]
+        assert "WindowsExporterDown" in names
+
+    def test_expr_covers_absent_and_zero(self, infra_rules):
+        rule = next(r for r in infra_rules if r.get("alert") == "WindowsExporterDown")
+        expr = rule["expr"]
+        assert 'up{job="windows"} == 0' in expr
+        assert "absent(up{job=" in expr
+
+    def test_severity_critical(self, infra_rules):
+        rule = next(r for r in infra_rules if r.get("alert") == "WindowsExporterDown")
+        assert rule["labels"]["severity"] == "critical"
+
+    def test_for_at_least_2m(self, infra_rules):
+        """Sustained window so a momentary scrape hiccup doesn't page."""
+        import re
+        rule = next(r for r in infra_rules if r.get("alert") == "WindowsExporterDown")
+        dur = rule.get("for", "0m")
+        m = re.match(r"(\d+)m", dur)
+        assert m is not None, f"unexpected for duration: {dur!r}"
+        assert int(m.group(1)) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Disk absent() guards — DB-rendered rules (poindexter#705)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestDiskAbsentGuards:
+    """Both disk rules must include an absent() guard so exporter death surfaces
+    through the disk alert path in addition to WindowsExporterDown.  poindexter#705."""
+
+    async def test_disk_low_includes_absent_guard(self):
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: PoindexterDiskSpaceLow" in out
+        low_section = out.split("alert: PoindexterDiskSpaceLow")[1].split("alert:", 1)[0]
+        assert "absent(windows_logical_disk_free_bytes)" in low_section
+
+    async def test_disk_critical_includes_absent_guard(self):
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: PoindexterDiskSpaceCritical" in out
+        crit_section = out.split("alert: PoindexterDiskSpaceCritical")[1].split("alert:", 1)[0]
+        assert "absent(windows_logical_disk_free_bytes)" in crit_section

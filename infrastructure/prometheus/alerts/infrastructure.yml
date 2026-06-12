@@ -65,6 +65,25 @@ groups:
             All LLM calls are failing. Check `ollama list` on the host
             and `ollama serve` status.
 
+      # --- Windows exporter ---
+      # Must be static (not DB-rendered): binary up/down, no tunable thresholds,
+      # and must fire even when the DB is down (when dynamic rendering fails).
+      # poindexter#705 — exporter death silently kills all disk alerting.
+      - alert: WindowsExporterDown
+        expr: up{job="windows"} == 0 or absent(up{job="windows"})
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "windows_exporter is unreachable — host metrics gone"
+          description: |
+            Prometheus cannot scrape the windows_exporter target (port 9182).
+            All host metrics (disk, GPU, CPU, memory) have gone stale or absent.
+            PoindexterDiskSpaceLow/Critical is now blind.
+            Check: `Get-Process windows_exporter` in PowerShell, or
+            `Invoke-WebRequest http://localhost:9182/metrics`.
+
       # PoindexterDiskSpaceLow and PoindexterDiskSpaceCritical were here.
       # Moved to prometheus_rule_builder.py DEFAULT_RULES so operators can
       # tune the 20/10 GB free thresholds and 200 GB total-size filter via
