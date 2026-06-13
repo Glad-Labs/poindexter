@@ -162,6 +162,80 @@
     return a;
   };
 
+  // ── settings shape adapter ────────────────────────────────
+  // GET /api/settings returns SettingListResponse {total,page,per_page,pages,
+  // items:[SettingResponse]} — NOT the {categories,settings} shape the panel
+  // reads. Map a SettingResponse row → the console row shape. Secrets arrive
+  // pre-masked '********' (is_encrypted / enc: ciphertext) and must never be
+  // treated as a real value. data_type ∈ string|int|float|bool|json.
+  function adaptSetting(it) {
+    const secret = !!it.is_encrypted || it.value === '********';
+    let type = 'text';
+    if (secret) type = 'secret';
+    else if (it.data_type === 'bool') type = 'bool';
+    else if (it.data_type === 'int') type = 'int';
+    else if (it.data_type === 'float') type = 'float';
+    else if (it.data_type === 'json') type = 'textarea';
+    return {
+      id: it.id,
+      key: it.key,
+      value: it.value == null ? '' : String(it.value),
+      category: it.category || 'general',
+      description: it.description || '',
+      type,
+      is_secret: secret,
+      readOnly: !!it.is_read_only,
+    };
+  }
+
+  // Derive the category sidebar from the distinct categories actually present.
+  // Reuse the curated mock labels where known; else Title-Case the raw id.
+  function deriveCategories(rows) {
+    const known = {};
+    ((window.PX_SETTINGS && window.PX_SETTINGS.categories) || []).forEach(
+      (c) => (known[c.id] = c.label)
+    );
+    const seen = {};
+    const out = [];
+    rows.forEach((r) => {
+      if (seen[r.category]) return;
+      seen[r.category] = 1;
+      out.push({
+        id: r.category,
+        label:
+          known[r.category] ||
+          r.category
+            .replace(/[_.]/g, ' ')
+            .replace(/\b\w/g, (m) => m.toUpperCase()),
+      });
+    });
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
+  }
+
+  // Page through GET /api/settings (per_page caps at 100) until all `total`
+  // rows are loaded — the console needs the full ~685-key set, not page 1.
+  // Page 1 is awaited to learn `total`; the rest fetch in parallel.
+  async function loadAllSettings(category) {
+    const PAGE = 100;
+    const qs = (off) =>
+      '/api/settings?limit=' +
+      PAGE +
+      '&offset=' +
+      off +
+      (category ? '&category=' + encodeURIComponent(category) : '');
+    const first = await http('GET', qs(0));
+    const items = (first && first.items) || [];
+    const total = (first && first.total) || items.length;
+    const offsets = [];
+    for (let off = PAGE; off < total && off < 5000; off += PAGE)
+      offsets.push(off);
+    const more = await Promise.all(offsets.map((off) => http('GET', qs(off))));
+    more.forEach((p) => items.push(...((p && p.items) || [])));
+    const settings = items.map(adaptSetting);
+    return { settings, categories: deriveCategories(settings), total };
+  }
+
   PX.api = {
     // ── config ──────────────────────────────────────────────
     config: cfg,
@@ -230,13 +304,9 @@
 
     // ── settings ────────────────────────────────────────────
     listSettings(category) {
+      // Live: page through + adapt SettingListResponse → {settings,categories}.
       return pick(
-        () =>
-          http(
-            'GET',
-            '/api/settings' +
-              (category ? `?category=${category}&limit=100` : '?limit=100')
-          ),
+        () => loadAllSettings(category),
         () =>
           pair(window.PX_SETTINGS, {
             categories: window.PX_SETTINGS.categories,
@@ -244,11 +314,16 @@
           })
       );
     },
-    // PUT /api/settings/{id} — body shape = SettingUpdate { value, ... }
-    updateSetting(id, value) {
+    // PUT /api/settings/{key} — the path segment is the setting KEY. The numeric
+    // row id is unreliable (often just a pagination index server-side), so saves
+    // MUST key off `key`. Body = SettingUpdate { value }.
+    updateSetting(key, value) {
       return pick(
-        () => http('PUT', `/api/settings/${id}`, { value: String(value) }),
-        () => ({ id, value, ok: true }) // mock: pretend it persisted
+        () =>
+          http('PUT', `/api/settings/${encodeURIComponent(key)}`, {
+            value: String(value),
+          }),
+        () => ({ key, value, ok: true }) // mock: pretend it persisted
       );
     },
 

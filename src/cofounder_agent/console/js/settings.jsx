@@ -24,7 +24,7 @@ function Toggle({ value, onChange, disabled }) {
   );
 }
 
-function SecretField({ value, onChange, original }) {
+function SecretField({ value, onChange, original, disabled }) {
   const [editing, setEditing] = React.useState(false);
   if (editing) {
     return (
@@ -43,23 +43,52 @@ function SecretField({ value, onChange, original }) {
     <div className="set-secret">
       <Icon name="settings" size={13} />
       <span style={{ flex: 1 }}>{value}</span>
-      <button className="mbtn mbtn--ghost" onClick={() => setEditing(true)}>
+      <button
+        className="mbtn mbtn--ghost"
+        disabled={disabled}
+        onClick={() => setEditing(true)}
+      >
         Set new
       </button>
     </div>
   );
 }
 
-function SettingControl({ s, onChange }) {
+// Small inline marker for a setting row (read-only / unset). Text-labelled so
+// it reads without relying on colour (operator is colourblind).
+function SetTag({ children, title, tone }) {
+  return (
+    <span
+      className="mono"
+      title={title}
+      style={{
+        fontSize: 9,
+        marginLeft: 8,
+        padding: '1px 5px',
+        border: '1px solid var(--gl-hairline-strong)',
+        borderRadius: 3,
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+        color: tone === 'unset' ? 'var(--gl-amber)' : 'var(--gl-text-dim)',
+        verticalAlign: 'middle',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function SettingControl({ s, onChange, disabled }) {
   switch (s.type) {
     case 'bool':
-      return <Toggle value={s.value} onChange={onChange} />;
+      return <Toggle value={s.value} onChange={onChange} disabled={disabled} />;
     case 'int':
       return (
         <input
           type="number"
           step="1"
           value={s.value}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -69,12 +98,17 @@ function SettingControl({ s, onChange }) {
           type="number"
           step="0.1"
           value={s.value}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         />
       );
     case 'select':
       return (
-        <select value={s.value} onChange={(e) => onChange(e.target.value)}>
+        <select
+          value={s.value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        >
           {s.options.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -84,17 +118,27 @@ function SettingControl({ s, onChange }) {
       );
     case 'textarea':
       return (
-        <textarea value={s.value} onChange={(e) => onChange(e.target.value)} />
+        <textarea
+          value={s.value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
       );
     case 'secret':
       return (
-        <SecretField value={s.value} onChange={onChange} original={s._orig} />
+        <SecretField
+          value={s.value}
+          onChange={onChange}
+          original={s._orig}
+          disabled={disabled}
+        />
       );
     default:
       return (
         <input
           type="text"
           value={s.value}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -347,7 +391,7 @@ function SettingsMode({ onApply, pushFeed }) {
   const apply = async () => {
     setSaving(true);
     try {
-      await Promise.all(dirty.map((r) => api.updateSetting(r.id, r.value)));
+      await Promise.all(dirty.map((r) => api.updateSetting(r.key, r.value)));
       const changes = dirty.map((r) => ({
         id: r.id,
         key: r.key,
@@ -457,6 +501,7 @@ function SettingsMode({ onApply, pushFeed }) {
             )}
             {visible.map((r) => {
               const isDirty = r.value !== r._orig;
+              const isUnset = r.value === '' && !r.is_secret;
               return (
                 <div
                   key={r.id}
@@ -466,11 +511,28 @@ function SettingsMode({ onApply, pushFeed }) {
                     <div className="set-row__key">
                       {isDirty && <span className="dirtydot" />}
                       {r.key}
+                      {r.readOnly && (
+                        <SetTag title="Read-only — managed outside the console">
+                          read-only
+                        </SetTag>
+                      )}
+                      {isUnset && (
+                        <SetTag
+                          tone="unset"
+                          title="Empty — the unset sentinel ('')"
+                        >
+                          unset
+                        </SetTag>
+                      )}
                     </div>
                     <div className="set-row__desc">{r.description}</div>
                   </div>
                   <div className="set-row__ctl">
-                    <SettingControl s={r} onChange={(v) => setVal(r.id, v)} />
+                    <SettingControl
+                      s={r}
+                      disabled={r.readOnly}
+                      onChange={(v) => setVal(r.id, v)}
+                    />
                   </div>
                 </div>
               );
