@@ -66,8 +66,9 @@ The sync filter also performs content-level rewrites:
 
 - **docs.json**: operator-branded `gladlabs.io` URLs are rewritten to
   poindexter-neutral GitHub URLs so OSS forks don't inherit operator branding.
-- **CHANGELOG.md**: lines mentioning private `app_settings` keys (`mercury_*`,
-  Tailnet hostnames, hardware costs) are redacted before the mirror push.
+- **CHANGELOG.md**: lines mentioning operator-private values — private
+  finance-module `app_settings` keys, Tailnet hostnames, or hardware-cost
+  figures — are redacted before the mirror push.
 - **Operator-name regex**: the leak guard uses
   `[Mm]atthew (?:[A-Z]\.\s+)?[Gg]ladding` (with optional middle-initial
   group) to catch both the plain and middle-initial forms of the operator
