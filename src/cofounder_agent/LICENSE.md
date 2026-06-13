@@ -91,6 +91,12 @@ summarized below; see individual repositories for complete license texts.
 
 - PostgreSQL — primary relational database
 
+**Artistic License 1.0 / GPL (dual-licensed)**
+
+- text-unidecode — pulled in transitively via `python-slugify`. Glad Labs LLC
+  elects to use this component under the **Artistic License**, which is
+  permissive and compatible with Apache-2.0 redistribution.
+
 See individual component repositories for complete license texts and NOTICE files.
 
 ---

@@ -18,52 +18,13 @@ limitations under the License.
 
 ---
 
-## Why Apache 2.0?
+This file is a pointer; the license lives in two canonical places:
 
-Poindexter was previously licensed under AGPL-3.0-or-later. **Relicensed to
-Apache 2.0 on 2026-04-29** to invite integration into commercial AI/ML
-infrastructure stacks.
-
-Apache 2.0 grants:
-
-- **Freedom to use** for any purpose, including commercial
-- **Freedom to modify** and redistribute
-- **Patent grant** — contributors can't pull rug after the fact
-- **No copyleft requirement** — derived works don't have to ship source
-
-This matches the rest of the modern AI/ML stack (Prefect, Ragas, DeepEval,
-sentence-transformers, Anthropic SDK, OpenAI SDK, Kubernetes,
-TensorFlow, PyTorch — all Apache 2.0).
-
----
-
-## Poindexter Pro
-
-The engine itself is permissively licensed and free. Poindexter Pro
-($19/mo or $180/yr) is a separate **convenience subscription** that includes
-premium prompts, premium seeding scripts, and VIP Discord access. Pro is
-delivered out-of-band (license-key-gated download); it does not affect
-the Apache 2.0 license terms of this repository.
-
-For Pro details: https://gladlabs.ai
-
----
-
-## Third-Party Dependencies
-
-This software includes components with the following licenses (all permissive
-or compatible with Apache 2.0):
-
-- **FastAPI**: MIT License
-- **PostgreSQL**: PostgreSQL License (permissive)
-- **Prefect**: Apache 2.0
-- **Ragas / DeepEval**: Apache 2.0
-- **Langfuse / LangChain / LiteLLM / BERTopic**: MIT License
-- **text-unidecode**: Artistic License 1.0 / GPL (dual-licensed). Pulled
-  in transitively via prefect → python-slugify. Glad Labs LLC elects to
-  use this component under the **Artistic License**, which is permissive
-  and compatible with Apache-2.0 redistribution.
-- See individual component repositories for complete license information
+- **[`../LICENSE`](../LICENSE)** — the full, verbatim Apache License 2.0 text
+  (the repo relicensed from AGPL-3.0 on 2026-04-29).
+- **[`cofounder_agent/LICENSE.md`](cofounder_agent/LICENSE.md)** — the
+  plain-English "why Apache 2.0", the Poindexter Pro convenience-subscription
+  note, and the third-party dependency license breakdown.
 
 ---
 
