@@ -1247,6 +1247,12 @@ async def generate_task_image(
                 )
                 task_metadata = {}
 
+        # task.get("task_metadata") can be None (or a non-dict) even with a {}
+        # default — the default only applies when the key is absent, not when the
+        # stored value is null. Coerce so the indexed assignment below is safe.
+        if not isinstance(task_metadata, dict):
+            task_metadata = {}
+
         task_result["featured_image_url"] = image_url
         task_metadata["featured_image_url"] = image_url
 

@@ -872,6 +872,34 @@ class TestGenerateImage:
 
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_local_diffusers_no_active_model_returns_false(self, tmp_path):
+        """sdxl_available=True but no model activated -> guard returns False (no KeyError).
+
+        When the host SDXL call fails and we fall through to Strategy 2 with
+        diffusers reportedly available but ``_active_model`` still None, the
+        ``IMAGE_MODEL_REGISTRY[self._active_model]`` lookup would raise
+        ``KeyError(None)``. The defensive guard converts that into the method's
+        standard False failure return.
+        """
+        svc = ImageService(site_config=_test_sc())
+        svc.sdxl_available = True  # pass the diffusers-available gate
+        svc._active_model = None  # ...but nothing was activated
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True  # skip lazy init so _active_model stays None
+            result = await svc.generate_image(
+                prompt="x", output_path=str(tmp_path / "x.png"),
+            )
+
+        assert result is False
+
 
 # ---------------------------------------------------------------------------
 # _ensure_pexels_key — DB-first key loading

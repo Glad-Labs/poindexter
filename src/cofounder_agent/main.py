@@ -1052,7 +1052,7 @@ async def api_health():
     """
     try:
         # Build comprehensive health response
-        health_data = {
+        health_data: dict[str, Any] = {
             "status": "healthy",
             "service": "poindexter",
             "version": config.app_version,

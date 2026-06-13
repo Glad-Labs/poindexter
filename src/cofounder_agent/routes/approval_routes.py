@@ -314,8 +314,8 @@ async def get_pending_approvals(
                     "created_at": task.get("created_at"),
                     "quality_score": task.get("quality_score"),  # Now in root level, not nested
                     "content_preview": (
-                        task.get("content", "")[:200].replace("\n", " ")
-                        if task.get("content")
+                        content[:200].replace("\n", " ")
+                        if (content := task.get("content"))
                         else "No content available"
                     ),
                     "featured_image_url": task.get("featured_image_url"),

@@ -1091,6 +1091,9 @@ class ImageService:
             return False
 
         # Resolve defaults from the active model config
+        if self._active_model is None:
+            logger.warning("Image generation requested before a model was activated - skipping")
+            return False
         config = IMAGE_MODEL_REGISTRY[self._active_model]
         if num_inference_steps is None:
             num_inference_steps = config.default_steps
