@@ -42,7 +42,7 @@ enabled:            true  (default false)
    ```
 2. Generate and store the token:
    ```
-   poindexter set-secret alertmanager_webhook_token '<paste>'
+   poindexter settings set alertmanager_webhook_token '<paste>' --secret
    ```
 3. Enable the row:
    ```sql

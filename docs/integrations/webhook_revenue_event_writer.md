@@ -43,21 +43,23 @@ enabled:            true  (default false — flip when ready)
 2. URL: `https://<your-host>/api/webhooks/lemon_squeezy`
 3. Events to subscribe: `order_created`, `order_refunded`, `subscription_created`, `subscription_updated`, `subscription_cancelled`.
 4. Copy the signing secret Lemon Squeezy generates.
-5. Store it: `poindexter set-secret lemon_squeezy_webhook_secret '<paste>'`
+5. Store it: `poindexter settings set lemon_squeezy_webhook_secret '<paste>' --secret`
 6. Enable the row: `UPDATE webhook_endpoints SET enabled = TRUE WHERE name = 'lemon_squeezy';` (or `poindexter webhooks enable lemon_squeezy` once the CLI ships).
 7. Trigger a test order in Lemon Squeezy (free test mode works). Verify a row lands in `revenue_events`.
 
 ### Rotation
 
 1. Generate a new secret in the Lemon Squeezy dashboard.
-2. `poindexter set-secret lemon_squeezy_webhook_secret '<new value>'`
+2. `poindexter settings set lemon_squeezy_webhook_secret '<new value>' --secret`
 3. Lemon Squeezy will retry failed calls with the new secret automatically.
 
 ### Test-fire without a real order
 
 ```bash
-# Paste your current secret:
-SECRET=$(poindexter get-secret lemon_squeezy_webhook_secret)
+# Read your stored signing secret back. --reveal decrypts the is_secret row and
+# prints the bare value to stdout (warning goes to stderr), so $(…) captures
+# just the secret:
+SECRET=$(poindexter settings get lemon_squeezy_webhook_secret --reveal)
 BODY='{"meta":{"event_name":"order_created","webhook_id":"test-1"},"data":{"id":"999","attributes":{"total":2900,"user_email":"test@example.com"}}}'
 SIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
 curl -X POST https://<your-host>/api/webhooks/lemon_squeezy \

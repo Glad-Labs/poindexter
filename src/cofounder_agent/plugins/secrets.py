@@ -147,13 +147,25 @@ async def get_secret(conn: Any, key: str) -> str | None:
     return plaintext
 
 
-async def set_secret(conn: Any, key: str, value: str, description: str = "") -> None:
+async def set_secret(
+    conn: Any,
+    key: str,
+    value: str,
+    description: str = "",
+    category: str = "secrets",
+) -> None:
     """Write an encrypted secret into ``app_settings``.
 
     Upserts with ``is_secret=true``. Always encrypts, regardless of
     whether the row already existed as a plain setting — that's the
     safe default; demotion from secret → plain is explicit via
     :func:`demote_secret`.
+
+    ``category`` lands on NEW rows only (default ``"secrets"``); on
+    conflict the existing row's category is preserved, matching the
+    historical behaviour. Callers that want a non-default home — e.g.
+    the generic ``poindexter settings set <key> <val> --secret
+    --category finance`` path — pass it through here.
     """
     ciphertext = await conn.fetchval(
         "SELECT encode(pgp_sym_encrypt($1, $2), 'base64')",
@@ -164,7 +176,7 @@ async def set_secret(conn: Any, key: str, value: str, description: str = "") -> 
     await conn.execute(
         """
         INSERT INTO app_settings (key, value, category, description, is_secret)
-        VALUES ($1, $2, 'secrets', $3, TRUE)
+        VALUES ($1, $2, $3, $4, TRUE)
         ON CONFLICT (key) DO UPDATE
             SET value = EXCLUDED.value,
                 is_secret = TRUE,
@@ -173,6 +185,7 @@ async def set_secret(conn: Any, key: str, value: str, description: str = "") -> 
         """,
         key,
         stored,
+        category,
         description,
     )
 

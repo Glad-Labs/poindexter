@@ -58,8 +58,8 @@ The orchestrator generates the platform-appropriate copy, looks up enabled `publ
 
 ```bash
 # 1. Register the credentials.
-poindexter settings set --secret bluesky_identifier 'your-handle.bsky.social'
-poindexter settings set --secret bluesky_app_password 'xxxx-xxxx-xxxx-xxxx'
+poindexter settings set bluesky_identifier 'your-handle.bsky.social' --secret
+poindexter settings set bluesky_app_password 'xxxx-xxxx-xxxx-xxxx' --secret
 
 # 2. Verify the seed row exists (the publishing_adapters migration ships it disabled-or-enabled).
 poindexter publishers list

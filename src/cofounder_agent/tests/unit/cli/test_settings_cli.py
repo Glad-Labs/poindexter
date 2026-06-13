@@ -23,6 +23,7 @@ Tests use mocked asyncpg connections — no real DB.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -283,3 +284,164 @@ class TestSettingsListFormat:
             pytest.fail(
                 f"No row started with the bare key — output was:\n{result.output}"
             )
+
+
+# ---------------------------------------------------------------------------
+# settings set --secret — encrypted generic-secret path
+# ---------------------------------------------------------------------------
+
+
+def _patch_asyncpg_connect_secret():
+    """Patch ``asyncpg.connect`` for the ``--secret`` path.
+
+    The secret path routes through ``plugins.secrets.set_secret``, which
+    calls ``conn.fetchval`` (pgcrypto encrypt) then ``conn.execute`` (the
+    upsert), preceded by ``ensure_pgcrypto``'s own ``conn.execute``. The
+    mock returns a fake base64 ciphertext so we never need a real DB.
+    """
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value="ZmFrZQ==")  # base64("fake")
+    conn.execute = AsyncMock(return_value="INSERT 0 1")
+    conn.close = AsyncMock()
+    return patch("asyncpg.connect", new=AsyncMock(return_value=conn)), conn
+
+
+def _find_insert_call(conn):
+    """The ``conn.execute`` call carrying the app_settings upsert SQL."""
+    for call in conn.execute.await_args_list:
+        if call.args and "INSERT INTO app_settings" in call.args[0]:
+            return call
+    return None
+
+
+@pytest.mark.unit
+class TestSettingsSetSecret:
+    """`settings set --secret` encrypts via the pgcrypto helper."""
+
+    def test_secret_flag_encrypts_and_hides_value(self, runner, monkeypatch):
+        """The plaintext is encrypted (enc:v1: sentinel) and never echoed."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, conn = _patch_asyncpg_connect_secret()
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "acme_api_token", "super-secret-token", "--secret"],
+            )
+
+        assert result.exit_code == 0, result.output
+        # The plaintext must never appear on the terminal.
+        assert "super-secret-token" not in result.output
+        # The stored value is ciphertext, not the plaintext.
+        insert = _find_insert_call(conn)
+        assert insert is not None, "set_secret never issued the upsert"
+        assert insert.args[2].startswith("enc:v1:")
+        assert "super-secret-token" not in insert.args[2]
+
+    def test_secret_flag_defaults_category_to_secrets(self, runner, monkeypatch):
+        """No --category given → the secret lands in the 'secrets' category."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, conn = _patch_asyncpg_connect_secret()
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["set", "some_token", "v", "--secret"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _find_insert_call(conn).args[3] == "secrets"
+
+    def test_secret_flag_honors_explicit_category(self, runner, monkeypatch):
+        """An explicit --category is threaded through to set_secret."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, conn = _patch_asyncpg_connect_secret()
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "acme_api_token", "v", "--secret", "--category", "integrations"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _find_insert_call(conn).args[3] == "integrations"
+
+    def test_secret_flag_creates_new_key_without_allow_new(self, runner, monkeypatch):
+        """Operator secrets aren't phantom-key-guarded.
+
+        Every other set_secret caller upserts unconditionally, so a
+        brand-new secret key must NOT require --allow-new (the docs don't
+        show it).
+        """
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        ctx, conn = _patch_asyncpg_connect_secret()
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["set", "brand_new_secret_key", "v", "--secret"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _find_insert_call(conn) is not None
+
+
+# ---------------------------------------------------------------------------
+# settings get --reveal — value-only decrypt for test-fires
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSettingsGetReveal:
+    """`settings get --reveal` decrypts and prints the bare plaintext."""
+
+    @staticmethod
+    def _patch_reveal_conn(*, row, decrypted):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=row)
+        conn.fetchval = AsyncMock(return_value=decrypted)
+        conn.close = AsyncMock()
+        return patch("asyncpg.connect", new=AsyncMock(return_value=conn)), conn
+
+    def test_reveal_prints_value_only_to_stdout(self, monkeypatch):
+        """stdout is the bare plaintext (scriptable); warning goes to stderr."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        runner = CliRunner(mix_stderr=False)
+        ctx, _conn = self._patch_reveal_conn(
+            row={"value": "enc:v1:abc", "is_secret": True},
+            decrypted="the-decrypted-secret",
+        )
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group,
+                ["get", "lemon_squeezy_webhook_secret", "--reveal"],
+            )
+
+        assert result.exit_code == 0, result.stderr
+        # Exactly the value + newline — nothing else — so SECRET=$(…) works.
+        assert result.stdout == "the-decrypted-secret\n"
+        # The exposure warning is on stderr, keeping stdout clean.
+        assert "reveal" in result.stderr.lower()
+
+    def test_reveal_json_includes_plaintext(self, monkeypatch):
+        """--reveal --json emits structured output with the plaintext value."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        runner = CliRunner(mix_stderr=False)
+        ctx, _conn = self._patch_reveal_conn(
+            row={"value": "enc:v1:abc", "is_secret": True},
+            decrypted="plain",
+        )
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(
+                settings_group, ["get", "k", "--reveal", "--json"],
+            )
+
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["value"] == "plain"
+
+    def test_reveal_missing_key_fails_loud(self, monkeypatch):
+        """An absent key exits non-zero rather than printing an empty secret."""
+        monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
+        runner = CliRunner(mix_stderr=False)
+        ctx, _conn = self._patch_reveal_conn(row=None, decrypted=None)
+        with _patch_resolve_dsn(), ctx:
+            result = runner.invoke(settings_group, ["get", "nope", "--reveal"])
+
+        assert result.exit_code != 0
+        assert "nope" in (result.stdout + result.stderr)

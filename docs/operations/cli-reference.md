@@ -237,18 +237,35 @@ poindexter settings list --limit 100 --json-output
 
 ### `settings get <key>`
 
+`--reveal` decrypts an `is_secret` row and prints the bare plaintext to
+stdout (a warning goes to stderr), so it's safe to capture in a script —
+e.g. a webhook HMAC test-fire. Without `--reveal`, encrypted values stay
+redacted as `******* (encrypted)`.
+
 ```bash
 poindexter settings get qa_final_score_threshold
-poindexter settings get cli_oauth_client_id --json-output
+poindexter settings get cli_oauth_client_id --json
+poindexter settings get lemon_squeezy_webhook_secret --reveal   # decrypt for a test-fire
 ```
 
 ### `settings set <key> <value>`
 
-Upsert — creates if missing, updates if present.
+Upsert — creates if missing (with `--allow-new`), updates if present.
+
+`--secret` stores the value **encrypted at rest** (pgcrypto) and flags the
+row `is_secret=true`, routing through the same path as the per-surface
+`<surface> set-secret` commands. The plaintext is never echoed back, the
+category defaults to `secrets` (override with `--category`), and
+`--allow-new` is implied (operator credentials aren't phantom-key-guarded).
+Read one back with `settings get <key> --reveal`.
 
 ```bash
 poindexter settings set qa_final_score_threshold 75
 poindexter settings set qa_gate_weight 0 --category qa --description "Gates are veto-only, not scored"
+
+# Encrypted secrets — generic app_settings keys with no dedicated surface row:
+poindexter settings set google_oauth_client_secret '<value>' --secret
+poindexter settings set acme_api_token '<value>' --secret --category integrations
 ```
 
 ### `settings disable <key>` / `settings enable <key>`

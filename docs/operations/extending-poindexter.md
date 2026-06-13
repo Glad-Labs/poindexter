@@ -267,8 +267,8 @@ Store credentials in app_settings with `is_secret=true` so they're
 redacted from logs and lists:
 
 ```bash
-poindexter settings set my_platform_api_token "xxx" --category secrets
-poindexter settings set my_platform_enabled true
+poindexter settings set my_platform_api_token "xxx" --secret
+poindexter settings set my_platform_enabled true --allow-new
 ```
 
 Register the adapter by inserting a `publishing_adapters` row and wiring a

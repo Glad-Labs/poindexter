@@ -180,16 +180,71 @@ def settings_list(
 @settings_group.command("get")
 @click.argument("key")
 @click.option("--json", "json_output", is_flag=True)
-def settings_get(key: str, json_output: bool) -> None:
+@click.option(
+    "--reveal",
+    is_flag=True,
+    help="Decrypt and print the plaintext of an ``is_secret`` row. The bare "
+         "value goes to stdout (so ``SECRET=$(poindexter settings get <key> "
+         "--reveal)`` is scriptable for HMAC test-fires); a one-line "
+         "exposure warning goes to stderr. Without ``--reveal`` an encrypted "
+         "value stays redacted as ``******* (encrypted)``.",
+)
+def settings_get(key: str, json_output: bool, reveal: bool) -> None:
     """Get a specific setting by key.
 
     Accepts either a bare key or the ``category/key`` form rendered by
     older ``settings list`` output. The ``category/`` prefix is
     auto-stripped before the lookup — see :func:`_split_category_prefix`.
+
+    By default an ``is_secret`` value is redacted. Pass ``--reveal`` to
+    decrypt it via ``plugins.secrets.get_secret`` and print the bare
+    plaintext to stdout (warning on stderr) — for operator test-fires
+    that need the raw secret.
     """
     # Auto-strip the optional category/ prefix so copy-paste from the
     # display form still resolves. Mirrors the MCP server's behaviour.
     canonical_key, _supplied_prefix = _split_category_prefix(key)
+
+    if reveal:
+        async def _reveal() -> str | None:
+            import asyncpg
+
+            from plugins.secrets import get_secret
+            from poindexter.cli._bootstrap import ensure_secret_key, resolve_dsn
+
+            # Load POINDEXTER_SECRET_KEY from bootstrap.toml — a bare CLI
+            # invocation doesn't inherit it the way the worker does.
+            ensure_secret_key()
+            conn = await asyncpg.connect(resolve_dsn())
+            try:
+                # get_secret decrypts is_secret rows and returns plain rows
+                # verbatim, so --reveal works for any key.
+                return await get_secret(conn, canonical_key)
+            finally:
+                await conn.close()
+
+        try:
+            plaintext = _run(_reveal())
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+
+        if plaintext is None:
+            click.echo(f"No setting found for key '{canonical_key}'", err=True)
+            sys.exit(1)
+
+        # Warn on stderr so stdout stays a clean, scriptable value.
+        click.secho(
+            f"warning: revealing decrypted secret value for "
+            f"{canonical_key!r} — handle with care",
+            fg="yellow",
+            err=True,
+        )
+        if json_output:
+            click.echo(json.dumps({"key": canonical_key, "value": plaintext}, default=str))
+        else:
+            click.echo(plaintext)
+        return
 
     async def _get():
         async with WorkerClient() as c:
@@ -222,16 +277,35 @@ def settings_get(key: str, json_output: bool) -> None:
 @click.option("--category", default="general", show_default=True)
 @click.option("--description", default="", help="Optional human-readable description.")
 @click.option(
+    "--secret",
+    "secret_flag",
+    is_flag=True,
+    help="Store the value ENCRYPTED at rest (pgcrypto) and flag the row "
+         "``is_secret=true``. Routes through ``plugins.secrets.set_secret`` "
+         "— the same encrypted-write path the per-surface ``<surface> "
+         "set-secret`` commands use. The plaintext is never echoed back. "
+         "Category defaults to ``secrets`` unless ``--category`` is given. "
+         "``--allow-new`` is implied (operator-provided credentials aren't "
+         "phantom-key-guarded). Read one back with ``settings get <key> "
+         "--reveal``.",
+)
+@click.option(
     "--allow-new",
     is_flag=True,
     help="Allow creating a brand-new setting key. Without this flag, an "
          "unknown bare key fails loud rather than silently upserting a "
          "row no consumer will read. Orthogonal to the slash-prefix "
          "handling — ``category/key`` always resolves to the bare "
-         "canonical key, never creates a phantom row.",
+         "canonical key, never creates a phantom row. Ignored with "
+         "``--secret`` (the secret path always upserts).",
 )
 def settings_set(
-    key: str, value: str, category: str, description: str, allow_new: bool,
+    key: str,
+    value: str,
+    category: str,
+    description: str,
+    secret_flag: bool,
+    allow_new: bool,
 ) -> None:
     """Upsert a setting by key — creates it (with ``--allow-new``) or updates if present.
 
@@ -258,6 +332,59 @@ def settings_set(
     the leftmost token is always the bare key.
     """
     canonical_key, supplied_prefix = _split_category_prefix(key)
+
+    if secret_flag:
+        # Encrypted generic-secret path. Routes through the same pgcrypto
+        # helper as the per-surface ``<surface> set-secret`` commands, so
+        # every ``is_secret=true`` row stays encrypted under one key. The
+        # phantom-key guard (Cases A–D below) is for typo'd *tunable*
+        # keys; operator secrets are explicit credentials for known
+        # integrations, so — like every other set_secret caller — we
+        # upsert unconditionally and don't require ``--allow-new``.
+        ctx = click.get_current_context()
+        source = ctx.get_parameter_source("category")
+        resolved_category = (
+            "secrets"
+            if (source is not None and source.name == "DEFAULT")
+            else category
+        )
+
+        async def _upsert_secret() -> None:
+            import asyncpg
+
+            from plugins.secrets import ensure_pgcrypto, set_secret
+            from poindexter.cli._bootstrap import ensure_secret_key, resolve_dsn
+
+            # plugins.secrets reads POINDEXTER_SECRET_KEY from the env; a
+            # bare ``poindexter <cmd>`` invocation hasn't loaded it the way
+            # the worker process does, so pull it from bootstrap.toml first.
+            ensure_secret_key()
+            conn = await asyncpg.connect(resolve_dsn())
+            try:
+                await ensure_pgcrypto(conn)
+                await set_secret(
+                    conn,
+                    canonical_key,
+                    value,
+                    description=description,
+                    category=resolved_category,
+                )
+            finally:
+                await conn.close()
+
+        try:
+            _run(_upsert_secret())
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+
+        # Deliberately do NOT echo the value — only confirm the write.
+        click.secho(
+            f"Stored (encrypted): {canonical_key} "
+            f"[category={resolved_category}, is_secret=true]",
+            fg="green",
+        )
+        return
 
     async def _upsert() -> bool:
         import asyncpg

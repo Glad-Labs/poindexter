@@ -60,7 +60,7 @@ await generate_and_distribute_social_posts(
 #    Required scope: write:statuses
 # 2. Register the credentials.
 poindexter settings set mastodon_instance_url 'https://mastodon.social'
-poindexter settings set --secret mastodon_access_token '<token>'
+poindexter settings set mastodon_access_token '<token>' --secret
 
 # 3. The mastodon_main row is seeded disabled by default.
 poindexter publishers enable mastodon_main

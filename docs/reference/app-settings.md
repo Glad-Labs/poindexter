@@ -4,7 +4,7 @@
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 842 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
-> Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
+> Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
 > **To regenerate:** `python scripts/regen-app-settings-doc.py`
 
@@ -17,8 +17,8 @@ SELECT key, value, updated_at FROM app_settings WHERE key = 'content_quality_min
 -- Write (non-secret)
 UPDATE app_settings SET value = '78', updated_at = NOW() WHERE key = 'content_quality_minimum';
 
--- Write (secret — use the helper so pgcrypto encrypts on write)
--- See services/plugins/secrets.py::set_secret() for the Python API.
+-- Write (secret) — raw SQL can't encrypt; use the CLI instead:
+--   poindexter settings set <key> <value> --secret
 ```
 
 The worker re-reads on every poll; no restart needed.

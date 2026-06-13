@@ -45,7 +45,7 @@ await deliver("vercel_isr",
 ### First-time setup
 
 1. Generate a shared secret (any random string). Store it on both sides:
-   - Poindexter: `poindexter set-secret revalidate_secret '<paste>'`
+   - Poindexter: `poindexter settings set revalidate_secret '<paste>' --secret`
    - Next.js `.env`: `REVALIDATE_SECRET=<same value>`
 2. Ensure the Next.js app has a route at `/api/revalidate` that reads `x-revalidate-secret` and calls `revalidatePath()` / `revalidateTag()` accordingly.
 3. Enable the row:
@@ -65,7 +65,7 @@ UPDATE webhook_endpoints SET url = 'https://newdomain.example' WHERE name = 'ver
 
 ### Rotating the secret
 
-1. Update both sides: `poindexter set-secret revalidate_secret '<new>'` AND Next.js env.
+1. Update both sides: `poindexter settings set revalidate_secret '<new>' --secret` AND Next.js env.
 2. Redeploy Next.js so it picks up the new env.
 
 ### Disabling

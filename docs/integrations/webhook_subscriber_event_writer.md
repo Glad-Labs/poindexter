@@ -37,7 +37,7 @@ enabled:            true  (default false)
 2. URL: `https://<your-host>/api/webhooks/resend`
 3. Subscribe to: `email.sent`, `email.delivered`, `email.opened`, `email.clicked`, `email.bounced`, `email.complained`.
 4. Copy the signing secret (starts with `whsec_...`).
-5. `poindexter set-secret resend_webhook_secret '<paste>'`
+5. `poindexter settings set resend_webhook_secret '<paste>' --secret`
 6. `UPDATE webhook_endpoints SET enabled = TRUE WHERE name = 'resend';`
 7. Send a test email from Resend. Verify a row lands in `subscriber_events`.
 

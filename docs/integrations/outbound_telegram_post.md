@@ -37,7 +37,7 @@ await deliver("telegram_ops", "Critical alert: pipeline stopped",
 1. Chat with @BotFather on Telegram → `/newbot` → save the bot token.
 2. Start a chat with your bot and send it any message (so Telegram registers you as a valid recipient).
 3. Find your chat_id (visit `https://api.telegram.org/bot<TOKEN>/getUpdates`).
-4. Store the token: `poindexter set-secret telegram_bot_token '<paste>'`
+4. Store the token: `poindexter settings set telegram_bot_token '<paste>' --secret`
 5. Seed or update the row:
    ```sql
    UPDATE webhook_endpoints

@@ -224,8 +224,8 @@ async def main() -> None:
         ),
         "",
         "> Generated values are example/per-operator. Set yours via "
-        "`poindexter set <key> <value>` or `poindexter settings set "
-        "<key> <value> --secret` for `is_secret=true` rows.",
+        "`poindexter settings set <key> <value>` (add `--secret` to store "
+        "the value encrypted with `is_secret=true`).",
         "",
         "> **To regenerate:** `python scripts/regen-app-settings-doc.py`",
         "",
@@ -238,8 +238,8 @@ async def main() -> None:
         "-- Write (non-secret)",
         "UPDATE app_settings SET value = '78', updated_at = NOW() WHERE key = 'content_quality_minimum';",
         "",
-        "-- Write (secret — use the helper so pgcrypto encrypts on write)",
-        "-- See services/plugins/secrets.py::set_secret() for the Python API.",
+        "-- Write (secret) — raw SQL can't encrypt; use the CLI instead:",
+        "--   poindexter settings set <key> <value> --secret",
         "```",
         "",
         "The worker re-reads on every poll; no restart needed.",
