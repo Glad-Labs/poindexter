@@ -7,6 +7,7 @@ Uses asyncpg DatabaseService for async database access.
 
 import json
 import uuid as uuid_lib
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -67,7 +68,7 @@ def _normalize_seo_keywords_in_task(task: dict[str, Any]) -> dict[str, Any]:
     return task
 
 
-def _check_task_ownership(task: dict, current_user: Any) -> None:
+def _check_task_ownership(task: Mapping[str, Any], current_user: Any) -> None:
     """
     Verify the current user owns the task.
 

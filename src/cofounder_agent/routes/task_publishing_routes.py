@@ -13,6 +13,7 @@ import json
 import os
 import re
 import uuid as uuid_lib
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -41,7 +42,7 @@ logger = get_logger(__name__)
 publishing_router = APIRouter(tags=["Task Publishing"])
 
 
-def _check_task_ownership(task: dict, current_user: Any) -> None:
+def _check_task_ownership(task: Mapping[str, Any], current_user: Any) -> None:
     """Ownership check — local copy to avoid circular import.
 
     `routes.task_routes` imports `publishing_router` from this module (late
