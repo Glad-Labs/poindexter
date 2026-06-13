@@ -25,16 +25,21 @@
       `mock:` branch. Implement/verify the live branch for one
       surface, leave the rest on mock, repeat. Search "TODO(live)".
 
-   Endpoint map (all confirmed in src/cofounder_agent/routes/):
+   Endpoint map (VERIFIED against src/cofounder_agent/routes/):
+     token         POST /token   (grant_type=client_credentials → JWT)
+     health        GET  /api/health
      settings      GET  /api/settings           · PUT /api/settings/{id}
-     approvals     GET  /api/approvals          · POST /api/approvals/{id}/{approve|reject}
-     tasks         GET  /api/tasks, /{id}        · POST /api/tasks/{id}/{retry|cancel}
+     approvals     GET  /api/tasks/pending-approval
+                   POST /api/tasks/{id}/{approve|reject|publish}  (approve != publish)
+     tasks         GET  /api/tasks, /{id}        · PUT /api/tasks/{id}/status  (retry→pending)
+                   DELETE /api/tasks/{id}  (cancel)
      events        GET  /api/pipeline/events
      memory        GET  /api/memory/stats, /api/memory/search
-     probes        GET  /probes
      posts         GET  /api/posts
      analytics     GET  /api/analytics/views
-     gpu           Prometheus GET /api/v1/query  (separate origin, :9090)
+     gpu           Prometheus GET /api/v1/query  (separate origin, :9091)
+   NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
+   discovery, NOT service health. Service health = Prometheus up{} + /api/health.
    ══════════════════════════════════════════════════════════════ */
 (function () {
   const LS = window.localStorage;
@@ -248,21 +253,38 @@
     },
 
     // ── approvals (Action Inbox · approve kind) ─────────────
+    // Real endpoints live under /api/tasks — there is NO /api/approvals.
+    // pending-approval → {total, count, tasks:[…]}. approve / reject / publish
+    // are three distinct operator gates: approve only STAGES (auto_publish
+    // defaults false), publish ships. (See feedback_human_approval.)
     listApprovals() {
       return pick(
-        () => http('GET', '/api/approvals'),
-        () => mock().inbox.filter((i) => i.kind === 'approve')
+        () => http('GET', '/api/tasks/pending-approval?limit=50'),
+        () => ({ tasks: mock().inbox.filter((i) => i.kind === 'approve') })
       );
     },
-    approve(id) {
+    approve(id, opts = {}) {
+      // Stage only — never auto-publish from the approve action.
       return pick(
-        () => http('POST', `/api/approvals/${id}/approve`),
+        () =>
+          http('POST', `/api/tasks/${id}/approve`, {
+            approved: true,
+            auto_publish: false,
+            ...opts,
+          }),
         () => ({ ok: true })
       );
     },
-    reject(id) {
+    reject(id, human_feedback = '') {
       return pick(
-        () => http('POST', `/api/approvals/${id}/reject`),
+        () => http('POST', `/api/tasks/${id}/reject`, { human_feedback }),
+        () => ({ ok: true })
+      );
+    },
+    publishTask(id) {
+      // Separate gate after approve. Ships the staged task.
+      return pick(
+        () => http('POST', `/api/tasks/${id}/publish`),
         () => ({ ok: true })
       );
     },
@@ -281,14 +303,17 @@
       );
     },
     retryTask(id) {
+      // No dedicated /retry route — reset to pending so the flow re-claims it
+      // (also the moment to clear any poisoned LangGraph checkpoint).
       return pick(
-        () => http('POST', `/api/tasks/${id}/retry`),
+        () => http('PUT', `/api/tasks/${id}/status`, { status: 'pending' }),
         () => ({ ok: true })
       );
     },
     killTask(id) {
+      // Cancel == DELETE the task row (there is no POST /cancel).
       return pick(
-        () => http('POST', `/api/tasks/${id}/cancel`),
+        () => http('DELETE', `/api/tasks/${id}`),
         () => ({ ok: true })
       );
     },

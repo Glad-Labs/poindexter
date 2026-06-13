@@ -18,6 +18,10 @@ function DL({ rows }) {
 
 function Drawer({ entity, onClose, actions }) {
   const open = !!entity;
+  // Reject-with-feedback sub-state for the approve drawer. Two-gate model:
+  // Approve STAGES the post; Reject sends it back to edit with operator notes.
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [feedback, setFeedback] = useState('');
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -25,6 +29,11 @@ function Drawer({ entity, onClose, actions }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Reset the reject panel whenever the drawer target changes.
+  useEffect(() => {
+    setRejectOpen(false);
+    setFeedback('');
+  }, [entity]);
 
   let title = '',
     eyebrow = '',
@@ -41,58 +50,131 @@ function Drawer({ entity, onClose, actions }) {
           title = e.title;
           body = (
             <>
+              {d.featured_image_url ? (
+                <>
+                  <div className="section-label">Featured image</div>
+                  <img
+                    src={d.featured_image_url}
+                    alt=""
+                    loading="lazy"
+                    style={{
+                      width: '100%',
+                      borderRadius: 8,
+                      border: '1px solid var(--gl-hairline-strong)',
+                      marginBottom: 12,
+                      display: 'block',
+                    }}
+                  />
+                </>
+              ) : null}
               <div className="section-label">Draft preview</div>
               <div className="preview">
                 <h4>{e.title}</h4>
-                <p>{d.excerpt}</p>
-                <p className="mono c-dim" style={{ fontSize: 10 }}>
-                  … {d.topic} · created {d.created}
+                <p>
+                  {d.excerpt || (
+                    <span className="c-dim">No preview available.</span>
+                  )}
                 </p>
+                {d.topic ? (
+                  <p className="mono c-dim" style={{ fontSize: 10 }}>
+                    {d.topic}
+                    {e.age ? ` · ${e.age}` : ''}
+                  </p>
+                ) : null}
               </div>
-              <div className="section-label">
-                Quality breakdown · {d.quality}/100
-              </div>
-              {(d.breakdown || []).map(([k, v]) => (
-                <div key={k} style={{ marginBottom: 8 }}>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: 3,
-                    }}
-                  >
-                    <span className="c-muted">{k}</span>
-                    <span className="c-text tnum">{v}</span>
+              {d.quality != null ? (
+                <>
+                  <div className="section-label">
+                    Quality · {Math.round(d.quality)}/100
                   </div>
-                  <Meter
-                    value={v}
-                    max={100}
-                    color={v >= 80 ? 'mint' : 'amber'}
-                  />
-                </div>
-              ))}
+                  {Array.isArray(d.breakdown) && d.breakdown.length ? (
+                    d.breakdown.map(([k, v]) => (
+                      <div key={k} style={{ marginBottom: 8 }}>
+                        <div
+                          className="mono"
+                          style={{
+                            fontSize: 11,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            marginBottom: 3,
+                          }}
+                        >
+                          <span className="c-muted">{k}</span>
+                          <span className="c-text tnum">{v}</span>
+                        </div>
+                        <Meter
+                          value={v}
+                          max={100}
+                          color={v >= 80 ? 'mint' : 'amber'}
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <Meter
+                      value={Math.round(d.quality)}
+                      max={100}
+                      color={d.quality >= 80 ? 'mint' : 'amber'}
+                    />
+                  )}
+                </>
+              ) : null}
               <div className="section-label">Routing</div>
               <DL
                 rows={[
-                  ['Channels', 'Blog · Newsletter'],
-                  ['Topic', d.topic],
-                  ['Model', 'Ollama glm-4.7-50b'],
-                  ['Stage', 'awaiting_approval'],
+                  ['Topic', d.topic || '—'],
+                  ['Stage', d.pipeline || 'awaiting_approval'],
+                  ['Task', d.task || e.id],
                 ]}
               />
+              {rejectOpen ? (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label>Reason for sending back</label>
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    value={feedback}
+                    onChange={(ev) => setFeedback(ev.target.value)}
+                    placeholder="What needs to change before this can be approved?"
+                    style={{ resize: 'vertical' }}
+                  />
+                </div>
+              ) : null}
             </>
           );
-          foot = (
+          foot = rejectOpen ? (
+            <>
+              <button
+                className="mbtn mbtn--danger"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => {
+                  e.detail = { ...(e.detail || {}), feedback };
+                  actions.reject(e);
+                }}
+              >
+                <Icon name="x" size={13} />
+                Send back to edit
+              </button>
+              <button
+                className="mbtn mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => {
+                  setRejectOpen(false);
+                  setFeedback('');
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
             <>
               <button
                 className="mbtn mbtn--primary"
                 style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                title="Stage for publish — does not go live"
                 onClick={() => actions.approve(e)}
               >
                 <Icon name="check" size={13} />
-                Approve & Publish
+                Approve
               </button>
               <button
                 className="mbtn"
@@ -104,7 +186,7 @@ function Drawer({ entity, onClose, actions }) {
               <button
                 className="mbtn mbtn--ghost mbtn--danger"
                 style={{ padding: '10px 14px' }}
-                onClick={() => actions.reject(e)}
+                onClick={() => setRejectOpen(true)}
               >
                 <Icon name="x" size={13} />
                 Reject
@@ -301,7 +383,10 @@ function Drawer({ entity, onClose, actions }) {
               <button
                 className="mbtn mbtn--primary"
                 style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
-                onClick={() => actions.approve(e)}
+                onClick={() => {
+                  actions.mediaApprove(e.detail);
+                  onClose();
+                }}
               >
                 <Icon name="check" size={13} />
                 Publish to channel

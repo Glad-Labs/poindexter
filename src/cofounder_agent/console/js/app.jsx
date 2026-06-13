@@ -23,6 +23,7 @@ const RAIL = [
 function App() {
   const PX = window.PX;
   const [inbox, setInbox] = useS(PX.inbox);
+  const [approved, setApproved] = useS([]); // live: staged tasks, awaiting publish
   const [services, setServices] = useS(PX.services);
   const [gpu, setGpu] = useS(PX.gpu);
   const [feed, setFeed] = useS(() =>
@@ -86,6 +87,34 @@ function App() {
     return () => {
       clearInterval(feedTimer);
       clearInterval(gpuTimer);
+    };
+  }, []);
+
+  // ── Live: load real pending approvals into the inbox ──────
+  // In live mode the inbox shows ONLY real /api/tasks/pending-approval rows.
+  // Other inbox kinds (fail/alert/drift/media) stay empty here until their own
+  // phases wire them — we never carry mock rows into a live view.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const [pending, appr] = await Promise.all([
+          PX.api.listApprovals(),
+          PX.api.listTasks('?status=approved&limit=50'),
+        ]);
+        if (!alive) return;
+        setInbox(((pending && pending.tasks) || []).map(approvalToInbox));
+        setApproved((Array.isArray(appr) ? appr : appr && appr.tasks) || []);
+      } catch (e) {
+        pushToast(`Approvals load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
     };
   }, []);
 
@@ -169,27 +198,63 @@ function App() {
   const closeDrawer = () => setEntity(null);
 
   const A = {
-    approve: (e) => {
+    // Approve STAGES the task (auto_publish=false). Optimistic remove + roll
+    // back on failure. Publish is a separate gate (below).
+    approve: async (e) => {
+      const prev = inbox;
       removeInbox(e.id);
       closeDrawer();
-      pushToast(
-        `Approved — “${trunc(e.title)}” queued to publish`,
-        'mint',
-        '✓'
-      );
-      pushFeed(
-        ['mint', 'PUBLISH'],
-        `operator approved <b>${trunc(e.title)}</b> → publish queue`
-      );
+      try {
+        await PX.api.approve(e.id);
+        pushToast(
+          `Approved — “${trunc(e.title)}” staged (not published)`,
+          'mint',
+          '✓'
+        );
+        pushFeed(
+          ['mint', 'APPROVE'],
+          `operator approved <b>${trunc(e.title)}</b> → staged`
+        );
+        // Surface it in the ready-to-publish list (the poll reconciles later).
+        setApproved((a) => [
+          { id: e.id, title: e.title, quality: e.detail?.quality },
+          ...a.filter((t) => t.id !== e.id),
+        ]);
+      } catch (err) {
+        setInbox(prev);
+        pushToast(`Approve failed — ${err.message}`, 'red', '✕');
+      }
     },
-    reject: (e) => {
+    // Publish SHIPS a staged task — the deliberate second gate after approve.
+    publish: async (e) => {
+      closeDrawer();
+      try {
+        await PX.api.publishTask(e.id);
+        setApproved((a) => a.filter((t) => t.id !== e.id));
+        pushToast(`Published — “${trunc(e.title)}” is live`, 'mint', '✓');
+        pushFeed(
+          ['mint', 'PUBLISH'],
+          `operator published <b>${trunc(e.title)}</b>`
+        );
+      } catch (err) {
+        pushToast(`Publish failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    reject: async (e) => {
+      const prev = inbox;
       removeInbox(e.id);
       closeDrawer();
-      pushToast(`Rejected — sent back to edit`, 'amber', '⚠');
-      pushFeed(
-        ['amber', 'REVIEW'],
-        `operator rejected <b>${trunc(e.title || '#' + (e.detail?.task || ''))}</b>`
-      );
+      try {
+        await PX.api.reject(e.id, e.detail?.feedback || '');
+        pushToast(`Rejected — sent back to edit`, 'amber', '⚠');
+        pushFeed(
+          ['amber', 'REVIEW'],
+          `operator rejected <b>${trunc(e.title || '#' + (e.detail?.task || ''))}</b>`
+        );
+      } catch (err) {
+        setInbox(prev);
+        pushToast(`Reject failed — ${err.message}`, 'red', '✕');
+      }
     },
     schedule: (e) => {
       removeInbox(e.id);
@@ -591,6 +656,11 @@ function App() {
                   onFix={A.fix}
                 />
               </div>
+              {approved.length > 0 && (
+                <div id="sec-publish">
+                  <PublishQueue items={approved} onPublish={A.publish} />
+                </div>
+              )}
               <div id="sec-services">
                 <ServiceGrid
                   services={services}
@@ -757,6 +827,114 @@ function App() {
 
       <Drawer entity={entity} onClose={closeDrawer} actions={A} />
       {toastNode}
+    </div>
+  );
+}
+
+// Minutes since an ISO timestamp (for relative-age display).
+function minsSince(iso) {
+  return Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+}
+
+// Map a /api/tasks/pending-approval row → the Action Inbox item shape.
+function approvalToInbox(t) {
+  const PX = window.PX;
+  return {
+    id: t.task_id,
+    kind: 'approve',
+    priority: 1,
+    title: t.task_name || t.topic || `Task ${t.task_id}`,
+    sub: [
+      [
+        'QUALITY',
+        t.quality_score != null ? String(Math.round(t.quality_score)) : '—',
+      ],
+      ['TYPE', t.task_type || 'blog_post'],
+      ['TOPIC', t.topic || '—'],
+    ],
+    age: t.created_at ? PX.ago(minsSince(t.created_at)) : '',
+    tags: [['cyan', 'READY']],
+    detail: {
+      excerpt: t.content_preview || '',
+      quality: t.quality_score,
+      pipeline: t.status,
+      topic: t.topic,
+      featured_image_url: t.featured_image_url,
+      task: t.task_id,
+    },
+  };
+}
+
+// Ready-to-publish list — staged (approved) tasks awaiting the publish gate.
+// Renders nothing when empty, so mock mode and an empty live queue show nothing
+// (no fabricated rows). Accepts both server rows (task_name/quality_score) and
+// the optimistic row pushed on approve (title/quality).
+function PublishQueue({ items, onPublish }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <span className="panel__title">
+          <span className="idx">▲</span>READY TO PUBLISH
+        </span>
+        <span className="panel__spacer" style={{ flex: 1 }} />
+        <span className="panel__meta">{items.length} staged</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {items.map((t) => {
+          const title = t.title || t.task_name || t.topic || t.id;
+          const q = t.quality != null ? t.quality : t.quality_score;
+          return (
+            <div
+              key={t.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 10px',
+                border: '1px solid var(--gl-line, rgba(255,255,255,0.1))',
+                borderRadius: 2,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--gl-font-mono)',
+                    fontSize: 12,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {trunc(title, 52)}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: '.12em',
+                    color: 'var(--gl-text-dim)',
+                  }}
+                >
+                  {q != null ? `Q${Math.round(q)} · ` : ''}APPROVED · AWAITING
+                  PUBLISH
+                </div>
+              </div>
+              <button
+                className="mbtn mbtn--primary"
+                onClick={() =>
+                  onPublish({
+                    id: t.id,
+                    title: t.title || t.task_name || t.topic || t.id,
+                  })
+                }
+              >
+                <Icon name="play" size={12} />
+                Publish
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
