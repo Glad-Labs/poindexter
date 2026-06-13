@@ -597,6 +597,18 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.sync_cloudflare_analytics",
             "SyncCloudflareAnalyticsJob",
         ),
+        # Active outage detector for the page-views beacon Worker (the ingest
+        # side above goes silent if the Worker is down). POSTs a side-effect-
+        # free health ping every 5 min, sets the
+        # poindexter_cloudflare_beacon_reachable gauge (→
+        # PoindexterCloudflareBeaconDown alert) and emits a finding on failure.
+        # Decoupled from refresh_metrics so the external round-trip stays off
+        # the /metrics scrape path.
+        (
+            "jobs",
+            "services.jobs.probe_cloudflare_beacon",
+            "ProbeCloudflareBeaconJob",
+        ),
         ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),

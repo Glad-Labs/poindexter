@@ -196,6 +196,24 @@ OLLAMA_MODEL_COUNT = Gauge(
     "Number of models returned by Ollama /api/tags (0 when Ollama is up but empty)",
 )
 
+# Cloudflare page-views beacon reachability. Unlike OLLAMA_REACHABLE (probed
+# inline here on every scrape because Ollama is local), the beacon is an
+# external-internet Worker, so it is probed out-of-band by
+# ``services.jobs.probe_cloudflare_beacon.ProbeCloudflareBeaconJob`` every 5
+# min — that job sets THIS gauge (it runs in the same worker process, so the
+# value is exposed on the next scrape). The static rule
+# ``PoindexterCloudflareBeaconDown`` alerts on ``== 0``. Initialised to 1 so
+# the first ~5 min before the job's first run reads healthy rather than
+# "no data", and so an install that never configures a beacon never alerts
+# (the job also re-asserts 1 when ``cloudflare_beacon_url`` is unset).
+CLOUDFLARE_BEACON_REACHABLE = Gauge(
+    "poindexter_cloudflare_beacon_reachable",
+    "1 if the Cloudflare page-views beacon Worker returned 2xx to the last "
+    "out-of-band probe (every 5m); 0 if unreachable. Page-view analytics "
+    "ingestion stalls while this is 0.",
+)
+CLOUDFLARE_BEACON_REACHABLE.set(1)
+
 EMBEDDINGS_TOTAL = Gauge(
     "poindexter_embeddings_total",
     "Total embeddings rows, labeled by source_table",

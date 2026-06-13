@@ -65,6 +65,28 @@ groups:
             All LLM calls are failing. Check `ollama list` on the host
             and `ollama serve` status.
 
+      # --- Cloudflare page-views beacon ---
+      # Static (not DB-rendered): binary up/down, no tunable threshold. The
+      # gauge is set out-of-band by ProbeCloudflareBeaconJob (every 5m), so
+      # `for: 11m` requires ~2 consecutive failed probes before firing —
+      # avoids paging on a single transient CDN blip. severity=warning →
+      # Discord (analytics gap is recoverable, not a pipeline halt).
+      - alert: PoindexterCloudflareBeaconDown
+        expr: poindexter_cloudflare_beacon_reachable == 0
+        for: 11m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Cloudflare page-views beacon Worker is unreachable"
+          description: |
+            ProbeCloudflareBeaconJob's health POST to the page-views beacon
+            Worker hasn't returned 2xx for 11+ minutes (≥2 consecutive 5-min
+            probes). First-party page-view analytics ingestion is stalled
+            until it recovers. Check the Worker at dash.cloudflare.com
+            (Workers & Pages → page-views-beacon) and `wrangler tail`, and
+            verify the `cloudflare_beacon_url` app_setting is correct.
+
       # --- Windows exporter ---
       # Must be static (not DB-rendered): binary up/down, no tunable thresholds,
       # and must fire even when the DB is down (when dynamic rendering fails).

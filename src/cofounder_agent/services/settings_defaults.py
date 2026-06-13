@@ -747,6 +747,18 @@ DEFAULTS: dict[str, str] = {
     # `schedule` class attribute (plugin.job.<name>), not seeded here.
     'seo.refresh.max_per_run': '3',
 
+    # ----- Cloudflare page-views beacon outage probe -----
+    # URL of the Cloudflare Worker that the public-site ViewTracker beacon
+    # POSTs page-view pings to (infrastructure/cloudflare/page-views-beacon).
+    # ProbeCloudflareBeaconJob health-pings this every 5 min and alerts via
+    # the poindexter_cloudflare_beacon_reachable gauge if it stops responding.
+    # Re-seeded empty here after the key was dropped as an orphan 2026-06-03
+    # (no reader then); the probe job is now the reader. Empty ⇒ probe skips
+    # and the gauge stays healthy (an unconfigured beacon must not alert).
+    # The production beacon URL is also set in Vercel as NEXT_PUBLIC_BEACON_URL
+    # for the browser-side beacon; set this app_setting to the same URL.
+    'cloudflare_beacon_url': '',
+
 }
 
 
