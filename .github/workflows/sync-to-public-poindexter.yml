@@ -4,22 +4,26 @@ name: Sync to public Poindexter mirror
 # Mirrors the filtered subset (private files stripped via scripts/sync-to-github.sh)
 # to Glad-Labs/poindexter (public OSS).
 #
-# Auth: fine-grained PAT scoped to Glad-Labs/poindexter (Contents: read+write),
-# stored as POINDEXTER_SYNC_TOKEN secret on this repo. Switched 2026-05-09 from
-# SSH deploy key to PAT after the enterprise policy disabled deploy keys org-wide
-# (see Glad-Labs/poindexter#TBD or just `git log` for context). The PAT route
-# avoids the enterprise-policy dependency entirely and gives tighter scope
-# (single repo, contents-only) than a deploy key (full repo SSH access).
+# Auth: a DEDICATED GitHub App ("glad-labs-mirror-sync") installed on
+# Glad-Labs/poindexter with Contents: read+write AND Workflows: read+write.
+# Both are required — Contents to force-push the rebuilt mirror, Workflows
+# because the mirror tree includes .github/workflows/* and GitHub refuses to let
+# a token push workflow files without the Workflows permission. This workflow
+# runs on glad-labs-stack and mints a short-lived (1h) installation token scoped
+# to the poindexter installation (owner + repositories) via
+# actions/create-github-app-token.
 #
-# POINDEXTER_SYNC_TOKEN rotation reminder:
-#   Fine-grained PATs have a maximum lifetime of 1 year. This token was created
-#   ~2026-05-09 and must be rotated before ~2027-05-09. Steps:
-#     1. GitHub → Settings → Developer settings → Fine-grained tokens → New token
-#        (scope: Glad-Labs/poindexter, Contents: read+write).
-#     2. Update the POINDEXTER_SYNC_TOKEN secret on Glad-Labs/glad-labs-stack.
-#     3. Trigger a manual workflow_dispatch run to confirm the new token works.
-#   A failed run (expired PAT) will open a GitHub issue on Glad-Labs/poindexter
-#   via the failure notification step at the bottom of this file.
+# App over PAT (2026-06-13): the previous POINDEXTER_SYNC_TOKEN fine-grained PAT
+# silently expired and froze the mirror for ~4 main pushes before anyone noticed
+# (the sync just goes red — it's a derived mirror, nothing pages). App
+# installation tokens are ephemeral and auto-minted on every run, so there is NO
+# annual expiry cliff to forget and nothing to rotate on a schedule. A leaked App
+# key is also lower blast radius than a PAT (single-repo install, two perms).
+#
+# Secrets on this repo: MIRROR_SYNC_APP_ID + MIRROR_SYNC_APP_PRIVATE_KEY.
+# If the sync starts failing on auth, check (in order): the App is still
+# installed on poindexter; its install still has Contents + Workflows write;
+# MIRROR_SYNC_APP_PRIVATE_KEY is valid. See docs/operations/ci-deploy-chain.md.
 #
 # To bypass for an individual commit, include "[skip-public-sync]" in the commit
 # message. Useful for in-progress branches that aren't ready for public visibility.
@@ -71,8 +75,8 @@ jobs:
           fetch-depth: 0
           # Don't persist the GITHUB_TOKEN credential helper — it sets an
           # http.https://github.com/.extraheader that takes precedence over
-          # URL-embedded credentials, which would steamroll our PAT and try
-          # to push as github-actions[bot] (no write access on poindexter).
+          # URL-embedded credentials, which would steamroll our App token and
+          # try to push as github-actions[bot] (no write access on poindexter).
           persist-credentials: false
 
       - name: Configure git identity for the temporary sync commit
@@ -80,15 +84,29 @@ jobs:
           git config user.name  "glad-labs-sync-bot"
           git config user.email "sync@gladlabs.io"
 
-      - name: Add poindexter as a git remote (HTTPS + PAT)
+      - name: Mint a poindexter installation token (dedicated mirror-sync App)
+        id: app-token
+        # Pinned to a SHA per the third-party-Actions lint. Mint the FULL
+        # installation token — do NOT pass permission-* narrowing inputs. The
+        # dedicated App install is already minimal (Contents + Workflows on
+        # poindexter only), so the full token IS least-privilege, and narrowing
+        # to a subset just risks the 422 that bit the runner healthcheck (#1489).
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.MIRROR_SYNC_APP_ID }}
+          private-key: ${{ secrets.MIRROR_SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: poindexter
+
+      - name: Add poindexter as a git remote (HTTPS + App installation token)
         env:
-          POINDEXTER_SYNC_TOKEN: ${{ secrets.POINDEXTER_SYNC_TOKEN }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          # x-access-token is GitHub's documented username for token auth
-          # over HTTPS; the actual auth is via the password slot (the PAT).
-          # Embedding the token in the remote URL keeps the sync script
-          # path-unchanged (it just `git push github` against this remote).
-          git remote add github "https://x-access-token:${POINDEXTER_SYNC_TOKEN}@github.com/Glad-Labs/poindexter.git"
+          # x-access-token is GitHub's documented username for token auth over
+          # HTTPS; the App installation token goes in the password slot. Embedding
+          # it in the remote URL keeps sync-to-github.sh path-unchanged (it just
+          # `git push github` against this remote).
+          git remote add github "https://x-access-token:${APP_TOKEN}@github.com/Glad-Labs/poindexter.git"
 
       - name: Run sync filter + force-push filtered subset
         run: bash scripts/sync-to-github.sh
@@ -106,12 +124,13 @@ jobs:
         # Opens a GitHub issue on Glad-Labs/poindexter so the operator sees the
         # failure in GitHub notifications without needing a separate webhook secret.
         # GITHUB_TOKEN has write access to issues on the source repo
-        # (Glad-Labs/glad-labs-stack); poindexter issues would need the PAT which
-        # may itself be expired. Filing on the source repo is more reliable.
+        # (Glad-Labs/glad-labs-stack); the mirror-sync App token is scoped to
+        # poindexter Contents+Workflows (not Issues), so filing on the source
+        # repo is both simpler and more reliable.
         #
-        # The most common failure mode is an expired POINDEXTER_SYNC_TOKEN (max
-        # 1-year lifetime; created ~2026-05-09, expires ~2027-05-09). See the
-        # rotation instructions in the header comment of this file.
+        # Failure modes are now App-access issues, not a token expiry: the App
+        # uninstalled from poindexter, its install missing Contents/Workflows
+        # write, or an invalid MIRROR_SYNC_APP_PRIVATE_KEY. See the header.
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -128,11 +147,11 @@ jobs:
           **Source commit:** \`${{ github.sha }}\`
 
           ### Likely cause
-          The \`POINDEXTER_SYNC_TOKEN\` fine-grained PAT may have expired (max 1-year lifetime; created ~2026-05-09).
+          The dedicated \`glad-labs-mirror-sync\` GitHub App lost access to poindexter — uninstalled, its install missing Contents or Workflows write, or an invalid \`MIRROR_SYNC_APP_PRIVATE_KEY\`. (Installation tokens are ephemeral and auto-minted, so there is no PAT to expire.)
 
           ### Fix
-          1. GitHub → Settings → Developer settings → Fine-grained tokens → regenerate the token (scope: \`Glad-Labs/poindexter\`, Contents: read+write).
-          2. Update the \`POINDEXTER_SYNC_TOKEN\` secret on \`Glad-Labs/glad-labs-stack\`.
+          1. Confirm the \`glad-labs-mirror-sync\` App is installed on \`Glad-Labs/poindexter\` with Contents + Workflows: read+write.
+          2. If the private key was rotated, update \`MIRROR_SYNC_APP_PRIVATE_KEY\` on \`Glad-Labs/glad-labs-stack\`.
           3. Re-run this workflow via \`workflow_dispatch\` to confirm.
 
           _Auto-filed by the sync-to-public-poindexter failure handler._"

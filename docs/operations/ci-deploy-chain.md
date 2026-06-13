@@ -47,9 +47,13 @@ workflow — Release Please is the only thing producing artifacts.
 The cross-repo sync is automatic: GitHub Actions workflow
 `.github/workflows/sync-to-public-poindexter.yml` runs on every push
 to `origin/main` and mirrors the filtered subset to the public repo
-in ~30s, using a write-enabled deploy key (private key stored as
-`POINDEXTER_DEPLOY_KEY` secret on glad-labs-stack). Just
-`git push origin main` and the public mirror updates itself.
+in ~30s, authenticating with a dedicated GitHub App
+(`glad-labs-mirror-sync`, installed on poindexter with Contents +
+Workflows read+write; secrets `MIRROR_SYNC_APP_ID` +
+`MIRROR_SYNC_APP_PRIVATE_KEY` on glad-labs-stack). Migrated
+2026-06-13 from a fine-grained PAT that silently expired and froze
+the mirror (which had itself replaced an SSH deploy key 2026-05-09).
+Just `git push origin main` and the public mirror updates itself.
 
 `scripts/sync-to-github.sh` strips private files (web/public-site,
 web/storefront, mcp-server-gladlabs, marketing, premium dashboards,

@@ -146,7 +146,7 @@ git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
 # inherit dep bumps through the normal commit→sync flow.
 git rm --cached --quiet .github/dependabot.yml 2>/dev/null || true
 git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # Deploy runs from glad-labs-stack, not poindexter
-git rm --cached --quiet .github/workflows/sync-to-public-poindexter.yml 2>/dev/null || true  # The mirror sync ITSELF lives only on glad-labs-stack — shipping it to the public mirror caused recursive runs that fail every time (no POINDEXTER_DEPLOY_KEY secret on the public side) and burn CI minutes
+git rm --cached --quiet .github/workflows/sync-to-public-poindexter.yml 2>/dev/null || true  # The mirror sync ITSELF lives only on glad-labs-stack — shipping it to the public mirror caused recursive runs that fail every time (no mirror-sync App / sync credentials on the public side) and burn CI minutes
 git rm --cached --quiet .github/workflows/release-please.yml 2>/dev/null || true  # release-please runs on glad-labs-stack only; the workflow file's repo gate is fine but it leaks the internal repo name and is dead code on the mirror
 git rm --cached --quiet .github/workflows/release-mirror-to-public.yml 2>/dev/null || true  # the workflow that creates matching tags+Releases on Glad-Labs/poindexter after release-please cuts one on stack — only runs on the source repo, dead code (and leaks internal name) on the mirror itself
 git rm --cached --quiet .github/workflows/public-mirror-safety.yml 2>/dev/null || true  # operator-overlay-specific leak patterns; the underlying script (scripts/ci/check_public_mirror_safety.py) is stripped too — see the mirror-tooling block below
