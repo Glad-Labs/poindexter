@@ -1897,12 +1897,15 @@ services:
   # `docker compose -f docker-compose.local.yml up -d`, so the stack is
   # unaffected until you enable it (COMPOSE_PROFILES=ci-runner in .env).
   #
-  # GH_RUNNER_PAT is a fine-grained PAT on Glad-Labs/glad-labs-stack with
-  # Administration: Read+write (register runners) and Variables: Read+write
-  # (the runner-healthcheck workflow flips the `CI_RUNNER` variable that the
-  # unit-tests runs-on seam reads). The SAME PAT also goes in as the repo
-  # secret CI_RUNNER_ADMIN_PAT for that workflow. Full setup, kill-switch
-  # (CI_RUNNER_MODE=off) and tuning: docs/operations/self-hosted-ci-runner.md.
+  # Auth = a dedicated GitHub App ("glad-labs-ci-runner") installed on
+  # Glad-Labs/glad-labs-stack with Administration: Read+write (register runners)
+  # and Variables: Read+write (the runner-healthcheck workflow flips the
+  # `CI_RUNNER` variable the unit-tests runs-on seam reads). Chosen over a PAT
+  # because an App key has no 1-year fine-grained-PAT expiry cliff and mints
+  # short-lived (1h) installation tokens on demand. The SAME App ID + private
+  # key also go in as repo secrets CI_RUNNER_APP_ID / CI_RUNNER_APP_PRIVATE_KEY
+  # for that workflow. Full setup, kill-switch (CI_RUNNER_MODE=off) and tuning:
+  # docs/operations/self-hosted-ci-runner.md.
   #
   # ---- SECURITY (load-bearing) ---------------------------------------------
   #  Self-hosted runners must NEVER serve a PUBLIC repo: a fork PR would run
@@ -1928,11 +1931,17 @@ services:
     cpus: ${CI_RUNNER_CPUS:-8}
     mem_limit: ${CI_RUNNER_MEM:-8g}
     environment:
-      # PAT (Administration: read+write) — the image mints fresh, short-lived
-      # registration tokens from it on every (re)register. `:-` not `:?` so an
-      # unset value can never break parsing of the rest of this compose file;
-      # the profile keeps the runner from starting until you've set it anyway.
-      ACCESS_TOKEN: ${GH_RUNNER_PAT:-}
+      # GitHub App creds (Administration: read+write) — the myoung34 image mints
+      # fresh, short-lived registration tokens from APP_ID + APP_PRIVATE_KEY on
+      # every (re)register. The App path REPLACES ACCESS_TOKEN — never set both.
+      # APP_LOGIN (install owner) auto-derives from REPO_URL below, so it's
+      # omitted. `:-` not `:?` so an unset value can never break parsing of the
+      # rest of this compose file; the profile keeps the runner from starting
+      # until you've set them anyway. APP_ID is a plain number (fine in .env);
+      # the multiline PEM does NOT live cleanly in a compose .env — export it
+      # from a file at `up` time (see the runbook's activation command).
+      APP_ID: ${CI_RUNNER_APP_ID:-}
+      APP_PRIVATE_KEY: ${CI_RUNNER_APP_PRIVATE_KEY:-}
       REPO_URL: https://github.com/Glad-Labs/glad-labs-stack
       RUNNER_SCOPE: repo
       RUNNER_NAME_PREFIX: glads-pc

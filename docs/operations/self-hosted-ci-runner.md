@@ -48,40 +48,62 @@ always-available liveness check.
 
 ## One-time setup
 
-### 1. Create the PAT (the only manual step)
+### 1. Create the runner App (the only manual step)
 
-GitHub doesn't allow PAT creation via API, so this is the one thing that needs
-your hands. Create a **fine-grained PAT**:
+GitHub doesn't allow App creation via API, so this is the one thing that needs
+your hands. Create a **dedicated GitHub App** (Settings → Developer settings →
+GitHub Apps → New GitHub App), named e.g. `glad-labs-ci-runner`:
 
-- **Resource owner:** Glad-Labs · **Repository access:** Only select →
-  `glad-labs-stack`
-- **Repository permissions:**
-  - **Administration:** Read and write _(register/list self-hosted runners)_
-  - **Variables:** Read and write _(the healthcheck flips `CI_RUNNER`)_
+- **Repository permissions:** **Administration: Read and write** (register/list
+  self-hosted runners) + **Variables: Read and write** (the healthcheck flips
+  `CI_RUNNER`). Nothing else.
+- **Where can this be installed:** Only on this account → then **Install** it on
+  `glad-labs-stack` only.
+- **Generate a private key** (downloads a `.pem`) and note the numeric **App ID**.
 
-Copy the `github_pat_…` value.
+App over PAT on purpose: an App key has no 1-year fine-grained-PAT expiry cliff
+and mints short-lived (1h) installation tokens on demand — lower maintenance,
+tighter least-privilege. A **dedicated** App (not the release-bot App) keeps a
+key leak from crossing blast radius.
 
-### 2. Wire the token into its two homes
+### 2. Wire the credentials into their two homes
+
+The container (local) and the healthcheck workflow (cloud) each need the App.
+The App ID is a plain number; only the private key is secret.
 
 ```bash
-# a) container registration — in the stack .env
-echo 'GH_RUNNER_PAT=github_pat_xxx' >> .env
-echo 'COMPOSE_PROFILES=ci-runner'  >> .env      # make the runners start with the stack
+# Stash the private key at the canonical path the activation command reads:
+mkdir -p ~/.poindexter
+mv ~/Downloads/glad-labs-ci-runner.*.private-key.pem ~/.poindexter/ci-runner-app.pem
 
-# b) the healthcheck workflow — as a repo secret (same PAT value)
-gh secret set CI_RUNNER_ADMIN_PAT --repo Glad-Labs/glad-labs-stack --body 'github_pat_xxx'
+# a) container (local) — App ID + profile in the stack .env. The multiline PEM
+#    is NOT put in .env (compose .env is line-based); it's exported from the file
+#    above at `up` time (step 3). COMPOSE_PROFILES starts the runner with the stack.
+echo 'CI_RUNNER_APP_ID=123456'    >> .env       # the numeric App ID (not secret)
+echo 'COMPOSE_PROFILES=ci-runner' >> .env
+
+# b) the healthcheck workflow — App ID + private key as repo secrets
+gh secret set CI_RUNNER_APP_ID          --repo Glad-Labs/glad-labs-stack --body '123456'
+gh secret set CI_RUNNER_APP_PRIVATE_KEY --repo Glad-Labs/glad-labs-stack < ~/.poindexter/ci-runner-app.pem
 
 # c) optional: routine Discord ping when CI auto-flips
 gh secret set DISCORD_OPS_WEBHOOK_URL --repo Glad-Labs/glad-labs-stack --body "$DISCORD_OPS_WEBHOOK_URL"
 ```
 
-### 3. Bring the runners up
+### 3. Bring the runner up
+
+The PEM is exported from the file into the container's `APP_PRIVATE_KEY` for the
+`up` invocation — a multiline value compose interpolates from the shell but can't
+read from `.env`. `restart: unless-stopped` captures the env at create time, so
+the runner survives daemon/PC restarts; you only re-run this when you
+intentionally recreate it (e.g. an image bump).
 
 ```bash
-docker compose -f docker-compose.local.yml --profile ci-runner up -d
+CI_RUNNER_APP_PRIVATE_KEY="$(cat ~/.poindexter/ci-runner-app.pem)" \
+  docker compose -f docker-compose.local.yml --profile ci-runner up -d github-runner-1
 docker compose -f docker-compose.local.yml ps github-runner-1
 # Confirm registration:
-gh api /repos/Glad-Labs/glad-labs-stack/actions/runners --jq '.runners[] | {name, status, busy}'
+gh api repos/Glad-Labs/glad-labs-stack/actions/runners --jq '.runners[] | {name, status, busy}'
 ```
 
 ### 4. Enable self-hosted
@@ -147,10 +169,10 @@ free, less when SDXL spikes). Size the runner to fit that, not the host.
 
 - **Job stuck "Queued" / "Waiting for a runner":** no online runner matches the
   labels. `docker compose -f docker-compose.local.yml logs github-runner-1`;
-  check the PAT hasn't expired (fine-grained PATs expire — rotate in both homes).
-  Immediate unblock: `gh variable set CI_RUNNER_MODE off`.
-- **Runner registers then immediately deregisters:** usually a bad/expired PAT
-  or missing `Administration: write`.
+  check the App private key is valid and the App install still has Administration
+  access. Immediate unblock: `gh variable set CI_RUNNER_MODE off`.
+- **Runner registers then immediately deregisters:** usually a bad App private
+  key, or the App install is missing `Administration: write`.
 - **`unit-tests` red only on self-hosted, green on hosted:** a hosted-image
   assumption. The two `Free … disk` steps are already guarded behind
   `!vars.CI_RUNNER`; if a new step assumes the ubuntu image, guard it the same
@@ -177,7 +199,7 @@ omitted today because `unit-tests` doesn't need it.
 
 A self-hosted runner must **never** serve a public repo — a fork PR would run
 arbitrary code on this machine. The public mirror `Glad-Labs/poindexter` has no
-`CI_RUNNER` variable and no admin PAT, so its `unit-tests` seam resolves to
+`CI_RUNNER` variable and no runner App, so its `unit-tests` seam resolves to
 `ubuntu-latest` by construction and `runner-healthcheck` no-ops there (it's
 guarded to `github.repository == 'Glad-Labs/glad-labs-stack'`). **Do not**
 hardcode `self-hosted` in any workflow, and do not register these runners

@@ -28,8 +28,8 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch:
 
-# The PAT (CI_RUNNER_ADMIN_PAT) carries all privilege; the default GITHUB_TOKEN
-# needs nothing here.
+# The runner App's installation token (minted in the first step) carries all
+# privilege; the default GITHUB_TOKEN needs nothing here.
 permissions:
   contents: read
 
@@ -46,21 +46,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ secrets.CI_RUNNER_ADMIN_PAT }}
       REPO: ${{ github.repository }}
       RUNNER_LABELS: '["self-hosted","linux","x64"]'
       DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
     steps:
+      # Mint a short-lived (1h) installation token from the dedicated runner App
+      # — Administration:read to list runners, Variables:write to flip CI_RUNNER.
+      # Narrowed to those two perms (the App also holds Administration:write, but
+      # only the runner CONTAINER needs that, to register). Guarded on the App-ID
+      # secret so this whole workflow is a quiet green no-op until the runner
+      # feature is configured. Pinned to a SHA per the third-party-Actions lint.
+      - name: Mint runner-App installation token
+        id: app-token
+        if: ${{ secrets.CI_RUNNER_APP_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.CI_RUNNER_APP_ID }}
+          private-key: ${{ secrets.CI_RUNNER_APP_PRIVATE_KEY }}
+          permission-administration: read
+          permission-variables: write
+
       - name: Reconcile CI_RUNNER against live runner status
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
-          # Dormant until the runner feature is configured. A green skip (not a
-          # red failure) keeps the scheduled run quiet before first setup.
+          # Dormant until the runner App is configured (no token minted). A green
+          # skip (not a red failure) keeps the scheduled run quiet before setup.
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::notice::CI_RUNNER_ADMIN_PAT not set — self-hosted runner not configured yet; nothing to reconcile."
-            echo "self-hosted runner not configured (no admin PAT)" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::CI_RUNNER_APP_ID not set — self-hosted runner not configured yet; nothing to reconcile."
+            echo "self-hosted runner not configured (no runner App)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
