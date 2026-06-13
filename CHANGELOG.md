@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+## [0.78.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.77.0...v0.78.0) (2026-06-13)
+
+
+### Features
+
+* **api:** mirror 5 operator surfaces over HTTP — gates, posts-approval, scheduling, topic-batch, media-approval ([#1343](https://github.com/Glad-Labs/glad-labs-stack/issues/1343)) ([#1491](https://github.com/Glad-Labs/glad-labs-stack/issues/1491)) ([d2ac3ab](https://github.com/Glad-Labs/glad-labs-stack/commit/d2ac3abac52a3c5f2d23c08ca976cdd87e9e18b1))
+* **console:** operator-console foundation — load + OAuth2 auth ([#1523](https://github.com/Glad-Labs/glad-labs-stack/issues/1523)) ([7934547](https://github.com/Glad-Labs/glad-labs-stack/commit/7934547d807b2d91204041478a4caf270dfee8af))
+* **console:** Phase 1 — real content-approvals surface (approve ≠ publish) ([#1529](https://github.com/Glad-Labs/glad-labs-stack/issues/1529)) ([4fa20eb](https://github.com/Glad-Labs/glad-labs-stack/commit/4fa20ebf14b6ccab1dab3a6bd4ef8959e82e0b95))
+* **console:** Phase 2 — settings surface wired to the real API shape ([#1531](https://github.com/Glad-Labs/glad-labs-stack/issues/1531)) ([76abccb](https://github.com/Glad-Labs/glad-labs-stack/commit/76abccbef3ba6a33a0804f13d8233014a87eaaef))
+* **console:** Phase 3 — pipeline panel models the real graph_def ([#1532](https://github.com/Glad-Labs/glad-labs-stack/issues/1532)) ([895a921](https://github.com/Glad-Labs/glad-labs-stack/commit/895a921705757900a110b912131131e9fe498a78))
+* **console:** Phase 3.3 — task Retry/Cancel actions go live ([#1533](https://github.com/Glad-Labs/glad-labs-stack/issues/1533)) ([c20e99c](https://github.com/Glad-Labs/glad-labs-stack/commit/c20e99c6da101db20b4ea98bcbff747a26c49979))
+* **console:** Phase 3.4 — QA panel re-labeled to the real rails ([#1534](https://github.com/Glad-Labs/glad-labs-stack/issues/1534)) ([95346fa](https://github.com/Glad-Labs/glad-labs-stack/commit/95346fad04dc389e75bc2a170ff86b3e16c9706a))
+* **content:** service layer as API contract — PostsService + MCP convergence ([#1341](https://github.com/Glad-Labs/glad-labs-stack/issues/1341), [#1342](https://github.com/Glad-Labs/glad-labs-stack/issues/1342)) ([#1482](https://github.com/Glad-Labs/glad-labs-stack/issues/1482)) ([2196572](https://github.com/Glad-Labs/glad-labs-stack/commit/2196572f860c8b5109f030ec0819d623bcd47e0f))
+* **observability:** count metrics_refresh per-phase failures (audit H2b) ([#1504](https://github.com/Glad-Labs/glad-labs-stack/issues/1504)) ([24d88de](https://github.com/Glad-Labs/glad-labs-stack/commit/24d88de37b7b5ab8df8ef4b9e57dd6af7a514fa9))
+* **observability:** detect Cloudflare page-views beacon outages ([#1502](https://github.com/Glad-Labs/glad-labs-stack/issues/1502)) ([981a1bc](https://github.com/Glad-Labs/glad-labs-stack/commit/981a1bc208ae75b144e5348da03bd6ae8fc1b399))
+* **scripts:** MCP orphan-sweep host-maintenance task ([#1525](https://github.com/Glad-Labs/glad-labs-stack/issues/1525)) ([24983ed](https://github.com/Glad-Labs/glad-labs-stack/commit/24983ed79462b9428005e91e6aeeae81cae7930f))
+* **seo:** route seo_refresh queued/outcome findings to Discord + awaiting-signoff Grafana panel ([#1469](https://github.com/Glad-Labs/glad-labs-stack/issues/1469)) ([77f22c4](https://github.com/Glad-Labs/glad-labs-stack/commit/77f22c4e4bc69181e40326e1cfda4a647ec917b0))
+* **seo:** SEO Harvest Loop Milestone B — auto-enqueue + outcome measurement ([#763](https://github.com/Glad-Labs/glad-labs-stack/issues/763)) ([#1466](https://github.com/Glad-Labs/glad-labs-stack/issues/1466)) ([7058123](https://github.com/Glad-Labs/glad-labs-stack/commit/7058123783cd474d5085c2cc1fa58e3e045410ca))
+* **topics:** self-heal reaper for stuck open topic_batches ([#1527](https://github.com/Glad-Labs/glad-labs-stack/issues/1527)) ([35a24ad](https://github.com/Glad-Labs/glad-labs-stack/commit/35a24ad2cf114f34cebb513a2571f8a652cc1c6e))
+
+
+### Bug Fixes
+
+* **api:** accept 8-char id prefixes on tasks/posts mutate routes ([#1517](https://github.com/Glad-Labs/glad-labs-stack/issues/1517)) ([26b1dcc](https://github.com/Glad-Labs/glad-labs-stack/commit/26b1dcc51d2d81fc29190048ec031f464e8d33e2))
+* **approval:** pause_at_gate sets status=awaiting_gate; sweep skips it ([#1480](https://github.com/Glad-Labs/glad-labs-stack/issues/1480)) ([e10be73](https://github.com/Glad-Labs/glad-labs-stack/commit/e10be7324ab43d76839d88171801c777bb4be787))
+* **brain:** exclude gate-paused tasks from the stuck-in_progress auto-cancel ([#1513](https://github.com/Glad-Labs/glad-labs-stack/issues/1513)) ([756205f](https://github.com/Glad-Labs/glad-labs-stack/commit/756205f49f3c3959919b3b88e12ed2bff5757608))
+* **cli:** accept short post_id prefixes in media approve/reject ([#1511](https://github.com/Glad-Labs/glad-labs-stack/issues/1511)) ([777bb07](https://github.com/Glad-Labs/glad-labs-stack/commit/777bb07b58f94be418d44ac44005dc224807357a))
+* **cli:** accept short UUID prefixes in pipeline resume/status ([#1490](https://github.com/Glad-Labs/glad-labs-stack/issues/1490)) ([45ab726](https://github.com/Glad-Labs/glad-labs-stack/commit/45ab7260f08276f814dd7ce625473a677acec98c))
+* **cli:** force SelectorEventLoop on Windows so pipeline resume keeps its checkpoint ([#1510](https://github.com/Glad-Labs/glad-labs-stack/issues/1510)) ([89ae14c](https://github.com/Glad-Labs/glad-labs-stack/commit/89ae14c5bec20e2a7f3a14265efaf0a51ac19138))
+* **cli:** unify UUID-prefix resolution across poindexter CLI ([#1514](https://github.com/Glad-Labs/glad-labs-stack/issues/1514)) ([665d493](https://github.com/Glad-Labs/glad-labs-stack/commit/665d493e7a39bca94cbebf61795c4c7a2efb2858))
+* **findings:** emit topic_gap at warn so the discord policy actually routes ([#1471](https://github.com/Glad-Labs/glad-labs-stack/issues/1471)) ([bb63e1d](https://github.com/Glad-Labs/glad-labs-stack/commit/bb63e1d67bfff4ab1e610f4c9a1d3d0cce1c3b5c))
+* **observability:** log webhook emit_finding failure instead of swallowing it ([#1518](https://github.com/Glad-Labs/glad-labs-stack/issues/1518)) ([#1519](https://github.com/Glad-Labs/glad-labs-stack/issues/1519)) ([b5fdcac](https://github.com/Glad-Labs/glad-labs-stack/commit/b5fdcac6973771d532b3c3b73c78d8179c1d5bdb))
+* **observability:** surface two swallowed failure paths (audit M1/M3) ([#1503](https://github.com/Glad-Labs/glad-labs-stack/issues/1503)) ([96a0b6b](https://github.com/Glad-Labs/glad-labs-stack/commit/96a0b6bb3db7665ec73d0eaa9c1c206c7deff05c))
+* **observability:** surface webhook dead-letters + auto-publish gate failures ([#1495](https://github.com/Glad-Labs/glad-labs-stack/issues/1495)) ([bf2c183](https://github.com/Glad-Labs/glad-labs-stack/commit/bf2c1833489ba63c68c9be5963f9682dd6f27105))
+* **pipeline:** make approve+resume atomic so a failed resume can't auto-publish ([#1516](https://github.com/Glad-Labs/glad-labs-stack/issues/1516)) ([b45b519](https://github.com/Glad-Labs/glad-labs-stack/commit/b45b519f7bfbc0fae2e8d6bd17e3993bfecd705f)), closes [#1515](https://github.com/Glad-Labs/glad-labs-stack/issues/1515)
+* **plugins:** repoint poindexter.stages entry-points to modules/content/stages ([#1512](https://github.com/Glad-Labs/glad-labs-stack/issues/1512)) ([dc57159](https://github.com/Glad-Labs/glad-labs-stack/commit/dc5715940ab89e29ecb26a9100b75dd919391b2e))
+* **settings:** retire vestigial findings.topic_gap.min_severity='info' ([#1473](https://github.com/Glad-Labs/glad-labs-stack/issues/1473)) ([45e0c6d](https://github.com/Glad-Labs/glad-labs-stack/commit/45e0c6d26ac197e742dbe5b1af4bd8ced2ff22f2))
+* **test:** make compose-drift probe tests hermetic re: docker pre-flight ([#1496](https://github.com/Glad-Labs/glad-labs-stack/issues/1496)) ([#1498](https://github.com/Glad-Labs/glad-labs-stack/issues/1498)) ([dce012e](https://github.com/Glad-Labs/glad-labs-stack/commit/dce012e3f1c938b70fcef638034c488827067c6d))
+* **topics:** auto-resolve internal-only batches + suppress empty-batch wedge ([#1521](https://github.com/Glad-Labs/glad-labs-stack/issues/1521)) ([be6a380](https://github.com/Glad-Labs/glad-labs-stack/commit/be6a380690d58a24058ead7ac5808d8701209853))
+* **topics:** guard resolve_batch against a missing niche ([#1524](https://github.com/Glad-Labs/glad-labs-stack/issues/1524)) ([35823d4](https://github.com/Glad-Labs/glad-labs-stack/commit/35823d41aba16017ddfdd3ee351318f8b4c82507))
+* **voice:** voice_join reads room/identity/wss_url DB-first from app_settings ([#717](https://github.com/Glad-Labs/glad-labs-stack/issues/717)) ([#1465](https://github.com/Glad-Labs/glad-labs-stack/issues/1465)) ([91e03db](https://github.com/Glad-Labs/glad-labs-stack/commit/91e03dbf6a96a610cb39034a6179e35920e9a3a1))
+
 ## [0.77.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.76.0...v0.77.0) (2026-06-12)
 
 
