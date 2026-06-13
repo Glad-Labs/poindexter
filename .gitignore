@@ -162,6 +162,10 @@ Modelfile*
 *.gguf
 scripts/secrets-to-scrub.txt
 *.html
+# …but the operator console's entry document is real source, not a build
+# artifact. The blanket *.html above silently swallowed it (which is why the
+# console shipped without an index.html). Keep this negation.
+!src/cofounder_agent/console/index.html
 
 # Branded frontend (private — not part of the open-source engine)
 web/public-site/

@@ -106,13 +106,18 @@ function ConnectionPanel({ onReload }) {
   const api = window.PX.api;
   const [live, setLive] = React.useState(api.isLive());
   const [base, setBase] = React.useState(api.config.base);
-  const [token, setToken] = React.useState(api.config.token);
+  const [clientId, setClientId] = React.useState(api.config.clientId);
+  const [clientSecret, setClientSecret] = React.useState(
+    api.config.clientSecret
+  );
+  const [scope, setScope] = React.useState(api.config.scope);
   const [sim, setSim] = React.useState(api.getSim());
   const [test, setTest] = React.useState({ state: 'idle', msg: '' });
 
   const runTest = async () => {
     api.setBase(base);
-    api.setToken(token);
+    api.setClient(clientId, clientSecret);
+    api.setScope(scope);
     setTest({ state: 'testing', msg: 'Pinging…' });
     try {
       const r = await api.health();
@@ -128,7 +133,8 @@ function ConnectionPanel({ onReload }) {
     setLive(on);
     api.setLive(on);
     api.setBase(base);
-    api.setToken(token);
+    api.setClient(clientId, clientSecret);
+    api.setScope(scope);
     setTest({ state: 'idle', msg: '' });
     onReload();
   };
@@ -162,15 +168,44 @@ function ConnectionPanel({ onReload }) {
           </span>
         </div>
         <div className="field">
-          <label>Bearer token</label>
+          <label>OAuth client ID</label>
           <input
-            type="password"
-            value={token}
-            placeholder="verify_api_token"
-            onChange={(e) => setToken(e.target.value)}
+            type="text"
+            value={clientId}
+            placeholder="console"
+            onChange={(e) => setClientId(e.target.value)}
           />
           <span className="hint">
-            Sent as Authorization: Bearer … · stored locally.
+            Mint a dedicated client:{' '}
+            <code>poindexter auth register-client</code> — the secret is shown
+            once.
+          </span>
+        </div>
+        <div className="field">
+          <label>OAuth client secret</label>
+          <input
+            type="password"
+            value={clientSecret}
+            placeholder="client_secret"
+            onChange={(e) => setClientSecret(e.target.value)}
+          />
+          <span className="hint">
+            A short-lived JWT is minted from{' '}
+            <span className="c-cyan">POST /token</span> · stored locally.
+          </span>
+        </div>
+        <div className="field">
+          <label>
+            Scope <span className="c-dim">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={scope}
+            placeholder="(default: all client scopes)"
+            onChange={(e) => setScope(e.target.value)}
+          />
+          <span className="hint">
+            Space-separated; least-privilege per grant.
           </span>
         </div>
       </div>

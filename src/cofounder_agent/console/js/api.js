@@ -12,9 +12,13 @@
       origin. Then BASE can stay '' (same-origin) and there is no
       CORS to configure. Otherwise add your console's origin to the
       worker's CORSMiddleware allow_origins and set BASE below.
-   2. SET A TOKEN: your routes use verify_api_token (Bearer). Drop a
-      token in once — PX.api.setToken('…') — it persists in
-      localStorage and rides every request as Authorization: Bearer.
+   2. SET OAUTH CREDS: routes use verify_api_token, which now accepts ONLY
+      an OAuth2 JWT (static Bearer was removed in #249). Provision a DEDICATED
+      console client — `poindexter auth register-client --name
+      poindexter-console --scopes "api:read api:write" --grant-type
+      client_credentials` (prints the secret once) — and call
+      PX.api.setClient('client_id','client_secret'). The adapter mints a
+      short-lived JWT from POST /token and refreshes it automatically.
    3. FLIP THE SWITCH: PX.api.setLive(true)  (persists). Or set
       window.PX_API_LIVE = true before this script loads.
    4. GO ONE AT A TIME: each method below has a `live:` branch and a
@@ -38,27 +42,78 @@
     // Same-origin when served from the worker. Else e.g. 'http://localhost:8002'
     base: LS.getItem('px_base') ?? '',
     // Prometheus is a different service/port; GPU + some rates come from here.
-    prometheus: LS.getItem('px_prom') ?? 'http://localhost:9090',
-    token: LS.getItem('px_token') ?? '',
+    // NOTE: the local stack runs Prometheus on :9091 (not the upstream default :9090).
+    prometheus: LS.getItem('px_prom') ?? 'http://localhost:9091',
+    // OAuth2 client-credentials. Static Bearer was removed in #249 — every
+    // request now rides a short-lived JWT minted from POST /token. Provision a
+    // dedicated client with `poindexter auth register-client --name
+    // poindexter-console` (it prints the secret once — paste it below).
+    clientId: LS.getItem('px_client_id') ?? '',
+    clientSecret: LS.getItem('px_client_secret') ?? '',
+    scope: LS.getItem('px_scope') ?? '',
     live: (window.PX_API_LIVE ?? false) || LS.getItem('px_live') === '1',
     // DEV-ONLY: simulate real-world async on the MOCK branch so we can test
     // loading / error / empty states without a backend. Ignored when live.
     sim: LS.getItem('px_sim') ?? 'normal', // normal | slow | error | empty
   };
 
-  const headers = () => ({
-    'Content-Type': 'application/json',
-    ...(cfg.token ? { Authorization: 'Bearer ' + cfg.token } : {}),
-  });
+  // In-memory OAuth token cache (never persisted — short-lived JWT).
+  let _tok = { value: '', exp: 0 };
 
-  // Thin fetch wrapper with sane errors. Used only by live branches.
+  // Mint (or reuse) a client-credentials JWT. Refreshes ~60s before expiry.
+  async function getToken() {
+    const now = Date.now();
+    if (_tok.value && now < _tok.exp - 60_000) return _tok.value;
+    if (!cfg.clientId || !cfg.clientSecret)
+      throw new Error(
+        'No OAuth client configured. Set client_id + client_secret in App Settings → Connection.'
+      );
+    const form = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+    });
+    if (cfg.scope) form.set('scope', cfg.scope);
+    const res = await fetch((cfg.base || '') + '/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(
+        `/token → ${res.status} ${res.statusText} ${detail}`.trim()
+      );
+    }
+    const j = await res.json();
+    _tok = {
+      value: j.access_token,
+      exp: Date.now() + (Number(j.expires_in) || 3600) * 1000,
+    };
+    return _tok.value;
+  }
+
+  // Thin fetch wrapper with sane errors + OAuth. Used only by live branches.
+  // Mints a JWT, and on a 401 clears the cache and retries once (token rotated
+  // or expired early).
   async function http(method, path, body, root) {
     const url = (root ?? cfg.base) + path;
-    const res = await fetch(url, {
-      method,
-      headers: headers(),
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    const doFetch = async () => {
+      const tok = await getToken();
+      return fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + tok,
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    };
+    let res = await doFetch();
+    if (res.status === 401) {
+      _tok = { value: '', exp: 0 };
+      res = await doFetch();
+    }
     if (!res.ok)
       throw new Error(`${method} ${path} → ${res.status} ${res.statusText}`);
     return res.status === 204 ? null : res.json();
@@ -111,9 +166,18 @@
       LS.setItem('px_live', on ? '1' : '0');
       return cfg.live;
     },
-    setToken(t) {
-      cfg.token = t || '';
-      LS.setItem('px_token', cfg.token);
+    setClient(id, secret) {
+      cfg.clientId = id || '';
+      cfg.clientSecret = secret || '';
+      LS.setItem('px_client_id', cfg.clientId);
+      // Same-origin local operator tool; the secret lives in this browser's
+      // localStorage. Document the trade-off; rotate via `poindexter auth`.
+      LS.setItem('px_client_secret', cfg.clientSecret);
+      _tok = { value: '', exp: 0 };
+    },
+    setScope(s) {
+      cfg.scope = s || '';
+      LS.setItem('px_scope', cfg.scope);
     },
     setBase(b) {
       cfg.base = b || '';
@@ -305,9 +369,8 @@
 
   // Tiny boot hint in the console for whoever wires this up.
   if (!cfg.live) {
-     
     console.info(
-      '[PX.api] MOCK mode. PX.api.setToken("…"); PX.api.setBase("http://localhost:8002"); PX.api.setLive(true) to go live.'
+      '[PX.api] MOCK mode. PX.api.setClient("client_id","client_secret"); PX.api.setBase("http://localhost:8002"); PX.api.setLive(true) to go live.'
     );
   }
 })();

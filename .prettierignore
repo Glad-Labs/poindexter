@@ -8,3 +8,9 @@ CHANGELOG.md
 docs/reference/app-settings.md
 package-lock.json
 .release-please-manifest.json
+
+# Vendored third-party runtime (React + Babel-standalone) for the operator
+# console — pinned, minified, checksum-locked. prettier un-minified these on
+# first commit (babel 2.98MB → 4.8MB); never reformat them. eslint already
+# skips them via **/*.min.js in eslint.config.js.
+src/cofounder_agent/console/js/vendor/

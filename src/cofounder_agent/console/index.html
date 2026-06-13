@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>Poindexter · Operator Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Brand + console styles (cascade order matters: tokens -> type -> brand -> components -> effects -> modes -> console) -->
+    <link rel="stylesheet" href="css/colors.css" />
+    <link rel="stylesheet" href="css/typography.css" />
+    <link rel="stylesheet" href="css/brand.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/effects.css" />
+    <link rel="stylesheet" href="css/modes.css" />
+    <link rel="stylesheet" href="css/console.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- React 18 + in-browser JSX, vendored locally (same-origin, offline-safe, no CDN-compromise vector). -->
+    <script src="js/vendor/react.production.min.js"></script>
+    <script src="js/vendor/react-dom.production.min.js"></script>
+    <script src="js/vendor/babel.min.js"></script>
+
+    <!-- Plain-JS globals first: window.PX (data), window.PX_SETTINGS, window.PX.api -->
+    <script src="js/data.js"></script>
+    <script src="js/settings-data.js"></script>
+    <script src="js/api.js"></script>
+
+    <!-- JSX components (Babel-compiled). app.jsx is LAST: it calls ReactDOM.createRoot. -->
+    <script type="text/babel" data-presets="react" src="js/primitives.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/panels.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/panels2.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/drawer.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/modes.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/palette.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/settings.jsx"></script>
+    <script type="text/babel" data-presets="react" src="js/app.jsx"></script>
+  </body>
+</html>
