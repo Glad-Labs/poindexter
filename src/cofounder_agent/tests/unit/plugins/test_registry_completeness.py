@@ -343,3 +343,68 @@ def test_pyproject_entry_points_are_registered_in_samples(group: str) -> None:
         "pip-install the package) or remove the dead entry_point "
         "from pyproject.toml. See finding #189."
     )
+
+
+# ---------------------------------------------------------------------------
+# Cross-check: every pyproject.toml entry_point TARGET must actually import.
+#
+# Captured 2026-06-13. The 2026-06-04 Module v1 Phase 3 migration moved the
+# 12 content stages from ``services/stages/`` to ``modules/content/stages/``
+# and updated the imperative ``_SAMPLES`` list to the new path — but left the
+# ``[tool.poetry.plugins."poindexter.stages"]`` entry_points pointing at the
+# now-deleted ``cofounder_agent.services.stages.*`` modules. The worker/CLI
+# image pip-installs the package (Dockerfile, no ``--no-root``), so
+# ``importlib.metadata.entry_points(group="poindexter.stages")`` discovered the
+# 12 stale entries on every boot and ``plugins.registry._load_group`` logged a
+# full ERROR traceback per entry (~12 ERROR lines per CLI/worker start).
+#
+# ``test_pyproject_entry_points_are_registered_in_samples`` did NOT catch it:
+# it compares only the class name *after the colon*, never the module *path* —
+# and the move left class names unchanged. This test closes that blind spot by
+# importing each entry_point's full ``module:Class`` target.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("group", _CROSSCHECK_GROUPS)
+def test_pyproject_entry_point_targets_import(group: str) -> None:
+    """Every ``module.path:ClassName`` target declared under
+    ``[tool.poetry.plugins."poindexter.<group>"]`` must resolve: the module
+    imports and the named class attribute exists.
+
+    Complements ``test_pyproject_entry_points_are_registered_in_samples``,
+    which only checks the class *name* against ``_SAMPLES`` and so is blind to
+    a stale module *path* (the failure mode the 2026-06-04 stages → modules/
+    content/stages move introduced). Importing the target is the same load
+    ``importlib.metadata`` does when the package is pip-installed, so a green
+    test here means no ``_load_group`` ERROR-spam on boot.
+    """
+    declared = _pyproject_entry_points().get(group, [])
+
+    broken: list[str] = []
+    for ep_name, target in declared:
+        module_path, _, cls_name = target.partition(":")
+        if not cls_name:
+            broken.append(f"{ep_name} = {target!r} (target has no ':ClassName')")
+            continue
+        try:
+            module = importlib.import_module(module_path)
+        except Exception as exc:  # noqa: BLE001 - any import failure is a real defect
+            broken.append(
+                f"{ep_name} = {target!r} "
+                f"(import failed: {type(exc).__name__}: {exc})"
+            )
+            continue
+        if not hasattr(module, cls_name):
+            broken.append(
+                f"{ep_name} = {target!r} "
+                f"(module imported but has no attribute {cls_name!r})"
+            )
+
+    assert not broken, (
+        f"pyproject.toml declares poindexter.{group} entry_points whose "
+        f"targets do not import:\n  " + "\n  ".join(broken) + "\n"
+        "Repoint the entry_point at the implementation's current module path "
+        "(was the class moved during a refactor? — update pyproject.toml AND "
+        "plugins.registry._SAMPLES together). This is the failure mode the "
+        "2026-06-04 stages → modules/content/stages move introduced."
+    )

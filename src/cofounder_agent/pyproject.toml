@@ -344,19 +344,22 @@ pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
 sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
 
+# Stages moved from services/stages/ to modules/content/stages/ in the
+# Module v1 Phase 3 migration (2026-06-04); targets repointed to match
+# (kept in lockstep with plugins.registry._SAMPLES).
 [tool.poetry.plugins."poindexter.stages"]
-verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
-generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
-writer_self_review = "cofounder_agent.services.stages.writer_self_review:WriterSelfReviewStage"
-quality_evaluation = "cofounder_agent.services.stages.quality_evaluation:QualityEvaluationStage"
-url_validation = "cofounder_agent.services.stages.url_validation:UrlValidationStage"
-replace_inline_images = "cofounder_agent.services.stages.replace_inline_images:ReplaceInlineImagesStage"
-source_featured_image = "cofounder_agent.services.stages.source_featured_image:SourceFeaturedImageStage"
-generate_seo_metadata = "cofounder_agent.services.stages.generate_seo_metadata:GenerateSeoMetadataStage"
-generate_media_scripts = "cofounder_agent.services.stages.generate_media_scripts:GenerateMediaScriptsStage"
-generate_video_shot_list = "cofounder_agent.services.stages.generate_video_shot_list:GenerateVideoShotListStage"
-capture_training_data = "cofounder_agent.services.stages.capture_training_data:CaptureTrainingDataStage"
-finalize_task = "cofounder_agent.services.stages.finalize_task:FinalizeTaskStage"
+verify_task = "cofounder_agent.modules.content.stages.verify_task:VerifyTaskStage"
+generate_content = "cofounder_agent.modules.content.stages.generate_content:GenerateContentStage"
+writer_self_review = "cofounder_agent.modules.content.stages.writer_self_review:WriterSelfReviewStage"
+quality_evaluation = "cofounder_agent.modules.content.stages.quality_evaluation:QualityEvaluationStage"
+url_validation = "cofounder_agent.modules.content.stages.url_validation:UrlValidationStage"
+replace_inline_images = "cofounder_agent.modules.content.stages.replace_inline_images:ReplaceInlineImagesStage"
+source_featured_image = "cofounder_agent.modules.content.stages.source_featured_image:SourceFeaturedImageStage"
+generate_seo_metadata = "cofounder_agent.modules.content.stages.generate_seo_metadata:GenerateSeoMetadataStage"
+generate_media_scripts = "cofounder_agent.modules.content.stages.generate_media_scripts:GenerateMediaScriptsStage"
+generate_video_shot_list = "cofounder_agent.modules.content.stages.generate_video_shot_list:GenerateVideoShotListStage"
+capture_training_data = "cofounder_agent.modules.content.stages.capture_training_data:CaptureTrainingDataStage"
+finalize_task = "cofounder_agent.modules.content.stages.finalize_task:FinalizeTaskStage"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
@@ -512,10 +515,6 @@ ignore = [
 # Quality scorers all share a (content, context, cfg) signature for
 # uniform dispatch, even when individual scorers don't read all three.
 "services/quality_scorers.py" = ["ARG001"]
-# Pipeline Stage Protocol: execute(context, config). Most stages read
-# from context and don't need config — the arg is part of the contract
-# so every stage can be dispatched uniformly.
-"services/stages/*" = ["ARG002"]
 # Job Protocol: run(pool, config). Subprocess jobs (db_backup,
 # auto_embed_posts) don't need the pool — they shell out to a CLI
 # that reads DATABASE_URL itself.
