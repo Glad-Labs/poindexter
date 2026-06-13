@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -173,3 +173,120 @@ def test_open_invalid_medium_rejected_by_click(runner, _stub_producing_services)
     result = runner.invoke(media.media_group, ["open", post_id, "audio"])
     assert result.exit_code != 0
     assert "Invalid value" in result.output or "invalid choice" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Short post_id prefix resolution — operators paste the 8-char prefix that
+# ``media pending`` prints, but media_approvals.post_id is a UUID column.
+# Before the fix, asyncpg crashed encoding the prefix as a UUID.
+# ---------------------------------------------------------------------------
+
+
+def _make_pool_with(*, exact=None, prefix_rows=None):
+    """asyncpg pool double: ``.acquire()`` yields a conn whose ``.fetchrow``
+    returns ``exact`` (the exact-match branch) and ``.fetch`` returns
+    ``prefix_rows`` (the LIKE branch)."""
+    from contextlib import asynccontextmanager
+
+    conn = MagicMock()
+    conn.fetchrow = AsyncMock(return_value=exact)
+    conn.fetch = AsyncMock(return_value=list(prefix_rows or []))
+
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    return pool
+
+
+class TestResolvePostIdPrefix:
+    @pytest.mark.asyncio
+    async def test_exact_match_returns_full_uuid(self):
+        media = _import_media_module()
+        full = "b938661c-1111-2222-3333-444455556666"
+        pool = _make_pool_with(exact={"post_id": full})
+        result = await media._resolve_post_id_prefix(pool, full, "video")
+        assert result == full
+
+    @pytest.mark.asyncio
+    async def test_unique_prefix_returns_full_uuid(self):
+        media = _import_media_module()
+        full = "b938661c-1111-2222-3333-444455556666"
+        # No exact match (fetchrow=None) → falls through to the LIKE scan.
+        pool = _make_pool_with(exact=None, prefix_rows=[{"post_id": full}])
+        result = await media._resolve_post_id_prefix(pool, "b938661c", "video")
+        assert result == full
+
+    @pytest.mark.asyncio
+    async def test_zero_matches_raises_usage_error(self):
+        media = _import_media_module()
+        import click
+
+        pool = _make_pool_with(exact=None, prefix_rows=[])
+        with pytest.raises(click.UsageError) as exc:
+            await media._resolve_post_id_prefix(pool, "deadbeef", "podcast")
+        assert "No podcast media" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_prefix_raises_with_candidates(self):
+        media = _import_media_module()
+        import click
+
+        pool = _make_pool_with(
+            exact=None,
+            prefix_rows=[
+                {"post_id": "b938661c-aaaa-1111-2222-333344445555"},
+                {"post_id": "b938661c-bbbb-1111-2222-333344445555"},
+            ],
+        )
+        with pytest.raises(click.UsageError) as exc:
+            await media._resolve_post_id_prefix(pool, "b938661c", "video")
+        msg = str(exc.value)
+        assert "matches 2 video rows" in msg
+        assert "b938661c-aaaa" in msg and "b938661c-bbbb" in msg
+
+
+class TestDecideResolvesPrefix:
+    def test_approve_resolves_prefix_before_decide(self, runner, monkeypatch):
+        """``media approve <prefix> <medium>`` resolves to the full UUID and
+        hands THAT to the service — never the bare prefix."""
+        media = _import_media_module()
+        full = "b938661c-1111-2222-3333-444455556666"
+
+        pool = _make_pool_with(exact=None, prefix_rows=[{"post_id": full}])
+        # pool.close() is awaited in _decide's finally block.
+        pool.close = AsyncMock()
+
+        async def _fake_pool():
+            return pool
+
+        monkeypatch.setattr(media, "_make_pool", _fake_pool)
+
+        decide_calls: list[tuple] = []
+
+        async def _fake_decide(_db, post_id, medium, **kwargs):
+            decide_calls.append((post_id, medium, kwargs))
+
+        fake_service = types.ModuleType("services.media_approval_service")
+        fake_service.decide = _fake_decide  # type: ignore[attr-defined]
+        monkeypatch.setitem(
+            sys.modules, "services.media_approval_service", fake_service
+        )
+        # _decide does `from services import media_approval_service`; make the
+        # attribute resolve to our fake on the parent package too.
+        import services as _services_pkg
+        monkeypatch.setattr(
+            _services_pkg, "media_approval_service", fake_service, raising=False
+        )
+
+        result = runner.invoke(media.media_group, ["approve", "b938661c", "video"])
+
+        assert result.exit_code == 0, result.output
+        assert len(decide_calls) == 1
+        # The service got the FULL uuid, not the 8-char prefix.
+        assert decide_calls[0][0] == full
+        assert decide_calls[0][1] == "video"
+        assert "approved: video for post b938661c" in result.output

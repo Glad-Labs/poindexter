@@ -172,23 +172,69 @@ def cmd_reject(post_id: str, medium: str, note: str | None):
     _decide(post_id, medium, approved=False, note=note)
 
 
+async def _resolve_post_id_prefix(pool: Any, prefix: str, medium: str) -> str:
+    """Resolve a possibly-short ``post_id`` to its full UUID for ``medium``.
+
+    ``poindexter media pending`` (and the Grafana media-approval queue) render
+    ``post_id`` as an 8-char prefix (``LEFT(post_id::text, 8)``), and operators
+    paste that prefix straight back into ``media approve`` / ``reject``. But
+    ``media_approvals.post_id`` is a UUID column, so a bare prefix can't even be
+    bound — asyncpg rejects it client-side (``invalid UUID '<prefix>': length
+    must be between 32..36``). Resolve it the way git resolves short SHAs:
+    exact match first, else a unique prefix WITHIN this medium (so a post that
+    has both a podcast and a video doesn't read as ambiguous when the medium
+    already disambiguates).
+
+    All comparisons are on ``post_id::text`` so the bound param stays text —
+    asyncpg is never asked to encode the short value as a UUID. Raises
+    ``click.UsageError`` when the prefix matches zero or many rows.
+    """
+    async with pool.acquire() as conn:
+        # Exact match first — full UUIDs and the common case, no LIKE scan.
+        exact = await conn.fetchrow(
+            "SELECT post_id::text AS post_id FROM media_approvals "
+            "WHERE post_id::text = $1 AND medium = $2",
+            prefix, medium,
+        )
+        if exact is not None:
+            return exact["post_id"]
+        rows = await conn.fetch(
+            "SELECT post_id::text AS post_id FROM media_approvals "
+            "WHERE post_id::text LIKE $1 AND medium = $2",
+            prefix + "%", medium,
+        )
+    if len(rows) == 1:
+        return rows[0]["post_id"]
+    if not rows:
+        raise click.UsageError(
+            f"No {medium} media for a post matching {prefix!r}. "
+            f"See `poindexter media pending --medium {medium}`."
+        )
+    matches = ", ".join(r["post_id"] for r in rows)
+    raise click.UsageError(
+        f"Ambiguous prefix {prefix!r} matches {len(rows)} {medium} rows: {matches}"
+    )
+
+
 def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
     async def _go():
         from services import media_approval_service
 
         pool = await _make_pool()
         try:
+            resolved = await _resolve_post_id_prefix(pool, post_id, medium)
             await media_approval_service.decide(
-                pool, post_id, medium,
+                pool, resolved, medium,
                 approved=approved,
                 decided_by="operator:cli",
                 notes=note,
             )
+            return resolved
         finally:
             await pool.close()
 
     try:
-        _run(_go())
+        resolved = _run(_go())
     except ValueError as e:
         # decide() raises when the row doesn't exist — surface a clean
         # operator message instead of a stack trace.
@@ -196,7 +242,7 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
         sys.exit(2)
 
     verb = "approved" if approved else "rejected"
-    click.secho(f"{verb}: {medium} for post {post_id[:8]}", fg="green" if approved else "yellow")
+    click.secho(f"{verb}: {medium} for post {resolved[:8]}", fg="green" if approved else "yellow")
 
 
 # ---------------------------------------------------------------------------
