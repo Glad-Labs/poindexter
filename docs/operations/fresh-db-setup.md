@@ -97,9 +97,10 @@ DATABASE_URL=postgres://postgres:postgres@localhost:15432/poindexter_brain \
 [smoke] OK — all N migrations applied cleanly
 ```
 
-The 169 historical migrations were squashed 2026-05-08 into a single
+The migration history is squashed into a single
 `0000_baseline.py` (plus `0000_baseline.schema.sql` +
-`0000_baseline.seeds.sql`), so the post-baseline count is much smaller
+`0000_baseline.seeds.sql`) — re-rolled most recently by the Phase E
+squash (2026-06-06) — so the post-baseline count is much smaller
 than it was pre-squash. Derive the expected count dynamically — the
 `-1` subtracts `__init__.py`:
 

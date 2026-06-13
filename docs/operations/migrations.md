@@ -11,8 +11,12 @@ migrations in Poindexter. If you are adding a migration, read sections
 
 ## TL;DR
 
-- **The 169 historical migrations were squashed 2026-05-08** into
-  `0000_baseline.py` + `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`.
+- **The migration history is squashed into `0000_baseline.py`** (+
+  `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`). The baseline has
+  been re-rolled as the tree grew — most recently the **Phase E squash
+  (2026-06-06, Glad-Labs/poindexter#1194)**, which folds in every migration
+  through `20260606_*` (superseding the 2026-05-29 Phase D and the original
+  2026-05-08 squashes); the docstring lists what each generation absorbed.
   That single file captures the whole pre-squash schema and seeds. The
   runner sorts lexically so `0000_baseline.py` runs first (`0` < `2`);
   on Matt's prod where the schema is already in place every

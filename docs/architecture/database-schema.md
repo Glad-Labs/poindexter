@@ -4,9 +4,10 @@ This document defines the database schema Poindexter runs on. The
 entire system uses PostgreSQL 16 with the pgvector extension through
 asyncpg. There is no ORM — queries are hand-written SQL, and schema
 changes are tracked as migration files in
-`src/cofounder_agent/services/migrations/` (the 169 historical files
-were squashed into `0000_baseline.py` on 2026-05-08; new migrations
-use a UTC timestamp prefix per poindexter#378).
+`src/cofounder_agent/services/migrations/` (the history is squashed
+into `0000_baseline.py`, re-rolled most recently by the Phase E squash
+on 2026-06-06; new migrations use a UTC timestamp prefix per
+poindexter#378).
 
 **Last Updated:** 2026-05-23
 **Version:** 0.1.x (alpha)
