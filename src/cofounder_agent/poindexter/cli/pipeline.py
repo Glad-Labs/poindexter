@@ -78,24 +78,46 @@ def _exit_error(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
+_TASK_COLUMNS = """
+    SELECT task_id::text AS task_id,
+           status,
+           awaiting_gate,
+           gate_artifact,
+           gate_paused_at,
+           topic,
+           template_slug
+      FROM pipeline_tasks
+"""
+
+
 async def _fetch_paused_row(pool: Any, task_id: str) -> dict[str, Any] | None:
-    """Return the gate-relevant columns for a task, or None."""
+    """Return the gate-relevant columns for a task, or None.
+
+    Accepts full UUIDs or unambiguous prefixes (like ``git log --short``).
+    Raises ``click.UsageError`` if the prefix matches more than one task.
+    """
     async with pool.acquire() as conn:
+        # Exact match first (covers full UUIDs and avoids the LIKE cost).
         row = await conn.fetchrow(
-            """
-            SELECT task_id::text AS task_id,
-                   status,
-                   awaiting_gate,
-                   gate_artifact,
-                   gate_paused_at,
-                   topic,
-                   template_slug
-              FROM pipeline_tasks
-             WHERE task_id::text = $1
-            """,
+            _TASK_COLUMNS + " WHERE task_id::text = $1",
             str(task_id),
         )
-        return dict(row) if row else None
+        if row is not None:
+            return dict(row)
+
+        # Prefix match — tolerate short IDs the way git does.
+        rows = await conn.fetch(
+            _TASK_COLUMNS + " WHERE task_id::text LIKE $1",
+            str(task_id) + "%",
+        )
+        if len(rows) == 0:
+            return None
+        if len(rows) > 1:
+            matches = ", ".join(r["task_id"] for r in rows)
+            raise click.UsageError(
+                f"Ambiguous prefix {task_id!r} matches {len(rows)} tasks: {matches}"
+            )
+        return dict(rows[0])
 
 
 @click.group(name="pipeline", help="Inspect + resume interrupt()-paused pipelines.")

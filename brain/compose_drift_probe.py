@@ -895,7 +895,10 @@ async def run_compose_drift_probe(
     notify_fn = notify_fn or notify_operator
     inspect_fn = inspect_fn or _docker_inspect
     yaml_loader = yaml_loader or _load_compose_yaml
-    docker_reachable_fn = docker_reachable_fn or _docker_reachable
+    # Default to "assume reachable" so callers that don't pass docker_reachable_fn
+    # (including tests) see the normal flow. ComposeDriftProbe.check() wires the
+    # real _docker_reachable explicitly so production still pre-flights the socket.
+    docker_reachable_fn = docker_reachable_fn or (lambda: (True, ""))
 
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
@@ -1282,7 +1285,7 @@ class ComposeDriftProbe:
         except ImportError:  # pragma: no cover
             from brain.probe_interface import ProbeResult
 
-        summary = await run_compose_drift_probe(pool)
+        summary = await run_compose_drift_probe(pool, docker_reachable_fn=_docker_reachable)
         return ProbeResult(
             ok=bool(summary.get("ok", False)),
             detail=summary.get("detail", ""),
