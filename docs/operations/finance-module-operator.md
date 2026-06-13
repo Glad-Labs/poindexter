@@ -19,8 +19,8 @@ reference from Telegram chats / Discord ops / Grafana dashboards.
 
 **Read-only by design.** The Mercury API token is provisioned with
 Read-Only scope; the daemon never has the credentials to move money.
-This aligns with [`feedback_oauth_scope_hygiene`](../../README.md#)
-— least privilege for any external integration.
+This aligns with the least-privilege principle — minimal scope for any
+external integration.
 
 ## What ships in F1 + F2 (2026-05-13)
 

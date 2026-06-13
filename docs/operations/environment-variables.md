@@ -7,7 +7,7 @@
 > Once the worker connects, everything — model thresholds, prompt
 > templates, QA weights, auto-publish rules, algorithm windows, SEO
 > pinging endpoints — is changed with SQL against `app_settings`
-> (717 keys (62 secret) as of May 2026 — see [`docs/reference/app-settings.md`](../reference/app-settings)), no redeploy needed.
+> (hundreds of keys — see [`docs/reference/app-settings.md`](../reference/app-settings) for the full, nightly-regenerated catalog), no redeploy needed.
 >
 > **Preferred path:** run `poindexter setup` once on first install.
 > It writes `~/.poindexter/bootstrap.toml` with 5 bootstrap values

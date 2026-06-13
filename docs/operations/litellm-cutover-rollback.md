@@ -1,7 +1,7 @@
 # LiteLLM Cutover — Rollback Runbook
 
 **Issue:** Glad-Labs/poindexter#372
-**Migration:** `services/migrations/0160_litellm_cutover_default_providers.py`
+**Migration:** `0160_litellm_cutover_default_providers.py` — since folded into `services/migrations/0000_baseline.py` by the migration re-squash (no longer a standalone file)
 **Affected component:** `services/llm_providers/dispatcher.py` —
 the per-tier `plugin.llm_provider.primary.<tier>` resolution path
 used by `get_provider()` / `dispatch_complete()` / `dispatch_embed()`.
@@ -9,6 +9,13 @@ used by `get_provider()` / `dispatch_complete()` / `dispatch_embed()`.
 This runbook documents the two ways to revert from `LiteLLMProvider`
 back to `OllamaNativeProvider` if the cutover causes a regression
 post-merge.
+
+> **Status (2026-06-13).** The cutover is complete — `litellm` is the
+> prod default for all seeded tiers, and the `0160` migration has since
+> been folded into `0000_baseline.py` by the migration re-squash.
+> **Path 1 (settings flip) is the live rollback path.** Path 2's
+> migration-`down` step is historical — there is no standalone `0160`
+> to revert anymore, so use the manual SQL it shows (or Path 1).
 
 ## Symptoms that should trigger a rollback
 
@@ -70,20 +77,19 @@ squash-merged so revert is one commit.
 git revert <PR-merge-commit-SHA>
 git push origin main
 
-# 2. Roll back the migration on the live DB
-#    (the PR's down() restores plugin.llm_provider.primary.<tier> to ollama_native)
-poindexter migrations down 0160_litellm_cutover_default_providers
+# 2. Restore the tier rows to ollama_native on the live DB.
+#    0160 is now folded into 0000_baseline, so there is no standalone
+#    migration to "down" — apply the SQL below (or use Path 1's flip).
 
 # 3. Reload the worker
 docker compose restart poindexter-worker
 
-# 4. Verify both layers
+# 4. Verify
 poindexter settings list 2>&1 | findstr "plugin.llm_provider.primary"
-poindexter migrations status | findstr 0160
 ```
 
-If `migrations down` isn't available in the running CLI version,
-apply the down() body manually:
+Restore the tier rows manually — the canonical step now that `0160`
+is part of the baseline:
 
 ```sql
 UPDATE app_settings
@@ -162,7 +168,7 @@ cutover:
 
 2. Verify `litellm` is installed (`poetry run pip show litellm`) — it
    wasn't a declared dependency before #372, the cutover PR adds it.
-3. Re-apply the migration: `poindexter migrations up`.
+3. Re-apply any pending migrations: `poindexter migrate up`.
 4. Restart the worker.
 5. Trigger one dev_diary post end-to-end and confirm `cost_logs`
    rows look as expected.

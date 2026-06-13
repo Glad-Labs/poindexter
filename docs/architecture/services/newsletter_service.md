@@ -219,5 +219,5 @@ All from `app_settings` via `services.site_config`:
 - `services.migrations.0121_flip_smtp_password_secret` — the
   migration that gated the SMTP password rotation; the
   `_cfg()` change here was paired with that migration.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_silent_defaults.md`
+- `feedback_no_silent_defaults` (operator design note)
   — why `_site_url()` raises rather than defaulting.

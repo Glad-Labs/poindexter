@@ -183,8 +183,8 @@ voice-agent stack running and a 5090 (or CPU-only Whisper for the
 public release). To smoke that path:
 
 1. Bring the stack up: `docker compose -f docker-compose.local.yml up -d livekit voice-agent-livekit`
-2. Plug a `PipecatAudioMediaPlane` into the bridge (factored into
-   `services/voice_pipecat.py` in PR #2 — see "Deferred" below).
+2. The bridge selects the `PipecatAudioMediaPlane` by default now (shared
+   `services/voice_pipecat.py`); no manual wiring needed.
 3. Open `https://meet.livekit.io`, plug in `LIVEKIT_URL` + a client
    token (`python -m services.voice_agent_livekit --print-client-token
 --room claude-bridge --identity me`), join the room.

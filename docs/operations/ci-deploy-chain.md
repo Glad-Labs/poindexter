@@ -58,13 +58,15 @@ Just `git push origin main` and the public mirror updates itself.
 `scripts/sync-to-github.sh` strips private files (web/public-site,
 web/storefront, mcp-server-gladlabs, marketing, premium dashboards,
 writing_samples, gladlabs-config, .shared-context, CLAUDE.md,
-`scripts/bootstrap.sh`, docs/, etc.) before pushing.
+`scripts/bootstrap.sh`, and select internal docs — audits, plans,
+and the operator-only finance / CI-runner runbooks; the rest of
+`docs/` ships to Mintlify) before pushing.
 
 The sync filter also performs content-level rewrites:
 
 - **docs.json**: operator-branded `gladlabs.io` URLs are rewritten to
   poindexter-neutral GitHub URLs so OSS forks don't inherit operator branding.
-- **CHANGELOG.md**: lines mentioning private app*settings keys (mercury*,
+- **CHANGELOG.md**: lines mentioning private `app_settings` keys (`mercury_*`,
   Tailnet hostnames, hardware costs) are redacted before the mirror push.
 - **Operator-name regex**: the leak guard uses
   `[Mm]atthew (?:[A-Z]\.\s+)?[Gg]ladding` (with optional middle-initial
@@ -139,8 +141,10 @@ decorators in `test_database_service.py` and
   `chore/regen-app-settings-doc` when the file drifts; the branch
   is force-pushed every run so the PR always reflects the latest
   regen. Per [poindexter#439](https://github.com/Glad-Labs/poindexter/issues/439).
-- `src/cofounder_agent/tests/` — Python unit tests (pytest), 8,748
-  cases across ~516 test files.
+- `src/cofounder_agent/tests/` — Python unit tests (pytest). The
+  `test-backend` check runs the full backend suite (several thousand
+  cases; the exact count drifts as agents add tests, so it is not
+  pinned here).
 - `web/public-site/next.config.js` — has a `validateEnv` check that
   rejects localhost URLs in production. `SKIP_ENV_VALIDATION=true`
   bypasses for local dev.
@@ -234,7 +238,7 @@ commit.
 
 The worker / brain / pipeline-bot / prefect-worker containers **bind-mount
 the deploy clone** (`POINDEXTER_DEPLOY_ROOT`, defaulting to
-`~/.poindexter/deploy/glad-labs-stack`) � **not** this dev checkout. The deploy
+`~/.poindexter/deploy/glad-labs-stack`) — **not** this dev checkout. The deploy
 clone is what the running pipeline actually executes. A merge to `main` does
 **not** reach the worker until the deploy clone is synced and the containers
 restart. Leaving the deploy clone behind is how production silently drifts
@@ -251,7 +255,7 @@ branch, checks out `main` in the dev checkout, fast-forwards to `origin/main`,
 **syncs the deploy clone** (`deploy-checkout-sync.ps1`) so the containers get
 the new code, verifies both checkouts are at `origin/main`, then restarts the
 pipeline containers and waits for the worker healthcheck and
-`poindexter_worker_up=1`. There is **no image rebuild** � app code is
+`poindexter_worker_up=1`. There is **no image rebuild** — app code is
 bind-mounted from the deploy clone, so a sync + restart is the deploy
 (dependency / base-image changes still need `docker compose build`).
 
@@ -262,11 +266,11 @@ bind-mounted from the deploy clone, so a sync + restart is the deploy
 > `origin/main` before proceeding.
 
 **Deploy-drift canary (glad-labs-stack#942).** Because the worker / brain
-bind-mount the deploy clone, �merged on main� does not mean �running in prod�
-until you run the deploy above. The brain�s `branch_drift_probe` closes that
-loop: every ~15 min it reads the deploy clone�s HEAD from a read-only `.git`
+bind-mount the deploy clone, "merged on main" does not mean "running in prod"
+until you run the deploy above. The brain's `branch_drift_probe` closes that
+loop: every ~15 min it reads the deploy clone's HEAD from a read-only `.git`
 mount (`${POINDEXTER_DEPLOY_ROOT:-.}/.git:/host-git:ro` on the brain-daemon
-container � **pointing at the deploy clone, not the dev checkout**, per
+container — **pointing at the deploy clone, not the dev checkout**, per
 glad-labs-stack#1295), compares it to `origin/main` via the GitHub API
 (`gh_token`), and pages the operator (Telegram / Discord) when prod is behind.
 It is **alert-only**; the remedy it points at is

@@ -950,6 +950,8 @@ All four fixes have regression tests.
 
 The function also mirrors the special-case gate logic for `internal_consistency` — `approved=False` with score ≥ `qa_consistency_veto_threshold` is advisory, not a veto. Two regression tests pin both branches.
 
+**Note (#355).** `cross_model_qa` was later retired; rejection-reason building now lives in the `qa.aggregate` atom (`modules/content/atoms/`). This entry is the original postmortem on the retired stage — if the symptom recurs on the current graph_def path, check `qa.aggregate`.
+
 ---
 
 ## `pgvector`, `LoRA`, `REST`, or `PostgreSQL` flagged as hallucinated library

@@ -524,7 +524,7 @@ docker restart poindexter-worker
 
 ### `smtp_password`
 
-**Lives in.** `app_settings.smtp_password` — **NOT YET encrypted as of 2026-04-30**. Migration `0121_flip_smtp_password_secret.py` flips the row to `is_secret=true` once seeded.
+**Lives in.** `app_settings.smtp_password` — **NOT YET encrypted as of 2026-04-30**. A migration flips the row to `is_secret=true` once seeded (since folded into the baseline).
 
 **TBD — needs operator confirmation:** verify with `psql -c "SELECT is_secret FROM app_settings WHERE key='smtp_password'"`. If `is_secret=false`, set as plain `poindexter set`. If `is_secret=true`, use the encrypted helper. The newsletter `_cfg` callsite is documented as needing migration to `await get_secret(...)` once this row is encrypted.
 
@@ -541,7 +541,7 @@ docker restart poindexter-worker
 
 ### `uptime_kuma_api_key`
 
-**Lives in.** `app_settings.uptime_kuma_api_key` (encrypted, seeded by `0120_seed_uptime_kuma_api_key.py`).
+**Lives in.** `app_settings.uptime_kuma_api_key` (encrypted; seeded in the baseline).
 
 **Used for.** Pushing health beacons to Uptime Kuma.
 
@@ -582,7 +582,7 @@ docker restart poindexter-worker
 
 **Lives in.** `app_settings.anthropic_api_key` (encrypted).
 
-**Used for.** Claude Haiku adversarial QA review (cross-model_qa stage).
+**Used for.** Claude Haiku adversarial QA review — the multi-model QA rail atoms (`qa.critic` / `qa.deepeval`) that replaced the retired `cross_model_qa` stage (#355).
 
 **Procedure.**
 
@@ -592,7 +592,7 @@ docker restart poindexter-worker
 # 3. docker restart poindexter-worker
 ```
 
-**Verify.** Run a content task end-to-end; check that the cross-model QA stage logs a Claude Haiku call rather than skipping.
+**Verify.** Run a content task end-to-end; check that a QA rail atom logs a Claude Haiku call rather than skipping.
 
 ---
 

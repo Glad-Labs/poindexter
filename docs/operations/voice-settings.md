@@ -29,7 +29,7 @@ ollama bot.
 | `voice_agent_room_name`                           | LiveKit room it joins (`poindexter`)                                |
 | `voice_agent_identity`                            | Its participant identity                                            |
 | `voice_agent_livekit_url`                         | In-network LiveKit URL (`ws://livekit:7880`)                        |
-| `voice_agent_public_join_url`                     | Human-facing tap-to-join URL (Tailscale Funnel)                     |
+| `voice_agent_public_join_url`                     | Human-facing tap-to-join URL (Tailscale Serve, tailnet-only)        |
 | `voice_agent_whisper_model`                       | STT model for the agent (`medium`)                                  |
 | `voice_agent_tts_voice` / `_tts_speed`            | Kokoro voice + speed                                                |
 | `voice_agent_vad_stop_secs`                       | VAD end-of-turn silence                                             |

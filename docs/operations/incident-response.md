@@ -46,9 +46,9 @@ Telegram silent but you SEE a problem?
 
 ## Alert index — alert name to runbook section
 
-These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (14 rules as of 2026-06-03). Brain daemon also fires a few synthetic alerts directly to Telegram, and host-infrastructure alerts (e.g. disk space) are sourced from Prometheus (`infrastructure/prometheus/alerts/`).
+These are the active Grafana alert rules in `infrastructure/grafana/provisioning/alerting/alert-rules.yml` (15 rules as of 2026-06-13). Brain daemon also fires a few synthetic alerts directly to Telegram, and host-infrastructure alerts (e.g. disk space) are sourced from Prometheus (`infrastructure/prometheus/alerts/`).
 
-**No-data posture (Glad-Labs/poindexter#581).** 13 of the 14 rules use `noDataState: Alerting`: every page-worthy rule returns a row in the healthy state (a `count(*)` / `SUM` / `AVG` always does; `GPU Temperature High` reads the latest `gpu_metrics` row), so "no data" can only mean the underlying table/view was renamed or dropped, or the datasource is down — i.e. the rule went blind. Those surface loudly rather than silently resolving green (fail-loud, no silent fallbacks). Query _errors_ (renamed column, dropped table) surface independently via `execErrState`, which is `Error` (or `Alerting`) on every rule — never `OK`. The single exception is **DB Size Warning**, intentionally kept on `noDataState: OK`: it is a non-page-worthy capacity warning whose only no-data condition (datasource unreachable) is already paged by the two critical rules on the same datasource (Worker Offline, Brain Daemon Stale). The posture is pinned by `src/cofounder_agent/tests/unit/infrastructure/test_grafana_alert_no_data_state.py`.
+**No-data posture (Glad-Labs/poindexter#581).** 14 of the 15 rules use `noDataState: Alerting`: every page-worthy rule returns a row in the healthy state (a `count(*)` / `SUM` / `AVG` always does; `GPU Temperature High` reads the latest `gpu_metrics` row), so "no data" can only mean the underlying table/view was renamed or dropped, or the datasource is down — i.e. the rule went blind. Those surface loudly rather than silently resolving green (fail-loud, no silent fallbacks). Query _errors_ (renamed column, dropped table) surface independently via `execErrState`, which is `Error` (or `Alerting`) on every rule — never `OK`. The single exception is **DB Size Warning**, intentionally kept on `noDataState: OK`: it is a non-page-worthy capacity warning whose only no-data condition (datasource unreachable) is already paged by the two critical rules on the same datasource (Worker Offline, Brain Daemon Stale). The posture is pinned by `src/cofounder_agent/tests/unit/infrastructure/test_grafana_alert_no_data_state.py`.
 
 | Alert                          | Severity | Section                                                             |
 | ------------------------------ | -------- | ------------------------------------------------------------------- |
@@ -62,6 +62,7 @@ These are the active Grafana alert rules in `infrastructure/grafana/provisioning
 | Daily Cost Spike               | warning  | [§ Daily Cost Spike](#daily-cost-spike)                             |
 | Content Quality Drop           | warning  | [§ Content Quality Drop](#content-quality-drop)                     |
 | Traffic Anomaly                | warning  | [§ Traffic Anomaly](#traffic-anomaly)                               |
+| Page-View Capture Dead         | warning  | [§ Page-View Capture Dead](#page-view-capture-dead)                 |
 | Pipeline Stalled               | warning  | [§ Pipeline Stalled](#pipeline-stalled)                             |
 | Ollama Unresponsive            | warning  | [§ Ollama Unresponsive](#ollama-unresponsive)                       |
 | Zero Published Posts This Week | warning  | [§ Zero Published Posts This Week](#zero-published-posts-this-week) |
@@ -130,13 +131,10 @@ docker compose -f docker-compose.local.yml up -d brain-daemon
 docker logs -f poindexter-brain-daemon 2>&1 | head -20
 ```
 
-The OS-level watchdog (Task Scheduler "Poindexter Brain Watchdog" / cron `brain-watchdog.sh`) should auto-restart within 10 minutes — if it didn't, the watchdog itself is broken. Check:
+The brain runs as the `poindexter-brain-daemon` container with `restart: unless-stopped`, so Docker relaunches it automatically if the process crashes. (The legacy OS-level watchdog — the Task Scheduler "Poindexter Brain Watchdog" — predates containerization and was disabled 2026-06-09; Docker's restart policy is the recovery path now.) If the container is _up_ but the cycle is still stale, it's hung rather than crashed — force a clean cycle:
 
 ```bash
-# Windows
-schtasks /Query /TN "Poindexter Brain Watchdog" /V /FO LIST
-# Linux
-crontab -l | grep brain-watchdog
+docker restart poindexter-brain-daemon
 ```
 
 **Escalation.** If brain restarts but immediately exits, look at the logs for a DB connection error — likely a `DATABASE_URL` problem. See [`disaster-recovery.md`](./disaster-recovery) CONFIG-1.
@@ -357,7 +355,26 @@ gh run list --repo Glad-Labs/glad-labs-stack --limit 5
 
 - Check Search Console for new manual penalties or indexing drops
 - Check Google Analytics for referrer changes
-- Check whether `ViewTracker` beacon is firing — open the site in a browser, watch Network tab, look for `/api/views/track` POST. If missing, the analytics beacon is broken (frontend issue, not a real traffic drop).
+- Check whether `ViewTracker` beacon is firing — open the site in a browser, watch the Network tab for the `sendBeacon` POST to the Cloudflare Worker (`NEXT_PUBLIC_BEACON_URL`). If it's missing, the analytics beacon is broken (frontend issue, not a real traffic drop) — see [§ Page-View Capture Dead](#page-view-capture-dead).
+
+---
+
+## Page-View Capture Dead
+
+**Means.** No fresh `page_views` rows — the own-analytics capture chain has stalled somewhere between the frontend beacon and the DB.
+
+**Triage.**
+
+```bash
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+  "SELECT MAX(created_at) AS newest, NOW() - MAX(created_at) AS age FROM page_views;"
+```
+
+**Fix.** Walk the chain front to back:
+
+- **Beacon not firing (frontend):** open a post in a browser, watch the Network tab for the `sendBeacon` POST to the Cloudflare Worker (`NEXT_PUBLIC_BEACON_URL`). If it's missing, the frontend regressed — check `web/public-site/components/ViewTracker.tsx` and that `NEXT_PUBLIC_BEACON_URL` is set in Vercel.
+- **Sync job stalled (backend):** the worker imports Cloudflare Analytics Engine into `page_views` every 5 minutes via `services/jobs/sync_cloudflare_analytics.py`. Confirm the worker is up and that job is scheduled.
+- **Real traffic drop, not a capture failure:** cross-check Search Console / GA — if they dropped too, treat it as [§ Traffic Anomaly](#traffic-anomaly), not a capture bug.
 
 ---
 

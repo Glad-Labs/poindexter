@@ -191,5 +191,5 @@ app_settings changes apply without a restart (#198):
 - `docs/architecture/anti-hallucination.md` — research is the FIRST
   line of defense (real citations beat downstream link-verification).
 - `docs/architecture/content-pipeline.md` — pipeline ordering.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_paid_apis.md`
+- `feedback_no_paid_apis` (operator design note)
   — why DuckDuckGo replaced Serper.

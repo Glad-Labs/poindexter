@@ -131,6 +131,6 @@ Every other tunable lives on the individual stages — see
   stages slot into the run order.
 - `docs/architecture/services/multi_model_qa.md` — the `MultiModelQA`
   rail library that the `qa.*` atoms delegate to.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_writer_model_canary.md`
+- `feedback_writer_model_canary` (operator design note)
   — operator playbook for diagnosing pipeline-wide approval-rate drops
   via the writer-fallback event.

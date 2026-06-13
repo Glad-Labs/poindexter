@@ -158,7 +158,7 @@ ollama/glm-4.7` (or `anthropic/claude-haiku-4-5` for cloud — note
   pipeline ordering.
 - `docs/architecture/services/content_router_service.md` — the calling
   pipeline.
-- `~/.claude/projects/C--Users-mattm/memory/project_qa_critic_cutoff.md`
+- `project_qa_critic_cutoff` (operator design note)
   — why the web fact-check gate exists.
-- `~/.claude/projects/C--Users-mattm/memory/project_multi_model_qa.md`
+- `project_multi_model_qa` (operator design note)
   — design vision for adversarial multi-model review.

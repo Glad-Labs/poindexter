@@ -251,5 +251,5 @@ threshold of T)`. The original warning categories are still emitted
   layer (heuristic + LLM, vs this validator's pure-regex hard rules).
 - `brain/hallucination-check/README.md` (if present) — manage the
   stdlib/PyPI/Ollama and library-topics data files.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_silent_defaults.md`
+- `feedback_no_silent_defaults` (operator design note)
   — why criticals must hard-block.

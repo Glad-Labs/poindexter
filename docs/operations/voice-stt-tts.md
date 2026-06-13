@@ -13,6 +13,13 @@ Both share one image (`scripts/Dockerfile.voice-agent`) and one pipeline
 (`services.voice_agent.build_voice_pipeline_task`) — only the transport
 differs.
 
+> **Two-room split (#1006).** The always-on LiveKit agent now runs one
+> container per room profile — `poindexter-voice-agent-livekit` (the
+> `poindexter` room) and `poindexter-voice-agent-claude-code` (the dev
+> room). This page covers the shared STT→TTS pipeline; see
+> [`voice-settings.md`](voice-settings) for the per-room key inventory and
+> [`voice-host-brain.md`](voice-host-brain) for the dev room's host brain.
+
 ## Start / stop
 
 The services come up with the rest of the stack:
@@ -57,7 +64,7 @@ Default room is `poindexter`; default identity for the bot is
 
 2. Open <https://meet.livekit.io>, paste:
    - LiveKit URL: `ws://<your-tailnet-host>:7880` (or `wss://...` if
-     you've put the SFU behind Tailscale Funnel / a reverse proxy)
+     you've put the SFU behind Tailscale Serve / a reverse proxy)
    - Token: the JWT from step 1
 
 3. Click connect, allow mic, talk. The bot is already in the room.
@@ -110,7 +117,7 @@ Container picks up changes on next restart.
 | `voice_agent_webrtc_enabled`  | `true`                      | Toggle the WebRTC container           |
 | `voice_agent_room_name`       | `poindexter`                | Room the bot joins on boot            |
 | `voice_agent_identity`        | `poindexter-bot`            | Bot's identity in the room            |
-| `voice_agent_brain`           | `ollama`                    | LLM stage — `ollama` or `claude-code` |
+| `voice_agent_brain_mode`      | `ollama`                    | LLM stage — `ollama` or `claude-code` |
 | `voice_agent_livekit_url`     | `ws://livekit:7880`         | In-network LiveKit URL the bot uses   |
 | `voice_agent_llm_model`       | `glm-4.7-5090:latest`       | Ollama model (when brain = ollama)    |
 | `voice_agent_ollama_url`      | `http://localhost:11434/v1` | Ollama base URL                       |
@@ -159,12 +166,12 @@ Kokoro), which is the path that kills the ~12s per-restart cold-start.
 
 ### Brain
 
-`voice_agent_brain = ollama` (default) — local glm-4.7-5090 with three
+`voice_agent_brain_mode = ollama` (default) — local glm-4.7-5090 with three
 read-only Poindexter tools (`check_pipeline_health`,
 `get_published_post_count`, `get_ai_spending_status`). Snappy, zero
 incremental cost.
 
-`voice_agent_brain = claude-code` — every voice turn shells out to
+`voice_agent_brain_mode = claude-code` — every voice turn shells out to
 `claude -p` under your Max OAuth subscription. Slower (~3-8s warm,
 ~10s cold first turn) but has full repo access, MCP tools, and
 edit/bash powers. Best for "dev on the go" — ask Claude to fix a bug
@@ -313,7 +320,7 @@ pattern, not a separate code path).
     disabled.
   - The same enabled-flag pattern on the WebRTC module's `_serve()`.
   - The `voice_agent_room_name` / `voice_agent_identity` /
-    `voice_agent_brain` / `voice_agent_livekit_url` /
+    `voice_agent_brain_mode` / `voice_agent_livekit_url` /
     `voice_agent_*_enabled` `app_settings` rows
     (migration `20260505_135518_seed_voice_agent_container_settings`).
   - `scripts/Dockerfile.voice-agent` — one image, two services.
@@ -325,8 +332,8 @@ pattern, not a separate code path).
   running for the operators who joined the Discord workflow before
   Pipecat existed.
 
-- LiveKit credentials live in env (`LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`)
-  to keep them in lockstep with the SFU container that consumes the
-  same pair via `LIVEKIT_KEYS`. Moving these to `bootstrap.toml`
-  follows the same path the rest of the project secrets are taking;
-  tracked as a follow-up.
+- LiveKit credentials default to env (`LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`),
+  in lockstep with the SFU container that consumes the same pair via
+  `LIVEKIT_KEYS`. As of #1000 (2026-06-04) they can also be stored encrypted
+  in `app_settings` (empty there = fall back to env), collapsing the
+  scattered env/file copies behind a single rotation point.

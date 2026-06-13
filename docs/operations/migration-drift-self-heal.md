@@ -167,7 +167,7 @@ mount is inert when sync is off and can stay mounted.
 
 ## See also
 
-- `~/.claude/projects/C--Users-mattm/memory/feedback_self_heal_not_suppress.md`
+- `feedback_self_heal_not_suppress` (operator design note)
   — the principle this implements.
 - [`docs/operations/migrations.md`](migrations.md) — migration conventions.
 - `brain/migration_drift_probe.py` — the implementation + its docstring.

@@ -148,5 +148,5 @@ Bootstrap-only env var:
   pipeline that produced the task.
 - `docs/operations/disaster-recovery.md` — cleanup steps when a
   publish goes wrong.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_bulk_publish.md`
+- `feedback_no_bulk_publish` (operator design note)
   — Matt's rule that bulk publishes never bypass per-post approval.

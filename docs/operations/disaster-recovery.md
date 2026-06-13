@@ -62,14 +62,18 @@ docker stop poindexter-worker poindexter-brain-daemon
 
 ### Step 2 — List available backups
 
-Backups land in `~/.poindexter/backups/` via `scripts/db-backup-local.sh` (run by cron / scheduled task). 14-day retention by default.
+Two backup tiers write under `~/.poindexter/backups/` — see [`backups.md`](./backups) for the full design:
+
+- **In-stack container tier (primary).** `backup-hourly` / `backup-daily` write `~/.poindexter/backups/auto/{hourly,daily}/poindexter_brain_*.dump` (last 24 hourly + 7 daily).
+- **`DbBackupJob`.** The worker's scheduled job runs `scripts/db-backup-local.sh` into the flat `~/.poindexter/backups/` (`poindexter-db-*.dump`, 14-day retention).
 
 ```bash
-ls -lht ~/.poindexter/backups/ | head
-# Expected: poindexter-db-2026-04-30T0312Z.dump  ...
+ls -lht ~/.poindexter/backups/auto/hourly/ ~/.poindexter/backups/auto/daily/ ~/.poindexter/backups/ 2>/dev/null | head -30
+# Expected: poindexter_brain_2026-04-30T0312Z.dump (container tiers)
+#       and/or poindexter-db-2026-04-30T0312Z.dump (DbBackupJob)
 ```
 
-If the directory is empty or hasn't been updated recently, your backup automation is broken — go to **DB-2** and treat this as a volume-loss event (your last good state is whatever's in git/Vercel/R2).
+If every location is empty or stale, your backup automation is broken — go to **DB-2** and treat this as a volume-loss event (your last good state is whatever's in git/Vercel/R2). The restore steps below take whichever dump you picked here.
 
 ### Step 3 — Verify the backup is restorable BEFORE you drop the live DB
 
@@ -515,7 +519,7 @@ docker compose -f docker-compose.local.yml up -d brain-daemon
 cat ~/.poindexter/heartbeat   # Should be < 5 min old
 ```
 
-The OS-level watchdog (Task Scheduler / cron) auto-restarts within 10 minutes.
+The container has `restart: unless-stopped`, so Docker relaunches it automatically on crash. (The legacy OS-level watchdog was retired when the brain was containerized.) If it's _up_ but the heartbeat is stale, it's hung — `docker restart poindexter-brain-daemon`.
 
 ### Content Worker (FastAPI) — pipeline stalled, `/api/health` fails
 
@@ -584,7 +588,7 @@ pythonw scripts/nvidia-smi-exporter.py
 
 ## Backup hygiene — preventing the next disaster
 
-- `scripts/db-backup-local.sh` runs daily and prunes after 14 days. If you don't see a fresh dump in `~/.poindexter/backups/` every morning, your scheduled task is broken — fix it before the next incident, not during.
+- Postgres is backed up automatically in tiers (see [`backups.md`](./backups)): the `backup-hourly` / `backup-daily` containers (24 hourly + 7 daily dumps under `~/.poindexter/backups/auto/`) plus the worker's `DbBackupJob` (`scripts/db-backup-local.sh`, flat 14-day dumps). The brain's `backup_watcher` restarts a stalled tier before paging, and a nightly `restore_test_probe` proves a dump actually restores. If you don't see fresh dumps every morning, that automation is broken — fix it before the next incident, not during.
 - **`bootstrap.toml` should be in your password manager** as a secure note. If it dies, you're in CONFIG-1 + CONFIG-2 territory — minimum 1 hour of pain.
 - **Take periodic offsite backups** of `~/.poindexter/backups/`. Cloud sync (rclone → R2/S3) once a week is enough.
 - **`POINDEXTER_SECRET_KEY` is the doomsday key.** Print it on paper, put it in a fireproof safe. If you lose it AND the live `app_settings` table, you cannot recover the encrypted secrets — only re-issue them.
@@ -598,7 +602,8 @@ pythonw scripts/nvidia-smi-exporter.py
 - [`troubleshooting.md`](./troubleshooting) — known-symptom debugging entries
 - [`local-development-setup.md`](./local-development-setup) — fresh setup walkthrough
 - [`ci-deploy-chain.md`](./ci-deploy-chain) — how Vercel deploys are wired
-- `scripts/db-backup-local.sh` — backup script (cron / scheduled task)
+- [`backups.md`](./backups) — backup tiers, retention, and the brain backup-watcher / restore-test probe
+- `scripts/db-backup-local.sh` — the `DbBackupJob` backup script (flat-dir tier)
 - `src/cofounder_agent/plugins/secrets.py` — encryption module reference
 
 ## Contact

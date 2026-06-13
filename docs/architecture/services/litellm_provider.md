@@ -64,5 +64,5 @@ Phase 2 of poindexter#199 landed 2026-05-08: `services/model_router.py` (~580 LO
 - `plugins/llm_provider.py` — the `LLMProvider` Protocol this plugin implements.
 - `plugins/registry.py` — where `LiteLLMProvider` is registered alongside `OllamaNativeProvider` and `OpenAICompatProvider`.
 - [`../cost-tier-routing.md`](../cost-tier-routing.md) — cost-tier API (`resolve_tier_model`) layered over the provider plugins.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_paid_apis.md` — local-default policy.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_wheel_reinvention.md` — adoption rationale.
+- `feedback_no_paid_apis` (operator design note) — local-default policy.
+- `feedback_no_wheel_reinvention` (operator design note) — adoption rationale.

@@ -62,7 +62,7 @@ After that, prompt edits in the Langfuse UI propagate to the worker on the next 
 
 ## See also
 
-- `~/.claude/projects/C--Users-mattm/memory/feedback_prompts_must_be_db_configurable.md` — why every prompt routes through this manager.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_module_singleton_gotcha.md` — DI gotcha that bit phase 1 of #47.
+- `feedback_prompts_must_be_db_configurable` (operator design note) — why every prompt routes through this manager.
+- `feedback_module_singleton_gotcha` (operator design note) — DI gotcha that bit phase 1 of #47.
 - `scripts/activate_langfuse.py` + `scripts/import_prompts_to_langfuse.py` — operator activation tools.
 - `services/migrations/0153_seed_langfuse_prompt_settings.py` — placeholder rows for the three Langfuse credentials.

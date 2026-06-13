@@ -1,6 +1,6 @@
 # Extending Poindexter
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-13
 
 How to add new capabilities to Poindexter without forking the monorepo
 or touching 1,000-line files. Every extension point below corresponds
@@ -436,7 +436,7 @@ is gone as of the Lane C Stage 4 cutover, 2026-05-16), drop in
 `ApprovalGateStage` with config:
 
 ```python
-from services.stages.approval_gate import ApprovalGateStage
+from modules.content.stages.approval_gate import ApprovalGateStage
 
 approval_gate = ApprovalGateStage()
 
@@ -549,7 +549,7 @@ gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
   flag on the setting row — `SiteConfig.get_secret()` redacts values
   from the in-memory cache and logs.
 - **Don't skip tests.** Every Stage / Reviewer / Adapter / Tap / Job /
-  Probe has a unit test. The repo's 8,400+ tests are the moat against
+  Probe has a unit test. The repo's 10,000+ tests are the moat against
   drift between what the docs promise and what the code does.
 
 ---
@@ -714,8 +714,14 @@ If you see all three, your Module is live.
 
 ### What's deferred
 
-- **Phase 3.5** — physical pipeline-code moves into `modules/content/`
-  (today substrate still owns the 21-stage tree). Wait for sample size ≥ 3.
+- **Phase 3.5 — shipped 2026-06-04.** The content pipeline code physically
+  moved from `services/` into `modules/content/` (`content_validator`,
+  `stages/`, `atoms/`, `multi_model_qa`, …) over a chain of squash-merged PRs,
+  enabled by the registry's presence-based discovery. The generic pipeline
+  engine (`template_runner`, `pipeline_architect`, `prompt_manager`,
+  `llm_text`, `atom_registry`) intentionally stays in substrate — `content`
+  rents it through the DB `graph_def` seam, so the engine never imports
+  content.
 - **Phase 4.5** — `register_dashboards` (Grafana folder per module),
   `register_cli` (subparser auto-discovery), `register_probes` (brain
   daemon integration). Today these are no-op stubs; wire them inline in

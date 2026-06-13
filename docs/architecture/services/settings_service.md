@@ -159,10 +159,10 @@ TIMESTAMP`.
 - `services.bootstrap_defaults.ensure_defaults` — populates new keys
   with sensible defaults at startup so a fresh DB doesn't need
   manual seeding.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_db_first_config.md`
+- `feedback_db_first_config` (operator design note)
   — the project's "everything tunable in DB" policy this service
   enforces.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_silent_defaults.md`
+- `feedback_no_silent_defaults` (operator design note)
   — note that the env-var fallback in `get()` is the ONE silent
   default the project tolerates, kept only for migration
   compatibility.

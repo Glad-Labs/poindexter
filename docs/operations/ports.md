@@ -96,6 +96,7 @@ should use `host.docker.internal:<host_port>`.
 - Compose `network_mode: container:postgres-local` services share another
   container's network namespace; they reach each other on `localhost:CONTAINER_PORT`,
   not via the host port. The legacy `poindexter-backup-*` sidecars do this.
-- Tailscale-routed access doesn't use these ports — see
-  `app_settings.tailscale_*` and the Funnel config in
-  `docs/operations/tailscale.md`.
+- Tailscale-routed access doesn't use these ports — it's fronted by
+  Tailscale Serve (tailnet-only), configured via the `app_settings.tailscale_*`
+  keys. (The `/voice/join` surface moved off the public Funnel to Serve on
+  2026-06-02.)

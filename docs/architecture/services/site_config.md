@@ -141,5 +141,5 @@ WHERE key = '<key>';` — then update callers to use `get_secret()`
   `_limit()` helper.
 - `services.settings_service.SettingsService` — the write path
   (mutates settings; logs to `audit_log` for the change history).
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_env_vars.md`
+- `feedback_no_env_vars` (operator design note)
   and `feedback_db_first_config.md` — why this exists.

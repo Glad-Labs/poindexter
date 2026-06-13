@@ -17,7 +17,7 @@ the regular pipeline.
 
 ## Day-zero setup
 
-The Glad Labs niche is pre-seeded by **migration 0115**:
+The Glad Labs niche is pre-seeded (now folded into the baseline migration):
 
 - slug `glad-labs`, writer mode `TWO_PASS`, batch size 5,
   cadence floor 60 minutes
@@ -33,7 +33,7 @@ poindexter topics niche list
 poindexter topics niche show glad-labs
 ```
 
-Adding a **new** niche today is a hand-job: there is no
+Adding a **new** niche today is a manual process: there is no
 `poindexter niche create` CLI yet (see "What's not yet built" below).
 Until that lands, insert via SQL or call `services.niche_service.NicheService`
 from a Python shell:
@@ -150,7 +150,7 @@ model override yet — see "What's not yet built").
 
 ## The kill-switch for legacy auto-discovery
 
-Migration 0118 introduced `topic_discovery_auto_enabled`:
+The `topic_discovery_auto_enabled` setting (seeded on by default):
 
 - **Default `true`** — the legacy `IdleWorker` discovery loop keeps firing
   on its old signals (queue-low, stale-content, rejection-streak, 24h
@@ -171,7 +171,7 @@ Glad Labs operators running niches should set this to `false`.
 
 ## Tuning knobs you'll actually touch
 
-Most of these live in `app_settings` and are seeded by migration 0119. The
+Most of these live in `app_settings` and are seeded with sane defaults. The
 two `niches` table columns at the top are per-niche, not app_setting.
 
 | Knob                                       | Where                 | Default                | What it controls                                                  |

@@ -164,12 +164,12 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
 
 ## See also
 
-- `~/.claude/projects/C--Users-mattm/memory/feedback_cost_controls.md`
+- `feedback_cost_controls` (operator design note)
   — Matt's $300 Gemini-in-one-night origin story for why this guard
   exists.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_paid_apis.md`
+- `feedback_no_paid_apis` (operator design note)
   — local-default + opt-in cloud LLM policy.
-- `~/.claude/projects/C--Users-mattm/memory/feedback_no_silent_defaults.md`
+- `feedback_no_silent_defaults` (operator design note)
   — why `CostGuardExhausted` MUST surface and not silently fall back.
 - `docs/architecture/services/site_config.md` — how the guard reads
   its limits and rate overrides.

@@ -101,7 +101,7 @@ want to override the auto-provisioned credential.
 
 1. Open Grafana → **Alerting** → **Contact points**.
 2. Click the contact point that points at the worker webhook
-   (default name: `poindexter-worker`).
+   (default name: `Poindexter Webhook`).
 3. Edit → **Optional Webhook settings** → **Custom HTTP headers**.
 4. Click **+ Add header**.
 5. Header name: `Authorization`
@@ -179,9 +179,13 @@ operator pastes the new one in — same procedure as a normal rotation.
 | `503 Service Unavailable`             | `app_settings.alertmanager_webhook_token` is empty. Run `poindexter set alertmanager_webhook_token "<value>"`.                     |
 | Test succeeds, real alerts never fire | Check the Grafana alert rule's `Notifications` block — the contact point must be selected.                                         |
 
-The middleware no longer accepts static-Bearer tokens — the dual-auth
-window closed in Glad-Labs/poindexter#249. Anything in the
-contact-point header that isn't a JWT minted by this command will 401.
+Note: Glad-Labs/poindexter#249 dropped the static-Bearer fallback on the
+**general** worker-API middleware, but this webhook route is the exception.
+`verify_alertmanager_token` (`routes/alertmanager_webhook_routes.py`) still
+accepts the legacy static `alertmanager_webhook_token` alongside OAuth JWTs,
+so a correctly-set static token also passes. A header that is neither a valid
+JWT nor the configured static token gets 401 — or 503 if the static token is
+unset and the JWT path doesn't accept (fail-closed).
 
 ## See also
 

@@ -57,7 +57,7 @@ The script:
 If you haven't set `user.signingkey` globally yet, pass the key id directly:
 
 ```sh
-bash scripts/setup-git-signing.sh 7169605F62C751356D054A26A821E680E5FA6305
+bash scripts/setup-git-signing.sh <YOUR_KEY_ID>
 ```
 
 On Windows, if `gpg` is installed but git can't find it, export `GPG_PROGRAM`
