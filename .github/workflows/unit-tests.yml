@@ -16,13 +16,19 @@
 # pytest steps on whether any backend code actually changed. Docs-only
 # PRs land the required check in ~30s; backend PRs run the full suite.
 #
-# #534: the docs-only short-circuit applies to PULL REQUESTS ONLY. On a
-# push to `main` the full suite ALWAYS runs. Otherwise a no-test commit
-# (e.g. a release-please changelog/version bump) layered on top of a
-# failing code commit would skip → report `success` → leave main's HEAD
-# showing a green check over a red tree. Pushes to main are infrequent
-# enough that the extra minutes buy an honest "green means tested" signal
-# on the branch everything else trusts.
+# #534 retired / cost-trim 2026-06-12: this gate runs the full suite on PRs
+# and the nightly schedule, but is SKIPPED on pushes to main on the PRIVATE
+# source repo (the job-level `if:` below). A merged PR already ran this exact
+# suite, so the post-merge push run was near-pure re-test — the single biggest
+# line on the private-repo Actions bill (~875 wall-min / 3 days). A skipped job
+# provisions no runner, so the saving is the whole run. The nightly schedule
+# run (full suite + coverage) is the "green means tested on main" backstop: a
+# semantic merge-conflict two concurrent PRs slip past PR gating surfaces there
+# within 24h. The PUBLIC mirror (Glad-Labs/poindexter) is EXEMPT from the skip —
+# public repos don't bill Actions, and `test-backend` is a required check there,
+# so it keeps running on push to stay green. (The earlier sweep already made
+# push reuse the PR path-detection short-circuit; this goes further and skips
+# source pushes outright.)
 name: unit-tests
 
 on:
@@ -51,6 +57,22 @@ permissions:
 
 jobs:
   test-backend:
+    # Cost-trim: skip on pushes to main on the PRIVATE source repo — the merged
+    # PR already ran this suite and a skipped job bills $0 (no runner provisioned,
+    # yet the required `test-backend` check still reports `skipped` = satisfied).
+    # PRs, the nightly schedule, workflow_dispatch, and the FREE public mirror's
+    # push (required `test-backend` check) all still run.
+    #
+    # Guard on `github.event.repository.private`, NOT the repo NAME: the public
+    # mirror sync rewrites the literal string `glad-labs-stack` -> `poindexter`
+    # in every file, which would INVERT a `github.repository == '...stack'` check
+    # (it silently flipped jest-unit.yml's guard and the PYTEST line at :90 the
+    # same way — the mirror runs them instead of skipping). `.private` is the real
+    # billing discriminator (public repos don't bill Actions) and carries no
+    # repo-name string for the sync to rewrite. Only read when event=='push'
+    # (push always carries github.event.repository), so the nullable schedule
+    # payload never reaches it. See the #534-retired / cost-trim note in the header.
+    if: ${{ !(github.event_name == 'push' && github.event.repository.private) }}
     # runs-on seam. When the `CI_RUNNER` repo variable is set (a JSON array of
     # runner labels — configured only on the private source repo) this job runs
     # on those self-hosted labels for $0 cloud minutes; when it's unset — the
@@ -143,14 +165,13 @@ jobs:
           fi
 
           # Push events fall through to the same HEAD^1 path-detection used
-          # for PRs. fetch-depth: 2 provides the parent commit. The old
-          # always-run-on-push (#534) was retired by the CI-minutes sweep: bot
-          # commits
-          # (release-please bumps, sync-claude-md, regen-app-settings-doc)
-          # were billing 9–14 min of the 2× private-runner multiplier despite
-          # already having passed CI before merge. All code merges go through
-          # PRs that already gate tests; the sole-committer + Telegram/Grafana
-          # alerting provides the safety net that #534 was adding.
+          # for PRs. fetch-depth: 2 provides the parent commit. #534's
+          # always-run-on-push was retired by the CI-minutes sweep, and the
+          # 2026-06-12 cost-trim went further: the job-level `if:` above skips
+          # SOURCE pushes outright (the merged PR already gated tests; the
+          # nightly + Telegram/Grafana alerting are the safety net #534 added).
+          # So on the source this path now serves only PRs / schedule / dispatch;
+          # the public mirror's sync push still reaches it (collect-only).
 
           # pull_request and push events both reach here (workflow_dispatch
           # returned above). For pull_request GitHub checks out a virtual
