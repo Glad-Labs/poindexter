@@ -138,6 +138,7 @@ _STRIP_FILES = (
     "scripts/install-git-hooks.sh",
     "scripts/system-health-check.sh",
     "scripts/claude-sessions.ps1",
+    "scripts/background-services.ps1",
     "scripts/run-claude-session.cmd",
     "scripts/sync-premium-prompts.py",
     "scripts/kuma_bootstrap.py",

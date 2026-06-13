@@ -116,6 +116,7 @@ git rm --cached --quiet scripts/install-git-hooks.sh 2>/dev/null || true     # l
 git rm -r --cached --quiet .githooks/ 2>/dev/null || true                    # the hooks themselves only fire after install-git-hooks.sh runs — paired stripping
 git rm --cached --quiet scripts/system-health-check.sh 2>/dev/null || true   # operator-specific health probes (Matt's install)
 git rm --cached --quiet scripts/claude-sessions.ps1 2>/dev/null || true       # Windows scheduled-task setup for autonomous Claude sessions (Matt's install)
+git rm --cached --quiet scripts/background-services.ps1 2>/dev/null || true   # Windows scheduled-task setup for host daemons gpu-scraper/nvidia-smi-exporter/video-server (Matt's install)
 git rm --cached --quiet scripts/run-claude-session.cmd 2>/dev/null || true    # cmd wrapper for above
 git rm --cached --quiet scripts/sync-premium-prompts.py 2>/dev/null || true   # syncs premium prompts from Glad Labs operator stash, no-op for public users
 git rm --cached --quiet scripts/kuma_bootstrap.py 2>/dev/null || true         # operator-specific Kuma monitor list (gladlabs.io / Tailscale Funnel), not a reusable template
