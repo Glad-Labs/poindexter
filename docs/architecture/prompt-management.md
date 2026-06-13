@@ -1,14 +1,16 @@
 # Prompt management — UnifiedPromptManager + Langfuse
 
-**Status:** Active. Lane A of `Glad-Labs/poindexter#450` (the OSS migration umbrella) completed 2026-05-09. Production no longer carries inline prompt constants.
+**Status:** Active. Lane A of `Glad-Labs/poindexter#450` (the OSS migration umbrella) completed 2026-05-09 — production no longer carries inline prompt constants. The YAML prompt files were subsequently migrated to agentskills.io `SKILL.md` packs (`Glad-Labs/poindexter#528`); no `prompts/*.yaml` files ship anymore.
 
 ## Where prompts live
 
-The single source of truth for every production prompt is **YAML files** under `src/cofounder_agent/prompts/*.yaml`, accessed via the `UnifiedPromptManager` cascade. There are exactly three places a prompt body can come from at runtime:
+The single source of truth for every production prompt is a set of **`SKILL.md` packs** under `src/cofounder_agent/skills/<pack>/<skill>/SKILL.md`, accessed via the `UnifiedPromptManager` cascade. There are exactly three places a prompt body can come from at runtime:
 
-1. **Langfuse `production` label** — operator's preferred edit surface. Cached in-process for ~60s; edits in the Langfuse UI take effect on the next `get_prompt()` call without a worker restart.
-2. **YAML default** — what ships with the repo. The OSS-friendly fallback when Langfuse isn't configured (or the lookup fails). Edits land via PR.
+1. **Langfuse `production` label** — the operator's preferred edit surface. Cached in-process for ~60s; edits in the Langfuse UI take effect on the next `get_prompt()` call without a worker restart.
+2. **`SKILL.md` pack default** — what ships with the repo (the in-memory default loaded at boot). The OSS-friendly fallback when Langfuse isn't configured (or the lookup fails). Edits land via PR.
 3. **`KeyError`** — if neither source has the key. Per `feedback_no_silent_defaults.md`, an unknown key is a configuration bug, not a quiet fallback.
+
+> The legacy `prompts/*.yaml` loader (`_initialize_prompts`) still runs at boot for backward compatibility, but the repo ships zero YAML prompt files — every key now comes from a `SKILL.md` pack via `_initialize_skills`. Skills load _after_ YAML so a migrated `SKILL.md` transparently wins over any leftover YAML entry for the same key.
 
 ## The cascade
 
@@ -20,13 +22,14 @@ caller: prompt = pm.get_prompt("qa.topic_delivery", topic=t, opening=o)
         ┌──────────────────────────────┐
         │ 1. Langfuse client            │
         │    .get_prompt(name=key,      │
-        │     label="production")        │
+        │     label="production")       │
         │    → returns template if hit  │
         └──────────────────────────────┘
                     ↓ (if None or error)
         ┌──────────────────────────────┐
         │ 2. self.prompts[key]          │
-        │    (loaded from YAML at boot) │
+        │    (in-memory default, loaded │
+        │     from SKILL.md packs at boot) │
         │    → returns template         │
         └──────────────────────────────┘
                     ↓ (if KeyError)
@@ -37,61 +40,24 @@ Both paths feed the same `template.format(**kwargs)` step at the end, so the cal
 
 ## Available prompt keys
 
-The seven prompts migrated by Lane A are now keys in the YAML files. Plus the prompts that already lived in YAML pre-Lane-A:
+Each `SKILL.md` pack declares the keys it provides in its frontmatter `metadata.prompts` list — **that frontmatter is the authoritative key inventory** (the loader registers exactly those keys). The packs that ship today:
 
-### `prompts/system.yaml`
+| Pack (`skills/<pack>/<skill>/SKILL.md`)                       | `metadata.category` | Surface                                                                             |
+| ------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------- |
+| `content/writer`                                              | content             | base content-writer persona + narrative-pass seed                                   |
+| `content/two-pass-writer`                                     | content             | TWO_PASS draft/revise prompts                                                       |
+| `content/blog-generation`                                     | content             | initial draft / SEO+social / iterative refinement                                   |
+| `content/content-qa`, `content/qa`                            | content_qa          | the `qa.*` review, critique, topic-delivery, consistency, aggregate-rewrite prompts |
+| `content/research`                                            | research            | search-result analysis + topic-candidate ranking                                    |
+| `content/image-generation`                                    | image               | featured-image, search-query, and image-director prompts                            |
+| `content/seo-metadata`                                        | seo_metadata        | `seo.*` title / description / keywords / excerpt / category / tags                  |
+| `content/social-media`                                        | social              | trend research + post creation                                                      |
+| `content/podcast`, `content/video`, `content/video-director`  | media               | media-script and shot-list prompts                                                  |
+| `content/atoms`                                               | content             | `atoms.*` system prompts (narrate_bundle, review_with_critic, pipeline_architect)   |
+| `content/utility`                                             | utility             | content summarization / JSON conversion helpers                                     |
+| `ops/automation`, `ops/business`, `ops/triage`, `ops/hygiene` | ops                 | `task.*` business/automation/ops prompts                                            |
 
-- `system.content_writer` — base persona prompt for blog content generation
-- `narrative.system` — persona seed for the deterministic-compositor narrative pass
-
-### `skills/content/blog-generation/SKILL.md`
-
-Migrated out of `prompts/blog_generation.yaml` to the agentskills.io
-SKILL.md catalog (#528). The loader (`prompt_manager._initialize_skills`)
-registers these keys exactly as the YAML did.
-
-- `blog_generation.initial_draft`
-- `blog_generation.seo_and_social`
-- `blog_generation.iterative_refinement`
-- `blog_generation.blog_system_prompt`
-- `blog_generation.blog_generation_request`
-
-### `prompts/content_qa.yaml`
-
-- `qa.content_review`
-- `qa.self_critique`
-- `qa.topic_delivery` — added by Lane A; checks whether body delivers on the topic the title promised
-- `qa.consistency` — added by Lane A; internal-contradiction check across recommendations / facts / principles / code-vs-prose
-- `qa.review` — added by Lane A; overall publication-readiness review (the third LLM critic)
-- `qa.aggregate_rewrite` — added by Lane A; the rewrite prompt that fires when QA rejects a draft and the writer model gets one chance to fix the issues
-
-### `prompts/research.yaml`
-
-- `research.analyze_search_results`
-- `topic.ranking` — added by Lane A; topic-candidate scoring against operator-weighted goals
-
-### `prompts/image_generation.yaml`
-
-- `image.featured_image`
-- `image.search_queries`
-- `image.decision` — added by Lane A; image director (analyzes article + decides what images go where)
-
-### `prompts/seo_metadata.yaml`
-
-- `seo.generate_title` / `seo.generate_meta_description` / `seo.extract_keywords` / `seo.generate_excerpt` / `seo.match_category` / `seo.extract_tags`
-
-### `prompts/social_media.yaml`
-
-- `social.research_trends` / `social.create_post`
-
-### `prompts/tasks.yaml`
-
-- `task.creative_blog_generation` / `task.qa_content_evaluation` / `task.business_financial_impact` / `task.business_market_analysis` / `task.business_performance_analysis` / `task.automation_email_campaign` / `task.content_summarization` / `task.utility_json_conversion`
-
-### `skills/content/atoms/SKILL.md`
-
-- `atoms.narrate_bundle.system_prompt` / `atoms.review_with_critic.system_prompt` / `atoms.pipeline_architect.system_prompt`
-- Migrated from `prompts/atoms.yaml` to the agentskills.io SKILL.md catalog. The `narrate_bundle` and `pipeline_architect` templates carry the operator persona as `{site_name}` / `{site_url}` placeholders, rendered from the run-bound `site_config` by the calling atom before the text reaches the model.
+The `narrate_bundle` and `pipeline_architect` templates carry the operator persona as `{site_name}` / `{site_url}` placeholders, rendered from the run-bound `site_config` by the calling atom before the text reaches the model.
 
 ## How operators tune prompts
 
@@ -104,16 +70,17 @@ registers these keys exactly as the YAML did.
 
 Langfuse versions every change. Roll back by promoting an older version to `production`.
 
-### Tier 2 — YAML edit (when Langfuse isn't an option)
+### Tier 2 — `SKILL.md` edit (when Langfuse isn't an option)
 
-1. Edit `src/cofounder_agent/prompts/<file>.yaml`.
-2. Commit. The container picks up the new body on next deploy / restart.
-3. The snapshot test for that prompt will fail if the body changed — update the snapshot in the same PR.
+1. Open the pack that owns the key (e.g. `skills/content/seo-metadata/SKILL.md` for `seo.*`).
+2. Edit the body in that key's `## <key>` section.
+3. Commit. The container picks up the new body on next deploy / restart.
+4. The prompt contract tests (`tests/unit/services/test_prompt_*.py`, `test_prompt_manager_skills.py`, and per-surface tests like `test_multi_model_qa_prompts.py`) pin rendered bodies — update the affected expectation in the same PR.
 
-The Lane A snapshot tests (in `tests/unit/services/test_*_prompts.py`) pin every rendered body byte-for-byte. They serve two purposes:
+The contract tests serve two purposes:
 
-- **Drift detection.** A prod-side Langfuse edit that strays from the YAML default lands on the dashboard but ALSO causes the snapshot test to fail in CI. The operator is forced to either revert the Langfuse edit or update the snapshot consciously.
-- **Migration safety.** When Lane A migrated f-string prompts to YAML, the snapshot test verified the YAML-rendered body matches the f-string-rendered body byte-for-byte. Format-string contract gotchas (literal `{{` `}}` doubling, trailing newlines) couldn't sneak through.
+- **Drift detection.** A prod-side Langfuse edit that strays from the `SKILL.md` default still lands on the dashboard but ALSO trips the test in CI, forcing a conscious revert-or-update.
+- **Migration safety.** When prompts moved (f-string → YAML → `SKILL.md`), the tests verified the rendered body stayed byte-for-byte identical, so format-string gotchas (`{{`/`}}` doubling, trailing newlines) couldn't sneak through.
 
 ## How callers fetch prompts
 
@@ -125,45 +92,56 @@ pm = get_prompt_manager()  # cached singleton
 prompt = pm.get_prompt(
     "qa.topic_delivery",
     topic="Why local LLMs win",
-    opening="In 2026, the case for local AI..."
+    opening="In 2026, the case for local AI...",
 )
 ```
 
-**Sync API** — even though Langfuse is involved, the call path doesn't await. The Langfuse client caches in-process and the call returns the cached version immediately. First-call latency is the only awaited piece, and that's wrapped synchronously inside the manager.
+**Sync API** — even though Langfuse is involved, the call path doesn't await. The Langfuse client caches in-process and the call returns the cached version immediately.
 
-**Format string semantics** — kwargs are substituted via `str.format(**kwargs)`. Literal braces in the prompt body must be doubled (`{{` / `}}`); the YAML files preserve the doubling. f-strings in source code happen to use the same doubling rule, which is why the migration snapshots came out identical.
+**Format string semantics** — kwargs are substituted via `str.format(**kwargs)`. Literal braces in the prompt body must be doubled (`{{` / `}}`); the `SKILL.md` bodies preserve the doubling.
 
-## YAML format
+## `SKILL.md` prompt format
 
-```yaml
-- key: qa.topic_delivery # dot-namespaced; first segment = surface
-  category: content_qa # matches the file's surface
-  description: 'QA gate — does the body deliver on the topic the title promised'
-  output_format: json # 'json' | 'text' — for downstream parsing
-  template: | # block scalar; preserves newlines verbatim
-    You are a strict editor checking whether an article
-    delivers on its topic. ...
+A prompt-bearing pack is a single `SKILL.md`: YAML frontmatter declares the keys, the body holds one `## <key>` section per prompt with the template in a fenced block.
 
-    REQUESTED TOPIC: {topic}
+```markdown
+---
+name: seo-metadata
+description: >
+  SEO metadata generation. Produce titles, meta descriptions, excerpts, ...
+license: Apache-2.0
+metadata:
+  category: seo_metadata
+  prompts:
+    - key: seo.generate_title
+      output_format: text # 'json' | 'text' — for downstream parsing
+      description: 'Default prompt — premium packs ship as an add-on'
+---
 
-    ARTICLE OPENING (first ~1000 words):
-    {opening}
+# SEO metadata skill
 
-    Respond with ONLY valid JSON:
-    {{"delivers": true/false, "score": NUMBER 0-100, "reason": "..."}}
+## seo.generate_title
+
+\`\`\`
+Write an SEO title for the following article.
+
+TOPIC: {topic}
+\`\`\`
 ```
 
-Use `|` (literal block) — not `>` (folded) — when the prompt has meaningful newlines (almost always). Use `|-` if you need to strip the trailing newline (matches a Python triple-quoted string that doesn't end with `\n`). Snapshots will tell you which form to use; pick whichever matches the source byte-for-byte.
+The loader (`prompt_manager._initialize_skills`) lives _inside_ the package (`<pkg>/skills/`) so a package-relative path resolves identically on the host (`src/cofounder_agent/skills`) and in the worker container (`/app/skills`). Operator _action_ skills (the repo-root `skills/poindexter/` pack that wraps the CLI/MCP) are a different layer — they carry no `metadata.prompts` and are not loaded here.
 
-## Why Langfuse + YAML, not just one
+## Why Langfuse + `SKILL.md`, not just one
 
-- **YAML alone:** edits require a PR + CI + deploy. Operators tuning prompts at 11pm on a Saturday don't want to touch Python.
+- **`SKILL.md` alone:** edits require a PR + CI + deploy. Operators tuning prompts at 11pm on a Saturday don't want to touch the repo.
 - **Langfuse alone:** an OSS fork operator who hasn't set up Langfuse has nothing to fall back on.
-- **Both:** YAML ships as the OSS-friendly default; Langfuse is the operator's edit surface; snapshot tests prevent silent drift.
+- **Both:** the pack default ships as the OSS-friendly baseline; Langfuse is the operator's edit surface; contract tests prevent silent drift.
 
 ## Related docs
 
 - `Glad-Labs/poindexter#450` — OSS migration umbrella (Lane A)
+- `Glad-Labs/poindexter#528` — YAML → `SKILL.md` pack migration
 - `Glad-Labs/poindexter#47` — the original UnifiedPromptManager migration
-- `docs/reference/app-settings.md` — `langfuse_host`, `langfuse_public_key`, `langfuse_secret_key`, `langfuse_tracing_enabled`
-- `docs/architecture/cost-tier-routing.md` — Lane B's sibling migration (model selection, not prompt selection)
+- [`docs/architecture/business-os-endgame.md`](./business-os-endgame) — the agentskills.io pack model and why prompts live as skills
+- [`docs/reference/app-settings.md`](../reference/app-settings.md) — `langfuse_host`, `langfuse_public_key`, `langfuse_secret_key`, `langfuse_tracing_enabled`
+- [`docs/architecture/cost-tier-routing.md`](./cost-tier-routing) — Lane B's sibling migration (model selection, not prompt selection)

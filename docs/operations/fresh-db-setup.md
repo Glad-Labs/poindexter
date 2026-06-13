@@ -11,7 +11,7 @@ empty Postgres database. It's the canonical reference for:
 - A test/staging environment that should mirror production.
 - A disaster-recovery rebuild from `pg_dump` + bootstrap.toml.
 - The acceptance test for any change touching `services/migrations/`,
-  `services/database_service.py`, `cli/setup.py`, or `utils/startup_manager.py`.
+  `services/database_service.py`, `poindexter/cli/setup.py`, or `utils/startup_manager.py`.
 
 If any step in this doc fails, the system is not in a shippable
 state. File a hard issue on Glad-Labs/poindexter with the failing
@@ -302,7 +302,7 @@ curl -s http://localhost:8002/health | python -m json.tool
 ```
 
 Should return `200 OK` with a JSON body containing `"status": "ok"` (or
-similar — the schema is in `routes/health_routes.py`).
+similar — the `/health` handler is defined in `main.py`).
 
 **Then re-run the check** to confirm everything is wired:
 

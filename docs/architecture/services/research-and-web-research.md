@@ -64,7 +64,7 @@ returns an empty list/string rather than crashing the pipeline.
 - `KNOWN_REFERENCES` — backward-compat module alias to the DEFAULT
   map. New callers should use `get_known_references()`.
 - `await research_topic(query, max_sources=None) -> str` — module-level
-  shim used by the TWO_PASS writer mode (`writer_rag_modes/two_pass.py`)
+  shim used by the TWO_PASS writer mode (`modules/content/atoms/two_pass_writer.py`)
   to fill `[EXTERNAL_NEEDED]` markers without needing a DB pool. Wraps
   `ResearchService(pool=None).build_context(query)`. Returns
   `"[research stub for: <query>]"` on failure so the writer keeps moving.

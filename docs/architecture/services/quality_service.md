@@ -1,6 +1,6 @@
 # Quality Service (Unified)
 
-**File:** `src/cofounder_agent/services/quality_service.py`
+**File:** `src/cofounder_agent/modules/content/quality_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_quality_service.py`
 **Last reviewed:** 2026-04-30
 
@@ -42,9 +42,10 @@ of the instance.
 
 ## Public API
 
-- `UnifiedQualityService(model_router=None, database_service=None, qa_agent=None, llm_client=None)` —
-  constructor. All deps optional; only `database_service` is needed
-  for persistence and only `llm_client` for `LLM_BASED` / `HYBRID`.
+- `UnifiedQualityService(database_service=None, qa_agent=None, llm_client=None, *, site_config)` —
+  constructor. `site_config` is required (keyword-only, DI'd); the rest
+  are optional — only `database_service` is needed for persistence and
+  only `llm_client` for `LLM_BASED` / `HYBRID`.
 - `await qs.evaluate(content, context=None, method=EvaluationMethod.PATTERN_BASED, store_result=True) -> QualityAssessment` —
   main entry point. `context` may include `topic`, `keywords`,
   `audience`, `target_length`, `task_id`, `content_id`. When
@@ -58,7 +59,7 @@ of the instance.
   delegates to `quality_scorers.flesch_kincaid_grade_level`.
 - `qs.get_statistics() -> dict` — running counters and pass-rate.
 - Module factories:
-  - `get_quality_service(model_router=None, database_service=None, llm_client=None)`
+  - `get_quality_service(database_service=None, llm_client=None, *, site_config)`
   - `get_content_quality_service(...)` — backward-compat alias.
 - Backward-compat aliases:
   - `ContentQualityService = UnifiedQualityService` (class alias).
@@ -186,8 +187,8 @@ under the `qa_*` prefix in `quality_scorers.qa_cfg()`.
   (or the nuclear option: `qa_llm_patterns_enabled false`).
 - **Inspect recent quality evaluations:**
   `SELECT created_at, overall_score, passing, evaluation_method
- FROM quality_evaluations
- ORDER BY created_at DESC LIMIT 50;`
+FROM quality_evaluations
+ORDER BY created_at DESC LIMIT 50;`
 - **Find LLM-pattern-heavy posts** — search the suggestions JSON
   column on `quality_evaluations` for `"AI writing pattern"` to see
   how often the writer falls back on slop patterns by category.

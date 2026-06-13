@@ -212,7 +212,7 @@ the matrix is what the director's policy converges toward.
 **Scope:**
 
 - Migration: add `posts.video_shot_list jsonb` column
-- New stage `services/stages/generate_video_shot_list.py` between
+- New stage `modules/content/stages/generate_video_shot_list.py` between
   `generate_media_scripts` and `finalize_task`
 - Pydantic models for shot list validation (`schemas/video_shot_list.py`)
 - Director prompt added to UnifiedPromptManager YAML + Langfuse

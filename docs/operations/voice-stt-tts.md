@@ -75,8 +75,8 @@ Bind host / port live in app_settings (`voice_agent_webrtc_host` =
 `0.0.0.0`, `voice_agent_webrtc_port` = `8003`). The default `0.0.0.0`
 binding relies on Tailscale to gate access — only your tailnet devices
 can reach the host port. If you ever expose the port to the open
-internet, add a token gate to the `/api/offer` handler in
-`services/voice_agent_webrtc.py`.
+internet, add a token gate at the WebRTC transport layer in
+`services/voice_agent.py` (the shared `build_voice_pipeline_task`).
 
 ### Local-only mode (override the public bind)
 
@@ -305,7 +305,7 @@ pattern, not a separate code path).
 ## Architecture notes
 
 - The Pipecat pipeline modules (`services/voice_agent.py`,
-  `services/voice_agent_livekit.py`, `services/voice_agent_webrtc.py`)
+  `services/voice_agent_livekit.py`, `services/voice_pipecat.py`)
   are unchanged from the pre-#383 state — they were already
   production-quality. #383 only added:
   - A `--service` daemon entrypoint on the LiveKit module that reads

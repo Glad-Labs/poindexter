@@ -66,8 +66,8 @@ wired module via `set_site_config` at collection time).
 settings. The set of keys depends entirely on what's in the table —
 717 keys (62 secret) as of May 2026. See
 [`docs/reference/app-settings.md`](../../reference/app-settings.md)
-for the current inventory, or
-`scripts/list_app_settings.py` to query the table directly.
+for the current inventory, or run
+`poindexter settings list` to query the table directly.
 
 The only env vars `SiteConfig` itself touches:
 

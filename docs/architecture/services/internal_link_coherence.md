@@ -1,6 +1,6 @@
 # Internal Link Coherence
 
-**File:** `src/cofounder_agent/services/internal_link_coherence.py`
+**File:** `src/cofounder_agent/modules/content/internal_link_coherence.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_internal_link_coherence.py`
 **Last reviewed:** 2026-04-30
 

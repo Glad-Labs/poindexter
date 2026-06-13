@@ -265,7 +265,7 @@ Two layers close it:
   `[text](url)` as an example doesn't false-positive. Zero-false-positive by
   construction — no reader-facing prose contains these tokens.
 
-- **Writer-prompt tightening** (`atoms/two_pass_writer.py::_draft_node`): the
+- **Writer-prompt tightening** (`modules/content/atoms/two_pass_writer.py::_draft_node`): the
   base + SOURCES instructions now state that `[EXTERNAL_NEEDED: …]` is the ONLY
   permitted placeholder and that an ungroundable claim must be written plainly
   **with no citation marker** — reducing the emission rate at the source while
@@ -280,8 +280,8 @@ Files:
 
 - `skills/content/blog-generation/SKILL.md` (migrated from
   `prompts/blog_generation.yaml`, #528)
-- `src/cofounder_agent/prompts/system.yaml`
-- `src/cofounder_agent/services/ai_content_generator.py:248-327`
+- `src/cofounder_agent/skills/content/writer/SKILL.md`
+- `src/cofounder_agent/modules/content/ai_content_generator.py:248-327`
   (`_load_prompts_for_generation` — fetches templates via
   `prompt_manager.get_prompt(...)`)
 
@@ -317,7 +317,7 @@ enforce it deterministically.
 
 ## Layer 2 — Programmatic validator
 
-File: `src/cofounder_agent/services/content_validator.py`
+File: `src/cofounder_agent/modules/content/content_validator.py`
 
 Entry point: `validate_content(title, content, topic, tags)` at line
 `686`. Runs synchronously, no LLM calls, returns a `ValidationResult`
@@ -402,7 +402,7 @@ remaining after promotion.
 
 ## Layer 3 — Cross-model review
 
-File: `src/cofounder_agent/services/multi_model_qa.py`
+File: `src/cofounder_agent/modules/content/multi_model_qa.py`
 
 Entry point: `MultiModelQA.review(title, content, topic,
 research_sources, preview_url)` at line `276`. Returns a
@@ -425,8 +425,8 @@ nothing to evaluate).
 | ---------------------------- | ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `programmatic_validator`     | `programmatic`     | 309                                  | Calls Layer 2's `validate_content()`. Score = `100 - score_penalty`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `citation_verifier`          | `http_head`        | 946 (`_check_citations`)             | HTTP HEAD against every external URL via `services.citation_verifier`. Fails if dead-link ratio > `qa_citation_max_dead_ratio` (default 0.30) or count < `qa_citation_min_count`.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `ollama_critic`              | `ollama`           | 652 (`_review_with_ollama`)          | Runs the `qa.review` YAML prompt (in `prompts/content_qa.yaml`, sourced through `UnifiedPromptManager`) on local Ollama. Configurable model via `pipeline_critic_model` (default `gemma3:27b`). The prompt explicitly handles the training-cutoff case: "do NOT automatically reject just because you lack knowledge", and grounds factual claims against the optional `SOURCES` block built from `ResearchService.build_context()`.                                                                                                                                                 |
-| `topic_delivery`             | `consistency_gate` | 1038 (`_check_topic_delivery`)       | Runs the `qa.topic_delivery` YAML prompt (in `prompts/content_qa.yaml`) — checks numeric promises ("10 X" → does the body actually list 10?), named entities ("Llama 4" → not Llama 3), format promise (guide vs opinion), and angle/thesis. Hard binary veto when it fails — bait-and-switch can't be fixed by targeted edits.                                                                                                                                                                                                                                                      |
+| `ollama_critic`              | `ollama`           | 652 (`_review_with_ollama`)          | Runs the `qa.review` prompt (in `skills/content/content-qa/SKILL.md`, sourced through `UnifiedPromptManager`) on local Ollama. Configurable model via `pipeline_critic_model` (default `gemma3:27b`). The prompt explicitly handles the training-cutoff case: "do NOT automatically reject just because you lack knowledge", and grounds factual claims against the optional `SOURCES` block built from `ResearchService.build_context()`.                                                                                                                                           |
+| `topic_delivery`             | `consistency_gate` | 1038 (`_check_topic_delivery`)       | Runs the `qa.topic_delivery` prompt (in `skills/content/content-qa/SKILL.md`) — checks numeric promises ("10 X" → does the body actually list 10?), named entities ("Llama 4" → not Llama 3), format promise (guide vs opinion), and angle/thesis. Hard binary veto when it fails — bait-and-switch can't be fixed by targeted edits.                                                                                                                                                                                                                                                |
 | `internal_consistency`       | `consistency_gate` | 1055 (`_check_internal_consistency`) | Runs the `qa.consistency` YAML prompt (in `prompts/content_qa.yaml`) — looks for recommendation contradictions ("don't use React" + "use Next.js"), factual contradictions, principle contradictions, and code-vs-prose contradictions. Soft veto: only fires a hard reject when its own score is unambiguously low (< `qa_consistency_veto_threshold`, default 50).                                                                                                                                                                                                                 |
 | `image_relevance`            | `vision_gate`      | 1071 (`_check_image_relevance`)      | Opt-in via `qa_vision_check_enabled` (default false). Downloads up to `qa_vision_max_images` (default 3) inline images, base64-encodes them, sends to `qa_vision_model` (default `qwen3-vl:30b`) with a "rate 0-100 how well the image represents the article's subject" prompt. Catches stock-photo-for-a-FastAPI-post mismatches.                                                                                                                                                                                                                                                  |
 | `web_factcheck`              | `web_factcheck`    | 1457 (`_web_fact_check`)             | Opt-in via `qa_web_factcheck_enabled` (default true). Extracts product / hardware / version claims via regex (RTX/Llama/Python version patterns), runs DuckDuckGo searches via `WebResearcher`, scores by fuzzy term-match ratio. The **fix** for the training-cutoff problem: local critics reject "RTX 5090 has 32GB VRAM" because they were trained before release; this gate confirms it on the live web. Special role: if the validator's only critical issue was `known_wrong_fact` and this gate confirms the claim, the validator's rejection is overridden.                 |

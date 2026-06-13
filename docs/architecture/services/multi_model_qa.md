@@ -1,6 +1,6 @@
 # Multi-Model QA
 
-**File:** `src/cofounder_agent/services/multi_model_qa.py`
+**File:** `src/cofounder_agent/modules/content/multi_model_qa.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_multi_model_qa.py`
 **Last reviewed:** 2026-04-30
 

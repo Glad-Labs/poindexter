@@ -15,17 +15,17 @@ This guide is prescriptive. If you want design rationale, read
 
 ## Quick picker
 
-| I want to...                                              | Add a...     | Protocol                        | Example                                    |
-| --------------------------------------------------------- | ------------ | ------------------------------- | ------------------------------------------ |
-| Run a new step in the content pipeline                    | **Stage**    | `plugins/stage.py::Stage`       | `services/stages/writer_self_review.py`    |
-| Score a draft against a new quality rule                  | **Reviewer** | `plugins/stage.py::Reviewer`    | `services/content_validator.py`            |
-| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`     | `services/social_adapters/bluesky.py`      |
-| Generate media (image / audio / video) from a new engine  | **Provider** | `plugins/stage.py::Provider`    | `services/providers/sdxl.py` (in-progress) |
-| Ingest content ideas from a new source (API, file, queue) | **Tap**      | `plugins/tap.py::Tap`           | `services/topic_sources/hackernews.py`     |
-| Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`       | `brain/health_probes.py`                   |
-| Schedule a recurring background task                      | **Job**      | `plugins/job.py::Job`           | `services/jobs/reload_site_config.py`      |
-| Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider** | `plugins/provider.py::Provider` | Phase J, tracked at GH-104                 |
-| **Add an entire business function (finance, HR, ...)**    | **Module**   | `plugins/module.py::Module`     | `src/cofounder_agent/modules/content/`     |
+| I want to...                                              | Add a...     | Protocol                               | Example                                          |
+| --------------------------------------------------------- | ------------ | -------------------------------------- | ------------------------------------------------ |
+| Run a new step in the content pipeline                    | **Stage**    | `plugins/stage.py::Stage`              | `modules/content/stages/writer_self_review.py`   |
+| Score a draft against a new quality rule                  | **Reviewer** | `plugins/stage.py::Reviewer`           | `modules/content/content_validator.py`           |
+| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`            | `services/social_adapters/bluesky.py`            |
+| Generate media (image / audio / video) from a new engine  | **Provider** | `plugins/stage.py::Provider`           | `services/image_providers/sdxl.py` (in-progress) |
+| Ingest content ideas from a new source (API, file, queue) | **Tap**      | `plugins/tap.py::Tap`                  | `services/topic_sources/hackernews.py`           |
+| Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`              | `brain/health_probes.py`                         |
+| Schedule a recurring background task                      | **Job**      | `plugins/job.py::Job`                  | `services/jobs/reload_site_config.py`            |
+| Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider** | `plugins/llm_provider.py::LLMProvider` | Phase J, tracked at GH-104                       |
+| **Add an entire business function (finance, HR, ...)**    | **Module**   | `plugins/module.py::Module`            | `src/cofounder_agent/modules/content/`           |
 
 **Capability plugins vs business modules.** Every row above the last is a
 _capability plugin_ — a discrete piece (one tap, one provider, one stage) the
@@ -45,14 +45,14 @@ Each column below describes the full "how" per extension type.
 
 A **Stage** is a pipeline step that runs on a single content task.
 Stages are wired into LangGraph pipelines — the `canonical_blog`
-graph_def (`services/canonical_blog_spec.py`, 18 nodes, seeded into the
+graph_def (`services/canonical_blog_spec.py`, 36 nodes, seeded into the
 `pipeline_templates` table) and the `dev_diary` factory in
 `services/pipeline_templates/__init__.py`; `TemplateRunner` orchestrates
 them via the spec's edge list.
 
 ### 1a. Minimum viable Stage
 
-Create `src/cofounder_agent/services/stages/my_stage.py`:
+Create `src/cofounder_agent/modules/content/stages/my_stage.py`:
 
 ```python
 from typing import Any
@@ -144,7 +144,7 @@ Custom fields (whatever your stage needs) live alongside. Example:
 
 Every stage ships with a unit test that builds a fake context + config
 and asserts the returned `StageResult`. Model the test on
-`tests/unit/services/stages/test_*.py`. Test that `halts_on_failure`
+`tests/unit/modules/content/stages/test_*.py`. Test that `halts_on_failure`
 and `timeout_seconds` are honored under the failure paths you care about.
 
 ---
@@ -212,7 +212,7 @@ keep it as pure veto. If it produces a meaningful graded score, use
 
 ### Register
 
-Add to `services/multi_model_qa.py::MultiModelQA.review()` in the
+Add to `modules/content/multi_model_qa.py::MultiModelQA.review()` in the
 reviewer-assembly section. Future plugin-architecture work (Phase E)
 will move this to an entry-point discovery.
 
@@ -227,8 +227,9 @@ itself.
 Existing adapters live in `services/social_adapters/`:
 
 - `bluesky.py` — working
-- `threads.py` — working
-- `linkedin.py`, `reddit.py`, `youtube.py` — stubbed (`NotImplementedError`, tracked at GH-40)
+- `mastodon.py` — working
+
+Further platforms (LinkedIn, Reddit, Threads) are tracked at GH-40.
 
 ### Minimum shape
 
@@ -270,7 +271,9 @@ poindexter settings set my_platform_api_token "xxx" --category secrets
 poindexter settings set my_platform_enabled true
 ```
 
-Register the adapter in `services/social_publisher.py` platform map.
+Register the adapter by inserting a `publishing_adapters` row and wiring a
+`publishing.<name>` handler (poindexter#112) — distribution is row-driven, see
+`services/integrations/handlers/`.
 
 ---
 
@@ -407,7 +410,7 @@ class MyProbe:
         MY_PROBE_GAUGE.set(value)
 ```
 
-Register in `brain/probe_registry.py`.
+Register in `plugins/probe_registry.py`.
 
 ---
 
@@ -737,5 +740,3 @@ If you see all three, your Module is live.
   DB-backed config key
 - [Database migrations convention](migrations.md) — Glad-Labs/poindexter#378
 - [Fresh DB setup walkthrough](fresh-db-setup.md) — verified end-to-end
-
-<!-- DOC-SYNC 2026-04-25: stale references — brain/probe_registry.py (use brain/probe_interface.py), services/social_publisher.py, and threads.py adapter no longer exist. Extension-point docs may be out of date. -->

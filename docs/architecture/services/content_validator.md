@@ -1,6 +1,6 @@
 # Content Validator
 
-**File:** `src/cofounder_agent/services/content_validator.py`
+**File:** `src/cofounder_agent/modules/content/content_validator.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_content_validator.py`
 **Last reviewed:** 2026-04-30
 

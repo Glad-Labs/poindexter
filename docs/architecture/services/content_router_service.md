@@ -95,7 +95,7 @@ Every other tunable lives on the individual stages — see
 - **Cross-model QA rejection** — on the graph_def path `qa.aggregate`
   (the qa.\* rail block that replaced the deleted `cross_model_qa` stage,
   #355) sets `status="rejected"`, persists the reject via
-  `services/atoms/_qa_persist.py`, and halts the graph; not raised as an
+  `modules/content/atoms/_qa_persist.py`, and halts the graph; not raised as an
   error.
 - **Silent writer fallback** — primary model timed out or 500'd, writer
   chain succeeded with the next model. Detected by comparing

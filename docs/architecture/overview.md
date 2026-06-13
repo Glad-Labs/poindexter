@@ -161,7 +161,7 @@ execution and multi-agent orchestration.
 
 | Component       | Technology                       | Port | Status        |
 | --------------- | -------------------------------- | ---- | ------------- |
-| **Public Site** | Next.js 15 + React 18 + Tailwind | 3000 | ✅ Production |
+| **Public Site** | Next.js 16 + React 19 + Tailwind | 3000 | ✅ Production |
 
 **Frontend Features:**
 
@@ -182,7 +182,7 @@ execution and multi-agent orchestration.
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (18 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
+- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (36 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
 - LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
@@ -198,7 +198,7 @@ execution and multi-agent orchestration.
 | **Storage**    | File system / Cloud Storage                        | Media files and assets       | ✅ Active |
 | **Task Queue** | Prefect (`services/flows/content_generation.py`)   | Async task processing        | ✅ Active |
 | **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine  | ✅ Active |
-| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 8 dashboards, ~90 panels     | ✅ Active |
+| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 13 dashboards, ~90 panels    | ✅ Active |
 
 ### AI Model Providers (Ollama-only pipeline)
 
@@ -239,7 +239,7 @@ Use cost tiers (`free`/`budget`/`standard`/`premium`) for model selection — ne
 
 ```text
 public-site/
-├── app/                        # Next.js 15 app router
+├── app/                        # Next.js 16 app router
 │   ├── page.js                 # Homepage
 │   ├── layout.js               # Root layout
 │   ├── posts/[slug]/page.tsx   # Dynamic post pages
@@ -343,7 +343,7 @@ GET  /api/tags                     # List tags
 A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. As of atom-cutover #355 (2026-06-02) `canonical_blog` ships as a static `graph_def` row in the `pipeline_templates` table (authored in `services/canonical_blog_spec.py`, compiled by `services/pipeline_architect.py::build_graph_from_spec`), preferred by `TemplateRunner.run` when `pipeline_use_graph_def=true` (the prod default). `dev_diary` still ships in-tree as a Python factory in `services/pipeline_templates/__init__.py` — the only entry left in `TEMPLATES` after the hand-coded `canonical_blog` factory was deleted:
 
 - `canonical_blog` — the 36-node default for blog posts (`services/canonical_blog_spec.py` is the authoritative node list). Six linear blocks: verify → **writer** (generate_draft → generate_title → check_title_originality → normalize_draft → optional `draft_gate` → writer_self_review → resolve_internal_link_placeholders → reconcile_citations) → **quality + images** (quality_evaluation → url_validation → plan/generate/inject inline images → source_featured_image → caption_images) → the **12-atom qa.\* rail block** (qa.programmatic → … → qa.aggregate, which replaced the deleted `cross_model_qa` stage) → **seo.generate_all_metadata** → media scripts → **finalize** (compile_meta → persist_task → record_pipeline_version → evaluate_auto_publish)
-- `dev_diary` — 4-node subset for the build-in-public stream (verify_task → narrate_bundle → source_featured_image → finalize_task)
+- `dev_diary` — 5-node subset for the build-in-public stream (verify_task → narrate_bundle → generate_seo_metadata → source_featured_image → finalize_task)
 
 Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL value fails loud per `feedback_no_silent_defaults`.
 
@@ -382,12 +382,12 @@ See [`services/template_runner.md`](services/template_runner) for the runner's i
 - Langfuse callback auto-traces every call
 - The hand-rolled `model_router.py` / `usage_tracker.py` / `model_constants.py` trio was deleted in Phase 2 cleanup (2026-05-08)
 
-#### Pipeline Templates + Stages (`services/pipeline_templates/__init__.py` + `services/stages/*`)
+#### Pipeline Templates + Stages (`services/pipeline_templates/__init__.py` + `modules/content/stages/*`)
 
-- `Stage` protocol: `name: str`, `async def run(context) -> context` — implemented per-stage in `services/stages/`
+- `Stage` protocol: `name: str`, `async def run(context) -> context` — implemented per-stage in `modules/content/stages/`
 - `TemplateRunner` (LangGraph) orchestrates the pipeline — `canonical_blog` from the DB `graph_def` (compiled by `pipeline_architect.build_graph_from_spec`) when `pipeline_use_graph_def=true` (the prod default since #355), `dev_diary` from its in-tree `TEMPLATES` factory. Halts naturally when a node returns a terminal state (e.g. `qa.aggregate` rejecting). The legacy `DEFAULT_STAGE_ORDER` list + `plugins/stage_runner.py` were deleted 2026-05-16 (Lane C Stage 4)
 - Context dict threads through every stage — the pipeline's shared memory. Live service handles ride in `RunnableConfig.configurable["__services__"]` so they don't serialize into checkpoints (poindexter#382)
-- Adding a new stage = drop a file in `services/stages/`, register it in `plugins/registry.py`, then add it as a node: for `canonical_blog` edit the `graph_def` spec (`services/canonical_blog_spec.py`, re-seeded into `pipeline_templates.graph_def`); for `dev_diary` add it to the `StateGraph` factory in `services/pipeline_templates/__init__.py`
+- Adding a new stage = drop a file in `modules/content/stages/`, register it in `plugins/registry.py`, then add it as a node: for `canonical_blog` edit the `graph_def` spec (`services/canonical_blog_spec.py`, re-seeded into `pipeline_templates.graph_def`); for `dev_diary` add it to the `StateGraph` factory in `services/pipeline_templates/__init__.py`
 
 #### Semantic Memory (`services/embedding_service.py` + pgvector)
 
