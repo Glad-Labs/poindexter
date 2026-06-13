@@ -37,7 +37,28 @@ import click
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 
 
+def _ensure_selector_event_loop_on_windows() -> None:
+    """Switch to the SelectorEventLoop on Windows before ``asyncio.run``.
+
+    ``pipeline resume`` depends on LangGraph's ``AsyncPostgresSaver`` (psycopg3)
+    to load the durable checkpoint the worker wrote when the graph paused at a
+    gate. psycopg3's async mode CANNOT run on Windows' default
+    ``ProactorEventLoop`` — it raises ``InterfaceError``, which
+    ``TemplateRunner._resolve_checkpointer`` catches and degrades to
+    ``MemorySaver``. A fresh ``MemorySaver`` holds no checkpoint, so LangGraph
+    re-runs the graph from its entry node with the CLI's thin initial state
+    (no ``post_id``) and seo_refresh halts at ``content.load_existing_post``.
+
+    asyncpg (the CLI pool) runs on either loop, so this switch is safe for
+    every pipeline subcommand. Mirrors
+    ``scripts/smoke_371_postgres_checkpointer.py``.
+    """
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
 def _run(coro):
+    _ensure_selector_event_loop_on_windows()
     return asyncio.run(coro)
 
 
