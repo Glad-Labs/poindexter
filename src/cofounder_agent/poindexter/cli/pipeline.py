@@ -100,6 +100,18 @@ class _PoolShim:
 
 async def _make_pool():
     import asyncpg
+
+    from poindexter.cli._bootstrap import ensure_secret_key
+
+    # Load POINDEXTER_SECRET_KEY from bootstrap.toml into env so the
+    # in-process graph's downstream ``plugins.secrets.get_secret`` calls
+    # succeed — ``storage_secret_key`` (R2 upload) and ``revalidate_secret``
+    # (Next.js ISR) are both is_secret rows. Worker containers have this set
+    # at startup; a bare ``poindexter pipeline …`` shell doesn't, so without
+    # it ``resume`` runs the graph but every secret read raises and the R2
+    # upload + ISR revalidation silently skip, leaving a republish
+    # half-propagated. Same fix as ``dev_diary._open_pool``.
+    ensure_secret_key()
     return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
 
 

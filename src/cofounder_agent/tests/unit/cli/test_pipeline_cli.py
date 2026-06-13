@@ -175,3 +175,46 @@ class TestResumeCommand:
             result = runner.invoke(pipeline_group, ["resume", "abc"])
         assert result.exit_code != 0
         assert "matches 2 tasks" in result.output
+
+
+# ---------------------------------------------------------------------------
+# _make_pool — POINDEXTER_SECRET_KEY load (R2 + ISR secret decryption on host)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_make_pool_loads_secret_key(monkeypatch):
+    """`_make_pool` loads POINDEXTER_SECRET_KEY before any pipeline secret read.
+
+    `pipeline resume` runs the graph in-process, which reads encrypted secrets
+    (`storage_secret_key` for the R2 upload, `revalidate_secret` for ISR) via
+    `site_config.get_secret()`. A bare `poindexter pipeline …` shell doesn't
+    inherit POINDEXTER_SECRET_KEY the way the worker container does, so without
+    this load every secret read raised SecretsError and the R2 upload + ISR
+    revalidation were silently skipped — leaving a republish half-propagated.
+    Mirrors dev_diary._open_pool.
+    """
+    ensure_called = False
+
+    def _fake_ensure() -> bool:
+        nonlocal ensure_called
+        ensure_called = True
+        return True
+
+    sentinel_pool = object()
+    monkeypatch.setattr(
+        "poindexter.cli._bootstrap.ensure_secret_key", _fake_ensure
+    )
+    monkeypatch.setattr(
+        "poindexter.cli.pipeline._dsn", lambda: "postgresql://fake/test"
+    )
+    monkeypatch.setattr(
+        "asyncpg.create_pool", AsyncMock(return_value=sentinel_pool)
+    )
+
+    from poindexter.cli.pipeline import _make_pool
+
+    pool = await _make_pool()
+
+    assert ensure_called is True, "_make_pool must load POINDEXTER_SECRET_KEY"
+    assert pool is sentinel_pool
