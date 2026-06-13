@@ -15,8 +15,9 @@ removed in the 2026-04 refactor):
 Each task carries a `quality_score` populated by `multi_model_qa.py` after the
 anti-hallucination QA rails finish. Six OSS rails run (all advisory): DeepEval ×3
 (`deepeval_brand_fabrication`, `deepeval_g_eval`, `deepeval_faithfulness`),
-guardrails-ai ×2 (`guardrails_brand`, `guardrails_competitor`), and Ragas ×1
-(`ragas_eval`, averaging faithfulness + answer-relevancy + context-precision).
+guardrails ×2 (`guardrails_brand`, `guardrails_competitor`, native/dep-free since
+#996), and Ragas ×1 (`ragas_eval`, averaging faithfulness + answer-relevancy +
+context-precision).
 
 ## Usage
 

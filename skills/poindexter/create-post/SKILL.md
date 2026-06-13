@@ -7,24 +7,32 @@ description: Create a new blog post or content task about a given topic. Use whe
 
 Creates a new content task via `POST /api/tasks`. Pending tasks are dispatched by
 **Prefect** (`services/flows/content_generation.py`) and run through the
-`canonical_blog` pipeline — an 18-node `graph_def` stored in the
+`canonical_blog` pipeline — a 36-node `graph_def` stored in the
 `pipeline_templates` table (authored in `services/canonical_blog_spec.py`,
-compiled by `services/pipeline_architect.py`):
+compiled by `services/pipeline_architect.py`). The chain runs linearly through
+six blocks:
 
-1. `verify_task` — task record exists and is processable
-2. `generate_content` — writer model drafts the post (may use a RAG mode)
-3. `writer_self_review` — writer re-reads and tightens its own draft
-4. `resolve_internal_link_placeholders` — closes leaked `[posts/<slug>]` markers
-5. `quality_evaluation` — early pattern-QA gate (scoring + truncation detection)
-6. `url_validation` — live-check external URLs cited in the draft
-7. `replace_inline_images` — generates each inline image via the SDXL host server
-8. `source_featured_image` — sources the featured image (falls back to Pexels)
-9. **qa.\* rail block** — `qa.critic` → `qa.deepeval` → `qa.guardrails` → `qa.ragas` → `qa.aggregate`: multi-model QA (adversarial critic + DeepEval + guardrails-ai + Ragas rails); `qa.aggregate` makes the gate decision. Replaced the deleted `cross_model_qa` stage (#355)
-10. `generate_seo_metadata` — title, description, slug, keywords
-11. `generate_media_scripts` — podcast script + video scene breakdown
-12. `generate_video_shot_list` — per-scene video shot list
-13. `capture_training_data` — snapshot for the feedback loop
-14. `finalize_task` — mark `awaiting_approval` (or auto-publish if score ≥ threshold)
+1. **verify** — `verify_task`: task record exists and is processable.
+2. **writer** — `generate_draft` → `generate_title` → `check_title_originality`
+   → `normalize_draft` → `draft_gate` (optional HITL, seeded off) →
+   `writer_self_review` → `resolve_internal_link_placeholders` →
+   `reconcile_citations` (deterministic citation repair, #765).
+3. **quality + images** — `quality_evaluation` (pattern-QA gate) →
+   `url_validation` → `plan_image_markers` → `generate_images` →
+   `inject_images` → `source_featured_image` → `caption_images` (vision alt-text).
+4. **qa.\* rail block** (12 atoms) — `qa.programmatic` → `qa.critic` →
+   `qa.deepeval` → `qa.ragas` → `qa.vision` → `qa.topic_delivery` →
+   `qa.citations` → `qa.unlinked_attribution` → `qa.consistency` →
+   `qa.self_consistency` → `qa.web_factcheck` → `qa.aggregate`: multi-model QA
+   delegating to `multi_model_qa.py`; `qa.aggregate` makes the gate decision
+   (halts on reject, no rewrite loop). Replaced the deleted `cross_model_qa`
+   stage (#355).
+5. **seo + media** — `seo.generate_all_metadata` (single structured call, #734)
+   → `generate_media_scripts` → `generate_video_shot_list` →
+   `capture_training_data`.
+6. **finalize** — `compile_meta` → `persist_task` → `record_pipeline_version` →
+   `evaluate_auto_publish`: mark `awaiting_approval` (or auto-publish if
+   score ≥ threshold).
 
 The writer model is **DB-configurable** via cost tiers
 (`cost_tier.{free,budget,standard,premium}.model` in `app_settings`), not hardcoded.

@@ -43,7 +43,7 @@ and runs without it.
 
 <CardGroup cols={3}>
   <Card title="6 OSS QA rails" icon="shield-check">
-    DeepEval (×3), guardrails-ai (×2), and Ragas — every generated post is
+    DeepEval (×3), guardrails (×2, native), and Ragas — every generated post is
     judged by all six before it can be auto-published.
   </Card>
   <Card title="39 scheduled jobs" icon="clock">
@@ -59,13 +59,14 @@ and runs without it.
     Fully self-hosted. Ollama on your GPU, Postgres on the box, no paid API
     in the critical path.
   </Card>
-  <Card title="8 Grafana dashboards" icon="chart-line">
-    Mission Control, Pipeline, Auto-Publish Gate, Cost, Observability,
-    System Health, Integrations, and QA Rails — pre-provisioned.
+  <Card title="13 Grafana dashboards" icon="chart-line">
+    Mission Control, Pipeline, Cost, Observability, System Health,
+    Integrations, QA Rails, Findings, Revenue, Experiments & Dry-Run,
+    Database, Hardware & Power, and SEO Harvest — pre-provisioned.
   </Card>
-  <Card title="18-node pipeline" icon="list-check">
-    `canonical_blog` graph_def: write → self-review → image-source → QA
-    rails → SEO → media scripts → finalize.
+  <Card title="36-node pipeline" icon="list-check">
+    `canonical_blog` graph_def: write → self-review → citation repair →
+    images → QA rails → SEO → media scripts → finalize.
   </Card>
 </CardGroup>
 

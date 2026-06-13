@@ -18,14 +18,14 @@ to the LLM and HTTP reviewers.
 **Atom-cutover #355 (live 2026-06-02) split that apart.** The
 `cross_model_qa` stage is deleted; on the live `canonical_blog`
 `graph_def` path the cross-model review runs as composable atoms in
-`src/cofounder_agent/services/atoms/` — `qa.programmatic` → `qa.critic` →
-`qa.deepeval` → `qa.guardrails` → `qa.ragas` → `qa.vision` →
+`src/cofounder_agent/modules/content/atoms/` — `qa.programmatic` → `qa.critic` →
+`qa.deepeval` → `qa.ragas` → `qa.vision` →
 `qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
-`qa.consistency` → `qa.web_factcheck` → `qa.aggregate`. Each rail atom delegates
-to the matching `MultiModelQA` rail methods (the `_review_with_cloud_model`
-critic plus the per-rail DeepEval, guardrails, Ragas, vision,
-topic-delivery, citation, consistency, and web-factcheck checks) and
-appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
+`qa.consistency` → `qa.self_consistency` → `qa.web_factcheck` → `qa.aggregate`.
+Each rail atom delegates to the matching `MultiModelQA` rail methods (the
+`_review_with_cloud_model` critic plus the per-rail DeepEval, Ragas, vision,
+topic-delivery, citation, consistency, self-consistency, and web-factcheck
+checks) and appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the atoms
 delegate to.

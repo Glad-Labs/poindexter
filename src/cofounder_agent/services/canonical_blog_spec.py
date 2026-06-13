@@ -27,9 +27,10 @@ The dev_diary template (4-node TEMPLATES factory) still uses
 The qa.* rail block and seo.* atom chain are unchanged from #355 except:
 
 - ``qa.guardrails`` was removed (#730): guardrails-ai was uninstalled
-  2026-05-12, the native re-implementation (``guardrails_rails.py``) is
-  advisory and disabled behind ``guardrails_enabled=false``, and the atom
-  was a dead no-op burning execution time on every run.
+  2026-05-12 (CVE), and the standalone atom was a dead no-op burning
+  execution time on every run. The native re-implementation
+  (``guardrails_rails.py``, #996) provides the advisory ``guardrails_brand``
+  / ``guardrails_competitor`` rails; the standalone graph node stays removed.
 
 - The three serial SEO atoms were collapsed into one structured call (#734):
   ``seo.generate_title → seo.generate_description → seo.extract_keywords``

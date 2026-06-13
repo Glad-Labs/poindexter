@@ -97,21 +97,22 @@ Every model routing decision (writer / critic / research / summarizer / embedder
 
 ## Architecture
 
-Poindexter is decomposed by analogy to brain anatomy. Each region is independent and communicates only through PostgreSQL — no inter-service imports.
+Poindexter is built as a **kernel + modules + capabilities** stack. The kernel is the substrate everything rents — plugin registry, DI container, pipeline engine, settings. Business **modules** (content, finance) compose **capability** plugins — 20 entry-point groups spanning llm / image / video / audio / tts. Components communicate only through PostgreSQL; there are no cross-component imports. Two standalone pieces sit alongside the app: the **Brainstem** watchdog daemon and the **Spinal Cord** (PostgreSQL itself, the shared bus).
 
 ```
-Brainstem    (brain/)              — standalone daemon, monitors, self-heals
-Cerebrum     (src/cofounder_agent/) — FastAPI backend, content pipeline, REST + MCP
-Cerebellum                          — anticipation engine + QA registry (learned patterns)
-Limbic       (brain_knowledge)     — knowledge graph, memory retrieval, revenue feedback
-Thalamus                           — process composer, routes inputs to the right pipeline
-Hypothalamus (settings_service)    — homeostasis: budget, cost guard, runtime config
-Spinal Cord  (PostgreSQL+pgvector) — shared substrate, all components talk through it
+Brainstem    (brain/)                 — standalone self-healing watchdog daemon
+Kernel       (plugins/, services/)    — substrate: plugin registry, DI container,
+                                        pipeline engine, settings service
+Modules      (modules/content,        — manifested business functions that
+              modules/finance)          compose capability plugins
+Capabilities (20 plugin entry points) — llm / image / video / audio / tts, …
+Spinal Cord  (PostgreSQL + pgvector)  — shared substrate; every component talks
+                                        through it, not through imports
 
 Any frontend reads static JSON from CDN — Next.js, Hugo, Astro, or a single HTML file.
 ```
 
-The brainstem can crash and restart without taking down the cerebrum. The cerebrum can be replaced with a different pipeline implementation as long as it writes the same tables. The architecture is designed to be poked at one region at a time.
+The brainstem can crash and restart without taking down the API. The content pipeline can be swapped for a different implementation as long as it writes the same tables. The architecture is designed to be poked at one piece at a time.
 
 Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 

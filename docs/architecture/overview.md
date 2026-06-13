@@ -146,7 +146,7 @@ execution and multi-agent orchestration.
    ↓
 7. Provider Protocol invokes the configured LLM (Ollama by default)
    ↓
-8. the qa.* rail atoms (qa.critic → qa.deepeval → qa.guardrails → qa.ragas) run each reviewer; qa.aggregate combines the scores into the gate decision and halts the graph on reject
+8. the 12-atom qa.* rail block (qa.programmatic → qa.critic → qa.deepeval → qa.ragas → … → qa.aggregate) runs each reviewer; qa.aggregate combines the scores into the gate decision and halts the graph on reject
    ↓
 9. finalize_task writes content_tasks (status=awaiting_approval)
    ↓
@@ -334,7 +334,7 @@ GET  /api/tags                     # List tags
 
 ### 3. Pipeline Templates + TemplateRunner
 
-**Location:** `src/cofounder_agent/services/template_runner.py`, `services/pipeline_templates/__init__.py`, `services/stages/`
+**Location:** `src/cofounder_agent/services/template_runner.py`, `services/pipeline_templates/__init__.py`, `services/canonical_blog_spec.py`; atom implementations live under `modules/content/stages/` + `modules/content/atoms/` (the legacy `services/stages/` tree was removed when the content pipeline moved into the content module, Phase 3, 2026-06-04)
 
 **Purpose:** Compose and run the content pipeline as a LangGraph state machine. The `agents/` tree was deleted 2026-05-09 — there are no role-based "agents" anymore. LLM calls live inline in the stages that need them, dispatched via `services/llm_providers/dispatcher.py` (which routes to the LiteLLM provider on prod).
 
@@ -342,7 +342,7 @@ GET  /api/tags                     # List tags
 
 A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. As of atom-cutover #355 (2026-06-02) `canonical_blog` ships as a static `graph_def` row in the `pipeline_templates` table (authored in `services/canonical_blog_spec.py`, compiled by `services/pipeline_architect.py::build_graph_from_spec`), preferred by `TemplateRunner.run` when `pipeline_use_graph_def=true` (the prod default). `dev_diary` still ships in-tree as a Python factory in `services/pipeline_templates/__init__.py` — the only entry left in `TEMPLATES` after the hand-coded `canonical_blog` factory was deleted:
 
-- `canonical_blog` — the 18-node default for blog posts (verify_task → generate_content → writer_self_review → resolve_internal_link_placeholders → quality_evaluation → url_validation → replace_inline_images → source_featured_image → **qa.critic → qa.deepeval → qa.guardrails → qa.ragas → qa.aggregate** — the qa.\* rail block that replaced the deleted `cross_model_qa` stage → generate_seo_metadata → generate_media_scripts → generate_video_shot_list → capture_training_data → finalize_task)
+- `canonical_blog` — the 36-node default for blog posts (`services/canonical_blog_spec.py` is the authoritative node list). Six linear blocks: verify → **writer** (generate_draft → generate_title → check_title_originality → normalize_draft → optional `draft_gate` → writer_self_review → resolve_internal_link_placeholders → reconcile_citations) → **quality + images** (quality_evaluation → url_validation → plan/generate/inject inline images → source_featured_image → caption_images) → the **12-atom qa.\* rail block** (qa.programmatic → … → qa.aggregate, which replaced the deleted `cross_model_qa` stage) → **seo.generate_all_metadata** → media scripts → **finalize** (compile_meta → persist_task → record_pipeline_version → evaluate_auto_publish)
 - `dev_diary` — 4-node subset for the build-in-public stream (verify_task → narrate_bundle → source_featured_image → finalize_task)
 
 Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL value fails loud per `feedback_no_silent_defaults`.
