@@ -1,26 +1,29 @@
 # Shared Context — Glad Labs
 
-This directory is shared between Claude Code and OpenClaw (Poindexter).
-Both systems read and write here to maintain continuity across sessions.
+This directory holds durable cross-session context for Glad Labs — identity,
+key decisions, preferences, and dated historical records. Its `.md` files are
+embedded into the semantic memory system by the memory tap
+(`src/cofounder_agent/services/taps/memory.py`), so the content is recallable
+via `search_memory`.
 
-## How It Works
-
-- **Claude Code** reads this on session startup and writes handoffs/decisions at session end
-- **OpenClaw** reads this on main session startup (after SOUL.md and USER.md)
-- Files use markdown with YAML frontmatter for metadata
-- `updated_by` field tracks which system last modified a file
+> **Note (retired mechanism, 2026-06):** the live session-state loop — `state/`
+> snapshots auto-written by the `sync-shared-context` job, plus the "read on
+> startup / write a handoff at session end" workflow — is **retired**. The job
+> was deleted and the snapshots went 2+ months stale. Claude Code now uses
+> `~/.claude/projects/.../memory/` for session continuity (see CLAUDE.md's
+> startup section). What remains here is durable reference content that stays
+> useful as embedded memory.
 
 ## Directory Layout
 
-- `identity/` — Who Matt is, how he thinks, project vision
-- `decisions/` — Key decisions with reasoning (the WHY)
-- `state/` — Current session, latest handoff, backlog
+- `identity/` — who Matt is, how he thinks, project vision
+- `decisions/` — key decisions with reasoning (the WHY)
 - `feedback/` — Matt's preferences and system constraints
+- `audits/`, `migrations/` — dated historical records (kept as-is)
 
-## Rules
+## Conventions
 
-- Both systems can read everything
-- Both systems can append to decisions/ and update state/
-- Identity files are updated rarely (only when Matt gives new guidance)
-- state/current-session.md should be updated when starting/ending work
-- Never delete another system's entries — append or update your own
+- Files use markdown with YAML frontmatter for metadata.
+- Identity files change rarely (only when Matt gives new guidance).
+- Dated records (`audits/`, `migrations/`) are immutable history — don't edit
+  them to reflect later state; add a new dated file instead.
