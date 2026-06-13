@@ -49,22 +49,38 @@ jobs:
       REPO: ${{ github.repository }}
       RUNNER_LABELS: '["self-hosted","linux","x64"]'
       DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
+      # Surfaced as an env var because the `secrets` context is NOT allowed in a
+      # step `if:` — GitHub rejects `if: secrets.x != ''` at parse time ("Unrecognized
+      # named-value: 'secrets'"). The `env` context IS allowed in `if:`, so the
+      # dormant guard below keys on this instead. (Job-level env referencing a
+      # secret is the documented workaround.)
+      RUNNER_APP_ID: ${{ secrets.CI_RUNNER_APP_ID }}
     steps:
-      # Mint a short-lived (1h) installation token from the dedicated runner App
-      # — Administration:read to list runners, Variables:write to flip CI_RUNNER.
-      # Narrowed to those two perms (the App also holds Administration:write, but
-      # only the runner CONTAINER needs that, to register). Guarded on the App-ID
-      # secret so this whole workflow is a quiet green no-op until the runner
-      # feature is configured. Pinned to a SHA per the third-party-Actions lint.
+      # Mint a short-lived (1h) installation token from the dedicated runner App.
+      # The token carries the FULL set of permissions the App install was granted
+      # — and that set is already exactly minimal: this App is dedicated to the
+      # runner and holds only Administration (list runners) + Variables (flip
+      # CI_RUNNER) + Metadata. So minting the full token IS least-privilege; the
+      # App install itself is the privilege boundary, not a per-mint narrowing.
+      #
+      # We do NOT pass `permission-*` inputs to narrow further. Two reasons:
+      #   1. `create-github-app-token` has no `permission-variables` input — the
+      #      repo-variables permission key is `actions_variables`, so the input
+      #      was silently ignored (a build warning), never granting Variables.
+      #   2. Narrowing to a subset the install wasn't granted 422s ("permissions
+      #      requested are not granted to this installation").
+      # Net: the narrowing was both wrong and unnecessary. Drop it.
+      #
+      # Guarded on the App-ID secret so this whole workflow is a quiet green no-op
+      # until the runner feature is configured. Pinned to a SHA per the
+      # third-party-Actions lint.
       - name: Mint runner-App installation token
         id: app-token
-        if: ${{ secrets.CI_RUNNER_APP_ID != '' }}
+        if: ${{ env.RUNNER_APP_ID != '' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           app-id: ${{ secrets.CI_RUNNER_APP_ID }}
           private-key: ${{ secrets.CI_RUNNER_APP_PRIVATE_KEY }}
-          permission-administration: read
-          permission-variables: write
 
       - name: Reconcile CI_RUNNER against live runner status
         shell: bash
@@ -81,7 +97,17 @@ jobs:
             exit 0
           fi
 
-          read_var() { gh api "/repos/$REPO/actions/variables/$1" --jq .value 2>/dev/null || echo ''; }
+          # On a 404 (an unset variable) `gh api` writes the JSON error body to
+          # STDOUT and exits non-zero, so the naive `… 2>/dev/null || echo ''`
+          # form leaks that body into the value instead of returning ''. Capture
+          # first, then reset to '' on any non-2xx. Without this an unset CI_RUNNER
+          # reads as non-empty, and the auto-ENABLE half of the loop never fires
+          # (`[ -z "$current" ]` stays false) — failover recovery would be dead.
+          read_var() {
+            local v
+            v="$(gh api "/repos/$REPO/actions/variables/$1" --jq .value 2>/dev/null)" || v=''
+            printf '%s' "$v"
+          }
 
           mode="$(read_var CI_RUNNER_MODE)"; mode="${mode:-auto}"
           current="$(read_var CI_RUNNER)"
