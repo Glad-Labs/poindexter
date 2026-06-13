@@ -113,8 +113,11 @@ class TestRouteManifestStructure:
         ops LLM diagnosis route).
         Updated 2026-05-27 (#239): added module_probes_router (Module v1
         brain-probe inventory at /api/modules/probes).
+        Updated 2026-06-13 (#1343): added the five operator HTTP-surface
+        routers — gates / posts_approval / scheduling / topic_batch /
+        media_approval — mirroring the in-process operator services over HTTP.
         """
-        assert len(_WORKER_ROUTES) == 19
+        assert len(_WORKER_ROUTES) == 24
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first
