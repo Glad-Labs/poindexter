@@ -295,7 +295,7 @@ async def _emit_progress(
     event_type: str,
     payload: dict[str, Any],
     notify_operator_message: str | None = None,
-    site_config: SiteConfig,
+    site_config: SiteConfig | None,
     on_event: OnEventCallback | None = None,
 ) -> None:
     """Fan progress events out to Discord (when enabled) + ``on_event``.
@@ -315,9 +315,11 @@ async def _emit_progress(
     The ``pool`` parameter is kept on the signature so the dozen call sites
     don't churn — it's unused at this layer.
 
-    ``site_config`` is mandatory (#272 Phase-2f — the module global was
-    deleted): run-level callers pass ``self._site_config`` and node-level
-    callers pass ``context.get("site_config")``.
+    ``site_config`` is optional: run-level callers pass ``self._site_config``
+    (always present); node-level callers pass ``context.get("site_config")``,
+    which can be ``None`` before the seam is threaded. When ``None`` the
+    Discord progress ping is skipped (the ``on_event`` sink still fires). The
+    module global it replaced (#272 Phase-2f) stays deleted either way.
     """
     del pool  # kept for source-compat — unused at this layer
     # on_event ALWAYS fires (independent of the Discord progress flag) so an
@@ -326,6 +328,11 @@ async def _emit_progress(
     await _safe_on_event(on_event, event_type, payload)
 
     if not notify_operator_message:
+        return
+    if site_config is None:
+        # Best-effort: without a SiteConfig we can't read the streaming
+        # flag, so skip the Discord ping. The on_event sink above already
+        # fired, so the streaming channel loses no progress signal.
         return
     _sc = site_config
     try:
@@ -696,11 +703,13 @@ def make_stage_node(
             context.setdefault(svc_key, svc_value)
         task_id = context.get("task_id")
         # SiteConfig is threaded through the pipeline context (one of the
-        # _KNOWN_SERVICE_KEYS partitioned onto RunnableConfig by the
-        # runner and merged back here). #272 Phase-2f made
-        # ``_emit_progress``'s ``site_config`` mandatory, so every
-        # node-level emit forwards this run-bound instance.
-        node_site_config = context.get("site_config")
+        # _KNOWN_SERVICE_KEYS partitioned onto RunnableConfig by the runner
+        # and merged back here). Best-effort for progress emission: a node
+        # can run before the seam is threaded (e.g. the make_stage_node unit
+        # tests), so this may be None — _emit_progress skips the Discord ping
+        # when it is, while the on_event sink still fires. (#272 Phase-2f
+        # deleted the module global; callers thread the instance instead.)
+        node_site_config: SiteConfig | None = context.get("site_config")
 
         cfg = await PluginConfig.load(pool, "stage", name)
         if not cfg.enabled:
