@@ -126,11 +126,19 @@ check_untyped_defs = true
 # Library stubs
 ignore_missing_imports = true
 
-# Source locations to type-check
-mypy_path = "src"
-files = [
-    "src/cofounder_agent",
-]
+# Source locations to type-check. Paths use $MYPY_CONFIG_FILE_DIR (this file's
+# directory = the repo root) so they resolve regardless of mypy's cwd: the
+# `type:check` npm script runs `cd src/cofounder_agent` first (to pick up the
+# backend poetry env), under which the old repo-relative `files` resolved to a
+# non-existent `src/cofounder_agent/src/cofounder_agent` ("cannot read file").
+# explicit_package_bases + mypy_path pinned at the package root make
+# src/cofounder_agent the single base, so modules are named `services.x` /
+# `modules.x` (matching runtime imports) rather than being found twice under
+# both `services.x` and `src.cofounder_agent.services.x`.
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src/cofounder_agent"
+explicit_package_bases = true
+namespace_packages = true
+files = ["$MYPY_CONFIG_FILE_DIR/src/cofounder_agent"]
 
 # Exclude test directories
 exclude = [
