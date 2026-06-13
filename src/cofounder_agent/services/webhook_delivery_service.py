@@ -183,9 +183,18 @@ class WebhookDeliveryService:
                         dedup_key=f"webhook_delivery_exhausted_{event_type}",
                     )
                 except Exception:
-                    # emit_finding is best-effort; never let an observability
-                    # failure poison the delivery loop.
-                    pass
+                    # emit_finding is best-effort — never let an observability
+                    # failure poison the delivery loop. But log it (rather than
+                    # swallow silently) so the dropped dead-letter finding is
+                    # still visible in Loki; this is the lowest-regress option
+                    # since we can't emit_finding about emit_finding failing.
+                    logger.warning(
+                        "[WEBHOOK] Failed to emit webhook_delivery_exhausted "
+                        "finding for event %s (%s)",
+                        event_id,
+                        event_type,
+                        exc_info=True,
+                    )
 
     def _format_message(self, event_type: str, payload: dict) -> str:
         """Format a webhook event into a human-readable message for OpenClaw."""
