@@ -605,6 +605,37 @@ async def test_reject_batch_marks_expired_and_can_re_discover(db_pool):
     assert new_batch_row is not None
 
 
+async def test_list_open_batches_returns_only_open_with_candidates_and_niche(db_pool):
+    """list_open_batches surfaces every *open* batch (across niches) with its
+    merged candidate view + niche slug/name, and excludes resolved/expired
+    batches. Powers the console's GET /api/topics/proposals triage surface."""
+    niche_a, batch_a, ext_a, int_a = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="list-open-a", n_external=2, n_internal=1,
+    )
+    _niche_b, batch_b, _ext_b, _int_b = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="list-open-b", n_external=1, n_internal=2,
+    )
+
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
+    # Reject batch_b → status 'expired' so it must drop out of the open list.
+    await svc.reject_batch(batch_id=batch_b, reason="none of these")
+
+    out = await svc.list_open_batches()
+
+    ids = {str(ob.view.id) for ob in out}
+    assert str(batch_a) in ids
+    assert str(batch_b) not in ids
+
+    ob_a = next(ob for ob in out if str(ob.view.id) == str(batch_a))
+    # Niche metadata is resolved + attached for operator display.
+    assert ob_a.niche_slug == "list-open-a"
+    assert ob_a.niche_name == niche_a.name
+    # The merged candidate view rides along (2 external + 1 internal).
+    assert ob_a.view.status == "open"
+    assert len(ob_a.view.candidates) == 3
+    assert {c.kind for c in ob_a.view.candidates} == {"external", "internal"}
+
+
 # ===========================================================================
 # _discover_external — TopicSource plugin dispatch (Task 6 follow-up)
 # ===========================================================================

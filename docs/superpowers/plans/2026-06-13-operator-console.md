@@ -554,9 +554,11 @@ stages: [
 
 ---
 
-## Phase 4 — Topics triage (NEW surface; needs thin HTTP routes)
+## Phase 4 — Topics triage (NEW surface; needs thin HTTP routes) — ✅ SHIPPED
 
 > Outcome: the operator can review, rank, resolve, and reject proposed topics from the console. **Reality:** the triage logic exists as MCP tools (`topics_rank_batch / reject_batch / resolve_batch / edit_winner / show_batch`) but **not** as HTTP routes — only `POST /api/topics/from-url(s)` exist (`topics_routes.py`). This phase adds the HTTP surface over the same service.
+
+> **As built (correction to the assumption above):** the MCP tools delegate to **`services.topic_batch_service.TopicBatchService`** — a **batch** model, **not** `topic_proposal_service` (which is for hand-injecting a single topic into the gate, a different job). A discovery sweep produces one _open batch_ per niche holding ~N ranked candidates. So the surface is batch-oriented and the plan's `POST /api/topics/{id}/…` cleanly reinterprets `{id}` as a **batch_id**: resolving advances the operator-ranked **rank-1 candidate** into the pipeline; rejecting discards the whole batch (→ `expired`) and frees the niche's one-open-batch slot. A stuck _open_ batch is the recurring "content goes dark" failure class, so this is the drain valve. Endpoints shipped: `GET /api/topics/proposals`, `POST /api/topics/{batch_id}/{rank,resolve,reject}`. Backing the GET is a new thin `TopicBatchService.list_open_batches()` (open batches across all niches, each a merged candidate view + resolved niche slug/name), unit-tested by a real-DB roundtrip. `edit_winner` (the 5th MCP tool) was intentionally **not** exposed in v1 — scope held to the plan's named four. Live console→worker→DB E2E is the post-merge operator step (needs this code deployed + a live open batch).
 
 ### Task 4.1: Expose topic-triage over HTTP (backend, TDD)
 
@@ -565,20 +567,20 @@ stages: [
 - Modify: `src/cofounder_agent/routes/topics_routes.py`
 - Test: `src/cofounder_agent/tests/unit/routes/test_topics_triage_routes.py`
 
-- [ ] **Step 1: Write failing tests** for `GET /api/topics/proposals` (list pending batch) and `POST /api/topics/{id}/resolve` / `/reject` / `/rank`, asserting they call the existing topic-proposal service (the same one the MCP tools use — find it via the MCP tool implementation `topics_resolve_batch`).
-- [ ] **Step 2: Run** → FAIL (routes absent).
-- [ ] **Step 3: Implement** the routes delegating to the shared service; auth via `verify_api_token`.
-- [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit.**
+- [x] **Step 1: Write failing tests** — `tests/unit/routes/test_topics_triage_routes.py` (13 tests, service mocked) pins the HTTP contract for `GET /api/topics/proposals` + `POST /api/topics/{batch_id}/{rank,resolve,reject}`; plus a real-DB roundtrip for the new `TopicBatchService.list_open_batches()` in `tests/unit/services/test_topic_batch_service.py`. (Service is `TopicBatchService`, the batch model — not `topic_proposal_service`.)
+- [x] **Step 2: Run** → FAIL (13 route tests failed: `TopicBatchService` not imported / 404).
+- [x] **Step 3: Implement** the routes delegating to `TopicBatchService` (`db_service.pool` → `TopicBatchService(pool, site_config=…)`); auth via `verify_api_token`; `{batch_id}` parsed to UUID (400 on malformed); unranked-resolve `ValueError` → 400. Added `list_open_batches()` + `OpenBatch` dataclass to the service so the route stays a thin single-collaborator serializer.
+- [x] **Step 4: Run** → PASS (13 route + 21 service tests green; ruff clean). Commit `76ed17055`.
+- [x] **Step 5: Commit.** `76ed17055`.
 
 ### Task 4.2: Topics panel in the console
 
 **Files:** Modify `js/api.js` (add `topics*` methods), `js/panels2.jsx` (new `TopicsPanel`), `js/app.jsx` (rail entry + section), `js/data.js` (mock shape)
 
-- [ ] **Step 1:** Add `RAIL` entry `{ id:'topics', icon:'overview', label:'Topics' }` and a `TopicsPanel` rendering the pending batch with rank/resolve/reject actions.
-- [ ] **Step 2:** Wire to the Phase-4.1 routes; optimistic update + error toast.
-- [ ] **Step 3: Verify** live against a real proposal batch.
-- [ ] **Step 4: Commit.**
+- [x] **Step 1:** Added `RAIL` entry `{ id:'topics', icon:'overview', label:'Topics' }` (with an open-batch **count badge**) + `sec-topics` section + `TopicsPanel` (`panels2.jsx`) rendering each open batch → ranked candidates with **Pick** (rank #1) / **Resolve** / **Reject**. Resolve is disabled until a winner is picked (mirrors the backend's unranked-resolve 400).
+- [x] **Step 2:** Wired to the Phase-4.1 routes via `api.js` (`listTopicProposals` / `rankTopicBatch` / `resolveTopicBatch` / `rejectTopicBatch` on the `pick(live, mock)` seam) + a 5-min live-load effect; `A.topicPick/Resolve/Reject` do optimistic updates with honest red-toast rollback. `data.js` `PX.topics` mock matches the live shape.
+- [x] **Step 3: Verify** — mock-mode browser pass (Playwright): panel renders, rail badge = open-batch count, Resolve disabled until Pick, Pick optimistically marks the winner + enables Resolve, no JS/Babel errors; eslint + prettier clean via the commit hook. _Live console→worker→DB pass deferred to the post-merge operator go-live (needs this code deployed + a live open batch)._
+- [x] **Step 4: Commit.** `acb028f99`.
 
 ---
 

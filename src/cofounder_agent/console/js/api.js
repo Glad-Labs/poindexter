@@ -393,6 +393,40 @@
       );
     },
 
+    // ── topics triage (open discovery batches) ──────────────
+    // GET /api/topics/proposals + POST /api/topics/{batch_id}/{rank|resolve|reject}.
+    // {batch_id} is a topic BATCH id: resolve advances the operator-ranked
+    // rank-1 candidate into the content pipeline; reject discards the batch and
+    // frees the niche's one-open-batch slot. (See routes/topics_routes.py.)
+    listTopicProposals() {
+      return pick(
+        () => http('GET', '/api/topics/proposals'),
+        () => pair(mock().topics, { count: 0, batches: [] })
+      );
+    },
+    rankTopicBatch(batchId, orderedCandidateIds) {
+      return pick(
+        () =>
+          http('POST', `/api/topics/${batchId}/rank`, {
+            ordered_candidate_ids: orderedCandidateIds,
+          }),
+        () => ({ ok: true, ranked: orderedCandidateIds.length })
+      );
+    },
+    resolveTopicBatch(batchId) {
+      // Advances the rank-1 winner; 400s if the batch wasn't ranked first.
+      return pick(
+        () => http('POST', `/api/topics/${batchId}/resolve`),
+        () => ({ ok: true, status: 'resolved' })
+      );
+    },
+    rejectTopicBatch(batchId, reason = '') {
+      return pick(
+        () => http('POST', `/api/topics/${batchId}/reject`, { reason }),
+        () => ({ ok: true, status: 'expired' })
+      );
+    },
+
     // ── live event stream ───────────────────────────────────
     // Worker exposes GET /api/pipeline/events. For a true live tail,
     // swap to SSE/WebSocket if you add one; polling works today.

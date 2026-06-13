@@ -94,6 +94,22 @@ class BatchView:
     candidates: list[CandidateView]
 
 
+@dataclass
+class OpenBatch:
+    """An open batch + its resolved niche metadata — the unit the operator
+    console's topic-triage surface lists.
+
+    Wraps ``BatchView`` (the merged, effective-score-sorted candidate view)
+    with the niche slug/name so the UI can label each batch without a second
+    round-trip. ``niche_slug`` / ``niche_name`` are ``None`` only if the niche
+    row vanished out from under an orphaned batch.
+    """
+
+    view: BatchView
+    niche_slug: str | None
+    niche_name: str | None
+
+
 class TopicBatchService:
     def __init__(self, pool, *, site_config: SiteConfig):
         self._pool = pool
@@ -838,6 +854,38 @@ class TopicBatchService:
                 batch_id,
             )
         logger.info("Batch %s rejected (reason=%r)", batch_id, reason)
+
+    async def list_open_batches(self) -> list[OpenBatch]:
+        """Return every ``open`` batch across all niches, newest first.
+
+        Each entry is a merged, effective-score-sorted candidate view (via
+        :meth:`show_batch`) plus the resolved niche slug/name for display.
+        Resolved/expired batches are excluded — the operator only drains
+        what's still pending a decision.
+
+        Powers the console topic-triage surface (``GET
+        /api/topics/proposals``) and the ``topics_*`` MCP/CLI flow. A stuck
+        *open* batch that never gets resolved is the recurring "content goes
+        dark" failure class, so surfacing open batches where the operator can
+        act on them is the whole point.
+        """
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id FROM topic_batches WHERE status = 'open' "
+                "ORDER BY created_at DESC",
+            )
+        out: list[OpenBatch] = []
+        for r in rows:
+            view = await self.show_batch(batch_id=r["id"])
+            niche = await self._niche_svc.get_by_id(view.niche_id)
+            out.append(
+                OpenBatch(
+                    view=view,
+                    niche_slug=niche.slug if niche else None,
+                    niche_name=niche.name if niche else None,
+                )
+            )
+        return out
 
     async def _handoff_to_pipeline(
         self,

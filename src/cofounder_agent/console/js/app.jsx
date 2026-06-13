@@ -12,6 +12,7 @@ const POINDEXTER_VERSION = '0.74.0'; // x-release-please-version
 const RAIL = [
   { id: 'overview', icon: 'overview', label: 'Overview' },
   { id: 'pipeline', icon: 'pipeline', label: 'Pipeline' },
+  { id: 'topics', icon: 'overview', label: 'Topics' },
   { id: 'brain', icon: 'brain', label: 'Brain' },
   { id: 'gpu', icon: 'gpu', label: 'GPU' },
   { id: 'services', icon: 'services', label: 'Services' },
@@ -27,6 +28,7 @@ function App() {
   const [services, setServices] = useS(PX.services);
   const [gpu, setGpu] = useS(PX.gpu);
   const [pipeline, setPipeline] = useS(PX.pipeline); // live: real /api/tasks
+  const [topics, setTopics] = useS(PX.topics); // live: GET /api/topics/proposals
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -134,6 +136,30 @@ function App() {
         setPipeline((p) => withLiveCounts(p, rows));
       } catch (e) {
         pushToast(`Tasks load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: load open topic batches into the Topics panel ───
+  // Surfaces what discovery proposed but hasn't been acted on — a stuck open
+  // batch is the recurring "content goes dark" failure, so this is the drain
+  // valve. Mock mode keeps PX.topics. Polls on the 5-min SYNC cadence.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.listTopicProposals();
+        if (!alive) return;
+        setTopics(res && res.batches ? res : { count: 0, batches: [] });
+      } catch (e) {
+        pushToast(`Topics load failed — ${e.message}`, 'red', '✕');
       }
     };
     load();
@@ -413,6 +439,68 @@ function App() {
         `operator published <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
       );
     },
+    // ── Topics triage ─────────────────────────────────────
+    // Pick a winner (operator_rank #1), resolve (advance winner → pipeline),
+    // or reject (discard the batch). Optimistic with honest red-toast
+    // rollback. Resolve requires a prior pick — the backend 400s an unranked
+    // resolve and we surface that message verbatim.
+    topicPick: async (b, c) => {
+      const rest = (b.candidates || [])
+        .filter((x) => x.id !== c.id)
+        .map((x) => x.id);
+      const ordered = [c.id, ...rest];
+      const prev = topics;
+      setTopics((t) => reRankBatch(t, b.batch_id, ordered));
+      try {
+        await PX.api.rankTopicBatch(b.batch_id, ordered);
+        pushToast(
+          `Picked “${trunc(c.operator_edited_topic || c.title)}” as winner`,
+          'cyan',
+          '★'
+        );
+        pushFeed(
+          ['cyan', 'TOPICS'],
+          `operator ranked <b>${trunc(c.title)}</b> #1 · ${b.niche_slug || ''}`
+        );
+      } catch (err) {
+        setTopics(prev);
+        pushToast(`Rank failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    topicResolve: async (b) => {
+      const prev = topics;
+      setTopics((t) => removeBatch(t, b.batch_id));
+      try {
+        await PX.api.resolveTopicBatch(b.batch_id);
+        pushToast('Batch resolved — winner queued to pipeline', 'mint', '✓');
+        pushFeed(
+          ['mint', 'TOPICS'],
+          `operator resolved batch <b>${String(b.batch_id).slice(0, 8)}</b> → pipeline`
+        );
+      } catch (err) {
+        setTopics(prev);
+        pushToast(`Resolve failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    topicReject: async (b) => {
+      const prev = topics;
+      setTopics((t) => removeBatch(t, b.batch_id));
+      try {
+        await PX.api.rejectTopicBatch(b.batch_id, '');
+        pushToast(
+          'Batch rejected — niche freed for a fresh sweep',
+          'amber',
+          '⚠'
+        );
+        pushFeed(
+          ['amber', 'TOPICS'],
+          `operator rejected batch <b>${String(b.batch_id).slice(0, 8)}</b>`
+        );
+      } catch (err) {
+        setTopics(prev);
+        pushToast(`Reject failed — ${err.message}`, 'red', '✕');
+      }
+    },
     launch: (t) => pushToast(`Opening ${t.name}…`, 'cyan', '↗'),
     voice: () =>
       pushToast('Connecting to Poindexter voice (LiveKit)…', 'cyan', '🎙'),
@@ -607,7 +695,9 @@ function App() {
               ? inbox.length
               : r.id === 'services'
                 ? services.filter((s) => s.status === 'err').length
-                : 0;
+                : r.id === 'topics'
+                  ? ((topics && topics.batches) || []).length
+                  : 0;
           return (
             <button
               key={r.id}
@@ -725,6 +815,14 @@ function App() {
                   onOpen={() => open('pipeline', pipeline)}
                   onOpenTask={(t) => open('task', t)}
                   onRetry={A.retry}
+                />
+              </div>
+              <div id="sec-topics">
+                <TopicsPanel
+                  topics={topics}
+                  onPick={A.topicPick}
+                  onResolve={A.topicResolve}
+                  onReject={A.topicReject}
                 />
               </div>
               <div id="sec-gpu">
@@ -979,6 +1077,33 @@ function withLiveCounts(p, rows) {
       state: counts[b.name] ? 'hot' : '',
     })),
   };
+}
+
+// Topic-batch optimistic-update helpers (pure). removeBatch drops a resolved/
+// rejected batch from the open list; reRankBatch stamps operator_rank by
+// 1-based position so the Picked winner shows as #1 immediately, before the
+// server round-trip lands (rolled back on error by the caller).
+function removeBatch(topics, batchId) {
+  const batches = ((topics && topics.batches) || []).filter(
+    (b) => b.batch_id !== batchId
+  );
+  return { count: batches.length, batches };
+}
+function reRankBatch(topics, batchId, orderedIds) {
+  const rankById = {};
+  orderedIds.forEach((id, i) => (rankById[id] = i + 1));
+  const batches = ((topics && topics.batches) || []).map((b) => {
+    if (b.batch_id !== batchId) return b;
+    return {
+      ...b,
+      candidates: (b.candidates || []).map((c) => ({
+        ...c,
+        operator_rank:
+          rankById[c.id] != null ? rankById[c.id] : c.operator_rank,
+      })),
+    };
+  });
+  return { ...topics, batches };
 }
 
 // Ready-to-publish list — staged (approved) tasks awaiting the publish gate.

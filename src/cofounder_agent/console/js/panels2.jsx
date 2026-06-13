@@ -382,4 +382,135 @@ function LauncherPanel({ tools, onLaunch, onVoice }) {
   );
 }
 
-Object.assign(window, { RevenuePanel, MediaPanel, QAPanel, LauncherPanel });
+/* ─── Topics triage (open discovery batches) ────────────────── */
+// One open batch per niche; each holds the ranked candidates a discovery
+// sweep produced. The operator Picks a winner (operator_rank #1), then
+// Resolves (advance winner → content pipeline) or Rejects (discard the batch,
+// free the niche for a fresh sweep). Resolve is disabled until something is
+// ranked — the backend 400s an unranked resolve, so we gate it in the UI too.
+const CAND_KIND_TAG = { external: 'cyan', internal: 'amber' };
+function TopicsPanel({ topics, onPick, onResolve, onReject }) {
+  const batches = (topics && topics.batches) || [];
+  return (
+    <Panel
+      idx="T1"
+      title="TOPICS · DISCOVERY BATCHES"
+      meta={`${batches.length} OPEN · AWAITING DECISION`}
+      flush
+    >
+      {batches.length === 0 && (
+        <div className="empty" style={{ padding: '20px 12px', fontSize: 11 }}>
+          No open topic batches. Discovery sweeps queue candidates per niche;
+          when one is pending you’ll rank + resolve it here.
+        </div>
+      )}
+      {batches.map((b) => {
+        const cands = b.candidates || [];
+        const ranked = cands.some((c) => c.operator_rank === 1);
+        return (
+          <div
+            key={b.batch_id}
+            style={{ borderBottom: '1px solid var(--gl-hairline)' }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '9px 12px',
+              }}
+            >
+              <span className="tag tag--cyan">{b.niche_slug || 'niche'}</span>
+              <span className="mono c-dim" style={{ fontSize: 10, flex: 1 }}>
+                {b.candidate_count} candidates ·{' '}
+                {String(b.batch_id).slice(0, 8)}
+              </span>
+              <button
+                className="mbtn mbtn--primary"
+                disabled={!ranked}
+                title={
+                  ranked
+                    ? 'Advance the rank-1 winner into the content pipeline'
+                    : 'Pick a winner first'
+                }
+                onClick={() => onResolve(b)}
+              >
+                <Icon name="play" size={11} />
+                Resolve
+              </button>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                title="Discard this batch — frees the niche for a fresh sweep"
+                onClick={() => onReject(b)}
+              >
+                <Icon name="kill" size={11} />
+              </button>
+            </div>
+            <div>
+              {cands.map((c) => {
+                const isWinner = c.operator_rank === 1;
+                return (
+                  <div
+                    key={c.id}
+                    className="svc"
+                    style={{
+                      gridTemplateColumns: 'auto 1fr auto',
+                      cursor: 'default',
+                      padding: '5px 12px',
+                      background: isWinner
+                        ? 'var(--gl-mint-dim, rgba(80,220,160,0.06))'
+                        : 'transparent',
+                    }}
+                  >
+                    <span
+                      className="mono tnum c-dim"
+                      style={{ fontSize: 10, minWidth: 34 }}
+                    >
+                      {c.operator_rank
+                        ? `#${c.operator_rank}`
+                        : `sys${c.rank_in_batch}`}
+                    </span>
+                    <span
+                      className="svc__name truncate"
+                      style={{ fontSize: 11 }}
+                      title={c.operator_edited_topic || c.title}
+                    >
+                      {c.operator_edited_topic || c.title}
+                      <small>
+                        <span className={`c-${CAND_KIND_TAG[c.kind] || 'dim'}`}>
+                          {c.kind}
+                        </span>{' '}
+                        · eff {Number(c.effective_score).toFixed(1)}
+                      </small>
+                    </span>
+                    <span
+                      className="act-item__acts"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        className={`mbtn ${isWinner ? 'mbtn--primary' : 'mbtn--ghost'}`}
+                        title="Make this the winner (operator rank #1)"
+                        onClick={() => onPick(b, c)}
+                      >
+                        <Icon name="check" size={10} />
+                        {isWinner ? 'Winner' : 'Pick'}
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </Panel>
+  );
+}
+
+Object.assign(window, {
+  RevenuePanel,
+  MediaPanel,
+  QAPanel,
+  LauncherPanel,
+  TopicsPanel,
+});

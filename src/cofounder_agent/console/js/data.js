@@ -970,6 +970,123 @@
     },
   ];
 
+  // ── Topic discovery batches (operator triage) ──────────────
+  // Mirrors GET /api/topics/proposals exactly: open batches per niche, each
+  // with its ranked candidate list. The operator picks a winner (rank #1),
+  // then resolves (→ content pipeline) or rejects (→ fresh sweep).
+  // operator_rank is null until the operator ranks; rank_in_batch is the
+  // system pre-rank. A stuck open batch = content goes dark, so this is the
+  // surface to drain it. (Brand niches: AI/ML, gaming, PC hardware.)
+  const topics = {
+    count: 2,
+    batches: [
+      {
+        batch_id: 'b1a2c3d4-aiml-open-batch',
+        niche_id: 'niche-aiml',
+        niche_slug: 'ai-ml',
+        niche_name: 'AI / ML',
+        status: 'open',
+        candidate_count: 4,
+        candidates: [
+          {
+            id: 'cand-aiml-1',
+            kind: 'external',
+            title: 'Speculative decoding is quietly eating inference costs',
+            summary: 'Why draft-model speculative decoding is the cheapest 2x',
+            score: 88.4,
+            effective_score: 88.4,
+            rank_in_batch: 1,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+          {
+            id: 'cand-aiml-2',
+            kind: 'internal',
+            title: 'What we learned running a 70B writer on one 5090',
+            summary: 'VRAM math, quant trade-offs, and where it broke',
+            score: 81.0,
+            effective_score: 81.0,
+            rank_in_batch: 2,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+          {
+            id: 'cand-aiml-3',
+            kind: 'external',
+            title: 'The case against agent frameworks for solo builders',
+            summary: 'When a graph engine is overkill and a for-loop wins',
+            score: 74.6,
+            effective_score: 74.6,
+            rank_in_batch: 3,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+          {
+            id: 'cand-aiml-4',
+            kind: 'external',
+            title: 'pgvector vs a dedicated vector DB at 100k rows',
+            summary: 'Latency and recall benchmarks at small scale',
+            score: 69.2,
+            effective_score: 69.2,
+            rank_in_batch: 4,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+        ],
+      },
+      {
+        batch_id: 'b5e6f7a8-hw-open-batch',
+        niche_id: 'niche-hw',
+        niche_slug: 'pc-hardware',
+        niche_name: 'PC Hardware',
+        status: 'open',
+        candidate_count: 3,
+        candidates: [
+          {
+            id: 'cand-hw-1',
+            kind: 'external',
+            title: 'The 5090 power-spike problem nobody warns you about',
+            summary: 'Transient loads, PSU headroom, and HX1500i logs',
+            score: 84.1,
+            effective_score: 84.1,
+            rank_in_batch: 1,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+          {
+            id: 'cand-hw-2',
+            kind: 'external',
+            title: 'Undervolting a 5090: a repeatable curve',
+            summary: 'Holds clocks at roughly 60W less draw',
+            score: 78.5,
+            effective_score: 78.5,
+            rank_in_batch: 2,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+          {
+            id: 'cand-hw-3',
+            kind: 'internal',
+            title: 'Our local-first GPU scheduler, one year in',
+            summary: 'Time-sharing one card across SDXL and Ollama',
+            score: 72.3,
+            effective_score: 72.3,
+            rank_in_batch: 3,
+            operator_rank: null,
+            operator_edited_topic: null,
+            operator_edited_angle: null,
+          },
+        ],
+      },
+    ],
+  };
+
   window.PX = {
     now,
     hhmmss,
@@ -986,6 +1103,7 @@
     revenue,
     media,
     qa,
+    topics,
     restarts,
     launcher,
     nextTs() {
