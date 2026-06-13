@@ -328,8 +328,26 @@ jobs:
         working-directory: src/cofounder_agent
         run: $PYTEST tests/unit/cli/ -q --tb=short -p no:cacheprovider $COV
 
-      # `--forked` isolates ServiceContainer / site_config singletons that
-      # leak across tests in the services directory.
+      # Parallelized with pytest-xdist (`-n 4`) instead of per-test `--forked`.
+      # This is the slowest CI step by far — ~8k tests, and `--forked` spawns one
+      # subprocess PER TEST, serially. `--forked` existed only to isolate
+      # ServiceContainer / site_config singleton leakage; the autouse
+      # `_reset_singletons_between_tests` + `_reset_env_between_tests` fixtures
+      # (tests/unit/conftest.py) already reset that shared state between every test
+      # in-process, and each xdist worker is its own process — together those cover
+      # what `--forked` did. These tests were written to run forked (fully isolated)
+      # so they carry no inter-test ordering deps and are safe to distribute;
+      # `--dist loadfile` keeps each test FILE on one worker (run together, in
+      # order) as a safety margin while spreading files across cores.
+      #
+      # Worker count is FIXED at 4, NOT `-n auto`: auto saw the WSL2 VM's 16 procs
+      # and spawned 16 workers, each importing the heavy tree (torch /
+      # sentence-transformers ~hundreds of MB resident), which blew past the
+      # runner container's 8g mem_limit — workers got OOM-reaped (`node down: Not
+      # properly terminated`) and pytest died with INTERNALERROR. 4 workers fit
+      # the memory budget (docker-compose.local.yml `CI_RUNNER_MEM`) and still cut
+      # this step from ~11 min (forked) to a few minutes. Bump only alongside the
+      # runner's mem_limit / the WSL2 RAM budget — see the self-hosted runbook.
       #
       # The ignore list was retired in Glad-Labs/poindexter#345
       # (fix/345-triage-ignored-tests). Each path was either re-enabled
@@ -340,10 +358,10 @@ jobs:
       # poindexter#398 (plugin discovery) / #399 (qa_gates runtime) /
       # #400 (queue cap in auto-discovery), with the failing test cases
       # removed in-line and the rest of each file restored to CI.
-      - name: Unit tests — services (forked)
+      - name: Unit tests — services (xdist)
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: $PYTEST tests/unit/services/ -q --tb=short --forked -p no:cacheprovider $COV
+        run: $PYTEST tests/unit/services/ -q --tb=short -n 4 --dist loadfile -p no:cacheprovider $COV
 
       - name: Unit tests — utils
         if: steps.changes.outputs.needs_tests == 'true'
