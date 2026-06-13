@@ -128,9 +128,12 @@ jobs:
         # poindexter Contents+Workflows (not Issues), so filing on the source
         # repo is both simpler and more reliable.
         #
-        # Failure modes are now App-access issues, not a token expiry: the App
-        # uninstalled from poindexter, its install missing Contents/Workflows
-        # write, or an invalid MIRROR_SYNC_APP_PRIVATE_KEY. See the header.
+        # Two failure modes, in order of likelihood: (1) the sync-filter step
+        # aborting on the leak guard — a newly-introduced operator-private pattern
+        # in a public-bound file froze the mirror on #1543/#1544 (2026-06-13),
+        # because public-mirror-safety is a non-blocking PR check; and (2) App
+        # access (uninstalled, missing Contents/Workflows write, or an invalid
+        # MIRROR_SYNC_APP_PRIVATE_KEY). See the header.
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -146,12 +149,13 @@ jobs:
           **Triggered by:** ${{ github.actor }}
           **Source commit:** \`${{ github.sha }}\`
 
-          ### Likely cause
-          The dedicated \`glad-labs-mirror-sync\` GitHub App lost access to poindexter — uninstalled, its install missing Contents or Workflows write, or an invalid \`MIRROR_SYNC_APP_PRIVATE_KEY\`. (Installation tokens are ephemeral and auto-minted, so there is no PAT to expire.)
+          ### Likely cause (in order of likelihood)
+          1. **Leak-guard abort (most common).** The sync filter (\`scripts/sync-to-github.sh\`) aborts when \`scripts/ci/check_public_mirror_safety.py\` finds an operator-private pattern in a public-bound file — the mirror freezes on purpose rather than leak. This is what froze it on #1543/#1544 (2026-06-13): a change merged to \`main\` carrying a leaked value because \`public-mirror-safety\` is a non-blocking PR check.
+          2. **App access lost.** The \`glad-labs-mirror-sync\` App uninstalled from poindexter, its install missing Contents/Workflows write, or an invalid \`MIRROR_SYNC_APP_PRIVATE_KEY\`. (Installation tokens are ephemeral and auto-minted, so there is no PAT to expire.)
 
           ### Fix
-          1. Confirm the \`glad-labs-mirror-sync\` App is installed on \`Glad-Labs/poindexter\` with Contents + Workflows: read+write.
-          2. If the private key was rotated, update \`MIRROR_SYNC_APP_PRIVATE_KEY\` on \`Glad-Labs/glad-labs-stack\`.
-          3. Re-run this workflow via \`workflow_dispatch\` to confirm.
+          1. **Leak case:** run \`python scripts/ci/check_public_mirror_safety.py\` locally on \`main\` to find the offending file + pattern, remove or rephrase the value (see \`_LEAK_PATTERNS\` / \`_STRIP_FILES\` in that script), and commit to \`main\`.
+          2. **App case:** confirm the \`glad-labs-mirror-sync\` App is installed on \`Glad-Labs/poindexter\` with Contents + Workflows: read+write; if the key was rotated, update \`MIRROR_SYNC_APP_PRIVATE_KEY\` on \`Glad-Labs/glad-labs-stack\`.
+          3. The next push to \`main\` re-runs the sync, or re-run this workflow via \`workflow_dispatch\` to confirm.
 
           _Auto-filed by the sync-to-public-poindexter failure handler._"
