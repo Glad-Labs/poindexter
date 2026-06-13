@@ -84,6 +84,32 @@ def _reset_module_state():
     cdp._last_notified_drifted = frozenset()
 
 
+@pytest.fixture(autouse=True)
+def _stub_docker_reachable(monkeypatch):
+    """Make the docker-reachability pre-flight deterministic + hermetic.
+
+    ``run_compose_drift_probe`` shells out to ``docker version`` via the
+    default ``_docker_reachable`` whenever the caller doesn't inject a
+    ``docker_reachable_fn``. Almost every test here mocks ``inspect_fn``
+    and wants the normal drift-logic flow — but on a runner where the
+    docker daemon isn't reachable from the test process (e.g. the
+    self-hosted Linux CI runner, which has no docker-in-docker), the
+    un-stubbed default returns ``(False, ...)`` and short-circuits the
+    probe to ``status="unknown"`` before any injected mock runs. That
+    silently failed 19 drift-logic tests for a purely environmental
+    reason once unit-tests moved to the self-hosted runner.
+
+    Patch the module-level default to "reachable" so the drift-logic
+    tests don't depend on ambient docker. The two tests that exercise the
+    pre-flight itself (``test_docker_unreachable_*`` and
+    ``test_docker_reachable_default_*``) pass an explicit
+    ``docker_reachable_fn`` argument when they need the unreachable
+    branch — that parameter takes precedence over this default, so they
+    are unaffected.
+    """
+    monkeypatch.setattr(cdp, "_docker_reachable", lambda: (True, ""))
+
+
 # ---------------------------------------------------------------------------
 # Scenario 1 — no drift → success, no notify
 # ---------------------------------------------------------------------------
