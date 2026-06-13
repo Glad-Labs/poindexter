@@ -34,7 +34,7 @@ poindexter retention run embeddings.claude_sessions --dry-run
 poindexter retention enable embeddings.claude_sessions
 poindexter retention run embeddings.claude_sessions
 
-# 3. Check Grafana -> Integration Health -> Retention policies
+# 3. Check Grafana -> Integrations & Admin -> Retention policies
 #    last_run_deleted should match the dry-run count
 ```
 
@@ -84,7 +84,7 @@ Running the seeded `embeddings.claude_sessions` policy once against the current 
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Database schema reference: `docs/architecture/database-schema.md`
 - Sibling handlers: `retention.downsample`, `retention.temporal_summarize` (deferred)
 - GH-110 (retention framework issue)

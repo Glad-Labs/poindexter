@@ -67,6 +67,6 @@ Two reasons:
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Companion: `tap.singer_subprocess` (the dispatcher that calls this handler)
 - GH-27 (`external_metrics` is one of the 8 feedback-loop tables this populates)

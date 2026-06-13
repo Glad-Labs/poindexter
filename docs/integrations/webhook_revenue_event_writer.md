@@ -78,6 +78,6 @@ Takes effect on the next request (no restart).
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Target table: `revenue_events`
 - Sibling handler: `webhook.subscriber_event_writer` (Resend email events)

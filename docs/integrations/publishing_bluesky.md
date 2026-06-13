@@ -29,7 +29,7 @@ config:         '{}'                  # Reserved for future per-row tuning
 
 ```sql
 INSERT INTO app_settings (key, value, is_secret) VALUES
-  ('bluesky_identifier',   'gladlabs.bsky.social',   true),
+  ('bluesky_identifier',   'your-handle.bsky.social',   true),
   ('bluesky_app_password', '<paste from bsky.app>',  true);
 ```
 
@@ -58,7 +58,7 @@ The orchestrator generates the platform-appropriate copy, looks up enabled `publ
 
 ```bash
 # 1. Register the credentials.
-poindexter settings set --secret bluesky_identifier 'gladlabs.bsky.social'
+poindexter settings set --secret bluesky_identifier 'your-handle.bsky.social'
 poindexter settings set --secret bluesky_app_password 'xxxx-xxxx-xxxx-xxxx'
 
 # 2. Verify the seed row exists (the publishing_adapters migration ships it disabled-or-enabled).
@@ -120,7 +120,7 @@ The next call to `_distribute_to_adapters` skips this row silently. No error is 
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md` (post-implementation status appendix shows what landed)
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handler: `publishing.mastodon`
 - Issue: `Glad-Labs/poindexter#112`
-- CLI: `poindexter publishers --help` (5 subcommands: list / show / enable / disable / set-secret / fire)
+- CLI: `poindexter publishers --help` (6 subcommands: list / show / enable / disable / set-secret / fire)

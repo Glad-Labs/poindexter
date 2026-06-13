@@ -8,8 +8,10 @@ explaining what external system it talks to, the config fields on the
 integration row, the secrets it reads from `app_settings`, the expected
 payload contract, and the operator runbook (add, test, rotate, disable).
 
-The framework itself is described in the
-[declarative-data-plane RFC](/docs/architecture/declarative-data-plane-rfc-2026-04-24).
+The shared design is summarized below: one source-of-truth table per
+surface, handlers registered as `<surface>.<name>`, encrypted secrets
+resolved through a single audited path, and `enabled=false` as the safe
+default for every row.
 
 ## Surfaces
 
@@ -108,7 +110,9 @@ the dispatcher.
 
   <Step title="Seed the adapter row">
     Add a migration that inserts the `publishing_adapters` row — copy the
-    shape from `services/migrations/20260509_175447_add_publishing_adapters.py`.
+    `INSERT INTO publishing_adapters` shape from
+    [`publishing_bluesky`](/docs/integrations/publishing_bluesky) or the rows
+    seeded in `services/migrations/0000_baseline.py`.
   </Step>
 
   <Step title="Document the handler">

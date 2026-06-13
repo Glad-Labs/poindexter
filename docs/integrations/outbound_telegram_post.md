@@ -73,6 +73,6 @@ UPDATE webhook_endpoints SET enabled = FALSE WHERE name = 'telegram_ops';
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handlers: `outbound.discord_post`, `outbound.vercel_isr`
 - Operator-notify entry point (replaces the deleted `services.task_executor._notify_telegram`): `services.integrations.operator_notify.notify_operator(message, critical=True, site_config=...)` routes to the `telegram_ops` row defined here (Prefect Stage 4 cutover, 2026-05-16).

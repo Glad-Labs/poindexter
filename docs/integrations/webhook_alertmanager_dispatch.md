@@ -84,6 +84,6 @@ The legacy `/api/webhooks/alertmanager` route in `routes/alertmanager_webhook_ro
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Target table: `alert_events`
 - Dispatch helper: `services.integrations.operator_notify.notify_operator` (the bespoke `_notify_alert` shim in the handler — `integrations/handlers/webhook_alertmanager.py::_notify_operator` — wraps it with severity-aware critical-flag handling)

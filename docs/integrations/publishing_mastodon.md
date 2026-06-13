@@ -110,7 +110,7 @@ poindexter publishers disable mastodon_main
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handler: `publishing.bluesky`
 - Issue: `Glad-Labs/poindexter#112`
 - CLI: `poindexter publishers --help`

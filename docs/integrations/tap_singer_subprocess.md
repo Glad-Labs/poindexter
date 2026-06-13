@@ -147,7 +147,7 @@ Then point an `external_taps.record_handler` row at `stripe_charge_writer`. The 
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - GH-103 (Singer tap support — closes when this handler is in production use)
 - GH-27 (feedback-loop tables — `external_metrics` is the target for analytics taps)
 - Singer spec: https://github.com/singer-io/getting-started/blob/master/docs/SPEC.md

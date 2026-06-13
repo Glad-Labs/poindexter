@@ -84,6 +84,6 @@ Failure between steps 2 and 3 is rare but possible (DB hiccup, manual kill). If 
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handler: `retention.ttl_prune`
 - GH-110 (retention framework issue)

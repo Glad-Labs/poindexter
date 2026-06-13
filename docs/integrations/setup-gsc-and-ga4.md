@@ -106,7 +106,7 @@ UPDATE external_taps
           to_jsonb('<your_refresh_token>'::text)
         ),
         '{tap_config,site_urls}',
-        '["https://www.gladlabs.io"]'::jsonb
+        '["https://www.example.com"]'::jsonb
       )
  WHERE name = 'gsc_main';
 ```
@@ -210,7 +210,7 @@ poindexter taps enable gsc_main
 poindexter taps enable ga4_main
 ```
 
-The schedule is `every 6 hours` for both. Watch the **Integration Health** Grafana dashboard — the `total_records` column on the External taps table will tick up after each run.
+The schedule is `every 6 hours` for both. Watch the **Integrations & Admin** Grafana dashboard — the `total_records` column on the External taps table will tick up after each run.
 
 ---
 
@@ -236,7 +236,7 @@ SELECT date, metric_value AS clicks
   FROM external_metrics
  WHERE source = 'google_search_console'
    AND metric_name = 'clicks'
-   AND slug = 'rtx-5090-70b-models'
+   AND slug = 'your-post-slug'
  ORDER BY date;
 
 -- Top-clicked queries last 7 days (dimensions are jsonb)

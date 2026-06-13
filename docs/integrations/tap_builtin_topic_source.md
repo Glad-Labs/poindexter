@@ -22,7 +22,7 @@ enabled:         false until operator flips on
 
 ## Seeded rows (all disabled)
 
-Migration 0090 seeds one row per current topic_source plugin with sensible schedules:
+The baseline migration seeds one row per current topic_source plugin with sensible schedules:
 
 | Name         | Schedule       |
 | ------------ | -------------- |
@@ -88,7 +88,7 @@ The existing topic_source plugin architecture is already declarative-ish (via `p
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handler: `tap.singer_subprocess` (stub — full external Singer tap support)
 - Existing runner: `services/topic_sources/runner.py`
 - GH-103 (external taps issue)

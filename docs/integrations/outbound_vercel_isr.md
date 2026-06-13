@@ -83,7 +83,7 @@ The caller (typically the publish pipeline) should catch `OutboundWebhookError` 
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handlers: `outbound.discord_post`, `outbound.telegram_post`
 - Legacy call site being migrated: `services.revalidation_service.trigger_nextjs_revalidation`
 - GH-114 (cache_invalidation_backends — the eventual more-general table for SvelteKit/Nuxt/Cloudflare-purge destinations)

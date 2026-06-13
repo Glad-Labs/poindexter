@@ -53,6 +53,6 @@ UPDATE webhook_endpoints SET enabled = FALSE WHERE name = 'resend';
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Target table: `subscriber_events`
 - Sibling handler: `webhook.revenue_event_writer` (Lemon Squeezy)

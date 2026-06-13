@@ -82,6 +82,6 @@ The call to `deliver()` will raise `OutboundWebhookError`; callers should catch 
 
 ## Related
 
-- RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
+- Framework overview: [Integrations](/docs/integrations/index)
 - Sibling handlers: `outbound.telegram_post`, `outbound.vercel_isr`
 - Direct-webhook fallback (used when the dispatcher framework is unavailable or the row is disabled): `services.integrations.operator_notify._legacy_discord_webhook` (inlined from the deleted `services.task_executor._notify_discord` during Prefect Stage 4, 2026-05-16).
