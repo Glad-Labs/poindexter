@@ -26,7 +26,7 @@ Three things make it useful beyond a vanilla LangGraph wrapper:
 
 ## Capability outcomes feedback loop
 
-After a run completes, the runner writes per-node training signal into `capability_outcomes` (table from migration 0147) when the caller passes a `capability_outcomes_writer`. The router's next routing decision can read this — same atom + same input shape ought to produce similar quality, similar cost, similar latency. ML-first design per `feedback_always_keep_ml_in_mind`: every deterministic component pairs with a learned-successor sketch.
+After a run completes, the runner writes per-node training signal into `capability_outcomes` (a baseline-schema table; originally migration 0147) when the caller passes a `capability_outcomes_writer`. The router's next routing decision can read this — same atom + same input shape ought to produce similar quality, similar cost, similar latency. ML-first design per `feedback_always_keep_ml_in_mind`: every deterministic component pairs with a learned-successor sketch.
 
 ## Reads from / writes to
 

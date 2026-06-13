@@ -1,6 +1,6 @@
 # Phase 1 — Variant Experiments Harness (Design)
 
-**Status:** Draft, awaiting operator review
+**Status:** ✅ **Shipped** — operator review is complete (the decisions are resolved inline below). The Phase 1 harness is live: the `experiments` / `experiment_variants` tables (now folded into the baseline schema), `services/experiment_runner.py::pick_variant`, the writer-atom hook (`modules/content/atoms/two_pass_writer.py` + `narrate_bundle.py`), and the writer-model override fallback (poindexter#574, 2026-06-03) are all in place. Phase 2 (multi-armed-bandit allocation) remains the successor.
 **Author:** Drafted by Claude during the 2026-05-28 R&D-lab strategy session
 **Predecessor:** Phase 0 (PR #695) — observation layer + `lab_outcomes_v1` view
 **Successor:** Phase 2 — multi-armed bandit traffic allocation

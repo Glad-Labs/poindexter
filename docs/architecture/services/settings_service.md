@@ -133,7 +133,7 @@ TIMESTAMP`.
       category="cost_guard", description="Daily LLM spend cap"
   )
   ```
-- **Set a value via CLI:** `poindexter set <key> <value>` — wraps
+- **Set a value via CLI:** `poindexter settings set <key> <value>` — wraps
   this service through the API.
 - **List everything (with secrets revealed):**
   ```python

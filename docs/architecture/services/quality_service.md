@@ -181,9 +181,9 @@ under the `qa_*` prefix in `quality_scorers.qa_cfg()`.
 
 - **Lower the pass bar for a genre that scores low for legitimate
   reasons** (e.g. very short news posts):
-  `poindexter set qa_pass_threshold 60`
+  `poindexter settings set qa_pass_threshold 60`
 - **Disable buzzword penalties temporarily:**
-  `poindexter set qa_llm_buzzword_penalty_per 0`
+  `poindexter settings set qa_llm_buzzword_penalty_per 0`
   (or the nuclear option: `qa_llm_patterns_enabled false`).
 - **Inspect recent quality evaluations:**
   `SELECT created_at, overall_score, passing, evaluation_method
@@ -195,7 +195,7 @@ ORDER BY created_at DESC LIMIT 50;`
 - **Run a one-off evaluation in the REPL:**
   ```python
   import asyncio
-  from services.quality_service import UnifiedQualityService, EvaluationMethod
+  from modules.content.quality_service import UnifiedQualityService, EvaluationMethod
   qs = UnifiedQualityService()
   result = asyncio.run(qs.evaluate("# Post\n\nBody...", context={"topic": "fastapi"}))
   print(result.overall_score, result.passing, result.suggestions)

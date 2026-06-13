@@ -132,7 +132,7 @@ app_settings changes apply without a restart (#198):
   - `services.stages.generate_content` — primary writer pipeline.
   - `services.writer_rag_modes.two_pass` — TWO_PASS revise loop via
     the `research_topic()` shim.
-  - `services.multi_model_qa` — the web fact-check gate constructs
+  - `modules.content.multi_model_qa` — the web fact-check gate constructs
     its own `WebResearcher()` directly.
   - `services.title_generation` — title generator searches for
     competing titles in the niche.
@@ -172,7 +172,7 @@ app_settings changes apply without a restart (#198):
   WHERE key = 'known_references_json';
   ```
 - **Tighten DDG timeout when it's hanging:**
-  `poindexter set web_research_search_timeout_seconds 10`
+  `poindexter settings set web_research_search_timeout_seconds 10`
 - **Test research output for a topic without running the pipeline:**
   ```python
   python -c "import asyncio; from services.research_service import ResearchService; print(asyncio.run(ResearchService(pool=None).build_context('FastAPI streaming')))"

@@ -149,7 +149,7 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
 - **Inspect today's spend:**
   `SELECT provider, model, SUM(cost_usd) FROM cost_logs WHERE created_at >= date_trunc('day', NOW()) AND provider NOT IN ('electricity','ollama','ollama_native') GROUP BY 1,2 ORDER BY 3 DESC;`
 - **Raise the daily cap temporarily:**
-  `poindexter set daily_spend_limit_usd 10` (then unset after the burst).
+  `poindexter settings set daily_spend_limit_usd 10` (then unset after the burst).
 - **Check whether a model is known to LiteLLM:** see
   `services.cost_lookup` lookup; or query
   `SELECT key, value FROM app_settings WHERE key LIKE 'plugin.llm_provider.%.cost_per_1k_%';`

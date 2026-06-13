@@ -10,6 +10,17 @@ treatments — chosen per-shot by an LLM director, rendered by the existing
 This doc is the contract. The implementation lands in 3 PRs (sequenced at the
 bottom). Each PR is independently shippable and useful.
 
+> **Superseded (2026-06-07) — read alongside the `media_pipeline` redesign.** This
+> 2026-05-28 proposal is the origin of the director / multi-source / shot-list idea,
+> and its **shot-list schema and source decision-matrix below remain the detailed
+> reference**. The broader render → QA → gate → distribute architecture was reframed
+> and approved as the single `media_pipeline` graph in
+> [`video-pipeline-redesign.md`](video-pipeline-redesign.md) (#689), with podcast
+> later split into [`podcast-pipeline-stage3.md`](podcast-pipeline-stage3.md). Treat
+> those two as the current source of truth for the rollout. PR 1's shot-list/director
+> stage (`modules/content/stages/generate_video_shot_list.py`) has since shipped into
+> `canonical_blog`.
+
 ## Background — what's broken today
 
 `services/video_service.py` hardcodes a single composition strategy: generate

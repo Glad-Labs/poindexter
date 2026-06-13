@@ -110,7 +110,7 @@ in app_settings table or as env var <KEY>.")`. This is the "fail
 
 ## Common ops
 
-- **Set a value via CLI:** `poindexter set <key> <value>`.
+- **Set a value via CLI:** `poindexter settings set <key> <value>`.
 - **List all settings:** `poindexter list-settings` or
   `SELECT key, value, is_secret FROM app_settings ORDER BY key;`
 - **Reload after a manual DB edit:** call

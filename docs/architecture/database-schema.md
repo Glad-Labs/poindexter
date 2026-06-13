@@ -9,7 +9,7 @@ into `0000_baseline.py`, re-rolled most recently by the Phase E squash
 on 2026-06-06; new migrations use a UTC timestamp prefix per
 poindexter#378).
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-13
 **Version:** 0.1.x (alpha)
 **Architecture:** PostgreSQL 16 + pgvector + FastAPI + asyncpg background workers
 
@@ -165,40 +165,6 @@ CREATE INDEX idx_writing_samples_user_id ON writing_samples(user_id);
 CREATE INDEX idx_writing_samples_created_at ON writing_samples(created_at DESC);
 ```
 
-### 1. `BlogPost` Model (Python)
-
-Used by content agents during the creation process.
-
-```python
-class BlogPost(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
-    raw_content: Optional[str] = None
-    excerpt: Optional[str] = None
-    slug: Optional[str] = None
-    primary_keyword: Optional[str] = None
-    category: Optional[str] = None
-    tags: List[str] = []
-    images: List[ImageDetails] = []
-    body_content_blocks: Optional[List[Dict[str, Any]]] = None
-    qa_feedback: List[str] = []
-```
-
-### 2. `ImageDetails` Model (Python)
-
-Represents images processed by the content agent.
-
-```python
-class ImageDetails(BaseModel):
-    query: Optional[str] = None
-    source: str = "pexels"  # Default to Pexels
-    path: Optional[str] = None  # Local path or GCS blob name
-    public_url: Optional[str] = None
-    alt_text: Optional[str] = None
-    caption: Optional[str] = None
-    description: Optional[str] = None
-```
-
 ---
 
 ## **API Endpoints Reference**
@@ -215,5 +181,5 @@ Key content routes:
 
 ---
 
-**Maintainer:** Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io).
+**Maintainer:** Poindexter is built and maintained by Glad Labs LLC.
 For questions, open an issue on the [public repo](https://github.com/Glad-Labs/poindexter).

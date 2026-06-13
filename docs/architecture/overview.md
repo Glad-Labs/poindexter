@@ -1,6 +1,6 @@
 # Poindexter Architecture
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-13
 **Version:** 0.1.x (alpha)
 **Status:** Production-ready on the author's daily-driver setup. Public alpha.
 
@@ -93,12 +93,20 @@ content with human oversight**, not "AI content factory" and not
 │  └────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
                               ↕️ Internal APIs
+│  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐       │
+│  │  PostgreSQL│ │            │ │ pgvector │ │ Storage  │       │
+│  │ (Production)│ │            │ │  Vector  │ │ (Media)  │       │
+│  └────────────┘ └────────────┘ └──────────┘ └──────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
 ### Backend: FastAPI worker (port 8002)
 
 The worker is a FastAPI service that handles all asynchronous task
 execution and multi-agent orchestration.
 
 **Architecture conventions:**
+
 - **Unified task API.** All task creation flows through
   `POST /api/tasks` with a `task_type` discriminator.
 - **Async DB driver.** The worker uses **asyncpg** directly — no
@@ -107,27 +115,15 @@ execution and multi-agent orchestration.
   sole task dispatch path as of 2026-05-16 (Stage 4 of the Prefect
   cutover deleted the legacy `task_executor.py`). The flow claims
   pending `pipeline_tasks` rows via `SELECT ... FOR UPDATE SKIP
-  LOCKED` and hands them to `content_router_service`. Retry /
+LOCKED` and hands them to `content_router_service`. Retry /
   heartbeat / stale-run sweep are Prefect-native; operator UI at
   http://localhost:4200.
-
-**Request Flow:**
-1. **POST `/api/tasks`**: User creates a task (e.g., `task_type="blog_post"`).
-2. **PostgreSQL**: Task is stored as `pending`.
-3. **Prefect flow**: `content_generation_flow` claims the row and dispatches by `task_type`.
-4. **ContentRouterService**: Thin TemplateRunner dispatcher — looks up the row's `template_slug` and runs the matching LangGraph template (`canonical_blog` for blog posts, `dev_diary` for the build-in-public stream).
 
 ### Data Architecture
 
 - **Primary DB**: PostgreSQL 16 with pgvector extension
 - **Driver**: `asyncpg` (Full Async)
 - **Schema Management**: Managed via `DatabaseService` delegates (`TasksDatabase`, `UsersDatabase`, etc.).
-│  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐       │
-│  │  PostgreSQL│ │            │ │ pgvector │ │ Storage  │       │
-│  │ (Production)│ │            │ │  Vector  │ │ (Media)  │       │
-│  └────────────┘ └────────────┘ └──────────┘ └──────────┘       │
-└──────────────────────────────────────────────────────────────────┘
-```
 
 ### Request Flow
 
@@ -214,7 +210,7 @@ execution and multi-agent orchestration.
 
 Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](plugin-architecture)).
 
-Use cost tiers (`free`/`budget`/`standard`/`premium`) for model selection — never hardcode model names. Cost tiers live in `app_settings` and map to Ollama models at runtime.
+Use cost tiers (`free`/`budget`/`standard`/`premium`/`flagship`) for model selection — never hardcode model names. Cost tiers live in `app_settings` and map to Ollama models at runtime.
 
 ---
 
@@ -376,7 +372,7 @@ See [`services/template_runner.md`](services/template_runner) for the runner's i
 
 #### LLM Router (`services/llm_providers/litellm_provider.py` via dispatcher)
 
-- LiteLLM-backed `LLMProvider` plugin — primary router as of 2026-05-16 (`plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'` on prod)
+- LiteLLM-backed `LLMProvider` plugin — primary router as of 2026-05-16 (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'` on prod)
 - Cost-tier API: `await resolve_tier_model(pool, "standard")` from `services/llm_providers/dispatcher.py`; operators tune per-tier model via `app_settings.cost_tier.<tier>.model` rows
 - Automatic provider routing + cost tracking + retries via mature OSS (LiteLLM)
 - Langfuse callback auto-traces every call
@@ -510,11 +506,11 @@ CREATE TABLE memories (
 The roadmap is tracked via GitHub milestones at
 [Glad-Labs/poindexter/milestones](https://github.com/Glad-Labs/poindexter/milestones).
 
-| Milestone                 | Status      | Description                                                                   |
-| ------------------------- | ----------- | ----------------------------------------------------------------------------- |
-| M1: Stabilize             | Done        | Pipeline runs end-to-end, fresh clone works, tests pass                       |
-| M3: Launch Poindexter Pro | In progress | Single subscription tier on Lemon Squeezy — $9/mo or $89/yr, 7-day free trial |
-| Backlog                   | Ongoing     | 30+ issues for post-revenue features                                          |
+| Milestone                 | Status      | Description                                                                         |
+| ------------------------- | ----------- | ----------------------------------------------------------------------------------- |
+| M1: Stabilize             | Done        | Pipeline runs end-to-end, fresh clone works, tests pass                             |
+| M3: Launch Poindexter Pro | In progress | Single subscription tier on Lemon Squeezy — $19/mo or $180/yr, Founding Member rate |
+| Backlog                   | Ongoing     | 30+ issues for post-revenue features                                                |
 
 ---
 

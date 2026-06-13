@@ -128,4 +128,3 @@ If you're not sure which category a new piece falls into, the test is: _if Matt 
 
 **Last updated:** 2026-05-08
 **Decision owner:** Matt (Glad Labs LLC)
-**Related:** [holistic architectural review 2026-05-07](../../.shared-context/audits/2026-05-07-holistic-architectural-review.md), [self-healing audit 2026-05-08](../../.shared-context/audits/2026-05-08-self-healing-and-backups-audit.md)

@@ -94,7 +94,7 @@ Gates (mostly opt-in):
 ## Dependencies
 
 - **Reads from:**
-  - `services.content_validator.validate_content` and
+  - `modules.content.content_validator.validate_content` and
     `verify_content_urls` (programmatic layer).
   - `services.citation_verifier` (HTTP HEAD path).
   - `services.web_research.WebResearcher` (DuckDuckGo fact check).
@@ -140,7 +140,7 @@ timed out after 5s`. Watch the `critic_fallback` audit event for
 
 - **Soften the critic for a misbehaving niche:** raise
   `qa_final_score_threshold` (e.g. to 60) or lower `qa_critic_weight`.
-- **Swap critic model:** `poindexter set pipeline_critic_model
+- **Swap critic model:** `poindexter settings set pipeline_critic_model
 ollama/glm-4.7` (or `anthropic/claude-haiku-4-5` for cloud — note
   cost guard interactions).
 - **Disable vision QA:** `qa_vision_check_enabled=false` (default).

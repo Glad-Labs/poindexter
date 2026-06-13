@@ -51,7 +51,7 @@ are private.
   without a host, returns early with the matching
   `skipped_reason` — no half-attempts that would partial-fail.
 - **`smtp_password` and `resend_api_key` are read via `get_secret`
-  vs `get`.** Per migration 0121, `smtp_password` is flagged
+  vs `get`.** In the baseline schema, `smtp_password` is flagged
   `is_secret=true`, which means it's filtered out of the in-memory
   `SiteConfig` cache and MUST be fetched via the async
   `get_secret()` path. The current code uses `get_secret` for
@@ -110,7 +110,7 @@ All from `app_settings` via `services.site_config`:
 - `smtp_host` (required when provider is SMTP) — SMTP server host.
 - `smtp_port` (default `587`) — SMTP port.
 - `smtp_user` (default empty) — SMTP auth user, optional.
-- `smtp_password` (default empty, **`is_secret=true` after 0121**)
+- `smtp_password` (default empty, **`is_secret=true` in the baseline**)
   — SMTP auth password.
 - `smtp_use_tls` (default `true`) — STARTTLS toggle.
 - `newsletter_batch_size` (default `50`) — emails per batch.
@@ -172,23 +172,23 @@ All from `app_settings` via `services.site_config`:
 
 - **Enable newsletters:**
   ```bash
-  poindexter set newsletter_enabled true
-  poindexter set newsletter_from_email "newsletter@gladlabs.io"
-  poindexter set newsletter_from_name "Glad Labs"
-  poindexter set resend_api_key "re_..."  # check is_secret flag!
+  poindexter settings set newsletter_enabled true
+  poindexter settings set newsletter_from_email "newsletter@example.com"
+  poindexter settings set newsletter_from_name "Glad Labs"
+  poindexter settings set resend_api_key "re_..."  # check is_secret flag!
   ```
 - **Switch to SMTP:**
   ```bash
-  poindexter set newsletter_provider smtp
-  poindexter set smtp_host smtp.example.com
-  poindexter set smtp_port 587
-  poindexter set smtp_user newsletter@gladlabs.io
-  poindexter set smtp_password '<password>'  # is_secret=true after 0121
+  poindexter settings set newsletter_provider smtp
+  poindexter settings set smtp_host smtp.example.com
+  poindexter settings set smtp_port 587
+  poindexter settings set smtp_user newsletter@example.com
+  poindexter settings set smtp_password '<password>'  # is_secret=true (baseline)
   ```
 - **Tune batch size for a slower provider:**
   ```bash
-  poindexter set newsletter_batch_size 20
-  poindexter set newsletter_batch_delay_seconds 5
+  poindexter settings set newsletter_batch_size 20
+  poindexter settings set newsletter_batch_delay_seconds 5
   ```
 - **Inspect recent send results:**
   ```sql
@@ -216,8 +216,8 @@ All from `app_settings` via `services.site_config`:
 
 - `docs/architecture/services/publish_service.md` — the caller that
   triggers newsletter sends.
-- `services.migrations.0121_flip_smtp_password_secret` — the
-  migration that gated the SMTP password rotation; the
-  `_cfg()` change here was paired with that migration.
+- `0000_baseline.py` — seeds `smtp_password` with `is_secret=true`
+  (originally migration `0121_flip_smtp_password_secret`, folded into
+  the baseline by the 2026-06-06 squash).
 - `feedback_no_silent_defaults` (operator design note)
   — why `_site_url()` raises rather than defaulting.

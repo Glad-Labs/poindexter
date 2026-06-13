@@ -160,22 +160,22 @@ filter failed"` via `logger.exception` — the candidate list falls
 
 - **Loosen the cap globally:**
   ```bash
-  poindexter set internal_link_single_target_cap 5
+  poindexter settings set internal_link_single_target_cap 5
   ```
 - **Disable the cap entirely (debug):**
   ```bash
-  poindexter set internal_link_single_target_cap_enabled false
+  poindexter settings set internal_link_single_target_cap_enabled false
   ```
 - **Disable tag-coherence (NOT recommended):**
   ```bash
-  poindexter set internal_link_tag_coherence_required false
+  poindexter settings set internal_link_tag_coherence_required false
   ```
 - **Find slugs that hit the cap recently:** grep production logs
   for `[LINK_COHERENCE] cap reached for <slug>: N inbound (cap=...)`.
 - **Audit a specific candidate:** construct one and run it through
   the filter directly:
   ```python
-  from services.internal_link_coherence import (
+  from modules.content.internal_link_coherence import (
       InternalLinkCoherenceFilter, LinkCandidate
   )
   cand = LinkCandidate(slug="foo", title="Foo")

@@ -1,8 +1,11 @@
 # `poindexter doctor` — unified health check-graph (#527)
 
-**Status:** design + v1 plan (deterministic-only). Phase 1 keystone of the
-[roadmap](#) / the 2026-05-29 observability-doctor audit (Option C: deterministic
-check-graph first, LLM diagnostician second).
+**Status:** v1 (deterministic-only) **shipped** (#527) — `services/doctor.py` and
+`poindexter/cli/doctor.py` are live, matching the design below. The hybrid LLM
+diagnostician (`_escalate_unknown`) remains a typed no-op seam, deferred to
+Phase 2 / #429. Originated in the 2026-05-29 observability-doctor audit
+(Option C: deterministic check-graph first, LLM diagnostician second). The
+sections below are the v1 design as built.
 
 ## Problem
 

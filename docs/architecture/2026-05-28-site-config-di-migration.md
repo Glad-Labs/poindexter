@@ -1,6 +1,6 @@
 # SiteConfig: per-module singleton → constructor DI (Application Container)
 
-**Status:** design v2 — 2026-05-28 (v1 proposed ContextVar; superseded after the future-proofing review)
+**Status:** ✅ **Shipped.** This is the original design v2 (2026-05-28; v1 proposed a ContextVar, superseded after the future-proofing review). `AppContainer` (`services/container.py`) + constructor DI is now live, `services.di_wiring.WIRED_MODULES` is an empty tuple, and the per-module `site_config` singleton + `set_site_config` fan-out are retired (#272 → the #788 capstone). Read the PR plan below as the executed roadmap.
 **Closes:** the latent bug class where every new entry point silently fails because it forgot to wire SiteConfig into N service modules. Most recent victim: `poindexter topics sweep --niche glad-labs` (2026-05-28).
 **Aligns with:** Module v1 destination (each business module owns its dependencies as a composable unit) + future multi-tenant SaaS posture (per-request / per-tenant SiteConfig).
 

@@ -13,11 +13,12 @@ describe the QA reviewer chain in DB-driven, declarative form.
 verifier, web fact-check, vision gate, etc.) to run in what order,
 which are required-to-pass, and what their per-gate config looks like.
 
-This module is the runtime read-side of migrations 0093 + 0094
-(`0093_create_qa_gates_table.py`, `0094_seed_qa_gates_default_chain.py`)
+This module is the runtime read-side of the declarative `qa_gates`
+table (created + default chain seeded in `0000_baseline.py`; originally
+migrations 0093 + 0094, folded into the baseline by the 2026-06-06 squash)
 which moved the QA chain out of hardcoded Python and into a
 declarative table — part of the broader "declarative data plane"
-work (see `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`).
+work (see the [integrations framework overview](/docs/integrations/index)).
 
 Three deliberate design choices:
 
@@ -97,7 +98,7 @@ no caching — every invocation hits the DB.
 - **Writes to:** nothing.
 - **External APIs:** none.
 - **Sister-service callers:**
-  - `services.multi_model_qa` (intended consumer once the declarative
+  - `modules.content.multi_model_qa` (intended consumer once the declarative
     cutover lands — currently still using hardcoded chain).
   - `poindexter.cli.qa_gates` — the CLI uses raw SQL for mutations
     rather than going through this module.
@@ -147,20 +148,19 @@ will use legacy chain`), returns `[]`. Intentionally DEBUG-level
 - **Verify migrations applied:**
   ```sql
   SELECT name, applied_at FROM schema_migrations
-  WHERE name LIKE '%qa_gates%' ORDER BY applied_at;
+  WHERE name = '0000_baseline' ORDER BY applied_at;
   ```
-  Expect `0093_create_qa_gates_table` and
-  `0094_seed_qa_gates_default_chain`.
+  Expect `0000_baseline` — the original `0093_create_qa_gates_table` /
+  `0094_seed_qa_gates_default_chain` migrations were folded into it by
+  the 2026-06-06 squash.
 
 ## See also
 
 - `docs/architecture/services/multi_model_qa.md` — the consumer of
   this chain (currently calling its hardcoded fallback).
-- `docs/architecture/declarative-data-plane-rfc-2026-04-24.md` —
-  broader RFC that motivated moving the chain into the DB.
+- [Integrations framework overview](/docs/integrations/index) — the
+  declarative data-plane pattern this table belongs to.
 - `poindexter/cli/qa_gates.py` — write-side CLI (the only sanctioned
   way to mutate `qa_gates`).
-- Migrations `0093_create_qa_gates_table.py` and
-  `0094_seed_qa_gates_default_chain.py` — schema + default rows.
-- `docs/operations/migrations-audit-2026-04-27.md` — confirms both
-  migrations applied 2026-04-27.
+- `0000_baseline.py` — the `qa_gates` schema + default rows (originally
+  migrations 0093/0094, squashed 2026-06-06).

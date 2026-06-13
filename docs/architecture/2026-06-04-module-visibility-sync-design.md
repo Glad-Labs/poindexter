@@ -1,6 +1,6 @@
 # Module Visibility Sync — presence-based discovery for the public mirror
 
-**Status:** design (approved 2026-06-04). Implements Module v1 **Phase 5**.
+**Status:** ✅ **Shipped** — Module v1 **Phase 5** (presence-based discovery) is live: `plugins/registry.py` directory-scans `modules/*/` (`for entry in sorted(base.iterdir())`) and the private `finance` CLI group was relocated into the module (`modules/finance/cli.py`). This is the approved design (2026-06-04) it implemented.
 **Date:** 2026-06-04 (brainstormed with Matt 2026-06-04)
 **Tracker:** [Glad-Labs/poindexter#490](https://github.com/Glad-Labs/poindexter/issues/490) (Module v1 umbrella) — Phase 5 child.
 **Supersedes:** the hand-maintained private-module strip + substrate line-patching in the public-mirror sync filter.

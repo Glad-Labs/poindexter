@@ -163,10 +163,10 @@ Lists are loaded lazily and cached for the process lifetime.
     `Mozilla/5.0 (compatible; Poindexter-LinkChecker/1.0)`,
     10s timeout, follows redirects).
 - **Sister-service callers:**
-  - `services.multi_model_qa` — wraps `validate_content` as the
+  - `modules.content.multi_model_qa` — wraps `validate_content` as the
     `programmatic_validator` reviewer; calls `verify_content_urls`
     when `qa_citation_verify_enabled` is set.
-  - `services.ai_content_generator` — uses validation in its
+  - `modules.content.ai_content_generator` — uses validation in its
     refinement loop (legacy generation path).
 
 ## Failure modes
@@ -222,17 +222,17 @@ threshold of T)`. The original warning categories are still emitted
   ```
   Picks up within `_FACT_OVERRIDES_TTL` (300s) on the next call.
 - **Tune the per-category warning threshold** (more lenient):
-  `poindexter set content_validator_warning_reject_threshold 5`
+  `poindexter settings set content_validator_warning_reject_threshold 5`
 - **Disable the code-density rule for a specific niche** — drop the
   niche's tags from `code_density_tag_filter`, or
-  `poindexter set code_density_check_enabled false`.
+  `poindexter settings set code_density_check_enabled false`.
 - **Inspect which rules are firing in production** —
   `sum by (rule)(rate(content_validator_warnings_total[1h]))` in
   Grafana. (The counter is emitted pre-promotion so it shows raw
   signal, not blocking decisions.)
 - **Run validation against a draft locally:**
   ```python
-  from services.content_validator import validate_content
+  from modules.content.content_validator import validate_content
   result = validate_content("My Title", "Body...", topic="fastapi", tags=["technical"])
   for issue in result.issues:
       print(issue.severity, issue.category, issue.description)

@@ -48,7 +48,7 @@ This service replaces the older `topic_proposal_service`. Shipped 2026-04-30.
 
 ## Configuration
 
-All from `app_settings` via `site_config` (migration 0119 added these):
+All from `app_settings` via `site_config` (seeded in the baseline schema; originally migration 0119):
 
 - `niche_top_n_per_pool` (default `5`) — top-N per pool fed into LLM
   final-score AND the slice inside `_embed_and_pre_rank`. Both ends

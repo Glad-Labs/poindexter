@@ -82,7 +82,7 @@ when adapter posting is wired more broadly).
 ## Status: module-level config caching
 
 Six values are captured at module import time rather than per-call,
-which means `poindexter set social_poster_model gemma3:27b` doesn't
+which means `poindexter settings set social_poster_model gemma3:27b` doesn't
 take effect until the worker restarts. This contradicts the
 project's "DB-first, runtime-tunable" stance but is the current
 shape — a future refactor should turn these into per-call lookups.
@@ -179,13 +179,13 @@ Failed to generate social posts for: <title>` Telegram + Discord
 
 - **Enable Bluesky + Mastodon posting:**
   ```bash
-  poindexter set social_distribution_platforms "bluesky,mastodon"
+  poindexter settings set social_distribution_platforms "bluesky,mastodon"
   ```
   Make sure the corresponding adapter credentials are configured
   in `app_settings` first.
 - **Switch to a different Ollama model for social copy:**
   ```bash
-  poindexter set social_poster_model "ollama/qwen3:8b"
+  poindexter settings set social_poster_model "ollama/qwen3:8b"
   ```
   Restart the worker (see status callout — module-level
   capture means no hot reload).
