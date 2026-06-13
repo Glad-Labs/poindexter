@@ -28,6 +28,7 @@ import click
 # DSN + asyncpg helpers (mirror the qa-gates / taps CLI patterns)
 # ---------------------------------------------------------------------------
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 
 
 def _run(coro):
@@ -147,6 +148,21 @@ def _print_result(result, *, json_output: bool, header: str = "") -> int:
         for r in result.rows:
             click.echo(_format_row_line(r))
     return 0 if result.ok else 1
+
+
+async def _resolve_single_post_id(pool: Any, post_id: str) -> str:
+    """Expand an 8-char ``posts.id`` prefix to its full UUID.
+
+    Falls back to the original token when nothing matches, so the
+    scheduling service's own not-found result (and its exit code) is
+    preserved verbatim; an ambiguous prefix raises ``AmbiguousPrefixError``
+    (→ exit 2). ``schedule list`` + the dashboards render
+    ``LEFT(post_id::text, 8)``, so a pasted prefix is the common case.
+    """
+    resolved = await resolve_uuid_prefix(
+        pool, table="posts", column="id", prefix=post_id, noun="post",
+    )
+    return resolved if resolved is not None else post_id
 
 
 # ---------------------------------------------------------------------------
@@ -294,12 +310,16 @@ def schedule_show(post_id: str, json_output: bool) -> None:
 
     async def _impl():
         async def _run_with_pool(pool):
-            return await show_scheduled(post_id, pool=pool)
+            effective = await _resolve_single_post_id(pool, post_id)
+            return await show_scheduled(effective, pool=pool)
 
         return await _with_pool(_run_with_pool)
 
     try:
         result = _run(_impl())
+    except AmbiguousPrefixError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(2)
     except Exception as e:
         click.echo(f"Error: {type(e).__name__}: {e}", err=True)
         sys.exit(1)
@@ -343,7 +363,11 @@ def schedule_shift(
     async def _impl():
         async def _run_with_pool(pool):
             cfg = await _load_site_config(pool)
-            ids = None if shift_all else [post_id]
+            if shift_all:
+                ids: list[str] | None = None
+            else:
+                assert post_id is not None  # guarded by the checks above
+                ids = [await _resolve_single_post_id(pool, post_id)]
             return await shift_fn(
                 by_delta=by_delta,
                 post_ids=ids,
@@ -355,6 +379,9 @@ def schedule_shift(
 
     try:
         result = _run(_impl())
+    except AmbiguousPrefixError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(2)
     except Exception as e:
         click.echo(f"Error: {type(e).__name__}: {e}", err=True)
         sys.exit(1)
@@ -394,7 +421,11 @@ def schedule_clear(
     async def _impl():
         async def _run_with_pool(pool):
             cfg = await _load_site_config(pool)
-            ids = None if clear_all else [post_id]
+            if clear_all:
+                ids: list[str] | None = None
+            else:
+                assert post_id is not None  # guarded by the checks above
+                ids = [await _resolve_single_post_id(pool, post_id)]
             return await clear_fn(
                 post_ids=ids,
                 pool=pool,
@@ -405,6 +436,9 @@ def schedule_clear(
 
     try:
         result = _run(_impl())
+    except AmbiguousPrefixError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(2)
     except Exception as e:
         click.echo(f"Error: {type(e).__name__}: {e}", err=True)
         sys.exit(1)
@@ -470,14 +504,18 @@ def publish_at_command(
     async def _impl():
         async def _run_with_pool(pool):
             cfg = await _load_site_config(pool)
+            effective = await _resolve_single_post_id(pool, post_id)
             return await assign_slot(
-                post_id, target, pool=pool, site_config=cfg, force=force,
+                effective, target, pool=pool, site_config=cfg, force=force,
             )
 
         return await _with_pool(_run_with_pool)
 
     try:
         result = _run(_impl())
+    except AmbiguousPrefixError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(2)
     except Exception as e:
         click.echo(f"Error: {type(e).__name__}: {e}", err=True)
         sys.exit(1)

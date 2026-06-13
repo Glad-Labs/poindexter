@@ -36,6 +36,7 @@ from poindexter.cli.approval import (
     _resolve_task_id_prefix,
     approve_command,
     reject_command,
+    show_pending_command,
 )
 
 # ---------------------------------------------------------------------------
@@ -327,3 +328,75 @@ class TestRejectCommandPrefixResolution:
 
         assert result.exit_code != 0
         assert "poindexter tasks reject" in result.output
+
+
+# ---------------------------------------------------------------------------
+# show_pending_command — #480 fixed approve/reject but missed show-pending;
+# it shares the same prefix-resolution glue now.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestShowPendingPrefixResolution:
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_prefix_resolves_then_shows(self, runner):
+        full_id = "6bf91cc3-0281-4b93-aa02-b04ebc1ab45b"
+        fake_show = AsyncMock(return_value={
+            "task_id": full_id,
+            "gate_name": "topic_decision",
+            "artifact": {},
+            "gate_paused_at": "2026-04-26T12:00:00+00:00",
+            "status": "in_progress",
+            "topic": "x",
+            "title": "y",
+        })
+        with patch(
+            "poindexter.cli.approval._resolve_task_id_prefix",
+            new=AsyncMock(return_value=full_id),
+        ), patch(
+            "poindexter.cli.approval._make_pool",
+            new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
+        ), patch(
+            "services.approval_service.show_pending",
+            new=fake_show,
+        ):
+            result = runner.invoke(show_pending_command, ["6bf91cc3"])
+
+        assert result.exit_code == 0, result.output
+        # The resolved full UUID is what's displayed AND what hit the service.
+        assert full_id in result.output
+        assert fake_show.await_args.kwargs["task_id"] == full_id
+
+    def test_ambiguous_prefix_exits_2(self, runner):
+        with patch(
+            "poindexter.cli.approval._resolve_task_id_prefix",
+            new=AsyncMock(side_effect=_AmbiguousPrefixError(
+                "Prefix 'abc' matches 2 tasks (showing up to 5):\n"
+                "  abc11111-... status=awaiting_approval topic=Foo\n"
+                "  abc22222-... status=rejected topic=Bar\n"
+                "\nUse the full task_id or a longer prefix."
+            )),
+        ), patch(
+            "poindexter.cli.approval._make_pool",
+            new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
+        ):
+            result = runner.invoke(show_pending_command, ["abc"])
+
+        assert result.exit_code == 2
+        assert "matches 2 tasks" in result.output
+
+    def test_not_found_exits_nonzero(self, runner):
+        with patch(
+            "poindexter.cli.approval._resolve_task_id_prefix",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "poindexter.cli.approval._make_pool",
+            new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
+        ):
+            result = runner.invoke(show_pending_command, ["deadbeef"])
+
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower()

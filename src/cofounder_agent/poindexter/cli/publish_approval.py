@@ -35,10 +35,30 @@ from typing import Any
 import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+async def _resolve_post_id(pool: Any, post_id: str) -> str:
+    """Expand an 8-char ``posts.id`` prefix to its full UUID.
+
+    The publish-gate dashboards + ``list-pending-publish`` render
+    ``LEFT(post_id::text, 8)``; the service layer exact-matches
+    ``posts.id::text``. Resolve here so a pasted prefix lands. Raises
+    ``PostsApprovalServiceError`` (→ clean exit 1) when nothing matches,
+    or ``AmbiguousPrefixError`` (→ exit 2) when several do.
+    """
+    from services.posts_approval_service import PostsApprovalServiceError
+
+    resolved = await resolve_uuid_prefix(
+        pool, table="posts", column="id", prefix=post_id, noun="post",
+    )
+    if resolved is None:
+        raise PostsApprovalServiceError(f"Post {post_id} not found")
+    return resolved
 
 
 async def _make_pool():
@@ -112,9 +132,10 @@ def approve_publish_command(
     async def _impl():
         pool = await _make_pool()
         try:
+            resolved = await _resolve_post_id(pool, post_id)
             site_config = await _make_site_config(pool)
-            return await approve_publish(
-                post_id=post_id,
+            return resolved, await approve_publish(
+                post_id=resolved,
                 gate_name=gate_name,
                 feedback=feedback,
                 site_config=site_config,
@@ -124,7 +145,10 @@ def approve_publish_command(
             await pool.close()
 
     try:
-        result = _run(_impl())
+        resolved_id, result = _run(_impl())
+    except AmbiguousPrefixError as e:
+        _exit_error(str(e), code=2)
+        return
     except PostsApprovalServiceError as e:
         _exit_error(str(e))
         return
@@ -137,7 +161,7 @@ def approve_publish_command(
         return
 
     click.secho(
-        f"Approved post {post_id} at gate {result.get('gate_name')!r}.",
+        f"Approved post {resolved_id} at gate {result.get('gate_name')!r}.",
         fg="green",
     )
     if feedback:
@@ -181,9 +205,10 @@ def reject_publish_command(
     async def _impl():
         pool = await _make_pool()
         try:
+            resolved = await _resolve_post_id(pool, post_id)
             site_config = await _make_site_config(pool)
-            return await reject_publish(
-                post_id=post_id,
+            return resolved, await reject_publish(
+                post_id=resolved,
                 gate_name=gate_name,
                 reason=reason,
                 site_config=site_config,
@@ -193,7 +218,10 @@ def reject_publish_command(
             await pool.close()
 
     try:
-        result = _run(_impl())
+        resolved_id, result = _run(_impl())
+    except AmbiguousPrefixError as e:
+        _exit_error(str(e), code=2)
+        return
     except PostsApprovalServiceError as e:
         _exit_error(str(e))
         return
@@ -206,7 +234,7 @@ def reject_publish_command(
         return
 
     click.secho(
-        f"Rejected post {post_id} at gate {result.get('gate_name')!r} "
+        f"Rejected post {resolved_id} at gate {result.get('gate_name')!r} "
         f"→ status={result.get('new_status')!r}.",
         fg="yellow",
     )
@@ -280,12 +308,16 @@ def show_pending_publish_command(post_id: str, json_output: bool) -> None:
     async def _impl():
         pool = await _make_pool()
         try:
-            return await show_pending_publish(pool=pool, post_id=post_id)
+            resolved = await _resolve_post_id(pool, post_id)
+            return await show_pending_publish(pool=pool, post_id=resolved)
         finally:
             await pool.close()
 
     try:
         row = _run(_impl())
+    except AmbiguousPrefixError as e:
+        _exit_error(str(e), code=2)
+        return
     except PostsApprovalServiceError as e:
         _exit_error(str(e))
         return

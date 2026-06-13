@@ -58,6 +58,7 @@ from typing import Any
 import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from poindexter.cli._prefix import resolve_uuid_prefix
 
 
 def _ensure_selector_event_loop_on_windows() -> None:
@@ -138,30 +139,26 @@ async def _fetch_paused_row(pool: Any, task_id: str) -> dict[str, Any] | None:
     """Return the gate-relevant columns for a task, or None.
 
     Accepts full UUIDs or unambiguous prefixes (like ``git log --short``).
-    Raises ``click.UsageError`` if the prefix matches more than one task.
+    Prefix resolution is delegated to the shared CLI resolver
+    (:func:`poindexter.cli._prefix.resolve_uuid_prefix`); an ambiguous
+    prefix raises ``AmbiguousPrefixError`` (a ``click.UsageError``).
     """
+    resolved = await resolve_uuid_prefix(
+        pool,
+        table="pipeline_tasks",
+        column="task_id",
+        prefix=str(task_id),
+        noun="task",
+    )
+    if resolved is None:
+        return None
+
     async with pool.acquire() as conn:
-        # Exact match first (covers full UUIDs and avoids the LIKE cost).
         row = await conn.fetchrow(
             _TASK_COLUMNS + " WHERE task_id::text = $1",
-            str(task_id),
+            resolved,
         )
-        if row is not None:
-            return dict(row)
-
-        # Prefix match — tolerate short IDs the way git does.
-        rows = await conn.fetch(
-            _TASK_COLUMNS + " WHERE task_id::text LIKE $1",
-            str(task_id) + "%",
-        )
-        if len(rows) == 0:
-            return None
-        if len(rows) > 1:
-            matches = ", ".join(r["task_id"] for r in rows)
-            raise click.UsageError(
-                f"Ambiguous prefix {task_id!r} matches {len(rows)} tasks: {matches}"
-            )
-        return dict(rows[0])
+    return dict(row) if row is not None else None
 
 
 @click.group(name="pipeline", help="Inspect + resume interrupt()-paused pipelines.")

@@ -27,13 +27,13 @@ import json
 import os
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from typing import Any
 
 import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from poindexter.cli._prefix import looks_like_full_uuid, resolve_uuid_prefix
 
 
 def _run(coro):
@@ -172,57 +172,31 @@ def cmd_reject(post_id: str, medium: str, note: str | None):
     _decide(post_id, medium, approved=False, note=note)
 
 
-async def _resolve_post_id_prefix(pool: Any, prefix: str, medium: str) -> str:
-    """Resolve a possibly-short ``post_id`` to its full UUID for ``medium``.
-
-    ``poindexter media pending`` (and the Grafana media-approval queue) render
-    ``post_id`` as an 8-char prefix (``LEFT(post_id::text, 8)``), and operators
-    paste that prefix straight back into ``media approve`` / ``reject``. But
-    ``media_approvals.post_id`` is a UUID column, so a bare prefix can't even be
-    bound — asyncpg rejects it client-side (``invalid UUID '<prefix>': length
-    must be between 32..36``). Resolve it the way git resolves short SHAs:
-    exact match first, else a unique prefix WITHIN this medium (so a post that
-    has both a podcast and a video doesn't read as ambiguous when the medium
-    already disambiguates).
-
-    All comparisons are on ``post_id::text`` so the bound param stays text —
-    asyncpg is never asked to encode the short value as a UUID. Raises
-    ``click.UsageError`` when the prefix matches zero or many rows.
-    """
-    async with pool.acquire() as conn:
-        # Exact match first — full UUIDs and the common case, no LIKE scan.
-        exact = await conn.fetchrow(
-            "SELECT post_id::text AS post_id FROM media_approvals "
-            "WHERE post_id::text = $1 AND medium = $2",
-            prefix, medium,
-        )
-        if exact is not None:
-            return exact["post_id"]
-        rows = await conn.fetch(
-            "SELECT post_id::text AS post_id FROM media_approvals "
-            "WHERE post_id::text LIKE $1 AND medium = $2",
-            prefix + "%", medium,
-        )
-    if len(rows) == 1:
-        return rows[0]["post_id"]
-    if not rows:
-        raise click.UsageError(
-            f"No {medium} media for a post matching {prefix!r}. "
-            f"See `poindexter media pending --medium {medium}`."
-        )
-    matches = ", ".join(r["post_id"] for r in rows)
-    raise click.UsageError(
-        f"Ambiguous prefix {prefix!r} matches {len(rows)} {medium} rows: {matches}"
-    )
-
-
 def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
     async def _go():
         from services import media_approval_service
 
         pool = await _make_pool()
         try:
-            resolved = await _resolve_post_id_prefix(pool, post_id, medium)
+            # Operators paste the 8-char prefix `media pending` renders;
+            # decide() casts post_id::uuid, so expand it first. Resolve
+            # WITHIN this medium (the medium already disambiguates) against
+            # media_approvals — the surface the operator actually saw — via
+            # the shared resolver (#1511 semantics, now on the common seam).
+            resolved = await resolve_uuid_prefix(
+                pool,
+                table="media_approvals",
+                column="post_id",
+                prefix=post_id,
+                extra_where="medium = $1",
+                params=(medium,),
+                noun="post",
+            )
+            if resolved is None:
+                raise click.UsageError(
+                    f"No {medium} media for a post matching {post_id!r}. "
+                    f"See `poindexter media pending --medium {medium}`."
+                )
             await media_approval_service.decide(
                 pool, resolved, medium,
                 approved=approved,
@@ -234,7 +208,12 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
             await pool.close()
 
     try:
-        resolved = _run(_go())
+        resolved_id = _run(_go())
+    except click.UsageError as e:
+        # Zero-match (above) or AmbiguousPrefixError (a click.UsageError) —
+        # render cleanly and exit 2 like the rest of the CLI.
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(2)
     except ValueError as e:
         # decide() raises when the row doesn't exist — surface a clean
         # operator message instead of a stack trace.
@@ -242,7 +221,10 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
         sys.exit(2)
 
     verb = "approved" if approved else "rejected"
-    click.secho(f"{verb}: {medium} for post {resolved[:8]}", fg="green" if approved else "yellow")
+    click.secho(
+        f"{verb}: {medium} for post {resolved_id[:8]}",
+        fg="green" if approved else "yellow",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -296,28 +278,50 @@ def _open_with_default_app(path: Path) -> None:
     subprocess.run(["xdg-open", str(path)], check=False)
 
 
+async def _resolve_open_post_id(post_id: str) -> str:
+    """Expand an 8-char post-id prefix to its full UUID for ``media open``.
+
+    Full UUIDs skip the DB entirely, so ``open`` keeps working from a
+    full id even when the DB is unreachable. A prefix is resolved against
+    ``posts.id``; a no-match raises ``click.BadParameter`` so a typo'd id
+    still fails loud per ``feedback_no_silent_defaults`` (the strict-UUID
+    guard this replaced), and an ambiguous prefix raises
+    ``AmbiguousPrefixError`` (a ``click.UsageError``).
+    """
+    if looks_like_full_uuid(post_id):
+        return post_id
+
+    pool = await _make_pool()
+    try:
+        resolved = await resolve_uuid_prefix(
+            pool, table="posts", column="id", prefix=post_id, noun="post",
+        )
+    finally:
+        await pool.close()
+
+    if resolved is None:
+        raise click.BadParameter(
+            f"no post matches {post_id!r} (need a full UUID or a known id prefix)",
+            param_hint="post_id",
+        )
+    return resolved
+
+
 @media_group.command(name="open")
 @click.argument("post_id")
 @click.argument("medium", type=click.Choice(_VALID_MEDIA, case_sensitive=False))
 def cmd_open(post_id: str, medium: str):
     """Open a generated media file with the OS default application.
 
-    The path matches what the backfill jobs write to disk — imports
-    ``PODCAST_DIR`` / ``VIDEO_DIR`` from the producing services so the
-    operator surface and the writer surface can't drift.
+    Accepts a full post UUID or the 8-char prefix the dashboards /
+    ``media pending`` render. The path matches what the backfill jobs
+    write to disk — imports ``PODCAST_DIR`` / ``VIDEO_DIR`` from the
+    producing services so the operator surface and the writer surface
+    can't drift.
     """
-    # Validate post_id is a proper UUID before touching the filesystem —
-    # a typo'd id should fail loud per ``feedback_no_silent_defaults``,
-    # not silently render "file not found".
-    try:
-        uuid.UUID(post_id)
-    except (ValueError, AttributeError, TypeError) as e:
-        raise click.BadParameter(
-            f"post_id must be a UUID; got {post_id!r} ({e})",
-            param_hint="post_id",
-        ) from e
+    resolved = _run(_resolve_open_post_id(post_id))
 
-    path = _resolve_media_path(post_id, medium)
+    path = _resolve_media_path(resolved, medium)
 
     if not path.exists():
         click.echo(
@@ -328,4 +332,4 @@ def cmd_open(post_id: str, medium: str):
         sys.exit(2)
 
     _open_with_default_app(path)
-    click.secho(f"Opened {medium} for post {post_id[:8]}: {path}", fg="cyan")
+    click.secho(f"Opened {medium} for post {resolved[:8]}: {path}", fg="cyan")

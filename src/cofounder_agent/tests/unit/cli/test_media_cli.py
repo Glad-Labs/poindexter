@@ -128,17 +128,56 @@ def test_open_linux_uses_xdg_open(monkeypatch, runner, _stub_producing_services)
 # ---------------------------------------------------------------------------
 
 
-def test_open_invalid_post_id_raises_click_error(runner, _stub_producing_services):
-    """A non-UUID post_id triggers Click's BadParameter handling."""
+def test_open_unresolvable_post_id_raises_click_error(runner, _stub_producing_services):
+    """A post_id that resolves to no post fails loud (BadParameter), never a
+    silent 'file not found'.
+
+    ``open`` is prefix-aware now (shared resolver), so the old strict
+    ``uuid.UUID()`` guard became a ``posts.id`` lookup — but the
+    fail-loud-on-bad-input contract (``feedback_no_silent_defaults``)
+    survives: a non-resolvable id still aborts before touching the FS.
+    """
     media = _import_media_module()
 
-    result = runner.invoke(media.media_group, ["open", "not-a-uuid", "podcast"])
+    with patch.object(
+        media, "_make_pool",
+        new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
+    ), patch.object(
+        media, "resolve_uuid_prefix", new=AsyncMock(return_value=None),
+    ):
+        result = runner.invoke(media.media_group, ["open", "not-a-uuid", "podcast"])
 
     # Click returns exit_code=2 for BadParameter via UsageError.
     assert result.exit_code != 0
-    assert "post_id must be a UUID" in result.output or "must be a UUID" in str(
+    assert "no post matches" in result.output or "no post matches" in str(
         result.exception
     )
+
+
+def test_open_prefix_resolves_then_opens(monkeypatch, runner, _stub_producing_services):
+    """An 8-char prefix resolves to the full id, then the file opens — the
+    operator can use the same prefix they passed to ``media approve``."""
+    media = _import_media_module()
+
+    full = "12345678-1234-1234-1234-123456789012"
+    media_path = _stub_producing_services / "podcast" / f"{full}.mp3"
+    media_path.write_bytes(b"fake mp3")
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    import os as _os
+    mock_startfile = MagicMock()
+    monkeypatch.setattr(_os, "startfile", mock_startfile, raising=False)
+
+    with patch.object(
+        media, "_make_pool",
+        new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
+    ), patch.object(
+        media, "resolve_uuid_prefix", new=AsyncMock(return_value=full),
+    ), patch.object(media.subprocess, "run"):
+        result = runner.invoke(media.media_group, ["open", "12345678", "podcast"])
+
+    assert result.exit_code == 0, result.output
+    mock_startfile.assert_called_once_with(str(media_path))
 
 
 def test_open_missing_file_prints_clean_error_and_exits_nonzero(
@@ -200,53 +239,6 @@ def _make_pool_with(*, exact=None, prefix_rows=None):
 
     pool.acquire = _acquire
     return pool
-
-
-class TestResolvePostIdPrefix:
-    @pytest.mark.asyncio
-    async def test_exact_match_returns_full_uuid(self):
-        media = _import_media_module()
-        full = "b938661c-1111-2222-3333-444455556666"
-        pool = _make_pool_with(exact={"post_id": full})
-        result = await media._resolve_post_id_prefix(pool, full, "video")
-        assert result == full
-
-    @pytest.mark.asyncio
-    async def test_unique_prefix_returns_full_uuid(self):
-        media = _import_media_module()
-        full = "b938661c-1111-2222-3333-444455556666"
-        # No exact match (fetchrow=None) → falls through to the LIKE scan.
-        pool = _make_pool_with(exact=None, prefix_rows=[{"post_id": full}])
-        result = await media._resolve_post_id_prefix(pool, "b938661c", "video")
-        assert result == full
-
-    @pytest.mark.asyncio
-    async def test_zero_matches_raises_usage_error(self):
-        media = _import_media_module()
-        import click
-
-        pool = _make_pool_with(exact=None, prefix_rows=[])
-        with pytest.raises(click.UsageError) as exc:
-            await media._resolve_post_id_prefix(pool, "deadbeef", "podcast")
-        assert "No podcast media" in str(exc.value)
-
-    @pytest.mark.asyncio
-    async def test_ambiguous_prefix_raises_with_candidates(self):
-        media = _import_media_module()
-        import click
-
-        pool = _make_pool_with(
-            exact=None,
-            prefix_rows=[
-                {"post_id": "b938661c-aaaa-1111-2222-333344445555"},
-                {"post_id": "b938661c-bbbb-1111-2222-333344445555"},
-            ],
-        )
-        with pytest.raises(click.UsageError) as exc:
-            await media._resolve_post_id_prefix(pool, "b938661c", "video")
-        msg = str(exc.value)
-        assert "matches 2 video rows" in msg
-        assert "b938661c-aaaa" in msg and "b938661c-bbbb" in msg
 
 
 class TestDecideResolvesPrefix:

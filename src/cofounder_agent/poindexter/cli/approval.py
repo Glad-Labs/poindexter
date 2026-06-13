@@ -34,6 +34,7 @@ from typing import Any
 import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._prefix import fetch_prefix_candidates, looks_like_full_uuid
 
 
 def _run(coro):
@@ -117,23 +118,24 @@ async def _resolve_task_id_prefix(pool: Any, task_id_or_prefix: str) -> str | No
       - >1 matches → raise ``_AmbiguousPrefixError`` with the
         candidates listed so the operator can pick.
 
-    poindexter#480.
+    poindexter#480. The exact/LIKE SQL mechanics live in the shared
+    :func:`poindexter.cli._prefix.fetch_prefix_candidates`; this wrapper
+    keeps approve/reject's richer disambiguation message + custom
+    exception type (pinned by ``test_approval_prefix_resolve_480``).
     """
     # Full UUID — skip the DB roundtrip.
-    if len(task_id_or_prefix) >= 36 and task_id_or_prefix.count("-") == 4:
+    if looks_like_full_uuid(task_id_or_prefix):
         return task_id_or_prefix
 
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT task_id::text AS task_id, status, topic
-              FROM pipeline_tasks
-             WHERE task_id::text LIKE $1 || '%'
-             ORDER BY created_at DESC
-             LIMIT 5
-            """,
-            task_id_or_prefix,
-        )
+    rows = await fetch_prefix_candidates(
+        pool,
+        table="pipeline_tasks",
+        column="task_id",
+        prefix=task_id_or_prefix,
+        select_extra=("status", "topic"),
+        order_by="created_at DESC",
+        limit=5,
+    )
 
     if not rows:
         return None
@@ -387,18 +389,27 @@ def show_pending_command(task_id: str, json_output: bool) -> None:
     """Show the gate state + full artifact for one task."""
     from services.approval_service import (
         ApprovalServiceError,
+        TaskNotFoundError,
         show_pending,
     )
 
     async def _impl():
         pool = await _make_pool()
         try:
-            return await show_pending(pool=pool, task_id=task_id)
+            # poindexter#480 fixed approve/reject but not show-pending —
+            # expand the operator's short prefix the same way here.
+            resolved = await _resolve_task_id_prefix(pool, task_id)
+            if resolved is None:
+                raise TaskNotFoundError(f"Task {task_id} not found")
+            return await show_pending(pool=pool, task_id=resolved)
         finally:
             await pool.close()
 
     try:
         row = _run(_impl())
+    except _AmbiguousPrefixError as e:
+        _exit_error(str(e), code=2)
+        return
     except ApprovalServiceError as e:
         _exit_error(str(e))
         return
