@@ -118,17 +118,17 @@ from modules.content.multi_model_qa import (
 )
 
 # ---------------------------------------------------------------------------
-# quality_service
-# ---------------------------------------------------------------------------
-from modules.content.quality_service import (
-    UnifiedQualityService as UnifiedQualityService,
-)
-
-# ---------------------------------------------------------------------------
 # posts_service
 # ---------------------------------------------------------------------------
 from modules.content.posts_service import (
     PostsService as PostsService,
+)
+
+# ---------------------------------------------------------------------------
+# quality_service
+# ---------------------------------------------------------------------------
+from modules.content.quality_service import (
+    UnifiedQualityService as UnifiedQualityService,
 )
 
 # ---------------------------------------------------------------------------

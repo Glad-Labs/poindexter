@@ -1710,7 +1710,9 @@ class TasksDatabase(DatabaseServiceMixin):
                 "checkpoints",
             ):
                 status = await conn.execute(
-                    f"DELETE FROM {table} WHERE thread_id = ANY($1::text[])",
+                    # nosec B608 — `table` is a fixed literal from the loop above
+                    # (no user input); `thread_ids` is bound via the $1 parameter.
+                    f"DELETE FROM {table} WHERE thread_id = ANY($1::text[])",  # nosec B608
                     thread_ids,
                 )
                 cleared += _parse_rowcount(status)
