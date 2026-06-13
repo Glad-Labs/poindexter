@@ -173,7 +173,7 @@
       tags: [['red', 'FAILED']],
       detail: {
         task: 2231,
-        stage: 'illustrate',
+        stage: 'generate_images',
         error:
           'httpx.ReadTimeout: image_search provider exceeded 30s read timeout',
         topic: 'The Economics of Self-Hosted GPUs',
@@ -407,13 +407,82 @@
 
   // ── Pipeline ────────────────────────────────────────────────
   const pipeline = {
+    // Real canonical_blog graph_def blocks (36 nodes — see
+    // services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF). Replaces the
+    // deleted research→draft→edit→illustrate→review→publish flow (gone 2026-05-16).
+    // `nodes` lets the live loader map a task's current `stage` → its block.
     stages: [
-      { name: 'research', count: 2, state: 'hot' },
-      { name: 'draft', count: 1, state: '' },
-      { name: 'edit', count: 0, state: '' },
-      { name: 'illustrate', count: 1, state: 'warn' },
-      { name: 'review', count: 4, state: 'hot' },
-      { name: 'publish', count: 0, state: '' },
+      { name: 'verify', nodes: ['verify_task'], count: 0, state: '' },
+      {
+        name: 'writer',
+        nodes: [
+          'generate_draft',
+          'generate_title',
+          'check_title_originality',
+          'normalize_draft',
+          'draft_gate',
+          'writer_self_review',
+          'resolve_internal_link_placeholders',
+          'reconcile_citations',
+          'quality_evaluation',
+          'url_validation',
+        ],
+        count: 2,
+        state: 'hot',
+      },
+      {
+        name: 'image',
+        nodes: [
+          'plan_image_markers',
+          'generate_images',
+          'inject_images',
+          'source_featured_image',
+          'caption_images',
+        ],
+        count: 1,
+        state: 'warn',
+      },
+      {
+        name: 'qa',
+        nodes: [
+          'qa_programmatic',
+          'qa_critic',
+          'qa_deepeval',
+          'qa_ragas',
+          'qa_vision',
+          'qa_topic_delivery',
+          'qa_citations',
+          'qa_unlinked_attribution',
+          'qa_consistency',
+          'qa_self_consistency',
+          'qa_web_factcheck',
+          'qa_aggregate',
+        ],
+        count: 1,
+        state: 'hot',
+      },
+      {
+        name: 'seo',
+        nodes: [
+          'seo_all_metadata',
+          'generate_media_scripts',
+          'generate_video_shot_list',
+          'capture_training_data',
+        ],
+        count: 0,
+        state: '',
+      },
+      {
+        name: 'finalize',
+        nodes: [
+          'compile_meta',
+          'persist_task',
+          'record_pipeline_version',
+          'evaluate_auto_publish',
+        ],
+        count: 0,
+        state: '',
+      },
     ],
     perDay: [
       4, 2, 6, 3, 5, 7, 3, 5, 8, 4, 6, 9, 5, 4, 7, 6, 8, 5, 7, 4, 3, 6, 9, 7, 5,
@@ -425,7 +494,7 @@
       {
         id: 2241,
         topic: 'The Quiet Compounding of Local-First Infra',
-        stage: 'review',
+        stage: 'qa_aggregate',
         status: 'ok',
         quality: 84,
         model: 'glm-4.7-50b',
@@ -434,7 +503,7 @@
       {
         id: 2240,
         topic: 'Why We Killed Our Observability Vendor',
-        stage: 'review',
+        stage: 'qa_aggregate',
         status: 'ok',
         quality: 81,
         model: 'glm-4.7-50b',
@@ -443,7 +512,7 @@
       {
         id: 2238,
         topic: 'The Economics of Self-Hosted GPUs',
-        stage: 'illustrate',
+        stage: 'generate_images',
         status: 'fail',
         quality: null,
         model: 'glm-4.7-50b',
@@ -452,7 +521,7 @@
       {
         id: 2237,
         topic: 'A Field Guide to pgvector at Small Scale',
-        stage: 'research',
+        stage: 'generate_draft',
         status: 'run',
         quality: null,
         model: 'glm-4.7-50b',
@@ -461,7 +530,7 @@
       {
         id: 2236,
         topic: 'Tailscale as the Only Network You Need',
-        stage: 'draft',
+        stage: 'normalize_draft',
         status: 'run',
         quality: null,
         model: 'glm-4.7-50b',
@@ -470,7 +539,7 @@
       {
         id: 2235,
         topic: 'Prometheus Recording Rules, Demystified',
-        stage: 'research',
+        stage: 'generate_draft',
         status: 'run',
         quality: null,
         model: 'glm-4.7-50b',

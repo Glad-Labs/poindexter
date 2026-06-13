@@ -26,6 +26,7 @@ function App() {
   const [approved, setApproved] = useS([]); // live: staged tasks, awaiting publish
   const [services, setServices] = useS(PX.services);
   const [gpu, setGpu] = useS(PX.gpu);
+  const [pipeline, setPipeline] = useS(PX.pipeline); // live: real /api/tasks
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -108,6 +109,31 @@ function App() {
         setApproved((Array.isArray(appr) ? appr : appr && appr.tasks) || []);
       } catch (e) {
         pushToast(`Approvals load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: load real tasks into the Pipeline panel ─────────
+  // Maps /api/tasks rows → the panel task shape and derives per-block counts
+  // from each task's current `stage` (the real graph_def node). Mock mode is
+  // untouched. Polls on the same 5-min cadence as approvals.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.listTasks('?limit=50');
+        if (!alive) return;
+        const rows = ((res && res.tasks) || []).map(taskToRow);
+        setPipeline((p) => withLiveCounts(p, rows));
+      } catch (e) {
+        pushToast(`Tasks load failed — ${e.message}`, 'red', '✕');
       }
     };
     load();
@@ -671,8 +697,8 @@ function App() {
               </div>
               <div id="sec-pipeline">
                 <PipelinePanel
-                  pipeline={PX.pipeline}
-                  onOpen={() => open('pipeline', PX.pipeline)}
+                  pipeline={pipeline}
+                  onOpen={() => open('pipeline', pipeline)}
                   onOpenTask={(t) => open('task', t)}
                   onRetry={(t) => {
                     pushToast(`Task #${t.id} re-queued`, 'cyan', '↻');
@@ -785,7 +811,7 @@ function App() {
           <WallDisplay
             kpis={PX.kpis}
             gpu={gpu}
-            pipeline={PX.pipeline}
+            pipeline={pipeline}
             brain={PX.brain}
             services={services}
             inbox={inbox}
@@ -862,6 +888,78 @@ function approvalToInbox(t) {
       featured_image_url: t.featured_image_url,
       task: t.task_id,
     },
+  };
+}
+
+// Map a /api/tasks UnifiedTaskResponse status → the panel's StatusText kind.
+// TASK_STATUS only knows ok|run|fail, so collapse the richer API states.
+function taskStatusKind(status) {
+  const s = (status || '').toLowerCase();
+  if (['failed', 'fail', 'error', 'cancelled', 'canceled'].includes(s))
+    return 'fail';
+  if (
+    [
+      'completed',
+      'complete',
+      'approved',
+      'published',
+      'awaiting_approval',
+    ].includes(s)
+  )
+    return 'ok';
+  return 'run'; // pending / queued / generating / running / in_progress …
+}
+
+// Map a /api/tasks row → the Pipeline panel task shape. `stage` is the real
+// current graph_def node when the API exposes it (else the status/publish bucket).
+function taskToRow(t) {
+  const PX = window.PX;
+  const id = t.id || t.task_id;
+  return {
+    id,
+    topic: t.topic || t.task_name || `Task ${id}`,
+    stage: t.stage || t.publish_status || t.status || '—',
+    status: taskStatusKind(t.status),
+    quality: t.quality_score != null ? Math.round(t.quality_score) : null,
+    model: t.model_used || '—',
+    age: t.created_at ? PX.ago(minsSince(t.created_at)) : '',
+    _raw: t,
+  };
+}
+
+// Rebuild a pipeline object from live rows: swap in the real task list and
+// recount each block by how many ACTIVE tasks sit at one of its nodes. Terminal
+// tasks (ok/fail) don't inflate "in-flight" block counts — honest empties result.
+function withLiveCounts(p, rows) {
+  const nodeToBlock = {};
+  (p.stages || []).forEach((b) =>
+    (b.nodes || []).forEach((n) => (nodeToBlock[n] = b.name))
+  );
+  const counts = {};
+  let ok = 0,
+    terminal = 0;
+  rows.forEach((r) => {
+    if (r.status === 'ok' || r.status === 'fail') {
+      terminal++;
+      if (r.status === 'ok') ok++;
+    }
+    if (r.status !== 'run') return; // only active tasks occupy a block
+    const block = nodeToBlock[r.stage];
+    if (block) counts[block] = (counts[block] || 0) + 1;
+  });
+  return {
+    ...p,
+    tasks: rows,
+    // Honest live meta: success rate over the loaded terminal tasks. Average
+    // completion isn't derivable from the list endpoint, so it reads unknown
+    // rather than carrying the mock value into a live view.
+    successRate: terminal ? Math.round((100 * ok) / terminal) : '—',
+    avgCompletion: '—',
+    stages: (p.stages || []).map((b) => ({
+      ...b,
+      count: counts[b.name] || 0,
+      state: counts[b.name] ? 'hot' : '',
+    })),
   };
 }
 
