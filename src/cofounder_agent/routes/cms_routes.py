@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
+from modules.content.api import PostsService
 from services.logger_config import get_logger
+from utils.content_formatting import convert_markdown_to_html  # still used by preview_post
 from utils.error_handler import handle_route_error
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -38,126 +40,9 @@ async def serve_generated_image(filename: str):
     return FileResponse(path, media_type="image/png")
 
 
-def convert_markdown_to_html(markdown_content: str) -> str:
-    """Convert markdown content to HTML. Falls back to raw content on error.
-
-    Content is stored as markdown in the DB; converted to HTML on read.
-
-    Historical bug (#198 follow-up): this function used to early-return
-    when content started with `<`, assuming the whole thing was already
-    HTML. That broke posts with a leading `<img>` tag followed by
-    markdown — they shipped raw `##` and `**` markers to the frontend.
-    The markdown library passes HTML through unmodified, so we can
-    safely convert mixed content.
-    """
-    if not markdown_content:
-        return ""
-
-    try:
-        import markdown as md
-
-        stripped = markdown_content.strip()
-
-        # Only skip conversion if the content has NO markdown markers —
-        # i.e. it's pure HTML / plain text. If markdown is present
-        # anywhere, convert the whole thing; python-markdown passes
-        # existing HTML tags through unchanged.
-        _has_markdown = bool(
-            _MARKDOWN_MARKER_RE.search(stripped)
-        )
-        if stripped.startswith("<") and not _has_markdown:
-            return markdown_content
-
-        html = md.markdown(
-            stripped,
-            extensions=["extra", "codehilite", "sane_lists", "smarty"],
-            output_format="html",
-        )
-        return html
-    except Exception as e:
-        logger.error("Error converting markdown: %s", e, exc_info=True)
-        return markdown_content
-
-
-# Cheap heuristic: look for any of `##` headers, `**bold**`, fenced code
-# blocks, markdown links, or list bullets. Much faster than a full parse
-# and good enough to gate the HTML-passthrough shortcut.
-_MARKDOWN_MARKER_RE = __import__("re").compile(
-    r"(?m)"  # multiline
-    r"(?:"
-    r"^\#{1,6}\s"              # headers
-    r"|\*\*[^*\n]{1,200}\*\*"   # bold
-    r"|```"                     # code fence
-    r"|^\s*[-*+]\s+\w"          # bulleted list
-    r"|\[[^\]]+\]\([^)]+\)"    # markdown link
-    r")"
-)
-
-
-_STRIP_MD_RE = __import__("re").compile(
-    r"\*{1,3}|_{1,3}"           # bold/italic markers
-    r"|!\[[^\]]*\]\([^)]*\)"    # images
-    r"|\[[^\]]*\]\([^)]*\)"     # links → keeps anchor text below
-    r"|```[^`]*```"             # fenced code blocks
-    r"|`[^`]+`"                 # inline code
-    r"|^\s*>+\s?"               # blockquotes
-    r"|^\s*[-*+]\s"             # list markers
-    r"|^\#{1,6}\s"              # headers
-)
-
-_LINK_TEXT_RE = __import__("re").compile(r"\[([^\]]+)\]\([^)]*\)")
-
-
-def generate_excerpt_from_content(content: str, length: int = 200) -> str:
-    """Generate a plain-text excerpt from markdown content."""
-    if not content:
-        return ""
-
-    lines = content.split("\n")
-    excerpt_parts = []
-
-    for line in lines:
-        if not line.strip() or line.startswith("#"):
-            continue
-
-        cleaned = _LINK_TEXT_RE.sub(r"\1", line)
-        cleaned = _STRIP_MD_RE.sub("", cleaned).strip()
-
-        if cleaned:
-            excerpt_parts.append(cleaned)
-
-        if len(" ".join(excerpt_parts)) >= length:
-            break
-
-    excerpt = " ".join(excerpt_parts)[:length].strip()
-    if len(" ".join(excerpt_parts)) > length:
-        excerpt = excerpt.rsplit(" ", 1)[0] + "..."
-
-    return excerpt
-
-
-def map_featured_image_to_coverimage(post: dict) -> dict:
-    """
-    Map database featured_image_url to Strapi-compatible coverImage format.
-
-    Frontend expects: coverImage.data.attributes.url
-    Database returns: featured_image_url
-
-    This ensures compatibility with existing frontend components.
-    """
-    if post.get("featured_image_url"):
-        post["coverImage"] = {
-            "data": {
-                "attributes": {
-                    "url": post["featured_image_url"],
-                    "alternativeText": f"Cover image for {post.get('title', 'post')}",
-                }
-            }
-        }
-    else:
-        post["coverImage"] = None
-
-    return post
+# convert_markdown_to_html, generate_excerpt_from_content, and
+# map_featured_image_to_coverimage are imported from utils.content_formatting
+# (Glad-Labs/poindexter#1341 — shared with PostsService to avoid duplication).
 
 
 async def get_db_pool():
@@ -199,60 +84,8 @@ async def list_posts(
         published_only = True
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            where_clauses = []
-            params = []
-
-            if published_only:
-                where_clauses.append("status = 'published'")
-
-            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-
-            # Single query: COUNT(*) OVER () avoids a separate COUNT round-trip.
-            # Same pattern used in tasks_db.py (line ~506).
-            params.append(limit)
-            params.append(offset)
-            query = f"""
-                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
-                       category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, content, author_id,
-                       COUNT(*) OVER () AS total_count
-                FROM posts
-                {where_sql}
-                ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST
-                LIMIT ${len(params) - 1} OFFSET ${len(params)}
-            """  # nosec B608  # where_sql is "" or " WHERE status = 'published'" (literal, line 207); LIMIT/OFFSET use $N placeholders, values via $N params
-
-            rows = await conn.fetch(query, *params)
-            total = rows[0]["total_count"] if rows else 0
-
-            # Exclude the internal window-function column from API output
-            posts = [{k: v for k, v in dict(row).items() if k != "total_count"} for row in rows]
-
-            # Format timestamps, generate missing excerpts, and convert markdown to HTML
-            for post in posts:
-                post["published_at"] = (
-                    post["published_at"].isoformat() if post["published_at"] else None
-                )
-                post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
-                post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
-
-                # Generate excerpt if missing
-                if not post.get("excerpt") and post.get("content"):
-                    post["excerpt"] = generate_excerpt_from_content(post["content"])
-
-                # Convert markdown content to HTML for safe rendering
-                if post.get("content"):
-                    post["content"] = convert_markdown_to_html(post["content"])
-
-                map_featured_image_to_coverimage(post)
-
-            return {
-                "posts": posts,
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-            }
+        svc = PostsService(pool=pool)
+        return await svc.list_posts(offset=offset, limit=limit, published_only=published_only)
     except Exception as e:
         raise await handle_route_error(e, "list_posts", logger) from e
 
@@ -540,49 +373,8 @@ async def search_posts(
     """
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            if not q.strip():
-                return {"posts": [], "total": 0, "offset": 0, "limit": limit}
-
-            search_term = f"%{q}%"
-            rows = await conn.fetch(
-                """
-                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
-                       category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, content, author_id
-                FROM posts
-                WHERE status = 'published'
-                  AND (title ILIKE $1 OR content ILIKE $1 OR slug ILIKE $1)
-                ORDER BY updated_at DESC
-                LIMIT $2
-                """,
-                search_term,
-                limit,
-            )
-
-            posts = [dict(row) for row in rows]
-
-            for post in posts:
-                post["published_at"] = (
-                    post["published_at"].isoformat() if post["published_at"] else None
-                )
-                post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
-                post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
-
-                if not post.get("excerpt") and post.get("content"):
-                    post["excerpt"] = generate_excerpt_from_content(post["content"])
-
-                if post.get("content"):
-                    post["content"] = convert_markdown_to_html(post["content"])
-
-                map_featured_image_to_coverimage(post)
-
-            return {
-                "posts": posts,
-                "total": len(posts),
-                "offset": 0,
-                "limit": limit,
-            }
+        svc = PostsService(pool=pool)
+        return await svc.search_posts(q=q, limit=limit)
     except Exception as e:
         raise await handle_route_error(e, "search_posts", logger) from e
 
@@ -599,82 +391,11 @@ async def get_post_by_slug(
     """
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            # Get post
-            post_row = await conn.fetchrow(
-                """
-                SELECT id, title, slug, content, excerpt, featured_image_url, cover_image_url,
-                       category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, author_id
-                FROM posts
-                WHERE slug = $1
-            """,
-                slug,
-            )
-
-            if not post_row:
-                raise HTTPException(status_code=404, detail="Post not found")
-
-            post = dict(post_row)
-            post_id = post["id"]
-            post["published_at"] = (
-                post["published_at"].isoformat() if post["published_at"] else None
-            )
-            post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
-            post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
-
-            # Generate excerpt if missing
-            if not post.get("excerpt") and post.get("content"):
-                post["excerpt"] = generate_excerpt_from_content(post["content"])
-
-            # Convert markdown content to HTML for safe rendering
-            if post.get("content"):
-                post["content"] = convert_markdown_to_html(post["content"])
-
-            # Map featured_image_url to coverImage in Strapi-compatible format
-            map_featured_image_to_coverimage(post)
-
-            # Get tags (gracefully handle missing table)
-            tags = []
-            try:
-                tag_rows = await conn.fetch(
-                    """
-                    SELECT t.id, t.name, t.slug
-                    FROM tags t
-                    JOIN post_tags pt ON t.id = pt.tag_id
-                    WHERE pt.post_id = $1
-                """,
-                    post_id,
-                )
-                tags = [dict(row) for row in tag_rows]
-            except Exception as tag_error:
-                # If tags table doesn't exist or query fails, just return empty tags
-                logger.warning(
-                    f"Could not fetch tags for post {post_id}: {tag_error!s}", exc_info=True
-                )
-                tags = []
-
-            # Get category
-            category = None
-            if post.get("category_id"):
-                cat_row = await conn.fetchrow(
-                    """
-                    SELECT id, name, slug
-                    FROM categories
-                    WHERE id = $1
-                """,
-                    post["category_id"],
-                )
-                if cat_row:
-                    category = dict(cat_row)
-
-            return {
-                "data": post,
-                "meta": {
-                    "tags": tags,
-                    "category": category,
-                },
-            }
+        svc = PostsService(pool=pool)
+        result = await svc.get_post_by_slug(slug)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -791,10 +512,10 @@ async def delete_post(
     """Delete a blog post by ID."""
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM posts WHERE id = $1", post_id)
-            if result == "DELETE 0":
-                raise HTTPException(status_code=404, detail="Post not found")
+        svc = PostsService(pool=pool)
+        deleted = await svc.delete_post(post_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Post not found")
     except HTTPException:
         raise
     except Exception as e:
@@ -819,23 +540,8 @@ async def list_categories(
     """
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, name, slug, description, created_at, updated_at
-                FROM categories
-                ORDER BY name
-            """)
-
-            all_categories = []
-            for row in rows:
-                cat = dict(row)
-                cat["created_at"] = cat["created_at"].isoformat() if cat["created_at"] else None
-                cat["updated_at"] = cat["updated_at"].isoformat() if cat["updated_at"] else None
-                all_categories.append(cat)
-
-            total = len(all_categories)
-            categories = all_categories[offset : offset + limit]
-            return {"categories": categories, "total": total, "offset": offset, "limit": limit}
+        svc = PostsService(pool=pool)
+        return await svc.list_categories(offset=offset, limit=limit)
     except Exception as e:
         raise await handle_route_error(e, "list_categories", logger) from e
 
@@ -896,23 +602,8 @@ async def list_tags(
     """
     try:
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, name, slug, description, created_at, updated_at
-                FROM tags
-                ORDER BY name
-            """)
-
-            all_tags = []
-            for row in rows:
-                tag = dict(row)
-                tag["created_at"] = tag["created_at"].isoformat() if tag["created_at"] else None
-                tag["updated_at"] = tag["updated_at"].isoformat() if tag["updated_at"] else None
-                all_tags.append(tag)
-
-            total = len(all_tags)
-            tags = all_tags[offset : offset + limit]
-            return {"tags": tags, "total": total, "offset": offset, "limit": limit}
+        svc = PostsService(pool=pool)
+        return await svc.list_tags(offset=offset, limit=limit)
     except Exception as e:
         raise await handle_route_error(e, "list_tags", logger) from e
 

@@ -526,36 +526,36 @@ class TestPreviewHtmlForwardsSiteConfig:
 @pytest.mark.unit
 class TestGenerateExcerpt:
     def test_empty_returns_empty(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         assert generate_excerpt_from_content("") == ""
 
     def test_skips_headers(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         content = "# Main Heading\n\n## Subheading\n\nActual content goes here."
         excerpt = generate_excerpt_from_content(content)
         assert "Main Heading" not in excerpt
         assert "Actual content" in excerpt
 
     def test_respects_length_limit(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         long_content = "word " * 200
         excerpt = generate_excerpt_from_content(long_content, length=100)
         assert len(excerpt) <= 110  # allow for ellipsis padding
 
     def test_adds_ellipsis_when_truncated(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         long = "This is a long paragraph that should definitely exceed the limit. " * 5
         excerpt = generate_excerpt_from_content(long, length=80)
         assert excerpt.endswith("...")
 
     def test_no_ellipsis_when_short(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         short = "Just a brief sentence."
         excerpt = generate_excerpt_from_content(short, length=200)
         assert not excerpt.endswith("...")
 
     def test_removes_markdown_brackets(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         content = "See [this link](https://example.com) for details."
         excerpt = generate_excerpt_from_content(content)
         assert "[" not in excerpt
@@ -564,7 +564,7 @@ class TestGenerateExcerpt:
         assert "(" not in excerpt
 
     def test_removes_backticks(self):
-        from routes.cms_routes import generate_excerpt_from_content
+        from utils.content_formatting import generate_excerpt_from_content
         content = "Use `pip install foo` to install."
         excerpt = generate_excerpt_from_content(content)
         assert "`" not in excerpt
@@ -578,40 +578,40 @@ class TestGenerateExcerpt:
 @pytest.mark.unit
 class TestMapFeaturedImageToCoverimage:
     def test_adds_coverimage_when_featured_set(self):
-        from routes.cms_routes import map_featured_image_to_coverimage
+        from utils.content_formatting import map_featured_image_to_coverimage
         post = {"title": "My Post", "featured_image_url": "https://img/hero.jpg"}
         result = map_featured_image_to_coverimage(post)
         assert result["coverImage"] is not None
         assert result["coverImage"]["data"]["attributes"]["url"] == "https://img/hero.jpg"
 
     def test_alt_text_includes_title(self):
-        from routes.cms_routes import map_featured_image_to_coverimage
+        from utils.content_formatting import map_featured_image_to_coverimage
         post = {"title": "My Post", "featured_image_url": "https://img/x.jpg"}
         result = map_featured_image_to_coverimage(post)
         alt = result["coverImage"]["data"]["attributes"]["alternativeText"]
         assert "My Post" in alt
 
     def test_no_image_returns_null_coverimage(self):
-        from routes.cms_routes import map_featured_image_to_coverimage
+        from utils.content_formatting import map_featured_image_to_coverimage
         post = {"title": "Post", "featured_image_url": None}
         result = map_featured_image_to_coverimage(post)
         assert result["coverImage"] is None
 
     def test_empty_string_returns_null(self):
-        from routes.cms_routes import map_featured_image_to_coverimage
+        from utils.content_formatting import map_featured_image_to_coverimage
         post = {"title": "Post", "featured_image_url": ""}
         result = map_featured_image_to_coverimage(post)
         assert result["coverImage"] is None
 
     def test_missing_title_uses_fallback_alt(self):
-        from routes.cms_routes import map_featured_image_to_coverimage
+        from utils.content_formatting import map_featured_image_to_coverimage
         post = {"featured_image_url": "https://img/x.jpg"}
         result = map_featured_image_to_coverimage(post)
         alt = result["coverImage"]["data"]["attributes"]["alternativeText"]
         assert "post" in alt.lower()
 
     def test_returns_same_dict_mutated(self):
-        from routes.cms_routes import map_featured_image_to_coverimage
+        from utils.content_formatting import map_featured_image_to_coverimage
         post = {"title": "P", "featured_image_url": "https://img/x.jpg"}
         result = map_featured_image_to_coverimage(post)
         assert result is post  # same dict, mutated in place

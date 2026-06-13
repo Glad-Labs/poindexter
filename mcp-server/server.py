@@ -23,12 +23,10 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import asyncpg
-import httpx
 from mcp.server.fastmcp import FastMCP
 
 # OAuth helper — local mirror of services.auth.oauth_client. See
@@ -174,9 +172,8 @@ def setup_runtime() -> None:
 
         LOCAL_DB_DSN = require_database_url(source="mcp_server")
 
-# Lazy-initialized connection pool and HTTP clients
+# Lazy-initialized connection pool and API clients
 _pool: asyncpg.Pool | None = None
-_http: httpx.AsyncClient | None = None
 # Worker-API OAuth client. Built lazily on first call to ``_get_oauth``
 # because we need the asyncpg pool already up to read credentials from
 # app_settings (and we want to defer that until someone actually calls
@@ -185,6 +182,9 @@ _oauth: McpOAuthClient | None = None
 # SiteConfig — lazy-loaded on first topic-tool call (mirrors the
 # ``_make_site_config`` helper in poindexter/cli/approval.py).
 _site_config: Any = None
+# MemoryClient — lazy-initialized on first memory-tool call; owns its
+# own asyncpg pool and httpx embed client.
+_memory_client: Any = None
 
 
 async def _get_pool() -> asyncpg.Pool:
@@ -194,13 +194,6 @@ async def _get_pool() -> asyncpg.Pool:
         _pool = await asyncpg.create_pool(LOCAL_DB_DSN, min_size=1, max_size=3)
     return _pool
 
-
-async def _get_http() -> httpx.AsyncClient:
-    """Get or create the async HTTP client (Ollama + ad-hoc probes)."""
-    global _http
-    if _http is None:
-        _http = httpx.AsyncClient(timeout=30.0)
-    return _http
 
 
 async def _get_oauth() -> McpOAuthClient:
@@ -265,18 +258,19 @@ async def _get_site_config() -> Any:
     return _site_config
 
 
-async def _embed_text(text: str) -> list[float]:
-    """Embed text via Ollama nomic-embed-text. Returns 768-dim vector."""
-    client = await _get_http()
-    resp = await client.post(
-        f"{OLLAMA_URL}/api/embed",
-        json={"model": EMBED_MODEL, "input": text},
-    )
-    resp.raise_for_status()
-    embeddings = resp.json().get("embeddings", [])
-    if not embeddings:
-        raise RuntimeError("Ollama returned no embeddings")
-    return embeddings[0]
+async def _get_memory_client() -> Any:
+    """Get or lazily create a MemoryClient, reusing LOCAL_DB_DSN."""
+    global _memory_client
+    if _memory_client is None:
+        from poindexter.memory.client import MemoryClient
+        mc = MemoryClient(
+            dsn=LOCAL_DB_DSN,
+            ollama_url=OLLAMA_URL,
+            embed_model=EMBED_MODEL,
+        )
+        await mc.connect()
+        _memory_client = mc
+    return _memory_client
 
 
 mcp = FastMCP("Poindexter", instructions="""
@@ -472,11 +466,14 @@ async def publish_post(task_id: str) -> str:
 async def get_post_count() -> str:
     """Get the total number of published posts on the configured site."""
     try:
+        from modules.content.api import PostsService
+
         pool = await _get_pool()
-        count = await pool.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
+        svc = PostsService(pool=pool)
+        count = await svc.get_published_post_count()
         return f"Published posts: {count}"
     except Exception as e:
-        return f"Error: {e}"
+        return _format_tool_error("get_post_count", e)
 
 
 # ============================================================================
@@ -744,64 +741,29 @@ async def search_memory(
             collapsed old embeddings and are usually what you want.
     """
     try:
-        embedding = await _embed_text(query)
-        pool = await _get_pool()
-
-        vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
-
-        # Fetch more candidates than requested so we can filter by threshold
-        fetch_limit = top_k * 3
-        summaries_clause = "" if include_summaries else " AND is_summary = FALSE"
-
-        if source_filter:
-            rows = await pool.fetch(
-                f"""
-                SELECT source_table, source_id, text_preview, metadata,
-                       1 - (embedding <=> $1::vector) as similarity
-                FROM embeddings
-                WHERE source_table = $2{summaries_clause}
-                ORDER BY embedding <=> $1::vector
-                LIMIT $3
-                """,
-                vector_str, source_filter, fetch_limit,
-            )
-        else:
-            where_sql = f"WHERE TRUE{summaries_clause}" if summaries_clause else ""
-            rows = await pool.fetch(
-                f"""
-                SELECT source_table, source_id, text_preview, metadata,
-                       1 - (embedding <=> $1::vector) as similarity
-                FROM embeddings
-                {where_sql}
-                ORDER BY embedding <=> $1::vector
-                LIMIT $2
-                """,
-                vector_str, fetch_limit,
-            )
-
-        # Apply similarity threshold and cap at top_k
-        rows = [r for r in rows if float(r["similarity"]) >= min_similarity][:top_k]
-
-        if not rows:
+        mc = await _get_memory_client()
+        hits = await mc.search(
+            query,
+            source_table=source_filter or None,
+            min_similarity=min_similarity,
+            limit=top_k,
+            include_summaries=include_summaries,
+        )
+        if not hits:
             return f'No results for "{query}" above similarity threshold {min_similarity}.'
 
-        lines = [f'Memory search: "{query}" ({len(rows)} results)\n']
-        for i, row in enumerate(rows, 1):
-            sim = float(row["similarity"])
-            meta = json.loads(row["metadata"]) if row["metadata"] else {}
-            source = row["source_table"]
-            sid = row["source_id"]
-            preview = (row["text_preview"] or "")[:200].replace("\n", " ")
-            origin = meta.get("origin", source)
+        lines = [f'Memory search: "{query}" ({len(hits)} results)\n']
+        for i, hit in enumerate(hits, 1):
+            meta = hit.metadata
+            origin = meta.get("origin", hit.writer or hit.source_table)
             mtype = meta.get("type", meta.get("state", ""))
-
+            preview = (hit.text_preview or "")[:200].replace("\n", " ")
             lines.append(
-                f"{i}. [{sim:.4f}] [{source}] {sid}"
+                f"{i}. [{hit.similarity:.4f}] [{hit.source_table}] {hit.source_id}"
                 + (f" (origin={origin}, type={mtype})" if mtype else f" (origin={origin})")
                 + f"\n   {preview}"
             )
         return "\n".join(lines)
-
     except Exception as e:
         return _format_tool_error("Memory search", e)
 
@@ -868,63 +830,19 @@ async def store_memory(
         if not writer:
             return "store_memory failed: writer is required (e.g. 'claude-code', 'openclaw', 'user')."
 
-        if not source_id:
-            # Generate a stable-ish id so duplicate calls in quick succession
-            # get a unique row. Use writer + epoch seconds + hash of text.
-            epoch = int(datetime.now(UTC).timestamp())
-            short = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
-            source_id = f"{writer}/adhoc-{epoch}-{short}.md"
-
-        content_hash_value = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        embedding = await _embed_text(text)
-        if not embedding or len(embedding) != 768:
-            return f"store_memory failed: got {len(embedding) if embedding else 0}-dim vector from embedder (expected 768)."
-
-        metadata: dict[str, Any] = {
-            "origin": writer,
-            "writer": writer,
-            "stored_via": "mcp.store_memory",
-            "stored_at": datetime.now(UTC).isoformat(),
-        }
-        if tags:
-            metadata["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-
-        vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
-        preview = text[:500].replace("\n", " ").strip()
-        now = datetime.now(UTC)
-
-        pool = await _get_pool()
-        await pool.execute(
-            """
-            INSERT INTO embeddings (source_table, source_id, chunk_index,
-                                    content_hash, text_preview,
-                                    embedding_model, embedding, metadata,
-                                    writer, origin_path,
-                                    created_at, updated_at)
-            VALUES ($1, $2, 0, $3, $4, $5, $6::vector, $7::jsonb, $8, $9, $10, $10)
-            ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
-            DO UPDATE SET content_hash = EXCLUDED.content_hash,
-                          text_preview = EXCLUDED.text_preview,
-                          embedding    = EXCLUDED.embedding,
-                          metadata     = EXCLUDED.metadata,
-                          writer       = EXCLUDED.writer,
-                          origin_path  = EXCLUDED.origin_path,
-                          updated_at   = EXCLUDED.updated_at
-            """,
-            source_table,
-            source_id,
-            content_hash_value,
-            preview,
-            EMBED_MODEL,
-            vector_str,
-            json.dumps(metadata),
-            writer,
-            source_id,
-            now,
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        mc = await _get_memory_client()
+        final_source_id = await mc.store(
+            text=text,
+            writer=writer,
+            source_id=source_id or None,
+            source_table=source_table,
+            tags=tags_list,
+            metadata={"stored_via": "mcp.store_memory"},
         )
-
+        content_hash_value = hashlib.sha256(text.encode("utf-8")).hexdigest()
         return (
-            f"Stored: [{source_table}/{writer}] {source_id}\n"
+            f"Stored: [{source_table}/{writer}] {final_source_id}\n"
             f"  {len(text)} chars, 768-dim vector, content_hash={content_hash_value[:12]}...\n"
             f"  Queryable via search_memory immediately."
         )
@@ -936,29 +854,24 @@ async def store_memory(
 async def memory_stats() -> str:
     """Get statistics about the semantic memory database — embedding counts by source type."""
     try:
-        pool = await _get_pool()
-        rows = await pool.fetch("""
-            SELECT source_table, COUNT(*) as count,
-                   MIN(created_at) as oldest,
-                   MAX(updated_at) as newest
-            FROM embeddings
-            GROUP BY source_table
-            ORDER BY count DESC
-        """)
-        if not rows:
+        mc = await _get_memory_client()
+        data = await mc.stats()
+        by_source = data["by_source_table"]
+        if not by_source:
             return "No embeddings in database."
 
-        total = sum(row["count"] for row in rows)
+        total = sum(v["count"] for v in by_source.values())
         lines = [f"Semantic Memory: {total} embeddings\n"]
-        for row in rows:
+        for key, info in sorted(by_source.items(), key=lambda x: -x[1]["count"]):
+            oldest_str = info["oldest"].strftime("%Y-%m-%d") if info["oldest"] else "?"
+            newest_str = info["newest"].strftime("%Y-%m-%d") if info["newest"] else "?"
             lines.append(
-                f"  {row['source_table']:15s} {row['count']:5d} vectors"
-                f"  (oldest: {row['oldest'].strftime('%Y-%m-%d') if row['oldest'] else '?'}"
-                f", newest: {row['newest'].strftime('%Y-%m-%d') if row['newest'] else '?'})"
+                f"  {key:15s} {info['count']:5d} vectors"
+                f"  (oldest: {oldest_str}, newest: {newest_str})"
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Failed to get memory stats: {e}"
+        return _format_tool_error("memory_stats", e)
 
 
 # ============================================================================

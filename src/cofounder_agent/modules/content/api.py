@@ -125,6 +125,13 @@ from modules.content.quality_service import (
 )
 
 # ---------------------------------------------------------------------------
+# posts_service
+# ---------------------------------------------------------------------------
+from modules.content.posts_service import (
+    PostsService as PostsService,
+)
+
+# ---------------------------------------------------------------------------
 # stages.topic_decision_gate
 # ---------------------------------------------------------------------------
 from modules.content.stages.topic_decision_gate import (
@@ -158,4 +165,6 @@ __all__ = [
     "build_topic_decision_artifact",
     # atoms.narrate_bundle
     "narrate_bundle",
+    # posts_service
+    "PostsService",
 ]

@@ -442,6 +442,7 @@ class MemoryClient:
         source_table: str | None = None,
         min_similarity: float = 0.0,
         limit: int = 10,
+        include_summaries: bool = True,
     ) -> list[MemoryHit]:
         """Semantic search across embeddings.
 
@@ -507,6 +508,8 @@ class MemoryClient:
         if writer:
             where_clauses.append(f"writer = ${len(args) + 1}")
             args.append(writer)
+        if not include_summaries:
+            where_clauses.append("is_summary = FALSE")
 
         args.append(limit)
         sql = f"""
