@@ -12,9 +12,9 @@ Phase 1 has two templates:
   2026-05-15 when ``resolve_internal_link_placeholders`` was added
   to close the ``[posts/<slug>]`` leak path.
 - ``dev_diary`` — minimal narrative post for daily build-in-public
-  output. Four nodes: verify_task → narrate_bundle (atom) →
-  source_featured_image → finalize_task. Skips QA, auto-curator,
-  SEO metadata, media scripts — none of which fit a status-report
+  output. Five nodes: verify_task → narrate_bundle (atom) →
+  generate_seo_metadata → source_featured_image → finalize_task. Skips
+  QA, auto-curator, media scripts — none of which fit a status-report
   artifact.
 
 Phase 4+ adds architect-LLM-composed templates (cached here via the

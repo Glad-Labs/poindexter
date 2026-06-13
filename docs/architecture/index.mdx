@@ -3,12 +3,15 @@ title: "Architecture"
 description: "How Poindexter is built — pipelines, plugins, modules, retrieval."
 ---
 
-Poindexter is modeled after human brain anatomy. Each region runs as an
-independent process or container and the parts communicate exclusively through
-shared PostgreSQL tables — no direct imports across region boundaries. The
-result is a system you can monitor, restart, and reason about region by region.
+Poindexter is built as a **kernel** — the shared substrate of plugin registry,
+DI container, pipeline engine, and settings — that **business modules** (content,
+finance) rent, composing **capability** plugins (LLM, image, video, audio, TTS) on
+top. Each component runs as an independent process or container and they
+communicate exclusively through shared PostgreSQL tables — no direct imports across
+those boundaries. The result is a system you can monitor, restart, and reason
+about one piece at a time.
 
-For the full mastery-grade walk-through (regions, data flow, technology
+For the full mastery-grade walk-through (components, data flow, technology
 choices, principles, and the request lifecycle), start with the
 [architecture overview](./overview). The cards below jump straight to the
 topic you need.
@@ -17,7 +20,7 @@ topic you need.
 
 <CardGroup cols={2}>
   <Card title="System overview" icon="diagram-project" href="/docs/architecture/overview">
-    The brain-region model end-to-end. Components, data flow, technology
+    The full architecture end-to-end. Components, data flow, technology
     choices, and the principles each subsystem upholds.
   </Card>
   <Card title="Multi-agent pipeline" icon="robot" href="/docs/architecture/multi-agent-pipeline">

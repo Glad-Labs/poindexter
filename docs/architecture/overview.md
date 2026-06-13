@@ -80,12 +80,12 @@ content with human oversight**, not "AI content factory" and not
 └──────────────────────────────────────────────────────────────────┘
                               ↕️ REST API
 ┌──────────────────────────────────────────────────────────────────┐
-│         POINDEXTER WORKER (Central Brain)                        │
+│         POINDEXTER WORKER                                        │
 │                     FastAPI + Python                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
-│  │       18 nodes; dev_diary template, 4 nodes)               │ │
+│  │       36 nodes; dev_diary template, 5 nodes)               │ │
 │  │  LiteLLM router (primary on prod for all 5 cost tiers;     │ │
 │  │     Ollama default, cloud providers behind cost_guard +    │ │
 │  │     allow_paid_base_url opt-in per feedback_no_paid_apis)  │ │

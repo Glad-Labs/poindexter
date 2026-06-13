@@ -15,7 +15,7 @@ extra dashboards, the book) lives at
 ## Start here
 
 - [welcome.mdx](welcome.mdx) — overview + curated reading path
-- [architecture/overview.md](architecture/overview.md) — system end-to-end (regions,
+- [architecture/overview.md](architecture/overview.md) — system end-to-end (components,
   data flow, technology choices)
 - [../README.md](../README.md) — project README (quick-start, status)
 

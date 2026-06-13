@@ -14,7 +14,7 @@ This doc captures the architectural framing and the boundary between the engine 
                     │                                  │
                     │  • PostgreSQL (spinal cord)      │
                     │  • Brain daemon (brainstem)      │
-                    │  • FastAPI worker (cerebrum)     │
+                    │  • FastAPI worker                │
                     │  • Content pipeline              │
                     │  • Plugin registry               │
                     │  • OAuth 2.1 token endpoint      │
