@@ -287,19 +287,43 @@ function App() {
       closeDrawer();
       pushToast('Scheduled for 09:00 tomorrow', 'cyan', '✓');
     },
-    retry: (e) => {
+    // Real task actions (mock-safe: PX.api.* return mock {ok:true} offline).
+    // retry → PUT /api/tasks/{id}/status {status:'pending'} (the flow re-claims
+    // it; also clears a poisoned LangGraph checkpoint server-side). cancel →
+    // DELETE /api/tasks/{id}. Optimistic pipeline update; roll a red toast on error.
+    retry: async (e) => {
+      const id = e.detail?.task || e.id;
       removeInbox(e.id);
       closeDrawer();
-      pushToast('Task re-queued from failed stage', 'cyan', '↻');
-      pushFeed(
-        ['cyan', 'PIPELINE'],
-        `operator retried <b>${e.detail ? '#' + e.detail.task : e.id}</b>`
-      );
+      try {
+        await PX.api.retryTask(id);
+        setPipeline((p) => ({
+          ...p,
+          tasks: (p.tasks || []).map((t) =>
+            t.id === id ? { ...t, status: 'run' } : t
+          ),
+        }));
+        pushToast(`Task #${id} re-queued from failed stage`, 'cyan', '↻');
+        pushFeed(['cyan', 'PIPELINE'], `operator retried <b>#${id}</b>`);
+      } catch (err) {
+        pushToast(`Retry failed — ${err.message}`, 'red', '✕');
+      }
     },
-    kill: (e) => {
+    kill: async (e) => {
+      const id = e.detail?.task || e.id;
       removeInbox(e.id);
       closeDrawer();
-      pushToast('Task killed', 'red', '✕');
+      try {
+        await PX.api.killTask(id);
+        setPipeline((p) => ({
+          ...p,
+          tasks: (p.tasks || []).filter((t) => t.id !== id),
+        }));
+        pushToast(`Task #${id} cancelled`, 'red', '✕');
+        pushFeed(['red', 'PIPELINE'], `operator cancelled <b>#${id}</b>`);
+      } catch (err) {
+        pushToast(`Cancel failed — ${err.message}`, 'red', '✕');
+      }
     },
     skipStage: (e) => {
       removeInbox(e.id);
@@ -700,13 +724,7 @@ function App() {
                   pipeline={pipeline}
                   onOpen={() => open('pipeline', pipeline)}
                   onOpenTask={(t) => open('task', t)}
-                  onRetry={(t) => {
-                    pushToast(`Task #${t.id} re-queued`, 'cyan', '↻');
-                    pushFeed(
-                      ['cyan', 'PIPELINE'],
-                      `operator retried <b>#${t.id}</b>`
-                    );
-                  }}
+                  onRetry={A.retry}
                 />
               </div>
               <div id="sec-gpu">

@@ -602,7 +602,7 @@ function Drawer({ entity, onClose, actions }) {
               <button
                 className="mbtn mbtn--amber"
                 style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
-                onClick={() => actions.retry({ id: 'task-' + e.id })}
+                onClick={() => actions.retry(e)}
               >
                 <Icon name="retry" size={13} />
                 Retry
@@ -610,10 +610,28 @@ function Drawer({ entity, onClose, actions }) {
               <button
                 className="mbtn mbtn--danger mbtn--ghost"
                 style={{ padding: '10px 14px' }}
-                onClick={onClose}
+                onClick={() => actions.kill(e)}
               >
                 <Icon name="kill" size={13} />
                 Kill
+              </button>
+            </>
+          ) : e.status === 'run' ? (
+            <>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                onClick={() => actions.kill(e)}
+              >
+                <Icon name="kill" size={13} />
+                Cancel task
+              </button>
+              <button
+                className="mbtn mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={onClose}
+              >
+                Close
               </button>
             </>
           ) : (
