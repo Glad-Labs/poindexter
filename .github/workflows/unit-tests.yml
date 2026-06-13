@@ -284,6 +284,16 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/kernel_purity_lint.py
 
+      # Silent-failure audit (H2): no NEW silently-swallowed exceptions in
+      # production code. A handler whose body is only `pass` or
+      # `<logger>.debug(...)` hides the failure below the prod log level AND
+      # GlitchTip's ERROR event gate. Existing sites are baselined
+      # (silent_excepts_baseline.json, ratchet-only-shrinks); the lint fails
+      # on net-new swallows. Pure-Python AST scan, no deps beyond stdlib.
+      - name: Silent-except lint (audit H2)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/lint_silent_excepts.py
+
       # #995: turn "N tests pass" into a coverage SIGNAL — gated to the nightly
       # schedule + manual dispatch only. The `COV` env var (job level, above) is
       # EMPTY on push/PR, so day-to-day runs don't pay the ~2x instrumentation
