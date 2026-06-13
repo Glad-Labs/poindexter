@@ -916,6 +916,51 @@ def halt_or_continue(next_node: str) -> Callable[[PipelineState], str]:
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint introspection (resume-atomicity c1)
+# ---------------------------------------------------------------------------
+
+
+async def has_resumable_checkpoint(pool: Any, thread_id: str) -> bool:
+    """Return True iff a durable LangGraph checkpoint exists for ``thread_id``.
+
+    Used by ``poindexter pipeline resume`` to allow a *continue-resume* of a
+    task stranded PAST its gate — ``awaiting_gate`` already cleared by approve,
+    but a downstream node crashed mid-resume so the checkpoint sits past the
+    gate and the task is still ``in_progress``. The default guard
+    (``awaiting_gate IS NOT NULL``) would refuse it; this lets the operator
+    continue from the checkpoint instead of waiting for the stale sweep.
+
+    The content pipeline keys checkpoints by the bare ``task_id`` (see
+    :meth:`TemplateRunner.run`), so ``thread_id == task_id`` here. Guarded by
+    ``to_regclass`` so it is a safe no-op (returns False) on installs where the
+    Postgres checkpointer was never initialised. Never raises — any error
+    degrades to False, since this only gates an extra recovery convenience and
+    must never break the at-gate resume path.
+    """
+    if not pool or not thread_id:
+        return False
+    try:
+        async with pool.acquire() as conn:
+            present = await conn.fetchval(
+                "SELECT to_regclass('public.checkpoints') IS NOT NULL"
+            )
+            if not present:
+                return False
+            return bool(
+                await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM checkpoints WHERE thread_id = $1)",
+                    str(thread_id),
+                )
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[template_runner] has_resumable_checkpoint(%s) failed: %s",
+            thread_id, exc,
+        )
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 

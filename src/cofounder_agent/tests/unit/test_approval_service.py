@@ -50,6 +50,16 @@ from services.approval_service import (
 # ---------------------------------------------------------------------------
 
 
+class _NoOpTransaction:
+    """No-op stand-in for ``asyncpg`` ``connection.transaction()``."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
 class FakeConnection:
     def __init__(self, store: FakeStore) -> None:
         self._store = store
@@ -59,6 +69,37 @@ class FakeConnection:
 
     async def __aexit__(self, *exc):
         return False
+
+    def transaction(self):
+        """No-op stand-in for ``conn.transaction()`` — approve() now wraps its
+        gate-clear + history-insert in one transaction."""
+        return _NoOpTransaction()
+
+    def _record_gate_event(self, args) -> dict:
+        """Shared INSERT INTO pipeline_gate_history recorder.
+
+        approve passes 5 args (event_kind='approved' is a SQL literal);
+        reject passes 6 (event_kind is $3)."""
+        if len(args) == 5:
+            task_id, gate_name, feedback, actor, metadata = args
+            event_kind = "approved"
+        else:
+            task_id, gate_name, event_kind, feedback, actor, metadata = args
+        event = {
+            "task_id": task_id, "gate_name": gate_name,
+            "event_kind": event_kind, "feedback": feedback,
+            "actor": actor, "metadata": metadata,
+        }
+        self._store.events.append(event)
+        return event
+
+    async def fetchval(self, sql: str, *args):
+        sql_norm = " ".join(sql.split())
+        if sql_norm.startswith("INSERT INTO pipeline_gate_history"):
+            # approve switched this INSERT to fetchval to capture RETURNING id.
+            self._record_gate_event(args)
+            return len(self._store.events)  # synthetic bigint id
+        raise AssertionError(f"FakeConnection.fetchval saw unexpected SQL: {sql_norm[:80]}")
 
     async def execute(self, sql: str, *args):
         sql_norm = " ".join(sql.split())

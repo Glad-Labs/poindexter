@@ -178,6 +178,7 @@ async def _fetch_task_row(pool: Any, task_id: str) -> dict[str, Any] | None:
                    pt.awaiting_gate,
                    pt.gate_artifact,
                    pt.gate_paused_at,
+                   pt.retry_count,
                    pt.topic,
                    pv.title AS title
               FROM pipeline_tasks pt
@@ -412,42 +413,58 @@ async def approve(
         verb="approve",
     )
     previous_status = row.get("status")
+    # The run attempt this approval belongs to. The stale-inprogress sweep
+    # (services.tasks_db.sweep_stale_tasks) bumps retry_count when it resets
+    # a crashed resume to 'pending'; stamping it here lets the gate atom
+    # reject a *stale* approval on the next fresh run instead of silently
+    # re-publishing regenerated content with no operator review.
+    approved_at_retry_count = int(row.get("retry_count") or 0)
 
     # Clear the gate columns and restore status to 'in_progress'. The
     # pipeline_gate_history row below is what the resume-pass idempotency
     # check reads (modules/content/atoms/approval_gate.py). Setting
     # in_progress here makes the stale sweeper the fallback for a crashed
     # resume run, and keeps the task visible as actively running while
-    # runner.run(resume=True) executes.
+    # runner.run(resume=True) executes. Both writes share one transaction so
+    # a task can never end up gate-cleared without its history row (or vice
+    # versa).
     async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE pipeline_tasks
-               SET awaiting_gate = NULL,
-                   gate_artifact = '{}'::jsonb,
-                   gate_paused_at = NULL,
-                   status = 'in_progress',
-                   updated_at = NOW()
-             WHERE task_id::text = $1
-            """,
-            str(task_id),
-        )
+        async with conn.transaction():
+            await conn.execute(
+                """
+                UPDATE pipeline_tasks
+                   SET awaiting_gate = NULL,
+                       gate_artifact = '{}'::jsonb,
+                       gate_paused_at = NULL,
+                       status = 'in_progress',
+                       updated_at = NOW()
+                 WHERE task_id::text = $1
+                """,
+                str(task_id),
+            )
 
-        await conn.execute(
-            """
-            INSERT INTO pipeline_gate_history
-                (task_id, gate_name, event_kind, feedback, actor, metadata)
-            VALUES ($1, $2, 'approved', $3, $4, $5::jsonb)
-            """,
-            str(task_id),
-            cleared_gate,
-            feedback or "",
-            actor,
-            json.dumps(
-                {"previous_status": previous_status},
-                default=str,
-            ),
-        )
+            # RETURNING id so a failed resume can target THIS exact row for
+            # rollback (rollback_resume_approval), rather than guessing the
+            # "latest approved" row under concurrency.
+            gate_history_id = await conn.fetchval(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, actor, metadata)
+                VALUES ($1, $2, 'approved', $3, $4, $5::jsonb)
+                RETURNING id
+                """,
+                str(task_id),
+                cleared_gate,
+                feedback or "",
+                actor,
+                json.dumps(
+                    {
+                        "previous_status": previous_status,
+                        "approved_at_retry_count": approved_at_retry_count,
+                    },
+                    default=str,
+                ),
+            )
 
     audit_log_bg(
         event_type="approval_gate_approved",
@@ -476,7 +493,123 @@ async def approve(
         "gate_name": cleared_gate,
         "previous_status": previous_status,
         "feedback": feedback or "",
+        "gate_history_id": gate_history_id,
     }
+
+
+# ---------------------------------------------------------------------------
+# Rollback — compensating action when a resume fails after approve (#resume)
+# ---------------------------------------------------------------------------
+
+
+async def rollback_resume_approval(
+    *,
+    task_id: str,
+    gate_name: str,
+    gate_history_id: int | None,
+    artifact: Any,
+    paused_at: Any,
+    pool: Any,
+) -> dict[str, Any]:
+    """Undo an :func:`approve` whose subsequent graph resume failed.
+
+    ``poindexter pipeline resume`` records the approval (clearing the gate
+    columns + writing an ``approved`` history row) BEFORE re-invoking the
+    graph. If the resume raises *before the gate is durably passed* (e.g. the
+    Postgres checkpointer can't be set up, so the graph never advances), the
+    approval is left dangling: the task is no longer paused (so it can't be
+    re-resumed) and the stale ``approved`` row would auto-pass a later fresh
+    run's gate. This compensating action reverses both effects atomically:
+
+    1. Restore the paused-at-gate columns (``awaiting_gate`` / ``gate_artifact``
+       / ``gate_paused_at`` / ``status='awaiting_gate'``) so the operator can
+       simply ``resume`` again.
+    2. Delete the dangling ``approved`` ``pipeline_gate_history`` row (by id,
+       when known) so nothing can silently auto-pass the gate.
+
+    Args:
+        task_id: External task identifier (``pipeline_tasks.task_id``).
+        gate_name: The gate the task was paused at before approve cleared it.
+        gate_history_id: Id of the ``approved`` row to delete (from
+            :func:`approve`'s return). ``None`` skips the delete.
+        artifact: The gate artifact captured BEFORE approve cleared it — any
+            JSON-coercible value; restored verbatim.
+        paused_at: The original ``gate_paused_at`` timestamp to restore.
+        pool: asyncpg pool.
+
+    Returns:
+        ``{"ok": True, "task_id": ..., "gate_name": ..., "deleted_row": bool}``.
+    """
+    artifact_json = json.dumps(_coerce_artifact(artifact), default=str)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                UPDATE pipeline_tasks
+                   SET awaiting_gate = $2,
+                       gate_artifact = $3::jsonb,
+                       gate_paused_at = $4,
+                       status = 'awaiting_gate',
+                       updated_at = NOW()
+                 WHERE task_id::text = $1
+                """,
+                str(task_id),
+                gate_name,
+                artifact_json,
+                paused_at,
+            )
+
+            deleted_row = False
+            if gate_history_id is not None:
+                await conn.execute(
+                    "DELETE FROM pipeline_gate_history WHERE id = $1",
+                    gate_history_id,
+                )
+                deleted_row = True
+
+    audit_log_bg(
+        event_type="approval_gate_resume_rolled_back",
+        source="approval_service",
+        details={
+            "gate_name": gate_name,
+            "gate_history_id": gate_history_id,
+            "deleted_row": deleted_row,
+        },
+        task_id=str(task_id),
+        severity="warning",
+    )
+
+    return {
+        "ok": True,
+        "task_id": str(task_id),
+        "gate_name": gate_name,
+        "deleted_row": deleted_row,
+    }
+
+
+async def latest_approved_gate(pool: Any, task_id: str) -> str | None:
+    """Return the gate_name of the most-recent ``approved`` row for a task.
+
+    Used by ``poindexter pipeline resume`` to name the gate a task stranded
+    *past* its gate (``awaiting_gate`` cleared by approve) already passed, so a
+    continue-resume can reference it. Returns ``None`` when the task has no
+    approval on record — the CLI reads that as "not a resumable post-gate
+    state" and falls through to the not-paused error.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT gate_name
+              FROM pipeline_gate_history
+             WHERE task_id = $1
+               AND event_kind = 'approved'
+             ORDER BY created_at DESC
+             LIMIT 1
+            """,
+            str(task_id),
+        )
+    return row["gate_name"] if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -878,6 +1011,8 @@ __all__ = [
     "is_gate_enabled",
     "pause_at_gate",
     "approve",
+    "rollback_resume_approval",
+    "latest_approved_gate",
     "reject",
     "list_pending",
     "show_pending",

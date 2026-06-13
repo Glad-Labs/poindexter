@@ -289,22 +289,38 @@ async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
     Reads ``pipeline_gate_history`` (not just ``pipeline_tasks.awaiting_gate``,
     which is also NULL for tasks that never hit the gate) for the most-recent
     typed event. Returns ``"approved"``, ``"rejected"``, or ``None`` when the
-    gate has no recorded decision yet.
+    gate has no recorded (or no *current*) decision yet.
 
     A ``rejected`` event_kind covers both ``rejected`` and any per-gate reject
     status (``dismissed`` etc.) — anything that is not ``approved`` and not a
     bare pause is treated as a halt signal.
+
+    **Freshness check (resume-atomicity c2).** An ``approved`` row is only
+    honored when it was granted for the task's *current* run attempt. The
+    stale-inprogress sweep (``services.tasks_db.sweep_stale_tasks``) resets a
+    crashed resume to ``pending`` and bumps ``retry_count`` while CLEARING the
+    LangGraph checkpoint — but it does NOT touch ``pipeline_gate_history``. On
+    the fresh re-run a *stale* approval (granted at a lower attempt) must NOT
+    auto-pass the gate, or regenerated content would publish with no operator
+    review. ``approve`` stamps the granting ``retry_count`` into the row's
+    ``metadata.approved_at_retry_count``; we compare it to the task's current
+    ``retry_count`` and treat a mismatch as "no decision" (→ re-pause). A
+    legacy row with no tag (``NULL``) is honored for backcompat.
     """
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT event_kind
-                  FROM pipeline_gate_history
-                 WHERE task_id = $1
-                   AND gate_name = $2
-                   AND event_kind IN ('approved', 'rejected', 'dismissed')
-                 ORDER BY created_at DESC
+                SELECT gh.event_kind,
+                       (gh.metadata ->> 'approved_at_retry_count')
+                           AS approved_at_retry_count,
+                       pt.retry_count AS current_retry_count
+                  FROM pipeline_gate_history gh
+                  JOIN pipeline_tasks pt ON pt.task_id::text = gh.task_id
+                 WHERE gh.task_id = $1
+                   AND gh.gate_name = $2
+                   AND gh.event_kind IN ('approved', 'rejected', 'dismissed')
+                 ORDER BY gh.created_at DESC
                  LIMIT 1
                 """,
                 str(task_id), gate_name,
@@ -312,7 +328,23 @@ async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
         if row is None:
             return None
         kind = row["event_kind"]
-        return "approved" if kind == "approved" else "rejected"
+        if kind != "approved":
+            return "rejected"
+
+        approved_attempt = row.get("approved_at_retry_count")
+        current_attempt = row.get("current_retry_count")
+        if (
+            approved_attempt is not None
+            and current_attempt is not None
+            and str(approved_attempt) != str(current_attempt)
+        ):
+            logger.info(
+                "[atoms.approval_gate:%s] stale approval (granted at attempt %s, "
+                "task now at attempt %s) — ignoring, will re-pause for review",
+                gate_name, approved_attempt, current_attempt,
+            )
+            return None
+        return "approved"
     except Exception as exc:  # noqa: BLE001
         logger.debug("[atoms.approval_gate] gate-decision check failed: %s", exc)
         return None

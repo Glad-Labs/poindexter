@@ -19,9 +19,11 @@ class FakeConn:
         *,
         fetchrow_result: Any = None,
         fetch_result: Any = None,
+        fetchval_result: Any = None,
     ) -> None:
         self._fetchrow_result = fetchrow_result
         self._fetch_result = fetch_result if fetch_result is not None else []
+        self._fetchval_result = fetchval_result
         self.executed: list[tuple[str, tuple[Any, ...]]] = []
 
     async def fetchrow(self, sql: str, *args: Any) -> Any:
@@ -33,6 +35,15 @@ class FakeConn:
         if callable(self._fetch_result):
             return self._fetch_result(sql, args)
         return self._fetch_result
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        # Recorded into ``executed`` like ``execute`` so SQL-shape assertions
+        # still see ``INSERT ... RETURNING id`` statements that switched from
+        # ``execute`` to ``fetchval`` to capture a generated key.
+        self.executed.append((sql, args))
+        if callable(self._fetchval_result):
+            return self._fetchval_result(sql, args)
+        return self._fetchval_result
 
     async def execute(self, sql: str, *args: Any) -> str:
         self.executed.append((sql, args))

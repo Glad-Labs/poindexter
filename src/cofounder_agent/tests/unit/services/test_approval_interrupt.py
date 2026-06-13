@@ -174,6 +174,93 @@ class TestApprovalGateAtom:
 
 
 # ---------------------------------------------------------------------------
+# 1b. The approval_gate atom — stale-approval freshness check (c2)
+# ---------------------------------------------------------------------------
+#
+# The gate-history 'approved' short-circuit exists so a resume doesn't re-pause.
+# But after a crashed resume, the stale-inprogress sweep resets the task to
+# 'pending' (bumping retry_count) and clears the LangGraph checkpoint — WITHOUT
+# touching pipeline_gate_history. On the fresh re-run the gate must NOT honor
+# the now-stale 'approved' row (that would republish regenerated content with
+# no operator review). The approval is tagged with the retry_count it was
+# granted at; the gate only honors it when that attempt matches the task's
+# current retry_count.
+
+
+@pytest.mark.unit
+class TestApprovalGateRetryCountFreshness:
+    async def test_stale_approval_re_pauses(self):
+        """approved_at_retry_count != current retry_count → re-pause, NOT pass.
+
+        Models the post-sweep fresh run: an 'approved' row from attempt 0
+        survives, but the sweep bumped retry_count to 1. The gate must treat
+        the stale approval as no-decision and pause again for a fresh review.
+        """
+        from modules.content.atoms import approval_gate
+
+        conn = FakeConn(fetchrow_result={
+            "event_kind": "approved",
+            "approved_at_retry_count": "0",
+            "current_retry_count": 1,
+        })
+        state = _state_with_pool(conn, title="Hello", topic="t")
+
+        pause_mock = AsyncMock(return_value={"ok": True})
+
+        def _raise_interrupt(payload):
+            raise GraphInterrupt(payload)
+
+        with (
+            patch("services.approval_service.is_gate_enabled", return_value=True),
+            patch("services.approval_service.pause_at_gate", pause_mock),
+            patch(
+                "services.integrations.operator_notify.notify_operator",
+                AsyncMock(),
+            ),
+            patch.object(approval_gate, "interrupt", _raise_interrupt),
+        ):
+            with pytest.raises(GraphInterrupt):
+                await approval_gate.run(state)
+
+        # It re-paused (did not silently pass the stale approval through).
+        pause_mock.assert_awaited_once()
+
+    async def test_matching_approval_passes_through(self):
+        """approved_at_retry_count == current retry_count → resume case → pass."""
+        from modules.content.atoms import approval_gate
+
+        conn = FakeConn(fetchrow_result={
+            "event_kind": "approved",
+            "approved_at_retry_count": "2",
+            "current_retry_count": 2,
+        })
+        state = _state_with_pool(conn)
+        with patch(
+            "services.approval_service.is_gate_enabled", return_value=True,
+        ):
+            out = await approval_gate.run(state)
+        assert out == {}
+
+    async def test_legacy_untagged_approval_passes_through(self):
+        """Backcompat: an 'approved' row written before the retry_count tag
+        (no approved_at_retry_count) is still honored — we don't strand
+        in-flight approvals that predate this change."""
+        from modules.content.atoms import approval_gate
+
+        conn = FakeConn(fetchrow_result={
+            "event_kind": "approved",
+            "approved_at_retry_count": None,
+            "current_retry_count": 4,
+        })
+        state = _state_with_pool(conn)
+        with patch(
+            "services.approval_service.is_gate_enabled", return_value=True,
+        ):
+            out = await approval_gate.run(state)
+        assert out == {}
+
+
+# ---------------------------------------------------------------------------
 # 2. GraphInterrupt propagation
 # ---------------------------------------------------------------------------
 

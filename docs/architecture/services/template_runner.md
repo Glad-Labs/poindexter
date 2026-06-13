@@ -1,8 +1,8 @@
 # Template Runner
 
 **File:** `src/cofounder_agent/services/template_runner.py`
-**Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py`, `tests/unit/services/test_template_runner_state_partition.py` + integration fan-out tests
-**Last reviewed:** 2026-05-23
+**Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py`, `tests/unit/services/test_template_runner_state_partition.py`, `tests/unit/services/test_checkpoint_resumable.py` + integration fan-out tests
+**Last reviewed:** 2026-06-13
 
 ## What it does
 
@@ -42,6 +42,7 @@ After a run completes, the runner writes per-node training signal into `capabili
 - **Node raises** — captured in the `record.status='failed'` + `record.error` field; downstream nodes that depend on the failed node's output trigger LangGraph's default abort. The terminal_state still returns with whatever ran.
 - **Concurrent fan-out without reducer** — `InvalidUpdateError`. State key needs `Annotated[T, reducer_fn]`. Already handled for `qa_reviews`; new fan-out targets need their own annotation.
 - **Halt before completion** — gates (e.g., `atoms.approval_gate`) return `_halt=True`. The runner stops cleanly; the calling pipeline picks up where it left off on the next pass once the operator approves (gate state lives in `pipeline_gate_history` per poindexter#366 phase 1).
+- **Resume atomicity** — `poindexter pipeline resume` records the gate approval BEFORE re-invoking `run(resume=True)`. A resume that _raises_ (the graph never advances past the gate — e.g. the checkpointer can't be set up) leaves a dangling approval, so the CLI rolls it back (`approval_service.rollback_resume_approval`) and restores the pause. A resume that _halts past the gate_ (a downstream node failed AFTER the gate passed) strands the task `in_progress` with an intact checkpoint and `awaiting_gate` already cleared — `has_resumable_checkpoint(pool, thread_id)` (this module) lets the CLI offer a _continue-resume_ from the checkpoint instead of refusing. Belt-and-suspenders: approvals are stamped with the task's `retry_count`, and `atoms.approval_gate` only honors an approval matching the current `retry_count`, so a stale approval can never auto-pass a post-sweep fresh run even if a rollback is missed. See `poindexter/cli/pipeline.py::resume_command`.
 - **Discord delivery fails** — swallowed at debug level. The orchestrator continues; the operator just doesn't get the progress ping for that node.
 
 ## See also

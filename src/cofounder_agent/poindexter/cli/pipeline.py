@@ -14,12 +14,35 @@ atom's idempotency check sees it) and then re-invokes the template with
 ``resume=True`` — LangGraph loads the checkpoint and continues from after the
 gate, skipping every already-run node.
 
+**Atomicity (resume-atomicity fix).** The approval write happens BEFORE the
+resume, so a resume failure used to strand the task: ``awaiting_gate`` cleared
+(not re-resumable) plus a stale ``approved`` row that the stale-inprogress
+sweep would later let auto-pass a fresh run — republishing with no operator
+review. ``resume`` now treats the approval as *provisional*:
+
+- **approve-and-resume** (paused at a gate): if the resume RAISES — the graph
+  never advanced past the gate (e.g. the checkpointer couldn't be set up) — the
+  approval is rolled back (``rollback_resume_approval``: delete the row +
+  restore the pause), so the task stays re-resumable and no stale approval
+  lingers.
+- **continue-resume** (stranded PAST the gate): when a downstream node crashed
+  AFTER the gate passed, ``awaiting_gate`` is already NULL but the checkpoint is
+  intact. ``resume`` detects this (``in_progress`` + a prior approval +
+  ``has_resumable_checkpoint``) and continues from the checkpoint WITHOUT
+  re-approving.
+
+Defense-in-depth: ``approve`` stamps the task's ``retry_count`` into the
+``approved`` row, and the gate atom only honors an approval whose attempt
+matches the task's current ``retry_count`` (the sweep bumps it) — so even if a
+rollback is missed (CLI crash), a stale approval can never auto-pass a
+post-sweep fresh run. See ``modules/content/atoms/approval_gate.py::_gate_decision``.
+
 NOTE: resume REQUIRES the Postgres checkpointer
 (``template_runner_use_postgres_checkpointer=true`` — the prod default).
 With MemorySaver the checkpoint does not survive across processes, so a
 fresh CLI process can't find the paused state.
 
-Single source of truth for the approval write is
+Single source of truth for the approval write (and its rollback) is
 :mod:`services.approval_service`; the resume invocation reuses
 :class:`services.template_runner.TemplateRunner`. This module is a thin
 Click wrapper that resolves a DSN + SiteConfig and renders results.
@@ -280,10 +303,20 @@ def status_command(task_id: str, json_output: bool) -> None:
 def resume_command(task_id: str, feedback: str | None, json_output: bool) -> None:
     """Approve the active gate and resume the interrupted graph.
 
-    1. Verifies the task is paused at a gate.
-    2. Records approval in ``pipeline_gate_history`` (via approval_service).
-    3. Re-invokes the template with ``resume=True`` (thread_id=task_id), so
-       LangGraph loads the checkpoint and continues from after the gate.
+    Two paths, picked from the task's state:
+
+    **approve-and-resume** (task paused at a gate). Records the approval in
+    ``pipeline_gate_history`` and re-invokes the template with ``resume=True``.
+    The approval is *provisional*: if the resume RAISES (the graph never
+    advanced past the gate — e.g. the Postgres checkpointer couldn't be set
+    up), it is rolled back (approval row deleted + pause restored) so the task
+    stays re-resumable and no stale approval can auto-pass a later fresh run.
+
+    **continue-resume** (task stranded PAST its gate). When ``awaiting_gate`` is
+    already NULL but the task is still ``in_progress`` with an intact checkpoint
+    and a prior approval on record — the shape left by a downstream node
+    crashing AFTER the gate passed — resume from the checkpoint WITHOUT
+    re-approving (the gate was already cleared, the approval is still valid).
     """
 
     async def _impl():
@@ -292,15 +325,8 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
             row = await _fetch_paused_row(pool, task_id)
             if row is None:
                 return {"error": f"Task {task_id} not found", "code": 1}
-            gate_name = row.get("awaiting_gate")
-            if not gate_name:
-                return {
-                    "error": (
-                        f"Task {task_id} is not paused at a gate "
-                        f"(status={row.get('status')!r}) — nothing to resume"
-                    ),
-                    "code": 1,
-                }
+
+            task_id_str = str(row["task_id"])
             template_slug = row.get("template_slug")
             if not template_slug:
                 return {
@@ -312,48 +338,116 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
 
             site_config = await _make_site_config(pool)
 
-            # 1. Record the approval so the gate atom's idempotency check
-            # sees the gate cleared, and the gate columns are cleared.
-            from services.approval_service import approve as approve_service
-            approval = await approve_service(
-                task_id=str(row["task_id"]),
-                gate_name=gate_name,
-                feedback=feedback,
-                actor="human",
-                site_config=site_config,
-                pool=pool,
-            )
-
-            # 2. Resume the graph from the checkpoint. We need the live
-            # service handles re-threaded into the RunnableConfig, so build
-            # a minimal context with database_service + site_config. A full
-            # DatabaseService construction needs DSN + an initialize() round
-            # trip; the gate atom (and stage adapters) only read ``.pool``,
-            # so a tiny shim exposing the CLI pool is sufficient + cheaper.
+            # We need the live service handles re-threaded into the
+            # RunnableConfig, so build a minimal context with database_service +
+            # site_config. A full DatabaseService needs DSN + an initialize()
+            # round trip; the gate atom (and stage adapters) only read
+            # ``.pool``, so a tiny shim exposing the CLI pool is sufficient.
             db_service = _PoolShim(pool)
 
-            from services.template_runner import TemplateRunner
-            runner = TemplateRunner(pool, site_config=site_config)
-            summary = await runner.run(
-                template_slug,
-                {
-                    "task_id": str(row["task_id"]),
-                    "topic": row.get("topic") or "",
-                    "database_service": db_service,
-                    "site_config": site_config,
-                },
-                thread_id=str(row["task_id"]),
-                resume=True,
-                resume_value={"approved": True, "gate_name": gate_name},
+            from services.template_runner import (
+                TemplateRunner,
+                has_resumable_checkpoint,
             )
 
+            async def _run_resume(resume_gate: str | None):
+                runner = TemplateRunner(pool, site_config=site_config)
+                return await runner.run(
+                    template_slug,
+                    {
+                        "task_id": task_id_str,
+                        "topic": row.get("topic") or "",
+                        "database_service": db_service,
+                        "site_config": site_config,
+                    },
+                    thread_id=task_id_str,
+                    resume=True,
+                    resume_value={"approved": True, "gate_name": resume_gate},
+                )
+
+            gate_name = row.get("awaiting_gate")
+
+            # ---- PATH 1: approve-and-resume (paused at a gate) -------------
+            if gate_name:
+                # Capture the paused state BEFORE approve clears it, so a
+                # failed resume can be compensated back to exactly here.
+                original_artifact = row.get("gate_artifact")
+                original_paused_at = row.get("gate_paused_at")
+
+                from services.approval_service import approve as approve_service
+                from services.approval_service import rollback_resume_approval
+
+                approval = await approve_service(
+                    task_id=task_id_str,
+                    gate_name=gate_name,
+                    feedback=feedback,
+                    actor="human",
+                    site_config=site_config,
+                    pool=pool,
+                )
+
+                try:
+                    summary = await _run_resume(gate_name)
+                except Exception as exc:  # noqa: BLE001 — surfaced below
+                    # The resume raised before the gate was durably passed
+                    # (the graph never advanced). Roll the approval back so the
+                    # task is re-resumable and no stale approval lingers.
+                    await rollback_resume_approval(
+                        task_id=task_id_str,
+                        gate_name=gate_name,
+                        gate_history_id=approval.get("gate_history_id"),
+                        artifact=original_artifact,
+                        paused_at=original_paused_at,
+                        pool=pool,
+                    )
+                    return {
+                        "error": (
+                            f"resume failed — approval rolled back, task is "
+                            f"re-resumable: {type(exc).__name__}: {exc}"
+                        ),
+                        "code": 1,
+                        "rolled_back": True,
+                    }
+
+                return {
+                    "ok": summary.ok,
+                    "task_id": task_id_str,
+                    "gate_name": gate_name,
+                    "template_slug": template_slug,
+                    "halted_at": summary.halted_at,
+                    "approval": approval,
+                    "mode": "approve_resume",
+                }
+
+            # ---- PATH 2: continue-resume (stranded past the gate) ----------
+            # awaiting_gate is NULL. If the task is an operator-driven resume
+            # that died past the gate (in_progress + intact checkpoint + a
+            # prior approval), continue from the checkpoint without re-approving.
+            from services.approval_service import latest_approved_gate
+
+            approved_gate = await latest_approved_gate(pool, task_id_str)
+            resumable = (
+                str(row.get("status")) == "in_progress"
+                and approved_gate is not None
+                and await has_resumable_checkpoint(pool, task_id_str)
+            )
+            if resumable:
+                summary = await _run_resume(approved_gate)
+                return {
+                    "ok": summary.ok,
+                    "task_id": task_id_str,
+                    "gate_name": approved_gate,
+                    "template_slug": template_slug,
+                    "halted_at": summary.halted_at,
+                    "mode": "continue_resume",
+                }
+
             return {
-                "ok": summary.ok,
-                "task_id": str(row["task_id"]),
-                "gate_name": gate_name,
-                "template_slug": template_slug,
-                "halted_at": summary.halted_at,
-                "approval": approval,
+                "error": (
+                    f"Task {task_id} is not paused at a gate "
+                    f"(status={row.get('status')!r}) — nothing to resume"
+                ),
+                "code": 1,
             }
         finally:
             await pool.close()
@@ -372,15 +466,16 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
         click.echo(json.dumps(result, indent=2, default=str))
         return
 
+    verb = "Continued" if result.get("mode") == "continue_resume" else "Resumed"
     if result.get("ok"):
         click.secho(
-            f"Resumed task {result['task_id']} past gate "
+            f"{verb} task {result['task_id']} past gate "
             f"{result['gate_name']!r} — pipeline completed.",
             fg="green",
         )
     else:
         click.secho(
-            f"Resumed task {result['task_id']} past gate "
+            f"{verb} task {result['task_id']} past gate "
             f"{result['gate_name']!r}, but the pipeline halted at "
             f"{result.get('halted_at')!r}.",
             fg="yellow",
