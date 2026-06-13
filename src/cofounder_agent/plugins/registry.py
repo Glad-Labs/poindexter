@@ -711,6 +711,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # ``topic_auto_resolve_enabled`` (default false). See
         # services/jobs/topic_auto_resolve.py docstring for rails.
         ("jobs", "services.jobs.topic_auto_resolve", "TopicAutoResolveJob"),
+        # Stale-batch reaper (hourly). Self-heal watchdog for the recurring
+        # "content went dark" wedge: a topic_batch stuck status='open' blocks
+        # every future sweep for its niche (uq_one_open_batch_per_niche).
+        # Alerts on any batch open past ``topic_batch_stuck_hours`` and —
+        # when ``topic_batch_reaper_enabled`` (default false) — auto-expires
+        # the dead (past expires_at) ones so the niche self-recovers. See
+        # services/jobs/reap_stale_topic_batches.py docstring for the rails.
+        ("jobs", "services.jobs.reap_stale_topic_batches", "ReapStaleTopicBatchesJob"),
         # Bridge: ``audit_log`` findings -> ``alert_events`` so the brain's
         # existing alert_dispatcher (with its dedup matrix) actually pages
         # operators on severity>=warn findings. Closes the "audit_log row

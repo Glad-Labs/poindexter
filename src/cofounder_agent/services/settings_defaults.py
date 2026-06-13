@@ -265,6 +265,17 @@ DEFAULTS: dict[str, str] = {
     'topic_discovery_news_patterns': '',
     'topic_discovery_streak_window_hours': '6',
     'topic_discovery_style_distribution': '',
+    # Stale-batch reaper (services/jobs/reap_stale_topic_batches.py). A
+    # topic_batch stuck status='open' wedges its niche content-dark via the
+    # one-open-batch-per-niche index. The reaper alerts on any batch open
+    # past _stuck_hours and — when _reaper_enabled — auto-expires the dead
+    # (already past expires_at) ones to self-heal the niche. Default OFF:
+    # flipping it on auto-clears expired batches, which reactivates sweeps on
+    # any active niche that has since moved to its own content path (e.g.
+    # dev_diary's daily cron) — an explicit operator decision. Set such a
+    # niche active=false first; the reaper is scoped to active niches.
+    'topic_batch_reaper_enabled': 'false',
+    'topic_batch_stuck_hours': '24',
 
     # ----- Content router / writer / self-review -----
     'content_router_contradiction_review_max_tokens': '1500',
@@ -575,6 +586,15 @@ DEFAULTS: dict[str, str] = {
     'findings.topic_gap.delivery': 'discord',
     'findings.topic_gap.fallback': 'log_only',
     'findings.topic_gap.cooldown_minutes': '1440',
+    # Stale-batch reaper (reap_stale_topic_batches). A wedged open batch =
+    # niche content-dark, so route the alert to the ops channel. severity is
+    # 'warn' when the batch still wedges the niche (pages) and 'info' when the
+    # reaper already auto-expired it (dropped by the router floor — no page);
+    # 12h cooldown keeps a persistent wedge to twice-daily, not hourly.
+    'findings.topic_batch_stuck.delivery': 'discord',
+    'findings.topic_batch_stuck.fallback': 'log_only',
+    'findings.topic_batch_stuck.cooldown_minutes': '720',
+    'findings.topic_batch_stuck.min_severity': 'warn',
     'findings.media_drift.delivery': 'log_only',
     'findings.r2_static_drift.delivery': 'discord',
     'findings.r2_static_drift.fallback': 'log_only',
