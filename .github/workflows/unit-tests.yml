@@ -511,3 +511,71 @@ jobs:
           # has no xml, so it only `warn`s there.
           if-no-files-found: ${{ github.repository == 'Glad-Labs/glad-labs-stack' && 'error' || 'warn' }}
           retention-days: 14
+
+  # Main-branch guard for the pure-AST ratchet lints (silent-except / module-
+  # purity / kernel-purity). Those three also run INSIDE test-backend for PRs,
+  # but test-backend is skipped on PRIVATE-main pushes (the cost-trim above), so
+  # a violation that reaches main through a branch whose own CI predated the lint
+  # is never re-checked on main — and then EVERY PR branched off that main
+  # inherits it and goes red at once (the 2026-06-13 #1499 incident: a silent
+  # except from a pre-lint branch (#1495) poisoned every open PR until #1519
+  # fixed main). This job re-runs the lints on the push to main with NO skip, so
+  # a poisoned main is caught at the source in minutes (and auto-files an issue)
+  # instead of being discovered via N red PRs.
+  #
+  # Scope = exactly the gap: `push && repository.private`. PRs (any repo) and the
+  # PUBLIC mirror's main push already run test-backend un-skipped, so they're
+  # covered there — only the private source's main push is blind. Guarding on
+  # `.private` (not the repo NAME) is deliberate: the mirror sync byte-rewrites
+  # `glad-labs-stack`->`poindexter` in every file and would invert a name check;
+  # `.private` carries no rewritable string. Push-only ⇒ ZERO per-PR overhead.
+  # The lints are pure stdlib AST scans (no poetry/torch), so this job needs only
+  # checkout + Python and finishes in seconds.
+  lint-main:
+    if: ${{ github.event_name == 'push' && github.event.repository.private }}
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write  # the failure handler files an issue on the source repo
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: "3.13"
+      - name: Module purity lint (Seam 1 Wave 4)
+        run: python scripts/ci/module_purity_lint.py
+      - name: Kernel purity lint (Seam 2 #666)
+        run: python scripts/ci/kernel_purity_lint.py
+      - name: Silent-except lint (audit H2)
+        run: python scripts/ci/lint_silent_excepts.py
+      - name: Notify operator — main fails a ratchet lint
+        # File an issue (GH notification -> phone) so a poisoned main is caught
+        # in minutes, not via every PR going red. GITHUB_TOKEN can write issues
+        # on the source repo; no extra secret. Mirrors the sync-to-public
+        # failure handler. (No dedup — main-red is rare and short-lived; a couple
+        # of duplicate issues across back-to-back red pushes is acceptable.)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ main fails a ratchet lint (run ${{ github.run_id }})" \
+            --label "bug" \
+            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity) failed on the push to **main**.
+
+          **Run:** ${RUN_URL}
+          **Commit:** \`${{ github.sha }}\`
+
+          ### Why this matters
+          test-backend (which carries these lints for PRs) is skipped on private-main pushes, so this job is main's only guard. A red run here means a violation reached main through a branch whose CI predated the lint — and **every open PR branched off this main will inherit it and go red** until main is fixed.
+
+          ### Fix
+          1. Open the run above — the failing step names the file and the offending count vs baseline.
+          2. Fix the violation on a branch (add logging / re-raise / route the import) and merge — or, if intentional, re-baseline (\`python scripts/ci/<lint>.py --update-baseline\`).
+          3. Open PRs go green again once they rebase onto the fixed main.
+
+          _Auto-filed by the lint-main guard (unit-tests.yml)._"
