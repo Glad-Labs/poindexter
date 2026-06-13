@@ -6,6 +6,7 @@
 # reformat of app-settings.md landed in a PR that only meant to change code).
 CHANGELOG.md
 docs/reference/app-settings.md
+docs/reference/services.md
 package-lock.json
 .release-please-manifest.json
 

@@ -1,0 +1,50 @@
+# PR-time drift guard for docs/reference/services.md.
+#
+# Unlike regen-app-settings-doc.yml (whose source is the live DB, hence the
+# Postgres service + App-token PR dance), this doc's source is the repo itself.
+# So drift can only appear in a PR that moves/renames/deletes a service file —
+# and a plain "regenerate + git diff --exit-code" catches it at PR time with no
+# Postgres, no secrets, and works on forked PRs. Pure stdlib generator => no
+# pip install needed.
+name: regen-services-doc
+
+on:
+  pull_request:
+    paths:
+      - "src/cofounder_agent/services/**"
+      - "src/cofounder_agent/modules/content/**"
+      - "scripts/regen-services-doc.py"
+      - "docs/reference/services.md"
+      - ".github/workflows/regen-services-doc.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4.3.1
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Regenerate services.md
+        run: python scripts/regen-services-doc.py
+
+      - name: Fail if the committed doc is out of date
+        run: |
+          if ! git diff --quiet -- docs/reference/services.md; then
+            echo "::error::docs/reference/services.md is out of date with the service trees."
+            echo "Run 'python scripts/regen-services-doc.py' and commit the result."
+            git --no-pager diff -- docs/reference/services.md
+            exit 1
+          fi
+          echo "services.md is up to date."
