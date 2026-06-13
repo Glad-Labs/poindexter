@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-06-12.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 843 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 842 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter set <key> <value>` or `poindexter settings set <key> <value> --secret` for `is_secret=true` rows.
 
@@ -44,7 +44,7 @@ The worker re-reads on every poll; no restart needed.
 - [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (326 keys)
+- [general](#general) (325 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (6 keys)
@@ -385,7 +385,6 @@ The worker re-reads on every poll; no restart needed.
 | `findings.topic_gap.cooldown_minutes` | `1440` |  |  |
 | `findings.topic_gap.delivery` | `discord` |  |  |
 | `findings.topic_gap.fallback` | `log_only` |  |  |
-| `findings.topic_gap.min_severity` | `info` |  |  |
 | `findings.uncategorized_post_autofixed.delivery` | `log_only` |  |  |
 | `flux_schnell_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `glitchtip_api_token` | `` |  |  |
