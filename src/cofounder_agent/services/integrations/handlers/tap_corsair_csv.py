@@ -1,7 +1,7 @@
 """Handler: ``tap.corsair_csv`` — ingest Corsair iCUE LINK CSV exports.
 
 Watches the operator's iCUE log directory (default
-``C:\\Users\\mattm\\sensor_logs``), parses curated columns from the
+``C:\\Users\\<you>\\sensor_logs``), parses curated columns from the
 newest CSV, and INSERTs one ``sensor_samples`` row per (timestamp,
 metric) cell. Idempotent via ``(source, sampled_at, metric_name)``
 uniqueness — re-running on already-processed rows is a no-op.

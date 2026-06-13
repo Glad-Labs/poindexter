@@ -25,14 +25,14 @@ from services.taps.memory import MemoryFilesTap, _build_source_id, _discover_mem
 class TestDiscoverMemoryDirs:
     def test_finds_every_claude_scope(self, tmp_path: Path):
         projects = tmp_path / "projects"
-        (projects / "C--users-mattm" / "memory").mkdir(parents=True)
+        (projects / "C--users-alice" / "memory").mkdir(parents=True)
         (projects / "C--WINDOWS-system32" / "memory").mkdir(parents=True)
-        (projects / "c--Users-mattm-website" / "memory").mkdir(parents=True)
+        (projects / "c--Users-alice-website" / "memory").mkdir(parents=True)
 
         dirs = _discover_memory_dirs(claude_projects_dir=str(projects))
 
         scopes = [scope for _, origin, scope in dirs if origin == "claude-code"]
-        assert "C--users-mattm" in scopes
+        assert "C--users-alice" in scopes
         assert "C--WINDOWS-system32" in scopes
         # Case-insensitive glob `C--*` matches `c--Users-...` too on Windows.
         # On Linux the glob is case-sensitive so the lowercase scope may not match.
@@ -70,43 +70,43 @@ class TestDiscoverMemoryDirs:
     def test_scope_allowlist_filters_other_scopes(self, tmp_path: Path):
         """Only allowlisted claude-code scopes are scanned (junction dedup).
 
-        Guards the C--Users-mattm ⇄ C--Users-mattm-glad-labs-website Junction:
+        Guards the C--Users-alice ⇄ C--Users-alice-myproject Junction:
         the second scope is a reparse point to the first, so without the
         allowlist the host would embed the same files under two scopes.
         """
         projects = tmp_path / "projects"
-        (projects / "C--Users-mattm" / "memory").mkdir(parents=True)
-        (projects / "C--Users-mattm-glad-labs-website" / "memory").mkdir(parents=True)
+        (projects / "C--Users-alice" / "memory").mkdir(parents=True)
+        (projects / "C--Users-alice-myproject" / "memory").mkdir(parents=True)
 
         dirs = _discover_memory_dirs(
             claude_projects_dir=str(projects),
             openclaw_memory_dir="__skip__",
             shared_context_dir="__skip__",
-            scope_allowlist="C--Users-mattm",
+            scope_allowlist="C--Users-alice",
         )
         scopes = [s for _, _, s in dirs]
-        assert "C--Users-mattm" in scopes
-        assert "C--Users-mattm-glad-labs-website" not in scopes
+        assert "C--Users-alice" in scopes
+        assert "C--Users-alice-myproject" not in scopes
 
     def test_scope_allowlist_is_case_insensitive(self, tmp_path: Path):
         """Docker bind mounts can lowercase Windows dir names — match on lower()."""
         projects = tmp_path / "projects"
-        (projects / "C--Users-mattm" / "memory").mkdir(parents=True)
+        (projects / "C--Users-alice" / "memory").mkdir(parents=True)
 
         dirs = _discover_memory_dirs(
             claude_projects_dir=str(projects),
             openclaw_memory_dir="__skip__",
             shared_context_dir="__skip__",
-            scope_allowlist="c--users-mattm",  # different casing than on disk
+            scope_allowlist="c--users-alice",  # different casing than on disk
         )
         scopes = [s for _, _, s in dirs]
-        assert "C--Users-mattm" in scopes
+        assert "C--Users-alice" in scopes
 
     def test_empty_allowlist_keeps_all_scopes(self, tmp_path: Path):
         """Back-compat: empty allowlist means ingest every scope."""
         projects = tmp_path / "projects"
-        (projects / "C--Users-mattm" / "memory").mkdir(parents=True)
-        (projects / "C--Users-mattm-glad-labs-website" / "memory").mkdir(parents=True)
+        (projects / "C--Users-alice" / "memory").mkdir(parents=True)
+        (projects / "C--Users-alice-myproject" / "memory").mkdir(parents=True)
 
         dirs = _discover_memory_dirs(
             claude_projects_dir=str(projects),
@@ -115,8 +115,8 @@ class TestDiscoverMemoryDirs:
             scope_allowlist="",
         )
         scopes = {s for _, _, s in dirs}
-        assert "C--Users-mattm" in scopes
-        assert "C--Users-mattm-glad-labs-website" in scopes
+        assert "C--Users-alice" in scopes
+        assert "C--Users-alice-myproject" in scopes
 
 
 class TestBuildSourceId:
@@ -130,7 +130,7 @@ class TestBuildSourceId:
 
         Regression guard for the 2026-04-18 collision bug.
         """
-        a = _build_source_id("claude-code", "C--users-mattm", "MEMORY.md")
+        a = _build_source_id("claude-code", "C--users-alice", "MEMORY.md")
         b = _build_source_id("claude-code", "C--WINDOWS-system32", "MEMORY.md")
         assert a != b
 
@@ -158,11 +158,11 @@ class TestMemoryFilesTapExtract:
     def populated_projects(self, tmp_path: Path):
         """Build a small faux Claude projects tree with 3 scopes + 5 files."""
         projects = tmp_path / "projects"
-        (projects / "C--users-mattm" / "memory").mkdir(parents=True)
-        (projects / "C--users-mattm" / "memory" / "MEMORY.md").write_text(
+        (projects / "C--users-alice" / "memory").mkdir(parents=True)
+        (projects / "C--users-alice" / "memory" / "MEMORY.md").write_text(
             "- user stuff\n", encoding="utf-8"
         )
-        (projects / "C--users-mattm" / "memory" / "project_vision.md").write_text(
+        (projects / "C--users-alice" / "memory" / "project_vision.md").write_text(
             "# Vision\nBuild great things.\n", encoding="utf-8"
         )
 
@@ -217,7 +217,7 @@ class TestMemoryFilesTapExtract:
         ):
             source_ids.add(doc.source_id)
 
-        assert "claude-code/C--users-mattm/MEMORY.md" in source_ids
+        assert "claude-code/C--users-alice/MEMORY.md" in source_ids
         assert "claude-code/C--WINDOWS-system32/MEMORY.md" in source_ids
         # Two MEMORY.md files produced two distinct IDs — collision bug guard.
         memory_md_ids = [sid for sid in source_ids if sid.endswith("MEMORY.md")]

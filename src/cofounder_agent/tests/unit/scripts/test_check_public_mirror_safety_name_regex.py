@@ -1,4 +1,4 @@
-"""Contract tests for the operator-name LEAK_GUARD regex.
+"""Contract tests for operator-identity LEAK_GUARD regexes (name + path).
 
 Pins the 2026-05-27 security audit finding: the regex
 ``[Mm]atthew [Gg]ladding`` did NOT match the middle-initial form
@@ -139,3 +139,129 @@ def test_name_pattern_does_not_match_matt_alone() -> None:
     ]
     matched = [s for s in safe if pat.search(s)]
     assert not matched, f"false positive on 'Matt' alone: {matched}"
+
+
+# ---------------------------------------------------------------------------
+# Claude-projects PATH-encoding regex (operator-identity leak, 2026-06-13).
+#
+# Claude Code namespaces project memory under ~/.claude/projects/, encoding the
+# cwd by flattening the drive-colon + path separators into dashes:
+# ``C:\Users\mattm``  ->  ``C--Users-mattm``. That encoded form matched NEITHER
+# the ``C:[\\/]Users[\\/]mattm`` nor the ``/c/Users/mattm`` pattern, so refs
+# like ``~/.claude/projects/C--Users-mattm/memory/...`` leaked the operator
+# username to the public mirror. The guard pattern is case-INSENSITIVE: Docker
+# bind mounts can lowercase Windows dir names, and the encoded path was observed
+# in four casings across the source tree.
+# ---------------------------------------------------------------------------
+
+
+def _claude_projects_path_pattern() -> re.Pattern[str]:
+    """Extract the LeakPattern that matches the Claude-projects path encoding."""
+    for lp in CHECK._LEAK_PATTERNS:
+        if lp.regex.search("C--Users-mattm"):
+            return lp.regex
+    raise AssertionError(
+        "No LEAK_PATTERNS entry matches 'C--Users-mattm'. Claude Code "
+        "flattens C:\\Users\\<user> to C--Users-<user> for project-dir "
+        "namespaces; the guard must catch this encoding (the C:\\Users and "
+        "/c/Users patterns do not)."
+    )
+
+
+def test_claude_projects_path_pattern_is_registered() -> None:
+    """A LEAK_PATTERNS entry must match the C--Users-<user> path encoding."""
+    assert _claude_projects_path_pattern() is not None
+
+
+def test_claude_projects_path_matches_base_scope() -> None:
+    """The encoded home-dir scope must be caught inside a realistic ref."""
+    pat = _claude_projects_path_pattern()
+    assert pat.search("~/.claude/projects/C--Users-mattm/memory/MEMORY.md"), (
+        "Pattern did not match the C--Users-mattm projects scope — this is "
+        "the operator-path encoding that leaked to the public mirror."
+    )
+
+
+def test_claude_projects_path_matches_suffixed_scope() -> None:
+    """The project-suffixed namespace (the junction sibling) must also fire."""
+    pat = _claude_projects_path_pattern()
+    assert pat.search(
+        "~/.claude/projects/C--Users-mattm-glad-labs-website/memory"
+    ), (
+        "Pattern did not match the -glad-labs-website suffixed scope. The "
+        "base C--Users-mattm pattern must catch it as a substring."
+    )
+
+
+def test_claude_projects_path_is_case_insensitive() -> None:
+    """Docker bind mounts can lowercase Windows dir names — match any casing.
+
+    The encoded path was observed in four casings in the source tree
+    (C--Users-mattm, C--users-mattm, c--Users-mattm-website, c--users-mattm),
+    so a case-sensitive guard would miss most of them.
+    """
+    pat = _claude_projects_path_pattern()
+    assert pat.search("c--users-mattm"), "lowercase form must fire"
+    assert pat.search("C--users-mattm"), "mixed-case form must fire"
+
+
+def test_claude_projects_path_does_not_match_generic_placeholder() -> None:
+    """A genericized (non-operator) example must NOT fire.
+
+    This keeps the now-public taps/memory.py docstring + its test fixtures
+    clean after their operator username was genericized to a placeholder, and
+    guards against broadening the pattern to ``C--Users-\\w+`` (which would
+    re-flag those public placeholders).
+    """
+    pat = _claude_projects_path_pattern()
+    safe = [
+        "C--Users-alice",
+        "C--Users-alice-myproject",
+        "C--Users-<you>",
+        "C--WINDOWS-system32",
+    ]
+    matched = [s for s in safe if pat.search(s)]
+    assert not matched, f"false positive on generic placeholders: {matched}"
+
+
+# ---------------------------------------------------------------------------
+# Windows home-path regex — source-escaped backslash form (2026-06-13).
+#
+# In Python source a Windows path is written with ESCAPED backslashes
+# (``C:\\Users\\mattm`` in the file text), because a bare ``C:\Users`` would be
+# an invalid ``\U`` unicode escape. The original ``C:[\\/]Users[\\/]mattm``
+# pattern matched only a SINGLE separator, so the doubled form leaked the
+# operator home path via .py docstrings (tap_corsair_csv.py, voice_brain_host.py
+# both shipped it). The pattern now uses ``[\\/]+`` to span doubled separators.
+# ---------------------------------------------------------------------------
+
+
+def _windows_home_path_pattern() -> re.Pattern[str]:
+    """Extract the LeakPattern matching the operator Windows home path."""
+    for lp in CHECK._LEAK_PATTERNS:
+        if lp.regex.search(r"C:\Users\mattm"):
+            return lp.regex
+    raise AssertionError(
+        "No LEAK_PATTERNS entry matches the C:\\Users\\mattm Windows home path."
+    )
+
+
+def test_windows_home_path_matches_single_separator() -> None:
+    """Regression: the original single-backslash / forward-slash forms still fire."""
+    pat = _windows_home_path_pattern()
+    assert pat.search(r"C:\Users\mattm"), "single-backslash form must fire"
+    assert pat.search("C:/Users/mattm"), "forward-slash form must fire"
+
+
+def test_windows_home_path_matches_source_escaped_backslashes() -> None:
+    """The Python-source escaped ``C:\\\\Users\\\\mattm`` form must fire.
+
+    This is the doubled-separator form the single-separator class missed,
+    which leaked the operator home path via .py docstrings (tap_corsair_csv.py,
+    voice_brain_host.py). ``[\\/]+`` spans the doubled backslashes.
+    """
+    pat = _windows_home_path_pattern()
+    assert pat.search(r"C:\\Users\\mattm"), (
+        "Windows pattern missed the source-escaped C:\\\\Users\\\\mattm form "
+        "that appears in Python-source docstrings."
+    )

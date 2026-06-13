@@ -66,8 +66,8 @@ def _discover_memory_dirs(
     scopes (the ``C--*`` directory names) to ingest; when set, every other
     scope is skipped. Empty means "all scopes" (back-compat). Matching is
     case-insensitive because Docker bind mounts can lowercase Windows dir
-    names. This is the dedup guard for the ``C--Users-mattm`` ⇄
-    ``C--Users-mattm-glad-labs-website`` junction: the latter is a Windows
+    names. This is the dedup guard for the ``C--Users-alice`` ⇄
+    ``C--Users-alice-myproject`` junction: the latter is a Windows
     Junction to the former, so on the host (where the reparse point
     resolves) both scopes would otherwise embed the same files twice.
 

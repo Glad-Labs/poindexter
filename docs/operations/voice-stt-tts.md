@@ -17,8 +17,7 @@ differs.
 > container per room profile — `poindexter-voice-agent-livekit` (the
 > `poindexter` room) and `poindexter-voice-agent-claude-code` (the dev
 > room). This page covers the shared STT→TTS pipeline; see
-> [`voice-settings.md`](voice-settings) for the per-room key inventory and
-> [`voice-host-brain.md`](voice-host-brain) for the dev room's host brain.
+> [`voice-settings.md`](voice-settings) for the per-room key inventory.
 
 ## Start / stop
 

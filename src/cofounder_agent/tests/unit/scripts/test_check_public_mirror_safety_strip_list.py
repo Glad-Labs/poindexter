@@ -202,3 +202,63 @@ def test_ships_to_public_not_in_strip_files() -> None:
         f"(so the scanner examines it) or remove it from _SHIPS_TO_PUBLIC "
         f"(if it was stripped intentionally)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Claude-projects path encoding (2026-06-13) — voice-host-brain.md is STRIPPED.
+#
+# Claude Code flattens C:\Users\<user> into C--Users-<user> for project-dir
+# namespaces. docs/operations/voice-host-brain.md documents the operator's
+# Claude-memory junction using literal C--Users-mattm paths as load-bearing
+# subject matter (plus operator per-turn cost figures and a Windows-host
+# runbook) — operator-overlay content. Once the C--Users-mattm leak pattern was
+# added to the guard, this file would abort the sync, so it joins the sibling
+# operator-overlay runbooks (finance-module-operator.md, self-hosted-ci-runner.md)
+# in the strip list. (taps/memory.py + its test, which also referenced the path,
+# are a generic OSS feature and were genericized instead of stripped.)
+# ---------------------------------------------------------------------------
+
+_VOICE_HOST_BRAIN_DOC = "docs/operations/voice-host-brain.md"
+
+
+def test_voice_host_brain_is_in_strip_files() -> None:
+    """docs/operations/voice-host-brain.md must be stripped from the mirror."""
+    assert _VOICE_HOST_BRAIN_DOC in CHECK._STRIP_FILES, (
+        f"{_VOICE_HOST_BRAIN_DOC} is not in _STRIP_FILES. It documents the "
+        "operator's Claude-memory junction with literal C--Users-mattm paths "
+        "(load-bearing subject matter) plus operator cost figures — "
+        "operator-overlay content that must not ship. Add it here AND add a "
+        "`git rm --cached` line in scripts/sync-to-github.sh."
+    )
+
+
+def test_would_ship_rejects_voice_host_brain() -> None:
+    """would_ship() must classify voice-host-brain.md as NOT shipping."""
+    assert not CHECK.would_ship(_VOICE_HOST_BRAIN_DOC), (
+        f"would_ship() still classifies {_VOICE_HOST_BRAIN_DOC} as shipping. "
+        "It must be stripped (operator Claude-memory paths + per-turn cost "
+        "figures). Verify the _STRIP_FILES entry."
+    )
+
+
+def test_sync_script_strips_voice_host_brain() -> None:
+    """sync-to-github.sh must git-rm the doc too (guard/sync lock-step).
+
+    _STRIP_FILES drives would_ship() (the scan-skip); sync-to-github.sh does
+    the actual stripping. If they drift — file in _STRIP_FILES but not
+    git-rm'd in the sync script — would_ship() returns False (so the guard
+    skips scanning it) while the sync still SHIPS it with the operator paths
+    intact: a silent leak the guard cannot see. Pin both ends together.
+    """
+    repo_root = next(
+        p for p in Path(__file__).resolve().parents
+        if (p / "pyproject.toml").exists() and (p / "src").exists()
+    )
+    sync_script = repo_root / "scripts" / "sync-to-github.sh"
+    text = sync_script.read_text(encoding="utf-8")
+    assert _VOICE_HOST_BRAIN_DOC in text, (
+        f"scripts/sync-to-github.sh has no reference to {_VOICE_HOST_BRAIN_DOC}. "
+        "It's in _STRIP_FILES (so the guard skips scanning it) but the sync "
+        "won't actually strip it — a silent leak. Add a `git rm --cached` line "
+        "in the strip block."
+    )

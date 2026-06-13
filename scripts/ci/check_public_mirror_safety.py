@@ -131,6 +131,11 @@ _STRIP_FILES = (
     "docs/architecture/declarative-data-plane-rfc-2026-04-24.md",
     "docs/operations/finance-module-operator.md",
     "docs/operations/self-hosted-ci-runner.md",
+    # Operator Claude-memory junction runbook: load-bearing operator paths in
+    # the Claude-projects encoding (see the C--Users-* leak pattern below) +
+    # operator per-turn cost figures + a Windows-host setup. Operator-overlay;
+    # strip like the sibling runbooks. Not referenced in docs.json nav.
+    "docs/operations/voice-host-brain.md",
     ".woodpecker.yml",
     "scripts/migrate-poindexter-rename.sh",
     "scripts/sync-to-github.sh",
@@ -377,7 +382,15 @@ _LEAK_PATTERNS = (
         "add it to the doc generator's _PRIVATE_KEY_PATTERNS.",
     ),
     LeakPattern(
-        re.compile(r"C:[\\/]Users[\\/]mattm"),
+        # ``[\\/]+`` (one-or-more separators) so the SOURCE-escaped form
+        # ``C:\\Users\\mattm`` is caught alongside the single-separator and
+        # forward-slash forms. In Python source a Windows path is written with
+        # escaped backslashes (a bare ``C:\Users`` would be an invalid \U
+        # unicode escape), so the doubled form is the NATURAL one in .py files
+        # — and the old single-separator class missed it, leaking the operator
+        # home path via .py docstrings (tap_corsair_csv.py, voice_brain_host.py;
+        # 2026-06-13).
+        re.compile(r"C:[\\/]+Users[\\/]+mattm"),
         "operator Windows home path",
         "Generalize the path — resolve from __file__ or a setting.",
     ),
@@ -385,6 +398,23 @@ _LEAK_PATTERNS = (
         re.compile(r"/c/Users/mattm"),
         "operator bash-style home path",
         "Generalize the path — resolve from $HOME or a setting.",
+    ),
+    LeakPattern(
+        # Claude Code namespaces project memory under ~/.claude/projects/,
+        # encoding the cwd by flattening the drive-colon + path separators into
+        # dashes: ``C:\Users\mattm`` -> ``C--Users-mattm``. That encoded form
+        # matched NEITHER path pattern above, so refs like
+        # ``~/.claude/projects/C--Users-mattm/memory/...`` leaked the operator
+        # username to the public mirror (audit-flagged 2026-06-13: 18 refs were
+        # live across shipping docs). Scoped to the operator username — like the
+        # two patterns above — so generic ``C--Users-<you>`` placeholders in
+        # docs don't false-positive. ``re.IGNORECASE`` because Docker bind
+        # mounts can lowercase Windows dir names (the path was observed in four
+        # casings across the tree).
+        re.compile(r"C--Users-mattm", re.IGNORECASE),
+        "operator Claude-projects path encoding",
+        "Generalize the path — Claude Code encodes C:\\Users\\<user> as "
+        "C--Users-<user>; use a placeholder like C--Users-<you>.",
     ),
     LeakPattern(
         re.compile(r"mattg-stack"),

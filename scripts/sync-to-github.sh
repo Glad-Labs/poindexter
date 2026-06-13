@@ -105,6 +105,7 @@ git rm -r --cached --quiet src/cofounder_agent/modules/finance/ 2>/dev/null || t
 git rm -r --cached --quiet src/cofounder_agent/tests/unit/modules/finance/ 2>/dev/null || true
 git rm --cached --quiet docs/operations/finance-module-operator.md 2>/dev/null || true   # private operator-overlay setup doc (Mercury banking)
 git rm --cached --quiet docs/operations/self-hosted-ci-runner.md 2>/dev/null || true      # private operator-overlay runbook (self-hosted CI runner on the operator's PC); references internal repo name + hardware. Paired with the stripped .github/workflows/runner-healthcheck.yml.
+git rm --cached --quiet docs/operations/voice-host-brain.md 2>/dev/null || true            # private operator-overlay runbook: documents the operator Claude-memory junction (Claude-projects path encoding) + per-turn cost figures + Windows host setup. Not referenced in docs.json nav. Paired with the C--Users-* leak pattern in check_public_mirror_safety.py.
 
 # === Private infrastructure (Matt's local setup, not useful publicly) ===
 git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # legacy Gitea CI config (unused post-decommission)

@@ -28,7 +28,7 @@ recovery logic.
 
 Run (started hidden by the launcher):
 
-    VOICE_BRAIN_TOKEN=<secret> VOICE_BRAIN_CWD=C:\\Users\\mattm\\glad-labs-website \\
+    VOICE_BRAIN_TOKEN=<secret> VOICE_BRAIN_CWD=C:\\Users\\<you>\\your-repo \\
         python scripts/voice_brain_host.py
 
 Env:
