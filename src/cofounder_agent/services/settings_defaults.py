@@ -291,6 +291,8 @@ DEFAULTS: dict[str, str] = {
     'ragas_enabled': 'true',
     'ragas_judge_model': '',
     'self_consistency_enabled': 'false',
+    'self_consistency_sample_count': '3',
+    'self_consistency_threshold': '0.7',
     # Citation reconciliation + advisory unlinked-attribution rail (#765).
     # why: deterministic repair that re-links named sources the writer dropped
     # the URL for, matched against the research corpus by domain handle — free,
@@ -353,6 +355,11 @@ DEFAULTS: dict[str, str] = {
     'podcast_description': '',
     'podcast_name': '',
     'podcast_tts_engine': '',
+    'podcast_tts_enabled': 'false',
+    'podcast_tts_base_url': 'http://speaches:8000/v1',
+    'podcast_tts_voice': 'bf_emma',
+    'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+    'podcast_tts_format': 'wav',
     'scheduled_publisher_poll_seconds': '60',
     'tts_acronym_replacements': '',
     'tts_pronunciations': '',
@@ -437,6 +444,12 @@ DEFAULTS: dict[str, str] = {
     'media.qa.av_sync_tolerance_s': '2.0',
 
     # ----- Observability / monitoring -----
+    # DataFabric store URLs (#429). Defaults match Docker-local ports from CLAUDE.md.
+    # Override to http://host.docker.internal:<port> when running inside a container.
+    'data_fabric_prometheus_url': 'http://localhost:9091',
+    'data_fabric_loki_url': 'http://localhost:3100',
+    'data_fabric_tempo_url': 'http://localhost:3200',
+    'data_fabric_pyroscope_url': 'http://localhost:4040',
     'enable_pyroscope': 'false',
     # Defaulted true 2026-05-17 (Glad-Labs/poindexter#409) — the
     # OTLP gRPC exporter + Tempo container + per-probe instrumentation
@@ -465,6 +478,11 @@ DEFAULTS: dict[str, str] = {
     # used MemorySaver (no durability across runs) — exactly the kind of
     # silent fallback ``feedback_no_silent_defaults`` calls out.
     'template_runner_use_postgres_checkpointer': 'true',
+    # Pipeline progress streaming (#361): where per-node on_event progress lands.
+    # 'discord' keeps the existing Discord progress feed (on_event no-op, no double-post);
+    # 'telegram' edit-streams a single message in place; 'off' silences on_event.
+    'pipeline_streaming_channel': 'discord',
+    'pipeline_streaming_min_edit_interval_s': '5',
 
     # ----- Security / auth -----
     'max_approval_queue': '3',
@@ -492,6 +510,13 @@ DEFAULTS: dict[str, str] = {
     # to the normal restart — pending migrations matter too, and a wedged
     # 'in_progress' row shouldn't block recovery forever.
     'migration_drift_max_inflight_defers': '6',
+    # Auto-sync knobs (#228). Ships dark (auto_sync_enabled=false) until the
+    # operator wires up the dedicated deploy checkout + bind-mount. When on, the
+    # probe resyncs the checkout (git reset --hard origin/main + clean -fd)
+    # before restarting, with exponential backoff across recover_max_attempts.
+    'migration_drift_auto_sync_enabled': 'false',
+    'migration_drift_deploy_checkout_path': '/host-deploy',
+    'migration_drift_recover_max_attempts': '3',
 
     # ----- Cadence SLO probe (brain probe_cadence_slo, issue #525) -----
     # Compares ACTUAL publish output against this CONFIGURED target so a
@@ -674,6 +699,19 @@ DEFAULTS: dict[str, str] = {
     'rate_limit_topics_from_url_per_ip': '10/minute',  # POST /api/topics/from-url — outbound fetch
     'rate_limit_podcast_generate_per_ip': '5/minute',  # POST /api/podcast/generate/{id} — GPU
     'rate_limit_video_generate_per_ip': '5/minute',    # POST /api/video/generate/{id} — GPU
+
+    # ----- Experiment / variant selection (#361) -----
+    # EWMA damping for the outcome→experiment-variant-weight feedback loop.
+    # new_weight = (1 - alpha) * old + alpha * signal (approve=1.0 / reject=0.0).
+    'router_feedback_alpha': '0.2',
+    # When true, pick_variant allocates proportional to experiment_variants.weight
+    # (nudged by the feedback loop) instead of uniform random. Default off.
+    'experiment_weighted_selection_enabled': 'false',
+
+    # ----- Pipeline approval gates (#363) -----
+    # draft_gate: pause after writer stage for operator review. Default off —
+    # prod runs are unaffected until `poindexter gates set draft_gate on`.
+    'pipeline_gate_draft_gate': 'off',
 
     # ----- SEO Harvest Loop (Phase 1) -----
     # The read-only analyzer is safe-on so the opportunity list populates day
