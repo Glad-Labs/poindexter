@@ -24,6 +24,7 @@ from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
+from utils.uuid_prefix import resolve_task_id_prefix
 
 # Stable gate name for the legacy `awaiting_approval` HITL flow.
 # All route-level approval/rejection writes funnel through this gate so
@@ -90,6 +91,11 @@ async def reject_task(
         # so the operator-friendly `0bc9badd` form resolves a row here.
         task = await db_service.get_task(task_id)
         if not task:
+            # get_task collapses an ambiguous prefix to None — re-probe so an
+            # ambiguous paste 409s ("use a longer prefix") instead of a
+            # misleading 404. A true miss / full UUID / numeric id passes
+            # through to the 404 below.
+            await resolve_task_id_prefix(db_service.pool, task_id)
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
         # Canonicalize the id BEFORE any downstream write. update_task and

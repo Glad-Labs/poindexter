@@ -16,7 +16,7 @@ Tests cover:
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -29,6 +29,22 @@ from routes.task_routes import _normalize_seo_keywords_in_task, router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
+
+
+def _set_pool(mock_db, fetch_rows):
+    """Attach a fake asyncpg pool so get_task's ambiguity probe can run on the
+    not-found path (``task_id::text LIKE $1 || '%'``). Only consulted when
+    ``db_service.get_task`` returns None — a found task never touches it.
+    """
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=fetch_rows)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=conn)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    pool = AsyncMock()
+    pool.acquire = MagicMock(return_value=cm)
+    mock_db.pool = pool
+    return pool, conn
 
 
 @pytest.fixture(autouse=True)
@@ -202,11 +218,34 @@ class TestGetTask:
     def test_returns_404_when_task_not_found(self):
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
+        # get_task None → the ambiguity probe runs; a value matching nothing
+        # 404s the same as before.
+        _set_pool(mock_db, fetch_rows=[])
         client = TestClient(_build_app(mock_db))
 
         resp = client.get("/api/tasks/nonexistent-id")
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
+
+    def test_ambiguous_prefix_returns_409(self):
+        """An ambiguous prefix returns 409 instead of a misleading 404 —
+        get_task collapses ambiguous prefixes to None, and the probe on the
+        not-found path re-detects the ambiguity (verifies the docstring's
+        'full or prefix' claim is honored, with safe disambiguation)."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        _set_pool(
+            mock_db,
+            fetch_rows=[
+                {"id": "550e8400-e29b-41d4-a716-446655440000"},
+                {"id": "550e8400-e29b-41d4-a716-4466554400ff"},
+            ],
+        )
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.get("/api/tasks/550e8400")
+        assert resp.status_code == 409
+        assert "Ambiguous" in resp.json()["detail"]
 
     def test_returns_task_when_found(self):
         task_stub = {

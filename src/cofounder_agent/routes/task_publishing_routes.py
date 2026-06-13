@@ -15,7 +15,6 @@ import re
 import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -27,6 +26,7 @@ from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.uuid_prefix import resolve_task_id_prefix
 
 # Stable gate name for the legacy `awaiting_approval` HITL flow.
 # Mirrors `routes.approval_routes.LEGACY_APPROVAL_GATE` — kept duplicated
@@ -239,27 +239,25 @@ async def approve_task(
         publish_at = body.publish_at
 
     try:
-        # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
-        try:
-            UUID(task_id)
-        except ValueError:
-            if len(task_id) >= 6 and hasattr(db_service, 'pool') and db_service.pool:
-                resolved = await db_service.pool.fetchval(
-                    "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
-                    task_id,
-                )
-                if resolved:
-                    task_id = str(resolved)
-                elif not task_id.isdigit():
-                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'") from None
-            elif not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format") from None
-
-        # Fetch task
+        # Accept a full UUID, a legacy numeric id, or an 8-char prefix pasted
+        # from the dashboards / `poindexter tasks list`. get_task resolves an
+        # unambiguous prefix; it returns None for an unknown OR ambiguous one.
         task = await db_service.get_task(task_id)
 
         if not task:
+            # Distinguish "ambiguous prefix" (409) from "no such task" (404):
+            # get_task collapses an ambiguous prefix to None, so re-probe. A
+            # full UUID / numeric id short-circuits the probe and 404s below.
+            await resolve_task_id_prefix(db_service.pool, task_id)
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Canonicalize to the full task_id before any downstream exact-match
+        # write (update_task_status, the gate-history INSERT). Handing them the
+        # URL-path prefix would silently no-op and leave the task in
+        # awaiting_approval. Replaces a naive `LIKE ... LIMIT 1` that approved
+        # whichever row sorted first on an ambiguous prefix (#176 / the
+        # operator-paste audit).
+        task_id = str(task.get("task_id") or task.get("id") or task_id)
 
         # Ownership check
         if isinstance(task, dict):
@@ -654,27 +652,20 @@ async def publish_task(
     ```
     """
     try:
-        # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
-        try:
-            UUID(task_id)
-        except ValueError:
-            if len(task_id) >= 6 and hasattr(db_service, 'pool') and db_service.pool:
-                resolved = await db_service.pool.fetchval(
-                    "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
-                    task_id,
-                )
-                if resolved:
-                    task_id = str(resolved)
-                elif not task_id.isdigit():
-                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'") from None
-            elif not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format") from None
-
-        # Fetch task
+        # Accept a full UUID, a legacy numeric id, or an 8-char prefix pasted
+        # from the dashboards. Same pattern as approve — get_task resolves an
+        # unambiguous prefix, returns None for unknown/ambiguous; the probe on
+        # the None path 409s an ambiguous paste vs 404s a true miss (#176).
         task = await db_service.get_task(task_id)
 
         if not task:
+            await resolve_task_id_prefix(db_service.pool, task_id)
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Canonicalize to the full task_id before the publish writes (the
+        # exact-match status update + distribution rows would no-op on a bare
+        # prefix).
+        task_id = str(task.get("task_id") or task.get("id") or task_id)
 
         # Ownership check
         if isinstance(task, dict):

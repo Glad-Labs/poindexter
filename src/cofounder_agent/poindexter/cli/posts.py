@@ -325,7 +325,7 @@ async def _patch_post(post_id: str, updates: dict) -> dict:
 @posts_group.command("publish")
 @click.argument("post_id")
 def posts_publish(post_id: str) -> None:
-    """Mark a post as published (sets status='published' and published_at=now)."""
+    """Mark a post as published (full id or 8-char prefix; sets status='published', published_at=now)."""
     try:
         p = _run(_patch_post(post_id, {"status": "published"}))
     except RuntimeError as e:
@@ -337,7 +337,7 @@ def posts_publish(post_id: str) -> None:
 @posts_group.command("archive")
 @click.argument("post_id")
 def posts_archive(post_id: str) -> None:
-    """Archive a post (removes from live site, soft delete)."""
+    """Archive a post (full id or 8-char prefix; removes from live site, soft delete)."""
     try:
         p = _run(_patch_post(post_id, {"status": "archived"}))
     except RuntimeError as e:
@@ -350,7 +350,7 @@ def posts_archive(post_id: str) -> None:
 @click.argument("post_id")
 @click.argument("title")
 def posts_retitle(post_id: str, title: str) -> None:
-    """Change a post's title (e.g. to remove first-person pronouns)."""
+    """Change a post's title (full id or 8-char prefix; e.g. to remove first-person pronouns)."""
     try:
         p = _run(_patch_post(post_id, {"title": title}))
     except RuntimeError as e:

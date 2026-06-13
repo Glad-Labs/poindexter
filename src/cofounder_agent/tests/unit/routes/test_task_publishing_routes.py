@@ -99,6 +99,27 @@ def _build_app(mock_db=None) -> FastAPI:
     return app
 
 
+def _set_pool(mock_db, fetch_rows):
+    """Attach a fake asyncpg pool to ``mock_db`` so resolve_task_id_prefix can
+    run its ``<column>::text LIKE $1 || '%'`` lookup.
+
+    ``conn.fetch`` returns ``fetch_rows`` (each a ``{"id": <full task_id>}``
+    mapping). The pool is an AsyncMock so the handler's other ``pool.execute``
+    / ``pool.fetchval`` calls stay awaitable; ``acquire()`` is overridden to
+    return the async-context-manager synchronously (asyncpg semantics). A
+    full-UUID / numeric id short-circuits the resolver and never touches this.
+    """
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=fetch_rows)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=conn)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    pool = AsyncMock()
+    pool.acquire = MagicMock(return_value=cm)
+    mock_db.pool = pool
+    return pool, conn
+
+
 # ===========================================================================
 # clean_generated_content — pure function tests
 # ===========================================================================
@@ -278,14 +299,57 @@ class TestApproveTask:
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"]
 
-    def test_invalid_task_id_returns_400(self):
+    def test_unknown_task_id_prefix_returns_404(self):
+        """A prefix matching no task now 404s (unified resolver), where the
+        old naive ``LIKE ... LIMIT 1`` returned a 400. ``deadbeef`` is a
+        well-formed prefix that simply names nothing."""
         mock_db = make_mock_db()
+        _set_pool(mock_db, fetch_rows=[])
         app = _build_app(mock_db)
         client = TestClient(app)
-        # Short non-digit strings (<6 chars) get 400 "Invalid task ID"
-        resp = self._post_approve(client, task_id="bad!")
+        resp = self._post_approve(client, task_id="deadbeef")
 
-        assert resp.status_code == 400
+        assert resp.status_code == 404
+        mock_db.update_task_status.assert_not_called()
+
+    def test_short_prefix_resolves_to_full_id(self):
+        """A pasted 8-char prefix lands on the full task_id: get_task resolves
+        it, then the handler canonicalizes so the status write targets the full
+        id (the old path silently picked whichever row sorted first)."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_approve(client, task_id=VALID_TASK_ID[:8], approved="true")
+
+        assert resp.status_code == 200
+        # The write must target the canonical FULL id, not the pasted prefix.
+        first_call = mock_db.update_task_status.call_args_list[0]
+        assert first_call[0][0] == VALID_TASK_ID
+
+    def test_ambiguous_prefix_returns_409_without_mutating(self):
+        """An ambiguous prefix is a 409, NOT a silent approve of the
+        first-sorting candidate (the data-integrity bug this fixes). get_task
+        collapses an ambiguous prefix to None; the probe re-detects it."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        _set_pool(
+            mock_db,
+            fetch_rows=[
+                {"id": VALID_TASK_ID},
+                {"id": "550e8400-e29b-41d4-a716-4466554400ff"},
+            ],
+        )
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_approve(client, task_id="550e8400", approved="true")
+
+        assert resp.status_code == 409
+        assert "Ambiguous" in resp.json()["detail"]
+        mock_db.update_task_status.assert_not_called()
 
     def test_numeric_task_id_accepted(self):
         """Numeric IDs are allowed for backwards compatibility."""
@@ -495,14 +559,44 @@ class TestPublishTask:
         assert resp.status_code == 409
         assert "Must be 'approved'" in resp.json()["detail"]
 
-    def test_invalid_task_id_returns_400(self):
+    def test_unknown_task_id_prefix_returns_404(self):
+        """A well-formed prefix matching no task 404s via the unified resolver
+        (was a 400 under the old naive ``LIKE ... LIMIT 1``)."""
         mock_db = make_mock_db()
+        _set_pool(mock_db, fetch_rows=[])
         app = _build_app(mock_db)
         client = TestClient(app)
-        resp = self._post_publish(client, task_id="bad!")
+        resp = self._post_publish(client, task_id="deadbeef")
 
-        assert resp.status_code == 400
-        assert "Invalid task ID" in resp.json()["detail"]
+        assert resp.status_code == 404
+
+    def test_short_prefix_resolves_to_full_id(self):
+        mock_db = make_mock_db()
+        task = _make_task(status="approved", content="# Great Post\nBody.")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_publish(client, task_id=VALID_TASK_ID[:8])
+
+        assert resp.status_code == 200
+
+    def test_ambiguous_prefix_returns_409_without_publishing(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        _set_pool(
+            mock_db,
+            fetch_rows=[
+                {"id": VALID_TASK_ID},
+                {"id": "550e8400-e29b-41d4-a716-4466554400ff"},
+            ],
+        )
+
+        app = _build_app(mock_db)
+        client = TestClient(app)
+        resp = self._post_publish(client, task_id="550e8400")
+
+        assert resp.status_code == 409
 
     def test_ownership_bypass_in_solo_operator_mode(self):
         mock_db = make_mock_db()

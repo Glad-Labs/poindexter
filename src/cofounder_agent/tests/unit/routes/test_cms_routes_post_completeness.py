@@ -486,10 +486,12 @@ class TestPostUpdateValidation:
     def test_publish_sets_published_at(self):
         """Setting status to 'published' without published_at should auto-set it."""
         pool, conn = _make_pool_mock()
+        # Full UUID → the prefix resolver short-circuits (no lookup), so the
+        # PATCH reaches the UPDATE path.
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/post-001",
+                "/api/posts/550e8400-e29b-41d4-a716-446655440000",
                 json={"status": "published"},
             )
         assert resp.status_code == 200
@@ -550,10 +552,11 @@ class TestPostUpdateValidation:
     def test_update_seo_fields(self):
         """Should allow updating SEO-specific fields."""
         pool, conn = _make_pool_mock()
+        # Full UUID → prefix resolver short-circuits, PATCH reaches the UPDATE.
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/post-001",
+                "/api/posts/550e8400-e29b-41d4-a716-446655440000",
                 json={
                     "seo_title": "Updated SEO Title",
                     "seo_description": "Updated meta description",

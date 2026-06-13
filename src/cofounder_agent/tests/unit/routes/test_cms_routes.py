@@ -43,6 +43,11 @@ def _build_app():
 
 NOW = datetime(2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc)
 
+# A full dashed UUID — resolve_uuid_prefix short-circuits these (no DB lookup),
+# so update_post tests that pass one exercise the exact-match write path.
+POST_UUID = "550e8400-e29b-41d4-a716-446655440000"
+POST_UUID_2 = "550e8400-e29b-41d4-a716-4466554400ff"
+
 SAMPLE_POST_ROW = {
     "id": "post-001",
     "title": "Test Post",
@@ -636,7 +641,7 @@ class TestUpdatePost:
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/post-001",
+                f"/api/posts/{POST_UUID}",
                 json={"title": "New Title", "content": "New body"},
                 headers={"Authorization": "Bearer test-token"},
             )
@@ -667,7 +672,7 @@ class TestUpdatePost:
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/missing-id",
+                f"/api/posts/{POST_UUID}",
                 json={"title": "x"},
                 headers={"Authorization": "Bearer test-token"},
             )
@@ -721,7 +726,7 @@ class TestUpdatePost:
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/post-001",
+                f"/api/posts/{POST_UUID}",
                 json={
                     "status": "scheduled",
                     "published_at": "2099-01-01T00:00:00Z",
@@ -743,7 +748,7 @@ class TestUpdatePost:
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/post-001",
+                f"/api/posts/{POST_UUID}",
                 json={"published_at": "2099-06-15T12:00:00Z", "title": "x"},
                 headers={"Authorization": "Bearer test-token"},
             )
@@ -762,7 +767,7 @@ class TestUpdatePost:
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
-                "/api/posts/post-001",
+                f"/api/posts/{POST_UUID}",
                 json={
                     "title": "x",
                     "admin_override": "bypass",  # not in allowed list
@@ -775,6 +780,73 @@ class TestUpdatePost:
         sql_arg = conn.execute.await_args.args[0]
         assert "admin_override" not in sql_arg
         assert "deleted_at" not in sql_arg
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/posts/{post_id} — short-prefix resolution
+#
+# `posts.id` is a real `uuid` column, so before this fix a pasted 8-char prefix
+# (`poindexter posts publish/archive/retitle 0bc9badd`) hit `WHERE id = $1` and
+# crashed asyncpg's client-side UUID cast → a 500. The handler now resolves the
+# prefix to the full id first (exact-then-unique-LIKE on `id::text`), 404s a
+# prefix that matches nothing, and 409s an ambiguous one.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdatePostPrefixResolution:
+    @staticmethod
+    def _make_pool(fetch_rows, execute_result="UPDATE 1"):
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=fetch_rows)
+        conn.execute = AsyncMock(return_value=execute_result)
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+        return pool, conn
+
+    def test_unique_prefix_resolves_then_updates_full_id(self):
+        pool, conn = self._make_pool(fetch_rows=[{"id": POST_UUID}])
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/550e8400",  # 8-char prefix an operator pasted
+                json={"title": "Retitled"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 200
+        # The UPDATE must bind the resolved FULL id, never the bare prefix —
+        # otherwise the uuid column cast still fails / matches nothing.
+        update_args = conn.execute.await_args.args
+        assert "UPDATE posts" in update_args[0]
+        assert update_args[-1] == POST_UUID
+
+    def test_ambiguous_prefix_returns_409_without_updating(self):
+        pool, conn = self._make_pool(fetch_rows=[{"id": POST_UUID}, {"id": POST_UUID_2}])
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/550e8400",
+                json={"title": "Retitled"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 409
+        assert "Ambiguous" in resp.json()["detail"]
+        conn.execute.assert_not_called()
+
+    def test_unknown_prefix_returns_404_without_updating(self):
+        pool, conn = self._make_pool(fetch_rows=[])
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/deadbeef",
+                json={"title": "Retitled"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 404
+        conn.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

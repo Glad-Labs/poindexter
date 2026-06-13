@@ -250,7 +250,7 @@ def _post_action(task_id: str, action: str, payload: dict | None = None) -> dict
 @tasks_group.command("approve")
 @click.argument("task_id")
 def tasks_approve(task_id: str) -> None:
-    """Approve a task for publishing."""
+    """Approve a task for publishing (full id or 8-char prefix from `tasks list`)."""
     try:
         t = _post_action(task_id, "approve")
     except RuntimeError as e:
@@ -278,7 +278,7 @@ def tasks_approve(task_id: str) -> None:
     ),
 )
 def tasks_reject(task_id: str, feedback: str, final: bool) -> None:
-    """Reject a task. --feedback is required by the worker API."""
+    """Reject a task (full id or 8-char prefix). --feedback is required by the worker API."""
     if not feedback:
         click.echo(
             "Error: --feedback is required. Give a short reason — it lands on the "
@@ -305,7 +305,7 @@ def tasks_reject(task_id: str, feedback: str, final: bool) -> None:
 @tasks_group.command("publish")
 @click.argument("task_id")
 def tasks_publish(task_id: str) -> None:
-    """Manually publish an approved task."""
+    """Manually publish an approved task (full id or 8-char prefix)."""
     try:
         t = _post_action(task_id, "publish")
     except RuntimeError as e:

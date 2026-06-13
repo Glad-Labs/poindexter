@@ -22,6 +22,7 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.uuid_prefix import resolve_task_id_prefix
 
 # Configure logging
 logger = get_logger(__name__)
@@ -810,10 +811,16 @@ async def get_task(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """Get details of a specific task by ID."""
+    """Get details of a specific task by ID (full UUID, numeric, or 8-char prefix)."""
     try:
         task = await db_service.get_task(task_id)
         if not task:
+            # get_task already resolves an unambiguous prefix; when it returns
+            # None the prefix matched nothing OR was ambiguous (get_task
+            # collapses ambiguous → None). Re-probe so an ambiguous paste 409s
+            # ("use a longer prefix") instead of a misleading 404. A true miss
+            # / full UUID / numeric id passes straight through to the 404 below.
+            await resolve_task_id_prefix(db_service.pool, task_id)
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
         # Ownership check: solo-operator mode bypasses via token string

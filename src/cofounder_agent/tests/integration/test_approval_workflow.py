@@ -352,9 +352,13 @@ class TestRejectTaskFlow:
     def test_reject_task_not_found_returns_404(self):
         db = _make_mock_db_for_reject()
         db.get_task = AsyncMock(return_value=None)
+        # A full UUID that names no task: get_task → None, the ambiguity probe
+        # short-circuits on the full-UUID shape (no DB round trip), and the
+        # handler 404s. Mirrors test_approve_task_not_found_returns_404.
+        nonexistent_uuid = "00000000-0000-0000-0000-000000000000"
         with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
-            resp = self._reject(client, task_id="nonexistent")
+            resp = self._reject(client, task_id=nonexistent_uuid)
         assert resp.status_code == 404
 
     def test_reject_wrong_status_returns_409(self):

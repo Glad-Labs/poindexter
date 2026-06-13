@@ -18,6 +18,7 @@ from utils.content_formatting import convert_markdown_to_html  # still used by p
 from utils.error_handler import handle_route_error
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.uuid_prefix import resolve_uuid_prefix
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["cms"])
@@ -480,6 +481,18 @@ async def update_post(
         # Validate column identifiers to prevent SQL injection
         from utils.sql_safety import SQLIdentifierValidator
 
+        pool = await get_db_pool()
+        # Operators paste 8-char id prefixes from the dashboards / `poindexter
+        # posts list`. posts.id is a real `uuid`, so a bare prefix in the
+        # exact-match `WHERE id = $N` below would crash asyncpg's client-side
+        # cast (a 500). Expand it to the full id first — 404 if it matches no
+        # post, 409 if the prefix is ambiguous. A full UUID passes through
+        # untouched (no DB round trip), keeping behaviour identical for the
+        # MCP server / brain daemon callers.
+        post_id = await resolve_uuid_prefix(
+            pool, table="posts", column="id", value=post_id, noun="post"
+        )
+
         set_parts = []
         params = []
         for i, (raw_col, val) in enumerate(filtered.items(), 1):
@@ -489,7 +502,6 @@ async def update_post(
         params.append(post_id)
         set_clause = ", ".join(set_parts)
 
-        pool = await get_db_pool()
         async with pool.acquire() as conn:
             result = await conn.execute(
                 f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",  # nosec B608  # set_clause built from `allowed` allowlist (line 637) + SQLIdentifierValidator.safe_identifier (line 702); values use $N params

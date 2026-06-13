@@ -13,7 +13,7 @@ Auth and DB are overridden so no real I/O occurs.
 broadcast_approval_status is patched so WebSocket calls don't fail.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -24,6 +24,25 @@ from middleware.api_token_auth import verify_api_token
 from routes.approval_routes import router
 from tests.unit.routes.conftest import make_mock_db
 from utils.route_utils import get_database_dependency
+
+
+def _set_pool(mock_db, fetch_rows):
+    """Attach a fake asyncpg pool so reject_task's ambiguity probe can run its
+    ``task_id::text LIKE $1 || '%'`` lookup on the not-found path.
+
+    ``conn.fetch`` returns ``fetch_rows`` (each ``{"id": <full task_id>}``).
+    Only consulted when ``get_task`` returns None — a found task never touches
+    the pool.
+    """
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=fetch_rows)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=conn)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    pool = AsyncMock()
+    pool.acquire = MagicMock(return_value=cm)
+    mock_db.pool = pool
+    return pool, conn
 
 # ---------------------------------------------------------------------------
 # App / client factory
@@ -120,6 +139,9 @@ class TestRejectTask:
     def test_reject_nonexistent_task_returns_404(self):
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
+        # get_task None → the ambiguity probe runs; a prefix matching nothing
+        # 404s the same as before.
+        _set_pool(mock_db, fetch_rows=[])
         client = TestClient(_build_app(mock_db))
 
         resp = client.post(
@@ -127,6 +149,29 @@ class TestRejectTask:
             json={"reason": "x", "feedback": "y"},
         )
         assert resp.status_code == 404
+
+    def test_reject_ambiguous_prefix_returns_409(self):
+        """An ambiguous prefix paste returns 409 (use a longer prefix), not a
+        misleading 404. get_task collapses ambiguous prefixes to None; the
+        probe on the not-found path re-detects the ambiguity."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        _set_pool(
+            mock_db,
+            fetch_rows=[
+                {"id": "550e8400-e29b-41d4-a716-446655440000"},
+                {"id": "550e8400-e29b-41d4-a716-4466554400ff"},
+            ],
+        )
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks/550e8400/reject",
+            json={"reason": "dupe", "feedback": "ambiguous"},
+        )
+        assert resp.status_code == 409
+        assert "Ambiguous" in resp.json()["detail"]
+        mock_db.update_task.assert_not_called()
 
     def test_reject_task_wrong_status_returns_409(self):
         """Wrong-state reject now returns 409 Conflict (poindexter#743)."""
