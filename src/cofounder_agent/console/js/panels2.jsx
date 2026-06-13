@@ -181,56 +181,37 @@ function MediaPanel({ media, onOpenItem, onApprove }) {
 
 /* ─── QA Rails ──────────────────────────────────────────────── */
 function QAPanel({ qa, onOpen }) {
+  const live = window.PX.api.isLive();
+  const rails = qa.rails || [];
+  const hardCount = rails.filter((r) => r.gate === 'hard').length;
   const maxReason = Math.max(...qa.reasons.map((r) => r[1]));
   return (
     <Panel
       idx="Q1"
-      title="QA RAILS · REJECTIONS"
-      meta={`PASS ${qa.passRate}% · REJECT ${qa.rejectionRate}%`}
+      title="QA RAILS · MULTI-MODEL REVIEW"
+      meta={
+        live
+          ? `${rails.length} RAILS · ${hardCount} HARD`
+          : `PASS ${qa.passRate}% · REJECT ${qa.rejectionRate}%`
+      }
       flush
       action="Quality detail"
       onAction={onOpen}
     >
+      {/* Rails — real config (modules/content/atoms/qa_*.py → qa.aggregate). */}
       <div
         style={{ padding: 12, borderBottom: '1px solid var(--gl-hairline)' }}
       >
         <div className="kpi__label" style={{ marginBottom: 8 }}>
-          Rejection reasons · 7d
+          Rails · {rails.length} → qa.aggregate
         </div>
-        {qa.reasons.map(([name, n]) => (
-          <div key={name} style={{ marginBottom: 7 }}>
-            <div
-              className="mono"
-              style={{
-                fontSize: 10.5,
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: 2,
-              }}
-            >
-              <span className="c-muted">{name}</span>
-              <span className="c-text tnum">{n}</span>
-            </div>
-            <Meter value={n} max={maxReason} color="amber" />
-          </div>
-        ))}
-      </div>
-      <div
-        style={{
-          padding: '10px 12px',
-          borderBottom: '1px solid var(--gl-hairline)',
-        }}
-      >
-        <div className="kpi__label" style={{ marginBottom: 8 }}>
-          ⚠ Hallucination guardrails · rate/5m
-        </div>
-        {qa.hallucination.map((h) => (
+        {rails.map((r) => (
           <div
-            key={h.rule}
+            key={r.rail}
             className="svc"
             style={{
               gridTemplateColumns: '1fr auto',
-              padding: '5px 0',
+              padding: '4px 0',
               cursor: 'default',
             }}
           >
@@ -238,43 +219,131 @@ function QAPanel({ qa, onOpen }) {
               className="mono"
               style={{ fontSize: 10.5, color: 'var(--gl-text-muted)' }}
             >
-              {h.rule}
+              {r.rail}
             </span>
-            <span className={`mono c-${h.tone} tnum`} style={{ fontSize: 11 }}>
-              {h.rate.toFixed(1)}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div style={{ padding: '10px 12px' }}>
-        <div className="kpi__label" style={{ marginBottom: 8 }}>
-          Approval rate by writer model
-        </div>
-        {qa.byModel.map((m) => (
-          <div key={m.model} style={{ marginBottom: 7 }}>
-            <div
-              className="mono"
+            <span
+              className="mono tnum"
               style={{
-                fontSize: 10.5,
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: 2,
+                fontSize: 9,
+                padding: '1px 5px',
+                borderRadius: 3,
+                border: '1px solid var(--gl-hairline-strong)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color:
+                  r.gate === 'hard' ? 'var(--gl-red)' : 'var(--gl-text-dim)',
               }}
             >
-              <span className="c-muted">
-                {m.model}
-                <span className="c-dim"> · {m.tasks}</span>
-              </span>
-              <span className="c-text tnum">{m.appr}%</span>
-            </div>
-            <Meter
-              value={m.appr}
-              max={100}
-              color={m.appr >= 85 ? 'mint' : 'amber'}
-            />
+              {r.gate}
+            </span>
           </div>
         ))}
       </div>
+
+      {live && (
+        <div style={{ padding: 12 }}>
+          <div className="empty" style={{ padding: '18px 8px', fontSize: 11 }}>
+            Per-pass QA metrics (pass-rate, rejection reasons, by-model) come
+            from <span className="c-cyan">audit_log · qa_pass_completed</span> —
+            see the QA Rails Grafana board. A console read is pending.
+          </div>
+        </div>
+      )}
+
+      {!live && (
+        <>
+          <div
+            style={{
+              padding: 12,
+              borderBottom: '1px solid var(--gl-hairline)',
+            }}
+          >
+            <div className="kpi__label" style={{ marginBottom: 8 }}>
+              Rejection reasons · 7d
+            </div>
+            {qa.reasons.map(([name, n]) => (
+              <div key={name} style={{ marginBottom: 7 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10.5,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 2,
+                  }}
+                >
+                  <span className="c-muted">{name}</span>
+                  <span className="c-text tnum">{n}</span>
+                </div>
+                <Meter value={n} max={maxReason} color="amber" />
+              </div>
+            ))}
+          </div>
+          <div
+            style={{
+              padding: '10px 12px',
+              borderBottom: '1px solid var(--gl-hairline)',
+            }}
+          >
+            <div className="kpi__label" style={{ marginBottom: 8 }}>
+              ⚠ Hallucination guardrails · rate/5m
+            </div>
+            {qa.hallucination.map((h) => (
+              <div
+                key={h.rule}
+                className="svc"
+                style={{
+                  gridTemplateColumns: '1fr auto',
+                  padding: '5px 0',
+                  cursor: 'default',
+                }}
+              >
+                <span
+                  className="mono"
+                  style={{ fontSize: 10.5, color: 'var(--gl-text-muted)' }}
+                >
+                  {h.rule}
+                </span>
+                <span
+                  className={`mono c-${h.tone} tnum`}
+                  style={{ fontSize: 11 }}
+                >
+                  {h.rate.toFixed(1)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: '10px 12px' }}>
+            <div className="kpi__label" style={{ marginBottom: 8 }}>
+              Approval rate by writer model
+            </div>
+            {qa.byModel.map((m) => (
+              <div key={m.model} style={{ marginBottom: 7 }}>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10.5,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginBottom: 2,
+                  }}
+                >
+                  <span className="c-muted">
+                    {m.model}
+                    <span className="c-dim"> · {m.tasks}</span>
+                  </span>
+                  <span className="c-text tnum">{m.appr}%</span>
+                </div>
+                <Meter
+                  value={m.appr}
+                  max={100}
+                  color={m.appr >= 85 ? 'mint' : 'amber'}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </Panel>
   );
 }

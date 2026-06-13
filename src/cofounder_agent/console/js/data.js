@@ -877,6 +877,22 @@
     rejectionRate: 12,
     passRate: 88,
     ragFallback: 4,
+    // The real multi-model QA rails (modules/content/atoms/qa_*.py → qa.aggregate).
+    // Hard gates block publish; advisory rails score but don't block. Graduate an
+    // advisory rail via qa_gates.<rail>.required_to_pass=true (project_qa_rails_state).
+    rails: [
+      { rail: 'qa.programmatic', gate: 'hard' },
+      { rail: 'qa.critic', gate: 'hard' },
+      { rail: 'qa.deepeval', gate: 'advisory' },
+      { rail: 'qa.ragas', gate: 'advisory' },
+      { rail: 'qa.vision', gate: 'advisory' },
+      { rail: 'qa.topic_delivery', gate: 'advisory' },
+      { rail: 'qa.citations', gate: 'advisory' },
+      { rail: 'qa.unlinked_attribution', gate: 'advisory' },
+      { rail: 'qa.consistency', gate: 'advisory' },
+      { rail: 'qa.self_consistency', gate: 'advisory' },
+      { rail: 'qa.web_factcheck', gate: 'advisory' },
+    ],
     reasons: [
       ['Off-brand voice', 7],
       ['Thin evidence', 5],
@@ -884,10 +900,12 @@
       ['Structure', 3],
       ['Factual risk', 2],
     ],
+    // Real programmatic anti-hallucination rule families (content_validator.py).
     hallucination: [
-      { rule: 'unverified_product_claim', rate: 0.8, tone: 'amber' },
-      { rule: 'fabricated_stat', rate: 0.3, tone: 'red' },
-      { rule: 'nonexistent_pkg_import', rate: 0.2, tone: 'amber' },
+      { rule: 'fake_stat', rate: 0.8, tone: 'amber' },
+      { rule: 'hallucinated_reference', rate: 0.3, tone: 'red' },
+      { rule: 'json_envelope_leak', rate: 0.2, tone: 'amber' },
+      { rule: 'fake_quote', rate: 0.1, tone: 'amber' },
     ],
     byModel: [
       { model: 'glm-4.7-50b', appr: 89, tasks: 147 },
