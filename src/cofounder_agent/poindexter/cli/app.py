@@ -68,6 +68,18 @@ def main(ctx: click.Context, verbose: bool) -> None:
     if verbose:
         logging.getLogger().setLevel(logging.INFO)
 
+    # Load POINDEXTER_SECRET_KEY from bootstrap.toml into the env once, here at
+    # the root, so EVERY subcommand can encrypt/decrypt secrets (auth migrate-*,
+    # webhooks/stores/publishers set-secret, settings set --secret / get
+    # --reveal, pipeline resume's R2 + ISR reads, …). The worker/brain containers
+    # inherit the key in their env; a bare `poindexter <cmd>` shell does not, so
+    # without this every host-side secret op raised SecretsError. Best-effort,
+    # cheap, idempotent — commands that touch no secrets are unaffected, and the
+    # per-command ensure_secret_key() calls stay as defense in depth.
+    from ._bootstrap import ensure_secret_key
+
+    ensure_secret_key()
+
 
 main.add_command(setup_command, name="setup")
 main.add_command(auth_group, name="auth")
