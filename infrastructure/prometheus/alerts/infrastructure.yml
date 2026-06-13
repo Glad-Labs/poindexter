@@ -88,3 +88,23 @@ groups:
       # Moved to prometheus_rule_builder.py DEFAULT_RULES so operators can
       # tune the 20/10 GB free thresholds and 200 GB total-size filter via
       # app_settings (prometheus.threshold.disk_free_warning_gb etc.).
+
+      # --- Metrics-refresh self-monitoring (audit H2b) ---
+      # refresh_metrics wraps each phase in its own try/except so one failing
+      # query can't fail the whole /metrics scrape — but a failing phase leaves
+      # its gauge frozen at the last value (stale), silently masking the
+      # underlying problem. poindexter_metrics_refresh_errors_total counts
+      # per-phase failures so a persistently stale gauge becomes visible.
+      # severity=warning → Discord (degraded observability, not an outage).
+      - alert: PoindexterMetricsRefreshErrors
+        expr: sum by (phase) (increase(poindexter_metrics_refresh_errors_total[15m])) > 20
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "metrics_refresh phase failing: {{ $labels.phase }}"
+          description: |
+            The {{ $labels.phase }} phase of refresh_metrics has thrown on
+            most scrapes for ~15 min, so its Prometheus gauge(s) are frozen at
+            the last good value — any panel or alert reading them is stale.
+            Check worker logs for `refresh_metrics: {{ $labels.phase }}`.

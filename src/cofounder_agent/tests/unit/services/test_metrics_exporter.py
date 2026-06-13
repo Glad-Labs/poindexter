@@ -462,6 +462,71 @@ class TestRefreshMetrics:
         assert "poindexter_unapplied_migrations_count" in text
 
 
+@pytest.mark.unit
+class TestMetricsRefreshErrorCounter:
+    """Audit H2b — per-phase refresh-failure counter.
+
+    Each refresh_metrics block has its own try/except so one failing query
+    can't fail the whole scrape, but those used to log only at DEBUG — and
+    when a phase throws its gauge holds the last value (stale). _note_refresh
+    _error now also increments a per-phase counter so the staleness is
+    countable + alertable instead of invisible.
+    """
+
+    def test_note_refresh_error_increments_phase(self):
+        from prometheus_client import REGISTRY
+
+        from services import metrics_exporter as mx
+
+        name = "poindexter_metrics_refresh_errors_total"
+        before = REGISTRY.get_sample_value(name, {"phase": "unit_probe"}) or 0.0
+        mx._note_refresh_error("unit_probe", RuntimeError("boom"))
+        after = REGISTRY.get_sample_value(name, {"phase": "unit_probe"}) or 0.0
+        assert after == before + 1.0
+
+    def test_exposed_series_is_total_suffixed(self):
+        # Pins the series name the PoindexterMetricsRefreshErrors alert
+        # queries. If prometheus_client ever changes its ``_total`` suffixing
+        # this fails loudly here, instead of the alert silently going dead.
+        from prometheus_client import REGISTRY
+
+        from services import metrics_exporter as mx
+
+        mx._note_refresh_error("name_probe", ValueError("x"))
+        assert (
+            REGISTRY.get_sample_value(
+                "poindexter_metrics_refresh_errors_total",
+                {"phase": "name_probe"},
+            )
+            is not None
+        )
+
+    @pytest.mark.asyncio
+    async def test_failing_phase_increments_counter(self):
+        from prometheus_client import REGISTRY
+
+        from services import metrics_exporter as mx
+
+        name = "poindexter_metrics_refresh_errors_total"
+        before = REGISTRY.get_sample_value(name, {"phase": "postgres"}) or 0.0
+
+        # A pool whose acquire() raises makes the postgres block (and the
+        # other DB blocks) throw. refresh_metrics must still complete and the
+        # postgres phase counter must tick.
+        pool = MagicMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("db gone"))
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = MagicMock(return_value=ctx)
+
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("no ollama")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        after = REGISTRY.get_sample_value(name, {"phase": "postgres"}) or 0.0
+        assert after >= before + 1.0
+
+
 def _heartbeat_series_value(mx):
     """Return the brain-heartbeat gauge value from the exposition, or None
     if the series is absent (the dead-man's-switch trigger condition)."""

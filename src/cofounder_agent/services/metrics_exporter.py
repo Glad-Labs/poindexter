@@ -61,6 +61,14 @@ Cost:
 - ``poindexter_daily_spend_usd`` — gauge
 - ``poindexter_monthly_spend_usd`` — gauge
 
+Self-monitoring:
+- ``poindexter_metrics_refresh_errors_total`` — counter by ``phase`` (audit
+  H2b). Each ``refresh_metrics`` block has its own try/except so one failing
+  query can't fail the whole scrape, but a failing phase leaves its gauge
+  frozen at the last value (stale). This counts per-phase failures so a
+  persistently stale gauge is visible (``PoindexterMetricsRefreshErrors``)
+  instead of dying at DEBUG.
+
 All metric values come from the same DB queries the brain probes
 already run, so the values stay consistent between the legacy probe
 path and the new Prometheus path during the migration.
@@ -503,6 +511,37 @@ def http_route_label(scope: Mapping[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Per-phase refresh-failure counter (audit H2b). Every block in
+# refresh_metrics has its own try/except so one failing query can't fail the
+# whole /metrics scrape — but those excepts logged only at DEBUG, making a
+# partial failure invisible. When a phase throws, its gauge(s) are NOT updated
+# and hold their last value (frozen/stale), so a panel or alert reading them is
+# silently looking at old data — e.g. an informational gauge that quietly stops
+# moving. This counter makes each such failure countable + alertable per phase
+# (PoindexterMetricsRefreshErrors). Named without the ``_total`` suffix per
+# prometheus_client convention; the exposed series is
+# ``poindexter_metrics_refresh_errors_total``.
+METRICS_REFRESH_ERRORS = Counter(
+    "poindexter_metrics_refresh_errors",
+    "refresh_metrics per-phase failures. A rising count for a phase means its "
+    "gauge(s) are stale — the query threw and the value is frozen at its last "
+    "good reading.",
+    ["phase"],
+)
+
+
+def _note_refresh_error(phase: str, exc: BaseException) -> None:
+    """Count + debug-log a per-phase refresh failure (audit H2b).
+
+    Replaces the bare ``logger.debug("refresh_metrics: <phase> failed", e)``
+    swallows so a stale gauge no longer hides its own cause: keeps the debug
+    log (full context for anyone already tailing) and adds the per-phase
+    counter increment (the operator-visible, alertable signal).
+    """
+    METRICS_REFRESH_ERRORS.labels(phase=phase).inc()
+    logger.debug("refresh_metrics: %s failed: %s", phase, exc)
+
+
 async def refresh_metrics(
     pool: Any,
     ollama_url: str,
@@ -537,7 +576,7 @@ async def refresh_metrics(
             POSTGRES_QUERY_LATENCY.observe(time.monotonic() - _t0)
         POSTGRES_CONNECTED.set(1 if val == 1 else 0)
     except Exception as e:
-        logger.debug("refresh_metrics: postgres check failed: %s", e)
+        _note_refresh_error("postgres", e)
         POSTGRES_CONNECTED.set(0)
 
     # #524: brain cycle heartbeat freshness — the delivery-plane dead-man's
@@ -563,7 +602,7 @@ async def refresh_metrics(
                 float(epoch)
             )
     except Exception as e:
-        logger.debug("refresh_metrics: brain heartbeat query failed: %s", e)
+        _note_refresh_error("brain_heartbeat", e)
         # DB error → drop the series so the dead-man's switch can fire.
         BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.clear()
 
@@ -580,7 +619,7 @@ async def refresh_metrics(
         PG_CONNECTIONS_USED.set(int(used or 0))
         PG_CONNECTIONS_MAX.set(int(max_conn or 0))
     except Exception as e:
-        logger.debug("refresh_metrics: pg_connections query failed: %s", e)
+        _note_refresh_error("pg_connections", e)
 
     # Ollama reachability + model count (Gitea #238 — "up but no models"
     # passed the old gauge; OLLAMA_MODEL_COUNT catches that case).
@@ -614,7 +653,7 @@ async def refresh_metrics(
         for r in rows:
             EMBEDDINGS_TOTAL.labels(source_table=r["source_table"] or "unknown").set(r["n"])
     except Exception as e:
-        logger.debug("refresh_metrics: embeddings query failed: %s", e)
+        _note_refresh_error("embeddings", e)
 
     # Published posts missing an embedding — catches "3 new posts
     # published, 0 got embedded" even when overall throughput looks fine.
@@ -633,7 +672,7 @@ async def refresh_metrics(
             )
         EMBEDDINGS_MISSING_POSTS.set(int(gap or 0))
     except Exception as e:
-        logger.debug("refresh_metrics: embeddings-gap query failed: %s", e)
+        _note_refresh_error("embeddings_gap", e)
 
     # Posts by status. ``.clear()`` first so a status that drops to zero
     # rows (or a renamed status string) doesn't leave a stale child series
@@ -658,7 +697,7 @@ async def refresh_metrics(
                 published_n = r["n"]
         POSTS_PUBLISHED.set(int(published_n))
     except Exception as e:
-        logger.debug("refresh_metrics: posts query failed: %s", e)
+        _note_refresh_error("posts", e)
 
     # Approval queue depth — used as the ``unless`` cross-check against
     # cost alerts so they don't fire while the pipeline is throttling.
@@ -669,7 +708,7 @@ async def refresh_metrics(
             )
         APPROVAL_QUEUE_LENGTH.set(int(queue_n or 0))
     except Exception as e:
-        logger.debug("refresh_metrics: approval queue query failed: %s", e)
+        _note_refresh_error("approval_queue", e)
 
     # GH-90: cumulative count of sweeper auto-cancels. Read from
     # pipeline_tasks.auto_cancelled_at so the value survives worker
@@ -685,7 +724,7 @@ async def refresh_metrics(
             )
         AUTO_CANCELLED_TOTAL.set(int(cancelled_n or 0))
     except Exception as e:
-        logger.debug("refresh_metrics: auto_cancelled count query failed: %s", e)
+        _note_refresh_error("auto_cancelled", e)
 
     # GH-227: unapplied migration count.
     # Compares the number of .py files in services/migrations/ to the row
@@ -716,7 +755,7 @@ async def refresh_metrics(
         # never want a negative value here.
         UNAPPLIED_MIGRATIONS_COUNT.set(max(on_disk - int(applied_n or 0), 0))
     except Exception as e:
-        logger.debug("refresh_metrics: unapplied_migrations count failed: %s", e)
+        _note_refresh_error("unapplied_migrations", e)
 
     # Spend.
     try:
@@ -735,7 +774,7 @@ async def refresh_metrics(
             DAILY_SPEND_USD.set(float(row["daily"] or 0))
             MONTHLY_SPEND_USD.set(float(row["monthly"] or 0))
     except Exception as e:
-        logger.debug("refresh_metrics: cost_logs query failed: %s", e)
+        _note_refresh_error("cost_logs", e)
 
     # -----------------------------------------------------------------
     # Metrics migrated from /api/prometheus (Gitea #269).
@@ -757,7 +796,7 @@ async def refresh_metrics(
             DB_POOL_MIN_SIZE.labels(pool="local").set(local_pool.get_min_size())
             DB_POOL_MAX_SIZE.labels(pool="local").set(local_pool.get_max_size())
     except Exception as e:
-        logger.debug("refresh_metrics: db_pool stats failed: %s", e)
+        _note_refresh_error("db_pool", e)
 
     # GPU scheduler snapshot.
     try:
@@ -769,7 +808,7 @@ async def refresh_metrics(
         GPU_GAMING_PAUSED_TOTAL_SECONDS.set(float(s.get("total_gaming_paused_s") or 0))
         GPU_BUSY.set(1 if s.get("busy") else 0)
     except Exception as e:
-        logger.debug("refresh_metrics: gpu_scheduler status failed: %s", e)
+        _note_refresh_error("gpu_scheduler", e)
 
     # Pipeline throttle state (GH-89 AC#2).
     try:
@@ -781,7 +820,7 @@ async def refresh_metrics(
         PIPELINE_THROTTLE_QUEUE_SIZE.set(int(ts.get("queue_size") or 0))
         PIPELINE_THROTTLE_QUEUE_LIMIT.set(int(ts.get("queue_limit") or 0))
     except Exception as e:
-        logger.debug("refresh_metrics: pipeline_throttle state failed: %s", e)
+        _note_refresh_error("pipeline_throttle", e)
 
     # Task counts from content_tasks — needs DatabaseService.tasks.
     try:
@@ -793,7 +832,7 @@ async def refresh_metrics(
                 int(getattr(task_counts, "awaiting_approval", 0) or 0)
             )
     except Exception as e:
-        logger.debug("refresh_metrics: task_counts query failed: %s", e)
+        _note_refresh_error("task_counts", e)
 
     # Module v1 metric contributions (Glad-Labs/poindexter#490 lifecycle).
     # Each business module MAY expose an optional ``refresh_module_metrics``
@@ -826,13 +865,13 @@ async def _refresh_module_metrics(pool: Any) -> None:
     try:
         from plugins.registry import get_modules
     except Exception as e:  # noqa: BLE001 — registry import must never break /metrics
-        logger.debug("refresh_metrics: module registry import failed: %s", e)
+        _note_refresh_error("module_registry", e)
         return
 
     try:
         modules = get_modules()
     except Exception as e:  # noqa: BLE001
-        logger.debug("refresh_metrics: get_modules() failed: %s", e)
+        _note_refresh_error("get_modules", e)
         return
 
     for mod in modules:
@@ -893,7 +932,7 @@ async def refresh_qa_rail_skip_ratio(
                 n = _QA_RAIL_SKIP_WINDOW_DEFAULT
             rows = await conn.fetch(_QA_RAIL_SKIP_SQL, n)
     except Exception as e:  # noqa: BLE001
-        logger.debug("refresh_metrics: qa_rail_skip_ratio query failed: %s", e)
+        _note_refresh_error("qa_rail_skip_ratio", e)
         return
 
     for r in rows:
