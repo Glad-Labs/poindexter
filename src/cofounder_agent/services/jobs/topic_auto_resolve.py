@@ -119,22 +119,54 @@ class TopicAutoResolveJob:
         )
 
         # ---- Find candidates ----
-        # Pull open batches with at least one candidate, plus the time of
-        # the most-recent auto_resolve_topic_auto_resolved audit_log row per
-        # niche so we can enforce the per-niche cooldown. ``picked_candidate_id``
-        # is NULL on open batches by definition.
+        # Pull open, non-expired batches with at least one candidate in
+        # EITHER candidate table, plus the time of the most-recent
+        # ``topic_auto_resolved`` audit_log row per niche so we can enforce
+        # the per-niche cooldown. ``picked_candidate_id`` is NULL on open
+        # batches by definition.
+        #
+        # Candidates live in TWO tables — ``topic_candidates`` (external:
+        # Hacker News / dev.to / web-search taps) and
+        # ``internal_topic_candidates`` (internal RAG: brain_knowledge /
+        # posts / decisions). ``rank_in_batch`` is computed across both
+        # pools combined, so a batch's entire top-N can land in either
+        # table. The eligibility check MUST consider both: a batch whose
+        # winners are all internal (zero external) is still resolvable, and
+        # the downstream ``operator_rank`` fix-up + ``resolve_batch`` already
+        # read both tables. Checking only ``topic_candidates`` here silently
+        # wedged the glad-labs niche for ~2 days on 2026-06-11 (batch
+        # ad54f70d: 5 internal / 0 external → invisible to this query →
+        # never resolved → the niche sweep then refused to open a
+        # replacement while the dead batch stayed ``open``).
+        #
+        # ``expires_at > NOW()`` skips stale batches so we never resolve one
+        # past its review window into content — and so a long-dead open
+        # batch from a niche that has since moved to a different content
+        # path (e.g. dev_diary, whose posts come from its own daily cron)
+        # is not resurrected here.
         rows = await pool.fetch(
             """
             SELECT
                 tb.id AS batch_id,
                 tb.niche_id,
                 n.slug AS niche_slug,
-                (SELECT COUNT(*) FROM topic_candidates tc WHERE tc.batch_id = tb.id) AS candidate_count
+                (
+                    (SELECT COUNT(*) FROM topic_candidates tc
+                      WHERE tc.batch_id = tb.id)
+                  + (SELECT COUNT(*) FROM internal_topic_candidates ic
+                      WHERE ic.batch_id = tb.id)
+                ) AS candidate_count
             FROM topic_batches tb
             JOIN niches n ON n.id = tb.niche_id
             WHERE tb.status = 'open'
               AND n.active = TRUE
-              AND EXISTS (SELECT 1 FROM topic_candidates tc WHERE tc.batch_id = tb.id)
+              AND tb.expires_at > NOW()
+              AND (
+                    EXISTS (SELECT 1 FROM topic_candidates tc
+                             WHERE tc.batch_id = tb.id)
+                 OR EXISTS (SELECT 1 FROM internal_topic_candidates ic
+                             WHERE ic.batch_id = tb.id)
+              )
             ORDER BY tb.created_at ASC
             LIMIT $1
             """,

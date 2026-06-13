@@ -291,6 +291,86 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
     assert open_count == 1
 
 
+async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
+    db_pool, monkeypatch,
+):
+    """Empty-batch wedge guard (2026-06-11 incident class).
+
+    If discovery runs but ranking yields nothing usable (every source
+    dry, all deduped, or the LLM final-scorer returns an empty dict),
+    ``run_sweep`` must NOT persist an empty ``open`` batch. A
+    candidate-less open batch can never be resolved, yet
+    ``_open_batch_exists`` would then short-circuit every future sweep
+    for the niche — a silent, multi-day content stall. Expect: returns
+    None, leaves zero ``topic_batches`` rows, and records the suppressed
+    run on ``discovery_runs`` for observability.
+    """
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(
+        slug="empty-batch-guard", name="EmptyGuard", batch_size=3,
+    )
+    await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
+    await nsvc.set_sources(n.id, [
+        NicheSource("internal_rag", enabled=True, weight_pct=100),
+    ])
+
+    async def fake_internal_generate(self, **kwargs):
+        # Discovery DOES find candidates this sweep …
+        return [
+            InternalCandidate(
+                source_kind="claude_session",
+                primary_ref=f"sess-{i}",
+                distilled_topic=f"Topic {i}",
+                distilled_angle=f"Angle {i}",
+            )
+            for i in range(4)
+        ]
+
+    monkeypatch.setattr(
+        "services.internal_rag_source.InternalRagSource.generate",
+        fake_internal_generate,
+    )
+
+    async def fake_embed_text(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr(
+        "services.topic_ranking._embed_text_cached", fake_embed_text,
+    )
+
+    # … but the LLM final-scorer returns nothing usable → ranked == [].
+    async def empty_llm_score(candidates, weights, *, model=None, site_config=None):
+        return {}
+
+    monkeypatch.setattr("services.topic_ranking.llm_final_score", empty_llm_score)
+
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
+    result = await svc.run_sweep(niche_id=n.id)
+
+    # Guard fired — no batch object handed back to the caller.
+    assert result is None
+
+    async with db_pool.acquire() as conn:
+        open_batches = await conn.fetchval(
+            "SELECT count(*) FROM topic_batches WHERE niche_id = $1", n.id,
+        )
+        run_row = await conn.fetchrow(
+            "SELECT * FROM discovery_runs WHERE niche_id = $1 "
+            "ORDER BY started_at DESC LIMIT 1",
+            n.id,
+        )
+
+    # No empty batch persisted → the next sweep isn't wedged.
+    assert open_batches == 0
+    # The suppressed run is still recorded (no batch, with a reason).
+    assert run_row is not None
+    assert run_row["batch_id"] is None
+    assert run_row["finished_at"] is not None
+    assert run_row["error"] is not None
+    assert "empty batch suppressed" in run_row["error"]
+
+
 # ---------------------------------------------------------------------------
 # Operator-interaction tests (Task 7)
 # ---------------------------------------------------------------------------

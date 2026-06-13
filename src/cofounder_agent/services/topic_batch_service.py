@@ -171,6 +171,34 @@ class TopicBatchService:
                 scored.values(), key=lambda c: -(c.llm_score or 0)
             )[: niche.batch_size]
 
+            # Guard against the empty-batch wedge. If discovery + ranking
+            # yielded nothing this sweep (every source dry, everything
+            # deduped away, or the LLM final-score returned no usable
+            # rows), do NOT persist an empty ``open`` batch. A
+            # candidate-less open batch can never be resolved, yet
+            # ``_open_batch_exists`` would then short-circuit every future
+            # sweep for this niche — a silent, multi-day content stall (the
+            # shape of the 2026-05-28 and 2026-06-11 incidents). Record the
+            # empty run on ``discovery_runs`` for observability and bail;
+            # because no open batch is left behind, the next sweep retries
+            # cleanly once the underlying source/LLM issue clears.
+            if not ranked:
+                logger.warning(
+                    "Niche %s: sweep produced 0 rankable candidates "
+                    "(external=%d internal=%d) — suppressing empty-batch "
+                    "creation so the niche isn't wedged",
+                    niche.slug, len(external), len(internal),
+                )
+                async with self._pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE discovery_runs SET finished_at = NOW(), "
+                        "candidates_generated = $1, error = $2 WHERE id = $3",
+                        len(external) + len(internal),
+                        "no rankable candidates — empty batch suppressed",
+                        run_id,
+                    )
+                return None
+
             batch = await self._write_batch(
                 niche, ranked, pool_external, pool_internal,
             )
