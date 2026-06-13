@@ -243,6 +243,7 @@ async def pause_at_gate(
                    SET awaiting_gate = $1,
                        gate_artifact = $2::jsonb,
                        gate_paused_at = $3,
+                       status = 'awaiting_gate',
                        updated_at = NOW()
                  WHERE task_id::text = $4
                 """,
@@ -412,11 +413,12 @@ async def approve(
     )
     previous_status = row.get("status")
 
-    # Clear the gate columns. Keep status as-is (the runner flipped it
-    # to in_progress when the Stage halted; clearing the gate lets the
-    # next pipeline tick pick up where it left off). The
-    # pipeline_gate_history row below is what the resume-pass
-    # idempotency check reads (services/atoms/approval_gate.py).
+    # Clear the gate columns and restore status to 'in_progress'. The
+    # pipeline_gate_history row below is what the resume-pass idempotency
+    # check reads (modules/content/atoms/approval_gate.py). Setting
+    # in_progress here makes the stale sweeper the fallback for a crashed
+    # resume run, and keeps the task visible as actively running while
+    # runner.run(resume=True) executes.
     async with pool.acquire() as conn:
         await conn.execute(
             """
@@ -424,6 +426,7 @@ async def approve(
                SET awaiting_gate = NULL,
                    gate_artifact = '{}'::jsonb,
                    gate_paused_at = NULL,
+                   status = 'in_progress',
                    updated_at = NOW()
              WHERE task_id::text = $1
             """,

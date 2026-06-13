@@ -231,3 +231,27 @@ class TestShowAndPause:
         assert out["gate_name"] == "g"
         assert out["notify"] == {"sent": False, "reason": "skipped"}
         assert "UPDATE pipeline_tasks" in executed_sql(conn)
+
+    async def test_pause_sets_awaiting_gate_status(self):
+        # Regression guard: pause_at_gate must set status='awaiting_gate' so
+        # the stale sweeper doesn't reclaim a legitimately-paused task.
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc.pause_at_gate(
+            task_id="t1", gate_name="g", artifact={},
+            site_config=None, pool=pool, notify=False,
+        )
+        sql = executed_sql(conn)
+        assert "status = 'awaiting_gate'" in sql
+
+    async def test_approve_restores_in_progress_status(self):
+        # Regression guard: approve() must set status='in_progress' so the
+        # runner can execute the resumed graph (and the sweeper can reclaim it
+        # if the resume crashes).
+        row = {"task_id": "t1", "status": "awaiting_gate", "awaiting_gate": "g",
+               "gate_artifact": "{}", "gate_paused_at": None, "topic": "T", "title": "Hi"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve(task_id="t1", pool=pool, site_config=None)
+        sql = executed_sql(conn)
+        assert "status = 'in_progress'" in sql

@@ -1390,6 +1390,31 @@ class TestSweepStaleTasks:
         conn.fetchval.assert_not_awaited()
         conn.execute.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_sweep_sql_excludes_awaiting_gate_tasks(self):
+        # Regression guard: sweep SELECT must include AND awaiting_gate IS NULL
+        # so legitimately-paused gate tasks are never reclaimed.
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock()
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        await db.sweep_stale_tasks(stale_threshold_minutes=30)
+        select_sql = conn.fetch.await_args.args[0]
+        assert "awaiting_gate IS NULL" in select_sql
+
 
 # ---------------------------------------------------------------------------
 # bulk_update_task_statuses

@@ -1560,6 +1560,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         SELECT task_id, retry_count
                         FROM pipeline_tasks
                         WHERE status = 'in_progress'
+                          AND awaiting_gate IS NULL
                           AND updated_at < $1
                         """,
                         cutoff,
