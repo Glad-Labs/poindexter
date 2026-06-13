@@ -1858,11 +1858,26 @@ async def auto_remediate(pool):
         stale_minutes = await _setting_int(pool, "stale_task_timeout_minutes", 180)
         grace_minutes = await _setting_int(pool, "brain_auto_cancel_grace_minutes", 10)
         cutoff_minutes = stale_minutes + grace_minutes
+        # A task paused at a HITL approval gate (LangGraph interrupt(), #363)
+        # keeps status='in_progress' while it waits — the graph is suspended
+        # mid-execution, not moved to a distinct status — but it carries a
+        # non-NULL awaiting_gate. Such a row is NOT stuck: it is legitimately
+        # waiting for an operator to run `poindexter pipeline resume`. The
+        # `awaiting_gate IS NULL` guard keeps the sweeper from reaping in-review
+        # work; without it a whole seo_refresh batch (its gate ships ENABLED)
+        # was auto-cancelled at the gate after 180m on 2026-06-13 before the
+        # operator could approve. This mirrors the guard already in
+        # TasksDatabase.sweep_stale_tasks (the Prefect reclaim path). Gate-paused
+        # rows are intentionally exempt from this short stuck-worker reaper —
+        # they're cheap (checkpointed, not running) and the operator gate is the
+        # control; abandoned-gate cleanup, if ever needed, belongs in a separate
+        # longer-horizon sweep, not here.
         stuck = await pool.fetch(f"""
             UPDATE pipeline_tasks SET status = 'failed',
                 error_message = 'Auto-cancelled: stuck in_progress > {stale_minutes}m',
                 updated_at = NOW()
             WHERE status = 'in_progress'
+              AND awaiting_gate IS NULL
               AND updated_at < NOW() - INTERVAL '{cutoff_minutes} minutes'
               AND COALESCE(started_at, updated_at) < NOW() - INTERVAL '{cutoff_minutes} minutes'
             RETURNING task_id, topic

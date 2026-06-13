@@ -125,6 +125,21 @@ class TestAutoRemediateSweeper:
         # check (protects rows that legitimately never ran).
         assert "COALESCE(started_at, updated_at)" in sweeper_sql
 
+    async def test_sweeper_excludes_gate_paused_tasks(self):
+        """A task paused at a HITL approval gate (LangGraph interrupt(), #363)
+        keeps status='in_progress' but carries a non-NULL awaiting_gate — it is
+        waiting for the operator, not stuck. The sweeper UPDATE must exclude it
+        via ``awaiting_gate IS NULL`` so in-review work isn't reaped. Regression
+        for the 2026-06-13 seo_refresh batch that was auto-cancelled at the gate;
+        mirrors the guard already in ``TasksDatabase.sweep_stale_tasks``."""
+        pool = _make_pool_for_sweeper(stuck_rows=[])
+        await bd.auto_remediate(pool)
+
+        sweeper_sql = pool.fetch.call_args_list[0].args[0]
+        assert "UPDATE pipeline_tasks" in sweeper_sql
+        assert "status = 'in_progress'" in sweeper_sql
+        assert "awaiting_gate IS NULL" in sweeper_sql
+
     async def test_sweeper_stamps_auto_cancelled_at_per_cancel(self):
         """GH-90 AC #4: each auto-cancelled task gets its
         ``pipeline_tasks.auto_cancelled_at`` column stamped (Phase 2 of
