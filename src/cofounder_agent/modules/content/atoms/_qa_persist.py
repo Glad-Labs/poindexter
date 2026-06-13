@@ -17,6 +17,8 @@ import json
 import logging
 from typing import Any
 
+from utils.findings import emit_finding
+
 logger = logging.getLogger(__name__)
 
 
@@ -87,6 +89,26 @@ async def persist_qa_reject(
         })
     except Exception as exc:  # noqa: BLE001
         logger.warning("[qa.aggregate] pipeline_versions write failed for %s: %s", task_id[:8], exc)
+        # The warning above is below the GlitchTip ERROR gate, so a systematic
+        # failure here (schema drift, pool exhaustion) would otherwise be
+        # invisible. The rejected draft is the operator's only record of WHAT
+        # was rejected — losing it silently means rejects pile up with no
+        # reviewable artifact. emit_finding routes to the Findings dashboard +
+        # Discord (dedup_key collapses a sustained failure to one alert). It is
+        # fire-and-forget and never raises, so the reject path stays intact.
+        emit_finding(
+            source="qa.aggregate",
+            kind="qa_reject_version_persist_failed",
+            severity="warn",
+            title="QA reject: rejected draft not archived",
+            body=(
+                f"persist_qa_reject could not write the rejected draft for task "
+                f"{task_id[:8]} to pipeline_versions: {type(exc).__name__}: {exc}. "
+                f"The reject still applied (status=rejected), but the draft + QA "
+                f"feedback were not saved for review/learning."
+            ),
+            dedup_key="qa_reject_version_persist_failed",
+        )
 
     # 3. Learning signal.
     try:

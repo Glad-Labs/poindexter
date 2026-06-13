@@ -107,3 +107,56 @@ class TestPersistQaReject:
     async def test_none_db_noop(self):
         await persist_qa_reject(None, task_id="t1", reason="r", final_score=1.0,
                                 content="c", title="t", qa_feedback="f", models_used_by_phase={})
+
+    async def test_emits_finding_when_version_write_fails(self, monkeypatch):
+        # A failed pipeline_versions write only logged at warning (below the
+        # GlitchTip ERROR gate) — now it must also emit a finding so a
+        # systematic loss of rejected drafts is operator-visible.
+        db = _DB()
+
+        class _FakePipelineDB:
+            def __init__(self, pool): ...
+
+            async def upsert_version(self, task_id, fields):
+                raise RuntimeError("pipeline_versions table gone")
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.emit_finding",
+            lambda **kw: calls.append(kw),
+        )
+
+        # Must not raise — the load-bearing status write still happened.
+        await persist_qa_reject(
+            db, task_id="task1234", reason="bad", final_score=55.0,
+            content="b", title="t", qa_feedback="fb", models_used_by_phase={},
+        )
+        assert db.update_task_calls[0][1]["status"] == "rejected"
+        assert len(calls) == 1
+        kw = calls[0]
+        assert kw["source"] == "qa.aggregate"
+        assert kw["kind"] == "qa_reject_version_persist_failed"
+        assert kw["severity"] == "warn"
+        assert kw["dedup_key"] == "qa_reject_version_persist_failed"
+
+    async def test_no_finding_when_version_write_succeeds(self, monkeypatch):
+        db = _DB()
+
+        class _FakePipelineDB:
+            def __init__(self, pool): ...
+
+            async def upsert_version(self, task_id, fields): ...
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.emit_finding",
+            lambda **kw: calls.append(kw),
+        )
+        await persist_qa_reject(
+            db, task_id="task1234", reason="bad", final_score=55.0,
+            content="b", title="t", qa_feedback="fb", models_used_by_phase={},
+        )
+        assert calls == []

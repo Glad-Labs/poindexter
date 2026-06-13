@@ -162,6 +162,63 @@ class TestPublishingTrigger:
 
 
 # ---------------------------------------------------------------------------
+# Poll-interval config (M3 — surface a swallowed bad-config fallback)
+# ---------------------------------------------------------------------------
+
+
+class TestPollIntervalConfig:
+    """A non-numeric ``scheduled_publisher_poll_seconds`` used to silently
+    revert to 60. It now warns so the operator knows their value was
+    ignored (not fail-loud — the loop works fine on the default)."""
+
+    @pytest.mark.asyncio
+    async def test_bad_poll_seconds_warns_and_falls_back(self):
+        pool, _conn = _make_pool([])
+        get_pool = AsyncMock(return_value=pool)
+        bad_sc = SiteConfig(
+            initial_config={"scheduled_publisher_poll_seconds": "not-a-number"}
+        )
+
+        with patch("services.scheduled_publisher.logger") as mock_logger:
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=bad_sc)
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            await task
+
+            warned = any(
+                "scheduled_publisher_poll_seconds is not a valid integer"
+                in str(call)
+                for call in mock_logger.warning.call_args_list
+            )
+            assert warned, mock_logger.warning.call_args_list
+
+    @pytest.mark.asyncio
+    async def test_valid_poll_seconds_does_not_warn(self):
+        pool, _conn = _make_pool([])
+        get_pool = AsyncMock(return_value=pool)
+        good_sc = SiteConfig(
+            initial_config={"scheduled_publisher_poll_seconds": "30"}
+        )
+
+        with patch("services.scheduled_publisher.logger") as mock_logger:
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=good_sc)
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            await task
+
+            warned = any(
+                "scheduled_publisher_poll_seconds is not a valid integer"
+                in str(call)
+                for call in mock_logger.warning.call_args_list
+            )
+            assert not warned
+
+
+# ---------------------------------------------------------------------------
 # Pool unavailable
 # ---------------------------------------------------------------------------
 

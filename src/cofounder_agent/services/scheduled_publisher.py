@@ -37,11 +37,23 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
 
     # Poll interval tunable via app_settings.scheduled_publisher_poll_seconds (#198)
     try:
+        # app_settings values are strings, so the fallback is a string too —
+        # int() coerces either form to 60.
         _poll_interval = int(
-            _sc.get("scheduled_publisher_poll_seconds", 60)
+            _sc.get("scheduled_publisher_poll_seconds", "60")
         )
-    except Exception:
+    except Exception as e:
         _poll_interval = 60
+        # Don't let a typo'd setting (e.g. "" / "sixty") silently revert to
+        # the default — the operator set a value expecting it to take effect.
+        # Not fail-loud (the loop works fine on 60), just visible.
+        logger.warning(
+            "[scheduled_publisher] scheduled_publisher_poll_seconds is not a "
+            "valid integer (%s); falling back to %ds. Set a numeric value to "
+            "silence this.",
+            e,
+            _poll_interval,
+        )
     logger.info(
         "[scheduled_publisher] Started (poll interval: %ds)", _poll_interval
     )
