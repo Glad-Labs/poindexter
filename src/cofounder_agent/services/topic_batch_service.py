@@ -783,7 +783,8 @@ class TopicBatchService:
         """Resolve the batch: hand the rank-1 candidate to the content
         pipeline, then mark the batch ``resolved`` + record provenance.
 
-        Raises ``ValueError`` if no operator_rank=1 candidate exists.
+        Raises ``ValueError`` if no operator_rank=1 candidate exists, or if
+        the batch references a niche that no longer exists.
         """
         view = await self.show_batch(batch_id=batch_id)
         winner = next(
@@ -792,6 +793,16 @@ class TopicBatchService:
         if winner is None:
             raise ValueError("no operator_rank=1 candidate; rank first")
         niche = await self._niche_svc.get_by_id(view.niche_id)
+        if niche is None:
+            # Defensive: topic_batches.niche_id is ON DELETE CASCADE, so an
+            # orphaned batch shouldn't occur in practice — but if the niche
+            # row is somehow gone, _handoff_to_pipeline would AttributeError
+            # on ``niche.slug`` mid-write. Fail loud with context per
+            # feedback_no_silent_defaults instead of a cryptic NoneType crash.
+            raise ValueError(
+                f"resolve_batch: batch {batch_id} references unknown niche "
+                f"{view.niche_id} — cannot hand off to pipeline"
+            )
         # Pass batch_id explicitly so content_tasks.topic_batch_id
         # provenance points at the batch (not the candidate). The
         # candidate id can be reconstructed from picked_candidate_id +

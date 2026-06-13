@@ -554,6 +554,34 @@ async def test_resolve_batch_advances_winner_and_marks_resolved(db_pool, monkeyp
     assert handoff_calls[0] == (ext_ids[0], niche.slug, str(batch_id))
 
 
+async def test_resolve_batch_raises_when_niche_missing(db_pool, monkeypatch):
+    """Defensive guard: if the batch's niche row has vanished between
+    show_batch and handoff, resolve_batch must fail loud with a clear
+    ValueError rather than crash with a NoneType AttributeError on
+    ``niche.slug`` deep inside _handoff_to_pipeline."""
+    niche, batch_id, ext_ids, _int_ids = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="resolve-missing-niche", n_external=1, n_internal=0,
+    )
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
+    await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=[ext_ids[0]])
+
+    # Simulate the niche having disappeared (orphaned batch).
+    async def _no_niche(_niche_id):
+        return None
+
+    monkeypatch.setattr(svc._niche_svc, "get_by_id", _no_niche)
+
+    with pytest.raises(ValueError, match="unknown niche"):
+        await svc.resolve_batch(batch_id=batch_id)
+
+    # The batch must NOT have been flipped to resolved on the failed path.
+    async with db_pool.acquire() as conn:
+        status = await conn.fetchval(
+            "SELECT status FROM topic_batches WHERE id = $1", batch_id,
+        )
+    assert status == "open"
+
+
 async def test_reject_batch_marks_expired_and_can_re_discover(db_pool):
     """reject_batch flips the batch to expired + frees up the
     one-open-batch-per-niche slot for a future sweep."""
