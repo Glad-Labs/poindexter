@@ -400,10 +400,40 @@ class FinalizeTaskStage:
                 gate_decision.dry_run, gate_decision.reason,
             )
         except Exception as _gate_err:
-            logger.debug(
+            # Silent-failure audit H2a: mirror the content.evaluate_auto_publish
+            # atom — a throwing gate evaluation must not vanish at DEBUG. The
+            # pipeline falls through to observe-only (no unsafe publish), but
+            # surface that the gate is not evaluating. severity=warning routes
+            # to the operator via FindingsAlertRouterJob.
+            logger.warning(
                 "[finalize_task] auto_publish_gate eval failed (non-fatal): %s",
                 _gate_err,
+                exc_info=True,
             )
+            try:
+                from utils.findings import emit_finding
+
+                emit_finding(
+                    source="finalize_task",
+                    kind="auto_publish_gate_eval_failed",
+                    severity="warning",
+                    title=(
+                        f"Auto-publish gate evaluation raised "
+                        f"{type(_gate_err).__name__} for task {str(task_id)[:8]}"
+                    ),
+                    body=(
+                        f"The auto-publish gate evaluation failed for task "
+                        f"{task_id}. The pipeline fell through to the default "
+                        f"observe-only decision (no unsafe publish), but the "
+                        f"gate is not evaluating. Error: {_gate_err!r}. "
+                        f"Investigate modules/content/auto_publish_gate.evaluate."
+                    ),
+                    dedup_key=f"auto_publish_gate_eval_failed_{type(_gate_err).__name__}",
+                )
+            except Exception:
+                # emit_finding is best-effort; never let observability failure
+                # break the finalize path.
+                pass
 
         return StageResult(
             ok=True,

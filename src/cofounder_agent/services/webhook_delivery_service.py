@@ -139,6 +139,7 @@ class WebhookDeliveryService:
 
         except Exception:
             # Increment retry count
+            new_attempts = (row["delivery_attempts"] or 0) + 1
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
@@ -150,6 +151,41 @@ class WebhookDeliveryService:
                     event_id,
                 )
             logger.warning("[WEBHOOK] Failed to deliver event %s", event_id, exc_info=True)
+            # Dead-letter escalation (silent-failure audit H1). Once
+            # delivery_attempts reaches MAX_RETRIES the poll query
+            # (delivery_attempts < MAX_RETRIES) stops selecting this row, so
+            # it sits delivered=FALSE forever with no further signal — and a
+            # per-attempt WARNING is below GlitchTip's ERROR event gate, so
+            # nothing surfaces. Emit a finding (severity=warning routes to the
+            # operator via FindingsAlertRouterJob) so an exhausted
+            # operator-notification event doesn't vanish into a dead letter.
+            if new_attempts >= MAX_RETRIES:
+                try:
+                    from utils.findings import emit_finding
+
+                    emit_finding(
+                        source="webhook_delivery_service",
+                        kind="webhook_delivery_exhausted",
+                        severity="warning",
+                        title=(
+                            f"Webhook event {event_id} ({event_type}) exhausted "
+                            f"{MAX_RETRIES} delivery attempts"
+                        ),
+                        body=(
+                            f"Event {event_id} of type '{event_type}' failed to "
+                            f"deliver to the OpenClaw webhook after {MAX_RETRIES} "
+                            f"attempts and is now a dead letter (delivered=FALSE, "
+                            f"no longer polled). Operator notifications carried by "
+                            f"this channel (e.g. task.failed / cost.budget_warning "
+                            f"/ post.published) will not arrive. Check the OpenClaw "
+                            f"webhook URL + token and the webhook_events backlog."
+                        ),
+                        dedup_key=f"webhook_delivery_exhausted_{event_type}",
+                    )
+                except Exception:
+                    # emit_finding is best-effort; never let an observability
+                    # failure poison the delivery loop.
+                    pass
 
     def _format_message(self, event_type: str, payload: dict) -> str:
         """Format a webhook event into a human-readable message for OpenClaw."""

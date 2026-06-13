@@ -449,3 +449,64 @@ class TestDeliveryLoop:
             await svc._delivery_loop()
 
         assert call_count == 2  # survived the first error and ran again
+
+
+# ---------------------------------------------------------------------------
+# _deliver_event — dead-letter escalation (silent-failure audit H1)
+# ---------------------------------------------------------------------------
+
+
+class TestDeadLetterEscalation:
+    """Once delivery_attempts reaches MAX_RETRIES the poll query stops
+    selecting the row, so it sits delivered=FALSE forever. A finding must be
+    emitted at that boundary so the dead letter is visible to the operator."""
+
+    def setup_method(self):
+        self.pool, self.conn = _make_pool()
+        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
+        with patch.dict("os.environ", env, clear=True):
+            self.svc = WebhookDeliveryService(self.pool, site_config=SiteConfig())
+        self.svc._client = AsyncMock()
+        # Every delivery fails so we exercise the retry/exhaustion path.
+        self.svc._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+    @pytest.mark.asyncio
+    async def test_emits_finding_when_attempts_exhausted(self):
+        # delivery_attempts == MAX_RETRIES - 1 → this failure pushes the row
+        # to MAX_RETRIES, past the poll cutoff: it becomes a dead letter.
+        row = _make_row(
+            event_id=99,
+            event_type="task.failed",
+            delivery_attempts=MAX_RETRIES - 1,
+        )
+        with patch("utils.findings.emit_finding") as mock_emit:
+            await self.svc._deliver_event(row)
+
+        mock_emit.assert_called_once()
+        kwargs = mock_emit.call_args.kwargs
+        assert kwargs["kind"] == "webhook_delivery_exhausted"
+        assert kwargs["severity"] == "warning"
+        assert "task.failed" in kwargs["dedup_key"]
+        # Body must name the consequence so the operator knows what was lost.
+        assert "dead letter" in kwargs["body"]
+
+    @pytest.mark.asyncio
+    async def test_no_finding_before_exhaustion(self):
+        # delivery_attempts == 0 → new total is 1, still < MAX_RETRIES, so the
+        # row remains retriable and no dead-letter finding should fire.
+        row = _make_row(event_id=100, delivery_attempts=0)
+        with patch("utils.findings.emit_finding") as mock_emit:
+            await self.svc._deliver_event(row)
+
+        mock_emit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_finding_failure_does_not_poison_delivery(self):
+        """An emit_finding error must never propagate out of the delivery path."""
+        row = _make_row(event_id=101, delivery_attempts=MAX_RETRIES - 1)
+        with patch(
+            "utils.findings.emit_finding",
+            side_effect=RuntimeError("audit pool down"),
+        ):
+            # Should NOT raise.
+            await self.svc._deliver_event(row)

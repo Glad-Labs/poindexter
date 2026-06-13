@@ -385,7 +385,10 @@ class TestContentEvaluateAutoPublish:
         eval_mock.assert_not_called()
 
     async def test_gate_failure_returns_none_auto_publish_gate(self, monkeypatch):
-        """Gate evaluation exception → auto_publish_gate=None (non-fatal)."""
+        """Gate evaluation exception → auto_publish_gate=None (non-fatal),
+        AND a warning-severity finding is emitted so the failure is visible to
+        the operator instead of vanishing at DEBUG (silent-failure audit H2a).
+        """
         from modules.content.atoms import content_evaluate_auto_publish as atom
 
         async def _boom(*a, **kw):
@@ -393,11 +396,23 @@ class TestContentEvaluateAutoPublish:
 
         monkeypatch.setattr("modules.content.auto_publish_gate.evaluate", _boom)
 
+        emit_calls: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding",
+            lambda **kw: emit_calls.append(kw),
+        )
+
         state = _base_state(niche_slug="dev_diary", quality_score=88.0)
         out = await atom.run(state)
 
+        # Falls through to observe-only — no decision, no unsafe publish.
         assert "auto_publish_gate" in out
         assert out["auto_publish_gate"] is None
+        # ...but the failure is now an operator-routable finding.
+        assert len(emit_calls) == 1
+        assert emit_calls[0]["kind"] == "auto_publish_gate_eval_failed"
+        assert emit_calls[0]["severity"] == "warning"
+        assert "RuntimeError" in emit_calls[0]["dedup_key"]
 
     async def test_platform_audit_written_on_success(self, monkeypatch):
         """When platform is provided, audit.write_bg is called with gate decision."""
