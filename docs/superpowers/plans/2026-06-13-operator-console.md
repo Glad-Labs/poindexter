@@ -49,7 +49,7 @@ This is an in-browser SPA with **no existing JS unit harness** in `console/`. We
 | Analytics views                | `GET /api/analytics/views`                                                                                                                                     | `cms_routes.py:631`                                                                                                                                                              |
 | Module probes (discovery only) | `GET /api/modules/probes`                                                                                                                                      | returns `{count:0,probes:[]}` today — **not** service health. `module_probes_routes.py:29`                                                                                       |
 
-**Endpoints the console assumes that DO NOT exist** (and how the plan resolves them): `GET /api/approvals*` (→ use `/api/tasks/*` above), `POST /api/tasks/{id}/retry` (→ `PUT …/status`), `POST /api/tasks/{id}/cancel` (→ `DELETE`), `GET /probes` for service health (→ Prometheus `up{}` + `/api/health`, Phase 5), `POST /api/admin/restart` / `run-probes` (→ new guarded route, Phase 5), topic-triage actions (MCP-only today → new HTTP routes, Phase 4).
+**Endpoints the console assumes that DO NOT exist** (and how the plan resolves them): `GET /api/approvals*` (→ use `/api/tasks/*` above), `POST /api/tasks/{id}/retry` (→ `PUT …/status`), `POST /api/tasks/{id}/cancel` (→ `DELETE`), `GET /probes` for service health (→ cAdvisor `container_last_seen` + `/api/health`, Phase 5.1 ✅), `run-probes` (removed — brain probes have no HTTP surface), `POST /api/admin/restart` (→ brain-routed guarded action, Phase 5.3 deferred), topic-triage actions (MCP-only today → new HTTP routes, Phase 4).
 
 ---
 
@@ -586,26 +586,30 @@ stages: [
 
 ## Phase 5 — Health & Services: a real truth source (drop the fictional probes)
 
-> Outcome: service health is sourced from Prometheus `up{}` (`:9091`) + `/api/health`; the GPU HUD uses real `nvidia_gpu_*` series; the service list reflects the real container topology; and the operator gets a **guarded restart** action.
+> Outcome: service health is sourced from cAdvisor `container_last_seen` (`:9091`) + `/api/health`; the GPU HUD uses real `nvidia_gpu_*` series; the service list reflects the real container topology; and the operator gets a **guarded restart** action.
 
-### Task 5.1: Service health from Prometheus + `/api/health`
+**STATUS — 5.1 + 5.2 SHIPPED (2026-06-13, this PR).** The read-only health surfaces are live on the adapter seam (mock mode unchanged; live mode verified against the real stack — all 19 container-backed services resolve `ok`, 0 down; all 8 GPU scalars resolve). **Task 5.3 (guarded restart) is intentionally deferred to a follow-up PR:** the worker container has NO `docker.sock` mount (only `poindexter-brain-daemon` does, RW), so a restart route on the worker cannot shell out to docker-compose — it must route through the brain via the DB spinal cord. That's a backend-design task, not a console edit, so it ships on its own.
 
-**Files:** Modify `js/api.js` (`probes()` → real health), `js/data.js` (`services`), `js/panels.jsx` (`ServiceGrid`)
+> Correction to the original plan: service health uses cAdvisor `container_last_seen`, **not** `up{}`. cAdvisor emits a series for **all ~39 running containers**, whereas `up{}` only has the ~12 Prometheus scrape targets — so `up{}` alone can't see most of the stack. The freshness expression `time() - container_last_seen` gives a per-container liveness age; the sibling cAdvisor series (`container_memory_usage_bytes`, `rate(container_cpu_usage_seconds_total[1m])`, `container_start_time_seconds`, the `image` label) make the detail drawer fully real too.
 
-- [ ] **Step 1:** Replace `probes()`'s `GET /probes` live branch with: (a) `GET /api/health` for the worker, and (b) Prometheus `up{}` instant queries per service for the rest. Delete the "28 probes / Run all 28" UI and the `runAllProbes`/`/api/admin/run-probes` calls (the brain's probes have no HTTP surface; alerts arrive via Telegram/AlertManager).
-- [ ] **Step 2:** Update the **real container list** in `data.js`: `poindexter-worker` (API, :8002), **`poindexter-prefect-worker`** (pipeline — the one that actually runs content), `poindexter-brain-daemon`, `postgres`, `ollama`, `sdxl-server`, `prometheus` (:9091), `grafana`, `loki`, `tempo`, `alertmanager`, `langfuse`, `glitchtip`, `pgadmin`, `pyroscope`, `uptime-kuma`, `livekit`, speaches sidecar(s). Mark which are tailnet-only.
-- [ ] **Step 3: Verify** the grid against `docker ps` + `up{}` in Prometheus.
-- [ ] **Step 4: Commit.**
+### Task 5.1: Service health from cAdvisor + `/api/health` — ✅ SHIPPED
 
-### Task 5.2: GPU HUD on real metrics
+**Files:** `js/api.js` (`probes()` → `serviceHealth()` + `promVector`), `js/data.js` (`services`), `js/panels.jsx` (`ServiceGrid`), `js/app.jsx` (30s live poll), `js/modes.jsx` (SystemMap node keys)
 
-**Files:** Modify `js/api.js` (`gpu()` ~`:290-303`)
+- [x] **Step 1:** Replaced `probes()` with `serviceHealth()`. Live branch derives status from `time() - container_last_seen{name=~"poindexter.+"}` (<60s `ok` · ≥60s `stale` · absent `down`), plus real `cpu`/`mem`/`uptime`/`image` from the sibling cAdvisor series and a worker `/api/health` overlay (container-up ≠ FastAPI-answering). Deleted the "Run all 28 probes" UI + `runAllProbes`/`/api/admin/run-probes` (the brain's probes have no HTTP surface; alerts arrive via Telegram/AlertManager). Added a `promVector` helper + a 30s live-poll effect in `app.jsx`.
+- [x] **Step 2:** Rewrote `data.js` `services` to the **real curated topology** (20 operator-meaningful subsystems): `worker` (:8002), **`prefect-worker`** (the pipeline runner that actually generates content), `brain-daemon`, `postgres-local`, `ollama` (`host:true` — :11434, no cAdvisor series), `sdxl-server`, `prefect-server`, `prometheus` (:9091), `grafana`, `loki`, `tempo`, `pyroscope`, `alertmanager`, `langfuse-web`, `glitchtip-web`, `pgadmin`, `cadvisor`, `uptime-kuma`, `livekit` (tailnet), `speaches` (tailnet). Each carries `container` (the real cAdvisor `name`); `host`/`tailnet` flags mark the exceptions. Realigned the SystemMap (`modes.jsx`) node/edge keys to the renamed services.
+- [x] **Step 3: Verified** — simulated the live mapping against real Prometheus (all 19 container services `ok`, 0 down, real cpu/mem/uptime/image), and a headless mock-mode render (20 rows, 0 runtime errors, "Run all probes" gone).
+- [x] **Step 4: Committed.**
 
-- [ ] **Step 1:** Point the Prometheus base at `:9091` and the queries at the real exporter series `nvidia_gpu_*` (single-sourced per #653) — utilisation, temp, power, VRAM used/total, clock. Confirm exact metric names with `mcp__grafana__list_prometheus_metric_names` or the Hardware & Power dashboard's panel queries.
-- [ ] **Step 2: Verify** the HUD against the Hardware & Power Grafana board.
-- [ ] **Step 3: Commit.**
+### Task 5.2: GPU HUD on real metrics — ✅ SHIPPED
 
-### Task 5.3: Guarded restart endpoint (backend, TDD)
+**Files:** `js/api.js` (`gpu()`), `js/app.jsx` (GPU poll → real in live), `js/panels.jsx` (`GpuHud` driver guard)
+
+- [x] **Step 1:** Pointed `gpu()` at the verified `nvidia_gpu_*` series at `:9091` (the ones the Hardware & Power board reads): `nvidia_gpu_utilization_percent`, `_temperature_celsius`, `_power_draw_watts`, `_power_limit_watts`, `_memory_used_mib`/`_memory_total_mib` (÷1024 → GB), `_fan_speed_percent`, `_clock_graphics_mhz`. `driver`/`procs` aren't in the exporter → left empty in live (no fabricated data); `utilHist`/`tempHist` seed flat-real and the live poll shifts real samples in. The `app.jsx` GPU timer polls real `gpu()` in live mode (mock keeps the local jitter).
+- [x] **Step 2: Verified** — all 8 scalars resolve against real Prometheus (idle box: 0% util, 35°C, 65/600 W, 2.5/31.8 GB).
+- [x] **Step 3: Committed.**
+
+### Task 5.3: Guarded restart endpoint (backend, TDD) — ⏭ DEFERRED (follow-up PR)
 
 **Files:**
 

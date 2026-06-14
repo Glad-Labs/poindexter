@@ -269,7 +269,7 @@ function ActionInbox({
 
 /* ─── Service health grid ───────────────────────────────────── */
 const LED = { ok: 'led-ok', warn: 'led-warn', err: 'led-err', off: 'led-off' };
-function ServiceGrid({ services, onOpen, onRestart, onProbe }) {
+function ServiceGrid({ services, onOpen, onRestart }) {
   const down = services.filter((s) => s.status === 'err').length;
   const warn = services.filter((s) => s.status === 'warn').length;
   return (
@@ -278,8 +278,6 @@ function ServiceGrid({ services, onOpen, onRestart, onProbe }) {
       title="SERVICE HEALTH"
       meta={`${services.length} CONTAINERS · ${down} DOWN · ${warn} DEGRADED`}
       flush
-      action="Run all probes"
-      onAction={onProbe}
     >
       <div>
         {services.map((s) => (
@@ -316,7 +314,7 @@ function GpuHud({ gpu, onOpen }) {
     <Panel
       idx="G1"
       title="GPU · RTX 5090"
-      meta={`DRIVER ${gpu.driver}`}
+      meta={gpu.driver ? `DRIVER ${gpu.driver}` : 'LIVE · nvidia_gpu'}
       flush
       action="Detail"
       onAction={onOpen}

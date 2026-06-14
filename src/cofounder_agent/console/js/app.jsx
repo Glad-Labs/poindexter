@@ -65,6 +65,23 @@ function App() {
       );
     }, 5200);
     const gpuTimer = setInterval(() => {
+      // Live: poll the real nvidia_gpu_* gauges (api.gpu) and shift the real
+      // reading into the sparkline history. Mock: subtle local jitter so the
+      // gauges feel alive without a backend.
+      if (PX.api.isLive()) {
+        PX.api
+          .gpu()
+          .then((real) =>
+            setGpu((g) => ({
+              ...g,
+              ...real,
+              utilHist: [...g.utilHist.slice(1), Math.round(real.util)],
+              tempHist: [...g.tempHist.slice(1), Math.round(real.temp)],
+            }))
+          )
+          .catch(() => {});
+        return;
+      }
       setGpu((g) => {
         const util = Math.max(
           40,
@@ -164,6 +181,31 @@ function App() {
     };
     load();
     const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: real service health from cAdvisor + worker /api/health ──
+  // Replaces the mock liveness with derived container_last_seen status (plus
+  // real cpu/mem/uptime/image). Faster cadence than the 5-min data polls — a
+  // down container is the thing an operator wants to see immediately. cAdvisor
+  // scrapes ~15s, so 30s is two scrapes of headroom. Mock mode keeps PX.services.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const rows = await PX.api.serviceHealth();
+        if (!alive) return;
+        if (Array.isArray(rows)) setServices(rows);
+      } catch (e) {
+        pushToast(`Service health load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 30 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -506,14 +548,6 @@ function App() {
       pushToast('Connecting to Poindexter voice (LiveKit)…', 'cyan', '🎙'),
   };
 
-  const runAllProbes = () => {
-    pushToast('Running all 28 probes…', 'cyan', '◐');
-    pushFeed(
-      ['cyan', 'PROBE'],
-      `operator triggered <b>run-all-probes</b> · 28 checks`
-    );
-  };
-
   const open = (type, data) => setEntity({ type, data });
 
   // ── Command palette commands (built from live state) ──────────────────
@@ -588,13 +622,6 @@ function App() {
         danger: s.status === 'err',
         run: () => A.restart(s),
       });
-    });
-    cmds.push({
-      id: 'probes',
-      group: 'Run',
-      icon: 'bolt',
-      label: 'Run all 28 probes',
-      run: runAllProbes,
     });
     cmds.push({
       id: 'embed',
@@ -806,7 +833,6 @@ function App() {
                   services={services}
                   onOpen={(s) => open('service', s)}
                   onRestart={A.restart}
-                  onProbe={runAllProbes}
                 />
               </div>
               <div id="sec-pipeline">

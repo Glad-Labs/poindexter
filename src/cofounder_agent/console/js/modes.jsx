@@ -272,32 +272,36 @@ function FeedMode({ inbox, feed, filter, setFilter, onOpen, A }) {
 }
 
 /* ═══ SYSTEM MAP — live node graph ══════════════════════════ */
+// Keys MUST match the `name` field of the entries in data.js `services` —
+// SystemMap looks each node up via svcByName[name] for its live status. (The
+// 2026-06 service rename dropped the `poindexter-` display prefix; the real
+// cAdvisor container name lives on `s.container`, used by the health query.)
 const MAP_NODES = [
-  { key: 'poindexter-worker', x: 50, y: 48, core: true },
-  { key: 'postgres', x: 22, y: 26 },
+  { key: 'worker', x: 50, y: 48, core: true },
+  { key: 'postgres-local', x: 22, y: 26 },
   { key: 'ollama', x: 76, y: 24 },
   { key: 'sdxl-server', x: 84, y: 52 },
-  { key: 'poindexter-brain-daemon', x: 50, y: 16 },
+  { key: 'brain-daemon', x: 50, y: 16 },
   { key: 'prometheus', x: 20, y: 70 },
   { key: 'loki', x: 38, y: 84 },
   { key: 'tempo', x: 62, y: 84 },
   { key: 'prefect-server', x: 80, y: 78 },
-  { key: 'glitchtip', x: 16, y: 48 },
+  { key: 'glitchtip-web', x: 16, y: 48 },
   { key: 'gpu', x: 88, y: 36, gpu: true },
 ];
 const MAP_EDGES = [
-  ['poindexter-worker', 'postgres', 'hot'],
-  ['poindexter-worker', 'ollama', 'hot'],
-  ['poindexter-worker', 'loki', 'hot'],
-  ['poindexter-worker', 'tempo', 'hot'],
-  ['poindexter-brain-daemon', 'poindexter-worker', 'hot'],
-  ['poindexter-brain-daemon', 'prometheus', ''],
+  ['worker', 'postgres-local', 'hot'],
+  ['worker', 'ollama', 'hot'],
+  ['worker', 'loki', 'hot'],
+  ['worker', 'tempo', 'hot'],
+  ['brain-daemon', 'worker', 'hot'],
+  ['brain-daemon', 'prometheus', ''],
   ['ollama', 'gpu', 'hot'],
   ['sdxl-server', 'gpu', 'amber'],
-  ['prometheus', 'poindexter-worker', ''],
-  ['prefect-server', 'poindexter-worker', 'err'],
-  ['poindexter-worker', 'glitchtip', ''],
-  ['poindexter-worker', 'sdxl-server', 'hot'],
+  ['prometheus', 'worker', ''],
+  ['prefect-server', 'worker', 'err'],
+  ['worker', 'glitchtip-web', ''],
+  ['worker', 'sdxl-server', 'hot'],
 ];
 
 function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {

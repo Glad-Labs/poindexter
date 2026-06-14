@@ -37,9 +37,11 @@
      memory        GET  /api/memory/stats, /api/memory/search
      posts         GET  /api/posts
      analytics     GET  /api/analytics/views
-     gpu           Prometheus GET /api/v1/query  (separate origin, :9091)
+     health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
+     gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
-   discovery, NOT service health. Service health = Prometheus up{} + /api/health.
+   discovery, NOT service health. Service health = cAdvisor container_last_seen
+   (covers all ~39 containers; up{} only has the ~12 scrape targets) + /api/health.
    ══════════════════════════════════════════════════════════════ */
 (function () {
   const LS = window.localStorage;
@@ -131,6 +133,19 @@
     const j = await (await fetch(u)).json();
     const v = j?.data?.result?.[0]?.value?.[1];
     return v != null ? Number(v) : null;
+  }
+
+  // Prometheus instant query → full vector: [{labels, value:Number}]. Used when
+  // one query carries a value PER series (e.g. per-container liveness) and we
+  // need to key the results by a label instead of taking result[0].
+  async function promVector(promql) {
+    const u =
+      cfg.prometheus + '/api/v1/query?query=' + encodeURIComponent(promql);
+    const j = await (await fetch(u)).json();
+    return (j?.data?.result || []).map((r) => ({
+      labels: r.metric || {},
+      value: r.value ? Number(r.value[1]) : null,
+    }));
   }
 
   const PX = window.PX || (window.PX = {});
@@ -445,25 +460,113 @@
       );
     },
 
-    // ── service health / probes ─────────────────────────────
-    probes() {
+    // ── service health (real liveness from cAdvisor) ────────
+    // Service health is NOT /api/modules/probes (that's module discovery and
+    // returns {count:0}). The real per-container signal is cAdvisor's
+    // container_last_seen — it covers ALL ~39 containers, whereas Prometheus
+    // up{} only has the ~12 scrape targets. From one instant query per metric
+    // (keyed by the `name` label) we derive:
+    //   status  ← age = time() - container_last_seen (<60s ok · ≥60s stale · absent down)
+    //   img     ← the series' `image` label
+    //   uptime  ← time() - container_start_time_seconds
+    //   cpu     ← rate(container_cpu_usage_seconds_total[1m]) * 100
+    //   mem     ← container_memory_usage_bytes / 1e6 (MB)
+    // plus a worker /api/health overlay — the container can be up while FastAPI
+    // is wedged. host:true rows (ollama at :11434) have no cAdvisor series, so
+    // they're shown neutral, never faked.
+    serviceHealth() {
       return pick(
-        () => http('GET', '/probes'),
+        async () => {
+          const byName = (vec) => {
+            const m = {};
+            vec.forEach((s) => {
+              if (s.labels.name) m[s.labels.name] = s;
+            });
+            return m;
+          };
+          const sel = '{name=~"poindexter.+"}';
+          const [age, cpu, mem, up] = await Promise.all([
+            promVector('time() - container_last_seen' + sel)
+              .then(byName)
+              .catch(() => ({})),
+            promVector(
+              'rate(container_cpu_usage_seconds_total' + sel + '[1m]) * 100'
+            )
+              .then(byName)
+              .catch(() => ({})),
+            promVector('container_memory_usage_bytes' + sel)
+              .then(byName)
+              .catch(() => ({})),
+            promVector('time() - container_start_time_seconds' + sel)
+              .then(byName)
+              .catch(() => ({})),
+          ]);
+          let workerOk = null;
+          try {
+            await http('GET', '/api/health');
+            workerOk = true;
+          } catch (e) {
+            workerOk = false;
+          }
+          const fmtUptime = (secs) => {
+            if (secs == null) return '—';
+            const d = Math.floor(secs / 86400);
+            const h = Math.floor((secs % 86400) / 3600);
+            const m = Math.floor((secs % 3600) / 60);
+            return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+          };
+          return mock().services.map((s) => {
+            if (s.host) {
+              // cAdvisor can't see host processes — don't fabricate liveness.
+              return { ...s, status: 'off', metric: 'host · not scraped' };
+            }
+            const a = age[s.container];
+            let status, metric;
+            if (!a || a.value == null) {
+              status = 'err';
+              metric = 'down';
+            } else if (a.value < 60) {
+              status = 'ok';
+              metric = 'up · ' + Math.round(a.value) + 's';
+            } else {
+              status = 'warn';
+              metric = 'stale · ' + Math.round(a.value) + 's';
+            }
+            if (workerOk === false && s.container === 'poindexter-worker') {
+              status = 'warn';
+              metric = 'api unreachable';
+            }
+            const cpuV = cpu[s.container]?.value;
+            const memV = mem[s.container]?.value;
+            return {
+              ...s,
+              status,
+              metric,
+              img: (a && a.labels.image) || s.img,
+              uptime: fmtUptime(up[s.container]?.value),
+              cpu: cpuV != null ? Math.round(cpuV) : 0,
+              mem: memV != null ? Math.round(memV / 1e6) : 0,
+              probe:
+                status === 'ok'
+                  ? 'cAdvisor ✓'
+                  : status === 'warn'
+                    ? 'cAdvisor ⚠'
+                    : 'absent ✕',
+            };
+          });
+        },
         () => mock().services
       );
     },
-    // No public "restart" route on the worker — restarts are a brain/docker
-    // action. Wire this to your own admin endpoint or a brain webhook.
-    // TODO(live): point at your restart mechanism.
+    // Restart is a brain/docker.sock action — the worker container has NO
+    // docker.sock mount (only poindexter-brain-daemon does), so it CANNOT
+    // restart containers directly. Phase 5.3 wires this through the brain via
+    // the DB spinal cord (write a restart intent the brain-daemon claims).
+    // Until then the live branch has no endpoint; mock stays a no-op. See
+    // docs/superpowers/plans/2026-06-13-operator-console.md.
     restartService(name) {
       return pick(
         () => http('POST', `/api/admin/restart`, { service: name }),
-        () => ({ ok: true })
-      );
-    },
-    runAllProbes() {
-      return pick(
-        () => http('POST', '/api/admin/run-probes'),
         () => ({ ok: true })
       );
     },
@@ -482,21 +585,46 @@
       );
     },
 
-    // ── GPU (Prometheus, not the worker) ────────────────────
-    // Metric names depend on your exporter (nvidia_gpu_exporter / DCGM).
-    // TODO(live): match these to your actual series names.
+    // ── GPU (Prometheus :9091, not the worker) ──────────────
+    // Verified against the local poindexter-gpu-exporter series (the same ones
+    // the Hardware & Power dashboard reads). VRAM is exported in MiB → /1024 for
+    // the GB the gauges expect. driver/procs aren't in nvidia_gpu_* so they're
+    // left empty in live rather than carrying mock values (no fabricated data).
+    // utilHist/tempHist seed FLAT at the current real reading; the GPU poll in
+    // app.jsx shifts real samples in each tick. clockMax/name are display
+    // scaffolding (the card really is an RTX 5090).
     async gpu() {
       if (!cfg.live) return mock().gpu;
-      const [util, temp, power] = await Promise.all([
-        promScalar('nvidia_smi_utilization_gpu_ratio * 100').catch(() => null),
-        promScalar('nvidia_smi_temperature_gpu').catch(() => null),
-        promScalar('nvidia_smi_power_draw_watts').catch(() => null),
-      ]);
+      const g = mock().gpu;
+      const [util, temp, power, powerMax, vu, vt, fan, clock] =
+        await Promise.all([
+          promScalar('nvidia_gpu_utilization_percent').catch(() => null),
+          promScalar('nvidia_gpu_temperature_celsius').catch(() => null),
+          promScalar('nvidia_gpu_power_draw_watts').catch(() => null),
+          promScalar('nvidia_gpu_power_limit_watts').catch(() => null),
+          promScalar('nvidia_gpu_memory_used_mib').catch(() => null),
+          promScalar('nvidia_gpu_memory_total_mib').catch(() => null),
+          promScalar('nvidia_gpu_fan_speed_percent').catch(() => null),
+          promScalar('nvidia_gpu_clock_graphics_mhz').catch(() => null),
+        ]);
+      const mibToGb = (m) =>
+        m == null ? null : Math.round((m / 1024) * 10) / 10;
+      const u = Math.round(util ?? g.util);
+      const t = Math.round(temp ?? g.temp);
       return {
-        ...mock().gpu,
-        util: util ?? mock().gpu.util,
-        temp: temp ?? mock().gpu.temp,
-        power: power ?? mock().gpu.power,
+        ...g,
+        driver: '', // not exported by nvidia_gpu_* — don't fabricate a version
+        procs: [], // no per-process VRAM series — empty beats fake rows
+        util: u,
+        temp: t,
+        power: power != null ? Math.round(power) : g.power,
+        powerMax: powerMax != null ? Math.round(powerMax) : g.powerMax,
+        vramUsed: mibToGb(vu) ?? g.vramUsed,
+        vramTotal: mibToGb(vt) ?? g.vramTotal,
+        fan: fan != null ? Math.round(fan) : g.fan,
+        clock: clock != null ? Math.round(clock) : g.clock,
+        utilHist: util != null ? Array(g.utilHist.length).fill(u) : g.utilHist,
+        tempHist: temp != null ? Array(g.tempHist.length).fill(t) : g.tempHist,
       };
     },
   };
