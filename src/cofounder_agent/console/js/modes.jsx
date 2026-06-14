@@ -481,9 +481,15 @@ function WallDisplay({
     },
     { label: 'In Flight', val: inFlight, foot: 'pipeline tasks', tone: '' },
     {
+      // queueDepth (brain_queue) has no HTTP route — null in live → honest '—'.
       label: 'Embed Queue',
-      val: brain.queueDepth,
-      foot: brain.queueDepth > 15 ? 'behind' : 'nominal',
+      val: brain.queueDepth == null ? '—' : brain.queueDepth,
+      foot:
+        brain.queueDepth == null
+          ? 'no HTTP route'
+          : brain.queueDepth > 15
+            ? 'behind'
+            : 'nominal',
       tone: brain.queueDepth > 15 ? 'amber' : 'mint',
     },
     {

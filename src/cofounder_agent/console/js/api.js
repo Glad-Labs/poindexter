@@ -477,10 +477,61 @@
     },
 
     // ── brain / memory ──────────────────────────────────────
+    // GET /api/memory/stats → {total, embed_model, embed_dim, by_source_table[],
+    // by_writer[]}. Map it onto the BrainPanel shape (totalEmbeddings / bySource
+    // / byWriter). queueDepth / lastCycle / decisions / growth / recent are
+    // brain-daemon internals (brain_queue / brain_decisions) with NO HTTP route,
+    // so live mode leaves them null/[] and the panel renders an honest-empty
+    // state — never the mock's queue/decisions (feedback_no_dummy_data).
     memoryStats() {
       return pick(
-        () => http('GET', '/api/memory/stats'),
+        async () => {
+          const s = await http('GET', '/api/memory/stats');
+          const src = (s && s.by_source_table) || [];
+          const wr = (s && s.by_writer) || [];
+          return {
+            totalEmbeddings: (s && s.total) || 0,
+            model: (s && s.embed_model) || 'nomic-embed-text',
+            dim: (s && s.embed_dim) || null,
+            bySource: src.map((r) => [r.key, r.count]),
+            byWriter: wr.map((r) => ({
+              key: r.key,
+              count: r.count,
+              age: r.age_seconds,
+              stale: !!r.stale,
+            })),
+            // brain-daemon internals — no HTTP route → honest-empty in live.
+            queueDepth: null,
+            lastCycle: null,
+            decisions: [],
+            growth: [],
+            recent: [],
+          };
+        },
         () => mock().brain
+      );
+    },
+
+    // GET /api/memory/search?q=&source_table=&limit= → {query, count, hits[]}.
+    // Semantic recall over the pgvector corpus — also the "recall decision"
+    // surface (scope source_table to memory/brain). Read-only. `opts` is an
+    // already-encoded query-string tail (e.g. '&source_table=memory&limit=10').
+    memorySearch(q, opts = '') {
+      return pick(
+        () =>
+          http('GET', '/api/memory/search?q=' + encodeURIComponent(q) + opts),
+        () => ({
+          query: q,
+          count: mock().brain.recent.length,
+          hits: mock().brain.recent.map((r, i) => ({
+            source_table: r.src,
+            source_id: r.id,
+            similarity: Number((0.82 - i * 0.06).toFixed(3)),
+            writer: 'worker',
+            text_preview: r.preview,
+            metadata: {},
+          })),
+        })
       );
     },
 

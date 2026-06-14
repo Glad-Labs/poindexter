@@ -120,6 +120,126 @@ function FindingsPanel({ findings, onOpen }) {
   );
 }
 
+/* ─── Memory recall — semantic search over the pgvector corpus ───
+   GET /api/memory/search?q=&source_table=&limit= . This is the recall surface
+   the Brain drawer hosts — and doubles as "recall decision" (scope to
+   memory/brain to pull decision-log embeddings). Read-only. `sources` is the
+   live by_source_table list ([key,count]) so the scope select stays
+   data-driven; the embedded mock returns canned hits offline. */
+function MemorySearch({ sources }) {
+  const [q, setQ] = React.useState('');
+  const [scope, setScope] = React.useState('');
+  const [s, setS] = React.useState({ status: 'idle', hits: [], err: '' });
+  const keys = (sources || []).map(([k]) => k);
+  const inputStyle = {
+    background: 'var(--gl-surface-2)',
+    color: 'var(--gl-text)',
+    border: '1px solid var(--gl-hairline)',
+    borderRadius: 4,
+    padding: '6px 8px',
+    fontSize: 12,
+  };
+  const run = async () => {
+    const query = q.trim();
+    if (!query) return;
+    setS({ status: 'loading', hits: [], err: '' });
+    try {
+      const opts =
+        '&limit=10' +
+        (scope ? '&source_table=' + encodeURIComponent(scope) : '');
+      const res = await PX.api.memorySearch(query, opts);
+      const hits = (res && res.hits) || [];
+      setS({ status: hits.length ? 'done' : 'empty', hits, err: '' });
+    } catch (e) {
+      setS({ status: 'error', hits: [], err: e.message });
+    }
+  };
+  return (
+    <>
+      <div className="section-label">Recall — semantic search</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input
+          type="text"
+          style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+          placeholder='e.g. "why cost tiers over hardcoded models"'
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyUp={(e) => e.key === 'Enter' && run()}
+        />
+        {keys.length > 0 && (
+          <select
+            style={inputStyle}
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            title="scope to a source_table (memory / brain = decisions)"
+          >
+            <option value="">all</option>
+            {keys.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        )}
+        <button className="mbtn mbtn--primary" onClick={run}>
+          <Icon name="search" size={11} />
+          Search
+        </button>
+      </div>
+      {s.status === 'loading' && (
+        <div className="mono c-dim" style={{ fontSize: 11 }}>
+          Searching…
+        </div>
+      )}
+      {s.status === 'error' && (
+        <div className="mono c-red" style={{ fontSize: 11 }}>
+          Search failed — {s.err}
+        </div>
+      )}
+      {s.status === 'empty' && (
+        <div className="mono c-dim" style={{ fontSize: 11 }}>
+          No matches.
+        </div>
+      )}
+      {s.status === 'done' &&
+        s.hits.map((h, i) => (
+          <div
+            key={i}
+            style={{
+              background: 'var(--gl-surface)',
+              border: '1px solid var(--gl-hairline)',
+              borderRadius: 4,
+              padding: '6px 8px',
+              marginBottom: 6,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <span className="mono c-cyan" style={{ fontSize: 10 }}>
+                {h.source_table}#{h.source_id}
+                {h.writer ? ' · ' + h.writer : ''}
+              </span>
+              <span className="mono c-mint tnum" style={{ fontSize: 10 }}>
+                {(h.similarity != null ? h.similarity : 0).toFixed(3)}
+              </span>
+            </div>
+            <div
+              className="c-text"
+              style={{ fontSize: 11, marginTop: 3, lineHeight: 1.4 }}
+            >
+              {(h.text_preview || '').slice(0, 240)}
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
 /* ─── Revenue ───────────────────────────────────────────────── */
 function RevenuePanel({ revenue, onOpen }) {
   const r = revenue;

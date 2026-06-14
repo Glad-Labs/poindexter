@@ -32,6 +32,7 @@ function App() {
   const [topics, setTopics] = useS(PX.topics); // live: GET /api/topics/proposals
   const [cost, setCost] = useS(PX.cost); // live: GET /api/metrics/costs/budget
   const [findings, setFindings] = useS(PX.findings); // live: GET /api/findings
+  const [brain, setBrain] = useS(PX.brain); // live: GET /api/memory/stats
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -271,6 +272,30 @@ function App() {
     };
     load();
     const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: real embedding corpus (GET /api/memory/stats) ───
+  // Maps total + by_source_table + by_writer onto the Brain panel. queueDepth /
+  // decisions / growth / recent have no HTTP route → honest-empty in live.
+  // Mock mode keeps PX.brain. 60s cadence (the corpus grows slowly).
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.memoryStats();
+        if (!alive || !res) return;
+        setBrain(res);
+      } catch (e) {
+        pushToast(`Memory stats load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 60 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -942,8 +967,8 @@ function App() {
               </div>
               <div id="sec-brain">
                 <BrainPanel
-                  brain={PX.brain}
-                  onOpen={() => open('brain', PX.brain)}
+                  brain={brain}
+                  onOpen={() => open('brain', brain)}
                   onEmbed={A.embed}
                 />
               </div>
@@ -1022,7 +1047,7 @@ function App() {
             kpis={PX.kpis}
             gpu={gpu}
             pipeline={pipeline}
-            brain={PX.brain}
+            brain={brain}
             services={services}
             inbox={inbox}
             clock={clock}

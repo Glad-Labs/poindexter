@@ -719,22 +719,34 @@
   };
 
   // ── Brain / embeddings ──────────────────────────────────────
+  // Shape mirrors GET /api/memory/stats (see memory_dashboard_routes.py):
+  //   totalEmbeddings ← total · bySource ← by_source_table · byWriter ← by_writer
+  // Live mode replaces those three from the real read. queueDepth / lastCycle /
+  // growth / decisions / recent are brain-daemon internals (brain_queue /
+  // brain_decisions) with NO HTTP route — they stay mock-only and render an
+  // honest-empty state in live (feedback_no_dummy_data). Corpus keys are the
+  // real source_tables (posts/issues/audit/memory/brain/claude_sessions).
   const brain = {
-    totalEmbeddings: 957,
+    totalEmbeddings: 16932,
     model: 'nomic-embed-text',
-    queueDepth: 24,
+    dim: 768,
+    queueDepth: 6,
     lastCycle: ago(41),
     bySource: [
-      ['issues', 612],
-      ['posts', 211],
-      ['docs', 88],
-      ['shared-context', 46],
+      ['posts', 8210],
+      ['issues', 4120],
+      ['audit', 2980],
+      ['memory', 902],
+      ['claude_sessions', 498],
+      ['brain', 222],
     ],
-    byOrigin: [
-      ['unknown', 894],
-      ['claude-code', 44],
-      ['openclaw', 10],
-      ['shared-context', 9],
+    // By writer, with per-writer staleness (mirrors by_writer rows).
+    byWriter: [
+      { key: 'worker', count: 11240, age: 95, stale: false },
+      { key: 'claude-code', count: 3010, age: 220, stale: false },
+      { key: 'user', count: 1605, age: 5400, stale: false },
+      { key: 'openclaw', count: 720, age: 28800, stale: true },
+      { key: 'brain', count: 357, age: 410, stale: false },
     ],
     growth: [
       12, 8, 21, 15, 32, 18, 9, 24, 41, 17, 28, 53, 22, 19, 36, 44, 31, 27, 48,
@@ -743,9 +755,9 @@
     decisions: [
       {
         ts: '14:31:08',
-        kind: 'probe',
-        msg: 'embeddings_freshness → WARN · queue depth 24',
-        tone: 'amber',
+        kind: 'observe',
+        msg: 'embeddings_freshness → OK · 6 queued, last cycle 41s',
+        tone: 'mint',
       },
       {
         ts: '14:28:44',
@@ -798,11 +810,11 @@
         at: ago(52),
       },
       {
-        src: 'docs',
+        src: 'memory',
         id: 88,
         chunk: 1,
         model: 'nomic-embed-text',
-        preview: 'Brain Daemon — operator URL probe reference',
+        preview: 'decision_log — why we pick cost tiers over hardcoded models',
         at: ago(67),
       },
     ],

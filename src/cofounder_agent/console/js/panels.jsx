@@ -434,14 +434,23 @@ function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
   );
 }
 
-/* ─── Brain panel ───────────────────────────────────────────── */
+/* ─── Brain panel ───────────────────────────────────────────────
+   Corpus headline (total + by-source) is the real /api/memory/stats read.
+   Queue depth + the decisions feed are brain-daemon internals (brain_queue /
+   brain_decisions) with NO HTTP route, so in live mode (queueDepth == null /
+   decisions == []) they render an honest "no HTTP route" state instead of the
+   mock's fabricated numbers (feedback_no_dummy_data). */
 function BrainPanel({ brain, onOpen, onEmbed }) {
-  const queueHot = brain.queueDepth > 15;
+  const queueKnown = brain.queueDepth != null;
+  const queueHot = queueKnown && brain.queueDepth > 15;
+  const sources = brain.bySource || [];
+  const max = sources[0]?.[1] || 1;
+  const decisions = brain.decisions || [];
   return (
     <Panel
       idx="B1"
       title="BRAIN · SEMANTIC MEMORY"
-      meta={`${brain.totalEmbeddings.toLocaleString()} VECTORS`}
+      meta={`${(brain.totalEmbeddings ?? 0).toLocaleString()} VECTORS`}
       flush
       action="Detail"
       onAction={onOpen}
@@ -456,58 +465,73 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
       >
         <div style={{ background: 'var(--gl-surface)', padding: 12 }}>
           <div className="kpi__label">Queue depth</div>
-          <div
-            className="kpi__value"
-            style={{
-              fontSize: 30,
-              color: queueHot ? 'var(--gl-amber)' : 'var(--gl-text)',
-            }}
-          >
-            {brain.queueDepth}
-          </div>
-          <div className="mono c-dim" style={{ fontSize: 10, marginTop: 4 }}>
-            last cycle {brain.lastCycle}
-          </div>
-          {queueHot && (
-            <button
-              className="mbtn mbtn--amber"
-              style={{ marginTop: 8 }}
-              onClick={onEmbed}
-            >
-              <Icon name="bolt" size={11} />
-              Trigger embed cycle
-            </button>
+          {queueKnown ? (
+            <>
+              <div
+                className="kpi__value"
+                style={{
+                  fontSize: 30,
+                  color: queueHot ? 'var(--gl-amber)' : 'var(--gl-text)',
+                }}
+              >
+                {brain.queueDepth}
+              </div>
+              <div
+                className="mono c-dim"
+                style={{ fontSize: 10, marginTop: 4 }}
+              >
+                last cycle {brain.lastCycle}
+              </div>
+              {queueHot && (
+                <button
+                  className="mbtn mbtn--amber"
+                  style={{ marginTop: 8 }}
+                  onClick={onEmbed}
+                >
+                  <Icon name="bolt" size={11} />
+                  Trigger embed cycle
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <div
+                className="kpi__value"
+                style={{ fontSize: 30, color: 'var(--gl-text-muted)' }}
+              >
+                —
+              </div>
+              <div
+                className="mono c-dim"
+                style={{ fontSize: 10, marginTop: 4 }}
+              >
+                brain_queue · no HTTP route
+              </div>
+            </>
           )}
         </div>
         <div style={{ background: 'var(--gl-surface)', padding: 12 }}>
           <div className="kpi__label" style={{ marginBottom: 8 }}>
             By source
           </div>
-          {brain.bySource.map(([k, v]) => {
-            const max = brain.bySource[0][1];
-            return (
-              <div key={k} style={{ marginBottom: 6 }}>
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 10,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    color: 'var(--gl-text-muted)',
-                    marginBottom: 2,
-                  }}
-                >
-                  <span>{k}</span>
-                  <span className="c-text tnum">{v}</span>
-                </div>
-                <Meter
-                  value={v}
-                  max={max}
-                  color={k === 'issues' ? '' : 'amber'}
-                />
+          {sources.map(([k, v], i) => (
+            <div key={k} style={{ marginBottom: 6 }}>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--gl-text-muted)',
+                  marginBottom: 2,
+                }}
+              >
+                <span>{k}</span>
+                <span className="c-text tnum">{v.toLocaleString()}</span>
               </div>
-            );
-          })}
+              <Meter value={v} max={max} color={i === 0 ? '' : 'amber'} />
+            </div>
+          ))}
         </div>
       </div>
       <div
@@ -517,19 +541,25 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
         }}
       >
         <div className="kpi__label" style={{ marginBottom: 8 }}>
-          Brain decisions · live
+          Brain decisions
         </div>
-        <div className="feed" style={{ padding: 0 }}>
-          {brain.decisions.slice(0, 4).map((d, i) => (
-            <div key={i} className="feed__line" style={{ padding: '2px 0' }}>
-              <span className="feed__ts">{d.ts}</span>
-              <span className={`feed__tag c-${d.tone}`}>
-                {d.kind.toUpperCase()}
-              </span>
-              <span className="feed__msg">{d.msg}</span>
-            </div>
-          ))}
-        </div>
+        {decisions.length > 0 ? (
+          <div className="feed" style={{ padding: 0 }}>
+            {decisions.slice(0, 4).map((d, i) => (
+              <div key={i} className="feed__line" style={{ padding: '2px 0' }}>
+                <span className="feed__ts">{d.ts}</span>
+                <span className={`feed__tag c-${d.tone}`}>
+                  {d.kind.toUpperCase()}
+                </span>
+                <span className="feed__msg">{d.msg}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            brain_decisions · no HTTP route — see Grafana / Langfuse
+          </div>
+        )}
       </div>
     </Panel>
   );

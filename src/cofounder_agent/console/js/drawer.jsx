@@ -725,68 +725,130 @@ function Drawer({ entity, onClose, actions }) {
         title = 'Brain';
         body = (
           <>
-            <div className="section-label">Embeddings · growth (30d)</div>
-            <div
-              style={{
-                background: 'var(--gl-surface)',
-                padding: 12,
-                border: '1px solid var(--gl-hairline)',
-              }}
-            >
-              <MiniBars
-                data={b.growth}
-                color="cyan"
-                labels={['30d', 'today']}
-                height={80}
-              />
-            </div>
-            <div className="section-label">Recently embedded</div>
+            <MemorySearch sources={b.bySource} />
+            <div className="section-label">Corpus · by writer</div>
             <table
               className="tbl"
               style={{ border: '1px solid var(--gl-hairline)' }}
             >
               <thead>
                 <tr>
-                  <th>Source</th>
-                  <th>Preview</th>
-                  <th className="num">When</th>
+                  <th>Writer</th>
+                  <th className="num">Vectors</th>
+                  <th className="num">Age</th>
                 </tr>
               </thead>
               <tbody>
-                {b.recent.map((r, i) => (
-                  <tr key={i}>
-                    <td className="c-cyan">
-                      {r.src}#{r.id}
-                    </td>
-                    <td className="truncate" title={r.preview}>
-                      {r.preview}
-                    </td>
-                    <td className="num c-dim">{r.at}</td>
-                  </tr>
-                ))}
+                {(b.byWriter || []).map((w, i) => {
+                  const a = w.age;
+                  const ageStr =
+                    a == null
+                      ? '—'
+                      : a < 60
+                        ? a + 's'
+                        : a < 3600
+                          ? Math.floor(a / 60) + 'm'
+                          : a < 86400
+                            ? Math.floor(a / 3600) + 'h'
+                            : Math.floor(a / 86400) + 'd';
+                  return (
+                    <tr key={i}>
+                      <td className={w.stale ? 'c-amber' : 'c-text'}>
+                        {w.key}
+                        {w.stale ? ' · stale' : ''}
+                      </td>
+                      <td className="num tnum">
+                        {(w.count || 0).toLocaleString()}
+                      </td>
+                      <td className={`num ${w.stale ? 'c-amber' : 'c-dim'}`}>
+                        {ageStr}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+            {/* growth + recent are brain_queue/daemon internals (no HTTP route)
+                — present in mock, honest-empty in live (feedback_no_dummy_data). */}
+            {b.growth && b.growth.length > 0 && (
+              <>
+                <div className="section-label">Embeddings · growth (30d)</div>
+                <div
+                  style={{
+                    background: 'var(--gl-surface)',
+                    padding: 12,
+                    border: '1px solid var(--gl-hairline)',
+                  }}
+                >
+                  <MiniBars
+                    data={b.growth}
+                    color="cyan"
+                    labels={['30d', 'today']}
+                    height={80}
+                  />
+                </div>
+              </>
+            )}
+            {b.recent && b.recent.length > 0 && (
+              <>
+                <div className="section-label">Recently embedded</div>
+                <table
+                  className="tbl"
+                  style={{ border: '1px solid var(--gl-hairline)' }}
+                >
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      <th>Preview</th>
+                      <th className="num">When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {b.recent.map((r, i) => (
+                      <tr key={i}>
+                        <td className="c-cyan">
+                          {r.src}#{r.id}
+                        </td>
+                        <td className="truncate" title={r.preview}>
+                          {r.preview}
+                        </td>
+                        <td className="num c-dim">{r.at}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
             <div className="section-label">Memory</div>
             <DL
               rows={[
-                ['Total vectors', b.totalEmbeddings.toLocaleString()],
-                ['Model', b.model],
-                ['Queue depth', b.queueDepth],
-                ['Last cycle', b.lastCycle],
+                ['Total vectors', (b.totalEmbeddings ?? 0).toLocaleString()],
+                ['Model', b.model + (b.dim ? ` · ${b.dim}d` : '')],
+                [
+                  'Queue depth',
+                  b.queueDepth == null ? '— · no HTTP route' : b.queueDepth,
+                ],
+                [
+                  'Last cycle',
+                  b.lastCycle == null ? '— · no HTTP route' : b.lastCycle,
+                ],
               ]}
             />
           </>
         );
-        foot = (
-          <button
-            className="mbtn mbtn--amber"
-            style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
-            onClick={() => actions.embed()}
-          >
-            <Icon name="bolt" size={13} />
-            Trigger embed cycle
-          </button>
-        );
+        // Embed-trigger has no HTTP route — offer it only in mock (queueDepth
+        // known); live mode shows no fake action button.
+        foot =
+          b.queueDepth != null ? (
+            <button
+              className="mbtn mbtn--amber"
+              style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+              onClick={() => actions.embed()}
+            >
+              <Icon name="bolt" size={13} />
+              Trigger embed cycle
+            </button>
+          ) : null;
         break;
       }
       case 'cost': {

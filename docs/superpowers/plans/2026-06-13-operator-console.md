@@ -667,23 +667,25 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ---
 
-## Phase 8 — Brain: real embeddings + memory/decision recall (NEW)
+## Phase 8 — Brain: real embeddings + memory/decision recall (NEW) — ✅ SHIPPED
 
 > Outcome: the Brain panel shows the real embedding corpus and becomes a _recall_ surface (`search_memory`, `recall_decision`), not just a counter.
 
-### Task 8.1: Real embedding stats
+**Implementation note (correction):** Phase 8 carried **zero backend work** — both `GET /api/memory/stats` and `GET /api/memory/search` already existed (`memory_dashboard_routes.py`), so this was a pure console-wiring phase (no new TDD route, unlike Phase 7). The route boundary, not the mock, decides what renders: corpus (total / by-source / by-writer) + semantic search are **real**; queue depth, last-cycle, the decisions feed, growth sparkline, and the "Trigger embed cycle" button are brain-daemon internals (`brain_queue` / `brain_decisions`) with **no HTTP route** → live mode shows an honest `— · no HTTP route` state, never the mock's fabricated numbers (`feedback_no_dummy_data`). Verified: mock headless render 12/12 + 0 runtime errors; live-shape mapper sim 9/9 against the route's exact response shape.
 
-**Files:** Modify `js/api.js` (`memoryStats` already → `/api/memory/stats`), `js/data.js` (`brain`), `js/panels.jsx` (`BrainPanel`)
+### Task 8.1: Real embedding stats — ✅ SHIPPED
 
-- [ ] **Step 1:** Map the real `/api/memory/stats` shape into the panel (corpus is ~16,932 across posts/issues/audit/memory/brain/claude_sessions — confirm the live shape at `memory_dashboard_routes.py:116`). Remove the 957 / issues-heavy mock.
-- [ ] **Step 2: Commit.**
+**Files:** `js/api.js` (`memoryStats` now maps the live shape → panel shape), `js/data.js` (`brain` reshaped to real source_tables + `byWriter`), `js/app.jsx` (live `brain` state + 60s `memoryStats` poll; `PX.brain` → live `brain` across panel/drawer/wall), `js/panels.jsx` (`BrainPanel` honest-empty queue/decisions), `js/modes.jsx` (wall Embed-Queue KPI honest-empty), `js/drawer.jsx` (real `byWriter` table w/ staleness; growth/recent honest-empty in live)
 
-### Task 8.2: Memory + decision search
+- [x] **Step 1:** Mapped `/api/memory/stats` (`total` → `totalEmbeddings`, `by_source_table` → `bySource`, `by_writer` → `byWriter` w/ staleness) onto the panel; dropped the 957 / issues-heavy mock for the real source_tables (posts/issues/audit/memory/brain/claude_sessions, ~16,932).
+- [x] **Step 2: Committed.** (folded into the single Phase 8 commit)
 
-**Files:** Modify `js/panels.jsx` (`BrainPanel`), `js/api.js` (add `memorySearch(q)`)
+### Task 8.2: Memory + decision search — ✅ SHIPPED
 
-- [ ] **Step 1:** Add a search box → `GET /api/memory/search?q=` rendering hits; add a "recall decision" lookup if an HTTP route exists (else note as follow-up).
-- [ ] **Step 2: Commit.**
+**Files:** `js/api.js` (add `memorySearch(q, opts)` → `/api/memory/search`), `js/panels2.jsx` (new `MemorySearch` widget), `js/drawer.jsx` (hosts `<MemorySearch sources={…}/>` in the Brain deep-dive)
+
+- [x] **Step 1:** Added a recall search box → `GET /api/memory/search?q=&source_table=&limit=` rendering hits (source/writer/similarity/preview). The **"recall decision"** ask is satisfied by the same widget — a data-driven `source_table` scope select (from the live `by_source_table` keys) lets the operator scope to `memory`/`brain` for decision-log embeddings, so no dedicated `recall_decision` route was needed.
+- [x] **Step 2: Committed.**
 
 ---
 
