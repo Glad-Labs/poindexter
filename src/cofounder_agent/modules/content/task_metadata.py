@@ -102,7 +102,7 @@ def build_task_metadata(
         "podcast_script": state.get("podcast_script", ""),
         "video_scenes": state.get("video_scenes", []),
         "short_summary_script": state.get("short_summary_script", ""),
-        # Glad-Labs/glad-labs-stack#649 PR 2 — the director's shot list
+        # Glad-Labs/poindexter#649 PR 2 — the director's shot list
         # rides through to publish_service so it lands on
         # posts.video_shot_list. Absent → downstream falls back to the
         # legacy slideshow renderer.
