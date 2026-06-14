@@ -29,6 +29,7 @@ function App() {
   const [gpu, setGpu] = useS(PX.gpu);
   const [pipeline, setPipeline] = useS(PX.pipeline); // live: real /api/tasks
   const [topics, setTopics] = useS(PX.topics); // live: GET /api/topics/proposals
+  const [cost, setCost] = useS(PX.cost); // live: GET /api/metrics/costs/budget
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -206,6 +207,44 @@ function App() {
     };
     load();
     const timer = setInterval(load, 30 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: real LLM/API spend vs cap (budget) ──────────────
+  // The one cost read with an HTTP surface (GET /api/metrics/costs/budget). The
+  // by-model / daily breakdowns aren't routed, so live mode clears them to [] and
+  // the panel/drawer render an explicit "backend read pending" — honest, never
+  // mocked. $0 infra + energy are facts (not reads), so they stay as-is. Mock
+  // mode keeps the full PX.cost. 5-min cadence (spend moves slowly).
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const b = await PX.api.budget();
+        if (!alive || !b) return;
+        setCost((c) => ({
+          ...c,
+          monthToDate: b.amount_spent ?? c.monthToDate,
+          budget: b.monthly_budget ?? c.budget,
+          projected: b.projected_final_cost ?? c.projected,
+          dailyBurn: b.daily_burn_rate ?? c.dailyBurn,
+          percentUsed: b.percent_used ?? c.percentUsed,
+          status: b.status ?? c.status,
+          alerts: b.alerts ?? [],
+          byModel: [],
+          daily: [],
+          energyKwhMonth: null,
+        }));
+      } catch (e) {
+        pushToast(`Budget load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -886,10 +925,7 @@ function App() {
                 <QAPanel qa={PX.qa} onOpen={() => open('qa', PX.qa)} />
               </div>
               <div id="sec-cost">
-                <CostPanel
-                  cost={PX.cost}
-                  onOpen={() => open('cost', PX.cost)}
-                />
+                <CostPanel cost={cost} onOpen={() => open('cost', cost)} />
               </div>
               <div id="sec-launch">
                 <LauncherPanel

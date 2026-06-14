@@ -537,7 +537,39 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
 
 /* ─── Cost panel ────────────────────────────────────────────── */
 function CostPanel({ cost, onOpen }) {
-  const pct = (cost.monthToDate / cost.budget) * 100;
+  const pct =
+    cost.percentUsed != null
+      ? cost.percentUsed
+      : (cost.monthToDate / cost.budget) * 100;
+  const warn = pct > 80 || cost.status === 'warning';
+  const energyUsd =
+    cost.energyKwhMonth != null
+      ? cost.energyKwhMonth * cost.electricityRate
+      : null;
+  // The honest cost rows. Infra is $0 (self-hosted); the real levers are LLM/API
+  // spend vs cap (the headline) + local energy. `energyKwhMonth === null` means
+  // live mode with no backend read → explicit "backend read pending", never a
+  // fabricated number (feedback_no_dummy_data).
+  const rows = [
+    ['Infra', '$0/mo', cost.infraNote],
+    [
+      'Energy',
+      energyUsd != null ? `~$${energyUsd.toFixed(2)}/mo` : '— pending',
+      energyUsd != null
+        ? `${cost.energyKwhMonth} kWh × $${cost.electricityRate}/kWh`
+        : 'cost_guard energy read not yet routed',
+    ],
+    [
+      'Daily burn',
+      `$${(cost.dailyBurn ?? 0).toFixed(2)}/day`,
+      `projected $${cost.projected.toFixed(2)} this month`,
+    ],
+    [
+      'Agent API',
+      `$${(cost.agentApiMonth ?? 0).toFixed(2)}/mo`,
+      cost.agentApiNote,
+    ],
+  ];
   return (
     <Panel
       idx="C1"
@@ -563,18 +595,18 @@ function CostPanel({ cost, onOpen }) {
             {cost.monthToDate.toFixed(2)}
           </span>
           <span className="mono c-dim" style={{ fontSize: 11 }}>
-            month to date · {pct.toFixed(0)}% of budget
+            LLM/API spend · month · {pct.toFixed(0)}% of cap
           </span>
         </div>
         <Meter
           value={cost.monthToDate}
           max={cost.budget}
-          color={pct > 80 ? 'amber' : 'mint'}
+          color={warn ? 'amber' : 'mint'}
         />
         <div style={{ marginTop: 14 }}>
-          {cost.byProvider.map((p) => (
+          {rows.map(([label, val, note]) => (
             <div
-              key={p.name}
+              key={label}
               className="svc"
               style={{
                 gridTemplateColumns: '1fr auto',
@@ -584,10 +616,10 @@ function CostPanel({ cost, onOpen }) {
               }}
             >
               <span className="svc__name" style={{ fontSize: 11 }}>
-                {p.name}
-                <small>{p.note}</small>
+                {label}
+                <small>{note}</small>
               </span>
-              <span className="svc__metric c-text">${p.amt.toFixed(2)}</span>
+              <span className="svc__metric c-text">{val}</span>
             </div>
           ))}
         </div>
@@ -601,8 +633,8 @@ function CostPanel({ cost, onOpen }) {
             gap: 6,
           }}
         >
-          <span aria-hidden="true">✓</span> ~${cost.saved.toLocaleString()}/mo
-          saved {cost.savedNote}
+          <span aria-hidden="true">✓</span> infra fully self-hosted — only
+          energy + LLM/API spend cost real money
         </div>
       </div>
     </Panel>

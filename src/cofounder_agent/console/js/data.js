@@ -808,28 +808,38 @@
     ],
   };
 
-  // ── Cost ────────────────────────────────────────────────────
+  // ── Cost — the honest model ─────────────────────────────────
+  // Infra is ~$0/mo (fully self-hosted). The real levers are LLM/API SPEND
+  // against the monthly cap (live: GET /api/metrics/costs/budget) and local
+  // ENERGY (kWh × rate). The old Cloudflare/B2 cloud-egress `byProvider` framing
+  // overstated cloud cost and is dropped. `byModel`/`daily` have no HTTP route
+  // yet, so live mode renders them as an explicit "backend read pending" empty
+  // (never mocked — see app.jsx budget poll + CostPanel).
   const cost = {
-    monthToDate: 11.42,
-    budget: 50,
-    projected: 28.6,
-    byProvider: [
-      {
-        name: 'Cloudflare R2',
-        amt: 4.12,
-        pct: 36,
-        note: 'object storage + egress',
-      },
-      { name: 'Cloudflare', amt: 3.0, pct: 26, note: 'Workers + Pages' },
-      { name: 'Domain / DNS', amt: 2.5, pct: 22, note: 'gladlabs.io + .ai' },
-      { name: 'Backblaze B2', amt: 1.8, pct: 16, note: 'offsite backup' },
-    ],
+    monthToDate: 11.42, // LLM/API spend MTD — live: budget.amount_spent
+    budget: 50, // monthly cap — live: budget.monthly_budget
+    projected: 28.6, // live: budget.projected_final_cost
+    dailyBurn: 0.41, // live: budget.daily_burn_rate
+    percentUsed: 22.8, // live: budget.percent_used
+    status: 'healthy', // live: budget.status (healthy | warning)
+    alerts: [], // live: budget.alerts
+    // Infra is self-hosted → $0. The honest replacement for the cloud-egress mock.
+    infraMonth: 0,
+    infraNote:
+      'fully self-hosted — local Docker · GPU · Postgres; only Vercel / R2 / Resend touch cloud',
+    // Local energy: the real physical cost of running the box (cost_guard + EIA).
+    energyKwhMonth: 9.5,
+    electricityRate: 0.142, // $/kWh (EIA residential)
+    // Scheduled-agent Anthropic API spend (Phase 6.2). Agents were paused
+    // 2026-06-09 for cost control and bill to Anthropic at full rate from
+    // 2026-06-15. No by-provider cost route yet → rolls into monthToDate.
+    agentApiMonth: 0,
+    agentApiNote:
+      'scheduled agents paused 2026-06-09 · full Anthropic rate from 2026-06-15',
     daily: [
       0.2, 0.3, 0.4, 0.4, 0.5, 0.6, 0.6, 0.7, 0.8, 0.4, 0.5, 0.6, 0.6, 0.4, 0.7,
       0.6, 0.5, 0.5, 0.7, 0.4, 0.3, 0.6, 0.9, 0.7, 0.5, 0.8, 0.6, 0.4, 0.7, 0.5,
     ],
-    saved: 1840,
-    savedNote: 'vs equivalent managed stack (Vercel + Datadog + OpenAI)',
   };
 
   // ── Audit / event feed (live) ───────────────────────────────
@@ -1073,8 +1083,6 @@
     { model: 'qwen3:8b', calls: 980, tokens: '0.6M', kwh: 0.7, share: 12 },
     { model: 'sdxl-lightning', calls: 128, tokens: '—', kwh: 0.9, share: 4 },
   ];
-  cost.electricityRate = 0.142; // $/kWh
-  cost.kwhMonth = 9.5;
 
   // ── Container restarts (24h) — cAdvisor signal ──────────────
   const restarts = [

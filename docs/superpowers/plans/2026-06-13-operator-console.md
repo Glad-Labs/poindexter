@@ -632,20 +632,22 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 > Outcome: the Cost panel tells the truth — infra is ~$0/mo self-hosted; the real levers are **energy (kWh via cost_guard)** and **LLM/API spend against cost_guard caps**, with the now-material **Anthropic API billing** surfaced (`project_anthropic_billing_split_2026_06`).
 
-### Task 6.1: Replace cloud-spend mock with energy + API spend
+**STATUS — 6.1 + 6.2 SHIPPED (2026-06-14, this PR).** The Cost panel + drawer are reframed to the honest model, and the spend-vs-cap headline is live-wired to the one cost route that exists (`GET /api/metrics/costs/budget` — verified mounted + JWT-protected). The by-model / daily-series / energy reads have **no HTTP route**, so live mode renders them as an explicit "backend read pending" empty (never mocked) — a clean backend follow-up.
 
-**Files:** Modify `js/data.js` (`cost`), `js/panels.jsx` (`CostPanel`)
+### Task 6.1: Replace cloud-spend mock with energy + API spend — ✅ SHIPPED
 
-- [ ] **Step 1:** Drop the R2/CF/B2 `byProvider` mock. Model: energy (watt-hours/kWh from `cost_guard` + EIA rate), LLM spend by model/tier from `cost_logs`, and the daily/monthly caps (`daily_spend_limit_usd` / `monthly_spend_limit_usd` — the keys fixed in #598). Render `$0` infra honestly.
-- [ ] **Step 2:** Source live values from `GET /api/analytics/views` siblings / a thin cost read (the Cost & Analytics Grafana board's queries are the reference; if no HTTP route exists, render the energy/caps from settings + note the spend read as a backend follow-up — empty, not mocked).
-- [ ] **Step 3: Commit.**
+**Files:** `js/data.js` (`cost`), `js/panels.jsx` (`CostPanel`), `js/drawer.jsx` (`case 'cost'`), `js/api.js` (`budget()`), `js/app.jsx` (cost state + budget poll)
 
-### Task 6.2: Anthropic API spend tracker
+- [x] **Step 1:** Dropped the R2/CF/B2 `byProvider` cloud-egress mock entirely. The new model: **$0 infra** (self-hosted, honest one-liner), **LLM/API spend vs the monthly cap** (headline + meter), local **energy** (kWh × EIA rate), and **daily burn → projected**. `byModel`/`daily` keep illustrative mock in mock mode only.
+- [x] **Step 2:** Live-wired the spend summary to **`GET /api/metrics/costs/budget`** (`CostAggregationService.get_budget_status` → `amount_spent`/`monthly_budget`/`percent_used`/`daily_burn_rate`/`projected_final_cost`/`alerts`/`status`) via a new `api.budget()` + a 5-min poll. The by-model / daily / energy reads are **not routed** (`get_breakdown_by_model` / `get_daily` are service-only), so live mode sets them empty and the panel + drawer render an explicit **"backend read pending"** — honest, never mocked. Verified the route is mounted (401, not 404) + registered.
+- [x] **Step 3: Committed.**
 
-**Files:** Modify `js/panels.jsx` (`CostPanel` sub-section)
+### Task 6.2: Anthropic API spend tracker — ✅ SHIPPED
 
-- [ ] **Step 1:** Add a small "Agent API spend" readout (the scheduled-agent fleet billing that goes full-rate 2026-06-15). Wire to `cost_logs` filtered to the API provider once the read exists; until then, render an explicit "not wired" state.
-- [ ] **Step 2: Commit.**
+**Files:** `js/panels.jsx` (`CostPanel` Agent-API row), `js/data.js` (`agentApiMonth`/`agentApiNote`), `js/drawer.jsx`
+
+- [x] **Step 1:** Added an **"Agent API"** readout to the Cost panel + drawer. There's no by-provider cost route, so Anthropic spend can't be separated from the total yet — the readout renders the honest state: `$0/mo` with the note _"scheduled agents paused 2026-06-09 · full Anthropic rate from 2026-06-15"_ (`project_anthropic_billing_split_2026_06`). When a by-provider `cost_logs` read lands, this row wires to it (backend follow-up).
+- [x] **Step 2: Committed.**
 
 ---
 

@@ -792,75 +792,104 @@ function Drawer({ entity, onClose, actions }) {
       case 'cost': {
         const c = e;
         eyebrow = 'COST CONTROL';
-        title = 'Cloud Spend';
+        title = 'Cost — spend, energy, infra';
+        // Empty arrays mean live mode with no backend route — show an explicit
+        // "backend read pending" note rather than a fabricated chart/table
+        // (feedback_no_dummy_data).
+        const pending = (label) => (
+          <div
+            className="mono c-dim"
+            style={{
+              fontSize: 11,
+              padding: '10px 12px',
+              border: '1px dashed var(--gl-hairline)',
+            }}
+          >
+            {label} — backend read pending (no HTTP route yet)
+          </div>
+        );
+        const energyUsd =
+          c.energyKwhMonth != null
+            ? c.energyKwhMonth * c.electricityRate
+            : null;
         body = (
           <>
-            <div className="section-label">Daily spend · 30 days</div>
-            <div
-              style={{
-                background: 'var(--gl-surface)',
-                padding: 12,
-                border: '1px solid var(--gl-hairline)',
-              }}
-            >
-              <MiniBars
-                data={c.daily}
-                color="amber"
-                labels={['30d', 'today']}
-                height={80}
-              />
-            </div>
-            <div className="section-label">By provider</div>
-            {c.byProvider.map((p) => (
-              <div key={p.name} style={{ marginBottom: 8 }}>
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 11,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    marginBottom: 3,
-                  }}
-                >
-                  <span className="c-muted">{p.name}</span>
-                  <span className="c-text tnum">${p.amt.toFixed(2)}</span>
-                </div>
-                <Meter value={p.amt} max={c.byProvider[0].amt} color="amber" />
+            <div className="section-label">LLM/API spend · 30 days</div>
+            {c.daily && c.daily.length ? (
+              <div
+                style={{
+                  background: 'var(--gl-surface)',
+                  padding: 12,
+                  border: '1px solid var(--gl-hairline)',
+                }}
+              >
+                <MiniBars
+                  data={c.daily}
+                  color="amber"
+                  labels={['30d', 'today']}
+                  height={80}
+                />
               </div>
-            ))}
-            <div className="section-label">LLM cost by model</div>
-            <table
-              className="tbl"
-              style={{ border: '1px solid var(--gl-hairline)' }}
-            >
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th className="num">Calls</th>
-                  <th className="num">Tokens</th>
-                  <th className="num">kWh</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(c.byModel || []).map((m) => (
-                  <tr key={m.model}>
-                    <td className="c-cyan">{m.model}</td>
-                    <td className="num">{m.calls.toLocaleString()}</td>
-                    <td className="num">{m.tokens}</td>
-                    <td className="num c-amber">{m.kwh}</td>
+            ) : (
+              pending('Daily spend series')
+            )}
+            <div className="section-label">LLM spend by model</div>
+            {c.byModel && c.byModel.length ? (
+              <table
+                className="tbl"
+                style={{ border: '1px solid var(--gl-hairline)' }}
+              >
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th className="num">Calls</th>
+                    <th className="num">Tokens</th>
+                    <th className="num">kWh</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="section-label">Budget</div>
+                </thead>
+                <tbody>
+                  {c.byModel.map((m) => (
+                    <tr key={m.model}>
+                      <td className="c-cyan">{m.model}</td>
+                      <td className="num">{m.calls.toLocaleString()}</td>
+                      <td className="num">{m.tokens}</td>
+                      <td className="num c-amber">{m.kwh}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              pending('By-model breakdown')
+            )}
+            <div className="section-label">Budget · spend vs cap</div>
             <DL
               rows={[
                 ['Month to date', '$' + c.monthToDate.toFixed(2)],
+                ['Monthly cap', '$' + c.budget],
                 ['Projected', '$' + c.projected.toFixed(2)],
-                ['Budget', '$' + c.budget],
-                ['Saved / mo', '~$' + c.saved.toLocaleString()],
+                ['Daily burn', '$' + (c.dailyBurn ?? 0).toFixed(2) + '/day'],
+                ['Status', c.status || '—'],
               ]}
             />
+            <div className="section-label">Infra &amp; energy</div>
+            <DL
+              rows={[
+                ['Infra', '$0/mo · self-hosted'],
+                [
+                  'Energy',
+                  energyUsd != null
+                    ? `~$${energyUsd.toFixed(2)}/mo · ${c.energyKwhMonth} kWh`
+                    : '— pending',
+                ],
+                ['Agent API', '$' + (c.agentApiMonth ?? 0).toFixed(2) + '/mo'],
+              ]}
+            />
+            <div
+              className="mono c-dim"
+              style={{ fontSize: 10.5, marginTop: 8 }}
+            >
+              {c.agentApiNote}
+            </div>
           </>
         );
         foot = (

@@ -37,6 +37,7 @@
      memory        GET  /api/memory/stats, /api/memory/search
      posts         GET  /api/posts
      analytics     GET  /api/analytics/views
+     budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
@@ -582,6 +583,31 @@
       return pick(
         () => http('GET', '/api/analytics/views'),
         () => ({ items: [] })
+      );
+    },
+
+    // ── cost / budget (real LLM/API spend vs cap) ───────────
+    // GET /api/metrics/costs/budget → {amount_spent, monthly_budget,
+    // percent_used, daily_burn_rate, projected_final_cost, alerts, status}.
+    // This is the ONE cost read with an HTTP surface. The by-model + daily-series
+    // breakdowns (CostAggregationService.get_breakdown_by_model / get_daily) are
+    // NOT routed, so the live CostPanel renders those as "backend read pending"
+    // (empty, not mocked — feedback_no_dummy_data).
+    budget() {
+      return pick(
+        () => http('GET', '/api/metrics/costs/budget'),
+        () => {
+          const c = mock().cost;
+          return {
+            amount_spent: c.monthToDate,
+            monthly_budget: c.budget,
+            percent_used: (c.monthToDate / c.budget) * 100,
+            daily_burn_rate: c.dailyBurn,
+            projected_final_cost: c.projected,
+            alerts: c.alerts,
+            status: c.status,
+          };
+        }
       );
     },
 
