@@ -42,6 +42,8 @@
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
+     voice         GET  /api/settings (voice_agent_public_join_url; operator config)
+     rebuild       POST /api/export/rebuild  (full static re-export + ISR revalidate)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
@@ -163,6 +165,102 @@
     if (secs < 3600) return Math.floor(secs / 60) + 'm';
     if (secs < 86400) return Math.floor(secs / 3600) + 'h';
     return Math.floor(secs / 86400) + 'd';
+  }
+
+  // HTML-escape an interpolated value. The audit feed renders each line's
+  // `html` via dangerouslySetInnerHTML, so any value pulled from audit_log
+  // details (reviewer feedback, topic titles, exception text — all
+  // LLM/research-derived, NOT trusted markup) MUST pass through here before
+  // being embedded. The surrounding <b>/<span class="c-*"> tags are ours.
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[c]
+    );
+  }
+
+  // Map one /api/pipeline/events row (a flattened audit_log entry) onto the
+  // console's feed-line shape {id, ts, tag:[tone,label], html}. Mirrors the
+  // mobile pipeline dashboard's colour logic (approved→mint, rejected→red,
+  // rewrite→amber) but as a single escaped line. `id` lets the live poll
+  // dedup against what's already on the feed.
+  function eventToFeedLine(ev) {
+    const d = (ev && ev.details) || {};
+    const type = (ev && ev.event_type) || 'event';
+    const task =
+      ev && ev.task_id ? escHtml(String(ev.task_id).slice(0, 8)) : '';
+    const ts =
+      ev && ev.timestamp
+        ? new Date(ev.timestamp).toTimeString().slice(0, 8)
+        : '';
+    const tail = task ? ` · <b>#${task}</b>` : '';
+    let tag, html;
+    switch (type) {
+      case 'qa_decision': {
+        const ok = d.approved !== false;
+        tag = [ok ? 'mint' : 'red', 'QA'];
+        html = `<b>${escHtml(d.reviewer || 'reviewer')}</b> <span class="c-${ok ? 'mint' : 'red'}">${ok ? 'PASS' : 'FAIL'}</span> · score <b>${escHtml(d.score ?? '?')}</b>${tail}`;
+        break;
+      }
+      case 'qa_aggregate': {
+        const ok = d.approved !== false;
+        tag = [ok ? 'mint' : 'red', 'QA'];
+        const failed =
+          Array.isArray(d.failed_reviewers) && d.failed_reviewers.length
+            ? ` · failed ${escHtml(d.failed_reviewers.join(', '))}`
+            : '';
+        html = `multi-model <span class="c-${ok ? 'mint' : 'red'}">${ok ? 'APPROVED' : 'REJECTED'}</span> · <b>${escHtml(d.final_score ?? '?')}</b>/100${failed}${tail}`;
+        break;
+      }
+      case 'qa_passed':
+        tag = ['mint', 'QA'];
+        html = `<span class="c-mint">passed</span>${tail}`;
+        break;
+      case 'qa_failed':
+        tag = ['red', 'QA'];
+        html = `<span class="c-red">failed</span>${tail}`;
+        break;
+      case 'rewrite_decision':
+      case 'qa_rewrite_triggered': {
+        tag = ['amber', 'REWRITE'];
+        const att =
+          d.attempt != null
+            ? `attempt <b>${escHtml(d.attempt)}</b>${d.max_attempts ? '/' + escHtml(d.max_attempts) : ''}`
+            : 'triggered';
+        const iss =
+          d.issue_count != null ? ` · ${escHtml(d.issue_count)} issues` : '';
+        html = `rewrite ${att}${iss}${tail}`;
+        break;
+      }
+      case 'task_started':
+      case 'task_created': {
+        tag = ['cyan', 'TASK'];
+        const topic = d.topic || d.title;
+        const t = topic ? ` · “${escHtml(topic)}”` : '';
+        html = `task <span class="c-cyan">${type === 'task_created' ? 'created' : 'started'}</span>${tail}${t}`;
+        break;
+      }
+      case 'pipeline_complete':
+      case 'generation_complete':
+        tag = ['mint', 'PIPELINE'];
+        html = `<span class="c-mint">${type === 'pipeline_complete' ? 'pipeline complete' : 'generation complete'}</span>${tail}`;
+        break;
+      default: {
+        const sev = (ev && ev.severity) || 'info';
+        const tone =
+          sev === 'error' ? 'red' : sev === 'warning' ? 'amber' : 'cyan';
+        tag = [tone, 'EVENT'];
+        html = `${escHtml(type)}${tail}`;
+      }
+    }
+    return { id: ev && ev.id, ts, tag, html };
   }
 
   const PX = window.PX || (window.PX = {});
@@ -482,12 +580,56 @@
     },
 
     // ── live event stream ───────────────────────────────────
-    // Worker exposes GET /api/pipeline/events. For a true live tail,
-    // swap to SSE/WebSocket if you add one; polling works today.
+    // Worker exposes GET /api/pipeline/events → {count, events[], server_time}.
+    // On live we map each event onto the feed-line shape (newest-first; the
+    // route orders timestamp DESC) so the audit feed shows REAL QA decisions /
+    // rewrites / task lifecycle instead of the mock simulator's fabricated
+    // lines. For a true live tail, swap to SSE/WebSocket if you add one;
+    // polling works today. Mock keeps the seed (the simulator drives the feed
+    // in mock mode, so this branch is only hit if something polls offline).
     pipelineEvents() {
       return pick(
-        () => http('GET', '/api/pipeline/events'),
+        async () => {
+          const r = await http(
+            'GET',
+            '/api/pipeline/events?limit=50&since_minutes=120'
+          );
+          const evs = (r && r.events) || [];
+          return evs.map(eventToFeedLine);
+        },
         () => mock().auditSeed
+      );
+    },
+
+    // ── voice (operator config, NOT hardcoded) ──────────────
+    // The tap-to-join URL is operator-specific tailnet infra, so it lives in
+    // app_settings.voice_agent_public_join_url (empty on fresh installs / the
+    // public mirror, set on the operator's stack). Hardcoding it would leak
+    // operator infra AND trip the mirror redact filter. Returns '' when unset
+    // so the caller renders an honest "voice not configured" state.
+    voiceJoinUrl() {
+      return pick(
+        async () => {
+          const r = await http(
+            'GET',
+            '/api/settings?search=voice_agent_public_join_url&limit=10'
+          );
+          const hit = ((r && r.items) || []).find(
+            (s) => s.key === 'voice_agent_public_join_url'
+          );
+          return (hit && hit.value) || '';
+        },
+        () => '' // mock: no operator voice URL (honest-empty)
+      );
+    },
+
+    // ── static-export rebuild ───────────────────────────────
+    // POST /api/export/rebuild — full re-export of every static JSON to the
+    // CDN + ISR revalidation. The operator "ship it" button.
+    rebuildExport() {
+      return pick(
+        () => http('POST', '/api/export/rebuild'),
+        () => ({ ok: true }) // mock: no-op
       );
     },
 

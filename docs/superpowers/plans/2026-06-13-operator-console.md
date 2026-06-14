@@ -735,23 +735,25 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ---
 
-## Phase 12 — Live feed, voice, and ship-it actions
+## Phase 12 — Live feed, voice, and ship-it actions — ✅ SHIPPED
 
-> Outcome: the audit feed shows **real** events (stop fabricating lines), the voice button connects the real bridge, and the operator can trigger a static-export rebuild.
+> Outcome: the audit feed shows **real** events (stop fabricating lines), the voice button opens the real join surface, and the operator can trigger a static-export rebuild.
 
-### Task 12.1: Real audit feed
+**Implementation note:** pure console-wiring — both endpoints already exist (`GET /api/pipeline/events` from `pipeline_events_routes.py`, `POST /api/export/rebuild` from `cms_routes.py`), so no new backend. **Two corrections to the plan:** (1) the voice URL is **not** hardcoded to the tailnet host — that would leak operator infra into the public-mirror console AND trip the sync `LINE_REDACT_RE` (`nightrider|taild4f626`). Instead `A.voice` reads `app_settings.voice_agent_public_join_url` via `GET /api/settings?search=…` and opens it only when set (honest "voice not configured" toast otherwise) — `feedback_db_first_config` + `feedback_no_operator_info_to_public_repo`. (2) Since the feed renders each line's `html` via `dangerouslySetInnerHTML`, the event→feed-line mapper **escapes every interpolated value** (`escHtml`) — `audit_log.details` carries LLM/research-derived strings (reviewer feedback, topic titles, exception text) that are untrusted; only the wrapping `<b>`/`<span class="c-*">` markup is author-controlled.
 
-**Files:** Modify `js/app.jsx` (the `liveTemplates` simulator), `js/api.js` (`pipelineEvents` already → `/api/pipeline/events`)
+### Task 12.1: Real audit feed — ✅ SHIPPED
 
-- [ ] **Step 1:** On live, replace the random `liveTemplates` generator with a poll of `GET /api/pipeline/events` (newest-first, dedup by id). Keep the simulator for mock mode only. Consider SSE later (note, not now).
-- [ ] **Step 2: Commit.**
+**Files:** `js/api.js` (`pipelineEvents()` now maps `events[]` → feed-lines via new `eventToFeedLine` + `escHtml` helpers; endpoint-map comment), `js/app.jsx` (feed init empty on live; mock simulator guarded by `isLive()`; new live-poll effect)
 
-### Task 12.2: Voice + rebuild actions
+- [x] **Step 1:** On live, `pipelineEvents()` fetches `GET /api/pipeline/events?limit=50&since_minutes=120` and maps each flattened `audit_log` event onto the feed-line shape (`{id, ts, tag:[tone,label], html}`) — `qa_decision`/`qa_aggregate` → mint/red by `approved`, rewrite → amber, task lifecycle → cyan/mint, fallback tone from `severity`. A new app.jsx effect polls every 5 s and prepends new lines deduped by `audit_log` event id; the feed starts **empty** on live (never the mock seed, `feedback_no_dummy_data`). The random `liveTemplates` simulator is now mock-only (guarded by `isLive()`). SSE noted as a future swap, not now.
+- [x] **Step 2: Verified + committed.**
 
-**Files:** Modify `js/app.jsx` (`A.voice`, add `A.rebuild`), `js/api.js`
+### Task 12.2: Voice + rebuild actions — ✅ SHIPPED
 
-- [ ] **Step 1:** `A.voice` → the real voice bridge (the `voice-bridge` MCP `voice_join_room` is session-scoped; for the console, deep-link to the tap-to-join URL `https://nightrider.taild4f626.ts.net/voice/join` rather than fake a connection). `A.rebuild` → a static-export rebuild trigger (the `rebuild_static_export` capability; wire to its route or note as follow-up).
-- [ ] **Step 2: Commit.**
+**Files:** `js/api.js` (`voiceJoinUrl()` settings-read, `rebuildExport()` → `POST /api/export/rebuild`), `js/app.jsx` (`A.voice` rewritten to open the configured URL, new `A.rebuild` optimistic action, new ⌘K "Rebuild static export" palette command under a new "Actions" group)
+
+- [x] **Step 1:** `A.voice` opens `app_settings.voice_agent_public_join_url` in a new tab (config-driven, mirror-safe — see note) with an honest-empty toast when unset. `A.rebuild` POSTs `/api/export/rebuild` (optimistic toast + `PUBLISH` feed line, rollback toast on failure), reachable from the command palette.
+- [x] **Step 2: Verified + committed.** Verification ran the **real** shipping code: mock-render regression (index.html mounts, **0 runtime errors**, seed feed renders, palette exposes "Rebuild static export") + an isolated harness exercising `PX.api.pipelineEvents()` against the exact `/api/pipeline/events` shape — **22/22**, including all 8 event-type→tone/label mappings, id/order preservation, and the **XSS escaping** (a `<img onerror>` reviewer name + `<script>` topic both escaped; no raw markup survives), plus `voiceJoinUrl` present/empty and `rebuildExport` POST.
 
 ---
 

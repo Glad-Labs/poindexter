@@ -37,7 +37,11 @@ function App() {
   const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
   const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
   const [feed, setFeed] = useS(() =>
-    PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
+    // Live starts empty — the real /api/pipeline/events poll fills it (never
+    // show the mock seed on live, feedback_no_dummy_data). Mock seeds the demo.
+    PX.api.isLive()
+      ? []
+      : PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
   const [entity, setEntity] = useS(null);
   const [filter, setFilter] = useS('all');
@@ -53,6 +57,9 @@ function App() {
   // ── Live simulation (subtle) ──────────────────────────────
   useE(() => {
     const feedTimer = setInterval(() => {
+      // Live mode's feed is driven by the real /api/pipeline/events poll
+      // (effect below); the random simulator is mock-only.
+      if (PX.api.isLive()) return;
       const tpl =
         PX.liveTemplates[Math.floor(Math.random() * PX.liveTemplates.length)]();
       const line = {
@@ -114,6 +121,51 @@ function App() {
     return () => {
       clearInterval(feedTimer);
       clearInterval(gpuTimer);
+    };
+  }, []);
+
+  // ── Live: real audit feed (GET /api/pipeline/events) ──────────────────
+  // Mock keeps the local simulator above. On live we poll the real pipeline
+  // events (QA decisions, rewrites, task lifecycle), map them to feed lines in
+  // the adapter, and prepend new ones — deduped by audit_log event id — so the
+  // feed shows ACTUAL decisions, never fabricated lines (feedback_no_dummy_data).
+  useE(() => {
+    if (!PX.api.isLive()) return undefined;
+    let alive = true;
+    const seen = new Set();
+    const tick = async () => {
+      try {
+        const lines = await PX.api.pipelineEvents();
+        if (!alive || !Array.isArray(lines)) return;
+        const incoming = lines.filter(
+          (l) => l && l.id != null && !seen.has(l.id)
+        );
+        if (!incoming.length) return;
+        incoming.forEach((l) => seen.add(l.id));
+        const add = incoming.map((l) => ({
+          ...l,
+          fresh: true,
+          key: 'ev' + l.id,
+        }));
+        setClock(PX.hhmmss(new Date()));
+        setFeed((f) => [...add, ...f].slice(0, 40));
+        add.forEach((l) =>
+          setTimeout(() => {
+            if (alive)
+              setFeed((g) =>
+                g.map((x) => (x.key === l.key ? { ...x, fresh: false } : x))
+              );
+          }, 1200)
+        );
+      } catch (_e) {
+        /* honest-empty: leave the feed as-is on a transient error */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
     };
   }, []);
 
@@ -777,8 +829,46 @@ function App() {
       }
     },
     launch: (t) => pushToast(`Opening ${t.name}…`, 'cyan', '↗'),
-    voice: () =>
-      pushToast('Connecting to Poindexter voice (LiveKit)…', 'cyan', '🎙'),
+    // Open the REAL tap-to-join URL (operator config, fetched from
+    // app_settings.voice_agent_public_join_url — never hardcoded). Honest
+    // toast when it's unset rather than faking a connection.
+    voice: async () => {
+      let url = '';
+      try {
+        url = await PX.api.voiceJoinUrl();
+      } catch (_e) {
+        url = '';
+      }
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        pushToast('Opening Poindexter voice…', 'cyan', '🎙');
+      } else {
+        pushToast(
+          'Voice not configured — set voice_agent_public_join_url',
+          'amber',
+          '🎙'
+        );
+      }
+    },
+    // Trigger a full static-export rebuild (POST /api/export/rebuild): re-export
+    // every static JSON to the CDN + ISR-revalidate the live site.
+    rebuild: async () => {
+      pushToast('Rebuilding static export…', 'cyan', '⟳');
+      try {
+        await PX.api.rebuildExport();
+        pushToast('Static export rebuilt — site refreshing', 'mint', '✓');
+        pushFeed(
+          ['mint', 'PUBLISH'],
+          'operator triggered <b>static export rebuild</b>'
+        );
+      } catch (err) {
+        pushToast(
+          'Rebuild failed — ' + (err && err.message ? err.message : 'error'),
+          'red',
+          '✕'
+        );
+      }
+    },
   };
 
   const open = (type, data) => setEntity({ type, data });
@@ -927,6 +1017,14 @@ function App() {
       label: 'Talk to Poindexter (voice)',
       hint: 'livekit',
       run: () => A.voice(),
+    });
+    cmds.push({
+      id: 'rebuild',
+      group: 'Actions',
+      icon: 'refresh',
+      label: 'Rebuild static export',
+      hint: 'publish',
+      run: () => A.rebuild(),
     });
     return cmds;
   }, [inbox, services]);
