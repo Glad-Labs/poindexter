@@ -39,6 +39,7 @@
      analytics     GET  /api/analytics/views
      budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
+     media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
@@ -148,6 +149,18 @@
       labels: r.metric || {},
       value: r.value ? Number(r.value[1]) : null,
     }));
+  }
+
+  // ISO timestamp → compact relative age ('22m', '3h', '2d'). Used to render
+  // server-side created_at columns the same way the mock's ago() helper does.
+  function relAge(iso) {
+    if (!iso) return '—';
+    const secs = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (!isFinite(secs) || secs < 0) return '—';
+    if (secs < 60) return Math.round(secs) + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm';
+    if (secs < 86400) return Math.floor(secs / 3600) + 'h';
+    return Math.floor(secs / 86400) + 'd';
   }
 
   const PX = window.PX || (window.PX = {});
@@ -532,6 +545,53 @@
             metadata: {},
           })),
         })
+      );
+    },
+
+    // ── media Gate-2 (podcast / video approval, #1343) ──────
+    // GET /api/media-approval/pending → {media:[{post_id, medium, title, slug,
+    // quality_score, created_at}], total}. gate2Pending (= total) + the queue
+    // are real; render-rate KPIs (renderSuccess24h / dispatched / videosPersisted)
+    // have no read here → null, and the panel shows '—' (feedback_no_dummy_data).
+    mediaQueue() {
+      return pick(
+        async () => {
+          const r = await http('GET', '/api/media-approval/pending');
+          const rows = (r && r.media) || [];
+          return {
+            gate2Pending: r && r.total != null ? r.total : rows.length,
+            renderSuccess24h: null,
+            dispatched: null,
+            videosPersisted: null,
+            queue: rows.map((m) => ({
+              id: m.post_id + ':' + m.medium,
+              post_id: m.post_id,
+              medium: m.medium,
+              title: m.title || m.slug || m.post_id,
+              slug: m.slug,
+              quality:
+                m.quality_score != null ? Math.round(m.quality_score) : null,
+              dur: null,
+              age: relAge(m.created_at),
+            })),
+          };
+        },
+        () => mock().media
+      );
+    },
+
+    // POST /api/media-approval/{post_id}/{medium}/decide {approved, notes?}.
+    // approved=true clears the post for dispatch; approved=false marks it
+    // rejected so it regenerates. The Gate-2 mutation (write surface).
+    mediaDecide(postId, medium, approved, notes = '') {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/media-approval/${encodeURIComponent(postId)}/${encodeURIComponent(medium)}/decide`,
+            { approved: !!approved, notes: notes || null }
+          ),
+        () => ({ ok: true, post_id: postId, medium, approved: !!approved })
       );
     },
 

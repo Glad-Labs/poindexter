@@ -361,8 +361,9 @@ function Drawer({ entity, onClose, actions }) {
               >
                 <h4 style={{ fontSize: 16 }}>{e.detail.title}</h4>
                 <p className="mono c-dim" style={{ margin: 0, fontSize: 11 }}>
-                  {e.detail.medium} · {e.detail.dur} · quality{' '}
-                  {e.detail.quality}
+                  {e.detail.medium}
+                  {e.detail.dur ? ` · ${e.detail.dur}` : ''} · quality{' '}
+                  {e.detail.quality ?? '—'}
                   {e.detail.shots ? ` · ${e.detail.shots} shots` : ''}
                 </p>
               </div>
@@ -370,31 +371,30 @@ function Drawer({ entity, onClose, actions }) {
               <DL
                 rows={[
                   ['Medium', e.detail.medium],
-                  ['Duration', e.detail.dur],
-                  ['Quality', e.detail.quality],
+                  ['Duration', e.detail.dur || '—'],
+                  ['Quality', e.detail.quality ?? '—'],
                   ['Stage', e.detail.stage],
                   ['Shot list', e.detail.shots || '—'],
                 ]}
               />
             </>
           );
+          // Gate-2 approve/reject → media-approval decide (not the post-approval
+          // reject). The handlers close the drawer + roll back on failure.
           foot = (
             <>
               <button
                 className="mbtn mbtn--primary"
                 style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
-                onClick={() => {
-                  actions.mediaApprove(e.detail);
-                  onClose();
-                }}
+                onClick={() => actions.mediaApprove(e.detail)}
               >
                 <Icon name="check" size={13} />
-                Publish to channel
+                Approve · clear for dispatch
               </button>
               <button
                 className="mbtn mbtn--danger mbtn--ghost"
                 style={{ padding: '10px 14px' }}
-                onClick={() => actions.reject(e)}
+                onClick={() => actions.mediaReject(e.detail)}
               >
                 <Icon name="x" size={13} />
                 Reject

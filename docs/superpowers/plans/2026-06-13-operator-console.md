@@ -689,17 +689,19 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ---
 
-## Phase 9 — Media Gate-2 (mostly real; wire it)
+## Phase 9 — Media Gate-2 (mostly real; wire it) — ✅ SHIPPED
 
 > Outcome: the Media panel lists rendered podcast/video awaiting Gate-2 and approves to the publish queue (`project_video_pipeline_workstream`; media generates on **publish**, not approve — `reference_media_gen_triggers_on_publish`).
 
-### Task 9.1: Wire media queue + Gate-2 approve
+**Implementation note (correction):** the Gate-2 surface is **`media_approval_routes.py`** (`GET /api/media-approval/pending`, `POST /api/media-approval/{post_id}/{medium}/decide`) — _not_ `video_routes.py` / `podcast_routes.py` (those are RSS/episode + generation routes). Both endpoints already existed (#1343), so this was again pure console-wiring — and the **first media mutation** surface. The decide endpoint approves/rejects (`approved=true` clears for dispatch, `false` regenerates); media still generates on publish downstream. Real: the pending queue + `gate2Pending` (= `total`). Honest-empty in live: the render-rate KPIs (`renderSuccess24h` / `dispatched` / `videosPersisted`) have no read on this route → `—`.
 
-**Files:** Modify `js/api.js` (add media methods → `routes/video_routes.py` / `podcast_routes.py`), `js/panels.jsx` (`MediaPanel`), `js/app.jsx` (`A.mediaApprove`)
+### Task 9.1: Wire media queue + Gate-2 approve — ✅ SHIPPED
 
-- [ ] **Step 1:** Confirm the media list + Gate-2 approve endpoints in `video_routes.py` / `podcast_routes.py`; wire the panel + the inbox `media` kind to them.
-- [ ] **Step 2: Verify** against a real rendered item on a dev niche.
-- [ ] **Step 3: Commit.**
+**Files:** `js/api.js` (`mediaQueue()` → `/api/media-approval/pending`, `mediaDecide(post_id, medium, approved, notes)` → `…/decide`, + `relAge` helper), `js/panels2.jsx` (`MediaPanel` — null-safe KPIs, **reject** button, empty-state), `js/app.jsx` (`media` state + 60s poll; `A.mediaApprove`/`A.mediaReject` as optimistic mutations w/ rollback), `js/drawer.jsx` (media inbox foot → `mediaApprove`/`mediaReject`, fixing the reject that wrongly hit the post-approval endpoint)
+
+- [x] **Step 1:** Confirmed the endpoints in **`media_approval_routes.py`** (corrected from the plan's `video_routes.py`/`podcast_routes.py`); wired the panel approve **+ reject** and the inbox `media` kind to `mediaDecide`. Optimistic queue removal + `gate2Pending` decrement, rolled back on failure.
+- [x] **Step 2: Verified** — mock headless render + interaction **11/11** (panel KPIs/queue, drawer Gate-2 approve+reject, optimistic approve & reject row removal), **0 runtime errors**; live-shape mapper sim **10/10** against `list_pending`'s exact row shape (carries `post_id`+`medium` for `decide()`, null-safe quality/title, age from `created_at`). A live dev-niche render needs a real pending media row — deferred to operator (no rendered Gate-2 item queued right now).
+- [x] **Step 3: Committed.**
 
 ---
 

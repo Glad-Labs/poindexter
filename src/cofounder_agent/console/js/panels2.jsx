@@ -335,15 +335,18 @@ function RevenuePanel({ revenue, onOpen }) {
 
 /* ─── Media pipeline (Stage 2) ──────────────────────────────── */
 const MEDIUM_TAG = { video: 'cyan', podcast: 'amber', short: 'mint' };
-function MediaPanel({ media, onOpenItem, onApprove }) {
-  const m = media;
+function MediaPanel({ media, onOpenItem, onApprove, onReject }) {
+  const m = media || {};
+  const queue = m.queue || [];
+  // Render-rate KPIs have no read on the media-approval route → '—' in live
+  // (feedback_no_dummy_data); gate2Pending + the queue are the real signals.
+  const dash = (v, suffix = '') => (v == null ? '—' : v + suffix);
+  const meta =
+    m.renderSuccess24h != null
+      ? `RENDER ${m.renderSuccess24h}% · ${m.dispatched} DISPATCHED`
+      : `${m.gate2Pending ?? 0} GATE-2 PENDING`;
   return (
-    <Panel
-      idx="M1"
-      title="MEDIA PIPELINE · STAGE 2"
-      meta={`RENDER ${m.renderSuccess24h}% · ${m.dispatched} DISPATCHED`}
-      flush
-    >
+    <Panel idx="M1" title="MEDIA PIPELINE · STAGE 2" meta={meta} flush>
       <div
         style={{
           display: 'grid',
@@ -354,13 +357,13 @@ function MediaPanel({ media, onOpenItem, onApprove }) {
         }}
       >
         {[
-          ['Render OK 24h', m.renderSuccess24h + '%', ''],
+          ['Render OK 24h', dash(m.renderSuccess24h, '%'), ''],
           [
             'Gate-2 pending',
-            m.gate2Pending,
+            dash(m.gate2Pending),
             m.gate2Pending > 0 ? 'is-amber' : '',
           ],
-          ['Videos total', m.videosPersisted, ''],
+          ['Videos total', dash(m.videosPersisted), ''],
         ].map(([l, v, c]) => (
           <div
             key={l}
@@ -374,43 +377,59 @@ function MediaPanel({ media, onOpenItem, onApprove }) {
         ))}
       </div>
       <div>
-        {m.queue.map((it) => (
-          <div
-            key={it.id}
-            className="svc"
-            style={{
-              gridTemplateColumns: 'auto 1fr auto auto',
-              cursor: 'pointer',
-            }}
-            onClick={() => onOpenItem(it)}
-          >
-            <span className={`tag tag--${MEDIUM_TAG[it.medium]}`}>
-              {it.medium}
-            </span>
-            <span
-              className="svc__name truncate"
-              style={{ fontSize: 11 }}
-              title={it.title}
-            >
-              {it.title}
-              <small>
-                {it.dur} · Q{it.quality}
-              </small>
-            </span>
-            <span className="svc__metric c-dim">{it.age}</span>
-            <span
-              className="act-item__acts"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                className="mbtn mbtn--primary"
-                onClick={() => onApprove(it)}
-              >
-                <Icon name="check" size={11} />
-              </button>
-            </span>
+        {queue.length === 0 ? (
+          <div className="mono c-dim" style={{ padding: 12, fontSize: 11 }}>
+            No media awaiting Gate-2.
           </div>
-        ))}
+        ) : (
+          queue.map((it) => (
+            <div
+              key={it.id}
+              className="svc"
+              style={{
+                gridTemplateColumns: 'auto 1fr auto auto',
+                cursor: 'pointer',
+              }}
+              onClick={() => onOpenItem(it)}
+            >
+              <span className={`tag tag--${MEDIUM_TAG[it.medium] || 'cyan'}`}>
+                {it.medium}
+              </span>
+              <span
+                className="svc__name truncate"
+                style={{ fontSize: 11 }}
+                title={it.title}
+              >
+                {it.title}
+                <small>
+                  {it.dur ? it.dur + ' · ' : ''}Q{it.quality ?? '—'}
+                </small>
+              </span>
+              <span className="svc__metric c-dim">{it.age}</span>
+              <span
+                className="act-item__acts"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className="mbtn mbtn--primary"
+                  title="Approve · clear for dispatch"
+                  onClick={() => onApprove(it)}
+                >
+                  <Icon name="check" size={11} />
+                </button>
+                {onReject && (
+                  <button
+                    className="mbtn mbtn--danger mbtn--ghost"
+                    title="Reject · regenerate"
+                    onClick={() => onReject(it)}
+                  >
+                    <Icon name="x" size={11} />
+                  </button>
+                )}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </Panel>
   );

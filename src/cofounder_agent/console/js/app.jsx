@@ -33,6 +33,7 @@ function App() {
   const [cost, setCost] = useS(PX.cost); // live: GET /api/metrics/costs/budget
   const [findings, setFindings] = useS(PX.findings); // live: GET /api/findings
   const [brain, setBrain] = useS(PX.brain); // live: GET /api/memory/stats
+  const [media, setMedia] = useS(PX.media); // live: GET /api/media-approval/pending
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -302,6 +303,30 @@ function App() {
     };
   }, []);
 
+  // ── Live: media Gate-2 queue (GET /api/media-approval/pending) ──
+  // Real pending podcast/video awaiting review + the gate2Pending count. The
+  // render-rate KPIs have no read → honest '—' in live. Mock keeps PX.media.
+  // 60s cadence.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.mediaQueue();
+        if (!alive || !res) return;
+        setMedia(res);
+      } catch (e) {
+        pushToast(`Media queue load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   // ── ⌘K command palette ────────────────────────────────────
   useE(() => {
     const onKey = (e) => {
@@ -560,16 +585,56 @@ function App() {
     editBudget: () =>
       pushToast('Budget editing — coming in detail view', 'cyan', '✎'),
     openLemon: () => pushToast('Opening Lemon Squeezy dashboard…', 'cyan', '↗'),
-    mediaApprove: (it) => {
-      pushToast(
-        `${it.title ? trunc(it.title) : 'Media'} → publish queue`,
-        'mint',
-        '✓'
-      );
-      pushFeed(
-        ['mint', 'MEDIA'],
-        `operator published <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
-      );
+    // Gate-2 decide (POST /api/media-approval/{post_id}/{medium}/decide).
+    // Optimistic queue removal + gate2Pending decrement, rolled back on failure.
+    // approved=true clears the asset for dispatch; reject sends it to regenerate.
+    mediaApprove: async (it) => {
+      const prev = media;
+      setMedia((m) => ({
+        ...m,
+        queue: (m.queue || []).filter((q) => q.id !== it.id),
+        gate2Pending: Math.max(0, (m.gate2Pending || 0) - 1),
+      }));
+      closeDrawer();
+      try {
+        await PX.api.mediaDecide(it.post_id || it.id, it.medium, true);
+        pushToast(
+          `${it.title ? trunc(it.title) : 'Media'} approved · cleared for dispatch`,
+          'mint',
+          '✓'
+        );
+        pushFeed(
+          ['mint', 'MEDIA'],
+          `operator approved <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
+        );
+      } catch (err) {
+        setMedia(prev);
+        pushToast(`Media approve failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    mediaReject: async (it) => {
+      const prev = media;
+      setMedia((m) => ({
+        ...m,
+        queue: (m.queue || []).filter((q) => q.id !== it.id),
+        gate2Pending: Math.max(0, (m.gate2Pending || 0) - 1),
+      }));
+      closeDrawer();
+      try {
+        await PX.api.mediaDecide(it.post_id || it.id, it.medium, false);
+        pushToast(
+          `${it.medium || 'Media'} rejected — will regenerate`,
+          'amber',
+          '⚠'
+        );
+        pushFeed(
+          ['amber', 'MEDIA'],
+          `operator rejected <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
+        );
+      } catch (err) {
+        setMedia(prev);
+        pushToast(`Media reject failed — ${err.message}`, 'red', '✕');
+      }
     },
     // ── Topics triage ─────────────────────────────────────
     // Pick a winner (operator_rank #1), resolve (advance winner → pipeline),
@@ -946,17 +1011,15 @@ function App() {
               </div>
               <div id="sec-media">
                 <MediaPanel
-                  media={PX.media}
+                  media={media}
                   onOpenItem={(it) =>
-                    open(
-                      'inbox',
-                      PX.inbox.find((x) => x.id === 'media-318') || {
-                        kind: 'media',
-                        detail: { ...it, stage: 'gate_2_review' },
-                      }
-                    )
+                    open('inbox', {
+                      kind: 'media',
+                      detail: { ...it, stage: 'gate_2_review' },
+                    })
                   }
                   onApprove={A.mediaApprove}
+                  onReject={A.mediaReject}
                 />
               </div>
               <div id="sec-revenue">
