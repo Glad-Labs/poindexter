@@ -17,6 +17,7 @@ const RAIL = [
   { id: 'gpu', icon: 'gpu', label: 'GPU' },
   { id: 'services', icon: 'services', label: 'Services' },
   { id: 'audit', icon: 'audit', label: 'Audit' },
+  { id: 'findings', icon: 'bell', label: 'Findings' },
   { id: 'cost', icon: 'cost', label: 'Cost' },
   { id: 'revenue', icon: 'pulse', label: 'Revenue' },
 ];
@@ -30,6 +31,7 @@ function App() {
   const [pipeline, setPipeline] = useS(PX.pipeline); // live: real /api/tasks
   const [topics, setTopics] = useS(PX.topics); // live: GET /api/topics/proposals
   const [cost, setCost] = useS(PX.cost); // live: GET /api/metrics/costs/budget
+  const [findings, setFindings] = useS(PX.findings); // live: GET /api/findings
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -241,6 +243,30 @@ function App() {
         }));
       } catch (e) {
         pushToast(`Budget load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: probe-findings triage (#461) ────────────────────
+  // Mirrors the Findings dashboard — emitted/pending counts + per-finding
+  // routing status. Read-only (the brain's findings_alert_router delivers them).
+  // Mock mode keeps PX.findings. 5-min cadence.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.findings();
+        if (!alive || !res) return;
+        setFindings(res);
+      } catch (e) {
+        pushToast(`Findings load failed — ${e.message}`, 'red', '✕');
       }
     };
     load();
@@ -940,6 +966,12 @@ function App() {
                   onOpen={() =>
                     pushToast('Opening full audit log', 'cyan', '↗')
                   }
+                />
+              </div>
+              <div id="sec-findings">
+                <FindingsPanel
+                  findings={findings}
+                  onOpen={() => open('findings', findings)}
                 />
               </div>
             </div>

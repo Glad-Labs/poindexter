@@ -3,6 +3,123 @@
    Revenue · Media (Stage 2) · QA Rails · Sub-tool Launcher.
    ────────────────────────────────────────────────────────────── */
 
+/* ─── Findings — probe-routing triage (#461) ────────────────── */
+// Read-only: findings are audit_log rows the brain's findings_alert_router
+// delivers autonomously (watermark-based). There is no ack/route HTTP surface,
+// so this panel surfaces "what fired, how it routed, what's still pending" —
+// no fabricated mutation buttons (matches the self-heal-not-suppress model).
+const SEV_TAG = {
+  critical: 'red',
+  warn: 'amber',
+  warning: 'amber',
+  info: 'cyan',
+};
+const SEV_LED = {
+  critical: 'led-err',
+  warn: 'led-warn',
+  warning: 'led-warn',
+  info: 'led-off',
+};
+const FINDING_STATUS_TAG = {
+  PENDING: 'amber',
+  routed: 'mint',
+  'log-only': 'cyan',
+};
+function FindingsPanel({ findings, onOpen }) {
+  const f = findings || {};
+  const rows = f.findings || [];
+  const emitted = (f.counts && f.counts.emitted) || 0;
+  const pending = (f.counts && f.counts.pending) || 0;
+  return (
+    <Panel
+      idx="F1"
+      title="FINDINGS"
+      meta={`${emitted} EMITTED · ${pending} PENDING`}
+      flush
+      action="Detail"
+      onAction={onOpen}
+    >
+      <div
+        style={{ padding: 12, borderBottom: '1px solid var(--gl-hairline)' }}
+      >
+        <div style={{ display: 'flex', gap: 20 }}>
+          <div>
+            <span className="kpi__value" style={{ fontSize: 26 }}>
+              {emitted}
+            </span>
+            <div className="mono c-dim" style={{ fontSize: 10 }}>
+              emitted · {f.hours || 168}h
+            </div>
+          </div>
+          <div>
+            <span
+              className={`kpi__value ${pending ? 'is-amber' : ''}`}
+              style={{ fontSize: 26 }}
+            >
+              {pending}
+            </span>
+            <div className="mono c-dim" style={{ fontSize: 10 }}>
+              pending delivery
+            </div>
+          </div>
+        </div>
+        <div
+          style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}
+        >
+          {(f.by_severity || []).map((s) => (
+            <span
+              key={s.severity}
+              className={`tag tag--${SEV_TAG[s.severity] || 'cyan'}`}
+            >
+              {s.severity} · {s.count}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div>
+        {rows.length === 0 ? (
+          <div className="empty">
+            <span className="glyph" aria-hidden="true">
+              ✓
+            </span>
+            No findings in the last {f.hours || 168}h.
+          </div>
+        ) : (
+          rows.slice(0, 8).map((row) => (
+            <div
+              key={row.id}
+              className="svc"
+              style={{
+                gridTemplateColumns: 'auto 1fr auto',
+                cursor: 'default',
+              }}
+            >
+              <span
+                className={`svc__led ${SEV_LED[row.severity] || 'led-off'}`}
+                title={row.severity}
+              />
+              <span className="svc__name truncate">
+                {row.kind}
+                <small>{row.title || row.source}</small>
+              </span>
+              <span className="act-item__acts">
+                <span
+                  className={`tag tag--${FINDING_STATUS_TAG[row.status] || 'cyan'}`}
+                >
+                  {row.status}
+                </span>
+                <span className="tag" title="delivery policy">
+                  {row.delivery}
+                </span>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 /* ─── Revenue ───────────────────────────────────────────────── */
 function RevenuePanel({ revenue, onOpen }) {
   const r = revenue;

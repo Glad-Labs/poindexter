@@ -38,6 +38,7 @@
      posts         GET  /api/posts
      analytics     GET  /api/analytics/views
      budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
+     findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
@@ -440,6 +441,28 @@
       return pick(
         () => http('POST', `/api/topics/${batchId}/reject`, { reason }),
         () => ({ ok: true, status: 'expired' })
+      );
+    },
+
+    // ── findings (probe-routing triage, #461) ───────────────
+    // GET /api/findings → {findings[], counts{emitted,pending}, by_kind[],
+    // by_severity[], delivery_by_kind{}, watermark, hours}. READ-ONLY: the
+    // brain's findings_alert_router delivers findings autonomously (watermark-
+    // based), so there is no ack/route HTTP surface to wire — the panel is a
+    // triage view, not a mutation surface.
+    findings(params = '') {
+      return pick(
+        () => http('GET', '/api/findings' + params),
+        () =>
+          pair(mock().findings, {
+            counts: { emitted: 0, pending: 0 },
+            by_kind: [],
+            by_severity: [],
+            delivery_by_kind: {},
+            findings: [],
+            hours: 168,
+            watermark: 0,
+          })
       );
     },
 

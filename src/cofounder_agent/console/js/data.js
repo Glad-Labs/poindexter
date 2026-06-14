@@ -1247,6 +1247,99 @@
     ],
   };
 
+  // ── Findings — probe-routing triage (#461) ──────────────────
+  // Mirrors GET /api/findings exactly: emitted/pending counts, by-kind /
+  // by-severity rollups, the kind→delivery policy, and the latest finding rows
+  // with routed/PENDING/log-only status. Counts cover the window; the detail
+  // list is the latest slice (so emitted > rows is expected, as in the route).
+  // status: routed (id≤watermark) · PENDING (routable, above watermark) ·
+  // log-only (info severity, never paged). Brand niches: AI/ML, gaming, PC HW.
+  const findings = {
+    counts: { emitted: 9, pending: 2 },
+    watermark: 18432,
+    hours: 168,
+    by_severity: [
+      { severity: 'warn', count: 5 },
+      { severity: 'info', count: 3 },
+      { severity: 'critical', count: 1 },
+    ],
+    by_kind: [
+      { kind: 'broken_external_link', count: 3 },
+      { kind: 'quality_regression', count: 2 },
+      { kind: 'embeddings_freshness', count: 2 },
+      { kind: 'media_drift', count: 1 },
+      { kind: 'cadence_slo', count: 1 },
+    ],
+    delivery_by_kind: {
+      broken_external_link: 'github_issue',
+      quality_regression: 'discord',
+      media_drift: 'discord',
+      cadence_slo: 'log_only',
+    },
+    findings: [
+      {
+        id: 18440,
+        timestamp: '2026-06-08T13:58:00',
+        source: 'audit_published_quality',
+        severity: 'critical',
+        kind: 'quality_regression',
+        title: 'Avg quality fell to 76 over the trailing 5 posts',
+        status: 'PENDING',
+        delivery: 'discord',
+      },
+      {
+        id: 18439,
+        timestamp: '2026-06-08T13:51:00',
+        source: 'brain.probe.embeddings_freshness',
+        severity: 'warn',
+        kind: 'embeddings_freshness',
+        title: 'Semantic memory 41m behind (queue depth 24)',
+        status: 'PENDING',
+        delivery: 'route',
+      },
+      {
+        id: 18431,
+        timestamp: '2026-06-08T11:20:00',
+        source: 'audit_external_links',
+        severity: 'warn',
+        kind: 'broken_external_link',
+        title: '2 dead links in "Tailscale as the Only Network You Need"',
+        status: 'routed',
+        delivery: 'github_issue',
+      },
+      {
+        id: 18402,
+        timestamp: '2026-06-08T09:04:00',
+        source: 'audit_media',
+        severity: 'warn',
+        kind: 'media_drift',
+        title: 'Video render 18% slower week-over-week',
+        status: 'routed',
+        delivery: 'discord',
+      },
+      {
+        id: 18377,
+        timestamp: '2026-06-07T22:40:00',
+        source: 'audit_published_quality',
+        severity: 'info',
+        kind: 'note',
+        title: 'SEO score steady at 84 across the last 10 posts',
+        status: 'log-only',
+        delivery: 'route',
+      },
+      {
+        id: 18361,
+        timestamp: '2026-06-07T19:12:00',
+        source: 'brain.probe.cadence_slo',
+        severity: 'info',
+        kind: 'cadence_slo',
+        title: 'Publish cadence 0.8/day vs 1.0/day target (7d)',
+        status: 'log-only',
+        delivery: 'log_only',
+      },
+    ],
+  };
+
   window.PX = {
     now,
     hhmmss,
@@ -1264,6 +1357,7 @@
     media,
     qa,
     topics,
+    findings,
     restarts,
     launcher,
     nextTs() {

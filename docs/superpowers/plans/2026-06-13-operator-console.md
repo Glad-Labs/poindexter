@@ -655,13 +655,15 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 > Outcome: probe-findings routing is visible and actionable, mirroring the Findings dashboard (#461) and the `findings_list` MCP tool.
 
-### Task 7.1: Findings panel
+**STATUS — SHIPPED (2026-06-14, this PR).** First backend+frontend phase: a new `GET /api/findings` route (TDD) + the console Findings panel. The "actions = ack/route" idea was **dropped** — findings are delivered autonomously by the brain's `findings_alert_router` (watermark-based) and have no ack/route HTTP surface, so the panel is a **read-only triage view** (no fabricated mutation buttons, matching the self-heal-not-suppress model + the Phase 5 "run all probes" removal).
 
-**Files:** Modify `js/panels2.jsx` (new `FindingsPanel`), `js/app.jsx` (section), `js/api.js`
+### Task 7.1: Findings route + panel — ✅ SHIPPED
 
-- [ ] **Step 1:** Source from `audit_log` where `event_type='finding'` (the Findings board's source). If no HTTP read exists, add a thin `GET /api/findings` route (backend, TDD, same pattern as Task 4.1) delegating to the findings service behind `findings_list`.
-- [ ] **Step 2:** Render emitted vs pending-delivery counts, by-kind/severity, and the `kind → delivery` policy; actions = ack/route.
-- [ ] **Step 3: Commit.**
+**Files:** `routes/findings_routes.py` (new), `services/findings_read.py` (new), `utils/route_registration.py` (register), `tests/unit/routes/test_findings_routes.py` (new), `tests/unit/services/test_findings_read.py` (new), `js/api.js` (`findings()`), `js/data.js` (`findings` mock), `js/panels2.jsx` (`FindingsPanel`), `js/app.jsx` (state + poll + RAIL + section), `js/drawer.jsx` (`case 'findings'`)
+
+- [x] **Step 1 (backend, TDD):** No findings HTTP read existed, so added `GET /api/findings` → `services.findings_read.read_findings`, which runs the same `audit_log` (`event_type='finding'`) query as the `findings_list` MCP tool but returns a **structured** summary: `{findings[], counts{emitted,pending}, by_kind[], by_severity[], delivery_by_kind{}, watermark, hours}`. Status mirrors the router job — `routed` (`id <= watermark`) / `PENDING` (routable, above watermark) / `log-only` (info severity). **5 route tests** (mocked contract: shape, query-param forwarding, defaults, 422 bounds, 401 auth) + **2 DB-roundtrip tests** (real SQL: rollups, status, delivery policy, kind filter, pending-only) — all 7 green; ruff + prettier clean.
+- [x] **Step 2 (console):** `FindingsPanel` renders emitted/pending counts, by-severity chips, and the latest findings (kind · title · status · delivery), with the `kind → delivery` policy table + full list in the detail drawer. Read-only (no ack/route). New `Findings` rail entry + 5-min live poll; mock mode keeps `PX.findings`. Headless mock render verified (panel + drawer, 0 runtime errors).
+- [x] **Step 3: Committed.**
 
 ---
 

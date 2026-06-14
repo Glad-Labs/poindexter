@@ -904,6 +904,121 @@ function Drawer({ entity, onClose, actions }) {
         );
         break;
       }
+      case 'findings': {
+        const fd = e;
+        eyebrow = 'PROBE FINDINGS · #461';
+        title = 'Findings — routing triage';
+        const rows = fd.findings || [];
+        // Read-only: findings are delivered by the brain's router (watermark-
+        // based). No ack/route footer — the drawer is a triage view.
+        const SEVT = {
+          critical: 'red',
+          warn: 'amber',
+          warning: 'amber',
+          info: 'cyan',
+        };
+        const STAT = { PENDING: 'amber', routed: 'mint', 'log-only': 'cyan' };
+        body = (
+          <>
+            <div className="section-label">Counts · {fd.hours || 168}h</div>
+            <DL
+              rows={[
+                ['Emitted', String((fd.counts && fd.counts.emitted) || 0)],
+                [
+                  'Pending delivery',
+                  String((fd.counts && fd.counts.pending) || 0),
+                ],
+                ['Route watermark', 'id ' + (fd.watermark || 0)],
+              ]}
+            />
+            <div className="section-label">By severity</div>
+            <div
+              style={{
+                display: 'flex',
+                gap: 6,
+                flexWrap: 'wrap',
+                marginBottom: 10,
+              }}
+            >
+              {(fd.by_severity || []).map((s) => (
+                <span
+                  key={s.severity}
+                  className={`tag tag--${SEVT[s.severity] || 'cyan'}`}
+                >
+                  {s.severity} · {s.count}
+                </span>
+              ))}
+            </div>
+            <div className="section-label">Kind → delivery policy</div>
+            <table
+              className="tbl"
+              style={{ border: '1px solid var(--gl-hairline)' }}
+            >
+              <thead>
+                <tr>
+                  <th>Kind</th>
+                  <th className="num">Count</th>
+                  <th>Delivery</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(fd.by_kind || []).map((k) => (
+                  <tr key={k.kind}>
+                    <td className="c-cyan">{k.kind}</td>
+                    <td className="num">{k.count}</td>
+                    <td>
+                      {(fd.delivery_by_kind && fd.delivery_by_kind[k.kind]) ||
+                        'route'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="section-label">Latest findings</div>
+            {rows.length === 0 ? (
+              <div className="mono c-dim" style={{ fontSize: 11 }}>
+                No findings in the window.
+              </div>
+            ) : (
+              rows.map((row) => (
+                <div
+                  key={row.id}
+                  style={{
+                    marginBottom: 8,
+                    paddingBottom: 8,
+                    borderBottom: '1px solid var(--gl-hairline)',
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span className="c-text">{row.kind}</span>
+                    <span className={`tag tag--${STAT[row.status] || 'cyan'}`}>
+                      {row.status}
+                    </span>
+                  </div>
+                  <div className="c-dim" style={{ fontSize: 11, marginTop: 2 }}>
+                    {row.title || '—'}
+                  </div>
+                  <div
+                    className="mono c-dim"
+                    style={{ fontSize: 10, marginTop: 2 }}
+                  >
+                    {row.severity} · {row.source} · → {row.delivery} · id{' '}
+                    {row.id}
+                  </div>
+                </div>
+              ))
+            )}
+          </>
+        );
+        break;
+      }
       case 'revenue': {
         const r = e;
         eyebrow = 'REVENUE · LEMON SQUEEZY';

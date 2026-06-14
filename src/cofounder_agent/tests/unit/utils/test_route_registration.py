@@ -116,8 +116,10 @@ class TestRouteManifestStructure:
         Updated 2026-06-13 (#1343): added the five operator HTTP-surface
         routers — gates / posts_approval / scheduling / topic_batch /
         media_approval — mirroring the in-process operator services over HTTP.
+        Updated 2026-06-13 (Phase 7 operator console): added findings_router
+        (probe-findings triage summary at /api/findings, #461).
         """
-        assert len(_WORKER_ROUTES) == 24
+        assert len(_WORKER_ROUTES) == 25
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first
