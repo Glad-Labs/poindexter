@@ -21,13 +21,14 @@ Usage:
 
 import asyncio
 import json
-import random
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from services.topic_length import pick_target_length
+from services.topic_sources._filters import CATEGORY_SEARCHES
 
 logger = get_logger(__name__)
 
@@ -80,125 +81,13 @@ class QueueTopicsResult(int):
 
 
 # ---------------------------------------------------------------------------
-# Shared target-length picker (#542)
+# Shared helpers relocated out of this legacy dispatcher (consolidation prep
+# — TopicDiscovery is being retired; see project_topic_discovery_consolidation).
+# They now live in dedicated modules and are imported at the top of this file:
+#   - pick_target_length / resolve_length_weights / DEFAULT_LENGTH_WEIGHTS
+#     → services.topic_length
+#   - CATEGORY_SEARCHES → services.topic_sources._filters
 # ---------------------------------------------------------------------------
-#
-# Both topic_discovery (auto-queue) and topic_proposal_service (manual /
-# URL-seed) vary post length through this one weighted picker so the queue
-# isn't dominated by a single length. Customers tune the mix via
-# ``app_settings.topic_discovery_length_distribution`` as JSON, e.g.
-# ``[[400, 800, 0.25], [800, 1200, 0.35], [1500, 2000, 0.25],
-#    [2500, 3500, 0.15]]``.
-#
-# Default distribution (journalism-style spread, #542): a true short-form
-# bucket (news brief / explainer, ~400-800 words) is now first-class, and
-# weight is spread across four buckets instead of clustering 60% on a
-# single 800-1200 band. This makes length variation visible across a day's
-# output instead of every post landing near ~1000 words.
-DEFAULT_LENGTH_WEIGHTS: list[tuple[int, int, float]] = [
-    (400, 800, 0.25),    # Short reads — news brief / quick explainer (2-3 min)
-    (800, 1200, 0.30),   # Standard reads (3-5 min)
-    (1500, 2000, 0.25),  # Medium features (6-8 min)
-    (2500, 3500, 0.20),  # Deep dives (10-15 min)
-]
-
-
-def resolve_length_weights(
-    site_config: Any,
-) -> list[tuple[int, int, float]]:
-    """Resolve the (lo, hi, weight) length buckets from app_settings.
-
-    Reads ``topic_discovery_length_distribution`` off the supplied
-    ``site_config`` (any object exposing ``.get(key, default)``). Falls
-    back to :data:`DEFAULT_LENGTH_WEIGHTS` when the key is unset or the
-    JSON is malformed (logs a WARNING — no silent swallow).
-    """
-    weights = list(DEFAULT_LENGTH_WEIGHTS)
-    raw = ""
-    if site_config is not None:
-        try:
-            raw = site_config.get("topic_discovery_length_distribution", "")
-        except Exception:  # pragma: no cover - defensive
-            raw = ""
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list) and parsed:
-                weights = [
-                    (int(lo), int(hi), float(w)) for lo, hi, w in parsed
-                ]
-        except (ValueError, TypeError) as exc:
-            logger.warning(
-                "[TOPIC_LENGTH] topic_discovery_length_distribution "
-                "invalid JSON, using defaults: %s", exc,
-            )
-    return weights
-
-
-def pick_target_length(site_config: Any) -> int:
-    """Pick a target word count via the weighted, DB-configurable picker.
-
-    Shared by ``topic_discovery`` and ``topic_proposal_service`` (#542)
-    so every task-creation path that doesn't get an explicit length still
-    varies output length the same way. Weights come from app_settings via
-    :func:`resolve_length_weights`.
-    """
-    weights = resolve_length_weights(site_config)
-    r = random.random()
-    cumulative = 0.0
-    for lo, hi, weight in weights:
-        cumulative += weight
-        if r <= cumulative:
-            return random.randint(lo, hi)
-    # Fallback: weights summed to < 1.0 (operator misconfigured) — use the
-    # last bucket's range so we still vary rather than pinning a constant.
-    lo, hi, _ = weights[-1]
-    return random.randint(lo, hi)
-
-
-# Category-specific search queries for DuckDuckGo
-CATEGORY_SEARCHES = {
-    "technology": [
-        "latest AI developer tools 2026",
-        "new programming frameworks 2026",
-        "cloud infrastructure trends",
-    ],
-    "startup": [
-        "solo founder success stories 2026",
-        "bootstrapped SaaS launch tips",
-        "indie hacker revenue milestones",
-    ],
-    "security": [
-        "latest cybersecurity threats developers",
-        "API security best practices 2026",
-        "zero trust architecture practical guide",
-    ],
-    "engineering": [
-        "software architecture patterns 2026",
-        "developer productivity engineering",
-        "CI/CD pipeline best practices",
-    ],
-    "insights": [
-        "state of software development 2026",
-        "developer survey results latest",
-        "tech industry trends predictions",
-    ],
-    "business": [
-        "AI business automation 2026",
-        "content marketing for developers",
-        "SaaS metrics that matter",
-    ],
-    "hardware": [
-        "best GPU for AI inference 2026",
-        "AMD vs NVIDIA gaming benchmarks",
-        "PC hardware news reviews 2026",
-    ],
-    "gaming": [
-        "upcoming PC games 2026",
-        "indie game development news",
-        "game engine updates Unreal Unity Godot",
-    ],
-}
 
 
 _STOP_WORDS = frozenset(
@@ -419,7 +308,7 @@ class TopicDiscovery:
 
         # Vary post lengths via the shared, DB-configurable picker (#542).
         # Weights live in app_settings.topic_discovery_length_distribution;
-        # see services.topic_discovery.DEFAULT_LENGTH_WEIGHTS for defaults.
+        # see services.topic_length.DEFAULT_LENGTH_WEIGHTS for defaults.
         # Both this auto-queue path and topic_proposal_service share
         # pick_target_length so neither flattens to a single length.
 

@@ -271,7 +271,7 @@ class TestTargetLengthVariation:
             # Force the shared picker to a deterministic value so the test
             # asserts the wiring, not the RNG.
             with patch(
-                "services.topic_discovery.pick_target_length",
+                "services.topic_length.pick_target_length",
                 return_value=637,
             ):
                 await propose_topic(
@@ -285,7 +285,7 @@ class TestTargetLengthVariation:
 
     @pytest.mark.asyncio
     async def test_none_length_lands_in_a_default_bucket(self):
-        from services.topic_discovery import DEFAULT_LENGTH_WEIGHTS
+        from services.topic_length import DEFAULT_LENGTH_WEIGHTS
 
         site_cfg = _make_site_config({})
         pool = _make_pool()

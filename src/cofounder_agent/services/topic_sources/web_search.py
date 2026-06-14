@@ -51,7 +51,7 @@ class WebSearchSource:
         # Lazy import so test environments that don't have the full
         # web_research dep chain installed can still import this module.
         from services.site_config import SiteConfig
-        from services.topic_discovery import CATEGORY_SEARCHES
+        from services.topic_sources._filters import CATEGORY_SEARCHES
         from services.web_research import WebResearcher
 
         raw_categories = config.get("categories")

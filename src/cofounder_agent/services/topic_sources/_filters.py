@@ -10,9 +10,52 @@ from __future__ import annotations
 
 import re
 
-# Re-export from the legacy home so nothing else in the codebase
-# breaks while we migrate. These should eventually live here only.
-from services.topic_discovery import CATEGORY_SEARCHES
+# Category-specific search queries for DuckDuckGo. This is the home now
+# (the planned end-state noted when the re-export shim was added); the
+# legacy ``services.topic_discovery`` re-exports it for backward compat
+# until that module is retired (``project_topic_discovery_consolidation``).
+CATEGORY_SEARCHES = {
+    "technology": [
+        "latest AI developer tools 2026",
+        "new programming frameworks 2026",
+        "cloud infrastructure trends",
+    ],
+    "startup": [
+        "solo founder success stories 2026",
+        "bootstrapped SaaS launch tips",
+        "indie hacker revenue milestones",
+    ],
+    "security": [
+        "latest cybersecurity threats developers",
+        "API security best practices 2026",
+        "zero trust architecture practical guide",
+    ],
+    "engineering": [
+        "software architecture patterns 2026",
+        "developer productivity engineering",
+        "CI/CD pipeline best practices",
+    ],
+    "insights": [
+        "state of software development 2026",
+        "developer survey results latest",
+        "tech industry trends predictions",
+    ],
+    "business": [
+        "AI business automation 2026",
+        "content marketing for developers",
+        "SaaS metrics that matter",
+    ],
+    "hardware": [
+        "best GPU for AI inference 2026",
+        "AMD vs NVIDIA gaming benchmarks",
+        "PC hardware news reviews 2026",
+    ],
+    "gaming": [
+        "upcoming PC games 2026",
+        "indie game development news",
+        "game engine updates Unreal Unity Godot",
+    ],
+}
 
 # Patterns that indicate news / current events / merch / personal anecdotes
 # — not evergreen editorial content. Moved verbatim from TopicDiscovery._NEWS_PATTERNS.

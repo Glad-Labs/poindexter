@@ -225,7 +225,7 @@ async def propose_topic(
     # is None so the manual / URL-seed paths stop flattening to a single
     # length. The picker is DB-configurable via app_settings.
     if target_length is None:
-        from services.topic_discovery import pick_target_length
+        from services.topic_length import pick_target_length
         target_length = pick_target_length(site_config)
 
     topic_clean = topic.strip()

@@ -36,7 +36,7 @@ class TestWebSearchSource:
         fake_categories = {"technology": ["distributed systems", "databases"]}
 
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", fake_categories):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,
@@ -57,7 +57,7 @@ class TestWebSearchSource:
         fake_categories = {"technology": ["scale databases"]}
 
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", fake_categories):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None, config={"categories": ["technology"]},
@@ -75,7 +75,7 @@ class TestWebSearchSource:
         fake_categories = {"technology": ["async task queues"]}
 
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", fake_categories):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None, config={"categories": ["technology"]},
@@ -94,7 +94,7 @@ class TestWebSearchSource:
         }
 
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", fake_categories):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             await source.extract(pool=None, config={"max_categories_per_run": 2})
 
@@ -104,7 +104,7 @@ class TestWebSearchSource:
     async def test_empty_categories_no_calls(self):
         fake = _make_researcher([])
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", {}):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", {}):
             source = WebSearchSource()
             topics = await source.extract(pool=None, config={})
 
@@ -119,7 +119,7 @@ class TestWebSearchSource:
         fake_categories = {"technology": ["rust safety"]}
 
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", fake_categories):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,
@@ -136,7 +136,7 @@ class TestWebSearchSource:
         fake_categories = {"technology": ["valid query"], "empty_cat": []}
 
         with patch("services.web_research.WebResearcher", return_value=fake), \
-             patch("services.topic_discovery.CATEGORY_SEARCHES", fake_categories):
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
             topics = await source.extract(
                 pool=None,

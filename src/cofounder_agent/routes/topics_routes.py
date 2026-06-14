@@ -19,7 +19,7 @@ from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from services.topic_batch_service import OpenBatch, TopicBatchService
-from services.topic_discovery import pick_target_length
+from services.topic_length import pick_target_length
 from services.url_scraper import URLScrapeError, URLScraper
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency

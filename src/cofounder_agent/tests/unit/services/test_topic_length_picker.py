@@ -19,7 +19,7 @@ import random
 from types import SimpleNamespace
 from typing import Any
 
-from services.topic_discovery import (
+from services.topic_length import (
     DEFAULT_LENGTH_WEIGHTS,
     pick_target_length,
     resolve_length_weights,
