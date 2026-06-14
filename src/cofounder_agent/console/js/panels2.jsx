@@ -554,6 +554,125 @@ function SchedulePanel({ schedule, onShift }) {
   );
 }
 
+/* ─── SEO refresh pipeline ───────────────────────────────────────
+   Read from GET /api/seo. The opportunity queue (open+queued, highest gap_score
+   first) is what the seo.refresh loop will act on; recent refreshes show the
+   baseline→outcome SERP-position delta (positive = moved up). Read-only — the
+   loop is autonomous, so the panel observes (no buttons). */
+const SEO_TIER_TAG = {
+  quick_win: 'mint',
+  high_value: 'cyan',
+  long_tail: 'amber',
+};
+function seoAgo(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!isFinite(s) || s < 0) return '';
+  if (s < 3600) return Math.round(s / 60) + 'm';
+  if (s < 86400) return Math.round(s / 3600) + 'h';
+  return Math.round(s / 86400) + 'd';
+}
+function SeoPanel({ seo }) {
+  const s = seo || {};
+  const queue = s.queue || [];
+  const refreshes = s.refreshes || [];
+  const byStatus = {};
+  (s.by_status || []).forEach((r) => {
+    byStatus[r.status] = r.count;
+  });
+  const num = (v, d = 1) => (v != null ? Number(v).toFixed(d) : '—');
+  return (
+    <Panel
+      idx="SE1"
+      title="SEO REFRESH · OPPORTUNITIES"
+      meta={`${byStatus.open || 0} OPEN · ${byStatus.queued || 0} QUEUED · ${byStatus.refreshed || 0} REFRESHED`}
+      flush
+    >
+      <div>
+        {queue.length === 0 ? (
+          <div className="mono c-dim" style={{ padding: 12, fontSize: 11 }}>
+            No open opportunities.
+          </div>
+        ) : (
+          queue.slice(0, 5).map((o) => (
+            <div
+              key={o.id}
+              className="svc"
+              style={{ gridTemplateColumns: 'auto 1fr auto auto' }}
+            >
+              <span className={`tag tag--${SEO_TIER_TAG[o.tier] || 'cyan'}`}>
+                {o.tier}
+              </span>
+              <span
+                className="svc__name truncate"
+                style={{ fontSize: 11 }}
+                title={o.target_query || o.slug}
+              >
+                {o.target_query || o.slug}
+                <small>
+                  pos {num(o.position)} · {o.impressions} impr
+                </small>
+              </span>
+              <span
+                className="mono c-mint tnum"
+                style={{ fontSize: 11 }}
+                title="gap score — est. clicks left on the table"
+              >
+                {Math.round(o.gap_score || 0)}
+              </span>
+              <span className="svc__metric c-dim">{seoAgo(o.detected_at)}</span>
+            </div>
+          ))
+        )}
+      </div>
+      {refreshes.length > 0 && (
+        <div
+          style={{
+            borderTop: '1px solid var(--gl-hairline)',
+            padding: '8px 12px',
+          }}
+        >
+          <div className="kpi__label" style={{ marginBottom: 6 }}>
+            Recent refreshes — baseline → outcome
+          </div>
+          {refreshes.slice(0, 4).map((r) => {
+            const up = r.delta != null && r.delta > 0;
+            const down = r.delta != null && r.delta < 0;
+            return (
+              <div
+                key={r.id}
+                className="mono"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  fontSize: 10,
+                  padding: '2px 0',
+                  color: 'var(--gl-text-muted)',
+                }}
+              >
+                <span
+                  className="truncate"
+                  style={{ maxWidth: '60%' }}
+                  title={r.target_query || r.slug}
+                >
+                  {r.target_query || r.slug}
+                </span>
+                <span className={up ? 'c-mint' : down ? 'c-amber' : 'c-dim'}>
+                  {num(r.baseline_position)} → {num(r.outcome_position)}
+                  {r.delta != null
+                    ? ` (${up ? '▲' : down ? '▼' : '–'}${Math.abs(r.delta).toFixed(1)})`
+                    : ''}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 /* ─── QA Rails ──────────────────────────────────────────────── */
 function QAPanel({ qa, onOpen }) {
   const live = window.PX.api.isLive();
@@ -886,6 +1005,7 @@ Object.assign(window, {
   RevenuePanel,
   MediaPanel,
   SchedulePanel,
+  SeoPanel,
   QAPanel,
   LauncherPanel,
   TopicsPanel,

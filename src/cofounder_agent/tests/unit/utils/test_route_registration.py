@@ -118,8 +118,10 @@ class TestRouteManifestStructure:
         media_approval — mirroring the in-process operator services over HTTP.
         Updated 2026-06-13 (Phase 7 operator console): added findings_router
         (probe-findings triage summary at /api/findings, #461).
+        Updated 2026-06-13 (Phase 11 operator console): added seo_router
+        (SEO-refresh opportunity summary at /api/seo, #1466).
         """
-        assert len(_WORKER_ROUTES) == 25
+        assert len(_WORKER_ROUTES) == 26
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

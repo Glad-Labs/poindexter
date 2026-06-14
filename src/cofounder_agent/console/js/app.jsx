@@ -35,6 +35,7 @@ function App() {
   const [brain, setBrain] = useS(PX.brain); // live: GET /api/memory/stats
   const [media, setMedia] = useS(PX.media); // live: GET /api/media-approval/pending
   const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
+  const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -346,6 +347,30 @@ function App() {
     };
     load();
     const timer = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: SEO refresh pipeline (GET /api/seo) ────────────
+  // Real seo_opportunities — the actionable queue + recent refresh outcomes.
+  // Read-only (the seo.refresh loop is autonomous). Mock keeps PX.seo. 5-min
+  // cadence (opportunities move on the harvest cycle, not second-to-second).
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.seo();
+        if (!alive || !res) return;
+        setSeo(res);
+      } catch (e) {
+        pushToast(`SEO load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -1093,6 +1118,9 @@ function App() {
               </div>
               <div id="sec-qa">
                 <QAPanel qa={PX.qa} onOpen={() => open('qa', PX.qa)} />
+              </div>
+              <div id="sec-seo">
+                <SeoPanel seo={seo} />
               </div>
               <div id="sec-cost">
                 <CostPanel cost={cost} onOpen={() => open('cost', cost)} />

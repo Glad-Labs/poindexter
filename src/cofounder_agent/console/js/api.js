@@ -41,6 +41,7 @@
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
+     seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
@@ -622,6 +623,18 @@
             post_ids: postIds && postIds.length ? postIds : null,
           }),
         () => ({ ok: true, by_delta: byDelta, post_ids: postIds || [] })
+      );
+    },
+
+    // ── SEO refresh pipeline (seo_routes.py, #1466) ─────────
+    // GET /api/seo → {queue, refreshes, by_status, by_tier}. The live shape
+    // already matches the panel, so no mapping. Read-only — the seo.refresh
+    // loop runs autonomously; the console observes the opportunity queue + the
+    // baseline→outcome position deltas.
+    seo() {
+      return pick(
+        () => http('GET', '/api/seo'),
+        () => mock().seo
       );
     },
 

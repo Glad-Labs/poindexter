@@ -720,16 +720,18 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ---
 
-## Phase 11 — SEO refresh loop (NEW)
+## Phase 11 — SEO refresh loop (NEW) — ✅ SHIPPED
 
 > Outcome: the live SEO-refresh loop (`seo.refresh.enabled=true`, #1466, `project_seo_harvest_phase2`) is visible — what's queued for refresh, what shipped.
 
-### Task 11.1: SEO panel
+**Implementation note:** the **only new-route TDD phase in the back half** — unlike media (#1343) / schedule (#1343) / findings, `seo_opportunities` had no console-shaped read. Added `services/seo_read.py::read_seo` + `routes/seo_routes.py` (`GET /api/seo`, OAuth-JWT) test-first. The read wraps the `seo_opportunities` lifecycle (`open → queued → refreshed → outcome-measured`) into a console summary: the actionable **queue** (open+queued, highest `gap_score` first), **recent refreshes** (rows the loop acted on, with a `baseline → outcome` SERP-position **delta** — positive = moved up, since a lower position number is better), and by-status / by-tier rollups. Read-only — the refresh loop runs autonomously, the console only observes. `Decimal`→`float` coercion at the read boundary (asyncpg returns `Decimal` for `NUMERIC`). The panel **derives** the delta arrow + colour from `baseline_position − outcome_position` (`feedback_calculated_vs_generated`), and `seo_opportunities` holds **live prod data** so the DB-roundtrip test seeds + cleans up by a scoped `test-seo-p11-` slug prefix (never a blanket `DELETE`).
 
-**Files:** Modify `js/panels2.jsx` (new `SeoPanel`), `js/app.jsx`, `js/api.js`
+### Task 11.1: SEO panel — ✅ SHIPPED
 
-- [ ] **Step 1:** Render the seo_refresh queue + recent refreshes (source from the SEO-harvest tables / settings). Backend read added TDD if absent.
-- [ ] **Step 2: Commit.**
+**Files:** `services/seo_read.py` (NEW — `read_seo(pool, *, limit)`), `routes/seo_routes.py` (NEW — `GET /api/seo`), `utils/route_registration.py` (+`seo_router` in `_WORKER_ROUTES`), `tests/unit/services/test_seo_read.py` + `tests/unit/routes/test_seo_routes.py` (NEW, TDD), `tests/unit/utils/test_route_registration.py` (count guard 25→26), `docs/reference/services.md` (regen → 383), `js/api.js` (`seo()` → `/api/seo`, pass-through — live shape == panel shape), `js/panels2.jsx` (new `SeoPanel` + `seoAgo` helper + `SEO_TIER_TAG`), `js/app.jsx` (`seo` state + 5-min poll + `sec-seo` section), `js/data.js` (`seo` mock — queue/refreshes/by_status/by_tier, real row shape)
+
+- [x] **Step 1:** New-route TDD — `read_seo` over `seo_opportunities` (queue by `gap_score DESC`, refreshes by `COALESCE(outcome_measured_at, refreshed_at) DESC`, baseline→outcome delta), exposed at `GET /api/seo` (limit 1..100, default 30); panel renders the top-5 queue (tier tag + target_query + "pos X · N impr" + gap score + age) and recent refreshes (`baseline → outcome (▲/▼delta)`, coloured mint/amber/dim). Read-only — no mutation (the loop is autonomous).
+- [x] **Step 2: Verified + committed.** Backend **35 tests pass** (5 route + DB-roundtrip incl. delta==6.0 from baseline12−outcome6, queue excludes refreshed+dismissed, gap DESC, `gap_score` is `float`), ruff clean, `services.md` regen → 383 with `seo_read` catalogued; mock headless render **8/8, 0 runtime errors**; live path validated end-to-end (read_seo DB-roundtrip + panel-consumes-mock-which-mirrors-live-shape + `api.seo()` pass-through).
 
 ---
 

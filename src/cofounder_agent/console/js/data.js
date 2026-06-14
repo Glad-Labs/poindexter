@@ -1400,6 +1400,107 @@
     ],
   };
 
+  // ── SEO refresh pipeline ────────────────────────────────────
+  // Mirrors GET /api/seo (seo_opportunities). queue = open+queued by gap_score;
+  // refreshes = acted-on rows with a baseline→outcome SERP-position delta
+  // (positive = moved up). Read-only — the seo.refresh loop runs autonomously,
+  // the panel only observes. Timestamps are ISO (matching the live read).
+  const _ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const seo = {
+    queue: [
+      {
+        id: 'o1',
+        slug: 'best-budget-gpu-2026',
+        target_query: 'best budget gpu 2026',
+        tier: 'quick_win',
+        status: 'open',
+        position: 8.4,
+        impressions: 2100,
+        gap_score: 142.0,
+        detected_at: _ago(1),
+      },
+      {
+        id: 'o2',
+        slug: 'local-llm-vram-guide',
+        target_query: 'llm vram requirements',
+        tier: 'quick_win',
+        status: 'queued',
+        position: 11.2,
+        impressions: 1680,
+        gap_score: 98.5,
+        detected_at: _ago(2),
+      },
+      {
+        id: 'o3',
+        slug: 'tailscale-funnel-vs-serve',
+        target_query: 'tailscale funnel vs serve',
+        tier: 'high_value',
+        status: 'open',
+        position: 14.0,
+        impressions: 1340,
+        gap_score: 76.0,
+        detected_at: _ago(3),
+      },
+      {
+        id: 'o4',
+        slug: 'sdxl-on-5090',
+        target_query: 'sdxl rtx 5090',
+        tier: 'long_tail',
+        status: 'open',
+        position: 19.5,
+        impressions: 540,
+        gap_score: 31.0,
+        detected_at: _ago(5),
+      },
+    ],
+    refreshes: [
+      {
+        id: 'r1',
+        slug: 'supervisor-pattern',
+        target_query: '200 line supervisor',
+        tier: 'high_value',
+        status: 'refreshed',
+        baseline_position: 12.0,
+        outcome_position: 6.0,
+        delta: 6.0,
+        measured_at: _ago(24),
+      },
+      {
+        id: 'r2',
+        slug: 'observability-vendor',
+        target_query: 'self-hosted observability',
+        tier: 'quick_win',
+        status: 'refreshed',
+        baseline_position: 9.0,
+        outcome_position: 7.5,
+        delta: 1.5,
+        measured_at: _ago(48),
+      },
+      {
+        id: 'r3',
+        slug: 'gpu-scheduler',
+        target_query: 'gpu scheduler ollama sdxl',
+        tier: 'long_tail',
+        status: 'refreshed',
+        baseline_position: 15.0,
+        outcome_position: 16.0,
+        delta: -1.0,
+        measured_at: _ago(72),
+      },
+    ],
+    by_status: [
+      { status: 'open', count: 18 },
+      { status: 'queued', count: 4 },
+      { status: 'refreshed', count: 11 },
+      { status: 'dismissed', count: 3 },
+    ],
+    by_tier: [
+      { tier: 'quick_win', count: 14 },
+      { tier: 'high_value', count: 12 },
+      { tier: 'long_tail', count: 10 },
+    ],
+  };
+
   window.PX = {
     now,
     hhmmss,
@@ -1419,6 +1520,7 @@
     topics,
     findings,
     schedule,
+    seo,
     restarts,
     launcher,
     nextTs() {
