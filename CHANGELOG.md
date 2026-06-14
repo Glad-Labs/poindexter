@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## [0.79.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.78.0...v0.79.0) (2026-06-14)
+
+
+### Features
+
+* **cli:** canonical secret-setting via `settings set --secret` + `settings get --reveal` ([#1556](https://github.com/Glad-Labs/glad-labs-stack/issues/1556)) ([ad1f641](https://github.com/Glad-Labs/glad-labs-stack/commit/ad1f641dc3b6e2bb5c5f1c3d034112eb37990da8))
+* **console:** Brain on real /api/memory/stats corpus + memory recall search (Phase 8) ([#1571](https://github.com/Glad-Labs/glad-labs-stack/issues/1571)) ([551522e](https://github.com/Glad-Labs/glad-labs-stack/commit/551522e7bd1be5c9e045fb39dded45ec071bf678))
+* **console:** findings triage — GET /api/findings (TDD) + Findings panel (Phase 7) ([#1570](https://github.com/Glad-Labs/glad-labs-stack/issues/1570)) ([6fec661](https://github.com/Glad-Labs/glad-labs-stack/commit/6fec66107bda9a184c735a2b684a269e010b4a40))
+* **console:** Media Gate-2 — live pending queue + approve/reject (Phase 9) ([#1572](https://github.com/Glad-Labs/glad-labs-stack/issues/1572)) ([8eb1da5](https://github.com/Glad-Labs/glad-labs-stack/commit/8eb1da5a609be254a428504c1aee3e7a9105d21d))
+* **console:** Phase 4 — topics triage (rank/resolve/reject open discovery batches) ([#1553](https://github.com/Glad-Labs/glad-labs-stack/issues/1553)) ([1f8315e](https://github.com/Glad-Labs/glad-labs-stack/commit/1f8315efb7c111d5a37ff9c949f82f89e3cd1e49))
+* **console:** real audit feed + voice/rebuild actions (Phase 12) ([#1575](https://github.com/Glad-Labs/glad-labs-stack/issues/1575)) ([f31f8c6](https://github.com/Glad-Labs/glad-labs-stack/commit/f31f8c67a9971e0d8eddced1a980023f8dbbcc08))
+* **console:** real service health from cAdvisor + live GPU HUD (Phase 5.1/5.2) ([#1565](https://github.com/Glad-Labs/glad-labs-stack/issues/1565)) ([d47934e](https://github.com/Glad-Labs/glad-labs-stack/commit/d47934ef46510b0b025200bf65e2aafde3002ac1))
+* **console:** reframe Cost to the honest model — $0 infra + LLM/API spend vs cap (Phase 6) ([#1568](https://github.com/Glad-Labs/glad-labs-stack/issues/1568)) ([f39b06c](https://github.com/Glad-Labs/glad-labs-stack/commit/f39b06c2b0086027b22825c27e8f8c08395c8544))
+* **console:** revenue honest empty-state + mobile fit + README truth pass (Phase 13) ([#1576](https://github.com/Glad-Labs/glad-labs-stack/issues/1576)) ([39dd21b](https://github.com/Glad-Labs/glad-labs-stack/commit/39dd21b9f44d67f9a02de97362ceb95ffe6038d3))
+* **console:** Scheduled-publish queue panel + per-row reschedule (Phase 10) ([#1573](https://github.com/Glad-Labs/glad-labs-stack/issues/1573)) ([ccf8369](https://github.com/Glad-Labs/glad-labs-stack/commit/ccf8369e4a68fff9443f21887553caf99a5446ad))
+* **console:** SEO refresh panel + GET /api/seo (TDD) (Phase 11) ([#1574](https://github.com/Glad-Labs/glad-labs-stack/issues/1574)) ([116ca95](https://github.com/Glad-Labs/glad-labs-stack/commit/116ca9564cb5c9bc8666afde9830c201df1475ef))
+
+
+### Bug Fixes
+
+* **ci:** catch Claude-projects + escaped Windows operator home-path encodings in leak guard ([#1554](https://github.com/Glad-Labs/glad-labs-stack/issues/1554)) ([ad41958](https://github.com/Glad-Labs/glad-labs-stack/commit/ad41958a82de9867643bee33facdc80a4f855a25))
+* **cli:** load POINDEXTER_SECRET_KEY in `pipeline` commands so secrets decrypt on host ([#1558](https://github.com/Glad-Labs/glad-labs-stack/issues/1558)) ([17da31f](https://github.com/Glad-Labs/glad-labs-stack/commit/17da31f8226f730646d39429f4612be06b1d87ab))
+* **cli:** load POINDEXTER_SECRET_KEY in the root callback for all subcommands ([#1559](https://github.com/Glad-Labs/glad-labs-stack/issues/1559)) ([32d7fe1](https://github.com/Glad-Labs/glad-labs-stack/commit/32d7fe115f8efb4d72f9013a2cf754042a4f4030))
+* **content:** reject rubric-leak titles structurally + repair 2 published rows ([#1567](https://github.com/Glad-Labs/glad-labs-stack/issues/1567)) ([5324ba5](https://github.com/Glad-Labs/glad-labs-stack/commit/5324ba50cf23a40d61d7fd34066516267718a748))
+* correct phantom `poindexter set` command to `poindexter settings set` ([#1562](https://github.com/Glad-Labs/glad-labs-stack/issues/1562)) ([7f3bd40](https://github.com/Glad-Labs/glad-labs-stack/commit/7f3bd40f4e801fa73f9d5f7313fdf96f4785b34f))
+* **scripts:** ASCII-ify em-dashes in PowerShell scripts (PS 5.1 parse failure) ([#1563](https://github.com/Glad-Labs/glad-labs-stack/issues/1563)) ([a738f28](https://github.com/Glad-Labs/glad-labs-stack/commit/a738f28cb8476dae8188f5fd30b439fa04d01d41))
+* **topics:** dedupe niche-batch sweep candidates (intra-batch + vs-existing) ([#1561](https://github.com/Glad-Labs/glad-labs-stack/issues/1561)) ([6102efe](https://github.com/Glad-Labs/glad-labs-stack/commit/6102efe8cb181a70e91f55a5f9991bd72eba4c88))
+* **types:** _check_task_ownership accepts Mapping (arg-type burndown) ([#1555](https://github.com/Glad-Labs/glad-labs-stack/issues/1555)) ([2d248de](https://github.com/Glad-Labs/glad-labs-stack/commit/2d248ded1d625a2d656e9f8241f5a87b104ee5ca))
+* **types:** _emit_progress site_config Optional (arg-type burndown 3/N) ([#1557](https://github.com/Glad-Labs/glad-labs-stack/issues/1557)) ([bed74e6](https://github.com/Glad-Labs/glad-labs-stack/commit/bed74e6646fe380ac86fb4ae592b788f9ba91456))
+* **types:** clear all [index] mypy errors — health_data annotation + None guards ([#1552](https://github.com/Glad-Labs/glad-labs-stack/issues/1552)) ([0b714b5](https://github.com/Glad-Labs/glad-labs-stack/commit/0b714b512c315bcaded09b5cfd4528e76c146db1))
+* **types:** restore the mypy type-check (npm run type:check was fully broken) ([#1551](https://github.com/Glad-Labs/glad-labs-stack/issues/1551)) ([31a0da7](https://github.com/Glad-Labs/glad-labs-stack/commit/31a0da79493bdb3965d58fa326f412d3457dbd9d))
+
 ## [0.78.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.77.0...v0.78.0) (2026-06-13)
 
 
