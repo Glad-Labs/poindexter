@@ -4,11 +4,14 @@ Per-niche flow:
   1. discover candidates (external source plugins + InternalRagSource) per
      niche_sources weights → pool of ~20
   2. carry-forward leftover candidates from prior batch with decay
-  3. embedding pre-rank against goal vectors → top 10
-  4. LLM final-score on the top 10 → final batch_size winners
-  5. write topic_batch + topic_candidates / internal_topic_candidates rows
-  6. open the topic_decision approval gate
-  7. record discovery_run
+  3. dedup the combined pool (intra-batch + vs-existing) via
+     get_deduplicator() — mirrors the legacy TopicDiscovery._deduplicate
+     pass the niche-batch rewrite originally dropped
+  4. embedding pre-rank against goal vectors → top 10
+  5. LLM final-score on the top 10 → final batch_size winners
+  6. write topic_batch + topic_candidates / internal_topic_candidates rows
+  7. open the topic_decision approval gate
+  8. record discovery_run
 
 Implementation note — lazy imports
 ==================================
@@ -110,6 +113,26 @@ class OpenBatch:
     niche_name: str | None
 
 
+class _DedupCandidate:
+    """Mutable ``_TopicLike`` adapter the deduplicators operate on.
+
+    The dedup engines (``services.topic_dedup.TopicDeduplicator`` /
+    ``SemanticDeduplicator``) mark ``.is_duplicate`` in place on objects
+    exposing ``.title``. The niche-batch candidates are dicts of several
+    shapes (fresh ``{"data": ...}`` vs carry-forward ``{"row": ...}``), so
+    we wrap each one — remembering its pool and the original item — for the
+    pass, then rebuild the filtered pools from the survivors.
+    """
+
+    __slots__ = ("title", "is_duplicate", "pool", "item")
+
+    def __init__(self, title: str, pool: str, item: Any) -> None:
+        self.title = title
+        self.is_duplicate = False
+        self.pool = pool  # "external" | "internal"
+        self.item = item
+
+
 class TopicBatchService:
     def __init__(self, pool, *, site_config: SiteConfig):
         self._pool = pool
@@ -161,10 +184,22 @@ class TopicBatchService:
                 internal = []
             carried = await self._load_carry_forward(niche.id)
 
-            pool_external, pool_internal = await self._embed_and_pre_rank(
-                niche,
+            # Dedup BEFORE embed/pre-rank so duplicates never reach a batch
+            # (and we don't pay to embed them). This mirrors the dedup pass
+            # the legacy ``TopicDiscovery._deduplicate`` runs — the niche-
+            # batch rewrite that replaced topic_proposal_service dropped it,
+            # so batches were coming back with duplicate candidates (e.g.
+            # internal RAG distilling one theme from two source rows landed
+            # "operator surface unreachability" in a single batch x3).
+            combined_external, combined_internal = await self._dedupe_candidates(
                 external + carried["external"],
                 internal + carried["internal"],
+            )
+
+            pool_external, pool_internal = await self._embed_and_pre_rank(
+                niche,
+                combined_external,
+                combined_internal,
             )
 
             # Top-N per pool is operator-tunable via niche_top_n_per_pool
@@ -455,6 +490,107 @@ class TopicBatchService:
                 for r in int_
             ],
         }
+
+    async def _dedupe_candidates(
+        self,
+        external: list,
+        internal: list,
+    ) -> tuple[list, list]:
+        """Drop duplicate candidates before they reach the batch.
+
+        Delegates to ``get_deduplicator()`` so the ``topic_dedup_engine``
+        app_setting still selects word-overlap (default) vs semantic, and
+        runs BOTH passes over the combined external+internal pool:
+
+        - intra-batch: collapses the same topic surfaced twice this sweep
+          (cross-source, or internal RAG distilling one theme from two
+          source rows — identical ``distilled_topic``, distinct
+          ``primary_ref`` — which survives the dict-keyed pre-rank as two
+          ids). Fresh candidates are listed before carry-forwards, so a
+          fresh/carried collision keeps the fresh copy.
+        - vs-existing: drops candidates whose title already matches a
+          published post or in-flight content_task.
+
+        Fail-open: a deduplicator error must never sink the sweep — log and
+        return the candidates un-deduped. A duplicate is a far smaller
+        problem than the content stall an exception here would cause (same
+        posture as the empty-batch-wedge guard in ``run_sweep``).
+        """
+        from services.topic_dedup_semantic import get_deduplicator
+
+        wrappers: list[_DedupCandidate] = []
+        for item in external:
+            wrappers.append(
+                _DedupCandidate(self._external_title(item), "external", item)
+            )
+        for item in internal:
+            wrappers.append(
+                _DedupCandidate(self._internal_title(item), "internal", item)
+            )
+        if not wrappers:
+            return external, internal
+
+        deduper = get_deduplicator(self._pool, site_config=self._site_config)
+        try:
+            await deduper.mark_duplicates(wrappers)
+        except Exception:
+            logger.warning(
+                "Dedup pass failed — proceeding with un-deduped candidates",
+                exc_info=True,
+            )
+            return external, internal
+
+        fresh_external = [
+            w.item for w in wrappers
+            if w.pool == "external" and not w.is_duplicate
+        ]
+        fresh_internal = [
+            w.item for w in wrappers
+            if w.pool == "internal" and not w.is_duplicate
+        ]
+        dropped = len(wrappers) - (len(fresh_external) + len(fresh_internal))
+        if dropped:
+            logger.info(
+                "Dedup dropped %d duplicate candidate(s) "
+                "(external %d→%d, internal %d→%d)",
+                dropped, len(external), len(fresh_external),
+                len(internal), len(fresh_internal),
+            )
+        return fresh_external, fresh_internal
+
+    @staticmethod
+    def _external_title(item: Any) -> str:
+        """Title of an external candidate across its shapes — fresh
+        ``{"data": {...}}`` / carry-forward ``{"row": {...}}`` / legacy
+        flat dict. Mirrors the shape handling in ``_embed_and_pre_rank``."""
+        if isinstance(item, dict) and "row" in item:
+            row = item["row"]
+        elif isinstance(item, dict) and "data" in item:
+            row = item["data"]
+        else:
+            row = item
+        if isinstance(row, dict):
+            return (row.get("title") or "").strip()
+        return ""
+
+    @staticmethod
+    def _internal_title(item: Any) -> str:
+        """Distilled topic of an internal candidate across its shapes —
+        fresh ``InternalCandidate`` dataclass under ``data`` / carry-forward
+        row dict under ``row``."""
+        if isinstance(item, dict) and "data" in item:
+            data = item["data"]
+        elif isinstance(item, dict) and "row" in item:
+            data = item["row"]
+        else:
+            data = item
+        # InternalCandidate dataclass (fresh) exposes ``.distilled_topic``;
+        # carry-forward row dicts carry it under the "distilled_topic" key
+        # (falling back to "title"). 3-arg getattr keeps both shapes happy.
+        topic = getattr(data, "distilled_topic", None)
+        if topic is None and isinstance(data, dict):
+            topic = data.get("distilled_topic") or data.get("title")
+        return (topic or "").strip()
 
     async def _embed_and_pre_rank(
         self,

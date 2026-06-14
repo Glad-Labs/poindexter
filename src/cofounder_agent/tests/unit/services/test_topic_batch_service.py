@@ -142,10 +142,18 @@ async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatc
     await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
 
     # External discovery yields 2 candidates; internal discovery blows up.
+    # Titles must be genuinely distinct (no shared content words): run_sweep
+    # now runs the dedup pass, and the old "Ext topic 0"/"Ext topic 1" pair
+    # was 67% word-overlap → the intra-batch deduper would (correctly)
+    # collapse them and this resilience test would see only 1 candidate.
     async def fake_external(self, niche):
+        titles = [
+            "Local LLM Inference Benchmarks",
+            "Postgres Replication Failover",
+        ]
         return [
             {"kind": "external", "data": {
-                "title": f"Ext topic {i}",
+                "title": title,
                 "summary": f"summary {i}",
                 "source_name": "hacker_news",
                 "source_ref": f"hn-{i}",
@@ -153,7 +161,7 @@ async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatc
                 "category": "ai",
                 "relevance_score": 0.9 - i * 0.1,
             }}
-            for i in range(2)
+            for i, title in enumerate(titles)
         ]
 
     async def boom_internal(self, niche):
@@ -216,6 +224,95 @@ async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatc
     assert run_row is not None
     assert run_row["batch_id"] == batch.id
     assert run_row["error"] is None
+
+
+async def test_run_sweep_dedupes_duplicate_candidates(db_pool, monkeypatch):
+    """Regression guard: the niche-batch sweep must drop duplicate
+    candidates before writing them to a batch.
+
+    ``TopicBatchService`` replaced ``topic_proposal_service`` but never
+    carried over the dedup pass the legacy ``TopicDiscovery`` path runs.
+    Internal RAG routinely distills the SAME topic from two different
+    source rows — identical ``distilled_topic``, distinct ``primary_ref``
+    — so the pair survives the dict-keyed pre-rank as two separate ids and
+    both land in the batch. In prod, "operator surface unreachability"
+    showed up in a single batch x3 this way. ``run_sweep`` now runs
+    ``get_deduplicator().mark_duplicates()`` so the copies collapse to one.
+    """
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug="dedup-sweep", name="Dedup", batch_size=5)
+    await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
+    await nsvc.set_sources(n.id, [
+        NicheSource("internal_rag", enabled=True, weight_pct=100),
+    ])
+
+    # Two candidates share distilled_topic but carry DISTINCT primary_refs
+    # (the prod shape) plus two genuinely distinct topics. Titles are
+    # chosen so word-overlap dedup flags ONLY the exact pair, never the
+    # distinct ones (no shared content words across the three topics).
+    async def fake_internal_generate(self, **kwargs):
+        return [
+            InternalCandidate(
+                source_kind="claude_session",
+                primary_ref="sess-A",
+                distilled_topic="Operator Surface Unreachability",
+                distilled_angle="why the gauge flatlines",
+            ),
+            InternalCandidate(
+                source_kind="claude_session",
+                primary_ref="sess-B",  # different ref, SAME topic
+                distilled_topic="Operator Surface Unreachability",
+                distilled_angle="duplicate distilled from a second session",
+            ),
+            InternalCandidate(
+                source_kind="brain_knowledge",
+                primary_ref="kb-1",
+                distilled_topic="Postgres Vacuum Tuning Guide",
+                distilled_angle="autovacuum thresholds",
+            ),
+            InternalCandidate(
+                source_kind="decision_log",
+                primary_ref="dec-1",
+                distilled_topic="Zero Trust Network Segmentation",
+                distilled_angle="east-west traffic controls",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "services.internal_rag_source.InternalRagSource.generate",
+        fake_internal_generate,
+    )
+
+    async def fake_embed_text(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr(
+        "services.topic_ranking._embed_text_cached", fake_embed_text,
+    )
+
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+        result = {}
+        for idx, c in enumerate(candidates):
+            c.llm_score = 80 - idx * 5
+            c.score_breakdown = {}
+            result[c.id] = c
+        return result
+
+    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
+    batch = await svc.run_sweep(niche_id=n.id)
+
+    assert batch is not None
+    view = await svc.show_batch(batch_id=batch.id)
+    titles = [c.title for c in view.candidates]
+    # The duplicate pair collapsed to a single candidate.
+    assert titles.count("Operator Surface Unreachability") == 1
+    # Three distinct topics survive (4 generated − 1 duplicate).
+    assert len(titles) == 3
+    # No duplicate titles anywhere in the persisted batch.
+    assert len(set(titles)) == len(titles)
 
 
 async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
