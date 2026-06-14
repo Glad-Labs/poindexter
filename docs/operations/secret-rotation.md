@@ -50,12 +50,12 @@ What kind of rotation is this?
 Every encrypted secret follows this lifecycle:
 
 1. **Generate** a new value (via the provider's UI / API, or `openssl rand`)
-2. **Set** the new value into `app_settings` via `poindexter set` or `set_secret(...)`. This encrypts under the current `POINDEXTER_SECRET_KEY`.
+2. **Set** the new value into `app_settings` via `poindexter settings set <key> "<value>" --secret` or the `set_secret(...)` Python helper. Either path encrypts under the current `POINDEXTER_SECRET_KEY`.
 3. **Restart** any in-process consumers so they re-fetch from `app_settings`. Most async consumers call `await site_config.get_secret(...)` per-request and don't need a restart; some sync constructors cache at startup and DO.
 4. **Verify** the rotation by triggering a real downstream call (test webhook, test alert, etc.).
 5. **Revoke** the old value at the provider (when applicable).
 
-The `poindexter set` CLI (or direct DB UPDATE, or the `set_secret` Python helper) is your write surface. The `poindexter settings get <key>` command will show `(encrypted)` for `is_secret=true` rows — you cannot read the plaintext back, by design.
+The `poindexter settings set <key> "<value>" --secret` CLI (or direct DB UPDATE, or the `set_secret` Python helper) is your write surface. The `poindexter settings get <key>` command shows `******* (encrypted)` for `is_secret=true` rows; pass `poindexter settings get <key> --reveal` to decrypt and print the plaintext (value to stdout, exposure warning to stderr) when you need to read one back.
 
 ---
 
@@ -126,7 +126,7 @@ async def main():
 asyncio.run(main())
 " </tmp/newval
 
-# Or: poindexter set <key> "<value>"   if you accept the value being on the cmdline.
+# Or: poindexter settings set <key> "<value>" --secret   if you accept the value being on the cmdline.
 # Prefer the helper above for true secrets.
 
 # 4. Restart any consumer that caches at startup
@@ -138,7 +138,7 @@ docker restart poindexter-worker     # most secrets — async-fetched per reques
 # 6. Revoke the old value at the provider
 ```
 
-**Why not always `poindexter set`?** It works, but it puts the secret value in your shell history and the click argv. `set_secret(...)` via the helper above keeps the secret in a 0600 file that you delete after.
+**Why not always `poindexter settings set --secret`?** It works, but it puts the secret value in your shell history and the click argv. `set_secret(...)` via the helper above keeps the secret in a 0600 file that you delete after.
 
 ---
 
@@ -293,7 +293,7 @@ Glad-Labs/poindexter#241.
 NEW=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # 2. Set in DB
-poindexter set revalidate_secret "$NEW"   # OR use set_secret helper
+poindexter settings set revalidate_secret "$NEW" --secret   # OR use set_secret helper
 
 # 3. Update on Vercel — this MUST happen within seconds of step 2,
 #    otherwise revalidation 401s until you do.
@@ -353,7 +353,7 @@ vercel logs --follow | grep revalidate
 NEW=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # 2. Set in DB
-poindexter set openclaw_webhook_token "$NEW"   # OR use set_secret helper
+poindexter settings set openclaw_webhook_token "$NEW" --secret   # OR use set_secret helper
 
 # 3. Update OpenClaw config
 # Edit ~/.openclaw/openclaw.json — set the gateway's expected token.
@@ -394,7 +394,7 @@ docker restart poindexter-alertmanager
 #    BotFather hands you the new token. Save it.
 
 # 2. Set in DB
-poindexter set telegram_bot_token "<new-token>"
+poindexter settings set telegram_bot_token "<new-token>" --secret
 
 # 3. ALSO update bootstrap.toml fallback (for operator notifications when DB is down)
 # Edit ~/.poindexter/bootstrap.toml -> telegram_bot_token = "<new-token>"
@@ -429,7 +429,7 @@ curl -s -X POST http://localhost:8002/api/test/notify-operator \
 #    Copy the new token.
 
 # 2. Set in DB
-poindexter set discord_bot_token "<new-token>"
+poindexter settings set discord_bot_token "<new-token>" --secret
 
 # 3. Restart Discord bot consumer
 docker restart poindexter-worker
@@ -457,7 +457,7 @@ Keys: `discord_ops_webhook_url`, `discord_alerts_webhook_url`, etc. (per-channel
 #    -> select webhook -> Copy Webhook URL (regenerates if needed)
 
 # 2. Set in DB
-poindexter set discord_ops_webhook_url "https://discord.com/api/webhooks/.../...token"
+poindexter settings set discord_ops_webhook_url "https://discord.com/api/webhooks/.../...token" --secret
 
 # 3. ALSO update bootstrap.toml fallback if this is the ops webhook
 # Edit ~/.poindexter/bootstrap.toml -> discord_ops_webhook_url
@@ -482,7 +482,7 @@ docker restart poindexter-worker poindexter-brain-daemon
 #    Copy the new value.
 
 # 2. Set in DB
-poindexter set lemon_squeezy_webhook_secret "<new-secret>"
+poindexter settings set lemon_squeezy_webhook_secret "<new-secret>" --secret
 
 # 3. Restart worker so the verifier reads the new value on next request
 #    (Actually, since the verifier is async and reads per-request, this
@@ -504,7 +504,7 @@ docker restart poindexter-worker
 
 ```bash
 # 1. https://resend.com/api-keys -> Delete old key, Create new key
-# 2. poindexter set resend_api_key "<new-key>"
+# 2. poindexter settings set resend_api_key "<new-key>" --secret
 # 3. docker restart poindexter-worker
 ```
 
@@ -524,16 +524,13 @@ docker restart poindexter-worker
 
 ### `smtp_password`
 
-**Lives in.** `app_settings.smtp_password` — **NOT YET encrypted as of 2026-04-30**. A migration flips the row to `is_secret=true` once seeded (since folded into the baseline).
-
-**TBD — needs operator confirmation:** verify with `psql -c "SELECT is_secret FROM app_settings WHERE key='smtp_password'"`. If `is_secret=false`, set as plain `poindexter set`. If `is_secret=true`, use the encrypted helper. The newsletter `_cfg` callsite is documented as needing migration to `await get_secret(...)` once this row is encrypted.
+**Lives in.** `app_settings.smtp_password`. Read via `await site_config.get_secret(...)` (the newsletter `_cfg` callsite), so set it with `--secret` to store it encrypted at rest.
 
 **Procedure.**
 
 ```bash
 # 1. Generate / obtain new SMTP password from your email host
-# 2. (If is_secret=true:) use the encrypted helper.
-#    (If is_secret=false:) poindexter set smtp_password "<new-pw>"
+# 2. poindexter settings set smtp_password "<new-pw>" --secret   # encrypts at rest (pgcrypto)
 # 3. docker restart poindexter-worker
 ```
 
@@ -551,7 +548,7 @@ docker restart poindexter-worker
 # 1. In Uptime Kuma: Settings -> API Keys -> Create / Regenerate
 #    Copy the new key.
 
-# 2. poindexter set uptime_kuma_api_key "<new-key>"
+# 2. poindexter settings set uptime_kuma_api_key "<new-key>" --secret
 
 # 3. docker restart poindexter-worker poindexter-brain-daemon
 ```
@@ -570,7 +567,7 @@ docker restart poindexter-worker
 
 ```bash
 # 1. https://platform.openai.com/api-keys -> Revoke old, Create new
-# 2. poindexter set openai_api_key "sk-..."
+# 2. poindexter settings set openai_api_key "sk-..." --secret
 # 3. docker restart poindexter-worker
 ```
 
@@ -588,7 +585,7 @@ docker restart poindexter-worker
 
 ```bash
 # 1. https://console.anthropic.com/settings/keys -> Revoke old, Create new
-# 2. poindexter set anthropic_api_key "sk-ant-..."
+# 2. poindexter settings set anthropic_api_key "sk-ant-..." --secret
 # 3. docker restart poindexter-worker
 ```
 
@@ -616,7 +613,7 @@ docker restart poindexter-worker
 
 ```bash
 # 1. https://www.pexels.com/api/new -> regenerate / new key
-# 2. poindexter set pexels_api_key "<new-key>"
+# 2. poindexter settings set pexels_api_key "<new-key>" --secret
 # 3. docker restart poindexter-worker
 ```
 
@@ -630,8 +627,8 @@ Keys: `cloudinary_api_key` + `cloudinary_api_secret` (both encrypted).
 
 ```bash
 # 1. https://console.cloudinary.com/settings/api-keys -> regenerate
-# 2. poindexter set cloudinary_api_key "<new-key>"
-#    poindexter set cloudinary_api_secret "<new-secret>"
+# 2. poindexter settings set cloudinary_api_key "<new-key>" --secret
+#    poindexter settings set cloudinary_api_secret "<new-secret>" --secret
 # 3. docker restart poindexter-worker
 ```
 
@@ -647,8 +644,8 @@ Keys: `storage_secret_key` + `storage_token` (both encrypted). Provider-agnostic
 
 ```bash
 # 1. At your storage provider (R2/S3/etc.) -> create new access key, deactivate old
-# 2. poindexter set storage_secret_key "<new-key>"
-#    poindexter set storage_token "<new-token>"
+# 2. poindexter settings set storage_secret_key "<new-key>" --secret
+#    poindexter settings set storage_token "<new-token>" --secret
 # 3. docker restart poindexter-worker
 ```
 
@@ -668,7 +665,7 @@ Keys: `storage_secret_key` + `storage_token` (both encrypted). Provider-agnostic
 docker exec poindexter-prefect-redis redis-cli CONFIG SET requirepass "<new-password>"
 
 # 2. Build new URL: redis://default:<new-password>@<host>:<port>
-# 3. poindexter set redis_url "redis://default:<new-password>@..."
+# 3. poindexter settings set redis_url "redis://default:<new-password>@..." --secret
 # 4. docker restart poindexter-worker
 ```
 
@@ -684,7 +681,7 @@ Keys: `bluesky_app_password` + `bluesky_identifier` (both encrypted).
 
 ```bash
 # 1. Bluesky app: Settings -> App Passwords -> Add (or regenerate)
-# 2. poindexter set bluesky_app_password "<new-app-password>"
+# 2. poindexter settings set bluesky_app_password "<new-app-password>" --secret
 # (bluesky_identifier is your handle — only changes if you change handles)
 # 3. docker restart poindexter-worker
 ```
@@ -719,8 +716,8 @@ Keys: `grafana_api_key` + `grafana_api_token` (both encrypted; some duplication 
 # 1. http://localhost:3000 (or http://<your-tailnet-ip>:3000 via tailnet) ->
 #    Administration -> Service accounts -> Add service account ->
 #    "alert-sync" with Editor role -> Add token
-# 2. poindexter set grafana_api_key "<new-key>"
-#    poindexter set grafana_api_token "<new-token>"   # if both rows exist
+# 2. poindexter settings set grafana_api_key "<new-key>" --secret
+#    poindexter settings set grafana_api_token "<new-token>" --secret   # if both rows exist
 # 3. docker restart poindexter-worker
 ```
 

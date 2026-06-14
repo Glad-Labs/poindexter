@@ -117,8 +117,8 @@ docker compose -f docker-compose.local.yml up -d --force-recreate --no-deps \
   voice-agent-livekit voice-agent-claude-code gpu-exporter
 
 # 5. Enable genuine self-heal
-poindexter set migration_drift_auto_recover_enabled true   # if not already
-poindexter set migration_drift_auto_sync_enabled true
+poindexter settings set migration_drift_auto_recover_enabled true   # if not already
+poindexter settings set migration_drift_auto_sync_enabled true
 ```
 
 **Rollback of the repoint:** remove the `POINDEXTER_DEPLOY_ROOT` line from `.env`
@@ -159,8 +159,8 @@ SELECT timestamp, event_type, details->>'detail'
 
 ## Roll back
 
-`poindexter set migration_drift_auto_sync_enabled false` disables the sync step
-(restart-only recovery remains). `poindexter set
+`poindexter settings set migration_drift_auto_sync_enabled false` disables the sync step
+(restart-only recovery remains). `poindexter settings set
 migration_drift_auto_recover_enabled false` disables recovery entirely (probe
 falls back to detect + single notify per drift-count change). The `/host-deploy`
 mount is inert when sync is off and can stay mounted.

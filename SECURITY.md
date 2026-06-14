@@ -133,7 +133,7 @@ The canonical inventory + per-key rotation procedures live in
 - **OAuth client secrets:** rotate every 90 days, or immediately on suspected compromise. Re-run the matching `poindexter auth migrate-<consumer>` command — it rotates the row atomically and rewrites the consumer's config file. Restart the consumer so it re-reads the file.
 - **`POINDEXTER_SECRET_KEY`:** rotate annually via the `plugins.secrets.rotate_key` helper (see `docs/operations/secret-rotation.md`). This is the doomsday key — losing it without rotation orphans every encrypted row.
 - **`LOCAL_POSTGRES_PASSWORD`:** rotate by running `ALTER USER poindexter PASSWORD '<new>'` then updating `~/.poindexter/bootstrap.toml` and restarting the stack.
-- **LLM provider keys:** rotate at the provider, then `poindexter set <key> "<value>"` (or the `set_secret` Python helper for true secrets). No restart needed — `get_secret()` reads from DB on every call.
+- **LLM provider keys:** rotate at the provider, then `poindexter settings set <key> "<value>" --secret` (or the `set_secret` Python helper for true secrets). No restart needed — `get_secret()` reads from DB on every call.
 
 ### If a secret is exposed
 

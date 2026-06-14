@@ -183,7 +183,7 @@ async def test_on_demand_running_with_real_drift_still_alerts():
 async def test_default_on_demand_list_covers_wan_and_sdxl():
     """No operator config → wan-server and sdxl-server are suppressed by
     default. Guards the issue #425 acceptance: out-of-the-box the noise
-    is gone without requiring `poindexter set` first."""
+    is gone without requiring `poindexter settings set` first."""
     cd._last_notified_drifted = frozenset()
     pool = _make_pool(setting_values={})  # no on-demand setting set
 

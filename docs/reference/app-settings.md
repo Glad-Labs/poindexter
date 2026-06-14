@@ -201,7 +201,7 @@ The worker re-reads on every poll; no restart needed.
 | `title_originality_external_penalty` | `-50` |  | GH-87: points subtracted from the QA score when the post title appears verbatim in external search results. Stored as... |
 | `topic_discovery_category_searches` | `{}` |  | JSON object mapping category name -> list of keyword search strings. Used by TopicDiscovery._classify_category to buc... |
 | `topic_discovery_news_patterns` | `[]` |  | JSON array of regex strings (case-insensitive). When non-empty, TopicDiscovery uses these patterns to reject titles a... |
-| `writing_style_reference` | `*(per-operator)*` | per-operator | Operator-specific writing style traits injected into content-generation prompts. Set via `poindexter set writing_styl... |
+| `writing_style_reference` | `*(per-operator)*` | per-operator | Operator-specific writing style traits injected into content-generation prompts. Set via `poindexter settings set wri... |
 | `writing_styles` | `[{"name": "technical", "voice": "prec...` |  | Configurable writing styles for content generation. Same pattern as image_styles. |
 
 ## content_qa

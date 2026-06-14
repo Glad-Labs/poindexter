@@ -39,7 +39,7 @@ fill those in at deploy time via the steps below.
    Save the token, then on the operator host:
 
    ```bash
-   poindexter set cloudflare_analytics_api_token <token>
+   poindexter settings set cloudflare_analytics_api_token <token> --secret
    ```
 
 3. **Mint an API token for `wrangler deploy`** (separate from the read
@@ -75,7 +75,7 @@ fill those in at deploy time via the steps below.
    On the operator host:
 
    ```bash
-   poindexter set cloudflare_beacon_url <https://your-beacon-url>
+   poindexter settings set cloudflare_beacon_url <https://your-beacon-url>
    ```
 
    `cloudflare_account_id` is already seeded in `app_settings` (per the

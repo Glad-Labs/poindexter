@@ -95,7 +95,7 @@ class RenderAlertmanagerConfigJob:
                 detail=(
                     "telegram_chat_id unset in app_settings — dead-man's-switch "
                     "Telegram delivery cannot be configured; run "
-                    "`poindexter set telegram_chat_id <id>`"
+                    "`poindexter settings set telegram_chat_id <id>`"
                 ),
                 changes_made=0,
             )

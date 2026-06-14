@@ -1260,7 +1260,7 @@ async def run_bot(
         # Half B: resolve the brain mode AT pipeline-build time, not at
         # process start. This is the runtime toggle surface — flipping
         # ``voice_agent_brain_mode`` via the start_voice_call MCP tool
-        # (or `poindexter set ...`) takes effect on the next call's
+        # (or `poindexter settings set ...`) takes effect on the next call's
         # pipeline build without restarting the container.
         resolved_brain = _resolve_brain_mode(site_config, brain)
         if brain is None:

@@ -148,7 +148,7 @@ logger = logging.getLogger("brain.compose_drift_probe")
 # Whether to call ``docker compose up -d`` on drifted services. Defaults
 # to False so a buggy probe can't cause cascading container recreates on
 # Matt's instance. Operators flip it on with
-# ``poindexter set compose_drift_auto_recover_enabled true`` once
+# ``poindexter settings set compose_drift_auto_recover_enabled true`` once
 # they're confident in the probe's accuracy.
 AUTO_RECOVER_SETTING_KEY = "compose_drift_auto_recover_enabled"
 
@@ -1098,7 +1098,7 @@ async def run_compose_drift_probe(
                         f"{compose_path} up -d "
                         f"{' '.join(sorted(drifted))}` to recreate the "
                         f"drifted services, or enable auto-recover via "
-                        f"`poindexter set {AUTO_RECOVER_SETTING_KEY} true`."
+                        f"`poindexter settings set {AUTO_RECOVER_SETTING_KEY} true`."
                     ),
                     source="brain.compose_drift_probe",
                     severity="warning",
@@ -1232,7 +1232,7 @@ async def run_compose_drift_probe(
                 f"`{COMPOSE_PROJECT_DIRECTORY_SETTING_KEY}` to the host repo "
                 f"directory so relative bind-mounts resolve correctly.\n\n"
                 f"Auto-recover will not retry this cycle. Disable it with "
-                f"`poindexter set {AUTO_RECOVER_SETTING_KEY} false` if "
+                f"`poindexter settings set {AUTO_RECOVER_SETTING_KEY} false` if "
                 f"you don't want it to retry next cycle either."
             ),
             source="brain.compose_drift_probe",

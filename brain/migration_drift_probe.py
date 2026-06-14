@@ -67,7 +67,7 @@ logger = logging.getLogger("brain.migration_drift_probe")
 # App_settings key controlling auto-recover behavior. Defaults to
 # ``"false"`` in the seed migration so a bad migration can't trigger a
 # restart loop on a fresh install. Operator flips it via
-# ``poindexter set migration_drift_auto_recover_enabled true`` once
+# ``poindexter settings set migration_drift_auto_recover_enabled true`` once
 # they're confident the pipeline restart-on-drift behavior is right for
 # their workload.
 AUTO_RECOVER_SETTING_KEY = "migration_drift_auto_recover_enabled"
@@ -849,7 +849,7 @@ async def run_migration_drift_probe(
                         f"(app_settings.{AUTO_RECOVER_SETTING_KEY}=false).\n"
                         f"Recommended fix: restart the worker to apply "
                         f"pending migrations, or enable auto-recover via "
-                        f"`poindexter set {AUTO_RECOVER_SETTING_KEY} true`."
+                        f"`poindexter settings set {AUTO_RECOVER_SETTING_KEY} true`."
                     ),
                     source="brain.migration_drift_probe",
                     severity="warning",

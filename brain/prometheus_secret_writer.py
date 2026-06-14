@@ -20,7 +20,7 @@ to ``_SECRETS`` to keep more secrets in lockstep.
 ## Operator workflow
 
 1. Operator stores the secret in ``app_settings`` (``is_secret=true``)
-   via ``poindexter set`` or the admin UI.
+   via ``poindexter settings set --secret`` or the admin UI.
 2. On every brain cycle (5 min), this module decrypts each secret via
    ``SiteConfig.get_secret`` and writes it to the corresponding
    bind-mounted file under ``/host-prometheus/secrets/``.

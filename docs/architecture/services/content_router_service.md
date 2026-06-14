@@ -114,7 +114,7 @@ Every other tunable lives on the individual stages — see
   function tolerates re-entry; downstream stages handle idempotency
   (e.g. publish_service has a slug-suffix guard).
 - **Toggle dry-run:** set `pipeline_dry_run_mode=true` via OpenClaw or
-  `poindexter set` to short-circuit the writer chain without
+  `poindexter settings set` to short-circuit the writer chain without
   consuming GPU/cloud time.
 - **Check writer-fallback events:**
   `SELECT * FROM audit_log WHERE event_type = 'writer_fallback' ORDER BY created_at DESC LIMIT 20;`

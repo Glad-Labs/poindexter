@@ -436,7 +436,7 @@ async def run_branch_drift_probe(
     if not token:
         return await _fail(
             f"gh_token missing — cannot query private repo {config['repo']}. "
-            f"Set it with `poindexter set gh_token <token>`.",
+            f"Set it with `poindexter settings set gh_token <token> --secret`.",
             page=True,
         )
 

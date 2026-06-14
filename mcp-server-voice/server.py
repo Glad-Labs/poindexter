@@ -247,7 +247,7 @@ async def voice_join_room(
                 "error": (
                     "voice_bridge_enabled=false in app_settings — bridge "
                     "is administratively disabled. Set it to true to "
-                    "re-enable: `poindexter set voice_bridge_enabled true`."
+                    "re-enable: `poindexter settings set voice_bridge_enabled true`."
                 ),
                 "missing_setting": None,
                 "disabled": True,

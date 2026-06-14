@@ -73,7 +73,7 @@ scrape_configs:
   # Operator workflow to rotate:
   #   1. Generate / rotate the key in Uptime Kuma admin UI
   #      (Settings -> API Keys).
-  #   2. `poindexter set uptime_kuma_api_key <new-key>`.
+  #   2. `poindexter settings set uptime_kuma_api_key <new-key> --secret`.
   #   3. Within ~5 min (next brain cycle) the file is overwritten and
   #      the next prometheus scrape uses the new value. No restart.
   - job_name: uptime-kuma

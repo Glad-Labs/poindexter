@@ -161,8 +161,8 @@ poindexter auth list-clients | grep grafana-alerts
 poindexter auth revoke-client --client-id pdx_<the_id>
 
 # Clear the cached client_id so the next mint provisions a new one.
-poindexter set grafana_oauth_client_id ""
-poindexter set grafana_oauth_client_secret ""
+poindexter settings set grafana_oauth_client_id "" --secret
+poindexter settings set grafana_oauth_client_secret "" --secret
 
 # Mint a fresh token bound to the new client.
 poindexter auth mint-grafana-token --ttl 90d
@@ -176,7 +176,7 @@ operator pastes the new one in — same procedure as a normal rotation.
 | Symptom from Grafana                  | Likely cause                                                                                                                       |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `401 Unauthorized` on test            | Token typo, missing `Bearer ` prefix, the token's `exp` elapsed, or the underlying OAuth client was revoked. Re-mint and re-paste. |
-| `503 Service Unavailable`             | `app_settings.alertmanager_webhook_token` is empty. Run `poindexter set alertmanager_webhook_token "<value>"`.                     |
+| `503 Service Unavailable`             | `app_settings.alertmanager_webhook_token` is empty. Run `poindexter settings set alertmanager_webhook_token "<value>" --secret`.   |
 | Test succeeds, real alerts never fire | Check the Grafana alert rule's `Notifications` block — the contact point must be selected.                                         |
 
 Note: Glad-Labs/poindexter#249 dropped the static-Bearer fallback on the

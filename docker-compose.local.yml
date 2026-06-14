@@ -293,7 +293,7 @@ services:
       # mounted into the prometheus container at /etc/prometheus/secrets/
       # (ro), so prometheus.yml's password_file: directives resolve to
       # whatever brain wrote on its last cycle. Rotating a secret is just
-      # `poindexter set <key> <new>`; brain syncs within 5 min.
+      # `poindexter settings set <key> <new>`; brain syncs within 5 min.
       - ./infrastructure/prometheus/secrets:/host-prometheus/secrets:rw
       # Read-only mount of the host's pg_dump backup directory so
       # backup_watcher.py can age-check actual files. Without this the
@@ -1549,7 +1549,7 @@ services:
   #
   # `unless-stopped` restart policy + DB-driven enabled flag means an
   # operator can take either surface offline by:
-  #   poindexter set voice_agent_livekit_enabled false
+  #   poindexter settings set voice_agent_livekit_enabled false
   #   docker restart poindexter-voice-agent-livekit
   # ...and the container will exit 0 on next boot (no crash-loop).
   voice-agent-livekit:

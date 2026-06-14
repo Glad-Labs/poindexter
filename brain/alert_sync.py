@@ -57,7 +57,7 @@ logger = logging.getLogger("brain.alert_sync")
 # Operators set it once at install:
 #   1. Create / locate the alerting folder in Grafana UI.
 #   2. Copy the UID from the folder's URL (`/dashboards/f/<UID>/...`).
-#   3. `poindexter set grafana_alert_folder_uid <UID>` (no --secret;
+#   3. `poindexter settings set grafana_alert_folder_uid <UID>` (no --secret;
 #      this isn't sensitive).
 GRAFANA_FOLDER_UID_KEY = "grafana_alert_folder_uid"
 GRAFANA_RULE_GROUP = "poindexter-db-alerts"
@@ -387,7 +387,7 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
         summary["error"] = (
             f"{GRAFANA_FOLDER_UID_KEY} not set — set it to the Grafana "
             "folder UID under which alert rules should appear "
-            f"(`poindexter set {GRAFANA_FOLDER_UID_KEY} <uid>`)"
+            f"(`poindexter settings set {GRAFANA_FOLDER_UID_KEY} <uid>`)"
         )
         logger.warning(
             "alert_sync: %s is empty — alert push needs a folder UID. "

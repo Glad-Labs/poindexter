@@ -605,7 +605,7 @@ async def run_glitchtip_triage_probe(
             f"GlitchTip API token not configured (app_settings."
             f"{TOKEN_SETTING_KEY}). Probe cannot authenticate. Run the audit "
             f"script (scripts/glitchtip_audit.py) to mint a token, then "
-            f"`poindexter set {TOKEN_SETTING_KEY} <token> --secret`."
+            f"`poindexter settings set {TOKEN_SETTING_KEY} <token> --secret`."
         )
         await _emit_audit_event(pool, "probe.glitchtip_triage_unconfigured", detail)
         return {"ok": True, "status": "unconfigured", "detail": detail}

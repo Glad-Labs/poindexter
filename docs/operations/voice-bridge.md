@@ -152,8 +152,8 @@ All knobs live in `app_settings` (seeded by migration
 Override at runtime:
 
 ```bash
-poindexter set voice_default_room ops
-poindexter set voice_bridge_chunk_max_chars 300
+poindexter settings set voice_default_room ops
+poindexter settings set voice_bridge_chunk_max_chars 300
 ```
 
 LiveKit credentials (`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`) are
@@ -199,7 +199,7 @@ Check the MCP server log for `"Bridge session ... closed"`. Common
 causes:
 
 - **Watchdog tripped** (`max_session_seconds` hit). Default 30 minutes;
-  bump via `poindexter set voice_bridge_max_session_seconds 7200`.
+  bump via `poindexter settings set voice_bridge_max_session_seconds 7200`.
 - **Audio plane connect failed**. The Pipecat plane raises if the
   LiveKit URL is unreachable or the JWT is rejected. Check
   `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` env vars
@@ -224,7 +224,7 @@ causes:
 slower than `large-v3`. If you have GPU headroom:
 
 ```bash
-poindexter set voice_bridge_stt_model large-v3
+poindexter settings set voice_bridge_stt_model large-v3
 ```
 
 Also check Silero VAD's silence threshold — Pipecat's default is fine

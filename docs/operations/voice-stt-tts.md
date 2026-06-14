@@ -37,7 +37,7 @@ docker restart poindexter-voice-agent-webrtc
 Take either surface offline without editing compose:
 
 ```
-poindexter set voice_agent_livekit_enabled false
+poindexter settings set voice_agent_livekit_enabled false
 docker restart poindexter-voice-agent-livekit
 # container exits 0; unless-stopped leaves it stopped (no crash-loop)
 ```
@@ -91,7 +91,7 @@ reachable from any Tailscale device on the tailnet. To restrict the
 WebRTC service to localhost only:
 
 ```
-poindexter set voice_agent_webrtc_host 127.0.0.1
+poindexter settings set voice_agent_webrtc_host 127.0.0.1 --allow-new  # --allow-new: this key isn't seeded by default
 docker restart poindexter-voice-agent-webrtc
 ```
 
@@ -105,7 +105,7 @@ intentional — see Glad-Labs/poindexter#402 for the audit.
 Every knob is an `app_settings` row. Edit at runtime:
 
 ```
-poindexter set <key> <value>
+poindexter settings set <key> <value>
 ```
 
 Container picks up changes on next restart.

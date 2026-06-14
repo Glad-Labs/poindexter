@@ -152,7 +152,7 @@ class SyncCloudflareAnalyticsJob:
                     "cannot run. First-party page-view data is NOT being "
                     "collected. Set the read token (scope "
                     "`Account → Account Analytics → Read`): "
-                    "`poindexter set cloudflare_analytics_api_token <token>`."
+                    "`poindexter settings set cloudflare_analytics_api_token <token> --secret`."
                 ),
                 dedup_key="cf_ae:token_unset",
             )

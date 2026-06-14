@@ -1436,7 +1436,7 @@ async def start_voice_call(
                     "voice_agent_public_join_url is unset. "
                     "Run migration 20260506_220613 to seed the default, "
                     "or set it manually: "
-                    "`poindexter set voice_agent_public_join_url <url>`."
+                    "`poindexter settings set voice_agent_public_join_url <url>`."
                 ),
                 "missing_setting": "voice_agent_public_join_url",
             })

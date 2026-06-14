@@ -179,7 +179,7 @@ poindexter migrate up
 This is the painful part. Encrypted secrets are gone forever. You need to:
 
 1. Go to [`secret-rotation.md`](./secret-rotation) and rotate **every** API key listed in the inventory (Telegram, Discord, OpenAI, Anthropic, Lemon Squeezy, Resend, Cloudinary, Pexels, etc.) — treat all of them as compromised because the encrypted blobs may have leaked with the volume backup.
-2. Re-seed each one with `poindexter set` (see secret-rotation.md "Re-seeding from scratch").
+2. Re-seed each one with `poindexter settings set <key> "<value>" --secret` (see secret-rotation.md "Re-seeding from scratch").
 
 ### Step 6 — Re-import published posts from R2
 

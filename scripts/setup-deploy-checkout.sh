@@ -30,7 +30,7 @@
 #   2. (Optional) schedule a periodic `git fetch origin` in this checkout so
 #      origin/main stays current for the probe to reset to (see runbook).
 #   3. Flip the flag to enable genuine self-heal:
-#        poindexter set migration_drift_auto_sync_enabled true
+#        poindexter settings set migration_drift_auto_sync_enabled true
 #
 # NOTE: This file MUST be checked out with LF line endings (.gitattributes
 # `*.sh eol=lf` enforces it). CRLF makes bash choke on `set -o pipefail\r`.
@@ -95,6 +95,6 @@ log "Deploy checkout ready at HEAD ${HEAD_SHA} (${SOURCE_REMOTE}/${SYNC_BRANCH})
 log ""
 log "Next steps:"
 log "  1. docker compose -f docker-compose.local.yml up -d --force-recreate brain-daemon"
-log "  2. poindexter set migration_drift_auto_sync_enabled true   # enable self-heal"
+log "  2. poindexter settings set migration_drift_auto_sync_enabled true   # enable self-heal"
 log "  3. (optional) schedule a periodic 'git -C ${DEPLOY_DIR} fetch ${SOURCE_REMOTE} ${SYNC_BRANCH}'"
 log "See docs/operations/migration-drift-self-heal.md for the full runbook."
