@@ -3,12 +3,12 @@
   Keep the dedicated deploy checkout in sync with origin/main.
 
 .DESCRIPTION
-  Glad-Labs/poindexter#228 — companion to scripts/setup-deploy-checkout.sh.
+  Glad-Labs/poindexter#228 - companion to scripts/setup-deploy-checkout.sh.
 
   Once the stack's runtime code mounts are repointed at the dedicated deploy
   clone (POINDEXTER_DEPLOY_ROOT=~/.poindexter/deploy/glad-labs-stack), that
   clone is what the worker (and the other src-mounting services) actually run.
-  It therefore needs to be advanced to origin/main as merges land — otherwise
+  It therefore needs to be advanced to origin/main as merges land - otherwise
   the relocated worker would run pinned clone-time code forever.
 
   This script does the host-side half of the genuine self-heal loop:
@@ -24,7 +24,7 @@
     - this scheduled job: keep the clone's code == origin/main (no restart)
     - the probe: on migration drift, reset + restart the worker to APPLY it
 
-  SAFE because the deploy clone is dedicated — nothing else ever edits it, so
+  SAFE because the deploy clone is dedicated - nothing else ever edits it, so
   `reset --hard` can never clobber uncommitted work. Run -Install once to
   register a Windows Scheduled Task that runs this every 10 minutes.
 
@@ -46,7 +46,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Deploy checkout dir — keep in sync with scripts/setup-deploy-checkout.sh and
+# Deploy checkout dir - keep in sync with scripts/setup-deploy-checkout.sh and
 # the POINDEXTER_DEPLOY_ROOT you set in .env for docker-compose.
 $DeployDir = if ($env:POINDEXTER_DEPLOY_ROOT) {
     $env:POINDEXTER_DEPLOY_ROOT

@@ -100,7 +100,7 @@ jobs:
           # A broad match here only ever over-runs a scan (safe); the risk to
           # avoid is under-running, so patterns lean inclusive.
           if echo "$changed" | grep -qE '^\.github/workflows/'; then emit workflows true; else emit workflows false; fi
-          if echo "$changed" | grep -qE '\.(sh|bash)$'; then emit shell true; else emit shell false; fi
+          if echo "$changed" | grep -qE '\.(sh|bash|ps1|psm1|psd1)$'; then emit shell true; else emit shell false; fi
           if echo "$changed" | grep -qE '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$'; then emit pylock true; else emit pylock false; fi
           if echo "$changed" | grep -qiE 'dockerfile|docker-compose|(^|/)compose\.ya?ml$|^infrastructure/'; then emit docker true; else emit docker false; fi
           # deps: fires when Python or JS lockfiles/manifests change. Used to
@@ -253,7 +253,7 @@ jobs:
         run: python scripts/ci/check-action-pins.py
 
   shell-line-endings:
-    name: Lint shell scripts for LF line endings
+    name: Lint shell + PowerShell scripts
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: changes
@@ -271,6 +271,12 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
       - name: Run check-shell-line-endings
         run: python scripts/ci/check-shell-line-endings.py
+      # Companion gate: PowerShell scripts must be ASCII or UTF-8-with-BOM.
+      # Windows PowerShell 5.1 decodes BOM-less ``.ps1`` as ANSI, turning
+      # multi-byte UTF-8 chars (e.g. em-dash) into string-delimiter
+      # smart-quotes -- the script then fails to parse before it runs.
+      - name: Run check-powershell-encoding
+        run: python scripts/ci/check-powershell-encoding.py
 
   poetry-lock:
     name: poetry check --lock (src/cofounder_agent)

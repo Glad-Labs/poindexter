@@ -7,7 +7,7 @@
     The worker, brain, pipeline-bot and prefect-worker containers BIND-MOUNT
     the dedicated deploy clone (POINDEXTER_DEPLOY_ROOT, defaulting to
     ~/.poindexter/deploy/glad-labs-stack). That clone is what the running
-    pipeline actually executes — this dev checkout is NOT what the containers
+    pipeline actually executes - this dev checkout is NOT what the containers
     run. This was the root cause of the long-running "merged != deployed" drift:
     deploy-worker used to fast-forward the dev checkout only, leaving the deploy
     clone (and therefore the running containers) lagging up to 10 minutes.
@@ -110,7 +110,7 @@ if (Test-Path $syncScript) {
     & pwsh $syncScript
     Ok "deploy clone synced"
 } else {
-    Fail "deploy-checkout-sync.ps1 not found at $syncScript — run scripts/setup-deploy-checkout.sh first"
+    Fail "deploy-checkout-sync.ps1 not found at $syncScript - run scripts/setup-deploy-checkout.sh first"
 }
 
 # 4b. Verify the deploy clone HEAD also matches origin/main.
@@ -119,7 +119,7 @@ $deployHead = $null
 if (Test-Path (Join-Path $deployRoot '.git')) {
     $deployHead = (git -C $deployRoot rev-parse HEAD 2>$null)
     if ($deployHead -ne $origin) {
-        Fail "deploy clone HEAD ($deployHead) != origin/main ($origin) after sync — check deploy-checkout-sync.ps1"
+        Fail "deploy clone HEAD ($deployHead) != origin/main ($origin) after sync - check deploy-checkout-sync.ps1"
     }
     Ok "deploy clone on main @ $($deployHead.Substring(0,9)) == origin/main"
 }

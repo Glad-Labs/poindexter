@@ -38,6 +38,49 @@ The output should end in `\n`, not `\r \n`. After the next 12h tick (or a manual
 
 ---
 
+## PowerShell script dies with `Unexpected token '}'` (and the brace looks fine)
+
+**Symptom.** Running a repo `.ps1` under Windows PowerShell 5.1 (`powershell.exe`) -- e.g. `./scripts/deploy-worker.ps1` -- aborts at parse time before a single line executes:
+
+```
+At C:\...\scripts\deploy-worker.ps1:125 char:1
++ }
++ ~
+Unexpected token '}' in expression or statement.
+```
+
+The reported brace is balanced and correct. Deleting it does not help (the error just moves or persists), and `git status` shows the file is **unmodified** vs `HEAD`. The same file parses cleanly under PowerShell 7 (`pwsh`).
+
+**Root cause.** The file is UTF-8 **without a BOM** and contains a non-ASCII character -- almost always an em-dash (`U+2014`) in a string or comment. Windows PowerShell 5.1 decodes BOM-less `.ps1` files using the system ANSI code page (Windows-1252), not UTF-8. The em-dash's three UTF-8 bytes (`E2 80 94`) are mis-decoded as three Windows-1252 characters whose last one is `U+201D`, a "smart" closing double-quote. PowerShell accepts smart-quotes as string delimiters, so that phantom quote prematurely terminates the surrounding string. Everything after it re-tokenizes in the wrong context, the brace nesting desyncs, and the parser finally fails on the next `}` it cannot match -- typically a few lines downstream of the real culprit. The reported line is where the parser gave up, not where the bad byte is.
+
+Confirm it is an encoding issue (not a real brace bug):
+
+```powershell
+$b=[System.IO.File]::ReadAllBytes($f)
+# parses clean as UTF-8 but fails as ANSI == this bug
+function P($s){$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseInput($s,[ref]$t,[ref]$e)|Out-Null;if($e){'err'}else{'clean'}}
+'utf8 : '+(P ([System.Text.Encoding]::UTF8.GetString($b)))
+'ansi : '+(P ([System.Text.Encoding]::GetEncoding(1252).GetString($b)))
+```
+
+**Fix.** Replace the non-ASCII characters with ASCII equivalents (em-dash -> `-`, ellipsis -> `...`, smart-quotes -> straight quotes). Reference the char by codepoint so your own tooling does not re-introduce it:
+
+```powershell
+$t=[System.IO.File]::ReadAllText($f,[System.Text.Encoding]::UTF8)
+$enc=New-Object System.Text.UTF8Encoding($false)  # UTF-8, no BOM (file is now pure ASCII)
+[System.IO.File]::WriteAllText($f,$t.Replace([char]0x2014,'-'),$enc)
+```
+
+(Re-saving as UTF-8 **with** a BOM also works -- 5.1 honours the BOM -- but plain ASCII is the most portable.) `.gitattributes` keeps `.ps1` at `eol=crlf`; the ReadAllText/Replace/WriteAllText sequence above preserves line endings.
+
+**Immediate unblock.** Run it under PowerShell 7, which reads BOM-less files as UTF-8: `pwsh -File .\scripts\deploy-worker.ps1`. (These scripts already expect `pwsh` -- `deploy-worker.ps1` invokes `& pwsh` internally.)
+
+**Regression gate.** The `shell-line-endings` job in `.github/workflows/security.yml` runs `scripts/ci/check-powershell-encoding.py`, which fails the build if any tracked `*.ps1` / `*.psm1` / `*.psd1` carries non-ASCII bytes without a BOM. Unit tests in `src/cofounder_agent/tests/unit/scripts/test_check_powershell_encoding.py` pin the contract.
+
+**Windows editor note.** If your editor inserts typographic dashes/quotes (Word-style "smart" autocorrect, or paste from a rendered doc), disable it for `.ps1` files. The CI lint catches it next push, but ASCII-only PowerShell sidesteps the whole class.
+
+---
+
 ## Post is "Not Found" on the public site immediately after publishing
 
 **Symptom.** You hit approve on a post, the backend logs say it went live, IndexNow and Google sitemap were pinged, but `https://www.gladlabs.io/posts/<slug>` returns a "Post Not Found" page. Refreshing doesn't help for the first 30 seconds to a few minutes.

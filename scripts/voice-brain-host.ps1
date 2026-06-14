@@ -11,7 +11,7 @@
 
       * starts at logon (the daemon needs the operator's interactive session so
         `claude` runs under the user's OAuth, not SYSTEM),
-      * runs HIDDEN under pythonw (no console window — hidden-background-job
+      * runs HIDDEN under pythonw (no console window - hidden-background-job
         policy); the daemon auto-logs to ~/.poindexter/voice_brain_host.log
         because pythonw has no stderr,
       * auto-restarts on crash (RestartCount/RestartInterval),

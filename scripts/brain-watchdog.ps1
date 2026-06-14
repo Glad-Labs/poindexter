@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Brain daemon watchdog — Layer 1 of Poindexter's redundancy model.
+    Brain daemon watchdog - Layer 1 of Poindexter's redundancy model.
 
 .DESCRIPTION
     Monitors the brain daemon's heartbeat file. If it goes stale (no update
@@ -63,9 +63,9 @@ if ($Uninstall) {
 
 # --- Heartbeat Check ---
 
-# If heartbeat file doesn't exist, brain has never run — start it
+# If heartbeat file doesn't exist, brain has never run - start it
 if (-not (Test-Path $HeartbeatPath)) {
-    Write-Log "WARN: No heartbeat file found — brain may have never started"
+    Write-Log "WARN: No heartbeat file found - brain may have never started"
     # Try to start the brain
     if (Test-Path $BrainScript) {
         Write-Log "ACTION: Starting brain daemon"
@@ -97,11 +97,11 @@ try {
 }
 
 if ($ageMinutes -lt $MaxStaleMinutes) {
-    # Brain is alive — nothing to do
+    # Brain is alive - nothing to do
     exit 0
 }
 
-# --- Brain is stale — take action ---
+# --- Brain is stale - take action ---
 
 Write-Log "ALERT: Brain heartbeat is $ageMinutes minutes old (threshold: $MaxStaleMinutes)"
 
@@ -121,7 +121,7 @@ if (Test-Path $BrainScript) {
     Write-Log "ERROR: Brain script not found at $BrainScript"
 }
 
-# Send Telegram alert (direct API call — no dependencies)
+# Send Telegram alert (direct API call - no dependencies)
 $telegramToken = $env:TELEGRAM_BOT_TOKEN
 $telegramChatId = $env:TELEGRAM_CHAT_ID
 

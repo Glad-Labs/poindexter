@@ -33,7 +33,7 @@ $WorkDir  = "C:\Users\mattm\glad-labs-website"
 $Venv     = "$WorkDir\.venv\Scripts"
 $TaskPrefix = "poindexter"
 
-# Service definitions — each is a persistent daemon started at logon.
+# Service definitions - each is a persistent daemon started at logon.
 $Services = @{
     "gpu-scraper" = @{
         Description = "GPU metrics scraper - polls nvidia-smi exporter (port 9835), writes to poindexter gpu_metrics table every 60s"
@@ -67,7 +67,7 @@ function Install-Services {
 
         $trigger = New-ScheduledTaskTrigger -AtLogOn
 
-        # No ExecutionTimeLimit — these are persistent daemons, not one-shot jobs.
+        # No ExecutionTimeLimit - these are persistent daemons, not one-shot jobs.
         # RestartCount + RestartInterval auto-recover from crashes.
         $settings = New-ScheduledTaskSettingsSet `
             -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `

@@ -13,7 +13,7 @@
       - Runs `docker compose up -d` to restart any stopped containers
 
     Why this exists: After the 2026-05-07 unexpected shutdown, Docker
-    Desktop's `AutoStart` setting was False so nothing came back online —
+    Desktop's `AutoStart` setting was False so nothing came back online -
     Grafana, Postgres, the whole stack was offline for 7+ hours. AutoStart
     is now True, but this watchdog catches the case where it silently flips
     back during a Docker Desktop update or where the engine crashes.
@@ -130,7 +130,7 @@ function Invoke-ComposeUp {
         $ec = $LASTEXITCODE
         Write-Log "INFO" "compose up exit=$ec"
         # Compose can exit non-zero on a single-service interpolation issue
-        # while still bringing the rest up — log details but don't bail.
+        # while still bringing the rest up - log details but don't bail.
         if ($ec -ne 0) {
             Write-Log "WARN" "compose up output: $($out -join ' | ')"
         }

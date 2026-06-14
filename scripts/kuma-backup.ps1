@@ -4,7 +4,7 @@
     in-container poindexter-backup-hourly (which only does pg_dump).
 
 .DESCRIPTION
-    Closes the gap discovered 2026-05-07 — Kuma's volume was wiped at
+    Closes the gap discovered 2026-05-07 - Kuma's volume was wiped at
     some point and no auto-backup existed because the backup container
     was Postgres-only. After Kuma was rebuilt by hand, this script
     snapshots the SQLite DB once an hour into ${BACKUP_DIR}/kuma/ via
@@ -94,7 +94,7 @@ if ($LASTEXITCODE -ne 0 -or $status -ne 'running') {
 $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 $destFile = Join-Path $kumaBackupDir "kuma_$ts.db"
 
-# 1. SQLite online backup inside the container — WAL-safe even with kuma running.
+# 1. SQLite online backup inside the container - WAL-safe even with kuma running.
 #    Path uses double-leading-slash to avoid git-bash MSYS path mangling.
 $dumpResult = docker exec $CONTAINER sqlite3 //app/data/kuma.db ".backup $STAGED" 2>&1
 if ($LASTEXITCODE -ne 0) {

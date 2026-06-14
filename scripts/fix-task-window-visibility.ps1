@@ -37,13 +37,13 @@ function Wrap-HiddenPS {
     Write-Host "Fixed: $TaskName"
 }
 
-# Poindexter Recovery Agent — long-running Python HTTP server via cmd script
+# Poindexter Recovery Agent - long-running Python HTTP server via cmd script
 Wrap-HiddenPS "Poindexter Recovery Agent" "& '$poindexter\scripts\recovery-agent.cmd'"
 
-# Poindexter MCP HTTP — long-running uv/Python HTTP server via cmd script
+# Poindexter MCP HTTP - long-running uv/Python HTTP server via cmd script
 Wrap-HiddenPS "Poindexter MCP HTTP" "& '$poindexter\scripts\poindexter-mcp-http.cmd'"
 
-# DR-Backup scripts — bash.exe; child inherits hidden PS console so no Bash window
+# DR-Backup scripts - bash.exe; child inherits hidden PS console so no Bash window
 Wrap-HiddenPS "GladLabs-DR-Backup" "& '$bash' -lc '$poindexterBash/scripts/dr-backup/run-backup.sh'"
 Wrap-HiddenPS "GladLabs-DR-Backup-Hourly" "& '$bash' -lc '$poindexterBash/scripts/dr-backup/run-hourly-pg.sh'"
 

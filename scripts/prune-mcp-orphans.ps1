@@ -8,7 +8,7 @@
     Unix does. This registers a Windows Scheduled Task that runs
     scripts/prune_mcp_orphans.py windowless (pythonw.exe) every 30 minutes to
     clean up genuine orphans only. See prune_mcp_orphans.py for the (provable)
-    safety rules — the Docker stack, your worker/brain, and live Claude sessions
+    safety rules - the Docker stack, your worker/brain, and live Claude sessions
     are never touched.
 
     The task runs as the current user and only ever kills the current user's
@@ -131,7 +131,7 @@ function Show-Status {
 }
 
 if ($Install) {
-    Register-Sweep $true        # dry-run first — the recommended starting posture
+    Register-Sweep $true        # dry-run first - the recommended starting posture
 } elseif ($Enforce) {
     Register-Sweep $false
 } elseif ($Uninstall) {
