@@ -40,6 +40,7 @@
      budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
+     schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
@@ -592,6 +593,35 @@
             { approved: !!approved, notes: notes || null }
           ),
         () => ({ ok: true, post_id: postId, medium, approved: !!approved })
+      );
+    },
+
+    // ── scheduled-publish queue (scheduling_routes.py, #1343) ──
+    // GET /api/scheduling → {rows:[{post_id, slug, title, published_at, status}],
+    // count}. Read; the panel derives depth / next-slot / past-due / upcoming-24h
+    // from published_at (calculated, not stored — feedback_calculated_vs_generated).
+    schedule() {
+      return pick(
+        async () => {
+          const r = await http('GET', '/api/scheduling');
+          const rows = (r && r.rows) || [];
+          return { rows, count: r && r.count != null ? r.count : rows.length };
+        },
+        () => mock().schedule
+      );
+    },
+
+    // PATCH /api/scheduling/shift {by_delta, post_ids?} — nudge slot(s) by a
+    // duration string ('1 hour', '-1 hour'). post_ids null = shift the whole
+    // schedule. The reschedule mutation (write surface).
+    scheduleShift(byDelta, postIds) {
+      return pick(
+        () =>
+          http('PATCH', '/api/scheduling/shift', {
+            by_delta: byDelta,
+            post_ids: postIds && postIds.length ? postIds : null,
+          }),
+        () => ({ ok: true, by_delta: byDelta, post_ids: postIds || [] })
       );
     },
 

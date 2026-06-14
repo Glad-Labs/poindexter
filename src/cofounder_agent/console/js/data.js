@@ -1352,6 +1352,54 @@
     ],
   };
 
+  // ── Scheduled-publish queue ─────────────────────────────────
+  // Mirrors GET /api/scheduling: posts with status='scheduled' + a future
+  // published_at slot. The panel DERIVES depth / next-slot / past-due /
+  // upcoming-24h from published_at (calculated, not stored). published_at is an
+  // ISO string in both mock + live so the derivation is identical.
+  const _sch = (h) => new Date(Date.now() + h * 3600000).toISOString();
+  const schedule = {
+    count: 5,
+    rows: [
+      // one past-due slot (scheduled_publisher hasn't fired yet) — operator flag
+      {
+        post_id: 'p-512',
+        slug: 'gpu-scheduler-one-year',
+        title: 'Our local-first GPU scheduler, one year in',
+        published_at: _sch(-0.5),
+        status: 'scheduled',
+      },
+      {
+        post_id: 'p-514',
+        slug: 'why-we-killed-observability-vendor',
+        title: 'Why We Killed Our Observability Vendor',
+        published_at: _sch(2),
+        status: 'scheduled',
+      },
+      {
+        post_id: 'p-517',
+        slug: 'tailscale-only-network',
+        title: 'Tailscale as the Only Network You Need',
+        published_at: _sch(8),
+        status: 'scheduled',
+      },
+      {
+        post_id: 'p-520',
+        slug: 'supervisor-pattern',
+        title: 'The 200-Line Supervisor Pattern',
+        published_at: _sch(26),
+        status: 'scheduled',
+      },
+      {
+        post_id: 'p-523',
+        slug: 'cost-tiers-over-models',
+        title: 'Cost Tiers Beat Hardcoded Model Names',
+        published_at: _sch(50),
+        status: 'scheduled',
+      },
+    ],
+  };
+
   window.PX = {
     now,
     hhmmss,
@@ -1370,6 +1418,7 @@
     qa,
     topics,
     findings,
+    schedule,
     restarts,
     launcher,
     nextTs() {

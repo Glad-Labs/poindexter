@@ -34,6 +34,7 @@ function App() {
   const [findings, setFindings] = useS(PX.findings); // live: GET /api/findings
   const [brain, setBrain] = useS(PX.brain); // live: GET /api/memory/stats
   const [media, setMedia] = useS(PX.media); // live: GET /api/media-approval/pending
+  const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
   const [feed, setFeed] = useS(() =>
     PX.auditSeed.map((l, i) => ({ ...l, key: 'seed' + i }))
   );
@@ -317,6 +318,30 @@ function App() {
         setMedia(res);
       } catch (e) {
         pushToast(`Media queue load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: scheduled-publish queue (GET /api/scheduling) ──
+  // Real posts with status='scheduled' + a future published_at. The panel
+  // derives depth / next-slot / past-due / upcoming-24h. Mock keeps PX.schedule.
+  // 60s cadence.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.schedule();
+        if (!alive || !res) return;
+        setSchedule(res);
+      } catch (e) {
+        pushToast(`Schedule load failed — ${e.message}`, 'red', '✕');
       }
     };
     load();
@@ -634,6 +659,34 @@ function App() {
       } catch (err) {
         setMedia(prev);
         pushToast(`Media reject failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    // Reschedule a scheduled post by a duration (PATCH /api/scheduling/shift).
+    // Optimistic: shift the row's published_at locally, roll back on failure.
+    scheduleShift: async (postId, byDelta) => {
+      const prev = schedule;
+      const neg = byDelta.trim().startsWith('-');
+      const mm = byDelta.match(/(\d+)\s*hour/i);
+      const dMs = (mm ? parseInt(mm[1], 10) : 0) * 3600000 * (neg ? -1 : 1);
+      setSchedule((s) => ({
+        ...s,
+        rows: (s.rows || []).map((r) =>
+          r.post_id === postId
+            ? {
+                ...r,
+                published_at: new Date(
+                  new Date(r.published_at).getTime() + dMs
+                ).toISOString(),
+              }
+            : r
+        ),
+      }));
+      try {
+        await PX.api.scheduleShift(byDelta, [postId]);
+        pushToast(`Slot shifted ${byDelta}`, 'cyan', '↻');
+      } catch (err) {
+        setSchedule(prev);
+        pushToast(`Reschedule failed — ${err.message}`, 'red', '✕');
       }
     },
     // ── Topics triage ─────────────────────────────────────
@@ -983,6 +1036,9 @@ function App() {
                   <PublishQueue items={approved} onPublish={A.publish} />
                 </div>
               )}
+              <div id="sec-schedule">
+                <SchedulePanel schedule={schedule} onShift={A.scheduleShift} />
+              </div>
               <div id="sec-services">
                 <ServiceGrid
                   services={services}

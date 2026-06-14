@@ -705,16 +705,18 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ---
 
-## Phase 10 — Scheduled-publish queue (NEW)
+## Phase 10 — Scheduled-publish queue (NEW) — ✅ SHIPPED
 
 > Outcome: the operator sees queue depth, next slot, past-due, and the upcoming-24h table (the System Health board's scheduled-publish panel set), and can nudge the schedule.
 
-### Task 10.1: Scheduled-publish panel
+**Implementation note (correction):** no new backend was needed — **`scheduling_routes.py`** (#1343) already exposes `GET /api/scheduling` (posts with `status='scheduled'` + a future `published_at`) plus assign / batch / **shift** / clear. So the planned "thin `GET /api/schedule` (TDD)" was unnecessary; this stayed pure console-wiring. The four stats (depth / next-slot / past-due / upcoming-24h) are **derived** from each row's `published_at` (calculated, not stored — `feedback_calculated_vs_generated`), not read from separate fields. Reschedule is a per-row **shift** (`PATCH /api/scheduling/shift`, optimistic) rather than the plan's `PUT …/status` guess. The panel is a self-contained masonry section after the approved-now `PublishQueue` (no RAIL entry — consistent with the other secondary panels).
 
-**Files:** Modify `js/panels2.jsx` (new `SchedulePanel`), `js/app.jsx`, `js/api.js`
+### Task 10.1: Scheduled-publish panel — ✅ SHIPPED
 
-- [ ] **Step 1:** Source from `pipeline_tasks` (`scheduled_publisher`) — list `approved`/scheduled rows with publish times. Add a thin `GET /api/schedule` read if none exists (backend, TDD). Actions: publish-now (`/publish`), reschedule (`PUT …/status` or a schedule field).
-- [ ] **Step 2: Commit.**
+**Files:** `js/panels2.jsx` (new `SchedulePanel` + `relWhen` helper, registered in the `Object.assign` export), `js/app.jsx` (`schedule` state + 60s poll + `A.scheduleShift` optimistic mutation + `sec-schedule` section), `js/api.js` (`schedule()` → `/api/scheduling`, `scheduleShift(byDelta, postIds)` → `…/shift`, + `relAge` already present), `js/data.js` (`schedule` mock — real row shape, one past-due slot)
+
+- [x] **Step 1:** Sourced from `GET /api/scheduling` (corrected from the plan's `pipeline_tasks` + new-route guess); panel derives depth / next-slot / past-due / upcoming-24h from `published_at`; per-row **+1h / −1h** shift reschedules via `PATCH /api/scheduling/shift` (optimistic, rollback on failure). Publish-now was left to the existing approved-`PublishQueue` (the scheduled queue's job is the future slots).
+- [x] **Step 2: Verified + committed.** Mock headless render + interaction **10/10, 0 runtime errors** (KPIs, derived past-due/overdue labelling, per-row shift; the optimistic shift flips a past-due row's count 1 → 0); live-derivation sim **7/7** against `scheduling_service.list_scheduled`'s exact row shape (`post_id`/`slug`/`title`/`published_at`/`status`).
 
 ---
 

@@ -435,6 +435,125 @@ function MediaPanel({ media, onOpenItem, onApprove, onReject }) {
   );
 }
 
+/* ─── Scheduled-publish queue ───────────────────────────────────
+   Read from GET /api/scheduling; depth / next-slot / past-due / upcoming-24h
+   are DERIVED from each row's published_at (calculated, not stored). Per-row
+   shift (+1h / −1h) reschedules via PATCH /api/scheduling/shift. */
+function relWhen(ms) {
+  const past = ms < 0;
+  const s = Math.abs(ms) / 1000;
+  let v;
+  if (s < 3600) v = Math.max(1, Math.round(s / 60)) + 'm';
+  else if (s < 86400) v = Math.round(s / 3600) + 'h';
+  else v = Math.round(s / 86400) + 'd';
+  return past ? v + ' overdue' : 'in ' + v;
+}
+function SchedulePanel({ schedule, onShift }) {
+  const s = schedule || {};
+  const now = Date.now();
+  const rows = (s.rows || [])
+    .map((r) => ({ ...r, _t: new Date(r.published_at).getTime() }))
+    .filter((r) => isFinite(r._t))
+    .sort((a, b) => a._t - b._t);
+  const depth = s.count != null ? s.count : rows.length;
+  const future = rows.filter((r) => r._t >= now);
+  const pastDue = rows.length - future.length;
+  const upcoming24 = future.filter((r) => r._t < now + 86400000).length;
+  const nextSlot = future.length ? relWhen(future[0]._t - now) : '—';
+  const clock = (t) =>
+    new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return (
+    <Panel
+      idx="S1"
+      title="SCHEDULED PUBLISH · QUEUE"
+      meta={`${depth} QUEUED · ${pastDue} PAST-DUE`}
+      flush
+    >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4,1fr)',
+          gap: 1,
+          background: 'var(--gl-hairline)',
+          borderBottom: '1px solid var(--gl-hairline)',
+        }}
+      >
+        {[
+          ['Depth', depth, ''],
+          ['Next slot', nextSlot, ''],
+          ['Past-due', pastDue, pastDue > 0 ? 'is-amber' : ''],
+          ['Upcoming 24h', upcoming24, ''],
+        ].map(([l, v, c]) => (
+          <div
+            key={l}
+            style={{ background: 'var(--gl-surface)', padding: '9px 12px' }}
+          >
+            <div className="kpi__label">{l}</div>
+            <div className={`kpi__value ${c}`} style={{ fontSize: 18 }}>
+              {v}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div>
+        {rows.length === 0 ? (
+          <div className="mono c-dim" style={{ padding: 12, fontSize: 11 }}>
+            Nothing scheduled.
+          </div>
+        ) : (
+          rows.slice(0, 6).map((r) => {
+            const overdue = r._t < now;
+            return (
+              <div
+                key={r.post_id}
+                className="svc"
+                style={{ gridTemplateColumns: 'auto 1fr auto auto' }}
+              >
+                <span
+                  className={`svc__led ${overdue ? 'led-warn' : 'led-ok'}`}
+                  title={overdue ? 'past-due' : 'scheduled'}
+                />
+                <span
+                  className="svc__name truncate"
+                  style={{ fontSize: 11 }}
+                  title={r.title}
+                >
+                  {r.title}
+                  <small>
+                    {clock(r._t)} · {relWhen(r._t - now)}
+                  </small>
+                </span>
+                <span className="svc__metric c-dim">{r.status}</span>
+                {onShift && (
+                  <span
+                    className="act-item__acts"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="mbtn mbtn--ghost"
+                      title="Push back 1 hour"
+                      onClick={() => onShift(r.post_id, '1 hour')}
+                    >
+                      +1h
+                    </button>
+                    <button
+                      className="mbtn mbtn--ghost"
+                      title="Pull forward 1 hour"
+                      onClick={() => onShift(r.post_id, '-1 hour')}
+                    >
+                      −1h
+                    </button>
+                  </span>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 /* ─── QA Rails ──────────────────────────────────────────────── */
 function QAPanel({ qa, onOpen }) {
   const live = window.PX.api.isLive();
@@ -766,6 +885,7 @@ function TopicsPanel({ topics, onPick, onResolve, onReject }) {
 Object.assign(window, {
   RevenuePanel,
   MediaPanel,
+  SchedulePanel,
   QAPanel,
   LauncherPanel,
   TopicsPanel,
