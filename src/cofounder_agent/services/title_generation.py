@@ -137,6 +137,29 @@ _JUNK_TITLE_SUBSTRING_PATTERNS: tuple[str, ...] = (
     " they lead with high-volume",
 )
 
+# Rubric / reasoning leak.  The title-generation LLM periodically emits a
+# rationale bullet *describing what good titles do* instead of an actual
+# title.  Real prod captures (canonical_blog ``pipeline_versions.title``):
+#   2026-06-10 (PUBLISHED): "Tone: They move away from the provocative/abstract…"
+#   2026-06-10 (PUBLISHED): "No Provocative Tone: These avoid the \"X is Y\"…"
+#   2026-06-13 (rejected) : "Neutral Tone: They are helpful and instructional…"
+#   2026-06-09            : "Intent-Based: They signal to the reader exactly…"
+#   2026-06-09            : "SEO Keywords: They lead with high-volume terms…"
+#
+# These share one grammatical shape the hardcoded prefix/substring lists
+# above keep missing (each new label — "Tone:", "Neutral Tone:" — needs a
+# fresh denylist entry, and short ones slip under the length cap): an
+# optional short label, then the meta-pronoun "They"/"These" followed by a
+# *lowercase* prose verb.  A real headline is title-cased after a subtitle
+# colon ("The 32GB Threshold: How the RTX 5090…" / "RTX 5090: These Are…"),
+# so the lowercase continuation is the discriminator — it means the model
+# wrote a sentence about titles, not a title.  When this fires,
+# ``choose_canonical_title`` falls back to the body H1 (the same source
+# publish_service uses), so the stored title becomes the real headline.
+_RUBRIC_REASONING_RE = re.compile(
+    r"^(?:[^:]{1,40}:\s+)?(?:[Tt]hey|[Tt]hese)\s+[a-z]",
+)
+
 # Characters that represent a cleanly terminated title.
 _CLEAN_END_CHARS: frozenset[str] = frozenset(
     string.ascii_letters + string.digits + '"' + "'" + "!" + "?" + "."
@@ -161,7 +184,12 @@ def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> b
        prefixes (e.g. ``Intent-Based:``, ``SEO Keywords:``, ``Heading:``).
     4. **Substring patterns** — contains any of the known instructional
        substrings (e.g. `` they signal to the reader``).
-    5. **Topic verbatim** — intentionally NOT handled here; that case is
+    5. **Rubric / reasoning leak** — matches ``_RUBRIC_REASONING_RE``: an
+       optional short label then ``They``/``These`` followed by a lowercase
+       prose verb (e.g. ``Tone: They move away…`` / ``These avoid…``). This
+       generalises checks 3-4 to the shared *structural* shape so novel
+       labels and sub-cap-length rubric bullets are still caught.
+    6. **Topic verbatim** — intentionally NOT handled here; that case is
        already covered by the ``choose_canonical_title`` fallback logic.
 
     Pure function — no LLM calls, no I/O.
@@ -191,6 +219,12 @@ def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> b
     for substr in _JUNK_TITLE_SUBSTRING_PATTERNS:
         if substr in lower:
             return True
+
+    # 5. Rubric / reasoning leak. Operates on the case-preserved ``stripped``
+    #    form (not ``lower``) because the lowercase prose-verb after the
+    #    pronoun is the discriminator vs a title-cased subtitle.
+    if _RUBRIC_REASONING_RE.match(stripped):
+        return True
 
     return False
 

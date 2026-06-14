@@ -174,6 +174,95 @@ def test_substring_they_lead_with_high_volume():
 
 
 # ---------------------------------------------------------------------------
+# Rubric / reasoning-leak structural detector (canonical_blog title bug)
+#
+# The title-generation LLM emits a rationale bullet ("<label>: They/These
+# <verb>…") instead of a title.  These are REAL prod captures from
+# pipeline_versions.title.  The hardcoded prefix/substring denylist above
+# misses novel labels ("Tone:", "Neutral Tone:") and the length cap misses
+# the shorter ones — only the structural rule catches them all.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rubric",
+    [
+        # 2026-06-10 — PUBLISHED with these as pipeline_versions.title (the
+        # two posts in the bug report). 100 chars after sanitizer truncation.
+        'Tone: They move away from the provocative/abstract tone of your recent '
+        'opinion pieces ("Claude Is...',
+        'No Provocative Tone: These avoid the "X is Y" opinionated style in favor '
+        "of a helpful, instructio...",
+        # 2026-06-13 — slipped PAST the #1280 denylist+length guard: 88 chars
+        # (under the 90 cap), and "Neutral Tone:" is not in the prefix denylist.
+        "Neutral Tone: They are helpful and instructional rather than provocative "
+        "or opinionated.",
+        # Other captures (rejected, but rubric still stored + shown in preview).
+        "Clarity: They immediately signal that this is a technical solution piece "
+        "rather than a diary entr...",
+        "Clarity: They clearly communicate that this is a retrospective comparison "
+        "rather than a day-of-la...",
+        # Bare leading pronoun, no label — defensive coverage.
+        "These avoid the opinionated style in favor of a helpful, instructional tone.",
+    ],
+)
+def test_rubric_reasoning_leak_is_junk(rubric: str):
+    """A rubric/reasoning bullet ('They/These <lowercase verb>…') must be
+    flagged regardless of label novelty or length."""
+    assert _is_junk_title(rubric) is True, f"Expected junk for rubric {rubric!r}"
+
+
+def test_neutral_tone_rubric_under_length_cap_is_junk():
+    """Regression for the 2026-06-13 capture: 88 chars (under the 90 cap) with
+    a 'Neutral Tone:' label absent from the prefix denylist. ONLY the
+    structural rule (#5) catches it — the length + denylist checks both miss."""
+    rubric = (
+        "Neutral Tone: They are helpful and instructional rather than "
+        "provocative or opinionated."
+    )
+    assert len(rubric) < _DEFAULT_TITLE_MAX_LENGTH  # would pass the length cap
+    assert not rubric.lower().startswith(
+        ("intent-based:", "seo keywords:", "heading:", "they signal", "they lead with")
+    )  # not in the prefix denylist
+    assert _is_junk_title(rubric) is True
+
+
+@pytest.mark.parametrize(
+    "legit",
+    [
+        # Title-cased after a subtitle colon — the legitimate shape.
+        "The 32GB Threshold: How the RTX 5090 Redefines Local LLM Development",
+        "My Take: A Guide to Embeddings",
+        # Pronoun present but title-cased after it ("These Are", not "these are").
+        "RTX 5090: These Are the Numbers That Matter",
+        "They Said It Couldn't Be Done: Building a Local LLM Rig",
+    ],
+)
+def test_legit_subtitle_titles_not_flagged_by_rubric_rule(legit: str):
+    """Legitimate subtitle-colon titles (title-cased after the colon/pronoun)
+    must NOT be caught by the rubric detector."""
+    assert _is_junk_title(legit) is False, f"False positive on {legit!r}"
+
+
+def test_choose_falls_back_to_h1_for_short_rubric_title():
+    """End-to-end pin: a rubric LLM title that slips under the length cap and
+    uses a novel label must still be replaced by the body H1, so the stored
+    pipeline_versions.title is the real headline (publish_service already
+    derives the live title from the same H1)."""
+    rubric = (
+        "Neutral Tone: They are helpful and instructional rather than "
+        "provocative or opinionated."
+    )
+    assert len(rubric) < _DEFAULT_TITLE_MAX_LENGTH  # not caught by the length cap
+    content = (
+        "# The 32GB Threshold: How the RTX 5090 Redefines Local LLM Development\n\n"
+        "Body text about the 5090."
+    )
+    out = choose_canonical_title("RTX 5090 local LLM", content, llm_title=rubric)
+    assert out == "The 32GB Threshold: How the RTX 5090 Redefines Local LLM Development"
+
+
+# ---------------------------------------------------------------------------
 # choose_canonical_title falls back when junk is detected
 # ---------------------------------------------------------------------------
 
