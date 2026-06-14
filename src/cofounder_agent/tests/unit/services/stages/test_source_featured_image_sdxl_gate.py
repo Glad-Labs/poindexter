@@ -39,6 +39,21 @@ def _make_image_service(sdxl_available: bool, sdxl_initialized: bool) -> Any:
 def _make_site_config(settings: dict[str, Any]) -> Any:
     sc = MagicMock()
     sc.get = MagicMock(side_effect=lambda k, default=None: settings.get(k, default))
+
+    def _get_int(k, default=0):
+        try:
+            return int(settings.get(k, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _get_float(k, default=0.0):
+        try:
+            return float(settings.get(k, default))
+        except (TypeError, ValueError):
+            return default
+
+    sc.get_int = MagicMock(side_effect=_get_int)
+    sc.get_float = MagicMock(side_effect=_get_float)
     return sc
 
 

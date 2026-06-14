@@ -2459,6 +2459,15 @@ class MultiModelQA:
         try:
             from services.web_research import WebResearcher
 
+            # Fact-check heuristics — DB-tunable via qa_web_factcheck_*; the
+            # literals are the fallback when the app_settings row is unset.
+            _sc = self._site_config
+            fc_max_claims = _sc.get_int("qa_web_factcheck_max_claims", 3)
+            fc_num_results = _sc.get_int("qa_web_factcheck_num_results", 3)
+            fc_snippet_chars = _sc.get_int("qa_web_factcheck_snippet_chars", 500)
+            fc_min_term_len = _sc.get_int("qa_web_factcheck_min_term_len", 2)
+            fc_match_ratio = _sc.get_float("qa_web_factcheck_match_ratio", 0.6)
+
             # Extract product/hardware claims worth verifying.
             # Look for patterns like "RTX 5090", "Llama 4", version numbers,
             # and spec claims (e.g., "32GB VRAM", "192GB/s bandwidth").
@@ -2490,8 +2499,8 @@ class MultiModelQA:
                 if r.provider == "ollama"
             )
 
-            # Limit to 3 most important claims to keep searches fast
-            claims_list = sorted(claims)[:3]
+            # Limit to the most important claims to keep searches fast.
+            claims_list = sorted(claims)[:fc_max_claims]
             logger.info(
                 "[WEB_FACTCHECK] Verifying %d claims: %s (critic_concerned=%s)",
                 len(claims_list), claims_list, critic_concerned,
@@ -2505,24 +2514,24 @@ class MultiModelQA:
             for claim in claims_list:
                 # Build a focused search query
                 query = f"{claim} specs official"
-                results = await researcher.search(query, num_results=3)
+                results = await researcher.search(query, num_results=fc_num_results)
                 if not results:
                     evidence_lines.append(f"  {claim}: no web results found")
                     continue
 
                 # Check if any result's content/snippet mentions the claim
                 combined_text = " ".join(
-                    (r.get("snippet", "") + " " + r.get("content", ""))[:500]
+                    (r.get("snippet", "") + " " + r.get("content", ""))[:fc_snippet_chars]
                     for r in results
                 ).lower()
                 claim_lower = claim.lower()
 
                 # Extract the key terms from the claim for fuzzy matching
-                claim_terms = [t for t in re.split(r"\s+", claim_lower) if len(t) > 2]
+                claim_terms = [t for t in re.split(r"\s+", claim_lower) if len(t) > fc_min_term_len]
                 matches = sum(1 for t in claim_terms if t in combined_text)
                 match_ratio = matches / len(claim_terms) if claim_terms else 0
 
-                if match_ratio >= 0.6:
+                if match_ratio >= fc_match_ratio:
                     verified += 1
                     evidence_lines.append(f"  {claim}: VERIFIED (web confirms)")
                 else:

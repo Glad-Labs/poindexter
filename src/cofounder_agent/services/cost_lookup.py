@@ -53,13 +53,21 @@ def _is_local_route(model: str) -> bool:
     )
 
 
-def get_model_cost_per_1k(model: str) -> tuple[float, float]:
+def get_model_cost_per_1k(
+    model: str, *, default_per_1k: float | None = None
+) -> tuple[float, float]:
     """Return ``(input_cost_per_1k, output_cost_per_1k)`` in USD.
 
     Lookup order:
     1. LiteLLM's ``model_cost`` dict (2,600+ entries, community-maintained).
     2. Local-route fallback ($0 for Ollama / local providers).
-    3. Module default (``DEFAULT_COST_PER_1K`` for both input and output).
+    3. Caller-supplied ``default_per_1k`` (e.g. a DB-tunable price from
+       ``app_settings``), else the module ``DEFAULT_COST_PER_1K``.
+
+    ``default_per_1k`` is the injection seam for the unknown-model fallback:
+    these are pure sync helpers with no ``SiteConfig`` of their own, so a
+    caller that holds one passes the configured price here rather than
+    baking the literal in. ``None`` uses ``DEFAULT_COST_PER_1K``.
 
     Never raises — a missing model logs a debug message and falls
     through to the default. Callers integrating cost tracking should
@@ -67,8 +75,9 @@ def get_model_cost_per_1k(model: str) -> tuple[float, float]:
     authoritative source is LiteLLM's ``completion_cost`` callback
     fired at request time, which sees the actual token counts.
     """
+    _default = DEFAULT_COST_PER_1K if default_per_1k is None else default_per_1k
     if not model:
-        return (DEFAULT_COST_PER_1K, DEFAULT_COST_PER_1K)
+        return (_default, _default)
 
     try:
         import litellm  # local import keeps test fixtures simple
@@ -76,7 +85,7 @@ def get_model_cost_per_1k(model: str) -> tuple[float, float]:
         # litellm not installed (e.g. minimal test env). Fall through.
         if _is_local_route(model):
             return (0.0, 0.0)
-        return (DEFAULT_COST_PER_1K, DEFAULT_COST_PER_1K)
+        return (_default, _default)
 
     table = getattr(litellm, "model_cost", None) or {}
     entry = table.get(model)
@@ -98,12 +107,12 @@ def get_model_cost_per_1k(model: str) -> tuple[float, float]:
 
     logger.debug(
         "cost_lookup: model %r not in LiteLLM table, using default $%s/1K",
-        model, DEFAULT_COST_PER_1K,
+        model, _default,
     )
-    return (DEFAULT_COST_PER_1K, DEFAULT_COST_PER_1K)
+    return (_default, _default)
 
 
-def get_model_cost(model: str) -> float:
+def get_model_cost(model: str, *, default_per_1k: float | None = None) -> float:
     """Backward-compat shim: return a single per-1K-token figure.
 
     Pre-#199 callers (``model_router.get_model_cost``,
@@ -112,18 +121,28 @@ def get_model_cost(model: str) -> float:
     estimation. We collapse to ``max(input, output)`` so the estimate
     is conservative (i.e. doesn't undercount when a request is
     output-heavy).
+
+    ``default_per_1k`` is forwarded to :func:`get_model_cost_per_1k`.
     """
-    ipt, opt = get_model_cost_per_1k(model)
+    ipt, opt = get_model_cost_per_1k(model, default_per_1k=default_per_1k)
     return max(ipt, opt)
 
 
-def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+def estimate_cost(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    *,
+    default_per_1k: float | None = None,
+) -> float:
     """Convenience: full per-call cost estimate.
 
     For monitoring + dashboards. The authoritative cost log is still
     written from ``litellm.completion_cost`` after the actual call.
+
+    ``default_per_1k`` is forwarded to :func:`get_model_cost_per_1k`.
     """
-    ipt_per_1k, opt_per_1k = get_model_cost_per_1k(model)
+    ipt_per_1k, opt_per_1k = get_model_cost_per_1k(model, default_per_1k=default_per_1k)
     return (prompt_tokens / 1000.0) * ipt_per_1k + (completion_tokens / 1000.0) * opt_per_1k
 
 

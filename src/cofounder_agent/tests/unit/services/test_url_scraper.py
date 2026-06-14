@@ -98,7 +98,23 @@ def _site_config(values: dict | None = None) -> MagicMock:
             return raw
         return str(raw).lower() in ("true", "1", "yes", "on")
 
+    def _get_int(key, default=0):
+        raw = values.get(key, default)
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return default
+
+    def _get_float(key, default=0.0):
+        raw = values.get(key, default)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+
     sc.get_bool.side_effect = _get_bool
+    sc.get_int.side_effect = _get_int
+    sc.get_float.side_effect = _get_float
     return sc
 
 

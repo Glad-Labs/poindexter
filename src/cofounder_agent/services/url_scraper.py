@@ -271,7 +271,7 @@ async def _safe_get(
     raise URLScrapeError(f"Redirect loop exhausted for {url!r}")
 
 
-async def _scrape_url(url: str, site_config: SiteConfig, timeout: float = DEFAULT_TIMEOUT) -> dict:
+async def _scrape_url(url: str, site_config: SiteConfig, timeout: float | None = None) -> dict:
     """Scrape a URL and return structured content.
 
     Returns:
@@ -292,6 +292,9 @@ async def _scrape_url(url: str, site_config: SiteConfig, timeout: float = DEFAUL
     """
     if not url or not url.startswith(("http://", "https://")):
         raise URLScrapeError(f"Invalid URL: {url!r}")
+
+    if timeout is None:
+        timeout = site_config.get_float("url_scraper_timeout_seconds", DEFAULT_TIMEOUT)
 
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
@@ -369,11 +372,12 @@ async def _scrape_generic(url: str, site_config: SiteConfig, timeout: float) -> 
 
     # Prefer <article> or <main>, fall back to body
     main = soup.find("article") or soup.find("main") or soup.find("body")
+    max_chars = site_config.get_int("url_scraper_max_content_chars", MAX_CONTENT_CHARS)
     content_full = ""
     if main:
         # Get text, collapse whitespace
         text = main.get_text(separator="\n", strip=True)
-        content_full = re.sub(r"\n{3,}", "\n\n", text)[:MAX_CONTENT_CHARS]
+        content_full = re.sub(r"\n{3,}", "\n\n", text)[:max_chars]
 
     content_preview = content_full[:500]
     word_count = len(content_full.split())
@@ -424,7 +428,9 @@ async def _scrape_github(url: str, site_config: SiteConfig, timeout: float) -> d
         raise URLScrapeError(f"GitHub fetch failed: {e}") from e
 
     title = f"{repo_data.get('full_name') or f'{owner}/{repo}'} — {repo_data.get('description') or 'GitHub repo'}"
-    content_full = readme_text[:MAX_CONTENT_CHARS]
+    content_full = readme_text[
+        : site_config.get_int("url_scraper_max_content_chars", MAX_CONTENT_CHARS)
+    ]
 
     return {
         "url": url,
@@ -476,7 +482,9 @@ async def _scrape_arxiv(url: str, site_config: SiteConfig, timeout: float) -> di
         "url": abs_url,
         "title": title[:300],
         "content_preview": abstract[:500],
-        "content_full": abstract[:MAX_CONTENT_CHARS],
+        "content_full": abstract[
+            : site_config.get_int("url_scraper_max_content_chars", MAX_CONTENT_CHARS)
+        ],
         "content_type": "arxiv",
         "author": authors[:500] if authors else None,
         "published_at": None,
@@ -515,7 +523,11 @@ class URLScraper:
     def __init__(self, *, site_config: SiteConfig) -> None:
         self._site_config = site_config
 
-    async def scrape_url(self, url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    async def scrape_url(self, url: str, timeout: float | None = None) -> dict:
         """Scrape *url* and return structured content. See module-level
-        ``_scrape_url`` for the returned dict shape + raised errors."""
+        ``_scrape_url`` for the returned dict shape + raised errors.
+
+        ``timeout`` of ``None`` resolves from
+        ``app_settings.url_scraper_timeout_seconds``.
+        """
         return await _scrape_url(url, self._site_config, timeout)

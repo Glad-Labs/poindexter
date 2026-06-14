@@ -73,6 +73,11 @@ Gates (mostly opt-in):
 
 - `qa_web_factcheck_enabled` (default `true`) — DuckDuckGo verification
   of product/spec claims.
+- `qa_web_factcheck_match_ratio` (default `0.6`) — fraction of a claim's
+  key terms that must appear in the search snippets to mark it VERIFIED.
+- `qa_web_factcheck_num_results` / `_snippet_chars` / `_min_term_len` /
+  `_max_claims` (defaults `3` / `500` / `2` / `3`) — search breadth and the
+  claim-matching heuristics (previously hardcoded literals in the rail).
 - `qa_citation_verify_enabled` (default `true`) — HTTP HEAD for cited URLs.
 - `qa_citation_max_dead_ratio` (default `0.30`).
 - `qa_citation_min_count` (default `0`).

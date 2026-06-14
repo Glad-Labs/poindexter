@@ -278,7 +278,10 @@ async def process_content_generation_task(
     except Exception:
         _settings_service = None
     from services.image_style_rotation import ImageStyleTracker as _IST
-    _style_tracker = _IST()
+    _style_tracker = _IST(
+        history_size=_sc.get_int("image_style_history_size", 10),
+        ttl_seconds=_sc.get_int("image_style_history_ttl_seconds", 3600),
+    )
 
     # Mutable copy — the experiment hook may set ``models_by_phase["writer"]``
     # below if an A/B experiment is active. Always seed the dict before

@@ -248,6 +248,18 @@ DEFAULTS: dict[str, str] = {
     'qa_title_similarity_threshold': '0.6',
     'title_max_length': '90',
     'qa_topic_dedup_hours': '48',
+    # Web fact-check rail (qa.web_factcheck) claim-verification heuristics.
+    # A claim is treated as VERIFIED when at least `match_ratio` of its key
+    # terms (tokens longer than `min_term_len` chars) appear in the first
+    # `snippet_chars` characters of the top `num_results` DuckDuckGo hits.
+    # `max_claims` caps how many extracted claims are searched per post.
+    # Previously hardcoded inline in modules/content/multi_model_qa.py; moved
+    # here so the rail's strictness is tunable without a redeploy.
+    'qa_web_factcheck_match_ratio': '0.6',
+    'qa_web_factcheck_num_results': '3',
+    'qa_web_factcheck_snippet_chars': '500',
+    'qa_web_factcheck_min_term_len': '2',
+    'qa_web_factcheck_max_claims': '3',
 
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',
@@ -322,9 +334,25 @@ DEFAULTS: dict[str, str] = {
     'image_model': 'sdxl_lightning',
     'image_negative_prompt': '',
     'image_styles': '',
+    # In-process featured-image style-rotation dedup window
+    # (services/image_style_rotation.py). `size` caps how many recent picks
+    # are remembered; `ttl_seconds` caps how long a pick blocks its own reuse.
+    # Previously module-level constants; externalised so the rotation window
+    # is tunable (a small style pool wants a shorter window to avoid starving).
+    'image_style_history_size': '10',
+    'image_style_history_ttl_seconds': '3600',
+    # Per-call HTTP timeout (seconds) for a local image inference server
+    # (SDXL / FLUX `/generate`) to render one image. A render that exceeds
+    # this is abandoned so a hung GPU server can't wedge the pipeline. Was a
+    # hardcoded literal at each provider call site.
+    'image_render_timeout_seconds': '90',
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',
+    # Per-call HTTP timeout (seconds) for a local audio inference server
+    # (Stable Audio Open `/generate`) to render one clip. Was a hardcoded
+    # literal in services/audio_gen_providers/stable_audio_open.py.
+    'audio_render_timeout_seconds': '180',
     # Stage-2 media trigger (#689 Plan 7) — the dispatch_media_pipeline job is
     # scheduled but DORMANT until media_pipeline_trigger_enabled flips on; this
     # is what takes media_pipeline from dormant to LIVE in prod.
@@ -687,6 +715,26 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Trusted source domains -----
     'trusted_source_domains': '',
+
+    # ----- Worker runtime -----
+    # How often (seconds) the worker writes its capability_registry
+    # heartbeat. The brain's "worker offline" threshold is already
+    # DB-tunable; this is the emit cadence that pairs with it. Was a
+    # hardcoded constant in services/worker_service.py.
+    'worker_heartbeat_interval_seconds': '30',
+
+    # ----- URL scraper (web research / topic-from-URL fetches) -----
+    # Per-request fetch timeout (seconds) and the safety cap (chars) on
+    # extracted page text. Were module-level constants in
+    # services/url_scraper.py. NOTE: the SSRF redirect cap (MAX_REDIRECTS)
+    # stays a code constant on purpose — it is a security guard, not a knob.
+    'url_scraper_timeout_seconds': '15',
+    'url_scraper_max_content_chars': '50000',
+
+    # ----- Tap ingestion (RAG corpus) -----
+    # Max characters per chunk when the tap runner splits a document before
+    # embedding (services/taps/_chunking.py). Was a module-level constant.
+    'tap_chunk_max_chars': '6000',
 
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',

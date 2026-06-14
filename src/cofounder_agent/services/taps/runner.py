@@ -35,6 +35,11 @@ from services.taps._chunking import chunk_text, content_hash
 
 logger = logging.getLogger(__name__)
 
+# Fallback embedding-model tag, used only when the MemoryClient doesn't
+# expose its own ``embed_model``. The store/dedup/delete paths below prefer
+# ``mem.embed_model`` so the stored ``embedding_model`` tag always matches
+# the model that produced the vector (a mismatch silently re-embeds every
+# doc — the dedup check would query the wrong tag).
 EMBED_MODEL = "nomic-embed-text"
 
 # Cap retained per-document store-failure samples so a tap that fails on
@@ -131,7 +136,9 @@ async def _delete_stale_chunks(
     )
 
 
-async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
+async def _store_document(
+    mem: Any, pool: Any, doc: Any, *, max_chars: int | None = None
+) -> str:
     """Persist one Document (with chunking + dedup). Returns one of:
 
     ``"embedded"``, ``"skipped"``, ``"failed"``.
@@ -147,10 +154,14 @@ async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
         return "skipped"
 
     full_hash = content_hash(text)
+    # Tag rows with the model the embedder actually uses, so the dedup check
+    # and stale-chunk delete below query the same ``embedding_model`` value
+    # that ``mem.store()`` writes (see EMBED_MODEL note above).
+    embed_model = getattr(mem, "embed_model", None) or EMBED_MODEL
 
     async with pool.acquire() as conn:
         existing = await _existing_chunk0_hash(
-            conn, doc.source_table, doc.source_id, EMBED_MODEL
+            conn, doc.source_table, doc.source_id, embed_model
         )
     if existing == full_hash:
         return "skipped"
@@ -180,11 +191,13 @@ async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
         # Clean up any stale chunks from a prior re-chunked store.
         async with pool.acquire() as conn:
             await _delete_stale_chunks(
-                conn, doc.source_table, doc.source_id, EMBED_MODEL, 1,
+                conn, doc.source_table, doc.source_id, embed_model, 1,
             )
         return "embedded"
 
-    chunks = chunk_text(text)
+    chunks = (
+        chunk_text(text) if max_chars is None else chunk_text(text, max_chars=max_chars)
+    )
     total_chunks = len(chunks)
     metadata_base = dict(doc.metadata)
     metadata_base.setdefault("chars", len(text))
@@ -209,14 +222,21 @@ async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
     # Clean up leftover chunks if the doc shrank.
     async with pool.acquire() as conn:
         await _delete_stale_chunks(
-            conn, doc.source_table, doc.source_id, EMBED_MODEL, total_chunks,
+            conn, doc.source_table, doc.source_id, embed_model, total_chunks,
         )
 
     return "embedded"
 
 
-async def run_tap(tap: Any, pool: Any, mem: Any) -> TapStats:
-    """Run one Tap end-to-end, returning a stats summary."""
+async def run_tap(
+    tap: Any, pool: Any, mem: Any, *, max_chars: int | None = None
+) -> TapStats:
+    """Run one Tap end-to-end, returning a stats summary.
+
+    ``max_chars`` overrides the chunk size for this run (sourced from
+    ``app_settings.tap_chunk_max_chars`` by :func:`run_all`); ``None`` uses
+    the ``chunk_text`` default.
+    """
     import time
 
     stats = TapStats(name=getattr(tap, "name", type(tap).__name__))
@@ -232,7 +252,7 @@ async def run_tap(tap: Any, pool: Any, mem: Any) -> TapStats:
     try:
         async for doc in tap.extract(pool, cfg.config):
             try:
-                outcome = await _store_document(mem, pool, doc)
+                outcome = await _store_document(mem, pool, doc, max_chars=max_chars)
             except Exception as e:
                 logger.exception("Tap %s: store failed for %s: %s", stats.name, doc.source_id, e)
                 stats.failed += 1
@@ -268,6 +288,26 @@ async def run_all(pool: Any, mem: Any) -> RunSummary:
     summary = RunSummary()
     start = time.monotonic()
 
+    # Global ingest chunk-size tunable, read once per run (not per doc) and
+    # threaded into each tap. Falls back to the chunk_text default if the
+    # SiteConfig load fails (best-effort — ingest must not hard-fail here).
+    chunk_max_chars: int | None = None
+    try:
+        from services.site_config import SiteConfig
+
+        _sc = SiteConfig(pool=pool)
+        await _sc.load(pool)
+        chunk_max_chars = _sc.get_int("tap_chunk_max_chars", 6000)
+    except Exception:  # noqa: BLE001 — config read is best-effort
+        # Visible (warning, not debug): a failed settings read means the DB
+        # read path hiccuped, which is worth surfacing even though ingest
+        # safely falls back to the chunk_text default. Keeps the handler out
+        # of the silent-except lint baseline (audit H2).
+        logger.warning(
+            "[TAP_RUNNER] tap_chunk_max_chars read failed; using chunk_text default",
+            exc_info=True,
+        )
+
     # Entry_points discovery + core-sample imperative loads.
     # De-dup by name so a core sample that also ships as an entry_point
     # doesn't run twice.
@@ -280,7 +320,7 @@ async def run_all(pool: Any, mem: Any) -> RunSummary:
         all_taps.append(tap)
 
     for tap in all_taps:
-        stats = await run_tap(tap, pool, mem)
+        stats = await run_tap(tap, pool, mem, max_chars=chunk_max_chars)
         summary.taps.append(stats)
         summary.total_embedded += stats.embedded
         summary.total_skipped += stats.skipped

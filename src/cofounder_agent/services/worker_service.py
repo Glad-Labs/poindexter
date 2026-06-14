@@ -20,8 +20,11 @@ from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
-HEARTBEAT_INTERVAL = 30  # seconds
-WORKER_TIMEOUT = 120  # seconds — worker considered offline after this
+# Default heartbeat cadence (seconds). Overridable at runtime via
+# app_settings.worker_heartbeat_interval_seconds — read on each tick so a
+# live settings change is honoured without a worker restart. The brain's
+# "worker offline" threshold is the consumer that pairs with this cadence.
+DEFAULT_HEARTBEAT_INTERVAL = 30
 
 
 class WorkerService:
@@ -40,7 +43,7 @@ class WorkerService:
     def capabilities(self) -> dict[str, Any]:
         """Discover local capabilities."""
         if not self._capabilities:
-            caps = {
+            caps: dict[str, Any] = {
                 "hostname": socket.gethostname(),
                 "platform": platform.system(),
                 "python": platform.python_version(),
@@ -81,7 +84,10 @@ class WorkerService:
         self._heartbeat_task = asyncio.create_task(
             self._heartbeat_loop(), name=f"heartbeat({self.worker_id})"
         )
-        logger.info("[WORKER] Heartbeat started (every %ds)", HEARTBEAT_INTERVAL)
+        interval = self._site_config.get_int(
+            "worker_heartbeat_interval_seconds", DEFAULT_HEARTBEAT_INTERVAL
+        )
+        logger.info("[WORKER] Heartbeat started (every %ds)", interval)
 
     async def stop(self):
         """Mark worker as offline."""
@@ -136,7 +142,10 @@ class WorkerService:
                 # wedged event loop / deadlock) — turning a silent hang into a
                 # captured stack trace.
                 self._arm_hang_watchdog()
-                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                interval = self._site_config.get_int(
+                    "worker_heartbeat_interval_seconds", DEFAULT_HEARTBEAT_INTERVAL
+                )
+                await asyncio.sleep(interval)
         finally:
             self._disarm_hang_watchdog()
 

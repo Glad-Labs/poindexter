@@ -354,3 +354,58 @@ class TestRetiredSettings:
             "See glad-labs-stack#1471 and migration "
             "20260612_060000_drop_topic_gap_min_severity."
         )
+
+
+# ---------------------------------------------------------------------------
+# Hardcoded-value externalisation audit keys
+# ---------------------------------------------------------------------------
+
+class TestConfigExternalisationAuditKeys:
+    """Keys added by the hardcoded-value externalisation audit. Each replaced
+    a literal that used to bypass app_settings; the seeded default must match
+    the prior in-code constant so the cutover is behaviour-preserving.
+    """
+
+    # key -> seeded default (must equal the old in-code literal)
+    EXPECTED = {
+        # Web fact-check rail (modules/content/multi_model_qa.py)
+        "qa_web_factcheck_match_ratio": "0.6",
+        "qa_web_factcheck_num_results": "3",
+        "qa_web_factcheck_snippet_chars": "500",
+        "qa_web_factcheck_min_term_len": "2",
+        "qa_web_factcheck_max_claims": "3",
+        # Image-style rotation window (services/image_style_rotation.py)
+        "image_style_history_size": "10",
+        "image_style_history_ttl_seconds": "3600",
+        # Local GPU render timeouts (image / audio providers)
+        "image_render_timeout_seconds": "90",
+        "audio_render_timeout_seconds": "180",
+        # Worker heartbeat cadence (services/worker_service.py)
+        "worker_heartbeat_interval_seconds": "30",
+        # URL scraper limits (services/url_scraper.py)
+        "url_scraper_timeout_seconds": "15",
+        "url_scraper_max_content_chars": "50000",
+        # Tap ingest chunk size (services/taps/_chunking.py)
+        "tap_chunk_max_chars": "6000",
+    }
+
+    def test_audit_keys_present_with_expected_defaults(self):
+        from services.settings_defaults import DEFAULTS
+
+        for key, val in self.EXPECTED.items():
+            assert key in DEFAULTS, f"{key} missing from DEFAULTS (audit regression)"
+            assert DEFAULTS[key] == val, (
+                f"{key} default drifted: {DEFAULTS[key]!r} != {val!r}"
+            )
+
+    def test_audit_numeric_defaults_parse(self):
+        """Every audit key is consumed via get_int/get_float — the seeded
+        string default must parse as the right numeric type."""
+        from services.settings_defaults import DEFAULTS
+
+        float_keys = {"qa_web_factcheck_match_ratio"}
+        for key in self.EXPECTED:
+            if key in float_keys:
+                float(DEFAULTS[key])
+            else:
+                int(DEFAULTS[key])  # raises if the default isn't an int string

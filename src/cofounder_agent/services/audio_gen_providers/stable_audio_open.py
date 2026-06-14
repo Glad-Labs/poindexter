@@ -133,6 +133,11 @@ class StableAudioOpenProvider:
         duration = _resolve_duration(config, site_config)
         sample_rate = _resolve_sample_rate(config, site_config)
         output_format = _resolve_output_format(config, site_config)
+        render_timeout = (
+            site_config.get_int("audio_render_timeout_seconds", 180)
+            if site_config is not None
+            else 180
+        )
         templated_prompt = _apply_prompt_template(
             prompt, kind, config, site_config,
         )
@@ -156,6 +161,7 @@ class StableAudioOpenProvider:
             duration=duration,
             sample_rate=sample_rate,
             output_format=output_format,
+            timeout=render_timeout,
         )
 
         if rendered_duration is None or not os.path.exists(output_path):
@@ -356,6 +362,7 @@ async def _generate_to_path(
     duration: float,
     sample_rate: int,
     output_format: str,
+    timeout: float = 180.0,
 ) -> float | None:
     """POST the prompt to the Stable Audio Open inference server; write
     the resulting audio file to ``output_path``.
@@ -376,7 +383,7 @@ async def _generate_to_path(
                     "format": output_format,
                     "model": "stable-audio-open-1.0",
                 },
-                timeout=180,
+                timeout=timeout,
             )
     except Exception as e:
         logger.error(

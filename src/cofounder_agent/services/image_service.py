@@ -1004,6 +1004,7 @@ class ImageService:
         # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
         _sc = self._site_config
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
+        render_timeout = _sc.get_int("image_render_timeout_seconds", 60)
         try:
             from contextlib import AsyncExitStack
 
@@ -1030,7 +1031,7 @@ class ImageService:
                         "steps": num_inference_steps or 4,
                         "guidance_scale": guidance_scale or 1.0,
                     },
-                    timeout=60,
+                    timeout=render_timeout,
                 )
                 # The sidecar at scripts/sdxl-server.py returns JSON
                 # (image_path + filename + generation_time_ms), NOT raw
@@ -1050,7 +1051,7 @@ class ImageService:
                         return False
                     img_resp = await client.get(
                         f"{sdxl_server_url}/images/{filename}",
-                        timeout=60,
+                        timeout=render_timeout,
                     )
                     if img_resp.status_code != 200:
                         logger.warning(

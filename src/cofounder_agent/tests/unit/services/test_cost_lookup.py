@@ -77,3 +77,45 @@ class TestEstimateCost:
     def test_zero_tokens_is_zero(self):
         cost = estimate_cost("claude-haiku-4-5", prompt_tokens=0, completion_tokens=0)
         assert cost == 0.0
+
+
+@pytest.mark.unit
+class TestDefaultPer1KInjection:
+    """The unknown-model fallback price is injectable (config-externalisation
+    audit) so a caller holding a SiteConfig can pass a DB-tunable default
+    instead of the baked-in module constant. These helpers are pure sync
+    functions with no SiteConfig of their own, so injection is the seam."""
+
+    def test_injected_default_used_for_unknown_cloud_model(self):
+        ipt, opt = get_model_cost_per_1k(
+            "totally-fake-provider/foo-9000", default_per_1k=0.02
+        )
+        assert (ipt, opt) == (0.02, 0.02)
+
+    def test_injected_default_used_for_empty_model(self):
+        assert get_model_cost_per_1k("", default_per_1k=0.02) == (0.02, 0.02)
+
+    def test_none_falls_back_to_module_default(self):
+        ipt, opt = get_model_cost_per_1k(
+            "totally-fake-provider/foo-9000", default_per_1k=None
+        )
+        assert (ipt, opt) == (DEFAULT_COST_PER_1K, DEFAULT_COST_PER_1K)
+
+    def test_local_route_ignores_injected_default(self):
+        # Local routes are $0 by policy regardless of the fallback price.
+        assert get_model_cost_per_1k("ollama/qwen3:8b", default_per_1k=0.02) == (0.0, 0.0)
+
+    def test_get_model_cost_forwards_default(self):
+        assert get_model_cost(
+            "totally-fake-provider/foo-9000", default_per_1k=0.03
+        ) == 0.03
+
+    def test_estimate_cost_forwards_default(self):
+        # 1000 prompt + 1000 completion at $0.01/1K each = $0.02
+        cost = estimate_cost(
+            "totally-fake-provider/foo-9000",
+            prompt_tokens=1000,
+            completion_tokens=1000,
+            default_per_1k=0.01,
+        )
+        assert cost == pytest.approx(0.02)

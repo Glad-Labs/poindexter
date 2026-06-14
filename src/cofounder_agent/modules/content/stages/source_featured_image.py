@@ -250,7 +250,13 @@ class SourceFeaturedImageStage:
             style_tracker = context.get("image_style_tracker")
             if style_tracker is None:
                 from services.image_style_rotation import ImageStyleTracker
-                style_tracker = ImageStyleTracker()
+                if site_config is not None:
+                    style_tracker = ImageStyleTracker(
+                        history_size=site_config.get_int("image_style_history_size", 10),
+                        ttl_seconds=site_config.get_int("image_style_history_ttl_seconds", 3600),
+                    )
+                else:
+                    style_tracker = ImageStyleTracker()
 
             # Capture the chosen style on the version-row update AND emit
             # an audit_log row so operators can verify rotation from

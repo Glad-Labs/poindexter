@@ -285,6 +285,11 @@ async def _generate_to_path(
     another provider.
     """
     try:
+        render_timeout = (
+            site_config.get_int("image_render_timeout_seconds", 90)
+            if site_config is not None
+            else 90
+        )
         _body = {
             "prompt": prompt,
             "negative_prompt": negative,
@@ -294,12 +299,12 @@ async def _generate_to_path(
         }
         if http_client is not None:
             resp = await http_client.post(
-                f"{server_url}/generate", json=_body, timeout=90,
+                f"{server_url}/generate", json=_body, timeout=render_timeout,
             )
         else:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
                 resp = await client.post(
-                    f"{server_url}/generate", json=_body, timeout=90,
+                    f"{server_url}/generate", json=_body, timeout=render_timeout,
                 )
     except Exception as e:
         # Server unreachable / connection refused / DNS / TLS — log a
