@@ -1083,9 +1083,25 @@ function Drawer({ entity, onClose, actions }) {
       }
       case 'revenue': {
         const r = e;
-        eyebrow = 'REVENUE · LEMON SQUEEZY';
+        // Pre-revenue (billing gated) → honest empty state, no fabricated
+        // charts. Fills in once the revenue engine records a real sale.
+        const rLive = !!r.live && (r.month > 0 || (r.byType || []).length > 0);
+        eyebrow = rLive ? 'REVENUE · LEMON SQUEEZY' : 'REVENUE · PRE-REVENUE';
         title = 'Revenue';
-        body = (
+        body = !rLive ? (
+          <>
+            <div className="section-label">Status</div>
+            <div
+              className="c-dim"
+              style={{ fontSize: 12, lineHeight: 1.6, padding: '4px 0' }}
+            >
+              Billing isn’t live yet. The Lemon Squeezy store and Pro
+              subscription are built but gated — no orders have been placed, so
+              there’s nothing to chart. This view fills in the moment the
+              revenue engine records a first sale.
+            </div>
+          </>
+        ) : (
           <>
             <div className="section-label">Daily revenue · 30 days</div>
             <div
@@ -1119,7 +1135,7 @@ function Drawer({ entity, onClose, actions }) {
                 </div>
                 <Meter
                   value={amt}
-                  max={r.byType[0][1]}
+                  max={r.byType.length ? r.byType[0][1] : 1}
                   color={name.includes('sub') ? 'amber' : 'mint'}
                 />
               </div>

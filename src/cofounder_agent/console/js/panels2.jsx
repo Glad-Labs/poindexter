@@ -243,12 +243,19 @@ function MemorySearch({ sources }) {
 /* ─── Revenue ───────────────────────────────────────────────── */
 function RevenuePanel({ revenue, onOpen }) {
   const r = revenue;
-  const delta = Math.round(((r.month - r.prevMonth) / r.prevMonth) * 100);
+  // Pre-revenue until the engine records a real sale. No fabricated figures
+  // (feedback_no_dummy_data) — render an honest $0 / "billing not live yet"
+  // and drop the MoM delta / daily chart / top-posts (all meaningless at $0).
+  const live = !!r.live && r.month > 0;
+  const delta =
+    live && r.prevMonth > 0
+      ? Math.round(((r.month - r.prevMonth) / r.prevMonth) * 100)
+      : null;
   return (
     <Panel
       idx="R1"
       title="REVENUE"
-      meta={`MRR $${r.mrr} · LEMON SQUEEZY`}
+      meta={live ? `MRR $${r.mrr} · LEMON SQUEEZY` : 'PRE-REVENUE'}
       flush
       action="Detail"
       onAction={onOpen}
@@ -257,28 +264,39 @@ function RevenuePanel({ revenue, onOpen }) {
         style={{ padding: 12, borderBottom: '1px solid var(--gl-hairline)' }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <span className="kpi__value is-mint" style={{ fontSize: 32 }}>
+          <span
+            className={`kpi__value ${live ? 'is-mint' : 'c-dim'}`}
+            style={{ fontSize: 32 }}
+          >
             <span className="unit" style={{ fontSize: 16 }}>
               $
             </span>
             {r.month.toLocaleString()}
           </span>
-          <span className={`delta ${delta >= 0 ? 'delta--up' : 'delta--down'}`}>
-            {delta >= 0 ? '+' : ''}
-            {delta}% MoM
-          </span>
+          {delta != null && (
+            <span
+              className={`delta ${delta >= 0 ? 'delta--up' : 'delta--down'}`}
+            >
+              {delta >= 0 ? '+' : ''}
+              {delta}% MoM
+            </span>
+          )}
         </div>
         <div className="mono c-dim" style={{ fontSize: 10, marginTop: 2 }}>
-          month to date · ${r.today} today · net ${r.net.toLocaleString()}
+          {live
+            ? `month to date · $${r.today} today · net $${r.net.toLocaleString()}`
+            : 'billing not live yet · Lemon Squeezy store gated'}
         </div>
-        <div style={{ marginTop: 10 }}>
-          <MiniBars
-            data={r.daily}
-            color="cyan"
-            labels={['30d', 'today']}
-            height={48}
-          />
-        </div>
+        {live && (
+          <div style={{ marginTop: 10 }}>
+            <MiniBars
+              data={r.daily}
+              color="cyan"
+              labels={['30d', 'today']}
+              height={48}
+            />
+          </div>
+        )}
       </div>
       <div
         style={{
@@ -290,7 +308,7 @@ function RevenuePanel({ revenue, onOpen }) {
       >
         {[
           ['Orders', r.orders, ''],
-          ['Subs', r.subscriptions, 'is-mint'],
+          ['Subs', r.subscriptions, live ? 'is-mint' : ''],
           ['Refunds', r.refunds, r.refunds > 0 ? 'is-amber' : ''],
         ].map(([l, v, c]) => (
           <div
@@ -308,26 +326,32 @@ function RevenuePanel({ revenue, onOpen }) {
         <div className="kpi__label" style={{ marginBottom: 8 }}>
           Top earning posts
         </div>
-        {r.topPosts.slice(0, 3).map((p) => (
-          <div
-            key={p.title}
-            className="svc"
-            style={{
-              gridTemplateColumns: '1fr auto',
-              padding: '6px 0',
-              cursor: 'default',
-            }}
-          >
-            <span
-              className="svc__name truncate"
-              style={{ fontSize: 11 }}
-              title={p.title}
+        {live && r.topPosts.length ? (
+          r.topPosts.slice(0, 3).map((p) => (
+            <div
+              key={p.title}
+              className="svc"
+              style={{
+                gridTemplateColumns: '1fr auto',
+                padding: '6px 0',
+                cursor: 'default',
+              }}
             >
-              {p.title}
-            </span>
-            <span className="svc__metric c-mint">${p.rev}</span>
+              <span
+                className="svc__name truncate"
+                style={{ fontSize: 11 }}
+                title={p.title}
+              >
+                {p.title}
+              </span>
+              <span className="svc__metric c-mint">${p.rev}</span>
+            </div>
+          ))
+        ) : (
+          <div className="c-dim" style={{ fontSize: 11 }}>
+            No sales yet — the first order lights this up.
           </div>
-        ))}
+        )}
       </div>
     </Panel>
   );

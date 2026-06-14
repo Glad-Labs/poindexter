@@ -757,34 +757,42 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ---
 
-## Phase 13 — Revenue (honest empty state) + polish
+## Phase 13 — Revenue (honest empty state) + polish — ✅ SHIPPED
 
 > Outcome: revenue renders an explicit pre-revenue empty state (no fabricated $); mobile-first layout is verified; the README is rewritten to the truth; optional build-step is documented.
 
-### Task 13.1: Revenue empty-until-live
+**Implementation note:** the final phase, all console-only. **Two plan corrections:** (1) revenue touched **three** files, not two — the fabricated mock also fed a `RevenuePanel` _and_ a drawer detail whose `r.byType[0][1]` would crash on an empty array, so `drawer.jsx` needed an empty-state branch + guard too. (2) Mobile was **not** a from-scratch build — a `@media (max-width:920px)` breakpoint already collapsed the rail→bottom-bar / masonry→1-col; the real defect (found only by measuring at 390px) was that the bottom bar's **11 nav buttons computed to a 708px-wide box** clipped by `.app{overflow:hidden}`, leaving the later tabs (Cost/Revenue) off-screen and untappable. Fixed with `grid-template-columns: minmax(0,1fr)` (let the column shrink below content min-content) + `.rail__btn{flex:1 1 0;min-width:0}` (buttons share the bar evenly), re-measured: rail box 390px, last button right-edge 384 ≤ 390.
 
-**Files:** Modify `js/data.js` (`revenue`), `js/panels.jsx` (`RevenuePanel`)
+### Task 13.1: Revenue empty-until-live — ✅ SHIPPED
 
-- [ ] **Step 1:** Replace the fabricated $1,284/mo mock with `$0` / "billing not live yet" until the revenue engine reports real orders. Operator-specific billing wiring stays in the private overlay; the OSS panel reads the generic revenue engine.
-- [ ] **Step 2: Commit.**
+**Files:** `js/data.js` (`revenue` mock zeroed + `live:false`), `js/panels2.jsx` (`RevenuePanel` empty-state — _panel lives in panels2, not panels.jsx_), `js/drawer.jsx` (revenue detail empty-state + `byType[0]` guard)
 
-### Task 13.2: Mobile-first pass
+- [x] **Step 1:** Replaced the fabricated $1,284/mo + fake orders/top-posts with an honest pre-revenue shape (`live:false`, all scalars 0, arrays empty). Both surfaces branch on `live`: the panel shows `$0` / "billing not live yet · Lemon Squeezy store gated" (MoM delta + daily bars + top-posts dropped, div-by-zero on `prevMonth` guarded); the drawer shows a "billing isn't live yet…" status block instead of empty charts. No live `/api/revenue` route exists, so this is genuinely honest-empty in both modes (`feedback_no_dummy_data`), not a missing wire.
+- [x] **Step 2: Verified + committed.**
 
-**Files:** Modify `css/console.css`, `css/modes.css`
+### Task 13.2: Mobile-first pass — ✅ SHIPPED
 
-- [ ] **Step 1:** Add breakpoints so the rail collapses to a bottom tab bar, the masonry becomes a single column, and the Action Inbox + Approvals are reachable in ≤2 taps at 390px. Verify in a phone viewport (Playwright `page.setViewportSize({width:390,height:844})`).
-- [ ] **Step 2: Commit.**
+**Files:** `css/console.css` (the `@media (max-width:920px)` block — `minmax(0,1fr)` app column + flex-shrink rail buttons + `overflow-x` safety net). `modes.css` already handled the mode surfaces; no change needed.
 
-### Task 13.3: README + docs truth pass
+- [x] **Step 1:** Diagnosed at 390×844 with Playwright (not assumed). The structural collapse already existed; the fix was the clipped 11-button rail (see note). Re-verified: no document h-overflow, rail box 390px, every nav button on-screen, masonry single-column, 0 runtime errors.
+- [x] **Step 2: Verified + committed.** 10/10 at 390px; screenshot confirmed the revenue drawer's pre-revenue state renders full-width on mobile.
 
-**Files:** Modify `src/cofounder_agent/console/README.md`
+### Task 13.3: README + docs truth pass — ✅ SHIPPED
 
-- [ ] **Step 1:** Rewrite the endpoint map to the verified table; replace the "paste API_TOKEN" auth section with the OAuth client-credentials runbook; remove the `index.html`-as-existing claim (now true) and the false "all confirmed" line. Note the Grafana-replacement posture + which deep-dives stay external.
-- [ ] **Step 2: Commit.**
+**Files:** `src/cofounder_agent/console/README.md` (full rewrite)
 
-### Task 13.4 (optional/future): build step
+- [x] **Step 1:** Replaced the "paste your `API_TOKEN`" auth section with the **OAuth 2.1 client-credentials** runbook (`poindexter auth register-client` → `setClient` → `/token`); rewrote the endpoint table to the **verified** 17-surface map (approvals/tasks corrected, GPU+service-health on Prometheus `:9091`, findings/media/schedule/seo/voice/rebuild added); dropped the stale "add a mount to `main.py`" (it's mounted at `/console/`) and the false "all confirmed" line; kept the one real `TODO(live)` (restart → brain-via-DB, Phase 5.3); noted the Grafana-replacement posture (Tempo/Pyroscope/Loki stay external) and the mobile bottom-tab-bar behaviour.
+- [x] **Step 2: Verified + committed.**
 
-- [ ] Document (do not implement now) a future esbuild/vite precompile so the console can ship production-fast if it ever leaves local-operator use.
+### Task 13.4 (optional/future): build step — ✅ DOCUMENTED (not implemented)
+
+- [x] The README "No build step" note now documents the future esbuild/vite precompile (bundle the `.jsx`, drop the Babel runtime) as an explicit follow-up — not done here, per the task.
+
+---
+
+## ✅ PLAN COMPLETE (2026-06-13)
+
+All phases 0–13 shipped via squash-merged PRs against `main`. The operator console is live at `/console/`: real auth (OAuth2 client-credentials), real reads across approvals/tasks/pipeline-events/findings/brain/media/schedule/seo/cost/GPU/service-health, real mutations (approve/publish/retry/cancel/media-decide/reschedule/rebuild), honest empty-states everywhere a live source is absent (revenue, restart), and a verified 390px mobile layout. Remaining deferred item: the guarded restart route (Phase 5.3, brain-via-DB) — left as the single `TODO(live)`.
 
 ---
 

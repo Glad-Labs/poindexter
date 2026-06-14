@@ -1393,18 +1393,33 @@ button {
 /* ─── Responsive: phone ─────────────────────────────────────── */
 @media (max-width: 920px) {
   .app {
-    grid-template-columns: 1fr;
+    /* minmax(0,1fr) lets the single column shrink BELOW its content's
+       min-content width, so main + the bottom rail track the viewport
+       instead of being stretched to the widest child (which, under the
+       base .app overflow:hidden, would clip the rail's later nav buttons
+       off-screen on a phone). */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 48px 1fr auto;
     grid-template-areas: 'topbar' 'main' 'rail';
   }
   .rail {
     flex-direction: row;
-    justify-content: space-around;
+    justify-content: space-between;
+    gap: 2px;
     border-right: 0;
     border-top: 1px solid var(--gl-hairline);
-    padding: 4px 0;
+    padding: 4px 6px;
     position: sticky;
     bottom: 0;
+    overflow-x: auto; /* safety net on screens narrower than the tab count */
+  }
+  /* The bottom tab bar packs all nav buttons into the viewport width:
+     each flexes to an equal share and may shrink below the 38px desktop
+     size so every destination stays one tap away (no clipped buttons). */
+  .rail__btn {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
   }
   .rail__logo {
     display: none;

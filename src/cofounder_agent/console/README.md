@@ -1,107 +1,127 @@
-# Poindexter Operator Console — deploy
+# Poindexter Operator Console
 
-Action-first operator UI for Poindexter. Replaces the read-only Grafana
-dashboards with a console that also lets you _act_: approve content, retry/kill
-tasks, ack alerts, fix URL drift, restart services, and edit `app_settings`
-inline. Built on the `@glad-labs/brand` (E3) system.
+Action-first operator UI for Poindexter. Where the Grafana dashboards are
+read-only, this console also lets you _act_: approve/publish content, retry or
+cancel tasks, triage findings, approve Gate-2 media, reschedule the publish
+queue, trigger a static-export rebuild, and edit `app_settings` inline. Built on
+the `@glad-labs/brand` (E3) system.
+
+It is meant to be the day-to-day **cockpit**; the deep-dive telemetry stays in
+Grafana — Tempo traces, Pyroscope flame graphs, and the Loki log explorer are
+linked out from the console rather than reimplemented.
 
 ## What's here
 
 ```
 console/
-├── index.html        ← entry (open this)
+├── index.html        ← entry (already served at /console/ — see §1)
 ├── css/              ← brand tokens + console styles
 └── js/               ← React app (in-browser Babel), data, API adapter
 ```
 
 It ships with realistic **mock data** so it runs with zero backend. Flip it to
-**live** from the in-app Connection panel (App Settings → top of page).
+**live** from the in-app Connection panel (App Settings → Connection).
 
 ---
 
-## 1. Serve it from the worker (recommended — same-origin, no CORS)
+## 1. It's already served from the worker (same-origin, no CORS)
 
-Add a static mount to `src/cofounder_agent/main.py`, **after** the routers are
-included so it doesn't shadow `/api`:
-
-```python
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-
-# Operator console (static SPA). html=True serves index.html at /console/.
-app.mount(
-    "/console",
-    StaticFiles(directory=Path(__file__).parent / "console", html=True),
-    name="console",
-)
-```
-
-Then with the worker running (`python -m uvicorn main:app --host 0.0.0.0 --port 8002`):
+`main.py` mounts this folder at `/console/` (`StaticFiles(..., html=True)`,
+mounted **after** the API routers so it never shadows `/api`). With the worker
+running:
 
 > Open **http://localhost:8002/console/**
 
-The static mount is **not** behind `verify_api_token`, so the page loads
-freely; the `/api/...` calls it makes carry your bearer token (below).
+The static mount is **not** behind `verify_api_token`, so the page itself loads
+freely; the `/api/...` calls it makes carry a short-lived OAuth JWT (below).
 
 ---
 
 ## 2. Go live (App Settings → Connection panel)
 
-1. **Worker base URL** — leave **blank** (same-origin → relative `/api/...`).
-2. **Bearer token** — paste your `API_TOKEN` value.
-3. **Test connection** → then toggle **Live** on.
+Auth is **OAuth 2.1 client-credentials only** — the static `API_TOKEN` Bearer
+was removed in #249. Provision a dedicated console client, then hand the adapter
+its credentials:
 
-Settings now read/write your real `app_settings` table. Start here — it's the
-safest read+write surface. Other panels still show mock data until their
-endpoints are wired (see the adapter).
+```bash
+poindexter auth register-client \
+  --name poindexter-console \
+  --scopes "api:read api:write" \
+  --grant-type client_credentials
+# prints client_id + client_secret ONCE
+```
+
+1. **Worker base URL** — leave **blank** (same-origin → relative `/api/...`).
+2. **Client ID + secret** — paste the two values from above
+   (`PX.api.setClient(id, secret)` under the hood). The adapter mints a JWT from
+   `POST /token` and refreshes it automatically; the secret is kept in
+   `localStorage`, never sent anywhere but `/token`.
+3. **Test connection** → then toggle **Live** on (`PX.api.setLive(true)`,
+   persisted).
+
+Settings then read/write your real `app_settings` table. Most read surfaces are
+already wired (below); anything without a live route renders an explicit
+empty/"not wired" state rather than mock numbers.
 
 ---
 
 ## 3. The API adapter — `js/api.js`
 
 One file is the only seam between UI and your stack: `window.PX.api`. Every
-method has a `live:` branch (real `fetch`) and a `mock:` branch. Flip surfaces
-on **one at a time**. Endpoint map (all confirmed in
+method has a `live:` branch (real `fetch`) and a `mock:` branch via
+`pick(liveFn, mockFn)`. Endpoint map (verified against
 `src/cofounder_agent/routes/`):
 
-| Surface           | Endpoint                                                            |
-| ----------------- | ------------------------------------------------------------------- |
-| settings          | `GET /api/settings` · `PUT /api/settings/{id}`                      |
-| approvals         | `GET /api/approvals` · `POST /api/approvals/{id}/{approve\|reject}` |
-| tasks             | `GET /api/tasks`, `/{id}` · `POST /api/tasks/{id}/{retry\|cancel}`  |
-| events            | `GET /api/pipeline/events`                                          |
-| brain / memory    | `GET /api/memory/stats`                                             |
-| probes            | `GET /probes`                                                       |
-| posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                       |
-| GPU               | Prometheus `GET /api/v1/query` (`:9090`)                            |
+| Surface           | Endpoint(s)                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| token             | `POST /token` (grant_type=client_credentials → JWT)                                                          |
+| health            | `GET /api/health`                                                                                            |
+| settings          | `GET /api/settings` · `PUT /api/settings/{id}`                                                               |
+| approvals         | `GET /api/tasks/pending-approval` · `POST /api/tasks/{id}/{approve\|reject\|publish}` (approve ≠ publish)    |
+| tasks             | `GET /api/tasks`, `/{id}` · `PUT /api/tasks/{id}/status` (retry→pending) · `DELETE /api/tasks/{id}` (cancel) |
+| events            | `GET /api/pipeline/events` (the live audit feed)                                                             |
+| brain / memory    | `GET /api/memory/stats` · `GET /api/memory/search`                                                           |
+| cost              | `GET /api/metrics/costs/budget` (spend vs cap)                                                               |
+| findings          | `GET /api/findings` (probe-routing triage, #461)                                                             |
+| media (Gate-2)    | `GET /api/media-approval/pending` · `POST /{post_id}/{medium}/decide`                                        |
+| schedule          | `GET /api/scheduling` · `PATCH /api/scheduling/shift` (reschedule)                                           |
+| seo               | `GET /api/seo` (SEO-refresh queue + outcomes, #1466)                                                         |
+| voice             | `GET /api/settings` → `voice_agent_public_join_url` (operator config)                                        |
+| rebuild           | `POST /api/export/rebuild` (full static re-export + ISR revalidate)                                          |
+| posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                |
+| service health    | Prometheus `GET /api/v1/query` — cAdvisor `container_last_seen` (`:9091`) + `/api/health`                    |
+| GPU               | Prometheus `GET /api/v1/query` — `nvidia_gpu_*` (`:9091`)                                                    |
 
-### Two `TODO(live)` spots that need your specifics
+### One `TODO(live)` spot left
 
-- **GPU** — set the Prometheus URL and match metric names to your exporter
-  (DCGM vs `nvidia_gpu_exporter`). Search `gpu()` in `js/api.js`.
-- **Restart service** — no worker route exists yet; it points at a placeholder
-  `POST /api/admin/restart`. Wire it to your brain/docker mechanism.
+- **Restart service** — there is no worker route yet; `restartService()` points
+  at a placeholder `POST /api/admin/restart`. The intended wiring (Phase 5.3) is
+  through the **brain via the DB spinal cord** — the console writes a restart
+  intent the brain-daemon claims — not a direct container kill from the API.
+  Until then, the Services panel is read-only and deep-links to Grafana/docker.
+
+### Note on Prometheus
+
+The local stack runs Prometheus on **`:9091`** (not the upstream default
+`:9090`). Set the Prometheus base in the Connection panel if yours differs.
 
 ### Dev tip
 
 The Connection panel has a **Dev simulation** dropdown (mock only:
-normal / slow / error / empty) so you can see loading/error/empty states
+normal / slow / error / empty) so you can exercise loading/error/empty states
 without a backend.
-
----
-
-## Alternative: don't want to touch `main.py`?
-
-Serve the folder with any static server on the **same origin** as the API, or
-run a small sidecar (`serve.py` with CORS) that proxies to the worker. Ask and
-it can be scaffolded.
 
 ---
 
 ## Notes
 
-- **No build step.** React + Babel run in-browser via pinned CDN scripts. Fine
-  for a local operator tool; precompile if you ever want it production-fast.
-- **Brand.** Uses the E3 tokens (cyan/amber, JetBrains Mono + Space Grotesk,
-  square corners, colorblind-safe glyphs).
+- **No build step.** React + Babel run in-browser via pinned vendored scripts
+  (`js/vendor/`). Fine for a local operator tool. If it ever needs to ship
+  production-fast, the future move is an esbuild/vite precompile of the `.jsx`
+  into one bundle and dropping the Babel runtime — documented as a follow-up,
+  not done here.
+- **Mobile.** At ≤920px the left rail collapses to a bottom tab bar and the
+  masonry becomes a single column; verified down to a 390px phone viewport.
+- **Brand.** E3 tokens (cyan/amber, JetBrains Mono + Space Grotesk, square
+  corners, colorblind-safe glyphs).
 - **Modes.** Console / Feed / Map / Wall + ⌘K command palette + App Settings.

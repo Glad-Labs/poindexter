@@ -937,71 +937,28 @@
   ];
 
   // ── Revenue (Lemon Squeezy) ─────────────────────────────────
+  // Pre-revenue: the Lemon Squeezy store + Pro subscription are built but
+  // billing is GATED (project_monetization), so there are zero real orders.
+  // The console shows an honest $0 / "billing not live yet" until the revenue
+  // engine records a first sale — never a fabricated figure (feedback_no_dummy_data).
+  // `live:false` drives every revenue surface (panel KPI, drawer detail, mode
+  // stat) to its empty state; flip to a real read when a /api/revenue route
+  // lands and the store opens.
   const revenue = {
-    today: 87,
-    month: 1284,
-    net: 1196,
-    prevMonth: 1042,
-    orders: 34,
-    subscriptions: 11,
-    refunds: 1,
-    mrr: 318,
-    byType: [
-      ['Guide — one-time', 642, 'cyan'],
-      ['Quick Start sub', 318, 'amber'],
-      ['Templates pack', 224, 'cyan'],
-      ['Other', 100, 'mint'],
-    ],
-    bySource: [
-      ['gladlabs.io organic', 58],
-      ['Newsletter', 22],
-      ['Direct', 13],
-      ['Referral', 7],
-    ],
-    daily: [
-      22, 0, 41, 18, 0, 67, 12, 0, 34, 55, 0, 29, 48, 0, 18, 72, 33, 0, 41, 29,
-      12, 0, 58, 44, 0, 31, 67, 0, 22, 87,
-    ],
-    topPosts: [
-      { title: 'The 200-Line Supervisor Pattern', rev: 312, orders: 9 },
-      { title: 'Why We Killed Our Observability Vendor', rev: 248, orders: 7 },
-      { title: 'Cost Telemetry Without a SaaS Bill', rev: 184, orders: 5 },
-      {
-        title: 'A Field Guide to pgvector at Small Scale',
-        rev: 142,
-        orders: 4,
-      },
-    ],
-    recent: [
-      {
-        ts: '14:08',
-        kind: 'order',
-        amt: 29,
-        what: 'Quick Start Guide',
-        src: 'organic',
-      },
-      {
-        ts: '12:51',
-        kind: 'sub',
-        amt: 9,
-        what: 'Quick Start monthly',
-        src: 'newsletter',
-      },
-      {
-        ts: '11:32',
-        kind: 'order',
-        amt: 49,
-        what: 'Templates pack',
-        src: 'direct',
-      },
-      {
-        ts: '09:14',
-        kind: 'refund',
-        amt: -29,
-        what: 'Quick Start Guide',
-        src: 'support',
-      },
-    ],
+    live: false,
+    today: 0,
+    month: 0,
+    net: 0,
+    prevMonth: 0,
+    orders: 0,
+    subscriptions: 0,
+    refunds: 0,
+    mrr: 0,
+    byType: [],
+    bySource: [],
+    daily: [],
+    topPosts: [],
+    recent: [],
   };
 
   // ── Media pipeline — Stage 2 (video + podcast) ──────────────
