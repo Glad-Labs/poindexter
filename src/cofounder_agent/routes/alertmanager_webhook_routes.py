@@ -136,7 +136,7 @@ async def verify_alertmanager_token(
                 logger.warning("alertmanager webhook: OAuth JWT rejected: %s", e)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"invalid_token: {e}",
+                    detail="invalid_token",
                     headers={
                         "WWW-Authenticate": 'Bearer error="invalid_token"',
                     },

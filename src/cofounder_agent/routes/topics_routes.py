@@ -95,7 +95,8 @@ async def from_url(
     try:
         scraped = await scraper.scrape_url(body.url)
     except URLScrapeError as e:
-        raise HTTPException(status_code=400, detail=f"Could not scrape URL: {e}") from e
+        logger.warning("URL scrape error: %s", e)
+        raise HTTPException(status_code=400, detail="Could not scrape URL") from e
     except Exception as e:
         logger.error("URL scrape crashed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="URL scrape failed") from e
