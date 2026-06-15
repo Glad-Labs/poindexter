@@ -42,35 +42,25 @@ no-op (already-linked assets fall out of the query; ``record_pending`` is
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from dataclasses import dataclass
 from typing import Any
 
 from plugins.job import JobResult
+from services.jobs.dispatch_handles import (
+    PlatformDispatchResult,
+    persist_platform_handles,
+)
 from services.media_approval_service import record_dispatched, record_pending
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class _PlatformDispatchResult:
-    """Outcome of delivering one asset to one video platform.
-
-    ``_dispatch_asset`` returns one of these per enabled adapter so the caller
-    can both decide the aggregate dispatch outcome (``record_dispatched``) AND
-    persist the platform's external handles (``external_id`` / ``url``). The
-    upload handler returns the external video id under its ``post_id`` key and
-    the public watch URL under ``url`` (see
-    ``services/integrations/handlers/publishing_youtube.py``); we capture them
-    here under clearer names. ``external_id`` is ``None`` on failure.
-    """
-
-    platform: str
-    success: bool
-    external_id: str | None = None
-    url: str | None = None
+# The per-platform dispatch result type now lives in the shared
+# ``dispatch_handles`` module (DRY consolidation of the #1584/#1601 duplication).
+# Re-exported under the original private name so ``_dispatch_asset`` and the
+# tests (``md._PlatformDispatchResult``) keep their existing reference.
+_PlatformDispatchResult = PlatformDispatchResult
 
 # Video destinations this lane delivers to. Adding a platform = add here + a
 # publishing_adapters row + a publishing.<name> handler (the #112 contract).
@@ -147,33 +137,6 @@ _ADAPTERS_SQL = """
       FROM publishing_adapters
      WHERE enabled = true
        AND platform = ANY($1::text[])
-"""
-
-# Merge one platform's external video id into the asset's platform_video_ids
-# jsonb. The ``||`` concat operator is a shallow merge, so {"youtube": "<id>"}
-# replaces only the youtube key and leaves any other platform's id intact —
-# the asset can be cross-posted without one delivery clobbering another's id.
-_MERGE_PLATFORM_VIDEO_ID_SQL = """
-    UPDATE media_assets
-       SET platform_video_ids = platform_video_ids || $2::jsonb,
-           updated_at = NOW()
-     WHERE id = $1::uuid
-"""
-
-# Record the external delivery for observability + dedupe. ``task_id`` is the
-# media_assets task key (== posts.metadata->>'pipeline_task_id', the FK target
-# for pipeline_distributions). Upserted on the (task_id, target) unique key so a
-# re-dispatch refreshes the same row rather than duplicating it.
-_RECORD_DISTRIBUTION_SQL = """
-    INSERT INTO pipeline_distributions
-        (task_id, target, status, external_id, external_url, post_id, published_at)
-    VALUES ($1, $2, 'published', $3, $4, $5::uuid, NOW())
-    ON CONFLICT (task_id, target) DO UPDATE SET
-        status       = EXCLUDED.status,
-        external_id  = COALESCE(EXCLUDED.external_id, pipeline_distributions.external_id),
-        external_url = COALESCE(EXCLUDED.external_url, pipeline_distributions.external_url),
-        post_id      = COALESCE(EXCLUDED.post_id, pipeline_distributions.post_id),
-        published_at = COALESCE(EXCLUDED.published_at, pipeline_distributions.published_at)
 """
 
 
@@ -297,44 +260,25 @@ async def _persist_dispatch_result(
     """Stamp the dispatch outcome AND capture each platform's external handles.
 
     All writes happen in a single transaction so a successful upload is never
-    recorded as dispatched (``media_approvals``) without its external id/url,
-    and vice-versa. Per successful platform we:
-
-    1. merge ``{platform: external_id}`` into ``media_assets.platform_video_ids``
-       (shallow ``||`` merge — never clobbers another platform's id), and
-    2. upsert a ``pipeline_distributions`` row (``status='published'``) carrying
-       ``external_id`` / ``external_url`` for observability + re-upload dedupe.
-
-    Both writes are skipped for a platform with no ``external_id`` (a failed
-    upload, or a handler that returned success without an id), and the
-    distribution upsert is skipped when ``task_id`` is missing (it's the NOT
-    NULL FK key for ``pipeline_distributions``). ``record_dispatched`` still
-    records the failed attempt in those cases so the row stays re-dispatchable.
+    recorded as dispatched (``media_approvals``) without its external id/url, and
+    vice-versa: ``record_dispatched`` stamps the aggregate outcome, then the
+    shared ``persist_platform_handles`` merges ``platform_video_ids`` + upserts
+    ``pipeline_distributions`` for each successful platform. This pass already has
+    ``asset_id`` / ``task_id`` on the approved-undispatched row, so it passes them
+    straight through (no resolve query). ``record_dispatched`` still records a
+    failed attempt so the row stays re-dispatchable.
     """
     ok = any(r.success for r in results)
     async with pool.acquire() as conn:
         async with conn.transaction():
             await record_dispatched(conn, post_id, medium, success=ok)
-            for r in results:
-                if not (r.success and r.external_id):
-                    continue
-                if asset_id:
-                    await conn.execute(
-                        _MERGE_PLATFORM_VIDEO_ID_SQL,
-                        asset_id,
-                        json.dumps({r.platform: r.external_id}),
-                    )
-                if task_id:
-                    await conn.execute(
-                        _RECORD_DISTRIBUTION_SQL,
-                        task_id, r.platform, r.external_id, r.url, post_id,
-                    )
-                else:
-                    logger.warning(
-                        "[MEDIA_DISTRIBUTE] %s delivered post %s (external_id=%s) "
-                        "but no task_id — skipping pipeline_distributions row",
-                        r.platform, post_id, r.external_id,
-                    )
+            await persist_platform_handles(
+                conn,
+                post_id=post_id,
+                asset_id=asset_id,
+                task_id=task_id,
+                results=results,
+            )
 
 
 def _max_per_cycle(site_config: Any) -> int:

@@ -26,13 +26,15 @@ Config (``plugin.job.backfill_videos``):
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from plugins.job import JobResult
+from services.jobs.dispatch_handles import (
+    PlatformDispatchResult,
+    persist_platform_handles,
+)
 from services.media_approval_service import record_dispatched
 
 logger = logging.getLogger(__name__)
@@ -49,53 +51,13 @@ _YOUTUBE_MAX_TAGS = 30
 _YOUTUBE_TAGS_JOINED_LIMIT = 500
 
 
-@dataclass(frozen=True)
-class _PlatformDispatchResult:
-    """Outcome of delivering one video to one platform.
+# The per-platform dispatch result type now lives in the shared
+# ``dispatch_handles`` module — the consolidation this file's #1584 mirror-note
+# anticipated. Re-exported under the original private name so
+# ``_dispatch_video_publishers`` and the tests (``bv._PlatformDispatchResult``)
+# keep their existing reference.
+_PlatformDispatchResult = PlatformDispatchResult
 
-    ``_dispatch_video_publishers`` returns one of these per enabled adapter so
-    the caller can both decide the aggregate dispatch outcome
-    (``record_dispatched``) AND persist the platform's external handles. The
-    upload handler returns the external video id under its ``post_id`` key and
-    the public watch URL under ``url`` (see
-    ``services/integrations/handlers/publishing_youtube.py``); we capture them
-    here under clearer names. ``external_id`` is ``None`` on failure. Mirrors
-    ``services/jobs/media_distribute.py``'s result type (#1584) — a future
-    consolidation could share one ``dispatch_handles`` module across both jobs.
-    """
-
-    platform: str
-    success: bool
-    external_id: str | None = None
-    url: str | None = None
-
-
-# Merge one platform's external video id into the asset's platform_video_ids
-# jsonb. The ``||`` concat operator is a shallow merge so {"youtube": "<id>"}
-# replaces only the youtube key and leaves any other platform's id intact.
-# (Mirrors media_distribute._MERGE_PLATFORM_VIDEO_ID_SQL.)
-_MERGE_PLATFORM_VIDEO_ID_SQL = """
-    UPDATE media_assets
-       SET platform_video_ids = platform_video_ids || $2::jsonb,
-           updated_at = NOW()
-     WHERE id = $1::uuid
-"""
-
-# Record the external delivery for observability + dedupe. ``task_id`` is the
-# pipeline_distributions NOT NULL FK key (== posts.metadata->>'pipeline_task_id').
-# Upserted on the (task_id, target) unique key so a re-dispatch refreshes the
-# same row rather than duplicating it. (Mirrors media_distribute._RECORD_DISTRIBUTION_SQL.)
-_RECORD_DISTRIBUTION_SQL = """
-    INSERT INTO pipeline_distributions
-        (task_id, target, status, external_id, external_url, post_id, published_at)
-    VALUES ($1, $2, 'published', $3, $4, $5::uuid, NOW())
-    ON CONFLICT (task_id, target) DO UPDATE SET
-        status       = EXCLUDED.status,
-        external_id  = COALESCE(EXCLUDED.external_id, pipeline_distributions.external_id),
-        external_url = COALESCE(EXCLUDED.external_url, pipeline_distributions.external_url),
-        post_id      = COALESCE(EXCLUDED.post_id, pipeline_distributions.post_id),
-        published_at = COALESCE(EXCLUDED.published_at, pipeline_distributions.published_at)
-"""
 
 # backfill is post-keyed, so unlike media_distribute (which has them in hand) it
 # must resolve the post's video media_asset id + source task_id before
@@ -674,51 +636,36 @@ async def _persist_dispatch_result(
 ) -> None:
     """Stamp the dispatch outcome AND capture each platform's external handles.
 
-    Post-keyed counterpart to ``media_distribute._persist_dispatch_result``
-    (#1584): backfill only has the ``post_id``, so it resolves the post's video
-    media_asset id + source task_id (via ``posts.metadata->>'pipeline_task_id'``,
-    the ``pipeline_distributions`` NOT NULL FK key) before persisting. All writes
-    share one transaction with the ``record_dispatched`` stamp so a successful
-    upload is never recorded as dispatched without its id/url, and vice-versa.
-    Per successful platform we:
+    Post-keyed counterpart to ``media_distribute._persist_dispatch_result``: this
+    job only has the ``post_id``, so it resolves the post's video media_asset id +
+    source task_id (via ``posts.metadata->>'pipeline_task_id'``, the
+    ``pipeline_distributions`` NOT NULL FK key) before delegating to the shared
+    ``persist_platform_handles``. All writes share one transaction with the
+    ``record_dispatched`` stamp so a successful upload is never recorded as
+    dispatched without its id/url, and vice-versa. ``record_dispatched`` still
+    records a failed attempt so the row stays re-dispatchable.
 
-    1. merge ``{platform: external_id}`` into ``media_assets.platform_video_ids``
-       (shallow ``||`` merge — never clobbers another platform's id), and
-    2. upsert a ``pipeline_distributions`` row (``status='published'``) carrying
-       ``external_id`` / ``external_url`` for observability + re-upload dedupe.
+    The resolve query is skipped when nothing is persistable (no successful upload
+    carried an ``external_id``), so a pure failure never touches the DB beyond the
+    stamp.
 
-    Both writes are skipped for a platform with no ``external_id``; the asset
-    merge is additionally skipped when the post has no media_asset row, and the
-    distribution upsert when no ``task_id`` resolves (logged). ``record_dispatched``
-    still records the attempt in those cases so the row stays re-dispatchable.
-
-    Without this the id/url were discarded — exactly why the 2026-06-15
-    grandfather re-upload left no handle to dedupe or clean up (incident #1596).
+    Without the handle capture the id/url were discarded — exactly why the
+    2026-06-15 grandfather re-upload left no handle to dedupe or clean up
+    (incident #1596).
     """
     ok = any(r.success for r in results)
     async with pool.acquire() as conn:
         async with conn.transaction():
             await record_dispatched(conn, post_id, medium, success=ok)
-            persistable = [r for r in results if r.success and r.external_id]
-            if not persistable:
+            if not any(r.success and r.external_id for r in results):
                 return
             row = await conn.fetchrow(_RESOLVE_ASSET_TASK_SQL, post_id)
             asset_id = row["asset_id"] if row else None
             task_id = row["task_id"] if row else None
-            for r in persistable:
-                if asset_id:
-                    await conn.execute(
-                        _MERGE_PLATFORM_VIDEO_ID_SQL,
-                        asset_id, json.dumps({r.platform: r.external_id}),
-                    )
-                if task_id:
-                    await conn.execute(
-                        _RECORD_DISTRIBUTION_SQL,
-                        task_id, r.platform, r.external_id, r.url, post_id,
-                    )
-                else:
-                    logger.warning(
-                        "[BACKFILL_VIDEOS] %s delivered post %s (external_id=%s) "
-                        "but no task_id resolved — skipping pipeline_distributions "
-                        "row", r.platform, post_id, r.external_id,
-                    )
+            await persist_platform_handles(
+                conn,
+                post_id=post_id,
+                asset_id=asset_id,
+                task_id=task_id,
+                results=results,
+            )
