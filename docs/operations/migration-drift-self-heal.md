@@ -127,11 +127,17 @@ checkout. `docker restart` keeps a container's existing mount, so the probe's
 restart is unaffected either way.
 
 **Note — normal (non-migration) deploys after the repoint:** the 10-min sync
-keeps the clone's _code_ at origin/main, but a running service only loads new
-code on its next restart. Migrations self-heal (the probe restarts the worker);
-other code changes load on the service's next natural/manual restart. Making the
-sync also restart services (continuous deploy) is a deliberate future step, not
-wired here.
+keeps the clone's _code_ at origin/main **and now bounces the bind-mount app
+containers** (`poindexter-worker` + `poindexter-pipeline-bot`) whenever the
+synced HEAD advances, so a merged Python change auto-deploys within ~10 min with
+no manual restart. `poindexter-prefect-worker` is deliberately left running —
+each flow runs in a fresh subprocess that re-imports `/app` per run, so new
+pipeline code lands on the next run without a bounce that would interrupt an
+in-flight post — and `poindexter-brain-daemon` is image-baked, so its code
+changes still need `docker compose build`. The migration-drift probe still owns
+the restart that APPLIES pending migrations. Run the sync with `-NoRestart` to
+restore the old sync-only behavior. Source of truth:
+`scripts/deploy-checkout-sync.ps1`.
 
 ## Verify
 

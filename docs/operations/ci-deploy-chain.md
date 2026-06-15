@@ -266,6 +266,14 @@ bind-mounted from the deploy clone, so a sync + restart is the deploy
 > clone before restarting containers, and verifies the deploy clone HEAD matches
 > `origin/main` before proceeding.
 
+**Routine Python merges now auto-deploy.** The 10-min `deploy-checkout-sync.ps1`
+scheduled task (above) bounces `poindexter-worker` + `poindexter-pipeline-bot`
+whenever it advances the deploy clone, so a merged code change reaches the
+running worker within ~10 min on its own. `deploy-worker.ps1` remains the tool
+for an _immediate_ deploy (skip the wait) and is still required for dependency /
+base-image changes (which need `docker compose build`) and for
+`poindexter-prefect-worker` / `poindexter-brain-daemon` bootstrap-level changes.
+
 **Deploy-drift canary (glad-labs-stack#942).** Because the worker / brain
 bind-mount the deploy clone, "merged on main" does not mean "running in prod"
 until you run the deploy above. The brain's `branch_drift_probe` closes that
