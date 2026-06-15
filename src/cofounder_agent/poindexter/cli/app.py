@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import click
 
@@ -66,6 +67,15 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 def main(ctx: click.Context, verbose: bool) -> None:
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+    # Stamp LOG_LEVEL into the environment NOW, before any lazy `from
+    # services.*` import runs inside a subcommand handler.  services/
+    # logger_config.py reads LOG_LEVEL at *module init time* (line ~48)
+    # and calls root.handlers.clear() + root.setLevel(), which would
+    # override the basicConfig(WARNING) below.  Setting the env var here
+    # ensures logger_config initialises at the right level whenever it
+    # first gets imported.  Respects any LOG_LEVEL already in the shell.
+    if "LOG_LEVEL" not in os.environ:
+        os.environ["LOG_LEVEL"] = "INFO" if verbose else "WARNING"
     if verbose:
         logging.getLogger().setLevel(logging.INFO)
 
