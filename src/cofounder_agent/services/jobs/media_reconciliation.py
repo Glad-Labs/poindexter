@@ -48,6 +48,17 @@ produce the same symptom (a media-wanting post with no asset):
    capped per cycle so a backlog doesn't pin the GPU. This is the
    original watchdog behaviour.
 
+## Approval-gate seeding (self-healing)
+
+Both passes route every stamped asset through ``_record_media_asset`` →
+``_seed_approval_gate``, which seeds a ``media_approvals`` row (idempotent
+via ``ON CONFLICT``, non-fatal) so the asset can't reach a public feed
+un-reviewed. This is the durable fix for the 2026-05-27→06-13 podcast-feed
+freeze: reconciliation stamped ``media_assets`` rows but the only seeder
+(``podcast_distribute``) is dormant behind ``podcast_pipeline_trigger_enabled``,
+so reconciliation-made podcasts never entered the approval queue and the
+gated feed silently excluded them (``feedback_approval_gate_all_media``).
+
 ## Config (``plugin.job.media_reconciliation``)
 
 - ``config.lookback_days`` (default 14) — REGEN-pass window: only
@@ -697,6 +708,50 @@ class MediaReconciliationJob:
             logger.warning(
                 "media_reconciliation: media_assets stamp failed for "
                 "post=%s type=%s: %s", post_id, asset_type, e,
+            )
+            # Stamp failed → the asset row may not exist; don't seed a gate
+            # for an asset we couldn't record.
+            return
+
+        # Self-healing approval gate (feedback_approval_gate_all_media):
+        # every reconciliation-stamped asset seeds its per-medium gate row
+        # inline, so the asset can't reach a public feed un-reviewed. THIS
+        # is the durable fix for the 2026-05-27→06-13 podcast-feed freeze —
+        # reconciliation used to stamp media_assets without ever seeding
+        # media_approvals (the only seeder, podcast_distribute, is dormant
+        # behind podcast_pipeline_trigger_enabled), so reconciliation-made
+        # podcasts never entered the approval queue and the gated feed
+        # silently excluded them.
+        await self._seed_approval_gate(pool, post_id, asset_type)
+
+    async def _seed_approval_gate(
+        self, pool: Any, post_id: str, asset_type: str,
+    ) -> None:
+        """Seed the per-medium approval gate for a freshly-stamped asset.
+
+        Idempotent + non-fatal. ``record_pending`` is
+        ``ON CONFLICT (post_id, medium) DO NOTHING`` so re-stamping never
+        clobbers a prior operator decision, and it runs its own
+        auto-approve tiers internally. A seed failure MUST NOT break
+        reconciliation — the asset is already stamped + on R2, the gate is
+        additive — so we log (a distinct message, so a seed failure isn't
+        mistaken for a stamp failure) and continue.
+
+        ``asset_type`` is the media_assets *type*. Reconciliation only
+        stamps ``podcast`` / ``video``, both of which are valid
+        media_approvals *media* verbatim (unlike Stage-2's
+        ``video_long`` → ``video`` remap in ``media_distribute``), so no
+        translation table is needed here.
+        """
+        try:
+            from services.media_approval_service import record_pending
+
+            await record_pending(pool, post_id, asset_type)
+        except Exception as e:  # noqa: BLE001 — gate seed is additive, never fatal
+            logger.warning(
+                "media_reconciliation: approval-gate seed failed for "
+                "post=%s medium=%s: %s — asset is stamped, gate is additive",
+                post_id, asset_type, e,
             )
 
     async def _regen_podcast(self, pool: Any, row: dict[str, Any]) -> bool:

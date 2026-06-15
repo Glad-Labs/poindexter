@@ -784,3 +784,91 @@ class TestMediaToGenerateFilter:
 
         # Legacy post → regen MUST fire.
         mock_regen.assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRecordMediaAssetSeedsApprovalGate:
+    """Pins the self-healing fix for the 2026-05-27→06-13 podcast-feed
+    freeze (``feedback_approval_gate_all_media``).
+
+    Root cause: reconciliation stamped ``media_assets`` rows but the only
+    seeder of ``media_approvals`` rows (``podcast_distribute``) is dormant
+    (``podcast_pipeline_trigger_enabled=false``), so reconciliation-made
+    podcasts never entered the approval queue → were excluded from the
+    gated feed → froze. Fix: every reconciliation-stamped asset seeds its
+    own approval gate inline at ``_record_media_asset``, independent of any
+    job's master switch.
+    """
+
+    async def test_stamp_seeds_pending_approval_for_podcast(self):
+        """A stamped podcast asset seeds a media_approvals row for
+        medium='podcast' via record_pending."""
+        pool, _conn = _make_pool([])
+        with patch(
+            "services.media_approval_service.record_pending",
+            new=AsyncMock(return_value="pending"),
+        ) as rp:
+            await MediaReconciliationJob()._record_media_asset(
+                pool,
+                post_id="post-1",
+                asset_type="podcast",
+                url="https://r2.test/podcast/v2/post-1.mp3",
+            )
+        rp.assert_awaited_once_with(pool, "post-1", "podcast")
+
+    async def test_stamp_seeds_pending_approval_for_video(self):
+        """A stamped video asset seeds medium='video' (media_assets type
+        'video' maps to the media_approvals 'video' medium verbatim)."""
+        pool, _conn = _make_pool([])
+        with patch(
+            "services.media_approval_service.record_pending",
+            new=AsyncMock(return_value="pending"),
+        ) as rp:
+            await MediaReconciliationJob()._record_media_asset(
+                pool,
+                post_id="post-2",
+                asset_type="video",
+                url="https://r2.test/video/post-2.mp4",
+            )
+        rp.assert_awaited_once_with(pool, "post-2", "video")
+
+    async def test_seed_failure_is_non_fatal(self):
+        """record_pending raising must NOT bubble out of
+        _record_media_asset — the asset is already stamped + on R2, the
+        gate seed is additive. (Fails against a naive seed with no
+        try/except.)"""
+        pool, conn = _make_pool([])
+        with patch(
+            "services.media_approval_service.record_pending",
+            new=AsyncMock(side_effect=RuntimeError("approvals DB down")),
+        ):
+            # Must not raise.
+            await MediaReconciliationJob()._record_media_asset(
+                pool,
+                post_id="post-3",
+                asset_type="podcast",
+                url="https://r2.test/podcast/v2/post-3.mp3",
+            )
+        # The stamp itself still ran (UPDATE-then-INSERT, execute → None).
+        assert conn.execute.await_count >= 1
+
+    async def test_no_seed_when_stamp_fails(self):
+        """If the media_assets stamp itself raises (e.g. pool exhausted),
+        record_pending must NOT be called — never seed a gate for an asset
+        we couldn't record. (Fails against an implementation missing the
+        early ``return`` in the stamp ``except``.)"""
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=RuntimeError("pool exhausted"))
+        with patch(
+            "services.media_approval_service.record_pending",
+            new=AsyncMock(),
+        ) as rp:
+            # Stamp fails but the method swallows it (non-fatal contract).
+            await MediaReconciliationJob()._record_media_asset(
+                pool,
+                post_id="post-4",
+                asset_type="podcast",
+                url="https://r2.test/podcast/v2/post-4.mp3",
+            )
+        rp.assert_not_awaited()

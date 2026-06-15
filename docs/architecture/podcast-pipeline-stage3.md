@@ -76,6 +76,16 @@ SAFETY NET — media_reconciliation
   (clear podcast_dispatched_at, capped attempts); keep drift alert. No inline regen.
 ```
 
+> **Interim self-healing seed (shipped 2026-06-14, ahead of §11).** Until the
+> §11 re-dispatch refactor lands, `media_reconciliation._record_media_asset`
+> seeds the per-medium `media_approvals` gate inline (via `_seed_approval_gate`
+> → `record_pending`, idempotent + non-fatal) for **every** stamped podcast /
+> video asset. This closes the freeze vector directly: the watchdog can no
+> longer stamp a `media_assets` row without also entering the asset into the
+> approval queue — regardless of whether `podcast_distribute` is dormant. It's
+> the durable fix for the 2026-05-27→06-13 Spotify/Apple freeze
+> (`feedback_approval_gate_all_media`).
+
 ## 4. Components
 
 ### New files
