@@ -274,6 +274,87 @@ curl -s http://localhost:8002/api/health | python -m json.tool
 
 ---
 
+## Procedure: DB-4 — Restore from the off-machine (Tier 2) restic repo
+
+**Scenario.** The machine is gone — drive failure, theft, ransomware — so the
+in-stack `~/.poindexter/backups/auto/` dumps went with it. You configured
+Tier 2 ([`backups.md`](./backups)), so the daily dumps live in an
+S3-compatible bucket as an encrypted restic repo. This restores from there.
+
+> **Hard dependency: the restic password.** Tier 2's password is stored
+> _encrypted in `app_settings`_ — which is gone in this scenario along with
+> `POINDEXTER_SECRET_KEY`. You restore from the **offline copy** the setup
+> wizard told you to save (password manager / fireproof safe). Without it the
+> repo is unrecoverable — restic encryption with a lost password is final. If
+> you don't have it, this procedure cannot help; skip to DB-2 (rebuild from
+> migrations + R2).
+
+### Step 1 — Install restic on the recovery machine
+
+```bash
+# Linux/macOS: package manager, or the static binary from
+# https://github.com/restic/restic/releases
+# Windows: `winget install restic.restic` or the release zip.
+restic version
+```
+
+### Step 2 — Point restic at the repo with your offline credentials
+
+You need four values: the repo URL (the `offsite_backup_repository` you chose —
+`s3:https://<endpoint>/<bucket>/<path>`), the **offline** restic password, and
+the S3 access key id + secret. On a fresh machine `app_settings` is gone, so
+these come from your offline copy / the bucket provider's console.
+
+```bash
+export RESTIC_REPOSITORY="s3:https://s3.us-west-002.backblazeb2.com/<bucket>/<path>"
+export RESTIC_PASSWORD="<the password you saved offline>"
+export AWS_ACCESS_KEY_ID="<s3 access key id>"
+export AWS_SECRET_ACCESS_KEY="<s3 secret access key>"
+```
+
+### Step 3 — Confirm the repo is reachable and list snapshots
+
+```bash
+restic snapshots
+# Expected: one or more snapshots tagged `poindexter`, newest last.
+# If this 403s, the key/password is wrong. If it hangs, check the endpoint.
+```
+
+### Step 4 — Restore the latest snapshot to a local directory
+
+```bash
+mkdir -p ./offsite-restore
+restic restore latest --target ./offsite-restore
+# The Tier 1 daily dump lands under ./offsite-restore/daily/poindexter_brain_*.dump
+ls -lht ./offsite-restore/daily/
+```
+
+### Step 5 — `pg_restore` the recovered dump
+
+Bring up an empty Postgres (HOST-1 Steps 1-5 if this is a fresh machine),
+then restore the recovered `.dump` exactly like DB-1 Step 5:
+
+```bash
+docker exec -i poindexter-postgres-local pg_restore \
+    -U poindexter -d poindexter_brain --no-owner --no-privileges \
+    < ./offsite-restore/daily/poindexter_brain_<TIMESTAMP>.dump
+```
+
+Then re-apply any newer migrations (DB-1 Step 6) and bring services up
+(DB-1 Step 7). Because the restored dump's `app_settings` still holds the
+_old_ encrypted secrets, you'll also need the original `POINDEXTER_SECRET_KEY`
+to decrypt them — if that's lost too, finish with CONFIG-2 (rotate + re-seed).
+
+### Verification
+
+```bash
+restic check                    # repo integrity (optional, slow for full)
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+  "SELECT COUNT(*) FROM posts; SELECT COUNT(*) FROM app_settings;"
+```
+
+---
+
 ## Procedure: HOST-1 — Rebuild the entire local stack on a new machine
 
 **Scenario.** Laptop died, fresh OS install, or you're moving to new hardware.
@@ -590,7 +671,7 @@ pythonw scripts/nvidia-smi-exporter.py
 
 - Postgres is backed up automatically in tiers (see [`backups.md`](./backups)): the `backup-hourly` / `backup-daily` containers (24 hourly + 7 daily dumps under `~/.poindexter/backups/auto/`) plus the worker's `DbBackupJob` (`scripts/db-backup-local.sh`, flat 14-day dumps). The brain's `backup_watcher` restarts a stalled tier before paging, and a nightly `restore_test_probe` proves a dump actually restores. If you don't see fresh dumps every morning, that automation is broken — fix it before the next incident, not during.
 - **`bootstrap.toml` should be in your password manager** as a secure note. If it dies, you're in CONFIG-1 + CONFIG-2 territory — minimum 1 hour of pain.
-- **Take periodic offsite backups** of `~/.poindexter/backups/`. Cloud sync (rclone → R2/S3) once a week is enough.
+- **Enable off-machine (Tier 2) backups** so a drive failure / theft / ransomware event doesn't take your only copy with it. Run `poindexter backup setup` to ship the daily dumps to an S3-compatible bucket via restic (see [`backups.md`](./backups)); recover with **DB-4** above. Save the restic password offline when the wizard prints it.
 - **`POINDEXTER_SECRET_KEY` is the doomsday key.** Print it on paper, put it in a fireproof safe. If you lose it AND the live `app_settings` table, you cannot recover the encrypted secrets — only re-issue them.
 
 ---

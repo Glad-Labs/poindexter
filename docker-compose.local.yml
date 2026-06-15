@@ -1841,6 +1841,48 @@ services:
       start_period: 30m
 
   # ===========================================
+  # Tier 2 — off-machine backup (poindexter#386). Same image as the Tier 1
+  # backup services (restic baked in), but runs scripts/backup-offsite/run.sh:
+  # restic backup of the daily dump dir → an S3-compatible bucket, weekly
+  # restic check, append-only-safe (no prune by default). OPT-IN: idles until
+  # `poindexter backup setup` writes the repo + creds. Secrets arrive via the
+  # env_file start-stack.sh materializes from encrypted app_settings; the
+  # ${VAR:-} defaults (NOT :?) keep the service dormant — not erroring — on a
+  # fresh stack. Staleness/auto-retry is owned by the brain offsite_backup_watch
+  # probe, so there is intentionally no healthcheck here.
+  backup-offsite:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.backup
+    image: poindexter-backup:latest
+    container_name: poindexter-backup-offsite
+    restart: unless-stopped
+    entrypoint: ["/app/run-offsite.sh"]
+    environment:
+      PG_HOST: postgres-local
+      PG_PORT: "5432"
+      PG_USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      PG_DATABASE: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      PGPASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+      TZ: ${TZ:-UTC}
+    env_file:
+      # Auto-managed by scripts/start-stack.sh from encrypted app_settings
+      # (offsite_backup_restic_password / _s3_access_key_id /
+      # _s3_secret_access_key). Holds RESTIC_PASSWORD + AWS_ACCESS_KEY_ID +
+      # AWS_SECRET_ACCESS_KEY. Git-ignored. Empty assignments when unconfigured
+      # ⇒ the runner idles loudly. required:false so a bare `docker compose up`
+      # before start-stack.sh has generated the file doesn't error — the runner
+      # simply idles until the creds exist.
+      - path: .poindexter-backup-offsite.env
+        required: false
+    volumes:
+      # Read-only: the offsite tier only READS the Tier 1 dumps and ships them.
+      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups:ro
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
   # LiveKit Server — multi-party WebRTC for the conference-call voice agent.
   # MIT-licensed. One container hosts every voice room.
   # ``--dev`` mode: in-memory room store, no TLS (Tailscale Funnel terminates

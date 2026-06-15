@@ -5,8 +5,9 @@
 # (NOT a docker named volume — those die with `docker volume prune` and
 # Docker Desktop reinstalls, which would defeat the purpose).
 #
-# Tier 2 (off-machine: USB / S3 / B2 via restic) lives elsewhere — this
-# service is the always-on first line of defense.
+# Tier 2 (off-machine via restic) reuses THIS image: the backup-offsite
+# service runs scripts/backup-offsite/run.sh with the restic binary added
+# below. This image is the always-on first line of defense for both tiers.
 #
 # Image is intentionally tiny: alpine + postgresql-client + bash + curl.
 # No python, no app code — keeps the image surface small and the failure
@@ -21,11 +22,17 @@ RUN apk add --no-cache \
     curl \
     coreutils \
     findutils \
+    restic \
     tzdata
 
 WORKDIR /app
 COPY scripts/backup/run.sh /app/run.sh
 RUN chmod +x /app/run.sh
+# Tier 2 entrypoint — selected via `entrypoint:` override on the
+# backup-offsite compose service. COPY before the chown below so the
+# backup user owns it.
+COPY scripts/backup-offsite/run.sh /app/run-offsite.sh
+RUN chmod +x /app/run-offsite.sh
 
 # Default to hourly cadence; the script honours BACKUP_TIER (hourly|daily)
 # and reads further config from app_settings via psql.

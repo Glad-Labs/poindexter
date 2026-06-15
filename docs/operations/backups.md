@@ -48,17 +48,123 @@ docker exec -i poindexter-postgres-local pg_restore \
 
 ## Tier 2 — off-machine (optional, recommended)
 
-Same-drive backups don't survive drive failure. For users who care
-about hardware-loss durability, two patterns work today:
+Same-drive backups don't survive drive failure, theft, or ransomware.
+Tier 2 ships Tier 1's daily dumps **off-machine** to any S3-compatible
+bucket (Backblaze B2, AWS S3, Cloudflare R2, MinIO) via
+[restic](https://restic.net) — encrypted, deduplicated, retention-managed.
+At our scale it runs ~$1/mo ($0.005/GB/mo on B2).
 
-- **USB / external drive via restic**: Matt's setup. Encrypted,
-  deduped, retention-managed. See `~/.poindexter/scripts/dr-backup/`
-  in the operator overlay (private). Public docs for a
-  `poindexter setup --backup-target` interactive wizard are tracked
-  in [poindexter#386](https://github.com/Glad-Labs/poindexter/issues/386).
-- **Cloud (S3 / B2 / R2) via restic**: ~$1/mo at our typical scale
-  ($0.005/GB/mo on Backblaze B2). Same `restic` engine, different
-  `repo` arg. Ship gate is the wizard issue above.
+### Setup wizard
+
+```bash
+poindexter backup setup
+```
+
+The wizard is **staged so nothing is saved until a real backup succeeds**:
+
+1. **Append-only key check** (advisory) — probes whether the S3 key can
+   `DeleteObject`. An append-only key (one that _cannot_ delete) is
+   strongly recommended: a ransomed host can then write new snapshots but
+   cannot destroy backup history. If the key is delete-capable the wizard
+   warns and asks for explicit confirmation.
+2. **`restic init`** — creates the encrypted repo.
+3. **First backup (acceptance gate)** — backs up the latest daily dump.
+   If this fails, _nothing is persisted_ — you fix the problem and re-run.
+4. **Encrypted persist** — writes the repo URL (plaintext) and the restic
+   password + S3 key pair (encrypted via pgcrypto) to `app_settings`, then
+   prints the restic password once for you to save offline.
+
+> ### ⚠️ Save the restic password offline — now
+>
+> The wizard generates a high-entropy restic repository password and stores
+> it encrypted in `app_settings`. **In a drive-failure / theft / ransomware
+> event the database and this machine are gone**, so a copy that lives only
+> in the DB is no copy at all. Write the printed password to your password
+> manager / a fireproof safe. Without it the remote repo is **unrecoverable**
+> — restic encryption with a lost password is final.
+
+### The `backup-offsite` runner
+
+`poindexter backup setup` configures an in-stack `backup-offsite` compose
+service (alpine + restic, reusing `scripts/Dockerfile.backup`). It reads
+`~/.poindexter/backups/auto/daily/` **read-only**, and on its cron:
+
+- runs `restic backup` of the latest daily dump, stamping an `audit_log`
+  heartbeat (`offsite_backup_succeeded`) on success;
+- once a week runs `restic check --read-data-subset=<pct>%` against the
+  remote to catch **bit-rot**, stamping `offsite_backup_verified`.
+
+`start-stack.sh` decrypts the three secrets into a git-ignored
+`.poindexter-backup-offsite.env` on every `up`/restart, so the runner picks
+up credentials without any `.env` you maintain by hand.
+
+### Append-only posture (ransomware resilience)
+
+The runner is **backup-only** — it never issues `restic forget`/`prune`
+(which delete objects), so a write-only S3 key (no `deleteFiles`) is
+sufficient and is the recommended configuration. Manage retention on the
+bucket side instead: a B2 lifecycle rule or Object Lock / WORM. If you
+genuinely need restic-side pruning, the `offsite_backup_prune_enabled`
+escape hatch (default `false`) re-enables it — but then your key needs
+delete and you lose the ransomware guarantee.
+
+### Operator commands
+
+```bash
+poindexter backup status      # repo + last-backup / last-verify ages
+poindexter backup run         # trigger an offsite backup now
+poindexter backup verify      # restic check --read-data-subset now
+poindexter backup snapshots   # list remote snapshots
+```
+
+### Settings (`app_settings`)
+
+All Tier 2 tunables are DB-backed (seeded every boot, so they reach
+existing deployments — only the three secrets are written by the wizard):
+
+| Setting                                          | Default                | Notes                                                         |
+| ------------------------------------------------ | ---------------------- | ------------------------------------------------------------- |
+| `offsite_backup_enabled`                         | `true`                 | Master switch for the runner                                  |
+| `offsite_backup_interval`                        | `24h`                  | Backup cadence (`<N>{s\|m\|h\|d}`)                            |
+| `offsite_backup_source_tier`                     | `daily`                | Which Tier 1 dir to ship (`daily` / `hourly`)                 |
+| `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                       |
+| `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)    |
+| `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                |
+| `offsite_backup_keep_weekly`                     | `4`                    |                                                               |
+| `offsite_backup_keep_monthly`                    | `6`                    |                                                               |
+| `offsite_backup_prune_enabled`                   | `false`                | Escape hatch — re-enables delete-bearing `forget`/`prune`     |
+| `offsite_backup_verify_enabled`                  | `true`                 | Weekly `restic check`                                         |
+| `offsite_backup_verify_interval_hours`           | `168`                  | Verify cadence (168h = weekly)                                |
+| `offsite_backup_verify_read_data_subset_percent` | `5`                    | Fraction of pack data re-read each verify (bit-rot scan)      |
+| `offsite_backup_max_age_hours`                   | `26`                   | Staleness threshold for the brain watch (24h cadence + slack) |
+| `offsite_backup_watch_enabled`                   | `true`                 | Brain auto-retry watch master switch                          |
+| `offsite_backup_watch_max_retries`               | `2`                    | Cumulative restarts across cycles before escalation           |
+| `offsite_backup_watch_retry_delay_seconds`       | `120`                  | Wait between `docker restart` and the post-restart re-read    |
+
+The three secrets — `offsite_backup_restic_password`,
+`offsite_backup_s3_access_key_id`, `offsite_backup_s3_secret_access_key` —
+are `is_secret=true` (pgcrypto-encrypted) and are written by the wizard, not
+seeded.
+
+### Brain offsite-backup watch (auto-retry before paging)
+
+`brain/offsite_backup_watch.py` (poindexter#386) is the self-heal layer for
+the offsite tier — a sibling of `backup_watcher` with one difference: its
+freshness source is the `audit_log` heartbeat (`offsite_backup_succeeded`), a
+**creds-free** DB read, so the brain never touches the restic password. Each
+cycle it reads the heartbeat age; if it's past `offsite_backup_max_age_hours`
+it `docker restart`s `poindexter-backup-offsite`, waits, and re-reads. After
+`offsite_backup_watch_max_retries` cumulative failures it emits a firing
+`offsite_backup_stale` alert (`critical`) and stops kicking. Unlike
+`backup_watcher` — which leans on the runner's own failure alert plus the
+Tier 1 healthcheck — the offsite tier has no other alert source for a dead
+runner, so this watch emits its own firing alert on escalate.
+
+### Restore from the remote
+
+When the machine is gone, restore from the remote repo with the offline
+restic password — see the **DB-4** runbook in
+[`disaster-recovery.md`](./disaster-recovery).
 
 ## Failure handling
 
@@ -173,8 +279,11 @@ read-only `/host-backups` mount already wired for the backup-watcher.
 
 ## Future
 
-- [poindexter#386](https://github.com/Glad-Labs/poindexter/issues/386):
-  `poindexter setup --backup-target` interactive wizard for Tier 2.
 - [poindexter#387](https://github.com/Glad-Labs/poindexter/issues/387):
   brain daemon SMART monitoring — surface drive-failing-soon warnings
   before drives actually die.
+- USB / external-drive Tier 2 backend (deferred from #386 — the
+  Windows drive-letter→container mount needs its own design pass).
+- A Grafana panel for the offsite tier (the `audit_log`
+  `offsite_backup_succeeded` / `offsite_backup_verified` events make it
+  queryable today).

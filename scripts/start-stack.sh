@@ -96,6 +96,29 @@ if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
     chmod 600 "$_RUNTIME_ENV" 2>/dev/null || true
 fi
 
+# Offsite-backup secrets (poindexter#386) — decrypt the three encrypted
+# app_settings rows into .poindexter-backup-offsite.env so the backup-offsite
+# service's env_file picks up RESTIC_PASSWORD + AWS_* on every up/restart.
+# Same pattern + same fail-soft posture as the Grafana token above: the helper
+# always emits the full env body (empty assignments when unconfigured), so the
+# runner idles loud-inert on an opt-out tier rather than the stack failing.
+# The file is git-ignored and only consumed when `poindexter backup setup` has
+# populated the secrets; the compose env_file is required:false so a missing
+# file is non-fatal too.
+if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_backup_offsite_secrets.py" ]; then
+    _OFFSITE_ENV="$PROJECT_DIR/.poindexter-backup-offsite.env"
+    # stdout (the env body) → the file; stderr (WARNINGs) → operator terminal.
+    if ! "$PYTHON_BIN" "$SCRIPT_DIR/_backup_offsite_secrets.py" > "$_OFFSITE_ENV"; then
+        # The helper is designed never to fail; this is belt-and-suspenders so
+        # a crash still leaves a valid (empty) env_file rather than a truncated one.
+        printf '%s\n' \
+            "# Auto-managed — generation failed, see start-stack.sh output." \
+            "RESTIC_PASSWORD=" "AWS_ACCESS_KEY_ID=" "AWS_SECRET_ACCESS_KEY=" \
+            > "$_OFFSITE_ENV"
+    fi
+    chmod 600 "$_OFFSITE_ENV" 2>/dev/null || true
+fi
+
 # Default docker compose action
 ACTION="${1:-up}"
 shift 2>/dev/null || true

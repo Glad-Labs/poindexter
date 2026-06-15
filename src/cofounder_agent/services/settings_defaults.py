@@ -74,6 +74,29 @@ DEFAULTS: dict[str, str] = {
     'site_name': '',
     'site_url': '',
 
+    # ----- Off-machine backup (Tier 2, #386) -----
+    # Non-secret tunables for the backup-offsite restic loop + the brain
+    # offsite_backup_watch probe. Seeded every boot (reaches existing
+    # deployments, not just fresh installs). The 3 secrets
+    # (offsite_backup_restic_password / _s3_access_key_id /
+    # _s3_secret_access_key) are NOT here — the wizard writes them encrypted.
+    'offsite_backup_enabled': 'true',
+    'offsite_backup_interval': '24h',
+    'offsite_backup_keep_daily': '7',
+    'offsite_backup_keep_monthly': '6',
+    'offsite_backup_keep_weekly': '4',
+    'offsite_backup_max_age_hours': '26',
+    'offsite_backup_prune_enabled': 'false',
+    'offsite_backup_repository': '',
+    'offsite_backup_restic_image': 'restic/restic:0.16.4',
+    'offsite_backup_source_tier': 'daily',
+    'offsite_backup_verify_enabled': 'true',
+    'offsite_backup_verify_interval_hours': '168',
+    'offsite_backup_verify_read_data_subset_percent': '5',
+    'offsite_backup_watch_enabled': 'true',
+    'offsite_backup_watch_max_retries': '2',
+    'offsite_backup_watch_retry_delay_seconds': '120',
+
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',

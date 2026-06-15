@@ -235,6 +235,19 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_RESTORE_TEST_PROBE = False
 
 try:
+    # poindexter#386 — offsite-backup auto-retry watch. Reads an audit_log
+    # heartbeat (creds-free) and `docker restart`s the wedged backup-offsite
+    # runner before paging; emits offsite_backup_stale on escalate.
+    from offsite_backup_watch import run_offsite_backup_watch_probe
+    _HAS_OFFSITE_BACKUP_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.offsite_backup_watch import run_offsite_backup_watch_probe
+        _HAS_OFFSITE_BACKUP_WATCH = True
+    except ImportError:
+        _HAS_OFFSITE_BACKUP_WATCH = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -381,6 +394,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "SMART drive-health monitoring offline — failing drives detected only by total loss"),
     ("_HAS_RESTORE_TEST_PROBE", "brain/restore_test_probe.py",
      "Backup RESTORE verification offline — a corrupt dump goes unnoticed (#441)"),
+    ("_HAS_OFFSITE_BACKUP_WATCH", "brain/offsite_backup_watch.py",
+     "Off-machine backup auto-retry offline — a wedged offsite runner pages late, no self-heal (#386)"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_CORSAIR_FEED_PROBE", "brain/corsair_feed_probe.py",
@@ -2488,6 +2503,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] restore_test probe failed: %s", e)
+
+    # Offsite-backup watch (#386). Reads the audit_log heartbeat each cycle;
+    # on staleness `docker restart`s the backup-offsite runner, and after
+    # max_retries emits a firing offsite_backup_stale alert. Creds-free —
+    # never touches the restic password. Disabled via
+    # app_settings.offsite_backup_watch_enabled=false.
+    if _HAS_OFFSITE_BACKUP_WATCH:
+        try:
+            ow_summary = await run_offsite_backup_watch_probe(pool)
+            probe_results["offsite_backup_watch"] = {
+                "ok": bool(ow_summary.get("ok", False)),
+                "detail": ow_summary.get("detail", ""),
+                "summary": ow_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] offsite_backup_watch probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

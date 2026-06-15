@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -43,3 +44,13 @@ def test_root_callback_loads_secret_key_before_dispatch():
         runner.invoke(main, ["settings"])
 
     assert calls["n"] >= 1, "root callback must call ensure_secret_key()"
+
+
+@pytest.mark.unit
+def test_backup_group_registered():
+    """The Tier 2 offsite-backup group + its core subcommands are wired in."""
+    assert "backup" in main.commands
+    backup = main.commands["backup"]
+    assert isinstance(backup, click.Group)
+    for sub in ("setup", "status", "run", "verify", "snapshots"):
+        assert sub in backup.commands, f"missing `backup {sub}`"
