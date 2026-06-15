@@ -1478,10 +1478,12 @@ class TestMediaSpawnRespectsPolicy:
     Historically ``publish_post_from_task`` sections 11b/c/d spawned
     podcast/video/short generation at publish time (gated on the post's
     ``media_to_generate`` policy — finding #196). That responsibility now
-    belongs to the gate driver (services/jobs/drive_media_gates.py), which
-    generates each medium PRE-publish per approval gate. These tests pin
-    the new contract: publish resolves the media policy ONTO the post (so
-    the gate sequence + driver know what to generate) but spawns NO media.
+    belongs to the Stage-2 ``media_pipeline`` lane — dispatched once a task
+    clears its approval gate by ``services/jobs/dispatch_media_pipeline.py``,
+    with ``services/jobs/media_reconciliation.py`` as the backfill watchdog.
+    These tests pin the new contract: publish resolves the media policy ONTO
+    the post (so the Stage-2 dispatcher knows what to generate) but spawns NO
+    media.
     """
 
     @pytest.mark.asyncio

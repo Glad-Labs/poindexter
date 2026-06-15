@@ -1865,10 +1865,13 @@ async def fire_post_distribution_hooks(
         logger.warning("[SEO] Failed in re-trigger (non-fatal): %s", e)
 
     # 4. Per-medium generation — REMOVED (Glad-Labs/poindexter#24).
-    # Media generation is now the gate driver's job, fired PRE-publish per
-    # medium gate (services/jobs/drive_media_gates.py), so a post's media
-    # already exists by the time its gates clear and this re-fire runs.
-    # This path now only re-fires distribution (social/devto/static/RSS).
+    # Media is no longer generated on the publish path. It's produced by the
+    # Stage-2 `media_pipeline` lane: dispatched once a task clears its approval
+    # gate (approved/published) by services/jobs/dispatch_media_pipeline.py,
+    # rendered by the media.* atoms, and distributed by
+    # services/jobs/media_distribute.py — with services/jobs/media_reconciliation.py
+    # as the DB/R2 drift watchdog that backfills anything that slipped through.
+    # This re-trigger path now only re-fires distribution (social/devto/static/RSS).
 
     logger.info(
         "[publish_service] Re-fired %d distribution hook(s) for post %s: %s",
