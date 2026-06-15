@@ -124,4 +124,64 @@ except ImportError:  # pragma: no cover — try legacy v3 path
         langfuse_context = _NoopLangfuseContext()  # type: ignore[assignment]
 
 
-__all__ = ["LANGFUSE_AVAILABLE", "langfuse_context", "observe"]
+def _install_cycle_safe_serializer_patch() -> None:
+    """Monkey-patch ``EventSerializer.default`` to add cycle detection on the
+    dict / list / ``__slots__`` branches.
+
+    Langfuse's serializer already guards the ``__dict__`` branch with
+    ``self.seen``, but the other three branches recurse without checking
+    for already-visited objects.  Any cyclic object graph that routes
+    through those branches causes infinite recursion — the ``RecursionError``
+    is swallowed in a GC finalizer, and by then the asyncio event loop has
+    been GIL-starved long enough for the brain's health-check timeout to fire.
+
+    Idempotent: the ``_poindexter_cycle_safe`` sentinel on the wrapper
+    prevents double-wrapping if the function is called more than once.
+
+    Reference: https://github.com/langfuse/langfuse-python/issues/1655
+    """
+    try:
+        from langfuse._utils.serializer import EventSerializer  # type: ignore[import-not-found]
+    except ImportError:
+        return  # not installed, or serializer moved / fixed in a future release
+
+    if getattr(EventSerializer.default, "_poindexter_cycle_safe", False):
+        return  # already patched — idempotent
+
+    _original_default = EventSerializer.default
+
+    def _cycle_safe_default(self: Any, obj: Any) -> Any:
+        # Only intercept the three un-guarded branches; pass everything else
+        # through to the original (including __dict__ objects, which already
+        # have self.seen cycle detection in the upstream code).
+        is_slots_only = hasattr(obj, "__slots__") and not hasattr(obj, "__dict__")
+        if not isinstance(obj, (dict, list)) and not is_slots_only:
+            return _original_default(self, obj)
+
+        # Lazily create the per-instance seen-set so we don't pay allocation
+        # cost for EventSerializer instances in the normal non-cyclic path.
+        if not hasattr(self, "_seen_poindexter"):
+            self._seen_poindexter = set()  # type: ignore[misc]
+
+        obj_id = id(obj)
+        if obj_id in self._seen_poindexter:
+            return f"<cycle:{type(obj).__name__}>"
+
+        self._seen_poindexter.add(obj_id)
+        try:
+            return _original_default(self, obj)
+        finally:
+            # Discard on exit so siblings in the same container don't
+            # falsely appear as cycles (only ancestors do).
+            self._seen_poindexter.discard(obj_id)
+
+    _cycle_safe_default._poindexter_cycle_safe = True  # type: ignore[attr-defined]
+    EventSerializer.default = _cycle_safe_default  # type: ignore[method-assign]
+
+
+# Install at import time — every module that does
+# ``from services.langfuse_shim import …`` gets the patch for free.
+_install_cycle_safe_serializer_patch()
+
+
+__all__ = ["LANGFUSE_AVAILABLE", "langfuse_context", "observe", "_install_cycle_safe_serializer_patch"]
