@@ -260,7 +260,7 @@ hypothesis = "^6.0"  # property-based tests for the deterministic quality scorer
 # Code Quality
 black = "^26.3.1"
 isort = "^5.0"
-pylint = "^2.0"
+pylint = ">=2,<5"
 ruff = "^0.15.0"
 flake8 = "^6.0"
 mypy = ">=1,<3"
