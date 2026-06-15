@@ -213,3 +213,19 @@ PR rather than an unattended autonomous pass. It must land as one unit:
    podcast-CTA'd audio).
 7. **`recorder` + `cli/posts.py` + reconciliation read-side** — drop the `video_long`
    strings (closes #573).
+
+> **Video-feed approval gate + grandfather (shipped 2026-06-14, ahead of the
+> full §11 cutover).** `routes/video_routes.py::video_feed` now mirrors the
+> podcast feed — sourced from `media_assets` and gated on
+> `media_approvals(medium='video', status='approved')` plus the
+> `media_to_generate` niche-policy seam — so un-reviewed video never reaches
+> the public RSS feed (`feedback_approval_gate_all_media`). To avoid the
+> footgun of freezing the already-live videos when the gate flips, a one-shot
+> migration (`*_grandfather_video_media_approvals_for_already_live_videos.py`)
+> inserts `status='approved'` rows (`decided_by='auto:grandfather'`) for every
+> published post that already has a `video`/`video_long` asset but no `video`
+> approval row. It's INSERT-where-absent (`NOT EXISTS` + `ON CONFLICT`), so
+> genuine `pending`/`rejected` decisions are untouched and freshly-generated
+> un-reviewed video correctly stays off the feed until approved. This gates the
+> read-side surface independently of the §11 `video_long`→`video` rename +
+> distributor re-dispatch cutover above.

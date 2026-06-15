@@ -138,18 +138,20 @@ class TestVideoFeed:
             assert "Test Video" in resp.text
 
     @patch("utils.route_utils.get_services")
-    def test_feed_with_episodes(self, mock_gs, tmp_path):
-        # Create video file
-        (tmp_path / "post-1.mp4").write_bytes(b"\x00" * 5000)
-
+    def test_feed_renders_approved_episodes(self, mock_gs):
+        """The feed renders the rows the (gated) query returns, sourced from
+        media_assets like the podcast feed — enclosure uses the asset row's
+        R2 url, length from file_size_bytes."""
         mock_conn = AsyncMock()
         mock_conn.fetch.return_value = [
             {
-                "id": "post-1",
+                "post_id": "post-1",
                 "title": "Test Video",
                 "slug": "test-video",
                 "excerpt": "A test video",
                 "published_at": datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc),
+                "url": "https://pub-test-bucket.r2.dev/video/post-1.mp4",
+                "file_size_bytes": 5000,
             }
         ]
 
@@ -163,12 +165,69 @@ class TestVideoFeed:
         mock_db.cloud_pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
-        with patch("routes.video_routes.VIDEO_DIR", tmp_path):
-            resp = client.get("/api/video/feed.xml")
-            assert resp.status_code == 200
-            assert "<item>" in resp.text
-            assert "Test Video" in resp.text
-            assert "video/mp4" in resp.text
+        resp = client.get("/api/video/feed.xml")
+        assert resp.status_code == 200
+        assert "<item>" in resp.text
+        assert "Test Video" in resp.text
+        assert "video/mp4" in resp.text
+        # Enclosure uses the asset-row R2 url (not a disk path).
+        assert "https://pub-test-bucket.r2.dev/video/post-1.mp4" in resp.text
+
+    @patch("utils.route_utils.get_services")
+    def test_feed_query_requires_approved_media_approval(self, mock_gs):
+        """The video feed MUST gate on an approved media_approvals row
+        (medium='video') joined to a video media_assets row — mirroring the
+        podcast feed and the operator requirement that ALL media is gated
+        before any public surface (``feedback_approval_gate_all_media``).
+
+        A mock can't exercise a real JOIN, so we pin the gate in the query
+        text — the same SQL-shape contract the podcast/reconciliation tests
+        use.
+        """
+        captured: list[str] = []
+
+        async def _fetch(sql, *_a, **_kw):
+            captured.append(sql)
+            return []
+
+        mock_conn = AsyncMock()
+        mock_conn.fetch = AsyncMock(side_effect=_fetch)
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.acquire.return_value = ctx
+        mock_db = MagicMock()
+        mock_db.cloud_pool = mock_pool
+        mock_gs.return_value.get_database.return_value = mock_db
+
+        resp = client.get("/api/video/feed.xml")
+        assert resp.status_code == 200
+        sql = " ".join(captured)
+        assert "media_approvals" in sql, "video feed must JOIN media_approvals"
+        assert "'approved'" in sql, "video feed must require status='approved'"
+        assert "'video'" in sql, "video feed must gate on medium='video'"
+        assert "media_assets" in sql, "video feed must source from media_assets"
+        # Mirror the podcast feed's niche-policy seam (feedback_filter_on_seams_not_slugs).
+        assert "media_to_generate" in sql
+
+    @patch("utils.route_utils.get_services")
+    def test_empty_feed_when_nothing_approved(self, mock_gs):
+        """No approved rows → query returns [] → feed renders no items."""
+        mock_conn = AsyncMock()
+        mock_conn.fetch.return_value = []
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.acquire.return_value = ctx
+        mock_db = MagicMock()
+        mock_db.cloud_pool = mock_pool
+        mock_gs.return_value.get_database.return_value = mock_db
+
+        resp = client.get("/api/video/feed.xml")
+        assert resp.status_code == 200
+        assert "<item>" not in resp.text
 
 
 # ---------------------------------------------------------------------------

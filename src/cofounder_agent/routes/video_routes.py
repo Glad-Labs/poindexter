@@ -55,45 +55,83 @@ def _rfc2822(dt: datetime) -> str:
 async def video_feed(
     site_config: Any = Depends(get_site_config_dependency),
 ):
-    """Video RSS feed — lists all generated video episodes."""
+    """Video RSS feed — long-form video episodes that cleared the gate.
+
+    Mirrors the podcast feed (#689): sourced from ``media_assets`` (the
+    canonical file registry), NOT a local-disk scan, so atom-produced
+    (task-keyed) episodes surface the same as legacy post-keyed ones. Two
+    stacked gates keep un-reviewed video off the public surface:
+
+    1. ``'video'/'video_long' = ANY(media_to_generate)`` — the niche-policy
+       seam (``feedback_filter_on_seams_not_slugs``). dev_diary's policy is
+       ``{}``, excluding those posts even if a stray asset exists.
+    2. ``media_approvals.status='approved'`` (medium='video') — the
+       operator-approval gate (``feedback_human_approval`` /
+       ``feedback_approval_gate_all_media``). Pending/rejected video never
+       reaches the feed; the fix for a missing episode is to approve the row
+       (``poindexter media approve <id> video``), not to strip the gate.
+
+    ``media_approvals`` uses ``video`` as the long-form medium; the matching
+    ``media_assets`` *types* are ``video`` (legacy) and ``video_long``
+    (Stage-2) — see ``media_distribute._TYPE_TO_MEDIUM``. Short-form
+    (``video_short``) is dispatched to YouTube Shorts, not this RSS feed.
+    ``DISTINCT ON (p.id)`` collapses multiple video assets per post to the
+    newest.
+    """
     from utils.route_utils import get_services
 
     db = get_services().get_database()
-    episodes_on_disk = {}
-    if VIDEO_DIR.exists():
-        for mp4 in VIDEO_DIR.glob("*.mp4"):
-            stat = mp4.stat()
-            episodes_on_disk[mp4.stem] = {
-                "file_size_bytes": stat.st_size,
-                "created_at": stat.st_ctime,
-            }
-
-    if not episodes_on_disk:
-        _vname = site_config.get("video_feed_name", "Video")
-        return Response(
-            content=f'<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>{_vname}</title></channel></rss>',
-            media_type="application/rss+xml; charset=utf-8",
-        )
-
-    # Fetch post metadata
-    post_ids = list(episodes_on_disk.keys())
-    posts_meta = []
     pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+
+    episodes: list[dict] = []
     if pool:
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT id::text, title, slug, excerpt, published_at
-                    FROM posts
-                    WHERE id::text = ANY($1) AND status = 'published'
-                    ORDER BY published_at DESC
+                    SELECT DISTINCT ON (p.id)
+                           p.id::text AS post_id, p.title, p.slug, p.excerpt,
+                           p.published_at, mas.url, mas.file_size_bytes
+                    FROM posts p
+                    JOIN media_assets mas
+                      ON mas.post_id = p.id
+                     AND mas.type IN ('video', 'video_long')
+                    JOIN media_approvals ma
+                      ON ma.post_id = p.id
+                     AND ma.medium = 'video'
+                     AND ma.status = 'approved'
+                    WHERE p.status = 'published'
+                      AND ('video' = ANY(media_to_generate)
+                           OR 'video_long' = ANY(media_to_generate))
+                    ORDER BY p.id, mas.created_at DESC NULLS LAST
                     """,
-                    post_ids,
                 )
-                posts_meta = [dict(r) for r in rows]
+                for r in rows:
+                    episodes.append({
+                        "post_id": r["post_id"],
+                        "title": r["title"] or "Untitled",
+                        "slug": r["slug"] or r["post_id"],
+                        "excerpt": r["excerpt"] or "",
+                        "published_at": r["published_at"],
+                        "url": r["url"] or "",
+                        "file_size_bytes": r["file_size_bytes"] or 0,
+                    })
         except Exception as e:
-            logger.warning("[VIDEO] Failed to fetch post metadata: %s", e)
+            logger.warning("[VIDEO] Failed to load feed episodes: %s", e)
+
+    # DISTINCT ON forced p.id ordering; present newest-first by publish date.
+    episodes.sort(
+        key=lambda ep: ep.get("published_at")
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    if not episodes:
+        _vname = site_config.get("video_feed_name", "Video")
+        return Response(
+            content=f'<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>{_vname}</title></channel></rss>',
+            media_type="application/rss+xml; charset=utf-8",
+        )
 
     # Build RSS
     rss = Element("rss")
@@ -118,20 +156,21 @@ async def video_feed(
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
-    for post in posts_meta:
-        pid = post["id"]
-        disk_info = episodes_on_disk.get(pid)
-        if not disk_info:
-            continue
+    # Hoisted lookups (constant per feed render). _r2_url raises 503 when
+    # storage_public_url is unset — but only reached once we have episodes
+    # (an empty feed never 503s).
+    _domain = site_config.get("site_domain", "video")
+    _r2 = _r2_url(site_config)
 
+    for ep in episodes:
+        pid = ep["post_id"]
         item = SubElement(channel, "item")
-        SubElement(item, "title").text = post.get("title", "Untitled")
-        SubElement(item, "link").text = f"{_su}/posts/{post.get('slug', pid)}"
-        SubElement(item, "description").text = post.get("excerpt", "")
-        _domain = site_config.get("site_domain", "video")
+        SubElement(item, "title").text = ep["title"]
+        SubElement(item, "link").text = f"{_su}/posts/{ep['slug']}"
+        SubElement(item, "description").text = ep["excerpt"]
         SubElement(item, "guid").text = f"{_domain}-video-{pid}"
 
-        pub_date = post.get("published_at")
+        pub_date = ep.get("published_at")
         if pub_date:
             if isinstance(pub_date, str):
                 pub_date = datetime.fromisoformat(pub_date)
@@ -139,9 +178,11 @@ async def video_feed(
                 pub_date = pub_date.replace(tzinfo=timezone.utc)
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
+        # Prefer the media_assets R2 url (#689 source of truth); fall back to
+        # the deterministic CDN path for rows without a stamped url.
         enclosure = SubElement(item, "enclosure")
-        enclosure.set("url", f"{_r2_url(site_config)}/video/{pid}.mp4")
-        enclosure.set("length", str(disk_info.get("file_size_bytes", 0)))
+        enclosure.set("url", ep["url"] or f"{_r2}/video/{pid}.mp4")
+        enclosure.set("length", str(ep["file_size_bytes"]))
         enclosure.set("type", "video/mp4")
 
     xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(rss, encoding="unicode")
