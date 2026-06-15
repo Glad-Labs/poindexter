@@ -24,7 +24,7 @@ permissions:
   security-events: write
 
 jobs:
-  # Path-classifier (Glad-Labs/glad-labs-stack CI-minutes sweep). The four
+  # Path-classifier (Glad-Labs/poindexter CI-minutes sweep). The four
   # file-specific lint jobs below (trivy-config / action-pins /
   # shell-line-endings / poetry-lock) only need to run when their inputs
   # change — gating them on this output skips up to 4 of the 7 jobs on a
