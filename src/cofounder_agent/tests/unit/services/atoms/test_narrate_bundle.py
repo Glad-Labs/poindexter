@@ -512,3 +512,108 @@ class TestRunEmitsTitle:
             assert not pat.match(title), (
                 f"title {title!r} matches a date-only pattern — structural gate would block"
             )
+
+
+# ---------------------------------------------------------------------------
+# run() body H1 == title — preview/publish title-mismatch regression guard
+# ---------------------------------------------------------------------------
+
+
+class TestRunBodyH1MatchesTitle:
+    """The published title and the preview title must agree.
+
+    ``publish_service.publish_post_from_task`` derives ``posts.title`` via
+    ``extract_title_from_content(body)`` — the body's first ``# `` heading —
+    while the preview / approval queue shows the stored ``pipeline_versions.title``
+    (the value run() returns). If narrate_bundle renders a generic
+    ``# What we shipped on {date}`` header as the body H1 while returning the
+    generated headline as ``title``, the two diverge: preview shows the good
+    headline but the published post reverts to the date header.
+
+    Fix: emit the generated headline AS the body H1 so publish's H1 extraction
+    yields the same title preview shows. The "What we shipped on {date}" line is
+    kept as a subtitle below it (and survives when publish strips the H1).
+    """
+
+    async def test_body_h1_equals_returned_title(self):
+        from unittest.mock import patch
+
+        from modules.content.atoms.narrate_bundle import run
+        from utils.text_utils import extract_title_from_content
+
+        async def _stub_llm(prompt, *, model=None, **kwargs):
+            return (
+                "TITLE: Stage-3 Podcast Pipeline Unlocks Spotify Refresh\n\n"
+                "Today we wired the Stage-3 podcast pipeline (PR #1445)."
+            )
+
+        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+            result = await run({
+                "task_id": "h1-title",
+                "site_config": _CaptureSiteConfig(),
+                "context_bundle": {
+                    "date": "2026-06-12",
+                    "merged_prs": [
+                        {"number": 1445, "title": "feat: stage-3 podcast", "body": ""},
+                    ],
+                    "notable_commits": [],
+                },
+            })
+
+        extracted, _ = extract_title_from_content(result["content"])
+        assert extracted == result["title"], (
+            f"body H1 {extracted!r} must equal the stored title {result['title']!r} — "
+            "else publish extracts the H1 and the published title diverges from preview"
+        )
+        assert result["title"] == "Stage-3 Podcast Pipeline Unlocks Spotify Refresh"
+
+    async def test_date_line_preserved_as_subtitle_after_h1_stripped(self):
+        from unittest.mock import patch
+
+        from modules.content.atoms.narrate_bundle import run
+        from utils.text_utils import extract_title_from_content
+
+        async def _stub_llm(prompt, *, model=None, **kwargs):
+            return "TITLE: Some Good Headline\n\nProse body referencing PR #1445."
+
+        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+            result = await run({
+                "task_id": "subtitle",
+                "site_config": _CaptureSiteConfig(),
+                "context_bundle": {
+                    "date": "2026-06-12",
+                    "merged_prs": [{"number": 1445, "title": "feat: x", "body": ""}],
+                    "notable_commits": [],
+                },
+            })
+
+        # publish strips the leading H1; the date framing must remain in the body.
+        _, cleaned = extract_title_from_content(result["content"])
+        assert "What we shipped on 2026-06-12" in (cleaned or ""), (
+            "date subtitle must remain in the body after the H1 is stripped at publish"
+        )
+
+    async def test_quiet_day_body_h1_equals_title(self):
+        from unittest.mock import patch
+
+        from modules.content.atoms.narrate_bundle import run
+        from utils.text_utils import extract_title_from_content
+
+        async def _capture_chat(prompt, *, model=None, **kwargs):
+            return "Stub."
+
+        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat):
+            result = await run({
+                "task_id": "quiet-h1",
+                "site_config": _CaptureSiteConfig(),
+                "context_bundle": {
+                    "date": "2026-06-12",
+                    "merged_prs": [],
+                    "notable_commits": [],
+                },
+            })
+
+        extracted, _ = extract_title_from_content(result["content"])
+        assert extracted == result["title"], (
+            f"quiet-day body H1 {extracted!r} must equal title {result['title']!r}"
+        )

@@ -137,7 +137,16 @@ ATOM_META = AtomMeta(
 )
 
 
-_HEADER_PREFIX = "# What we shipped on "
+# The dev_diary body's H1 is the generated headline (set per render below),
+# NOT a fixed string. publish_service.publish_post_from_task derives
+# posts.title from the body's first H1 via extract_title_from_content, while
+# the preview / approval queue shows the stored pipeline_versions.title — the
+# two must agree or the published title reverts to a generic header even
+# though preview shows the good headline. The "What we shipped on {date}"
+# framing moves below the title as an italic subtitle, so it survives when
+# publish strips the leading H1. Guarded by
+# test_narrate_bundle.TestRunBodyH1MatchesTitle.
+_SUBTITLE_PREFIX = "What we shipped on "
 # Footer matches deterministic_compositor (PR #631, 2026-05-27): a
 # single public-mirror link so readers who want commit-level detail
 # can browse the public repo. That 2026-05-27 fix landed on the OLD
@@ -534,12 +543,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     date = (bundle.get("date") or "").strip() or "today"
 
     if _bundle_is_empty(bundle):
+        quiet_title = f"Quiet day — {date}"
         body = (
-            f"{_HEADER_PREFIX}{date}\n\n"
+            f"# {quiet_title}\n\n"
             f"Quiet day — no shipped work to report.\n\n"
             f"{_FOOTER}\n"
         )
-        return {"content": body, "model_used": "none", "title": f"Quiet day — {date}"}
+        return {"content": body, "model_used": "none", "title": quiet_title}
 
     # DI seam (glad-labs-stack#330) — atoms read site_config from state.
     # 2026-05-12 (poindexter#485): replaced the three-place hardcoded
@@ -678,8 +688,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             prose = "\n".join(sections).rstrip()
             post_title = f"Shipped {' and '.join(parts)} — {date}"
 
+    # H1 == the generated headline so publish's extract_title_from_content
+    # yields the same title preview shows; the date framing drops to an
+    # italic subtitle that survives the H1 strip at publish. See
+    # _SUBTITLE_PREFIX note above.
     body = (
-        f"{_HEADER_PREFIX}{date}\n\n"
+        f"# {post_title}\n\n"
+        f"_{_SUBTITLE_PREFIX}{date}_\n\n"
         f"{prose}\n\n"
         f"{_FOOTER}\n"
     )
