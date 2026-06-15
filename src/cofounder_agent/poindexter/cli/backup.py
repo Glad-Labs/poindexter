@@ -108,14 +108,15 @@ async def persist_config(
     *,
     dsn: str,
     repo_url: str,
+    region: str,
     restic_password: str,
     access_key_id: str,
     secret_access_key: str,
 ) -> None:
-    """Write the repo URL (plain) + the 3 secrets (encrypted) to app_settings.
+    """Write the repo URL + region (plain) + the 3 secrets (encrypted) to app_settings.
 
-    The repo URL goes through :func:`_set_setting` (plaintext); the restic
-    password and S3 key pair go through :func:`_set_secret` (encrypted at
+    The repo URL and S3 region go through :func:`_set_setting` (plaintext); the
+    restic password and S3 key pair go through :func:`_set_secret` (encrypted at
     rest). ``start-stack.sh`` later decrypts the three secrets into the
     backup-offsite container's env_file. Never route a secret through
     ``_set_setting`` or the repo URL through ``_set_secret`` — the split is
@@ -124,6 +125,7 @@ async def persist_config(
     conn = await _connect(dsn)
     try:
         await _set_setting(conn, "offsite_backup_repository", repo_url)
+        await _set_setting(conn, "offsite_backup_s3_region", region)
         await _set_secret(
             conn,
             "offsite_backup_restic_password",
@@ -277,6 +279,11 @@ def backup_setup() -> None:
     ).strip()
     bucket = click.prompt("Bucket name").strip()
     path = click.prompt("Path within bucket", default="poindexter").strip()
+    # SigV4 signs with the bucket's region; B2 (and AWS) reject the signature
+    # when it's wrong, so we must pass AWS_DEFAULT_REGION to restic — not just
+    # the creds. Default to the region derived from the endpoint host, but let
+    # the operator correct it (our heuristic can't know every provider).
+    region = click.prompt("S3 region", default=_derive_s3_region(endpoint)).strip()
     access_key_id = click.prompt("S3 access key id").strip()
     secret_access_key = click.prompt("S3 secret access key", hide_input=True).strip()
 
@@ -288,6 +295,7 @@ def backup_setup() -> None:
     s3_env = {
         "AWS_ACCESS_KEY_ID": access_key_id,
         "AWS_SECRET_ACCESS_KEY": secret_access_key,
+        "AWS_DEFAULT_REGION": region,
         "RESTIC_PASSWORD": restic_password,
     }
 
@@ -350,6 +358,7 @@ def backup_setup() -> None:
         persist_config(
             dsn=dsn,
             repo_url=repo_url,
+            region=region,
             restic_password=restic_password,
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
@@ -482,6 +491,12 @@ def _run_or_die(
         raise click.ClickException(
             "restic password unset — re-run `poindexter backup setup`."
         )
+    # SigV4 region — without it restic signs with us-east-1 and a non-us-east-1
+    # bucket (e.g. B2 us-east-005) rejects the signature. Skip when unset so
+    # restic keeps its own default for legacy configs.
+    region = asyncio.run(_get_setting(dsn, "offsite_backup_s3_region"))
+    if region:
+        env["AWS_DEFAULT_REGION"] = region
     res = _run_restic(image, repo, restic_args, env=env, source_mount=source_mount)
     if res.returncode != 0:
         raise click.ClickException(f"restic failed:\n{res.stderr}")

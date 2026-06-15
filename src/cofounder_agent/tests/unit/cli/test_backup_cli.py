@@ -77,6 +77,7 @@ def test_persist_config_writes_secrets_and_tunables(monkeypatch):
         bk.persist_config(
             dsn="postgresql://x",
             repo_url="s3:https://h/b/p",
+            region="us-east-005",
             restic_password="pw",
             access_key_id="akid",
             secret_access_key="sak",
@@ -88,7 +89,27 @@ def test_persist_config_writes_secrets_and_tunables(monkeypatch):
         "offsite_backup_s3_access_key_id",
         "offsite_backup_s3_secret_access_key",
     }
+    # repo URL AND region are plaintext settings, not secrets.
     assert ("offsite_backup_repository", "s3:https://h/b/p") in set_setting_calls
+    assert ("offsite_backup_s3_region", "us-east-005") in set_setting_calls
+
+
+@pytest.mark.parametrize(
+    "endpoint,expected",
+    [
+        ("s3.us-east-005.backblazeb2.com", "us-east-005"),
+        ("s3.us-west-002.backblazeb2.com", "us-west-002"),
+        ("https://s3.us-east-005.backblazeb2.com/", "us-east-005"),
+        ("s3.amazonaws.com", "us-east-1"),
+        ("s3.eu-west-1.amazonaws.com", "eu-west-1"),
+        ("abc123.r2.cloudflarestorage.com", "auto"),
+        ("minio.local:9000", "us-east-1"),
+    ],
+)
+def test_derive_s3_region(endpoint, expected):
+    # The bug this guards: a B2 us-east-005 bucket needs AWS_DEFAULT_REGION or
+    # restic signs with us-east-1 and B2 rejects the signature.
+    assert bk._derive_s3_region(endpoint) == expected
 
 
 def test_format_status_unconfigured():

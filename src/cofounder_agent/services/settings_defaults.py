@@ -89,6 +89,7 @@ DEFAULTS: dict[str, str] = {
     'offsite_backup_prune_enabled': 'false',
     'offsite_backup_repository': '',
     'offsite_backup_restic_image': 'restic/restic:0.16.4',
+    'offsite_backup_s3_region': '',
     'offsite_backup_source_tier': 'daily',
     'offsite_backup_verify_enabled': 'true',
     'offsite_backup_verify_interval_hours': '168',

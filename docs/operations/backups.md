@@ -122,24 +122,25 @@ poindexter backup snapshots   # list remote snapshots
 All Tier 2 tunables are DB-backed (seeded every boot, so they reach
 existing deployments — only the three secrets are written by the wizard):
 
-| Setting                                          | Default                | Notes                                                         |
-| ------------------------------------------------ | ---------------------- | ------------------------------------------------------------- |
-| `offsite_backup_enabled`                         | `true`                 | Master switch for the runner                                  |
-| `offsite_backup_interval`                        | `24h`                  | Backup cadence (`<N>{s\|m\|h\|d}`)                            |
-| `offsite_backup_source_tier`                     | `daily`                | Which Tier 1 dir to ship (`daily` / `hourly`)                 |
-| `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                       |
-| `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)    |
-| `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                |
-| `offsite_backup_keep_weekly`                     | `4`                    |                                                               |
-| `offsite_backup_keep_monthly`                    | `6`                    |                                                               |
-| `offsite_backup_prune_enabled`                   | `false`                | Escape hatch — re-enables delete-bearing `forget`/`prune`     |
-| `offsite_backup_verify_enabled`                  | `true`                 | Weekly `restic check`                                         |
-| `offsite_backup_verify_interval_hours`           | `168`                  | Verify cadence (168h = weekly)                                |
-| `offsite_backup_verify_read_data_subset_percent` | `5`                    | Fraction of pack data re-read each verify (bit-rot scan)      |
-| `offsite_backup_max_age_hours`                   | `26`                   | Staleness threshold for the brain watch (24h cadence + slack) |
-| `offsite_backup_watch_enabled`                   | `true`                 | Brain auto-retry watch master switch                          |
-| `offsite_backup_watch_max_retries`               | `2`                    | Cumulative restarts across cycles before escalation           |
-| `offsite_backup_watch_retry_delay_seconds`       | `120`                  | Wait between `docker restart` and the post-restart re-read    |
+| Setting                                          | Default                | Notes                                                                                                                      |
+| ------------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `offsite_backup_enabled`                         | `true`                 | Master switch for the runner                                                                                               |
+| `offsite_backup_interval`                        | `24h`                  | Backup cadence (`<N>{s\|m\|h\|d}`)                                                                                         |
+| `offsite_backup_source_tier`                     | `daily`                | Which Tier 1 dir to ship (`daily` / `hourly`)                                                                              |
+| `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                                                                                    |
+| `offsite_backup_s3_region`                       | _(set by wizard)_      | SigV4 signing region — required for non-us-east-1 buckets (e.g. B2 `us-east-005`); the wizard derives it from the endpoint |
+| `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)                                                                 |
+| `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                                                                             |
+| `offsite_backup_keep_weekly`                     | `4`                    |                                                                                                                            |
+| `offsite_backup_keep_monthly`                    | `6`                    |                                                                                                                            |
+| `offsite_backup_prune_enabled`                   | `false`                | Escape hatch — re-enables delete-bearing `forget`/`prune`                                                                  |
+| `offsite_backup_verify_enabled`                  | `true`                 | Weekly `restic check`                                                                                                      |
+| `offsite_backup_verify_interval_hours`           | `168`                  | Verify cadence (168h = weekly)                                                                                             |
+| `offsite_backup_verify_read_data_subset_percent` | `5`                    | Fraction of pack data re-read each verify (bit-rot scan)                                                                   |
+| `offsite_backup_max_age_hours`                   | `26`                   | Staleness threshold for the brain watch (24h cadence + slack)                                                              |
+| `offsite_backup_watch_enabled`                   | `true`                 | Brain auto-retry watch master switch                                                                                       |
+| `offsite_backup_watch_max_retries`               | `2`                    | Cumulative restarts across cycles before escalation                                                                        |
+| `offsite_backup_watch_retry_delay_seconds`       | `120`                  | Wait between `docker restart` and the post-restart re-read                                                                 |
 
 The three secrets — `offsite_backup_restic_password`,
 `offsite_backup_s3_access_key_id`, `offsite_backup_s3_secret_access_key` —

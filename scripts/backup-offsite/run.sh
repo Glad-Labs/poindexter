@@ -172,6 +172,14 @@ tick() {
         log "offsite backup not configured (repo/password empty) — run \`poindexter backup setup\`. Idling."
         return 0
     fi
+    # SigV4 region — restic signs with us-east-1 by default, which a
+    # non-us-east-1 bucket (e.g. B2 us-east-005) rejects ("Signature validation
+    # failed"). The wizard derives + stores this; export it so restic inherits.
+    local region
+    region=$(read_setting offsite_backup_s3_region "")
+    if [[ -n "${region}" ]]; then
+        export AWS_DEFAULT_REGION="${region}"
+    fi
     source_tier=$(read_setting offsite_backup_source_tier "${DEFAULT_SOURCE_TIER}")
     if run_backup "${repo}" "${source_tier}"; then
         maybe_prune "${repo}"
