@@ -449,35 +449,24 @@ jobs:
         working-directory: src/cofounder_agent
         run: $PYTEST tests/unit/test_*.py -q --tb=short --forked -p no:cacheprovider $COV
 
-      # #994: tests/integration/ was never run by any CI workflow, so the
+      # #994 / #1078: tests/integration/ was never run by any CI workflow, so the
       # strongest content-pipeline regression guards ran against nothing.
       # Most critically test_graphdef_pipeline.py — the #572 "graph_def writer
       # returns empty content" guard — drives the REAL build_graph_from_spec
       # compiler + TemplateRunner.run path with stub stages, asserting the
-      # writer's content survives to finalize_task. It needs no live Ollama/DB
-      # (only langgraph, a core dep), yet @pytest.mark.integration kept it out
-      # of every gate.
+      # writer's content survives to finalize_task.
       #
-      # This step runs only the service-light slice — the #572 graph_def guard
-      # plus the fully-mocked approval / task-lifecycle route flows (their
-      # module docstrings: "No live server or DB required"). The rest of
-      # tests/integration/ self-skips without INTEGRATION_TESTS /
-      # REAL_SERVICES_TESTS / a reachable Ollama, so running the whole dir here
-      # would mostly skip; it's left to the operator's local
-      # `poetry run pytest -m integration`. Broadening this gate to the full
-      # -m integration set is a follow-up once every service-heavy test's
-      # CI-skip path is verified end-to-end. tests/integration_db/ (live
-      # Postgres) and tests/benchmarks/ (perf) stay out by design.
-      - name: "Integration tests — service-light (graph_def #572 guard + mocked flows)"
+      # This step now runs the full tests/integration/ directory (#1078). The
+      # service-heavy tests (Ollama, WAN, live DB) self-skip in CI because they
+      # gate on INTEGRATION_TESTS / REAL_SERVICES_TESTS env vars or autouse
+      # availability fixtures (e.g. _require_wan in test_cooperative_unload_protocol.py,
+      # fixed in #1057 so the probe is deferred to fixture setup, not import time).
+      # tests/integration_db/ (live Postgres, handled by integration-db.yml) and
+      # tests/benchmarks/ (perf, scheduled) stay out by design.
+      - name: "Integration tests — full tests/integration/ sweep (#1078)"
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
-        run: >-
-          $PYTEST
-          tests/integration/test_graphdef_pipeline.py
-          tests/integration/test_approval_workflow.py
-          tests/integration/test_task_lifecycle.py
-          -q --tb=short -p no:cacheprovider
-          $COV
+        run: $PYTEST tests/integration/ -q --tb=short -p no:cacheprovider $COV
 
       # #995: ADVISORY coverage signal. Combines the `.coverage` data the
       # steps above accumulated (one file across the per-dir split, thanks
