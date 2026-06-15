@@ -167,6 +167,111 @@ class TestCleanGeneratedContent:
         assert "AI Trends" not in result
         assert "The field of AI is evolving." in result
 
+
+# ===========================================================================
+# Draft editing routes — edit-body / replace-image / regen-image (#523)
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestDraftEditingRoutes:
+    """The 3 edit routes delegate to PostEditService and serialize EditResult.
+
+    PostEditService is patched to a fake so these tests cover the route wiring
+    (task-id resolution, body parsing, error mapping, response shape) — the
+    service logic itself is covered by tests/unit/modules/content."""
+
+    def _client_with_fake_service(self, monkeypatch, calls):
+        from modules.content.post_edit_service import EditResult
+
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+
+        class FakeSvc:
+            def __init__(self, **kw):
+                calls["ctor"] = kw
+
+            async def edit_body(self, task_id, **kw):
+                calls["edit_body"] = (task_id, kw)
+                return EditResult(task_id, "body", True, "edited", warnings=["w1"])
+
+            async def replace_image(self, task_id, **kw):
+                calls["replace_image"] = (task_id, kw)
+                return EditResult(task_id, kw["which"], True, "swapped", new_url=kw["url"])
+
+            async def regen_image(self, task_id, **kw):
+                calls["regen_image"] = (task_id, kw)
+                return EditResult(
+                    task_id, "featured", True, "regenerated",
+                    new_url="https://cdn/new.webp",
+                )
+
+        monkeypatch.setattr(_pub_mod, "PostEditService", FakeSvc)
+        # Keep regen from building the real (SDXL) image service.
+        monkeypatch.setattr(
+            "services.image_service.get_image_service",
+            lambda site_config=None: object(),
+        )
+        return TestClient(_build_app(mock_db))
+
+    def test_edit_body_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/edit-body", json={"find": "x", "replace": "y"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["field"] == "body"
+        assert body["warnings"] == ["w1"]
+        tid, kw = calls["edit_body"]
+        assert tid == VALID_TASK_ID
+        assert kw == {"new_content": None, "find": "x", "replace": "y"}
+
+    def test_replace_image_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(
+            f"/{VALID_TASK_ID}/replace-image",
+            json={"which": "inline:2", "url": "u.png"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["new_url"] == "u.png"
+        assert calls["replace_image"][1] == {"which": "inline:2", "url": "u.png"}
+
+    def test_regen_image_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(
+            f"/{VALID_TASK_ID}/regen-image",
+            json={"which": "featured", "prompt": "a teal robot"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["new_url"] == "https://cdn/new.webp"
+        assert calls["regen_image"][1] == {"which": "featured", "prompt": "a teal robot"}
+
+    def test_edit_body_unknown_task_404(self):
+        mock_db = make_mock_db()  # get_task returns None by default
+        client = TestClient(_build_app(mock_db))
+        r = client.post(f"/{VALID_TASK_ID}/edit-body", json={"new_content": "x"})
+        assert r.status_code == 404
+
+    def test_edit_body_value_error_maps_to_400(self, monkeypatch):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+
+        class FailSvc:
+            def __init__(self, **kw):
+                pass
+
+            async def edit_body(self, task_id, **kw):
+                raise ValueError("find string not present in draft body")
+
+        monkeypatch.setattr(_pub_mod, "PostEditService", FailSvc)
+        client = TestClient(_build_app(mock_db))
+        r = client.post(f"/{VALID_TASK_ID}/edit-body", json={"find": "zzz", "replace": ""})
+        assert r.status_code == 400
+        assert "find string not present" in r.json()["detail"]
+
     def test_title_removal_is_case_insensitive(self):
         raw = "ai trends\n\nBody text."
         result = clean_generated_content(raw, title="AI Trends")

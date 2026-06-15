@@ -616,3 +616,101 @@ def tasks_approve_batch(
         fg=color,
     )
     sys.exit(0 if fail == 0 else 1)
+
+
+# ---------------------------------------------------------------------------
+# edit — draft body/image editing (drafts only, poindexter#523)
+# ---------------------------------------------------------------------------
+
+
+def _post_edit(path: str, payload: dict[str, Any]) -> dict:
+    """POST an edit to the worker API; return parsed JSON or exit 1 on error."""
+
+    async def _call():
+        async with WorkerClient() as c:
+            resp = await c.post(path, json=payload)
+            return await c.json_or_raise(resp)
+
+    try:
+        return _run(_call())
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+def _emit_edit_result(data: dict) -> None:
+    click.secho(f"✅ {data.get('detail', 'done')}", fg="green")
+    if data.get("new_url"):
+        click.echo(f"   → {data['new_url']}")
+    for warning in data.get("warnings") or []:
+        click.secho(f"   ⚠ {warning}", fg="yellow")
+
+
+def _fetch_task_body(task_id: str) -> str:
+    """Best-effort fetch of the current draft body to pre-fill ``$EDITOR``."""
+
+    async def _get():
+        async with WorkerClient() as c:
+            resp = await c.get(f"/api/tasks/{task_id}")
+            return await c.json_or_raise(resp)
+
+    try:
+        task = _run(_get())
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    result = task.get("result")
+    if not isinstance(result, dict):
+        result = {}
+    return task.get("content") or result.get("content") or ""
+
+
+@tasks_group.command("edit-body")
+@click.argument("task_id")
+@click.option(
+    "--find", default=None,
+    help="Substring to replace (surgical edit). Omit to open $EDITOR.",
+)
+@click.option(
+    "--replace", default=None,
+    help="Replacement for --find (default: delete the match).",
+)
+def tasks_edit_body(task_id: str, find: str | None, replace: str | None) -> None:
+    """Edit an awaiting_approval draft's body. Drafts only.
+
+    With --find, the worker applies a surgical find/replace. Without it, the
+    current body opens in $EDITOR and the saved result is written back. Either
+    way the validator re-runs (warn-only) — warnings print but never block.
+    """
+    if find is not None:
+        payload: dict[str, Any] = {"find": find, "replace": replace or ""}
+    else:
+        current = _fetch_task_body(task_id)
+        edited = click.edit(current)
+        if edited is None or edited == current:
+            click.echo("(no changes)")
+            return
+        payload = {"new_content": edited}
+    _emit_edit_result(_post_edit(f"/api/tasks/{task_id}/edit-body", payload))
+
+
+@tasks_group.command("replace-image")
+@click.argument("task_id")
+@click.option("--which", required=True, help="featured | inline:N (1-based)")
+@click.option("--url", required=True, help="New image URL.")
+def tasks_replace_image(task_id: str, which: str, url: str) -> None:
+    """Swap a draft image URL (drafts only) — the featured image or the N-th inline <img>."""
+    _emit_edit_result(
+        _post_edit(f"/api/tasks/{task_id}/replace-image", {"which": which, "url": url}),
+    )
+
+
+@tasks_group.command("regen-image")
+@click.argument("task_id")
+@click.option("--which", required=True, help="featured | inline:N (1-based)")
+@click.option("--prompt", required=True, help="Image generation prompt.")
+def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
+    """Regenerate a draft image via the image capability and swap it in (drafts only)."""
+    _emit_edit_result(
+        _post_edit(f"/api/tasks/{task_id}/regen-image", {"which": which, "prompt": prompt}),
+    )

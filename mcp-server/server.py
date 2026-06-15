@@ -463,6 +463,65 @@ async def publish_post(task_id: str) -> str:
 
 
 @mcp.tool()
+async def edit_post_body(
+    task_id: str, find: str = "", replace: str = "", new_content: str = "",
+) -> str:
+    """Edit an awaiting_approval draft's body. Drafts only (NOT published posts).
+
+    Provide ``find`` (+ optional ``replace``) for a surgical edit, OR
+    ``new_content`` to overwrite the whole body. The anti-hallucination
+    validator re-runs but is advisory — warnings are reported and the edit
+    still applies (you are the human approval gate).
+    """
+    if not new_content and not find:
+        return (
+            "Error: provide `find` (+ optional `replace`) for a surgical edit, "
+            "or `new_content` to overwrite the body."
+        )
+    full_id = await _resolve_task_id(task_id)
+    payload = (
+        {"new_content": new_content} if new_content else {"find": find, "replace": replace}
+    )
+    result = await _api("POST", f"/api/tasks/{full_id}/edit-body", payload)
+    if result.get("error"):
+        return f"Error: {result['error']}"
+    warnings = result.get("warnings") or []
+    suffix = f" (warnings: {'; '.join(warnings)})" if warnings else ""
+    return f"{result.get('detail', 'edited')}{suffix}"
+
+
+@mcp.tool()
+async def replace_post_image(task_id: str, which: str, url: str) -> str:
+    """Swap a draft image URL. Drafts only.
+
+    ``which`` = ``featured`` or ``inline:N`` (1-based — the N-th inline <img>).
+    """
+    full_id = await _resolve_task_id(task_id)
+    result = await _api(
+        "POST", f"/api/tasks/{full_id}/replace-image", {"which": which, "url": url},
+    )
+    if result.get("error"):
+        return f"Error: {result['error']}"
+    return f"{result.get('detail', 'replaced')} → {result.get('new_url')}"
+
+
+@mcp.tool()
+async def regen_post_image(task_id: str, which: str, prompt: str) -> str:
+    """Regenerate a draft image via the image capability and swap it in. Drafts only.
+
+    ``which`` = ``featured`` or ``inline:N``. Honors the no-humans/no-hands +
+    on-topic guardrails configured for image generation.
+    """
+    full_id = await _resolve_task_id(task_id)
+    result = await _api(
+        "POST", f"/api/tasks/{full_id}/regen-image", {"which": which, "prompt": prompt},
+    )
+    if result.get("error"):
+        return f"Error: {result['error']}"
+    return f"{result.get('detail', 'regenerated')} → {result.get('new_url')}"
+
+
+@mcp.tool()
 async def get_post_count() -> str:
     """Get the total number of published posts on the configured site."""
     try:

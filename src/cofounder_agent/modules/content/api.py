@@ -118,6 +118,16 @@ from modules.content.multi_model_qa import (
 )
 
 # ---------------------------------------------------------------------------
+# post_edit_service
+# ---------------------------------------------------------------------------
+from modules.content.post_edit_service import (
+    EditResult as EditResult,
+)
+from modules.content.post_edit_service import (
+    PostEditService as PostEditService,
+)
+
+# ---------------------------------------------------------------------------
 # posts_service
 # ---------------------------------------------------------------------------
 from modules.content.posts_service import (
@@ -167,4 +177,7 @@ __all__ = [
     "narrate_bundle",
     # posts_service
     "PostsService",
+    # post_edit_service
+    "PostEditService",
+    "EditResult",
 ]

@@ -17,10 +17,11 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from modules.content.api import EditResult, PostEditService
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
@@ -1276,3 +1277,148 @@ async def generate_task_image(
     except Exception as e:
         logger.error("Failed to generate image for task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate image") from e
+
+
+# ============================================================================
+# DRAFT EDITING — body + images (poindexter#523)
+# ============================================================================
+# Operator edits to an awaiting_approval draft, backed by the shared
+# modules/content PostEditService. Drafts only (pipeline_versions); editing a
+# published posts.content row is out of scope. The CLI + MCP tools call these
+# routes — this is the single seam.
+
+
+class EditBodyRequest(BaseModel):
+    new_content: str | None = None
+    find: str | None = None
+    replace: str | None = None
+
+
+class ReplaceImageRequest(BaseModel):
+    which: str  # "featured" | "inline:N"
+    url: str
+
+
+class RegenImageRequest(BaseModel):
+    which: str  # "featured" | "inline:N"
+    prompt: str
+
+
+async def _resolve_full_task_id(db_service: DatabaseService, task_id: str) -> str:
+    """Canonicalize a task id / 8-char prefix to the full UUID, else 404/409.
+
+    Mirrors the approve/reject routes so prefix pastes from ``poindexter tasks
+    list`` resolve before the exact-match writes inside PostEditService."""
+    task = await db_service.get_task(task_id)
+    if not task:
+        await resolve_task_id_prefix(db_service.pool, task_id)
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return str(task.get("task_id") or task.get("id") or task_id)
+
+
+def _build_edit_service(
+    db_service: DatabaseService, site_config: Any, *,
+    platform: Any = None, need_image: bool = False,
+) -> PostEditService:
+    """Construct the shared edit service from request-scoped deps. The image
+    service is only built for regen (avoids loading the SDXL pipeline on body
+    edits); if it can't initialise, regen surfaces a 503. ``platform`` is the
+    kernel handle (``app.state.kernel_platform``) the service writes audit rows
+    through — the module-purity seam; ``None`` simply drops the audit row."""
+    image_service = None
+    if need_image:
+        try:
+            from services.image_service import get_image_service
+
+            image_service = get_image_service(site_config=site_config)
+        except Exception:  # noqa: BLE001 — regen returns a 503 if the image svc is unavailable
+            image_service = None
+    return PostEditService(
+        pool=db_service.pool,
+        site_config=site_config,
+        image_service=image_service,
+        db_service=db_service,
+        platform=platform,
+    )
+
+
+def _edit_result_json(res: EditResult) -> dict[str, Any]:
+    return {
+        "ok": res.ok,
+        "field": res.field,
+        "detail": res.detail,
+        "warnings": res.warnings,
+        "new_url": res.new_url,
+    }
+
+
+@publishing_router.post("/{task_id}/edit-body", summary="Edit an awaiting_approval draft's body")
+async def edit_task_body(
+    task_id: str,
+    body: EditBodyRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Edit a draft's body (drafts only). Provide ``new_content`` to overwrite or
+    ``find``/``replace`` for a surgical edit. Re-runs the validator (warn-only)."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.edit_body(
+            full_id, new_content=body.new_content, find=body.find, replace=body.replace,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/replace-image", summary="Swap a draft image URL")
+async def replace_task_image(
+    task_id: str,
+    body: ReplaceImageRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Swap a draft image URL (drafts only). ``which`` = ``featured`` or ``inline:N``."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.replace_image(full_id, which=body.which, url=body.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/regen-image", summary="Regenerate a draft image")
+async def regen_task_image(
+    task_id: str,
+    body: RegenImageRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Regenerate a draft image via the image capability (drafts only).
+    ``which`` = ``featured`` or ``inline:N``. Honors the no-humans/on-topic guardrails."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep, need_image=True,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.regen_image(full_id, which=body.which, prompt=body.prompt)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return _edit_result_json(res)
