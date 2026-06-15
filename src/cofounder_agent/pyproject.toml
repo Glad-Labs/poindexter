@@ -1,11 +1,22 @@
-[tool.poetry]
+[project]
 name = "poindexter-backend"
 version = "0.5.0"
 description = "Poindexter backend — FastAPI + specialized AI agents. Built by Glad Labs LLC."
-authors = ["Glad Labs LLC <hello@gladlabs.io>"]
+authors = [{ name = "Glad Labs LLC", email = "hello@gladlabs.io" }]
 # SPDX license — Apache-2.0, matching LICENSE / src/LICENSE.md (poindexter#645).
 license = "Apache-2.0"
 readme = "README.md"
+# Build metadata only; the dependency-locking python range lives in
+# [tool.poetry.dependencies] below. Per Poetry's PEP 621 docs the two are
+# intentionally distinct (this is the build floor, that is the solver range).
+requires-python = ">=3.13,<3.14"
+# Dependencies are declared dynamic so they stay in [tool.poetry.dependencies]:
+# PEP 508 strings can't express the explicit pytorch-cu128 source pin on torch
+# (glad-labs-stack#334) or the optional/marker syntax. classifiers stay dynamic
+# so poetry-core keeps auto-generating them.
+dynamic = ["dependencies", "classifiers"]
+
+[tool.poetry]
 packages = [
     { include = "cofounder_agent", from = ".." },
     { include = "poindexter", from = "." }
@@ -238,7 +249,7 @@ atproto = ">=0.0.67,<0.0.69"
 # post silently failed with 'Mastodon.py package not installed'.
 "Mastodon.py" = ">=1.8.1"
 
-[tool.poetry.extras]
+[project.optional-dependencies]
 ml = ["torch", "transformers", "diffusers"]
 profiling = ["pyroscope-io"]
 # YouTube publishing — the operator opts in once they've run the OAuth
@@ -271,7 +282,7 @@ pre-commit = ">=3,<5"
 # Development Tools
 ipython = "^8.0"
 
-[tool.poetry.scripts]
+[project.scripts]
 api = "cofounder_agent.main:app"
 # Plain `poindexter <command>` CLI (no `python -m` required).
 # Same entry point as python -m poindexter — routes through app.main.
@@ -282,7 +293,7 @@ poindexter = "poindexter.cli.app:main"
 # that declares entry_points under these groups is discovered at
 # runtime. See docs/architecture/plugin-architecture.md for the
 # full design.
-[tool.poetry.plugins."poindexter.taps"]
+[project.entry-points."poindexter.taps"]
 hello = "cofounder_agent.plugins.samples.hello_tap:HelloTap"
 memory = "cofounder_agent.services.taps.memory:MemoryFilesTap"
 posts = "cofounder_agent.services.taps.published_posts:PostsTap"
@@ -292,10 +303,10 @@ brain_decisions = "cofounder_agent.services.taps.brain_decisions:BrainDecisionsT
 claude_code_sessions = "cofounder_agent.services.taps.claude_code_sessions:ClaudeCodeSessionsTap"
 openclaw_sqlite = "cofounder_agent.services.taps.openclaw_sqlite:OpenClawSQLiteTap"
 
-[tool.poetry.plugins."poindexter.probes"]
+[project.entry-points."poindexter.probes"]
 database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
 
-[tool.poetry.plugins."poindexter.jobs"]
+[project.entry-points."poindexter.jobs"]
 # noop + sync_page_views removed 2026-06-02 (#936) — dead no-op jobs; kept in
 # sync with plugins.registry._SAMPLES (test_registry_completeness enforces it).
 expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
@@ -329,7 +340,7 @@ morning_brief = "cofounder_agent.services.jobs.morning_brief:MorningBriefJob"
 run_taps = "cofounder_agent.services.jobs.run_taps:RunTapsJob"
 run_retention = "cofounder_agent.services.jobs.run_retention:RunRetentionJob"
 
-[tool.poetry.plugins."poindexter.topic_sources"]
+[project.entry-points."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
 devto = "cofounder_agent.services.topic_sources.devto:DevtoSource"
 web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
@@ -338,7 +349,7 @@ codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
 dev_diary = "cofounder_agent.services.topic_sources.dev_diary_source:DevDiarySource"
 igdb = "cofounder_agent.services.topic_sources.igdb:IGDBSource"
 
-[tool.poetry.plugins."poindexter.image_providers"]
+[project.entry-points."poindexter.image_providers"]
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
 sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
@@ -346,7 +357,7 @@ ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenera
 # Stages moved from services/stages/ to modules/content/stages/ in the
 # Module v1 Phase 3 migration (2026-06-04); targets repointed to match
 # (kept in lockstep with plugins.registry._SAMPLES).
-[tool.poetry.plugins."poindexter.stages"]
+[project.entry-points."poindexter.stages"]
 verify_task = "cofounder_agent.modules.content.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.modules.content.stages.generate_content:GenerateContentStage"
 writer_self_review = "cofounder_agent.modules.content.stages.writer_self_review:WriterSelfReviewStage"
@@ -360,7 +371,7 @@ generate_video_shot_list = "cofounder_agent.modules.content.stages.generate_vide
 capture_training_data = "cofounder_agent.modules.content.stages.capture_training_data:CaptureTrainingDataStage"
 finalize_task = "cofounder_agent.modules.content.stages.finalize_task:FinalizeTaskStage"
 
-[tool.poetry.plugins."poindexter.llm_providers"]
+[project.entry-points."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
 # LiteLLM-backed provider — the production default after migration 0160
@@ -379,10 +390,12 @@ litellm = "cofounder_agent.services.llm_providers.litellm_provider:LiteLLMProvid
 # overlay modules installed via ``pip`` — the discovery path the
 # overlay-package endgame uses. See
 # ``docs/architecture/2026-06-04-module-visibility-sync-design.md``.
-[tool.poetry.plugins."poindexter.modules"]
+[project.entry-points."poindexter.modules"]
 
 [build-system]
-requires = ["poetry-core"]
+# poetry-core >=2.0 is required to read the PEP 621 [project] table above
+# (older cores silently ignore it, dropping name/version at build time).
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 # ===== POETRY SOURCES =====

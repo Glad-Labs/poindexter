@@ -788,7 +788,7 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "platform_python_implementation != \"PyPy\" or sys_platform != \"win32\" and extra == \"profiling\""
+markers = "extra == \"profiling\" and sys_platform != \"win32\" or platform_python_implementation != \"PyPy\""
 files = [
     {file = "cffi-2.0.0-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:0cf2d91ecc3fcc0625c2c530fe004f82c110405f101548512cce44322fa8ac44"},
     {file = "cffi-2.0.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f73b96c41e3b2adedc34a7356e64c8eb96e03a3782b535e043a986276ce12a49"},
@@ -6464,7 +6464,7 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "(platform_python_implementation != \"PyPy\" or sys_platform != \"win32\" and extra == \"profiling\") and implementation_name != \"PyPy\""
+markers = "(extra == \"profiling\" and sys_platform != \"win32\" or platform_python_implementation != \"PyPy\") and implementation_name != \"PyPy\""
 files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
@@ -6817,7 +6817,7 @@ description = "Pyroscope Python integration"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "sys_platform != \"win32\" and extra == \"profiling\""
+markers = "extra == \"profiling\" and sys_platform != \"win32\""
 files = [
     {file = "pyroscope_io-0.8.16-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:e07edcfd59f5bdce42948b92c9b118c824edbd551730305f095a6b9af401a9e8"},
     {file = "pyroscope_io-0.8.16-py2.py3-none-macosx_11_0_x86_64.whl", hash = "sha256:dc98355e27c0b7b61f27066500fe1045b70e9459bb8b9a3082bc4755cb6392b6"},
@@ -10100,4 +10100,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "610409c2cae4659aee0e22d9eb560e3467a2f773f9acb3ba3ac423167fee01fd"
+content-hash = "c2796c5bd169730daa89a99e7f66b7d87fd73ce867c297d8d0ed01c40bf77db7"

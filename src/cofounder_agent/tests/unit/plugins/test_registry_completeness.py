@@ -220,7 +220,7 @@ def test_known_unregistered_links_to_an_issue() -> None:
 #
 # Captured 2026-05-20 (finding #189). Five plugins (CollapseOldEmbeddingsJob,
 # BackfillPodcastsJob, BackfillVideosJob, OpenClawSQLiteTap, IGDBSource)
-# had ``[tool.poetry.plugins."poindexter.*"]`` declarations in pyproject.toml
+# had ``[project.entry-points."poindexter.*"]`` declarations in pyproject.toml
 # but were never added to ``_SAMPLES``. In production the worker doesn't
 # pip-install the package (it only bind-mounts the source), so
 # ``importlib.metadata.entry_points()`` returns 0 and the imperative
@@ -266,7 +266,7 @@ def _pyproject_entry_points() -> dict[str, list[tuple[str, str]]]:
 
     out: dict[str, list[tuple[str, str]]] = {}
     sections = _re.findall(
-        r'\[tool\.poetry\.plugins\."poindexter\.([^"]+)"\](.*?)(?=^\[tool|\Z)',
+        r'\[project\.entry-points\."poindexter\.([^"]+)"\](.*?)(?=^\[|\Z)',
         text, _re.DOTALL | _re.MULTILINE,
     )
     for group, section in sections:
@@ -315,7 +315,7 @@ def _registered_class_names_per_group() -> dict[str, set[str]]:
 
 @pytest.mark.parametrize("group", _CROSSCHECK_GROUPS)
 def test_pyproject_entry_points_are_registered_in_samples(group: str) -> None:
-    """Every entry_point declared in ``[tool.poetry.plugins."poindexter.<group>"]``
+    """Every entry_point declared in ``[project.entry-points."poindexter.<group>"]``
     must appear in ``_SAMPLES`` under the same plugin type.
 
     In production the worker bind-mounts the source rather than
@@ -351,7 +351,7 @@ def test_pyproject_entry_points_are_registered_in_samples(group: str) -> None:
 # Captured 2026-06-13. The 2026-06-04 Module v1 Phase 3 migration moved the
 # 12 content stages from ``services/stages/`` to ``modules/content/stages/``
 # and updated the imperative ``_SAMPLES`` list to the new path — but left the
-# ``[tool.poetry.plugins."poindexter.stages"]`` entry_points pointing at the
+# ``[project.entry-points."poindexter.stages"]`` entry_points pointing at the
 # now-deleted ``cofounder_agent.services.stages.*`` modules. The worker/CLI
 # image pip-installs the package (Dockerfile, no ``--no-root``), so
 # ``importlib.metadata.entry_points(group="poindexter.stages")`` discovered the
@@ -368,7 +368,7 @@ def test_pyproject_entry_points_are_registered_in_samples(group: str) -> None:
 @pytest.mark.parametrize("group", _CROSSCHECK_GROUPS)
 def test_pyproject_entry_point_targets_import(group: str) -> None:
     """Every ``module.path:ClassName`` target declared under
-    ``[tool.poetry.plugins."poindexter.<group>"]`` must resolve: the module
+    ``[project.entry-points."poindexter.<group>"]`` must resolve: the module
     imports and the named class attribute exists.
 
     Complements ``test_pyproject_entry_points_are_registered_in_samples``,

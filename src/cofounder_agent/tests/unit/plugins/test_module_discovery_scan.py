@@ -47,7 +47,7 @@ def _scan_is_sole_module_source(monkeypatch):
     stripped public mirror, that entry-point group is empty, so the scan is the
     sole source. But a full-tree *editable* dev install whose ``dist-info``
     predates the 2026-06-04 Phase-5 change that emptied the pyproject
-    ``[tool.poetry.plugins."poindexter.modules"]`` group still carries stale
+    ``[project.entry-points."poindexter.modules"]`` group still carries stale
     ``content``/``finance`` entry points (frozen in ``entry_points.txt``).
     Those leak ``finance`` past the scan monkeypatch and falsely red
     ``test_stripped_tree_has_no_finance_anywhere`` in local full-tree dev runs,
