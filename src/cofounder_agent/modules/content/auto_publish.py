@@ -38,9 +38,10 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
+
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -225,8 +226,12 @@ async def auto_publish_task(
     # Record approval + distribution so the ``content_tasks`` view's
     # resolved ``approval_status`` / ``post_id`` / ``post_slug`` columns
     # are non-NULL for auto-published rows (same contract as the
-    # operator-curated approve path).
-    with suppress(Exception):
+    # operator-curated approve path). The post is already live, so a failure
+    # here must NOT un-publish it — but it must be visible: these rows back an
+    # operator-facing view, and swallowing the failure (the old
+    # ``with suppress(Exception)``) left that view silently wrong, against
+    # this module's own fail-loud docstring (silent-failure audit).
+    try:
         await database_service.pool.execute(
             """
             INSERT INTO pipeline_gate_history
@@ -257,13 +262,58 @@ async def auto_publish_task(
             external_url=result.published_url,
             status="published",
         )
+    except Exception as exc:
+        logger.error(
+            "[AUTO_PUBLISH] Task %s published as post %s but recording the "
+            "approval/distribution rows failed — the content_tasks view will "
+            "show NULL approval_status/post_id/post_slug until reconciled: %s",
+            task_id, result.post_id, exc, exc_info=True,
+        )
+        emit_finding(
+            source="auto_publish",
+            kind="auto_publish_contract_write_failed",
+            title=f"Auto-publish bookkeeping failed for task {task_id}",
+            body=(
+                f"Task {task_id} published as post {result.post_id} "
+                f"({result.post_slug}) but the pipeline_gate_history + "
+                f"distribution write failed: {exc!r}. The content_tasks view "
+                f"resolves approval_status / post_id / post_slug from these "
+                f"rows, so they read NULL until backfilled."
+            ),
+            severity="warn",
+            dedup_key=f"auto-publish-contract:{task_id}",
+            extra={"task_id": str(task_id), "post_id": str(result.post_id)},
+        )
 
-    # model_performance.human_approved flip — learning signal that
-    # closes the loop on whether the quality scorer's prediction
-    # matched the auto-publish outcome (poindexter#271 Phase 3.A1).
-    with suppress(Exception):
+    # model_performance.human_approved flip — learning signal that closes the
+    # loop on whether the quality scorer's prediction matched the auto-publish
+    # outcome (poindexter#271 Phase 3.A1). A failure here doesn't affect the
+    # live post, but silently dropping it starves the scorer's feedback loop —
+    # make it visible rather than swallowing it.
+    try:
         await database_service.mark_model_performance_outcome(
             task_id, human_approved=True, post_published=True,
+        )
+    except Exception as exc:
+        logger.error(
+            "[AUTO_PUBLISH] Task %s — model_performance learning-signal flip "
+            "failed; the quality scorer won't learn from this auto-publish "
+            "outcome: %s",
+            task_id, exc, exc_info=True,
+        )
+        emit_finding(
+            source="auto_publish",
+            kind="auto_publish_learning_signal_failed",
+            title=f"Auto-publish learning-signal write failed for task {task_id}",
+            body=(
+                f"mark_model_performance_outcome failed for task {task_id} "
+                f"after a successful auto-publish: {exc!r}. The router's "
+                f"quality feedback loop (poindexter#271) is missing this "
+                f"outcome."
+            ),
+            severity="warn",
+            dedup_key=f"auto-publish-learning:{task_id}",
+            extra={"task_id": str(task_id)},
         )
 
     return True

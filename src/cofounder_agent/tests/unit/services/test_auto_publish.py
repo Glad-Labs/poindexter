@@ -311,3 +311,97 @@ class TestAutoPublishHappyPath:
             )
         assert result is False
         pub_mock.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# auto_publish_task — bookkeeping-write visibility (silent-failure audit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAutoPublishBookkeepingVisibility:
+    """The post-publish bookkeeping writes — the gate-history + distribution
+    rows that back the ``content_tasks`` view, and the model_performance
+    learning signal — used to run inside ``with suppress(Exception)``, so a
+    failure vanished with no log, no finding, no page (contradicting this
+    module's own fail-loud docstring). They must now be operator-visible: the
+    post still publishes (availability preserved), but the failure logs at
+    ERROR and emits a warn-severity finding."""
+
+    @pytest.mark.asyncio
+    async def test_gate_history_write_failure_logs_and_emits_finding(self, caplog):
+        import logging as _logging
+
+        from modules.content import auto_publish as ap_mod
+
+        task = {
+            "task_id": "t-gh",
+            "featured_image_url": "https://img/featured.png",
+            "task_metadata": {},
+        }
+        db = _make_db(published_today=0, daily_limit="1", task=task)
+        # The pipeline_gate_history INSERT raises.
+        db.pool.execute = AsyncMock(side_effect=RuntimeError("gate_history INSERT failed"))
+
+        pub_mock = AsyncMock(return_value=_publish_result(success=True))
+        with (
+            patch("services.publish_service.publish_post_from_task", pub_mock),
+            patch.object(ap_mod, "emit_finding", create=True) as emit_mock,
+            caplog.at_level(_logging.ERROR, logger="modules.content.auto_publish"),
+        ):
+            result = await ap_mod.auto_publish_task(
+                database_service=db,
+                task_id="t-gh",
+                quality_score=92.0,
+                site_config=_make_site_config(),
+            )
+
+        # Post still published — a bookkeeping failure must not un-publish it.
+        assert result is True
+        # Visible: an ERROR log naming the task.
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert any("t-gh" in r.message for r in errors), (
+            f"expected an ERROR log naming the task; got {[r.message for r in errors]}"
+        )
+        # Visible: a warn-severity finding from the auto_publish source.
+        emit_mock.assert_called()
+        kwargs = emit_mock.call_args.kwargs
+        assert kwargs["severity"] == "warn"
+        assert kwargs["source"] == "auto_publish"
+
+    @pytest.mark.asyncio
+    async def test_learning_signal_write_failure_logs_and_emits_finding(self, caplog):
+        import logging as _logging
+
+        from modules.content import auto_publish as ap_mod
+
+        task = {
+            "task_id": "t-ls",
+            "featured_image_url": "https://img/featured.png",
+            "task_metadata": {},
+        }
+        db = _make_db(published_today=0, daily_limit="1", task=task)
+        db.mark_model_performance_outcome = AsyncMock(
+            side_effect=RuntimeError("model_performance flip failed")
+        )
+
+        pub_mock = AsyncMock(return_value=_publish_result(success=True))
+        pipeline_db = MagicMock()
+        pipeline_db.add_distribution = AsyncMock(return_value=None)
+        with (
+            patch("services.publish_service.publish_post_from_task", pub_mock),
+            patch("services.pipeline_db.PipelineDB", return_value=pipeline_db),
+            patch.object(ap_mod, "emit_finding", create=True) as emit_mock,
+            caplog.at_level(_logging.ERROR, logger="modules.content.auto_publish"),
+        ):
+            result = await ap_mod.auto_publish_task(
+                database_service=db,
+                task_id="t-ls",
+                quality_score=92.0,
+                site_config=_make_site_config(),
+            )
+
+        assert result is True
+        emit_mock.assert_called()
+        assert emit_mock.call_args.kwargs["severity"] == "warn"
+        assert emit_mock.call_args.kwargs["source"] == "auto_publish"

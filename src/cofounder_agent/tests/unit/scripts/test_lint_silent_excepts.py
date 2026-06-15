@@ -94,6 +94,78 @@ class TestSilentDetection:
         assert _scan_src(tmp_path, src) == 2
 
 
+class TestBroadSuppressDetection:
+    """``contextlib.suppress(Exception)`` is as silent as ``except: pass`` but
+    lives in an ``ast.With`` node, not an ``ExceptHandler`` — the original
+    scan could not see it. Broad suppression (Exception / BaseException) is
+    counted; narrow, named suppression is a deliberate control-flow choice
+    and is not."""
+
+    def test_broad_suppress_exception_is_silent(self, tmp_path):
+        src = (
+            "from contextlib import suppress\n"
+            "def f():\n"
+            "    with suppress(Exception):\n"
+            "        x()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_suppress_baseexception_is_silent(self, tmp_path):
+        src = (
+            "from contextlib import suppress\n"
+            "def f():\n"
+            "    with suppress(BaseException):\n"
+            "        x()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_contextlib_suppress_attribute_form_is_silent(self, tmp_path):
+        src = (
+            "import contextlib\n"
+            "def f():\n"
+            "    with contextlib.suppress(Exception):\n"
+            "        x()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_narrow_suppress_is_not_silent(self, tmp_path):
+        src = (
+            "from contextlib import suppress\n"
+            "def f():\n"
+            "    with suppress(OSError):\n"
+            "        x()\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_narrow_suppress_multiple_types_is_not_silent(self, tmp_path):
+        src = (
+            "from contextlib import suppress\n"
+            "def f():\n"
+            "    with suppress(ValueError, TypeError):\n"
+            "        x()\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_broad_suppress_silent_ok_override_exempts(self, tmp_path):
+        src = (
+            "from contextlib import suppress\n"
+            "def f():\n"
+            "    with suppress(Exception):  # noqa: silent-ok best-effort close\n"
+            "        x()\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_broad_suppress_and_silent_except_both_counted(self, tmp_path):
+        src = (
+            "from contextlib import suppress\n"
+            "def f():\n"
+            "    with suppress(Exception):\n"
+            "        a()\n"
+            "    try:\n        b()\n    except Exception:\n        pass\n"
+        )
+        assert _scan_src(tmp_path, src) == 2
+
+
 class TestBaselineRatchet:
     def test_real_tree_matches_baseline(self):
         """The committed baseline must satisfy the live tree (no drift).

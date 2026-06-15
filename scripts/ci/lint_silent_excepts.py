@@ -2,12 +2,17 @@
 """CI lint: no NEW silently-swallowed exceptions in production code.
 
 Silent-failure audit follow-up (H2). A swallowed exception is invisible to
-the operator when its handler body is *only* one of:
+the operator when the failure is recorded by *only* one of:
 
-  - ``pass``                       — nothing is recorded at all
-  - ``<logger>.debug(...)``        — below the prod log level AND below
+  - ``except ...: pass``           — nothing is recorded at all
+  - ``except ...: <logger>.debug`` — below the prod log level AND below
                                      GlitchTip's ERROR event gate
                                      (LoggingIntegration event_level=ERROR)
+  - ``with suppress(Exception):``  — broad ``contextlib.suppress`` silences
+                                     the whole block (no log, no finding, no
+                                     re-raise); it is an ``ast.With`` node,
+                                     not an ``ExceptHandler``, so the handler
+                                     scan alone never sees it
 
 Either way the failure never reaches Loki (at prod level), never creates a
 GlitchTip issue, and never pages. This lint stops that category from
@@ -46,9 +51,19 @@ BASELINE_PATH = Path(__file__).resolve().parent / "silent_excepts_baseline.json"
 SCAN_ROOTS = [
     (REPO_ROOT / "src" / "cofounder_agent", ("tests",)),
     (REPO_ROOT / "brain", ()),
+    # The public MCP server — operator phone-facing tools. A swallowed
+    # exception here means an operator action silently no-ops. The private
+    # ``mcp-server-gladlabs/`` overlay is intentionally NOT scanned: its paths
+    # must never enter this baseline, which ships in the public mirror.
+    (REPO_ROOT / "mcp-server", ("tests",)),
 ]
 
 OVERRIDE_MARKER = "silent-ok"
+
+# Suppressing one of these via ``contextlib.suppress(...)`` silences the whole
+# ``with`` body exactly like ``except Exception: pass``. Narrow, named
+# suppression (``suppress(OSError)``) is deliberate control flow, not a swallow.
+_BROAD_SUPPRESS_NAMES = {"Exception", "BaseException"}
 
 
 def _is_debug_call(stmt: ast.stmt) -> bool:
@@ -76,12 +91,17 @@ def _handler_is_silent(handler: ast.ExceptHandler) -> bool:
     return isinstance(only, ast.Pass) or _is_debug_call(only)
 
 
-def _handler_has_override(handler: ast.ExceptHandler, lines: list[str]) -> bool:
-    """True if a ``silent-ok`` marker appears anywhere in the handler span."""
-    start = handler.lineno
+def _node_has_override(node: ast.AST, lines: list[str]) -> bool:
+    """True if a ``silent-ok`` marker appears anywhere in the node's span.
+
+    Works for both an ``except`` handler and a ``with suppress(...)`` block —
+    the escape hatch is identical: a ``# noqa: silent-ok <reason>`` comment on
+    the opening line or anywhere inside the body exempts an intentional swallow.
+    """
+    start = getattr(node, "lineno", 1)
     end = start
-    for node in ast.walk(handler):
-        node_end = getattr(node, "end_lineno", None)
+    for child in ast.walk(node):
+        node_end = getattr(child, "end_lineno", None)
         if node_end is not None and node_end > end:
             end = node_end
     # lines is 0-indexed; AST linenos are 1-indexed.
@@ -91,8 +111,46 @@ def _handler_has_override(handler: ast.ExceptHandler, lines: list[str]) -> bool:
     return False
 
 
+def _is_broad_suppress(node: ast.With | ast.AsyncWith) -> bool:
+    """True if a ``with`` statement swallows a broad exception via suppress().
+
+    Matches ``with suppress(Exception):`` and ``with contextlib.suppress(
+    BaseException):`` — both silence the whole body with no log, no finding,
+    no re-raise, exactly like ``except Exception: pass``. Narrow suppression
+    (``suppress(OSError)``, ``suppress(ValueError, TypeError)``) names the
+    exception it expects and is NOT counted.
+    """
+    for item in node.items:
+        call = item.context_expr
+        if not isinstance(call, ast.Call):
+            continue
+        func = call.func
+        is_suppress = (isinstance(func, ast.Name) and func.id == "suppress") or (
+            isinstance(func, ast.Attribute) and func.attr == "suppress"
+        )
+        if not is_suppress:
+            continue
+        for arg in call.args:
+            arg_name = (
+                arg.id
+                if isinstance(arg, ast.Name)
+                else arg.attr
+                if isinstance(arg, ast.Attribute)
+                else None
+            )
+            if arg_name in _BROAD_SUPPRESS_NAMES:
+                return True
+    return False
+
+
 def scan_file(path: Path) -> int:
-    """Count un-overridden silent except handlers in one file."""
+    """Count un-overridden silent swallows in one file.
+
+    Two shapes count: an ``except`` handler whose body is only ``pass`` /
+    ``<logger>.debug(...)``, and a ``with contextlib.suppress(Exception)``
+    block (broad suppression). Both hide the failure below operator
+    visibility; both are exempt with a ``# noqa: silent-ok`` marker.
+    """
     try:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
@@ -102,7 +160,10 @@ def scan_file(path: Path) -> int:
     count = 0
     for node in ast.walk(tree):
         if isinstance(node, ast.ExceptHandler) and _handler_is_silent(node):
-            if not _handler_has_override(node, lines):
+            if not _node_has_override(node, lines):
+                count += 1
+        elif isinstance(node, (ast.With, ast.AsyncWith)) and _is_broad_suppress(node):
+            if not _node_has_override(node, lines):
                 count += 1
     return count
 
