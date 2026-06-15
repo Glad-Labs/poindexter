@@ -16,8 +16,16 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
 3. **Dispatch.** Deliver Gate-2-*approved* assets to the enabled video platforms
    via the publishing handler registry — long form ``shorts=False``, short
    ``shorts=True`` (the #682/#1249 Shorts-aware YouTube handler) — then stamp
-   ``record_dispatched``. Runs the same cycle as link/seed so a freshly-approved
-   asset can reach YouTube without waiting a cycle.
+   ``record_dispatched`` and **capture the external handles**: on a successful
+   upload the handler's external video id + public url are persisted via
+   ``_persist_dispatch_result`` — merged into ``media_assets.platform_video_ids``
+   (``{"youtube": "<videoId>"}``, a non-clobbering jsonb merge) and upserted as a
+   ``pipeline_distributions`` row (``target='youtube'``, ``external_id``,
+   ``external_url``, ``status='published'``) in the same transaction as the
+   ``record_dispatched`` stamp. Without this the id/url were discarded and there
+   was no record of what landed on YouTube (or any handle to dedupe re-uploads).
+   Runs the same cycle as link/seed so a freshly-approved asset can reach YouTube
+   without waiting a cycle.
 
 **Deconfliction with ``backfill_videos``.** That legacy dispatch-only pass fires
 only for posts whose ``VIDEO_DIR/{post_id}.mp4`` exists on disk; media_pipeline
@@ -34,14 +42,35 @@ no-op (already-linked assets fall out of the query; ``record_pending`` is
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from plugins.job import JobResult
 from services.media_approval_service import record_dispatched, record_pending
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _PlatformDispatchResult:
+    """Outcome of delivering one asset to one video platform.
+
+    ``_dispatch_asset`` returns one of these per enabled adapter so the caller
+    can both decide the aggregate dispatch outcome (``record_dispatched``) AND
+    persist the platform's external handles (``external_id`` / ``url``). The
+    upload handler returns the external video id under its ``post_id`` key and
+    the public watch URL under ``url`` (see
+    ``services/integrations/handlers/publishing_youtube.py``); we capture them
+    here under clearer names. ``external_id`` is ``None`` on failure.
+    """
+
+    platform: str
+    success: bool
+    external_id: str | None = None
+    url: str | None = None
 
 # Video destinations this lane delivers to. Adding a platform = add here + a
 # publishing_adapters row + a publishing.<name> handler (the #112 contract).
@@ -93,6 +122,8 @@ _APPROVED_UNDISPATCHED_SQL = """
     SELECT ma.post_id::text AS post_id,
            ma.medium,
            p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
+           mas.id::text AS asset_id,
+           mas.task_id,
            mas.storage_path
       FROM media_approvals ma
       JOIN posts p ON p.id = ma.post_id
@@ -118,17 +149,51 @@ _ADAPTERS_SQL = """
        AND platform = ANY($1::text[])
 """
 
+# Merge one platform's external video id into the asset's platform_video_ids
+# jsonb. The ``||`` concat operator is a shallow merge, so {"youtube": "<id>"}
+# replaces only the youtube key and leaves any other platform's id intact —
+# the asset can be cross-posted without one delivery clobbering another's id.
+_MERGE_PLATFORM_VIDEO_ID_SQL = """
+    UPDATE media_assets
+       SET platform_video_ids = platform_video_ids || $2::jsonb,
+           updated_at = NOW()
+     WHERE id = $1::uuid
+"""
+
+# Record the external delivery for observability + dedupe. ``task_id`` is the
+# media_assets task key (== posts.metadata->>'pipeline_task_id', the FK target
+# for pipeline_distributions). Upserted on the (task_id, target) unique key so a
+# re-dispatch refreshes the same row rather than duplicating it.
+_RECORD_DISTRIBUTION_SQL = """
+    INSERT INTO pipeline_distributions
+        (task_id, target, status, external_id, external_url, post_id, published_at)
+    VALUES ($1, $2, 'published', $3, $4, $5::uuid, NOW())
+    ON CONFLICT (task_id, target) DO UPDATE SET
+        status       = EXCLUDED.status,
+        external_id  = COALESCE(EXCLUDED.external_id, pipeline_distributions.external_id),
+        external_url = COALESCE(EXCLUDED.external_url, pipeline_distributions.external_url),
+        post_id      = COALESCE(EXCLUDED.post_id, pipeline_distributions.post_id),
+        published_at = COALESCE(EXCLUDED.published_at, pipeline_distributions.published_at)
+"""
+
 
 async def _dispatch_asset(
     pool: Any, site_config: Any, row: dict[str, Any], *, shorts: bool
-) -> bool:
+) -> list[_PlatformDispatchResult]:
     """Deliver one approved video asset to the enabled video platforms.
 
     Builds the SEO-rich YouTube payload from the post's structured fields
     (reusing the same helpers backfill_videos uses, glad-labs-stack#275) and
     threads the ``shorts`` flag so the adapter injects the ``#Shorts`` marker for
     short-form (the #682/#1249 handler). Per-adapter exceptions are isolated.
-    Returns True iff at least one platform accepted the upload.
+
+    Returns one ``_PlatformDispatchResult`` per enabled adapter, carrying the
+    handler's external video id + public url on success so the caller can
+    persist them (``media_assets.platform_video_ids`` + ``pipeline_distributions``).
+    Previously this returned a bare ``bool`` and the id/url were discarded — the
+    bug this fix closes. An empty list means there was nothing to dispatch to
+    (handler load failed / no enabled adapter); the caller treats that as a
+    failed attempt, same as before.
     """
     # Reuse the pure YouTube-payload helpers — they compose the description
     # (SEO excerpt + canonical back-link + stripped body, ≤4800 chars) and parse
@@ -144,16 +209,16 @@ async def _dispatch_asset(
         load_all()  # idempotent — ensures publishing_youtube is registered
     except Exception as exc:  # noqa: BLE001
         logger.warning("[MEDIA_DISTRIBUTE] handler load failed: %s", exc)
-        return False
+        return []
 
     try:
         adapters = await pool.fetch(_ADAPTERS_SQL, list(_VIDEO_PLATFORMS))
     except Exception as exc:  # noqa: BLE001
         logger.warning("[MEDIA_DISTRIBUTE] adapter lookup failed: %s", exc)
-        return False
+        return []
     if not adapters:
         logger.debug("[MEDIA_DISTRIBUTE] no enabled video adapters — skipping")
-        return False
+        return []
 
     description = _build_youtube_description(
         seo_description=row.get("excerpt") or "",
@@ -171,7 +236,7 @@ async def _dispatch_asset(
         "shorts": shorts,
     }
 
-    any_success = False
+    results: list[_PlatformDispatchResult] = []
     for adapter in adapters:
         platform = adapter["platform"]
         try:
@@ -184,23 +249,92 @@ async def _dispatch_asset(
                 pool=pool,
             )
             if isinstance(result, dict) and result.get("success"):
-                any_success = True
+                # The handler returns the external video id under "post_id"
+                # and the public watch URL under "url" — capture both so the
+                # caller can persist them.
+                results.append(
+                    _PlatformDispatchResult(
+                        platform=platform,
+                        success=True,
+                        external_id=result.get("post_id"),
+                        url=result.get("url"),
+                    )
+                )
                 logger.info(
-                    "[MEDIA_DISTRIBUTE] %s upload succeeded for post %s (shorts=%s)",
-                    platform, row["post_id"], shorts,
+                    "[MEDIA_DISTRIBUTE] %s upload succeeded for post %s "
+                    "(shorts=%s, external_id=%s)",
+                    platform, row["post_id"], shorts, result.get("post_id"),
                 )
             else:
+                results.append(
+                    _PlatformDispatchResult(platform=platform, success=False)
+                )
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] %s upload failed for post %s: %s",
                     platform, row["post_id"],
                     (result or {}).get("error") if isinstance(result, dict) else result,
                 )
         except Exception as exc:  # noqa: BLE001 — one platform must not starve others
+            results.append(
+                _PlatformDispatchResult(platform=platform, success=False)
+            )
             logger.warning(
                 "[MEDIA_DISTRIBUTE] %s upload raised for post %s: %s",
                 platform, row["post_id"], exc,
             )
-    return any_success
+    return results
+
+
+async def _persist_dispatch_result(
+    pool: Any,
+    *,
+    post_id: str,
+    medium: str,
+    asset_id: str | None,
+    task_id: str | None,
+    results: list[_PlatformDispatchResult],
+) -> None:
+    """Stamp the dispatch outcome AND capture each platform's external handles.
+
+    All writes happen in a single transaction so a successful upload is never
+    recorded as dispatched (``media_approvals``) without its external id/url,
+    and vice-versa. Per successful platform we:
+
+    1. merge ``{platform: external_id}`` into ``media_assets.platform_video_ids``
+       (shallow ``||`` merge — never clobbers another platform's id), and
+    2. upsert a ``pipeline_distributions`` row (``status='published'``) carrying
+       ``external_id`` / ``external_url`` for observability + re-upload dedupe.
+
+    Both writes are skipped for a platform with no ``external_id`` (a failed
+    upload, or a handler that returned success without an id), and the
+    distribution upsert is skipped when ``task_id`` is missing (it's the NOT
+    NULL FK key for ``pipeline_distributions``). ``record_dispatched`` still
+    records the failed attempt in those cases so the row stays re-dispatchable.
+    """
+    ok = any(r.success for r in results)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await record_dispatched(conn, post_id, medium, success=ok)
+            for r in results:
+                if not (r.success and r.external_id):
+                    continue
+                if asset_id:
+                    await conn.execute(
+                        _MERGE_PLATFORM_VIDEO_ID_SQL,
+                        asset_id,
+                        json.dumps({r.platform: r.external_id}),
+                    )
+                if task_id:
+                    await conn.execute(
+                        _RECORD_DISTRIBUTION_SQL,
+                        task_id, r.platform, r.external_id, r.url, post_id,
+                    )
+                else:
+                    logger.warning(
+                        "[MEDIA_DISTRIBUTE] %s delivered post %s (external_id=%s) "
+                        "but no task_id — skipping pipeline_distributions row",
+                        r.platform, post_id, r.external_id,
+                    )
 
 
 def _max_per_cycle(site_config: Any) -> int:
@@ -309,19 +443,30 @@ class MediaDistributeJob:
 
             shorts = medium == "video_short"
             try:
-                ok = await _dispatch_asset(pool, sc, dict(row), shorts=shorts)
+                results = await _dispatch_asset(pool, sc, dict(row), shorts=shorts)
             except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] dispatch raised for post %s (%s): %s",
                     row["post_id"], medium, exc,
                 )
-                ok = False
+                results = []
+            ok = any(r.success for r in results)
 
+            # Stamp the dispatch + capture each platform's external id/url in one
+            # transaction (the id/url used to be discarded — the bug). asset_id /
+            # task_id come off the approved-undispatched row.
             try:
-                await record_dispatched(pool, row["post_id"], medium, success=ok)
+                await _persist_dispatch_result(
+                    pool,
+                    post_id=row["post_id"],
+                    medium=medium,
+                    asset_id=row.get("asset_id"),
+                    task_id=row.get("task_id"),
+                    results=results,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "[MEDIA_DISTRIBUTE] record_dispatched failed for post %s (%s): %s",
+                    "[MEDIA_DISTRIBUTE] record dispatch outcome failed for post %s (%s): %s",
                     row["post_id"], medium, exc,
                 )
             if ok:
