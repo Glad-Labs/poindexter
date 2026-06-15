@@ -204,11 +204,11 @@ class MemoryClient:
         mask the real error that sent us into close() in the first place.
         """
         if self._http is not None:
-            with suppress(Exception):
+            with suppress(Exception):  # noqa: silent-ok teardown close; raise would mask the original error
                 await self._http.aclose()
             self._http = None
         if self._pool is not None:
-            with suppress(Exception):
+            with suppress(Exception):  # noqa: silent-ok teardown close; raise would mask the original error
                 await self._pool.close()
             self._pool = None
 

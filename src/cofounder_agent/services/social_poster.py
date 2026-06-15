@@ -343,7 +343,7 @@ async def _generate_social_text(
                 text = result.get("text", "").strip()
             finally:
                 if owns_client:
-                    with suppress(Exception):
+                    with suppress(Exception):  # noqa: silent-ok best-effort client close in finally
                         await client.close()
 
         # Defense in depth: strip any residual <think>...</think> reasoning

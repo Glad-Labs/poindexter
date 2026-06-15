@@ -2,20 +2,24 @@
 """CI lint: no NEW silently-swallowed exceptions in production code.
 
 Silent-failure audit follow-up (H2). A swallowed exception is invisible to
-the operator when the failure is recorded by *only* one of:
+the operator when a single-statement handler records the failure with *only*:
 
-  - ``except ...: pass``           — nothing is recorded at all
-  - ``except ...: <logger>.debug`` — below the prod log level AND below
-                                     GlitchTip's ERROR event gate
-                                     (LoggingIntegration event_level=ERROR)
-  - ``with suppress(Exception):``  — broad ``contextlib.suppress`` silences
-                                     the whole block (no log, no finding, no
-                                     re-raise); it is an ``ast.With`` node,
-                                     not an ``ExceptHandler``, so the handler
-                                     scan alone never sees it
+  - ``pass`` — nothing recorded at all
+  - ``<logger>.debug(...)`` — below the prod Loki level (INFO)
+  - ``<logger>.info(...)`` — reaches Loki but is below GlitchTip's ERROR event
+    gate (LoggingIntegration event_level=ERROR), so it never pages
+  - ``return <sentinel>`` under a *broad* except (``except:`` /
+    ``except Exception`` / ``except BaseException``) — swallows anything and
+    returns None / a constant / an empty collection with no log, no finding,
+    no re-raise. A *narrow* except returning a sentinel
+    (``except ValueError: return None``) is a deliberate fallback, left alone.
 
-Either way the failure never reaches Loki (at prod level), never creates a
-GlitchTip issue, and never pages. This lint stops that category from
+…or when a whole block is wrapped in broad ``contextlib.suppress(Exception)``
+(an ``ast.With`` node, not an ``ExceptHandler``, so the handler scan alone
+never sees it).
+
+Either way the failure never reaches the operator's alerting bar. This lint
+stops that category from
 GROWING. It does NOT try to fix the ~existing sites in one pass — those are
 captured in a per-file BASELINE (``silent_excepts_baseline.json``) and the
 lint only fails when a file's count exceeds its baseline (i.e. a NEW silent
@@ -60,35 +64,86 @@ SCAN_ROOTS = [
 
 OVERRIDE_MARKER = "silent-ok"
 
-# Suppressing one of these via ``contextlib.suppress(...)`` silences the whole
-# ``with`` body exactly like ``except Exception: pass``. Narrow, named
-# suppression (``suppress(OSError)``) is deliberate control flow, not a swallow.
-_BROAD_SUPPRESS_NAMES = {"Exception", "BaseException"}
+# The "catch everything" exception types. Catching one — via ``except
+# Exception:`` or ``contextlib.suppress(Exception)`` — and then not recording
+# the failure is the swallow this lint guards. Narrow, named exceptions
+# (OSError, ValueError, …) are deliberate control flow.
+_BROAD_EXCEPTION_NAMES = {"Exception", "BaseException"}
+
+# debug is below the prod Loki level (INFO); info reaches Loki but is below
+# GlitchTip's ERROR event gate. For an *exception*, a handler that only logs at
+# one of these never pages — both sit below the operator's alerting bar.
+_LOW_VISIBILITY_LOG_METHODS = {"debug", "info"}
 
 
-def _is_debug_call(stmt: ast.stmt) -> bool:
-    """True if stmt is a bare ``<anything>.debug(...)`` expression statement."""
+def _is_low_visibility_log_call(stmt: ast.stmt) -> bool:
+    """True if stmt is a bare ``<anything>.debug(...)`` / ``.info(...)`` call."""
     if not isinstance(stmt, ast.Expr):
         return False
     call = stmt.value
     if not isinstance(call, ast.Call):
         return False
     func = call.func
-    return isinstance(func, ast.Attribute) and func.attr == "debug"
+    return isinstance(func, ast.Attribute) and func.attr in _LOW_VISIBILITY_LOG_METHODS
+
+
+def _is_broad_except(handler: ast.ExceptHandler) -> bool:
+    """True if the ``except`` clause catches everything — bare ``except:`` or
+    ``except Exception`` / ``except BaseException`` (alone or in a tuple)."""
+    exc = handler.type
+    if exc is None:
+        return True  # bare ``except:``
+    candidates = exc.elts if isinstance(exc, ast.Tuple) else [exc]
+    for node in candidates:
+        name = (
+            node.id
+            if isinstance(node, ast.Name)
+            else node.attr
+            if isinstance(node, ast.Attribute)
+            else None
+        )
+        if name in _BROAD_EXCEPTION_NAMES:
+            return True
+    return False
+
+
+def _is_sentinel_return(stmt: ast.stmt) -> bool:
+    """True if stmt returns a sentinel — bare ``return``, a constant (None /
+    bool / number / str / bytes), or an empty collection literal. Returning a
+    named value or a non-empty literal is a meaningful fallback, not a
+    sentinel, and is NOT flagged."""
+    if not isinstance(stmt, ast.Return):
+        return False
+    val = stmt.value
+    if val is None:  # bare ``return``
+        return True
+    if isinstance(val, ast.Constant):  # return None / False / 0 / "" / b""
+        return True
+    if isinstance(val, (ast.List, ast.Set, ast.Tuple)):
+        return len(val.elts) == 0
+    if isinstance(val, ast.Dict):
+        return len(val.keys) == 0
+    return False
 
 
 def _handler_is_silent(handler: ast.ExceptHandler) -> bool:
-    """True if the handler body swallows silently (pass-only or debug-only).
+    """True if a single-statement handler swallows below operator visibility.
 
-    A handler with any second statement (a finding emit, a re-raise, a
-    state mutation, a higher-severity log) is NOT silent — the failure is
-    being recorded or acted on.
+    The lone statement is one of: ``pass``; a ``<logger>.debug/info(...)`` call
+    (below the alerting bar); or — under a *broad* except — a ``return`` of a
+    sentinel (None / constant / empty collection), which swallows anything and
+    reports "empty". A *narrow* except returning a sentinel
+    (``except ValueError: return None``) is a deliberate fallback, not a
+    swallow. A handler with any second statement (a finding emit, a re-raise, a
+    state mutation, a higher-severity log) is NOT silent.
     """
     body = handler.body
     if len(body) != 1:
         return False
     only = body[0]
-    return isinstance(only, ast.Pass) or _is_debug_call(only)
+    if isinstance(only, ast.Pass) or _is_low_visibility_log_call(only):
+        return True
+    return _is_broad_except(handler) and _is_sentinel_return(only)
 
 
 def _node_has_override(node: ast.AST, lines: list[str]) -> bool:
@@ -138,7 +193,7 @@ def _is_broad_suppress(node: ast.With | ast.AsyncWith) -> bool:
                 if isinstance(arg, ast.Attribute)
                 else None
             )
-            if arg_name in _BROAD_SUPPRESS_NAMES:
+            if arg_name in _BROAD_EXCEPTION_NAMES:
                 return True
     return False
 
@@ -228,14 +283,14 @@ def main() -> int:
         for r in regressions:
             print(r)
         print(
-            "\nA handler whose body is only `pass` or `<logger>.debug(...)` "
-            "swallows the failure below the operator's visibility "
-            "(prod log level + GlitchTip ERROR gate). Make it visible — "
-            "escalate the log level, emit_finding(severity>=warn), or "
-            "re-raise. If the swallow is genuinely fine (best-effort "
-            "cleanup), add `# noqa: silent-ok <reason>` on the except line. "
-            "If you intentionally reduced a count, re-run with "
-            "--update-baseline."
+            "\nThese handlers swallow a failure below the operator's alerting "
+            "bar — body is only `pass`, `<logger>.debug/info(...)`, or "
+            "`return <sentinel>` under a broad except, or a broad "
+            "`contextlib.suppress(...)`. Make it visible — escalate to "
+            "warning+/error, emit_finding(severity>=warn), or re-raise. If the "
+            "swallow is genuinely fine (best-effort cleanup), add "
+            "`# noqa: silent-ok <reason>`. If you intentionally reduced a "
+            "count, re-run with --update-baseline."
         )
         return 1
 

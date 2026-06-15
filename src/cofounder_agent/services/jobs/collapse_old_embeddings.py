@@ -399,7 +399,7 @@ async def build_summary_text_via_llm(
                 text = text[1:-1].strip()
             return text or None
         finally:
-            with suppress(Exception):
+            with suppress(Exception):  # noqa: silent-ok best-effort client close in finally
                 await client.close()
     except Exception as exc:  # noqa: BLE001 — never let a bad LLM call kill the job
         logger.warning(
