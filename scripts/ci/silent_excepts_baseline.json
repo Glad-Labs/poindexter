@@ -20,7 +20,6 @@
   "mcp-server/http_server.py": 1,
   "mcp-server/oauth_client.py": 1,
   "mcp-server/server.py": 3,
-  "src/cofounder_agent/clients/progress_client.py": 3,
   "src/cofounder_agent/config/__init__.py": 1,
   "src/cofounder_agent/main.py": 3,
   "src/cofounder_agent/memory_system.py": 1,

@@ -22,7 +22,6 @@ Tests cover:
 - _calculate_cluster_importance — base + recency bonus
 - forget_outdated_memories — deletes from DB and caches
 - get_memory_summary — returns counts from DB
-- get_progress_client helper (not memory_system, skip)
 """
 
 from datetime import datetime, timedelta, timezone
