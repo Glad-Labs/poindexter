@@ -104,7 +104,8 @@ async def run_seo_llm(
     for attempt in range(1, max_attempts + 1):
         try:
             text = await ollama_chat_text(
-                prompt, site_config=site_config, pool=pool, tier=_SEO_TIER
+                prompt, site_config=site_config, pool=pool, tier=_SEO_TIER,
+                task_id=state.get("task_id"), phase="seo",
             )
             return (text or "").strip()
         except Exception as exc:  # noqa: BLE001 — retry any transient transport error

@@ -623,6 +623,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             site_config=site_config,
             pool=pool,
             timeout_setting="niche_ollama_chat_timeout_seconds",
+            task_id=task_id,
+            phase="narrate_bundle",
         )
     except Exception as exc:
         logger.warning(

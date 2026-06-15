@@ -248,6 +248,10 @@ class _State(TypedDict, total=False):
     # registry was unreachable (bootstrap / test).
     prompt_template_key: str | None
     prompt_template_version: int | None
+    # Pipeline task_id — threaded from generate_content.py via run() so
+    # every ollama_chat_text call inside this graph can tag cost_logs rows
+    # with the originating task. None when called outside a pipeline context.
+    task_id: str | None
 
 
 # -- nodes --
@@ -351,6 +355,7 @@ async def _draft_node(state: _State) -> _State:
         topic=state["topic"], angle=state["angle"],
         snippets=state["snippets"], extra_instructions=instruction,
         site_config=site_config, pool=pool,
+        task_id=state.get("task_id"),
     )
     return {**state, "draft": draft}
 
@@ -580,6 +585,7 @@ async def _revise_node(state: _State) -> _State:
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
+    task_id = state.get("task_id")
     # Phase 1 lab harness — when the caller passed a writer_model_override
     # (because pick_variant assigned a model-axis variant), it lives in
     # the parallel _MODEL_OVERRIDE_REGISTRY (string is msgpack-friendly
@@ -622,6 +628,8 @@ async def _revise_node(state: _State) -> _State:
             site_config=site_config,
             pool=pool,
             timeout_setting="niche_ollama_chat_timeout_seconds",
+            task_id=task_id,
+            phase="two_pass_revise",
         )
 
     # poindexter#574 — variant-override fallback. When a variant assigned
@@ -736,7 +744,7 @@ def _build_graph():
 _GRAPH = _build_graph()
 
 
-async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw: Any) -> dict[str, Any]:
+async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task_id: str | None = None, **kw: Any) -> dict[str, Any]:
     """Run the two-pass writer graph and return the final draft + metadata.
 
     Kwargs that flow into graph state:
@@ -781,6 +789,7 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, **kw
             "writer_prompt_override": str(kw.get("writer_prompt_override") or ""),
             "context_bundle": cb_kw if isinstance(cb_kw, dict) else {},
             "research_context": str(kw.get("research_context") or ""),
+            "task_id": task_id,
         }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)

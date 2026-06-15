@@ -224,6 +224,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             system=_resolve_system_prompt(),
             site_config=site_config,
             pool=pool,
+            task_id=state.get("task_id"),
+            phase="qa_critic",
         )
     except Exception as exc:
         logger.exception("[atoms.review_with_critic] ollama call failed: %s", exc)

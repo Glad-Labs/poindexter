@@ -174,6 +174,8 @@ async def ollama_chat_text(
     site_config: Any = None,
     pool: Any = None,
     tier: str = "standard",
+    task_id: str | None = None,
+    phase: str = "ollama_chat_text",
 ) -> str:
     """Plain-text LLM chat call.
 
@@ -250,6 +252,8 @@ async def ollama_chat_text(
             model=resolved_model,
             tier=tier,
             timeout_s=int(timeout),
+            task_id=task_id,
+            phase=phase,
         )
         raw = getattr(completion, "text", "") or ""
         usage_details = {

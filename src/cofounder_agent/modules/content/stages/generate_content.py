@@ -852,6 +852,7 @@ class GenerateContentStage:
                 angle=angle,
                 niche_id=None,
                 pool=pool,
+                task_id=str(task_id) if task_id else None,
                 writer_prompt_override=writer_prompt_override,
                 context_bundle=context_bundle,
                 # Pre-collected external research corpus — threaded so the

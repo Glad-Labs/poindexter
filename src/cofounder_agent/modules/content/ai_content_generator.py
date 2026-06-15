@@ -1358,6 +1358,7 @@ async def generate_with_context(
     extra_instructions: str | None = None,
     site_config: Any,
     pool: Any = None,
+    task_id: str | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1406,6 +1407,8 @@ async def generate_with_context(
         site_config=_sc,
         pool=pool,
         timeout_setting="niche_ollama_chat_timeout_seconds",
+        task_id=task_id,
+        phase="draft_generation",
     )
 
 
