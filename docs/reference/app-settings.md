@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-14.**  
+> **Auto-generated from live `app_settings` table on 2026-06-15.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 842 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 855 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -29,7 +29,7 @@ The worker re-reads on every poll; no restart needed.
 
 - [alerts](#alerts) (5 keys)
 - [api_keys](#api-keys) (1 key)
-- [backup](#backup) (14 keys)
+- [backup](#backup) (30 keys)
 - [bench](#bench) (2 keys)
 - [brain](#brain) (13 keys)
 - [brain-probes](#brain-probes) (7 keys)
@@ -68,8 +68,8 @@ The worker re-reads on every poll; no restart needed.
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (37 keys)
-- [plugins](#plugins) (48 keys)
-- [plugin_telemetry](#plugin-telemetry) (83 keys)
+- [plugins](#plugins) (47 keys)
+- [plugin_telemetry](#plugin-telemetry) (81 keys)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
 - [publishing](#publishing) (5 keys)
@@ -124,6 +124,22 @@ The worker re-reads on every poll; no restart needed.
 | `backup_watcher_poll_interval_minutes` | `5` |  | Cadence at which the watcher re-checks backup freshness. Matches the brain cycle by default; bump higher only if the ... |
 | `backup_watcher_retry_delay_seconds` | `120` |  | How long the watcher waits after `docker restart` before re-stat-ing the dump directory. Long enough for postgres rec... |
 | `backup_watcher_sentinel_dir` | `/host-backup-logs` |  | Container path the brain bind-mounts ~/.poindexter/logs into (read-only). brain/backup_watcher.py scans this director... |
+| `offsite_backup_enabled` | `true` |  | Master switch for the off-machine (Tier 2) restic loop. The backup-offsite container stays running but idles when fal... |
+| `offsite_backup_interval` | `24h` |  | Cadence between offsite restic backups. Format <N>{s\|m\|h\|d}. Read fresh each tick. |
+| `offsite_backup_keep_daily` | `7` |  | restic forget --keep-daily (only consulted when offsite_backup_prune_enabled=true). |
+| `offsite_backup_keep_monthly` | `6` |  | restic forget --keep-monthly (only consulted when offsite_backup_prune_enabled=true). |
+| `offsite_backup_keep_weekly` | `4` |  | restic forget --keep-weekly (only consulted when offsite_backup_prune_enabled=true). |
+| `offsite_backup_max_age_hours` | `26` |  | Staleness threshold for the brain offsite_backup_watch probe (daily cadence + 2h slack). |
+| `offsite_backup_prune_enabled` | `false` |  | When false (default) the runner never forget/prunes — keeps an append-only S3 key safe. Enable ONLY with a privileged... |
+| `offsite_backup_repository` | `` |  | restic repository URL, e.g. s3:https://s3.us-west-002.backblazeb2.com/<bucket>/<path>. Empty = Tier 2 inert. Set by `... |
+| `offsite_backup_restic_image` | `restic/restic:0.16.4` |  | Pinned restic image the wizard + brain verify use via `docker run`. Matches the alpine restic baked into the backup i... |
+| `offsite_backup_source_tier` | `daily` |  | Which Tier 1 dump subdir under /backups to ship off-machine. |
+| `offsite_backup_verify_enabled` | `true` |  | Master switch for the weekly remote `restic check`. |
+| `offsite_backup_verify_interval_hours` | `168` |  | How often the runner runs `restic check` against the remote repo (weekly). |
+| `offsite_backup_verify_read_data_subset_percent` | `5` |  | Percentage of pack data `restic check --read-data-subset` re-reads to catch bit-rot. |
+| `offsite_backup_watch_enabled` | `true` |  | Master switch for the brain auto-retry watch on the offsite tier. |
+| `offsite_backup_watch_max_retries` | `2` |  | docker restart attempts before the watch escalates and emits offsite_backup_stale. |
+| `offsite_backup_watch_retry_delay_seconds` | `120` |  | Wait between docker restart and re-checking the heartbeat. |
 
 ## bench
 
@@ -857,7 +873,7 @@ The worker re-reads on every poll; no restart needed.
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
 | `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
-| `operator_url_probe_target_overrides` | `{"data_fabric_loki_url": {"method": "...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
+| `operator_url_probe_target_overrides` | `{"cloudflare_beacon_url": {"alive_cod...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
 | `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP gRPC endpoint that the worker pushes spans to. Default points at the docker-compose tempo service on its OTLP gR... |
 | `pyroscope_server_url` | `http://pyroscope:4040` |  | Pyroscope ingestion URL for worker agent |
 | `sentry_profiles_sample_rate` | `0.1` |  | Fraction of transactions to capture as CPU profiles. Default 0.1. Same hardcoding bug as traces sample rate. |
@@ -944,7 +960,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.db_backup` | `{"enabled": true, "interval_seconds":...` |  | Config for job db_backup — tune cadence via config.schedule |
 | `plugin.job.detect_anomalies` | `{"enabled": true, "interval_seconds":...` |  | Config for job detect_anomalies — tune cadence via config.schedule |
 | `plugin.job.detect_duplicate_posts` | `{"enabled": true, "interval_seconds":...` |  | Config for job detect_duplicate_posts — tune cadence via config.schedule |
-| `plugin.job.drive_media_gates` | `{"enabled": true, "interval_seconds":...` |  | Config for job drive_media_gates — tune cadence via config.schedule |
 | `plugin.job.expire_stale_approvals` | `{"enabled": true, "interval_seconds":...` |  | Config for job expire_stale_approvals — tune cadence via config.schedule |
 | `plugin.job.findings_alert_router` | `{"enabled": true, "interval_seconds":...` |  | Config for job findings_alert_router — tune cadence via config.schedule |
 | `plugin.job.fix_broken_external_links` | `{"enabled": true, "interval_seconds":...` |  | Config for job fix_broken_external_links — tune cadence via config.schedule |
@@ -998,7 +1013,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_run_db_backup` | `0` |  | Unix epoch of last fire for plugin job 'db_backup' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_detect_anomalies` | `0` |  | Unix epoch of last fire for plugin job 'detect_anomalies' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_detect_duplicate_posts` | `0` |  | Unix epoch of last fire for plugin job 'detect_duplicate_posts' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_drive_media_gates` | `0` |  | Unix epoch of last fire for plugin job 'drive_media_gates' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_expire_stale_approvals` | `0` |  | Unix epoch of last fire for plugin job 'expire_stale_approvals' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_findings_alert_router` | `0` |  | Unix epoch of last fire for plugin job 'findings_alert_router' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_fix_broken_external_links` | `0` |  | Unix epoch of last fire for plugin job 'fix_broken_external_links' (auto-written by PluginScheduler) |
@@ -1039,7 +1053,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_status_db_backup` | `ok` |  | Outcome of last fire for plugin job 'db_backup': 'ok' or 'err' |
 | `plugin_job_last_status_detect_anomalies` | `ok` |  | Outcome of last fire for plugin job 'detect_anomalies': 'ok' or 'err' |
 | `plugin_job_last_status_detect_duplicate_posts` | `ok` |  | Outcome of last fire for plugin job 'detect_duplicate_posts': 'ok' or 'err' |
-| `plugin_job_last_status_drive_media_gates` | `ok` |  | Outcome of last fire for plugin job 'drive_media_gates': 'ok' or 'err' |
 | `plugin_job_last_status_expire_stale_approvals` | `ok` |  | Outcome of last fire for plugin job 'expire_stale_approvals': 'ok' or 'err' |
 | `plugin_job_last_status_findings_alert_router` | `ok` |  | Outcome of last fire for plugin job 'findings_alert_router': 'ok' or 'err' |
 | `plugin_job_last_status_fix_broken_external_links` | `ok` |  | Outcome of last fire for plugin job 'fix_broken_external_links': 'ok' or 'err' |
