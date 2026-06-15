@@ -1,0 +1,54 @@
+# Fail the build if any file documents a non-existent top-level `set`
+# subcommand of the Poindexter CLI. The real command lives under the
+# `settings` group — `poindexter settings set <key> <value>` — so a bare
+# top-level `set` invocation errors with `No such command 'set'`.
+#
+# See scripts/ci/check_phantom_poindexter_set.py for the detection rule and
+# the allow-list. The bug was reconciled twice (#1556, #1562) and kept
+# creeping back into docs / runbooks / error strings / seed descriptions;
+# this guard makes the regression fail loud so the fix lands with the
+# offending change.
+#
+# Modeled on public-mirror-safety.yml: no path filter, because the bad
+# string can appear anywhere — exactly like a leak. The script is
+# stdlib-only, so the job is checkout + run, no install step.
+name: phantom-poindexter-set
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same PR ref. The check is fast (<2s) so this
+# mostly matters for the rare PR with rapid-fire pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — read-only checkout is all this needs.
+permissions:
+  contents: read
+
+jobs:
+  phantom-poindexter-set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout (need full ref to git ls-files)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+        with:
+          # Shallow clone is fine — the script uses `git ls-files`, not history.
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+
+      # No third-party deps — the script is stdlib-only on purpose so it runs
+      # in <2s without a cache or install step.
+      - name: Run phantom-poindexter-set check
+        run: python scripts/ci/check_phantom_poindexter_set.py
