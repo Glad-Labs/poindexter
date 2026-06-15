@@ -1453,8 +1453,19 @@ class TemplateRunner:
             from brain.bootstrap import resolve_database_url
             return resolve_database_url()
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "[template_runner] resolve_database_url raised: %s", exc,
+            # Warn, not debug: this swallow is what made the seo_refresh
+            # resume failure a two-step mystery. ``brain.bootstrap`` is NOT
+            # on sys.path in the installed CLI venv (poindexter-backend ships
+            # only ``cofounder_agent``; ``brain`` lives at the repo root), so
+            # this fallback raises ModuleNotFoundError there. Surfacing the
+            # cause makes the downstream "no DSN resolved — MemorySaver" line
+            # self-diagnosing instead of silent.
+            logger.warning(
+                "[template_runner] checkpointer DSN fallback via "
+                "brain.bootstrap failed (%s: %s) — pass checkpointer_dsn "
+                "explicitly or set DATABASE_URL. Falling back to MemorySaver "
+                "(no durable checkpoints).",
+                type(exc).__name__, exc,
             )
             return None
 

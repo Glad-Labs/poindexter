@@ -288,6 +288,41 @@ class TestCheckpointerFallback:
         ), f"expected DSN-missing warning, got: {[r.message for r in caplog.records]}"
 
     @pytest.mark.asyncio
+    async def test_dsn_fallback_failure_warns_with_cause(
+        self, trivial_templates, flag_on, caplog,
+    ):
+        """When the brain.bootstrap DSN fallback raises (the installed-CLI-venv
+        case: ModuleNotFoundError because brain isn't on sys.path), _resolve_dsn
+        now logs a WARNING naming the cause — not a swallowed debug line — so the
+        operator can self-diagnose instead of chasing the downstream halt."""
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None, site_config=flag_on,
+        )
+
+        with patch(
+            "brain.bootstrap.resolve_database_url",
+            side_effect=ModuleNotFoundError("No module named 'brain'"),
+        ), caplog.at_level(logging.WARNING):
+            summary = await runner.run(
+                trivial_templates,
+                {"task_id": "dsn-raise", "topic": "hi"},
+                thread_id="dsn-raise-thread",
+            )
+
+        # Still degrades gracefully to MemorySaver.
+        assert summary.ok
+        # The NEW behavior: a WARNING that names brain.bootstrap and the cause.
+        assert any(
+            rec.levelno == logging.WARNING
+            and "brain.bootstrap" in rec.getMessage()
+            and "No module named 'brain'" in rec.getMessage()
+            for rec in caplog.records
+        ), (
+            "expected a DSN-fallback WARNING naming the cause, got: "
+            f"{[(r.levelname, r.getMessage()) for r in caplog.records]}"
+        )
+
+    @pytest.mark.asyncio
     async def test_import_failure_falls_back_to_memorysaver(
         self, trivial_templates, flag_on, caplog, monkeypatch,
     ):
