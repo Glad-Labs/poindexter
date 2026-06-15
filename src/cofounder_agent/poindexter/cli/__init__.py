@@ -20,6 +20,33 @@ Future subcommand groups (tracked in #191):
     poindexter settings — app_settings get/set
 """
 
+# ── Quiet a noisy third-party warning before any CLI submodule loads ─────────
+# langgraph's Postgres checkpointer builds a module-level
+# ``langchain_core.load.Reviver()`` at import time
+# (``langgraph/checkpoint/serde/jsonplus.py``), and langchain-core >=1.3.3 emits
+# a ``LangChainPendingDeprecationWarning`` when ``allowed_objects`` is left at
+# its default. The call site is inside the dependency, so we cannot pass the
+# argument — and a fresh process resets the once-per-process dedup, so every
+# ``poindexter <cmd>`` would otherwise print it. Worker/server logs are
+# untouched: they never import ``poindexter.cli``.
+#
+# Ordering is load-bearing. ``warnings.filters`` is LIFO (last writer wins), and
+# langchain-core's ``surface_langchain_deprecation_warnings()`` prepends its own
+# ``"default"`` filter for this category when langchain-core is first imported.
+# So we import the category first (forcing that surface call), then register our
+# ``ignore`` afterwards so it lands ahead of langchain-core's in the stack.
+# Scoped to the exact message so other (actionable) langchain deprecations still
+# surface.
+import warnings
+
+from langchain_core._api.deprecation import LangChainPendingDeprecationWarning
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"The default value of `allowed_objects`",
+    category=LangChainPendingDeprecationWarning,
+)
+
 from .app import main
 
 __all__ = ["main"]
