@@ -565,6 +565,15 @@ async def list_approved_undispatched(
     Used by BackfillVideosJob to find videos approved before dispatch
     tracking was introduced (poindexter#558), or for any retry pass
     on transiently-failed uploads.
+
+    Excludes ``decided_by LIKE '%grandfather%'`` rows. Grandfathering blesses
+    already-live media as ``approved`` so a newly-gated RSS feed keeps showing
+    it (``is_approved`` / the feed query rightly KEEP those rows) — but the
+    media is already distributed, so the *upload* dispatchers must never queue
+    it. Conflating the two re-uploaded 9 videos to YouTube on 2026-06-15
+    (glad-labs-stack#1596); this exclusion is defense-in-depth against a future
+    grandfather migration that forgets to stamp ``dispatched_at`` at insert.
+    NULL-safe via COALESCE so operator rows with a NULL ``decided_by`` dispatch.
     """
     if medium is not None:
         _validate_medium(medium)
@@ -582,6 +591,7 @@ async def list_approved_undispatched(
         JOIN posts p ON p.id = ma.post_id
         WHERE ma.status = 'approved'
           AND ma.dispatched_at IS NULL
+          AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
           AND ($1::text IS NULL OR ma.medium = $1)
         ORDER BY ma.created_at ASC
         LIMIT $2

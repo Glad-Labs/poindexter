@@ -321,6 +321,47 @@ async def test_decide_rebuild_failure_is_non_fatal(mock_db: MagicMock) -> None:
 
 
 # ---------------------------------------------------------------------------
+# list_approved_undispatched — the upload-dispatcher selector
+# ---------------------------------------------------------------------------
+
+
+async def test_list_approved_undispatched_excludes_grandfather(
+    mock_db: MagicMock,
+) -> None:
+    """The upload dispatchers must NOT re-deliver grandfathered media.
+
+    Grandfather rows (``decided_by LIKE '%grandfather%'``) bless already-live
+    media as ``approved`` so a newly-gated RSS feed keeps showing it — but the
+    media is already distributed and must never be queued for upload. The
+    selector therefore excludes grandfather rows, NULL-safe via COALESCE so
+    operator rows with a NULL ``decided_by`` are still returned. Regression
+    guard for the 2026-06-15 re-upload incident (glad-labs-stack#1596).
+    """
+    mock_db.fetch.return_value = []
+    await media_approval_service.list_approved_undispatched(mock_db, medium="video")
+    sql = mock_db.fetch.call_args.args[0]
+    assert "ma.dispatched_at IS NULL" in sql  # still gates on never-delivered
+    assert "COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'" in sql
+
+
+async def test_list_approved_undispatched_still_returns_normal_rows(
+    mock_db: MagicMock,
+) -> None:
+    """The grandfather guard must not disturb the normal return path."""
+    mock_db.fetch.return_value = [
+        {
+            "post_id": "abc", "medium": "video", "title": "T", "content": "c",
+            "excerpt": "e", "seo_keywords": "k", "slug": "s",
+        },
+    ]
+    rows = await media_approval_service.list_approved_undispatched(
+        mock_db, medium="video",
+    )
+    assert len(rows) == 1
+    assert rows[0]["post_id"] == "abc"
+
+
+# ---------------------------------------------------------------------------
 # list_pending
 # ---------------------------------------------------------------------------
 

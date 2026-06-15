@@ -125,6 +125,10 @@ _APPROVED_UNDISPATCHED_SQL = """
                       END
      WHERE ma.status = 'approved'
        AND ma.dispatched_at IS NULL
+       -- Never re-deliver grandfathered media: grandfathering only blesses it
+       -- 'approved' for the RSS-feed gate; it is already live, so queuing it
+       -- for upload re-detonates glad-labs-stack#1596. NULL-safe via COALESCE.
+       AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
        AND ma.medium = ANY($1::text[])
        AND COALESCE(mas.storage_path, '') <> ''
      ORDER BY ma.created_at ASC

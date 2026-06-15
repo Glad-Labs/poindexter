@@ -395,3 +395,16 @@ def test_job_protocol_shape():
     assert job.name == "media_distribute"
     assert isinstance(job.schedule, str)
     assert job.idempotent is True
+
+
+def test_approved_undispatched_sql_excludes_grandfather():
+    """The asset-pass selector must exclude grandfathered media_approvals.
+
+    Same conflation as glad-labs-stack#1596: ``approved AND dispatched_at IS
+    NULL`` reads as "deliver now", but grandfather rows are already-live media
+    that must never be queued for upload. NULL-safe via COALESCE so operator
+    rows with a NULL ``decided_by`` still dispatch.
+    """
+    sql = md._APPROVED_UNDISPATCHED_SQL
+    assert "ma.dispatched_at IS NULL" in sql  # still gates on never-delivered
+    assert "COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'" in sql
