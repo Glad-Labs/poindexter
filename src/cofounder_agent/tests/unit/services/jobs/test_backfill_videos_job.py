@@ -7,11 +7,13 @@ cap.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.jobs import backfill_videos as bv
 from services.jobs.backfill_videos import (
     BackfillVideosJob,
     _build_youtube_description,
@@ -535,3 +537,274 @@ class TestDispatchPayload:
         )
         assert "Read the full post" not in payload["description"]
         assert payload["tags"] == ["ai"]
+
+
+# --------------------------------------------------------------------------
+# YouTube external-handle capture + persistence (incident #1596 — ports the
+# #1584 media_distribute capture into the post-keyed backfill path)
+# --------------------------------------------------------------------------
+
+
+class _FakeTxn:
+    """``conn.transaction()`` async-context stand-in (no-op begin/commit)."""
+
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FakeConn:
+    """Pooled-connection stand-in. ``execute`` records calls (so the
+    platform_video_ids merge + pipeline_distributions insert can be asserted);
+    ``fetchrow`` resolves the post's (asset_id, task_id); ``transaction``
+    yields a no-op async context."""
+
+    def __init__(self, *, asset_id: str | None = "asset-1", task_id: str | None = "task-1"):
+        self.execute = AsyncMock(return_value="OK")
+        self.fetchrow = AsyncMock(return_value={"asset_id": asset_id, "task_id": task_id})
+
+    def transaction(self):
+        return _FakeTxn()
+
+
+class _FakeAcquire:
+    """``pool.acquire()`` async-context stand-in yielding a single conn."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _PersistPool:
+    """asyncpg-pool stand-in exposing only ``acquire()`` → a shared conn, so
+    the transactional persist (``_persist_dispatch_result``) is observable via
+    ``pool.conn``."""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def acquire(self):
+        return _FakeAcquire(self.conn)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDispatchResultCapture:
+    """``_dispatch_video_publishers`` returns one ``_PlatformDispatchResult``
+    per adapter, capturing the handler's external id + url (was: bare bool)."""
+
+    def _adapter_rows(self) -> list[dict]:
+        return [{
+            "name": "yt",
+            "platform": "youtube",
+            "handler_name": "youtube",
+            "config": {},
+            "metadata": {},
+        }]
+
+    async def _run(self, dispatch_return: Any) -> list[Any]:
+        class _Pool:
+            fetch = AsyncMock(return_value=self._adapter_rows())
+
+        fake_registry = MagicMock()
+        fake_registry.dispatch = AsyncMock(return_value=dispatch_return)
+        fake_approval = MagicMock()
+        fake_approval.is_approved = AsyncMock(return_value=True)
+
+        with patch("services.integrations.registry", fake_registry), \
+             patch("services.integrations.handlers.load_all", MagicMock()), \
+             patch("services.media_approval_service", fake_approval):
+            return await _dispatch_video_publishers(
+                pool=_Pool(),
+                site_config=SiteConfig(initial_config={"site_url": "https://gladlabs.io"}),
+                post_id="post-1",
+                video_path="/tmp/post-1.mp4",
+                title="My Title",
+                content="<p>Body</p>",
+                seo_description="Meta.",
+                seo_keywords="ai",
+                slug="my-post",
+            )
+
+    async def test_success_captures_external_id_and_url(self):
+        results = await self._run(
+            {"success": True, "post_id": "VID123", "url": "https://youtu.be/VID123"},
+        )
+        assert len(results) == 1
+        r = results[0]
+        assert r.platform == "youtube"
+        assert r.success is True
+        # Handler returns the external video id under "post_id" + url under "url".
+        assert r.external_id == "VID123"
+        assert r.url == "https://youtu.be/VID123"
+
+    async def test_failure_has_no_external_id(self):
+        results = await self._run({"success": False, "error": "quota"})
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].external_id is None
+        assert results[0].url is None
+
+    async def test_not_approved_returns_empty(self):
+        class _Pool:
+            fetch = AsyncMock(return_value=self._adapter_rows())
+
+        fake_registry = MagicMock()
+        fake_registry.dispatch = AsyncMock(return_value={"success": True})
+        fake_approval = MagicMock()
+        fake_approval.is_approved = AsyncMock(return_value=False)
+
+        with patch("services.integrations.registry", fake_registry), \
+             patch("services.integrations.handlers.load_all", MagicMock()), \
+             patch("services.media_approval_service", fake_approval):
+            results = await _dispatch_video_publishers(
+                pool=_Pool(),
+                site_config=SiteConfig(initial_config={"site_url": "https://gladlabs.io"}),
+                post_id="post-1", video_path="/tmp/post-1.mp4",
+                title="T", content="C", seo_description="", seo_keywords="", slug="s",
+            )
+        # Gate closed → nothing dispatched, no handles to persist.
+        assert results == []
+        fake_registry.dispatch.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestPersistDispatchResult:
+    """``_persist_dispatch_result`` stamps record_dispatched AND persists each
+    successful platform's external id/url — resolving (asset_id, task_id) from
+    the post — all in one transaction (post-keyed counterpart to #1584)."""
+
+    async def test_records_id_and_url(self):
+        conn = _FakeConn(asset_id="asset-1", task_id="task-1")
+        pool = _PersistPool(conn)
+        results = [bv._PlatformDispatchResult(
+            platform="youtube", success=True,
+            external_id="VID123", url="https://youtu.be/VID123",
+        )]
+        rec = AsyncMock()
+        with patch.object(bv, "record_dispatched", rec):
+            await bv._persist_dispatch_result(
+                pool, post_id="post-1", medium="video", results=results,
+            )
+
+        rec.assert_awaited_once()
+        assert rec.await_args.kwargs["success"] is True
+        assert rec.await_args.args[0] is conn        # same transactional conn
+        assert rec.await_args.args[1] == "post-1"
+        assert rec.await_args.args[2] == "video"
+
+        calls = conn.execute.await_args_list
+        merge = next(c for c in calls if "platform_video_ids" in c.args[0])
+        assert "||" in merge.args[0]                  # jsonb merge, not clobber
+        assert merge.args[1] == "asset-1"
+        assert json.loads(merge.args[2]) == {"youtube": "VID123"}
+
+        dist = next(c for c in calls if "pipeline_distributions" in c.args[0])
+        assert dist.args[1] == "task-1"
+        assert dist.args[2] == "youtube"
+        assert dist.args[3] == "VID123"
+        assert dist.args[4] == "https://youtu.be/VID123"
+        assert dist.args[5] == "post-1"
+
+    async def test_failure_writes_no_handles(self):
+        conn = _FakeConn()
+        pool = _PersistPool(conn)
+        results = [bv._PlatformDispatchResult(platform="youtube", success=False)]
+        rec = AsyncMock()
+        with patch.object(bv, "record_dispatched", rec):
+            await bv._persist_dispatch_result(
+                pool, post_id="post-1", medium="video", results=results,
+            )
+        rec.assert_awaited_once()
+        assert rec.await_args.kwargs["success"] is False
+        # No external id → no merge, no distribution, and no resolution query.
+        conn.execute.assert_not_awaited()
+        conn.fetchrow.assert_not_awaited()
+
+    async def test_missing_task_id_skips_distribution_but_merges_asset(self):
+        # Post-keyed reality: a post may have a video asset but no
+        # pipeline_task_id in metadata → merge the asset id, skip the
+        # task-keyed pipeline_distributions row (logged, not raised).
+        conn = _FakeConn(asset_id="asset-1", task_id=None)
+        pool = _PersistPool(conn)
+        results = [bv._PlatformDispatchResult(
+            platform="youtube", success=True,
+            external_id="VID123", url="https://youtu.be/VID123",
+        )]
+        with patch.object(bv, "record_dispatched", AsyncMock()):
+            await bv._persist_dispatch_result(
+                pool, post_id="post-1", medium="video", results=results,
+            )
+        calls = conn.execute.await_args_list
+        assert any("platform_video_ids" in c.args[0] for c in calls)
+        assert not any("pipeline_distributions" in c.args[0] for c in calls)
+
+    async def test_missing_asset_id_records_distribution_only(self):
+        # No media_assets row for the post → can't merge platform_video_ids,
+        # but still record the distribution (task_id resolved).
+        conn = _FakeConn(asset_id=None, task_id="task-1")
+        pool = _PersistPool(conn)
+        results = [bv._PlatformDispatchResult(
+            platform="youtube", success=True,
+            external_id="VID123", url="https://youtu.be/VID123",
+        )]
+        with patch.object(bv, "record_dispatched", AsyncMock()):
+            await bv._persist_dispatch_result(
+                pool, post_id="post-1", medium="video", results=results,
+            )
+        calls = conn.execute.await_args_list
+        assert not any("platform_video_ids" in c.args[0] for c in calls)
+        assert any("pipeline_distributions" in c.args[0] for c in calls)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDispatchOnlyPassWiring:
+    """The dispatch-only pass routes its results through
+    ``_persist_dispatch_result`` (not a bare ``record_dispatched``), so the
+    external handles reach the DB."""
+
+    async def test_run_dispatch_pass_persists_results(self, tmp_path):
+        job = BackfillVideosJob()
+        # Cloud (niche) path returns nothing → no generation; only the
+        # dispatch-only pass runs.
+        fake_asyncpg, _ = _fake_asyncpg(rows=[])
+        approved_rows = [{
+            "post_id": "p1", "title": "T", "content": "C",
+            "excerpt": "E", "seo_keywords": "k", "slug": "s",
+        }]
+        (tmp_path / "videos").mkdir(parents=True)
+        (tmp_path / "videos" / "p1.mp4").write_bytes(b"v")
+
+        results = [bv._PlatformDispatchResult(
+            platform="youtube", success=True,
+            external_id="VID", url="https://youtu.be/VID",
+        )]
+        disp = AsyncMock(return_value=results)
+        persist = AsyncMock()
+
+        with patch("services.niche_service.NicheService.list_active",
+                   new=AsyncMock(return_value=[])), \
+             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+             patch("services.media_approval_service.list_approved_undispatched",
+                   new=AsyncMock(return_value=approved_rows)), \
+             patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
+             patch("services.video_service.VIDEO_DIR", tmp_path / "videos"), \
+             patch.object(bv, "_dispatch_video_publishers", disp), \
+             patch.object(bv, "_persist_dispatch_result", persist):
+            result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
+
+        disp.assert_awaited_once()
+        persist.assert_awaited_once()
+        assert persist.await_args.kwargs["results"] == results
+        assert persist.await_args.kwargs["post_id"] == "p1"
+        assert result.ok is True
+        assert result.changes_made >= 1
