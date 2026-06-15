@@ -109,7 +109,13 @@ jobs:
       # `test-backend` check green. Source behavior is byte-identical (the
       # ternary resolves to plain `python -m pytest`), so this PR's own CI fully
       # exercises the real suite.
-      PYTEST: ${{ github.repository == 'Glad-Labs/glad-labs-stack' && 'python -m pytest' || 'python -m pytest --collect-only' }}
+      #
+      # Guard on the MIRROR name ('Glad-Labs/poindexter'), NOT the source name:
+      # the sync script does a blanket glad-labs-stack→poindexter substitution
+      # across every text file, which INVERTS a '== glad-labs-stack' check on
+      # the mirror. Checking '== poindexter' is inversion-proof because the
+      # substitution never touches the destination name. (#1481)
+      PYTEST: ${{ github.repository == 'Glad-Labs/poindexter' && 'python -m pytest --collect-only' || 'python -m pytest' }}
 
     steps:
       # Free up GitHub-hosted runner disk space. The ubuntu-latest image ships
@@ -498,7 +504,7 @@ jobs:
         # advisory there to avoid a permanently-red nightly that gates nothing.
         run: |
           coverage combine 2>/dev/null || true
-          if [ "${{ github.repository }}" = "Glad-Labs/glad-labs-stack" ]; then
+          if [ "${{ github.repository }}" != "Glad-Labs/poindexter" ]; then
             coverage report
             coverage xml
           else
@@ -520,7 +526,7 @@ jobs:
           # machinery produced nothing — fail the upload (and the job) so the
           # regression is loud. The mirror's --collect-only nightly legitimately
           # has no xml, so it only `warn`s there.
-          if-no-files-found: ${{ github.repository == 'Glad-Labs/glad-labs-stack' && 'error' || 'warn' }}
+          if-no-files-found: ${{ github.repository == 'Glad-Labs/poindexter' && 'warn' || 'error' }}
           retention-days: 14
 
   # Main-branch guard for the pure-AST ratchet lints (silent-except / module-

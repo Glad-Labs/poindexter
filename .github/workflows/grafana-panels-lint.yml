@@ -49,7 +49,7 @@ jobs:
     # force-pushed (checks gate nothing) and this isn't a required check there;
     # it would re-validate the same (public) dashboards the source already
     # linted against the same migrations. Skip on poindexter, run on the source.
-    if: github.repository == 'Glad-Labs/glad-labs-stack'
+    if: github.repository != 'Glad-Labs/poindexter'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
