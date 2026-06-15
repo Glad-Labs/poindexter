@@ -229,19 +229,6 @@ def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> b
     return False
 
 
-def _sanitize_topic_fallback(topic: str) -> str:
-    """Derive a clean title string from ``topic`` when the LLM title is junk.
-
-    Strips the QA batch suffix, trims whitespace, and applies title-casing
-    so the fallback reads like a proper headline.  Does NOT touch the topic
-    further — operators tune the topic; we should faithfully represent it.
-    """
-    cleaned = strip_qa_batch_suffix(topic or "").strip()
-    # title() is crude but deterministic and good enough for a fallback; the
-    # content validator / approver will catch anything weird.
-    return cleaned.title() if cleaned else cleaned
-
-
 def choose_canonical_title(
     topic: str,
     content: str,
