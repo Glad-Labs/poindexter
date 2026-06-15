@@ -294,6 +294,17 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/lint_silent_excepts.py
 
+      # DB-first config guard (GH#93 Phase 3): no NEW os.getenv / os.environ
+      # reads in services/ outside the bootstrap / SDK-bridge allowlist. Pure-
+      # Python AST scan, no deps beyond stdlib. Was pre-commit-only, so
+      # violations accumulated unguarded in fresh worktrees (#769) — now rides
+      # inside test-backend like the other ratchet lints. Allow a legitimate
+      # new file by adding it to ALLOWED_FILES in the script with a one-line
+      # justification.
+      - name: Services os.getenv lint (DB-first config, GH#93)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/check-no-os-getenv-in-services.py
+
       # #995: turn "N tests pass" into a coverage SIGNAL — gated to the nightly
       # schedule + manual dispatch only. The `COV` env var (job level, above) is
       # EMPTY on push/PR, so day-to-day runs don't pay the ~2x instrumentation
@@ -550,6 +561,8 @@ jobs:
         run: python scripts/ci/kernel_purity_lint.py
       - name: Silent-except lint (audit H2)
         run: python scripts/ci/lint_silent_excepts.py
+      - name: Services os.getenv lint (DB-first config, GH#93)
+        run: python scripts/check-no-os-getenv-in-services.py
       - name: Notify operator — main fails a ratchet lint
         # File an issue (GH notification -> phone) so a poisoned main is caught
         # in minutes, not via every PR going red. GITHUB_TOKEN can write issues
@@ -565,7 +578,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "⚠️ main fails a ratchet lint (run ${{ github.run_id }})" \
             --label "bug" \
-            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity) failed on the push to **main**.
+            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / services-os.getenv) failed on the push to **main**.
 
           **Run:** ${RUN_URL}
           **Commit:** \`${{ github.sha }}\`
@@ -575,7 +588,7 @@ jobs:
 
           ### Fix
           1. Open the run above — the failing step names the file and the offending count vs baseline.
-          2. Fix the violation on a branch (add logging / re-raise / route the import) and merge — or, if intentional, re-baseline (\`python scripts/ci/<lint>.py --update-baseline\`).
+          2. Fix the violation on a branch (add logging / re-raise / route the import) and merge — or, if intentional, re-baseline (\`python scripts/ci/<lint>.py --update-baseline\`) or, for services-os.getenv, allowlist the file in \`ALLOWED_FILES\`.
           3. Open PRs go green again once they rebase onto the fixed main.
 
           _Auto-filed by the lint-main guard (unit-tests.yml)._"
