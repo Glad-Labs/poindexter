@@ -1,33 +1,37 @@
-"""WebSearchSource — topic ideation via DuckDuckGo category searches.
+"""WebSearchSource — niche-aware topic ideation via DuckDuckGo search.
 
-Picks a random seed query from each enabled category's
-``CATEGORY_SEARCHES`` list, runs it through ``WebResearcher.search_simple``
-(which wraps DDG + fallbacks), and converts the top N results into
-DiscoveredTopic candidates.
+Resolves a set of search queries from the niche context the tap handler
+passes in, runs each through ``WebResearcher.search_simple`` (DDG +
+fallbacks), and converts the top N results into DiscoveredTopic candidates.
 
-Config (``plugin.topic_source.web_search`` in app_settings):
+Query resolution (first match wins, §2b of the taps-ingest design):
+
+1. ``config.seed_queries`` — explicit operator-pinned queries.
+2. ``config.categories`` — one random seed query per category from the
+   ``CATEGORY_SEARCHES`` bank. The niche-bound tap's migration seeds these
+   for niches the bank covers (gaming, pc-hardware).
+3. niche ``target_audience_tags`` — ``"{niche_name} {tag}"`` per tag, for
+   niches the bank doesn't cover (AI/ML). Passed in by the tap handler.
+4. none of the above — raise ``ValueError`` (the silent "search every global
+   category" fallback is retired; feedback_no_silent_defaults).
+
+Config (``plugin.topic_source.web_search`` in app_settings, layered with the
+tap row's config + niche context):
 
 - ``enabled`` (default true)
-- ``config.categories`` — which categories to search this run.
-  When omitted, uses every key in ``CATEGORY_SEARCHES``. Useful for
-  operators who only publish in 1-2 categories to avoid paying search
-  costs for irrelevant ones.
-- ``config.max_categories_per_run`` (default 3) — cap on categories
-  hit per invocation. Keeps run duration bounded when many categories
-  are configured.
-- ``config.results_per_query`` (default 3) — top N hits per category.
-- ``config.relevance_score`` (default 2.0) — flat score assigned to
-  every web-search candidate. Operators who trust DDG more can bump;
-  those who prefer other signals drop it.
+- ``seed_queries`` — explicit query list (highest priority).
+- ``categories`` — which bank categories to search this run.
+- ``max_categories_per_run`` (default 3) — cap on queries hit per run.
+- ``results_per_query`` (default 3) — top N hits per query.
+- ``relevance_score`` (default 2.0) — flat score on every candidate.
 
-Returns ``source="ddg_search"`` (legacy-compatible label so downstream
-dedup + display don't have to special-case the migration).
+Returns ``source="ddg_search"`` (legacy-compatible label so downstream dedup
++ display don't have to special-case the migration).
 """
 
 from __future__ import annotations
 
 import logging
-import random
 from typing import Any
 
 from plugins.topic_source import DiscoveredTopic
@@ -37,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class WebSearchSource:
-    """Category-seeded web search for topic ideation via WebResearcher."""
+    """Niche-aware category/tag-seeded web search via WebResearcher."""
 
     name = "web_search"
 
@@ -48,38 +52,32 @@ class WebSearchSource:
     ) -> list[DiscoveredTopic]:
         del pool
 
-        # Lazy import so test environments that don't have the full
-        # web_research dep chain installed can still import this module.
+        # Lazy import so test environments without the full web_research dep
+        # chain can still import this module.
         from services.site_config import SiteConfig
-        from services.topic_sources._filters import CATEGORY_SEARCHES
         from services.web_research import WebResearcher
 
-        raw_categories = config.get("categories")
-        max_cats = int(config.get("max_categories_per_run", 3) or 3)
         results_per_query = int(config.get("results_per_query", 3) or 3)
         relevance_score = float(config.get("relevance_score", 2.0) or 2.0)
+        max_queries = int(config.get("max_categories_per_run", 3) or 3)
 
-        target_categories = (
-            list(raw_categories) if isinstance(raw_categories, list) and raw_categories
-            else list(CATEGORY_SEARCHES.keys())
-        )
-        target_categories = target_categories[:max_cats]
+        plan = self._resolve_queries(config)[:max_queries]
+        if not plan:
+            # Niche-aware resolution found nothing AND no explicit config was
+            # given. Fail loud rather than silently searching every global
+            # category (the retired pre-niche behaviour). feedback_no_silent_defaults.
+            raise ValueError(
+                "web_search: no seed_queries, no categories, and no niche "
+                "target_audience_tags to derive queries from — refusing to "
+                "fall back to a global all-category search"
+            )
 
-        # Caller-bridge (#272 leaf batch 2): the dispatcher seeds the
-        # lifespan-bound SiteConfig under ``config["_site_config"]``. Fall
-        # back to a fresh env-fallback instance when it's absent (tests,
-        # CLI one-shots) so this source stays importable + runnable.
         researcher = WebResearcher(
             site_config=config.get("_site_config") or SiteConfig()
         )
 
         topics: list[DiscoveredTopic] = []
-        for cat in target_categories:
-            queries = CATEGORY_SEARCHES.get(cat, [])
-            if not queries:
-                continue
-            query = random.choice(queries)
-
+        for query, category_label in plan:
             results = await researcher.search_simple(query, num_results=results_per_query)
             for r in results or []:
                 title = r.get("title", "")
@@ -91,7 +89,7 @@ class WebSearchSource:
                 topics.append(
                     DiscoveredTopic(
                         title=rewritten,
-                        category=cat,
+                        category=category_label,
                         source="ddg_search",
                         source_url=r.get("url", ""),
                         relevance_score=relevance_score,
@@ -99,7 +97,39 @@ class WebSearchSource:
                 )
 
         logger.info(
-            "WebSearchSource: %d topics across %d categories",
-            len(topics), len(target_categories),
+            "WebSearchSource: %d topics across %d queries", len(topics), len(plan),
         )
         return topics
+
+    @staticmethod
+    def _resolve_queries(config: dict[str, Any]) -> list[tuple[str, str]]:
+        """Resolve (query, category_label) pairs, first match wins (§2b).
+
+        1. explicit config.seed_queries  -> pinned, label 'custom'
+        2. explicit config.categories    -> bank queries, label = category
+        3. niche target_audience_tags    -> '{niche_name} {tag}', label = tag
+        4. nothing                        -> [] (caller fails loud)
+        """
+        seed_queries = config.get("seed_queries")
+        if isinstance(seed_queries, list) and seed_queries:
+            return [(str(q), "custom") for q in seed_queries]
+
+        categories = config.get("categories")
+        if isinstance(categories, list) and categories:
+            import random
+
+            from services.topic_sources._filters import CATEGORY_SEARCHES
+
+            plan: list[tuple[str, str]] = []
+            for cat in categories:
+                queries = CATEGORY_SEARCHES.get(cat, [])
+                if queries:
+                    plan.append((random.choice(queries), cat))
+            return plan
+
+        tags = config.get("target_audience_tags")
+        niche_name = (config.get("niche_name") or "").strip()
+        if isinstance(tags, list) and tags and niche_name:
+            return [(f"{niche_name} {tag}", str(tag)) for tag in tags]
+
+        return []

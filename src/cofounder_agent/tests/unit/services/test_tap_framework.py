@@ -106,10 +106,22 @@ async def test_singer_subprocess_validates_required_config():
 
 
 @pytest.mark.asyncio
+async def test_builtin_topic_source_requires_niche_id():
+    # b1: topic taps are niche-bound — a row without niche_id fails loud.
+    with pytest.raises(ValueError, match="niche_id"):
+        await tap_builtin_topic_source.builtin_topic_source(
+            None, site_config=None, row=_tap_row(), pool=_FakePool(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_builtin_topic_source_requires_tap_type():
+    # niche_id present so we reach the tap_type guard (handler order:
+    # pool -> niche_id -> tap_type).
+    row = _tap_row(tap_type="", niche_id="11111111-1111-1111-1111-111111111111")
     with pytest.raises(ValueError, match="tap_type"):
         await tap_builtin_topic_source.builtin_topic_source(
-            None, site_config=None, row=_tap_row(tap_type=""), pool=_FakePool(),
+            None, site_config=None, row=row, pool=_FakePool(),
         )
 
 
@@ -121,90 +133,9 @@ async def test_builtin_topic_source_requires_pool():
         )
 
 
-@pytest.mark.asyncio
-async def test_builtin_topic_source_delegates_to_topic_runner(monkeypatch):
-    """The handler shells out to services.topic_sources.runner.run_all
-    and filters the summary to this tap's source name."""
-    from dataclasses import dataclass
-
-    @dataclass
-    class _SourceStats:
-        name: str
-        topics_returned: int = 0
-        error: str | None = None
-
-    @dataclass
-    class _Summary:
-        per_source: list[_SourceStats]
-        topics: list[Any]
-
-        @property
-        def total(self) -> int:
-            return len(self.topics)
-
-    async def _fake_run_all(pool):
-        # Signature matches services.topic_sources.runner.run_all after
-        # the fix in PR #134 (handler calls run_all(pool) — site_config
-        # was dropped because each TopicSource plugin reads its own
-        # config from the plugin registry).
-        return _Summary(
-            per_source=[
-                _SourceStats(name="hackernews", topics_returned=5),
-                _SourceStats(name="devto", topics_returned=3),
-            ],
-            topics=[],
-        )
-
-    # Patch the import the handler does lazily.
-    import services.topic_sources.runner as _tsr
-    monkeypatch.setattr(_tsr, "run_all", _fake_run_all)
-
-    result = await tap_builtin_topic_source.builtin_topic_source(
-        None,
-        site_config=None,
-        row=_tap_row(tap_type="hackernews"),
-        pool=_FakePool(),
-    )
-    assert result == {"records": 5, "source": "hackernews"}
-
-
-@pytest.mark.asyncio
-async def test_builtin_topic_source_raises_on_source_error(monkeypatch):
-    from dataclasses import dataclass
-
-    @dataclass
-    class _SourceStats:
-        name: str
-        topics_returned: int = 0
-        error: str | None = None
-
-    @dataclass
-    class _Summary:
-        per_source: list[_SourceStats]
-        topics: list[Any]
-
-        @property
-        def total(self) -> int:
-            return len(self.topics)
-
-    async def _fake_run_all(pool):
-        # Signature matches the handler's run_all(pool) call (see comment
-        # in the sibling test for context — fixed alongside PR #134).
-        return _Summary(
-            per_source=[_SourceStats(name="hackernews", error="429 rate limited")],
-            topics=[],
-        )
-
-    import services.topic_sources.runner as _tsr
-    monkeypatch.setattr(_tsr, "run_all", _fake_run_all)
-
-    with pytest.raises(RuntimeError, match="429"):
-        await tap_builtin_topic_source.builtin_topic_source(
-            None,
-            site_config=None,
-            row=_tap_row(tap_type="hackernews"),
-            pool=_FakePool(),
-        )
+# The handler's niche-aware single-source dispatch + dedup + topic_pool insert
+# behaviour (the b1 rewrite that replaced the old run_all delegation) is covered
+# in tests/unit/services/integrations/handlers/test_tap_builtin_topic_source.py.
 
 
 # ---------------------------------------------------------------------------

@@ -365,6 +365,12 @@ class TopicBatchService:
                 "_site_config": self._site_config,
                 "niche_slug": niche.slug,
                 "niche_id": str(niche.id),
+                # Niche-aware sourcing (§2b): web_search derives queries from
+                # these when no explicit categories/seed_queries are configured.
+                # Harmless for sources that ignore them — keeps the orchestrator
+                # path consistent with the niche-bound tap handler.
+                "niche_name": niche.name,
+                "target_audience_tags": list(niche.target_audience_tags),
             })
 
             try:

@@ -1,18 +1,13 @@
-"""Handler: ``tap.builtin_topic_source``.
+"""Handler: ``tap.builtin_topic_source`` (b1 rewrite).
 
-Adapter that turns the existing in-repo ``plugins/topic_source``
-entry-point plugins (hackernews, devto, web_search, etc.) into the
-declarative ``external_taps`` model.
+Dispatches the single ``topic_source`` plugin named in ``row.tap_type``
+with full niche context, dedups, and INSERTs the survivors into the tap's
+``target_table`` (``topic_pool``). This is the per-source loop body lifted
+from ``TopicBatchService._discover_external`` — b2 deletes that method, so
+keeping the logic identical makes the deletion a move, not a rewrite.
 
-Under the hood it delegates to
-:func:`services.topic_sources.runner.run_all` filtered to a single
-source name (taken from ``row.tap_type``), then returns the record
-count. The existing topic_sources.runner already dedup-and-stores;
-this handler is purely a shape adapter so operators can manage all
-data ingestion through one table.
-
-Future taps that write to other target tables won't use this adapter —
-they'll use ``singer_subprocess`` or a purpose-built handler.
+The pre-b1 version delegated to ``topic_sources.runner.run_all`` and threw
+the topics away (returned only a count). That hollow path is gone.
 """
 
 from __future__ import annotations
@@ -20,7 +15,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from plugins.config import PluginConfig
+from plugins.registry import get_topic_sources
 from services.integrations.registry import register_handler
+from services.niche_service import NicheService
+from services.topic_dedup_semantic import get_deduplicator
+from services.topic_pool import insert_pooled_topics
 
 logger = logging.getLogger(__name__)
 
@@ -33,48 +33,89 @@ async def builtin_topic_source(
     row: dict[str, Any],
     pool: Any,
 ) -> dict[str, Any]:
-    """Invoke the existing topic_source plugin named in ``row.tap_type``.
-
-    Returns ``{"records": N}`` so the runner can tally totals. The actual
-    topic persistence happens inside the existing plugin (dedup,
-    similarity scoring, content_task row creation) — this handler is
-    just the declarative wrapper.
-    """
+    """Run one niche-bound topic source and store its candidates in the pool."""
     if pool is None:
         raise RuntimeError("tap.builtin_topic_source: pool unavailable")
+
+    niche_id = row.get("niche_id")
+    if not niche_id:
+        raise ValueError(
+            "tap.builtin_topic_source: topic taps require a niche_id "
+            "(this tap row has none). feedback_no_silent_defaults."
+        )
 
     source_name = row.get("tap_type")
     if not source_name:
         raise ValueError(
             "tap.builtin_topic_source: row.tap_type must name a registered "
-            "topic_source plugin (e.g. 'hackernews', 'devto')"
+            "topic_source plugin (e.g. 'hackernews', 'web_search')"
         )
 
-    # Lazy import to avoid loading topic_sources until this handler fires.
-    from services.topic_sources.runner import run_all as _topic_run_all
+    niche = await NicheService(pool).get_by_id(niche_id)
+    if niche is None:
+        raise ValueError(f"tap.builtin_topic_source: unknown niche_id {niche_id}")
 
-    # The runner's signature is ``run_all(pool)`` — site_config is unused
-    # because each TopicSource plugin reads its own config from the
-    # plugin registry / DB at construction time. Earlier versions of
-    # this handler passed site_config as a second arg and crashed at
-    # dispatch with TypeError; fixed 2026-05-01.
-    summary = await _topic_run_all(pool)
+    # Resolve the single source. internal_rag isn't an entry-point plugin —
+    # branch to its service class (same as _discover_internal does).
+    if source_name == "internal_rag":
+        from services.internal_rag_source import InternalRagSource
 
-    # Filter the per-source stats to our source_name. When the operator
-    # has multiple taps each targeting a different topic_source, each
-    # handler invocation runs the full topic_sources pipeline — accept
-    # that duplication for now and revisit if it becomes painful.
-    matching = [s for s in summary.per_source if s.name == source_name]
-    records = sum(s.topics_returned for s in matching)
-    errors = [s.error for s in matching if s.error]
+        source: Any = InternalRagSource(pool, site_config=site_config)
+    else:
+        registry = {
+            getattr(p, "name", type(p).__name__): p for p in get_topic_sources()
+        }
+        source = registry.get(source_name)
+        if source is None:
+            raise ValueError(
+                f"tap.builtin_topic_source: source {source_name!r} is not a "
+                "registered topic_source plugin — check install or rename"
+            )
 
-    if errors:
-        raise RuntimeError(
-            f"tap.builtin_topic_source: source {source_name!r} errored: {errors[0]}"
+    # Build extract_config exactly as _discover_external does: per-install
+    # plugin config, then the tap row's own config (e.g. seeded categories),
+    # then the niche context the source needs to scope its output.
+    plugin_cfg = await PluginConfig.load(pool, "topic_source", source_name)
+    extract_config: dict[str, Any] = dict(plugin_cfg.config)
+    extract_config.update(dict(row.get("config") or {}))
+    extract_config.update(
+        {
+            "_site_config": site_config,
+            "niche_slug": niche.slug,
+            "niche_id": str(niche.id),
+            "niche_name": niche.name,
+            "target_audience_tags": list(niche.target_audience_tags),
+        }
+    )
+
+    topics = await source.extract(pool, extract_config)
+
+    # Fuzzy/semantic dedup (honours topic_dedup_engine). DiscoveredTopic
+    # already exposes .title + .is_duplicate, so the deduper marks in place.
+    if topics:
+        deduper = get_deduplicator(pool, site_config=site_config)
+        try:
+            await deduper.mark_duplicates(topics)
+        except Exception:
+            logger.warning(
+                "tap.builtin_topic_source: dedup pass failed — proceeding "
+                "with un-deduped candidates",
+                exc_info=True,
+            )
+    fresh = [t for t in (topics or []) if not getattr(t, "is_duplicate", False)]
+
+    target_table = row.get("target_table") or "topic_pool"
+    async with pool.acquire() as conn:
+        inserted = await insert_pooled_topics(
+            conn,
+            niche_id=niche.id,
+            source=source_name,
+            topics=fresh,
+            table=target_table,
         )
 
     logger.info(
-        "[tap.builtin_topic_source] %s: %d topic(s) ingested",
-        source_name, records,
+        "[tap.builtin_topic_source] %s/%s: %d pooled (%d fetched, %d after dedup)",
+        niche.slug, source_name, inserted, len(topics or []), len(fresh),
     )
-    return {"records": records, "source": source_name}
+    return {"records": inserted, "source": source_name}

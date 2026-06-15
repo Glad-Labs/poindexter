@@ -96,19 +96,26 @@ class TestWebSearchSource:
         with patch("services.web_research.WebResearcher", return_value=fake), \
              patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
-            await source.extract(pool=None, config={"max_categories_per_run": 2})
+            # Explicit categories now required (the no-config global-bank
+            # fallback is retired); the cap still clips to 2.
+            await source.extract(pool=None, config={
+                "categories": ["tech", "ai", "cloud", "devops", "security"],
+                "max_categories_per_run": 2,
+            })
 
         assert fake.search_simple.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_empty_categories_no_calls(self):
+    async def test_no_config_and_no_niche_fails_loud(self):
+        # Empty config + no niche context now fails loud — the silent
+        # "search every global category" fallback is retired (§2b).
         fake = _make_researcher([])
         with patch("services.web_research.WebResearcher", return_value=fake), \
              patch("services.topic_sources._filters.CATEGORY_SEARCHES", {}):
             source = WebSearchSource()
-            topics = await source.extract(pool=None, config={})
+            with pytest.raises(ValueError):
+                await source.extract(pool=None, config={})
 
-        assert topics == []
         fake.search_simple.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -146,6 +153,60 @@ class TestWebSearchSource:
         # empty_cat had no seed queries, skipped; technology ran once.
         assert fake.search_simple.call_count == 1
         assert len(topics) == 1
+
+    @pytest.mark.asyncio
+    async def test_explicit_seed_queries_win(self):
+        fake = _make_researcher({"my exact query": [
+            {"title": "An article about the exact pinned query topic", "url": "https://x/1"},
+        ]})
+        with patch("services.web_research.WebResearcher", return_value=fake):
+            source = WebSearchSource()
+            topics = await source.extract(
+                pool=None,
+                config={"seed_queries": ["my exact query"]},
+            )
+        assert len(topics) == 1
+        fake.search_simple.assert_awaited_with("my exact query", num_results=3)
+
+    @pytest.mark.asyncio
+    async def test_niche_tags_derive_queries_when_no_config(self):
+        # No seed_queries, no categories — derive from niche name + tags.
+        captured: list[str] = []
+
+        async def _search(query, num_results=3):  # mock: num_results unused
+            captured.append(query)
+            return [{"title": f"A readable article about {query} in depth", "url": "https://x/1"}]
+
+        fake = MagicMock()
+        fake.search_simple = AsyncMock(side_effect=_search)
+        with patch("services.web_research.WebResearcher", return_value=fake):
+            source = WebSearchSource()
+            topics = await source.extract(
+                pool=None,
+                config={
+                    "niche_name": "PC Gaming",
+                    "target_audience_tags": ["esports", "gpu overclocking"],
+                },
+            )
+        # One query per tag, niche name folded in for topical scoping.
+        assert captured == ["PC Gaming esports", "PC Gaming gpu overclocking"]
+        assert len(topics) == 2
+
+    @pytest.mark.asyncio
+    async def test_two_niches_get_different_queries(self):
+        seen: list[str] = []
+
+        async def _search(query, num_results=3):  # mock: num_results unused
+            seen.append(query)
+            return []
+
+        fake = MagicMock()
+        fake.search_simple = AsyncMock(side_effect=_search)
+        with patch("services.web_research.WebResearcher", return_value=fake):
+            source = WebSearchSource()
+            await source.extract(pool=None, config={"niche_name": "AI/ML", "target_audience_tags": ["llms"]})
+            await source.extract(pool=None, config={"niche_name": "PC Gaming", "target_audience_tags": ["esports"]})
+        assert seen == ["AI/ML llms", "PC Gaming esports"]
 
 
 class TestContract:

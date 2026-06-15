@@ -832,6 +832,10 @@ async def test_discover_external_dispatches_registered_plugins(db_pool, monkeypa
         cfg = stub.calls[0]["config"]
         assert cfg["niche_slug"] == n.slug
         assert cfg["niche_id"] == str(n.id)
+        # Niche-aware sourcing (§2b): name + audience tags flow to the source
+        # so web_search can derive queries when no categories are configured.
+        assert cfg["niche_name"] == n.name
+        assert cfg["target_audience_tags"] == list(n.target_audience_tags)
         assert "_site_config" in cfg
 
     # internal_rag must not have been routed through here at all.
