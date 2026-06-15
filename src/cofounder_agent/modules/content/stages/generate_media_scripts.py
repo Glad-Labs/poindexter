@@ -125,6 +125,9 @@ class GenerateMediaScriptsStage:
         # PipelineState channels; now flow out via context_updates.
         podcast_audio_path = ""
         podcast_intro_audio_path = ""
+        # Long-form VIDEO narration script (poindexter#689) — declared before the
+        # try so a later scene-parse failure preserves it, same as the audio paths.
+        video_long_script = ""
 
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
@@ -187,6 +190,35 @@ class GenerateMediaScriptsStage:
                             logger.info("[MEDIA] Podcast intro sting: %s", path)
                 except Exception as sfx_exc:
                     logger.warning("[MEDIA] audio_gen intro sting failed: %s", sfx_exc)
+
+            # Long-form VIDEO narration script (poindexter#689) — distinct from
+            # the podcast script, paced to on-screen visuals; its CTA is appended
+            # at render time. Guarded + fail-soft like the scene call below.
+            if pool is not None and platform is not None:
+                try:
+                    async with gpu.lock(
+                        "ollama", model=model,
+                        task_id=context.get("task_id"), phase="media_scripts",
+                    ):
+                        vn_result = await platform.dispatch.complete(
+                            pool=pool,
+                            messages=[{"role": "user", "content": _build_video_narration_prompt(
+                                title, clean_content,
+                            )}],
+                            model=model,
+                            tier="standard",
+                            timeout_s=120,
+                            temperature=0.6,
+                            max_tokens=2048,
+                        )
+                    vn_text = (getattr(vn_result, "text", "") or "").strip()
+                    video_long_script = (
+                        _normalize_for_speech(vn_text, site_config=sc) if vn_text else ""
+                    )
+                    if video_long_script:
+                        logger.info("[MEDIA] Video narration script: %d chars", len(video_long_script))
+                except Exception as vn_exc:
+                    logger.warning("[MEDIA] video narration script failed: %s", vn_exc)
 
             # Call 2: Video scenes + short summary (single LLM call).
             scene_prompt = _build_scene_prompt(
@@ -274,6 +306,7 @@ class GenerateMediaScriptsStage:
                     "video_ambient_audio_path": ambient_audio_path,
                     "podcast_audio_path": podcast_audio_path,
                     "podcast_intro_audio_path": podcast_intro_audio_path,
+                    "video_long_script": video_long_script,
                     "stages": stages,
                 },
                 metrics={
@@ -304,9 +337,34 @@ class GenerateMediaScriptsStage:
                     # same contract as podcast_script above.
                     "podcast_audio_path": podcast_audio_path,
                     "podcast_intro_audio_path": podcast_intro_audio_path,
+                    "video_long_script": video_long_script,
                     "stages": stages,
                 },
             )
+
+
+def _build_video_narration_prompt(title: str, clean_content: str) -> str:
+    """Prompt for the long-form VIDEO narration script — distinct from the
+    podcast script (paced to on-screen visuals, no audio-only filler). Length is
+    left to the work (no pinned word count); the CTA is appended at render time.
+    """
+    return (
+        "Write a voiceover narration script for a long-form video about the "
+        "article below. It is spoken over on-screen visuals (b-roll, diagrams, "
+        "stock footage), so:\n"
+        "- Write for the ear, but assume the viewer also sees supporting imagery "
+        "— reference what's shown where it's natural ('here we see…', 'on "
+        "screen…').\n"
+        "- Tighter and more visual than an audio-only podcast; no 'welcome back' "
+        "radio filler.\n"
+        "- Open with a brief hook, walk the key points in order, then a natural "
+        "closing line. Do NOT add a like/subscribe call-to-action — that's "
+        "appended separately.\n"
+        "- Plain prose. No headings, no bracketed stage directions.\n\n"
+        f"TITLE: {title}\n\n"
+        f"ARTICLE:\n{clean_content[:3500]}\n\n"
+        "NARRATION:"
+    )
 
 
 def _build_scene_prompt(title: str, clean_content: str, site_name: str) -> str:

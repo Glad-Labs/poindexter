@@ -29,7 +29,8 @@ ATOM_META = AtomMeta(
     ),
     inputs=(
         FieldSpec(name="video_shot_list", type="dict", description="16:9 director shot list"),
-        FieldSpec(name="podcast_audio_path", type="str", description="narration MP3 path", required=False),
+        FieldSpec(name="long_narration_audio_path", type="str", description="long narration MP3 path", required=False),
+        FieldSpec(name="long_caption_srt_path", type="str", description="long-lane burned-in SRT", required=False),
         FieldSpec(name="video_ambient_audio_path", type="str", description="ambient bed path", required=False),
         FieldSpec(name="site_config", type="object", description="DI seam (SDXL/Wan2.1 config)", required=False),
         FieldSpec(name="database_service", type="object", description="DB service (pool source)", required=False),
@@ -54,7 +55,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from modules.content.atoms._media_render import render_from_state
 
     return await render_from_state(
-        state, shot_list_key="video_shot_list", output_key="long_video_path"
+        state,
+        shot_list_key="video_shot_list",
+        output_key="long_video_path",
+        narration_key="long_narration_audio_path",
+        caption_key="long_caption_srt_path",
     )
 
 

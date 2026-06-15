@@ -1,7 +1,13 @@
-"""qa.audio — Stage-2 narration audio QA atom (#1193, Phase 2).
+"""qa.audio — Stage-2 narration audio QA atom (#1193, Phase 2; dual-lane #689).
 
-Three deterministic checks on the podcast narration audio
-(``podcast_audio_path``) using ffprobe and ffmpeg — no AI model required:
+QAs EACH video lane's narration audio (long + short) independently — each lane
+now narrates its OWN script (``long_narration_audio_path`` /
+``short_narration_audio_path``, produced by ``media.render_narration``), so the
+checks run per lane and the results are nested under
+``audio_qa_result['long']`` / ``audio_qa_result['short']``.
+
+Three deterministic checks per lane using ffprobe and ffmpeg — no AI model
+required:
 
 D. **Silence detection** (``ffmpeg silencedetect``): flag any silence segment
    longer than DB-configurable ``media.qa.audio.max_silence_s`` (default 3.0s).
@@ -72,16 +78,32 @@ ATOM_META = AtomMeta(
     ),
     inputs=(
         FieldSpec(
-            name="podcast_audio_path",
+            name="long_narration_audio_path",
             type="str",
-            description="narration audio file path (WAV/MP3/AAC)",
+            description="long-lane narration audio file path (WAV/MP3/AAC)",
+            required=False,
         ),
         FieldSpec(
-            name="podcast_script",
+            name="short_narration_audio_path",
+            type="str",
+            description="short-lane narration audio file path (WAV/MP3/AAC)",
+            required=False,
+        ),
+        FieldSpec(
+            name="video_long_script",
             type="str",
             description=(
-                "source narration script — word count used for duration estimate "
-                "(Check F). Optional; skipped when absent."
+                "long-lane source script — word count used for the duration "
+                "estimate (Check F). Optional; falls back to podcast_script."
+            ),
+            required=False,
+        ),
+        FieldSpec(
+            name="short_summary_script",
+            type="str",
+            description=(
+                "short-lane source script — word count used for the duration "
+                "estimate (Check F). Optional; skipped when absent."
             ),
             required=False,
         ),
@@ -212,26 +234,30 @@ async def _measure_volume(audio_path: str) -> dict[str, float] | None:
 # ---------------------------------------------------------------------------
 
 
-async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
-    """QA the podcast narration audio. Best-effort — NEVER raises.
+async def _qa_one(  # noqa: C901
+    *,
+    audio_path: str,
+    script: str,
+    task_id: Any,
+    label: str,
+    site_config: Any,
+) -> dict[str, Any]:
+    """Run the three deterministic QA checks over ONE lane's narration audio.
 
-    Returns ``{"audio_qa_result": {<check>: {...}, ...}}``. An absent or
-    unreadable ``podcast_audio_path`` skips all checks and returns an empty
-    result dict.
+    Returns the per-check ``result`` dict (NOT wrapped in ``audio_qa_result``).
+    Best-effort — NEVER raises. An absent or unreadable ``audio_path`` skips all
+    checks and returns an empty dict. Findings are dedup-keyed per lane
+    (``...:{task_id}:{label}``) so the long + short lanes don't collide.
     """
-    task_id = state.get("task_id")
-    site_config = state.get("site_config")
-    audio_path = (state.get("podcast_audio_path") or "").strip()
-    podcast_script = state.get("podcast_script") or ""
-
     result: dict[str, Any] = {}
 
     try:
         if not audio_path or not os.path.exists(audio_path):
             logger.debug(
-                "[qa.audio] no podcast_audio_path for task %s — skipping", task_id
+                "[qa.audio] no narration audio for task %s lane %s — skipping",
+                task_id, label,
             )
-            return {"audio_qa_result": result}
+            return result
 
         # --- Check D: Silence detection ---
         max_sil = _cfg_float(
@@ -253,20 +279,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
                     source="qa.audio",
                     kind="audio_long_silence",
                     title=(
-                        f"Long silence in narration: {worst['duration_s']:.1f}s "
-                        f"at {worst['start_s']:.1f}s"
+                        f"Long silence in {label} narration: "
+                        f"{worst['duration_s']:.1f}s at {worst['start_s']:.1f}s"
                     ),
                     body=(
-                        f"Task {task_id}: {len(long_silences)} silence segment(s) "
-                        f"≥ {max_sil}s detected in {audio_path!r}. "
+                        f"Task {task_id} ({label}): {len(long_silences)} silence "
+                        f"segment(s) ≥ {max_sil}s detected in {audio_path!r}. "
                         f"Longest: {worst['duration_s']:.2f}s starting at "
                         f"{worst['start_s']:.2f}s. "
                         "Suggests TTS dropout or audio truncation. Advisory only."
                     ),
                     severity="warn",
-                    dedup_key=f"audio_long_silence:{task_id}",
+                    dedup_key=f"audio_long_silence:{task_id}:{label}",
                     extra={
                         "task_id": str(task_id or ""),
+                        "lane": label,
                         "segments": long_silences,
                         "max_silence_threshold_s": max_sil,
                     },
@@ -300,18 +327,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
                     source="qa.audio",
                     kind="audio_clipping",
                     title=(
-                        f"Narration audio clipping: "
+                        f"{label} narration audio clipping: "
                         f"max_volume={vol['max_volume_db']:.1f} dBFS"
                     ),
                     body=(
-                        f"Task {task_id}: max_volume {vol['max_volume_db']:.2f} dBFS "
-                        f"≥ clip threshold {max_clip} dBFS for {audio_path!r}. "
+                        f"Task {task_id} ({label}): max_volume "
+                        f"{vol['max_volume_db']:.2f} dBFS ≥ clip threshold "
+                        f"{max_clip} dBFS for {audio_path!r}. "
                         "Audio may have distortion artifacts in the rendered video."
                     ),
                     severity="warn",
-                    dedup_key=f"audio_clipping:{task_id}",
+                    dedup_key=f"audio_clipping:{task_id}:{label}",
                     extra={
                         "task_id": str(task_id or ""),
+                        "lane": label,
                         "mean_volume_db": vol["mean_volume_db"],
                         "max_volume_db": vol["max_volume_db"],
                         "threshold_db": max_clip,
@@ -323,18 +352,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
                     source="qa.audio",
                     kind="audio_too_quiet",
                     title=(
-                        f"Narration audio too quiet: "
+                        f"{label} narration audio too quiet: "
                         f"mean_volume={vol['mean_volume_db']:.1f} dBFS"
                     ),
                     body=(
-                        f"Task {task_id}: mean_volume {vol['mean_volume_db']:.2f} dBFS "
-                        f"< threshold {min_mean} dBFS for {audio_path!r}. "
+                        f"Task {task_id} ({label}): mean_volume "
+                        f"{vol['mean_volume_db']:.2f} dBFS < threshold "
+                        f"{min_mean} dBFS for {audio_path!r}. "
                         "Audio may be inaudible in the rendered video."
                     ),
                     severity="warn",
-                    dedup_key=f"audio_too_quiet:{task_id}",
+                    dedup_key=f"audio_too_quiet:{task_id}:{label}",
                     extra={
                         "task_id": str(task_id or ""),
+                        "lane": label,
                         "mean_volume_db": vol["mean_volume_db"],
                         "max_volume_db": vol["max_volume_db"],
                         "threshold_db": min_mean,
@@ -349,7 +380,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
 
         if actual_duration is None:
             result["duration_check"] = "unavailable"
-        elif podcast_script.strip():
+        elif script.strip():
             wps = _cfg_float(
                 site_config, "media.qa.audio.words_per_second", _DEFAULT_WPS
             )
@@ -363,7 +394,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
                 "media.qa.audio.duration_long_ratio",
                 _DEFAULT_DURATION_LONG_RATIO,
             )
-            word_count = len(podcast_script.split())
+            word_count = len(script.split())
             expected = max(word_count / wps, 1.0)  # floor 1s to avoid div-by-zero
             result["estimated_duration_s"] = round(expected, 1)
             ratio = actual_duration / expected
@@ -374,19 +405,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
                     source="qa.audio",
                     kind="audio_duration_mismatch",
                     title=(
-                        f"Narration audio shorter than expected: "
+                        f"{label} narration audio shorter than expected: "
                         f"{actual_duration:.1f}s (expected ~{expected:.0f}s)"
                     ),
                     body=(
-                        f"Task {task_id}: actual {actual_duration:.2f}s is only "
-                        f"{ratio:.0%} of estimated {expected:.1f}s "
+                        f"Task {task_id} ({label}): actual {actual_duration:.2f}s "
+                        f"is only {ratio:.0%} of estimated {expected:.1f}s "
                         f"({word_count} words at {wps} wps). "
                         "Suggests TTS produced a truncated/incomplete narration."
                     ),
                     severity="warn",
-                    dedup_key=f"audio_duration_mismatch:{task_id}",
+                    dedup_key=f"audio_duration_mismatch:{task_id}:{label}",
                     extra={
                         "task_id": str(task_id or ""),
+                        "lane": label,
                         "actual_s": actual_duration,
                         "estimated_s": expected,
                         "ratio": ratio,
@@ -399,19 +431,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
                     source="qa.audio",
                     kind="audio_duration_mismatch",
                     title=(
-                        f"Narration audio longer than expected: "
+                        f"{label} narration audio longer than expected: "
                         f"{actual_duration:.1f}s (expected ~{expected:.0f}s)"
                     ),
                     body=(
-                        f"Task {task_id}: actual {actual_duration:.2f}s is "
-                        f"{ratio:.0%} of estimated {expected:.1f}s "
+                        f"Task {task_id} ({label}): actual {actual_duration:.2f}s "
+                        f"is {ratio:.0%} of estimated {expected:.1f}s "
                         f"({word_count} words at {wps} wps). "
                         "Suggests the audio contains unexpected extra content."
                     ),
                     severity="info",
-                    dedup_key=f"audio_duration_mismatch:{task_id}",
+                    dedup_key=f"audio_duration_mismatch:{task_id}:{label}",
                     extra={
                         "task_id": str(task_id or ""),
+                        "lane": label,
                         "actual_s": actual_duration,
                         "estimated_s": expected,
                         "ratio": ratio,
@@ -425,9 +458,41 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
             result["duration_check"] = "no_script"
 
     except Exception as exc:  # noqa: BLE001 — a QA failure must never halt the graph
-        logger.exception("[qa.audio] unexpected error for task %s: %s", task_id, exc)
+        logger.exception(
+            "[qa.audio] unexpected error for task %s lane %s: %s",
+            task_id, label, exc,
+        )
 
-    return {"audio_qa_result": result}
+    return result
+
+
+async def run(state: dict[str, Any]) -> dict[str, Any]:
+    """QA both narration lanes (long + short). Best-effort — NEVER raises.
+
+    Returns ``{"audio_qa_result": {"long": {...}, "short": {...}}}`` — each lane
+    QA'd against its OWN narration audio + source script. A missing lane audio
+    path yields an empty per-lane result rather than failing the graph.
+    """
+    task_id = state.get("task_id")
+    site_config = state.get("site_config")
+
+    # Long lane: prefer the purpose-built long script, fall back to the podcast
+    # script (mirrors media.render_narration's long fallback).
+    long_res = await _qa_one(
+        audio_path=(state.get("long_narration_audio_path") or "").strip(),
+        script=state.get("video_long_script") or state.get("podcast_script") or "",
+        task_id=task_id,
+        label="long",
+        site_config=site_config,
+    )
+    short_res = await _qa_one(
+        audio_path=(state.get("short_narration_audio_path") or "").strip(),
+        script=state.get("short_summary_script") or "",
+        task_id=task_id,
+        label="short",
+        site_config=site_config,
+    )
+    return {"audio_qa_result": {"long": long_res, "short": short_res}}
 
 
 __all__ = ["ATOM_META", "run"]

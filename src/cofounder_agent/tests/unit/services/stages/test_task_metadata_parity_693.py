@@ -66,6 +66,7 @@ EXPECTED_METADATA_KEYS = frozenset(
         "video_ambient_audio_path",
         "podcast_audio_path",
         "podcast_intro_audio_path",
+        "video_long_script",
     }
 )
 
@@ -100,6 +101,7 @@ _SHARED_STATE: dict = {
     "video_ambient_audio_path": "/tmp/ambient.wav",
     "podcast_audio_path": "/tmp/podcast.wav",
     "podcast_intro_audio_path": "/tmp/intro.wav",
+    "video_long_script": "VIDEO_LONG NARRATION",
     "models_used_by_phase": {"writer": "glm-4.7-5090"},
     "quality_result": SimpleNamespace(overall_score=85),
 }

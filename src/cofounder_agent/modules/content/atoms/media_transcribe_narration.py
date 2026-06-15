@@ -1,31 +1,30 @@
-"""media.transcribe_narration — Stage-2 one-ASR-pass atom (Plan 5, #676).
+"""media.transcribe_narration — Stage-2 per-lane ASR atom (#676 / #689).
 
-Runs a single ASR (whisper.cpp) pass over the podcast narration BEFORE the
-render nodes. It does two things from one transcription (redesign §6 "one ASR
-pass"):
+Runs one ASR (whisper.cpp) pass over EACH video lane's narration audio (long +
+short), BEFORE the render nodes. Per lane it does two things from one
+transcription (redesign §6 "one ASR pass"):
 
-1. **Captions (#676 part a):** writes the SRT document to a temp file and
-   surfaces it on the ``caption_srt_path`` channel so BOTH render atoms
-   (``media.render_long_video`` / ``media.render_short_video``) can burn the
-   same captions into their videos — they narrate the same
-   ``podcast_audio_path``, so one ASR pass covers both.
+1. **Captions (#676):** writes the SRT document to a temp file and surfaces it
+   on the lane's caption channel (``long_caption_srt_path`` /
+   ``short_caption_srt_path``) so each render burns in the captions for the
+   narration it actually plays. (Pre-#689 a single pass over a shared
+   ``podcast_audio_path`` produced one caption track for both renders; now that
+   each lane narrates its OWN script, captions are per-lane.)
 
-2. **Fidelity QA (#676 part b):** compares the ASR transcript against the
-   source narration script (``podcast_script``) with a normalized
-   ``difflib.SequenceMatcher`` ratio. A low ratio (below the DB-configurable
-   ``media.caption.fidelity_min_ratio``, default 0.80) emits an advisory
-   ``caption_fidelity`` finding — this catches TTS dropouts / truncation where
-   the spoken audio diverged from what the writer scripted.
+2. **Fidelity QA (#676 part b):** compares each lane's ASR transcript against
+   that lane's source script (``video_long_script`` / ``short_summary_script``)
+   with a normalized ``difflib.SequenceMatcher`` ratio. A low ratio (below the
+   DB-configurable ``media.caption.fidelity_min_ratio``, default 0.80) emits an
+   advisory ``caption_fidelity`` finding — catches TTS dropouts / truncation.
 
 Captions are **best-effort**: a caption failure (whisper not installed, audio
 missing, provider exception) must NEVER halt the graph — the video still
-renders, just without burned-in captions. So every failure mode returns empty
-keys (and, where useful, emits an informational/warning finding) rather than
-raising.
+renders, just without burned-in captions. So every failure mode returns an empty
+path (and, where useful, emits a per-lane finding) rather than raising.
 
-NOTE (#674 trap): ``caption_srt_path`` / ``asr_transcript`` MUST be declared
-``PipelineState`` channels (added in Plan 5) or LangGraph silently drops them,
-and the render atoms would never see the captions.
+NOTE (#674 trap): ``long_caption_srt_path`` / ``short_caption_srt_path`` MUST be
+declared ``PipelineState`` channels or LangGraph silently drops them, and the
+render atoms would never see the captions.
 """
 
 from __future__ import annotations
@@ -53,23 +52,24 @@ ATOM_META = AtomMeta(
     type="atom",
     version="1.0.0",
     description=(
-        "Stage-2: one ASR pass over the podcast narration — produces an SRT "
-        "caption track for the renders to burn in (#676) and a fidelity check "
-        "of the transcript vs the source script."
+        "Stage-2: one ASR pass per video lane over its narration audio — "
+        "produces a per-lane SRT caption track for the render to burn in "
+        "(#676/#689) and a fidelity check of each transcript vs its source script."
     ),
     inputs=(
-        FieldSpec(name="podcast_audio_path", type="str", description="narration audio path"),
-        FieldSpec(name="podcast_script", type="str", description="source narration script", required=False),
+        FieldSpec(name="long_narration_audio_path", type="str", description="long narration audio path", required=False),
+        FieldSpec(name="short_narration_audio_path", type="str", description="short narration audio path", required=False),
+        FieldSpec(name="video_long_script", type="str", description="long source script (fidelity)", required=False),
+        FieldSpec(name="short_summary_script", type="str", description="short source script (fidelity)", required=False),
         FieldSpec(name="site_config", type="object", description="DI seam (caption provider config)", required=False),
-        FieldSpec(name="database_service", type="object", description="DB service (pool source)", required=False),
         FieldSpec(name="task_id", type="str", description="pipeline task id"),
     ),
     outputs=(
-        FieldSpec(name="caption_srt_path", type="str", description="burned-in SRT path ('' when unavailable)"),
-        FieldSpec(name="asr_transcript", type="str", description="ASR transcript text ('' when unavailable)"),
+        FieldSpec(name="long_caption_srt_path", type="str", description="long burned-in SRT path ('' when unavailable)"),
+        FieldSpec(name="short_caption_srt_path", type="str", description="short burned-in SRT path ('' when unavailable)"),
     ),
     requires=("task_id",),
-    produces=("caption_srt_path", "asr_transcript"),
+    produces=("long_caption_srt_path", "short_caption_srt_path"),
     capability_tier=None,
     cost_class="free",
     idempotent=True,
@@ -78,18 +78,14 @@ ATOM_META = AtomMeta(
     parallelizable=False,
 )
 
-_EMPTY = {"caption_srt_path": "", "asr_transcript": ""}
-
 
 def _normalize(text: str) -> str:
     """Lowercase, strip punctuation, collapse whitespace.
 
     Used so the fidelity ratio compares the WORDS the ASR heard vs the WORDS
-    the writer scripted, not capitalization / punctuation / spacing noise
-    (which differs between TTS-input prose and ASR output).
+    the writer scripted, not capitalization / punctuation / spacing noise.
     """
     lowered = (text or "").lower()
-    # Drop everything that isn't a word char or whitespace, then collapse runs.
     stripped = re.sub(r"[^\w\s]", " ", lowered)
     return re.sub(r"\s+", " ", stripped).strip()
 
@@ -114,104 +110,94 @@ def _resolve_threshold(site_config: Any) -> float:
         return _DEFAULT_FIDELITY_MIN_RATIO
 
 
-async def run(state: dict[str, Any]) -> dict[str, Any]:
-    """One ASR pass: produce ``caption_srt_path`` + ``asr_transcript``.
+async def _transcribe_one(
+    *,
+    audio_path: str,
+    script: str,
+    task_id: Any,
+    label: str,
+    site_config: Any,
+) -> str:
+    """One ASR pass over a single lane's narration → its SRT caption path.
 
-    Best-effort — never raises. Returns ``{"caption_srt_path": <path-or-"">,
-    "asr_transcript": <text-or-"">}``.
+    Returns the SRT path, or ``""`` on any no-op/failure (no audio, whisper
+    unavailable, write error). Best-effort — never raises. Emits per-lane
+    findings (dedup keyed by task + ``label``) on failure / low fidelity.
     """
-    task_id = state.get("task_id")
-    narration = state.get("podcast_audio_path") or ""
-    if not narration:
-        # Nothing to transcribe (e.g. podcast TTS disabled) — graceful no-op.
+    if not audio_path:
         logger.info(
-            "[media.transcribe_narration] task=%s no podcast_audio_path — "
+            "[media.transcribe_narration] task=%s lane=%s no narration audio — "
             "skipping ASR (captions unavailable, video still renders)",
-            task_id,
+            task_id, label,
         )
-        return dict(_EMPTY)
+        return ""
 
-    site_config = state.get("site_config")
-
-    # Get the caption provider. caption_providers/__init__ exposes no
-    # resolver/factory (it's a docstring-only package), so instantiate the
-    # default whisper_local provider directly behind the CaptionProvider seam.
-    # The provider returns success=False (never raises) when disabled / binary
-    # missing / model missing, so it's safe to call even without whisper.
     try:
         provider = WhisperLocalCaptionProvider(site_config=site_config)
-        result = await provider.transcribe(
-            audio_path=narration, task_id=task_id
-        )
+        result = await provider.transcribe(audio_path=audio_path, task_id=task_id)
     except Exception as exc:  # noqa: BLE001 — a caption failure must not halt the graph
         logger.exception(
-            "[media.transcribe_narration] task=%s transcribe raised: %s",
-            task_id, exc,
+            "[media.transcribe_narration] task=%s lane=%s transcribe raised: %s",
+            task_id, label, exc,
         )
         emit_finding(
             source="media.transcribe_narration",
             kind="caption_failed",
-            title="ASR transcription raised an exception",
-            body=f"provider.transcribe raised for task {task_id}: {exc}",
+            title=f"ASR transcription raised an exception ({label})",
+            body=f"provider.transcribe raised for task {task_id} lane {label}: {exc}",
             severity="warn",
-            dedup_key=f"caption_failed:{task_id}",
-            extra={"task_id": str(task_id or ""), "error": str(exc)},
+            dedup_key=f"caption_failed:{task_id}:{label}",
+            extra={"task_id": str(task_id or ""), "lane": label, "error": str(exc)},
         )
-        return dict(_EMPTY)
+        return ""
 
-    # Derive the transcript from the segments (falls back to "" if none).
     asr_transcript = " ".join(
         seg.text for seg in (result.segments or []) if seg.text
     ).strip()
 
     if not result.success or not result.srt_text:
-        # Captions unavailable (e.g. whisper not installed) — best-effort, so
-        # log + an informational finding, but still surface whatever transcript
-        # we got. The video renders without burned-in captions.
         logger.info(
-            "[media.transcribe_narration] task=%s captions unavailable "
+            "[media.transcribe_narration] task=%s lane=%s captions unavailable "
             "(success=%s, srt=%s) — rendering without burned-in captions",
-            task_id, result.success, bool(result.srt_text),
+            task_id, label, result.success, bool(result.srt_text),
         )
         emit_finding(
             source="media.transcribe_narration",
             kind="caption_unavailable",
-            title="ASR produced no usable caption track",
+            title=f"ASR produced no usable caption track ({label})",
             body=(
-                f"transcribe for task {task_id} returned success="
+                f"transcribe for task {task_id} lane {label} returned success="
                 f"{result.success}, srt_text empty={not result.srt_text}: "
                 f"{result.error or 'no error detail'}"
             ),
             severity="info",
-            dedup_key=f"caption_unavailable:{task_id}",
-            extra={"task_id": str(task_id or ""), "error": result.error},
+            dedup_key=f"caption_unavailable:{task_id}:{label}",
+            extra={"task_id": str(task_id or ""), "lane": label, "error": result.error},
         )
-        return {"caption_srt_path": "", "asr_transcript": asr_transcript}
+        return ""
 
-    # Success: persist the SRT document where the compositor can burn it in.
-    srt_path = f"{tempfile.gettempdir()}/captions_{task_id}.srt"
+    srt_path = f"{tempfile.gettempdir()}/captions_{task_id}_{label}.srt"
     try:
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(result.srt_text)
     except OSError as exc:
         logger.warning(
-            "[media.transcribe_narration] task=%s failed to write SRT %s: %s",
-            task_id, srt_path, exc,
+            "[media.transcribe_narration] task=%s lane=%s failed to write SRT %s: %s",
+            task_id, label, srt_path, exc,
         )
         emit_finding(
             source="media.transcribe_narration",
             kind="caption_failed",
-            title="Failed to write caption SRT to disk",
-            body=f"writing {srt_path} for task {task_id} raised: {exc}",
+            title=f"Failed to write caption SRT to disk ({label})",
+            body=f"writing {srt_path} for task {task_id} lane {label} raised: {exc}",
             severity="warn",
-            dedup_key=f"caption_failed:{task_id}",
-            extra={"task_id": str(task_id or ""), "error": str(exc)},
+            dedup_key=f"caption_failed:{task_id}:{label}",
+            extra={"task_id": str(task_id or ""), "lane": label, "error": str(exc)},
         )
-        return {"caption_srt_path": "", "asr_transcript": asr_transcript}
+        return ""
 
-    # Fidelity QA (#676 part b): compare the ASR transcript to the source
-    # script. Only when both are non-empty — nothing to compare otherwise.
-    script = state.get("podcast_script") or ""
+    # Fidelity QA (#676 part b): compare the ASR transcript to the source script.
+    # Only when both are non-empty — nothing to compare otherwise.
     if asr_transcript and script:
         threshold = _resolve_threshold(site_config)
         ratio = _fidelity_ratio(asr_transcript, script)
@@ -219,18 +205,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             emit_finding(
                 source="media.transcribe_narration",
                 kind="caption_fidelity",
-                title=f"ASR fidelity {ratio:.2f} < {threshold}",
+                title=f"ASR fidelity {ratio:.2f} < {threshold} ({label})",
                 body=(
-                    f"The narration ASR transcript for task {task_id} diverged "
-                    f"from the source script (normalized SequenceMatcher ratio "
-                    f"{ratio:.3f} < {threshold}). Likely a TTS dropout or "
-                    "truncation — the spoken audio doesn't match what was "
-                    "scripted. Captions still burned in; advisory only."
+                    f"The {label} narration ASR transcript for task {task_id} "
+                    f"diverged from its source script (normalized SequenceMatcher "
+                    f"ratio {ratio:.3f} < {threshold}). Likely a TTS dropout or "
+                    "truncation. Captions still burned in; advisory only."
                 ),
                 severity="warn",
-                dedup_key=f"caption_fidelity:{task_id}",
+                dedup_key=f"caption_fidelity:{task_id}:{label}",
                 extra={
                     "task_id": str(task_id or ""),
+                    "lane": label,
                     "ratio": ratio,
                     "threshold": threshold,
                     "asr_len": len(asr_transcript),
@@ -239,11 +225,35 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             )
 
     logger.info(
-        "[media.transcribe_narration] task=%s wrote captions to %s "
+        "[media.transcribe_narration] task=%s lane=%s wrote captions to %s "
         "(transcript=%dc)",
-        task_id, srt_path, len(asr_transcript),
+        task_id, label, srt_path, len(asr_transcript),
     )
-    return {"caption_srt_path": srt_path, "asr_transcript": asr_transcript}
+    return srt_path
+
+
+async def run(state: dict[str, Any]) -> dict[str, Any]:
+    """One ASR pass per video lane → per-lane SRT caption tracks (#689).
+
+    Best-effort — never raises. Returns ``{"long_caption_srt_path": <path-or-"">,
+    "short_caption_srt_path": <path-or-"">}``.
+    """
+    task_id = state.get("task_id")
+    site_config = state.get("site_config")
+    long_srt = await _transcribe_one(
+        audio_path=state.get("long_narration_audio_path") or "",
+        script=state.get("video_long_script") or state.get("podcast_script") or "",
+        task_id=task_id, label="long", site_config=site_config,
+    )
+    short_srt = await _transcribe_one(
+        audio_path=state.get("short_narration_audio_path") or "",
+        script=state.get("short_summary_script") or "",
+        task_id=task_id, label="short", site_config=site_config,
+    )
+    return {
+        "long_caption_srt_path": long_srt,
+        "short_caption_srt_path": short_srt,
+    }
 
 
 __all__ = ["ATOM_META", "run"]

@@ -53,6 +53,8 @@ async def render_from_state(
     *,
     shot_list_key: str,
     output_key: str,
+    narration_key: str = "podcast_audio_path",
+    caption_key: str = "caption_srt_path",
 ) -> dict[str, Any]:
     """Render a video from a shot-list channel in graph state.
 
@@ -63,6 +65,12 @@ async def render_from_state(
         output_key: Which state channel to write the rendered path into
             (``long_video_path`` or ``short_video_path``). MUST be a
             declared ``PipelineState`` channel or LangGraph drops it.
+        narration_key: Which state channel holds this lane's narration audio
+            path (``long_narration_audio_path`` / ``short_narration_audio_path``
+            per #689). Defaults to ``podcast_audio_path`` for backcompat.
+        caption_key: Which state channel holds this lane's burned-in SRT
+            (``long_caption_srt_path`` / ``short_caption_srt_path``). Defaults to
+            ``caption_srt_path`` for backcompat.
 
     Returns:
         ``{output_key: <path-or-empty-string>}`` — empty on no-op /
@@ -104,12 +112,12 @@ async def render_from_state(
         else state.get("pool")
     )
 
-    narration = state.get("podcast_audio_path") or ""
+    narration = state.get(narration_key) or ""
     ambient = state.get("video_ambient_audio_path") or None
-    # SRT caption track produced by the one-ASR-pass transcribe atom
-    # (media.transcribe_narration, Plan 5 #676). Empty-string is the atom's
-    # no-op sentinel, so `or None` maps it to None — no track to burn.
-    caption = state.get("caption_srt_path") or None
+    # SRT caption track produced by media.transcribe_narration (per-lane #689).
+    # Empty-string is the atom's no-op sentinel, so `or None` maps it to None —
+    # no track to burn.
+    caption = state.get(caption_key) or None
     width, height = _resolve_dims(shot_list.aspect)
 
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"

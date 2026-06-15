@@ -489,3 +489,48 @@ def test_no_marker_no_trailing_prose_leaves_short_empty():
 
     assert short == ""
     assert scenes == [_SCENE_A, _SCENE_B]
+
+
+# ---------------------------------------------------------------------------
+# Distinct long-form VIDEO narration script (poindexter#689)
+#
+# The long video must narrate its OWN script (paced to on-screen visuals),
+# not reuse the podcast script. generate_media_scripts emits it via
+# context_updates as ``video_long_script``.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_video_long_script_emitted_via_context_updates():
+    """A distinct video_long_script is generated + flows via context_updates."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+
+    def _complete(*, messages, **_kw):
+        # The video-narration call is the one whose prompt asks for a
+        # "voiceover narration"; the scene call gets canned scene text.
+        prompt = messages[0]["content"]
+        if "voiceover narration" in prompt:
+            return SimpleNamespace(
+                text="On screen we see the new GPU. Here is why it matters.",
+            )
+        return SimpleNamespace(text="1. a cinematic shot\n\nSHORT: quick hook here")
+
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(side_effect=_complete)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="A" * 500)), \
+         patch("services.podcast_service._normalize_for_speech",
+               new=lambda text, **_k: text), \
+         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+               return_value=False), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=False):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    vls = result.context_updates.get("video_long_script", "")
+    assert vls.strip() != ""
+    assert "screen" in vls.lower()

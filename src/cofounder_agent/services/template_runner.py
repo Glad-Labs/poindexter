@@ -472,6 +472,17 @@ class PipelineState(TypedDict, total=False):
     # are dropped on the graph_def path, so the captions would vanish without them.
     caption_srt_path: str
     asr_transcript: str
+    # Per-media narration (poindexter#689): each video lane renders its OWN
+    # narration audio from its own script + CTA, replacing the shared
+    # podcast_audio_path the renders used to read. media.render_narration
+    # produces the audio paths; media.transcribe_narration produces the per-lane
+    # SRTs. Same #674 last-value-channel discipline — undeclared keys are dropped
+    # on the graph_def path.
+    video_long_script: str
+    long_narration_audio_path: str
+    short_narration_audio_path: str
+    long_caption_srt_path: str
+    short_caption_srt_path: str
     # Stage-2 media QA result (#1193 Plan 6): media.qa runs AFTER the renders
     # and produces a per-asset QA signals dict (A/V duration sync, caption
     # presence, gated frame human-detection). Same last-value-channel

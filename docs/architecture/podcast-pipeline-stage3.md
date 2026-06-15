@@ -113,7 +113,7 @@ SAFETY NET — media_reconciliation
 | ⏸ `services/media_pipeline_spec.py` / `media_persist.py` | Drop `video_long` → write `video` (+ `video_short`). (§11)                                                                                                                                                                                       |
 | ⏸ `services/jobs/dispatch_media_pipeline.py`             | Already uses `media_pipeline_dispatched_at` (the de-facto video marker); no rename needed. (§11)                                                                                                                                                 |
 | ⏸ `services/jobs/media_distribute.py`                    | Type map → `{video:video, video_short:video_short}`; join `mas.type = ma.medium`; de-dup to avoid double-send. (§11)                                                                                                                             |
-| ⏸ `modules/content/atoms/` video render atoms            | Append `media.cta.video` outro as an end beat (own render path — base narration is shared). (§11)                                                                                                                                                |
+| ✅ `modules/content/atoms/media_render_narration.py`     | Each video lane renders its OWN narration audio (own script + `media.cta.video` / `media.cta.video_short` outro) via the shared `_narration_render` helper — no shared base narration. Shipped #689. (§6)                                        |
 | ⏸ `services/jobs/media_reconciliation.py`                | Replace `_regen_*`/`_record_media_asset` with per-medium **re-dispatch** (clear marker, capped attempts). Keep drift alert. (§11)                                                                                                                |
 | ✅ `services/settings_defaults.py`                       | Seed `podcast_pipeline_trigger_enabled` (+ caps) and `media.cta.{podcast,video,video_short}` (podcast CTA live; video CTAs seeded ahead of their §11 reader).                                                                                    |
 | ✅/⏸ `plugins/registry.py`                               | ✅ Register `dispatch_podcast_pipeline` + `podcast_distribute`. ⏸ **deregister** `backfill_podcasts` + `backfill_videos` (§11 — `media_distribute` still imports `backfill_videos` helpers).                                                     |
@@ -167,8 +167,15 @@ video side is deferred — see §11.
 
 `app_settings`: `media.cta.podcast` (default: "If you enjoyed this, rate and review the
 show on Spotify or Apple Podcasts — it genuinely helps."), `media.cta.video` /
-`media.cta.video_short` (default: "Like and subscribe for more."). Render atoms append
-the medium's outro before TTS / as the end beat. ML-tunable later.
+`media.cta.video_short` (default: "Like and subscribe for more.").
+
+Each medium renders its OWN narration audio from its OWN script with the medium's
+CTA appended before TTS — there is **no shared base narration** (#689). The
+podcast lane (`podcast.render`) and the two video lanes (`media.render_narration`,
+which produces `long_narration_audio_path` + `short_narration_audio_path`) all
+delegate to the shared `_narration_render.render_narration(script, cta_key, …)`
+helper, so the CTA-append + TTS + fail-soft contract lives in one place.
+ML-tunable later.
 
 ## 7. Reject → recreate
 
@@ -224,9 +231,12 @@ PR rather than an unattended autonomous pass. It must land as one unit:
    `media_distribute`) to a shared home.
 5. **Data migration** — relabel/de-dup the 10 existing `video_long` rows → one `video`
    row per post.
-6. **Video CTA** — append `media.cta.video` as an end beat; the video shares the base
-   narration, so a _spoken_ CTA needs its own render path (don't reuse the
-   podcast-CTA'd audio).
+6. **Video CTA** — ✅ shipped (#689). Each video lane renders its OWN narration
+   from its OWN script with its OWN spoken CTA (`media.cta.video` /
+   `media.cta.video_short`) via `media.render_narration` → the shared
+   `_narration_render` helper. (The earlier "video shares the base podcast
+   narration" plan is superseded — Stage-2 never carried the podcast audio
+   across, which is what left every rendered video silent.)
 7. **`recorder` + `cli/posts.py` + reconciliation read-side** — drop the `video_long`
    strings (closes #573).
 

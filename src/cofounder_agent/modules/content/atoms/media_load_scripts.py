@@ -45,6 +45,7 @@ ATOM_META = AtomMeta(
     ),
     outputs=(
         FieldSpec(name="podcast_script", type="str", description="podcast VO script"),
+        FieldSpec(name="video_long_script", type="str", description="long-form video narration script"),
         FieldSpec(name="video_scenes", type="list", description="long-form scene prompts"),
         FieldSpec(name="short_summary_script", type="str", description="short-form narration"),
         FieldSpec(name="video_shot_list", type="dict", description="director shot list"),
@@ -54,6 +55,7 @@ ATOM_META = AtomMeta(
     requires=("task_id",),
     produces=(
         "podcast_script",
+        "video_long_script",
         "video_scenes",
         "short_summary_script",
         "video_shot_list",
@@ -77,6 +79,7 @@ ATOM_META = AtomMeta(
 # downstream no-op gracefully on empty inputs.
 _EMPTY = {
     "podcast_script": "",
+    "video_long_script": "",
     "video_scenes": [],
     "short_summary_script": "",
     "video_shot_list": None,
@@ -125,6 +128,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "podcast_script": meta.get("podcast_script", _EMPTY["podcast_script"]),
+        "video_long_script": meta.get("video_long_script", _EMPTY["video_long_script"]),
         "video_scenes": meta.get("video_scenes", _EMPTY["video_scenes"]),
         "short_summary_script": meta.get(
             "short_summary_script", _EMPTY["short_summary_script"],

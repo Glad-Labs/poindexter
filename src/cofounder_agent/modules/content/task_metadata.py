@@ -113,4 +113,5 @@ def build_task_metadata(
         "video_ambient_audio_path": state.get("video_ambient_audio_path", ""),
         "podcast_audio_path": state.get("podcast_audio_path", ""),
         "podcast_intro_audio_path": state.get("podcast_intro_audio_path", ""),
+        "video_long_script": state.get("video_long_script", ""),
     }

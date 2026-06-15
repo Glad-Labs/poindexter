@@ -54,6 +54,19 @@ async def test_media_load_scripts_reads_task_metadata():
 
 
 @pytest.mark.asyncio
+async def test_media_load_scripts_loads_video_long_script():
+    """The long-form video narration script (#689) is loaded into state so
+    Stage-2's render_narration can synthesize it."""
+    meta = {"podcast_script": "POD", "video_long_script": "the long video narration"}
+    pool, _ = _pool_returning({"task_metadata": meta})
+    db = SimpleNamespace(pool=pool)
+
+    result = await load_scripts_run({"task_id": "t-vls", "database_service": db})
+
+    assert result["video_long_script"] == "the long video narration"
+
+
+@pytest.mark.asyncio
 async def test_media_load_scripts_parses_json_string_metadata():
     """asyncpg returns jsonb as a str when no codec is registered — must parse."""
     meta = {
@@ -81,6 +94,7 @@ async def test_media_load_scripts_handles_missing_metadata():
 
     assert result == {
         "podcast_script": "",
+        "video_long_script": "",
         "video_scenes": [],
         "short_summary_script": "",
         "video_shot_list": None,

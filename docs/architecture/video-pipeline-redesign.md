@@ -83,6 +83,18 @@ SAFETY NET — media_reconciliation watchdog (demoted backfill jobs)
 
 **Scripts-in-Stage-1, render-in-Stage-2** keeps all creative/LLM work behind Gate 1 (approving the blog implicitly approves the plan) and makes Stage 2 deterministic rendering + distribution. A re-render never re-invents prompts — the root fix for #674 and #675.
 
+**The sketch above is conceptual.** The authoritative Stage-2 `media_pipeline`
+graph_def is a linear 8-node chain (`services/media_pipeline_spec.py`):
+
+```
+load_scripts → render_narration → transcribe_narration → qa_audio →
+render_long_video → render_short_video → media_qa → persist_media → END
+```
+
+`render_narration` (#689) regenerates the long + short narration audio from
+their own scripts + CTAs (§6); the podcast is produced by its own pipeline, not
+this graph.
+
 ---
 
 ## 3. Gates
@@ -146,13 +158,31 @@ The legacy host `:9837` slideshow path is replaced by the compositor for the liv
 
 ---
 
-## 6. Audio, captions & QA — one ASR pass
+## 6. Audio, captions & QA — per-lane narration + one ASR pass each
 
-- **TTS narration** via `podcast_service` / `tts_providers`. Voice is DB-configurable (#677) — see Voice Variety.
-- **One ASR pass** over the generated narration does double duty:
-  - **(a) Captions** — emits the `.srt` burned in by the compositor (#676).
-  - **(b) Fidelity QA** — diff the ASR transcript against the source script to catch TTS dropouts / mispronunciations / truncation.
-- **`qa.audio` atom (#1193)** — audio-native model (Qwen2-Audio 7B-Instruct / Ola) _listens_ to the narration for pacing, repetition, and tone mismatch without a text round-trip.
+- **Per-lane TTS narration (#689)** — the `media.render_narration` atom
+  regenerates the long AND short narration audio in Stage 2 from their OWN
+  scripts (`video_long_script` / `short_summary_script`) with their OWN CTAs
+  (`media.cta.video` / `media.cta.video_short`), into
+  `long_narration_audio_path` / `short_narration_audio_path`. There is **no
+  shared `podcast_audio_path` base** — the earlier "both renders narrate the
+  same podcast audio" plan left every rendered video **silent**, because
+  Stage 2 never carried the podcast audio across from Stage 1. The podcast and
+  both video lanes all synthesize through the shared `_narration_render` helper
+  (`podcast_service` / `tts_providers`). Voice is DB-configurable (#677) — see
+  Voice Variety.
+- **One ASR pass _per lane_** (`media.transcribe_narration`) over that lane's
+  own narration audio does double duty:
+  - **(a) Captions** — emits the lane's `.srt` (`long_caption_srt_path` /
+    `short_caption_srt_path`) burned in by that lane's render (#676).
+  - **(b) Fidelity QA** — diff the lane's ASR transcript against that lane's
+    source script to catch TTS dropouts / mispronunciations / truncation.
+- **`qa.audio` atom (#1193, dual-lane #689)** — runs the deterministic
+  ffprobe/ffmpeg checks (silence / volume / duration-vs-script) on **each**
+  narration lane, nesting the results under `audio_qa_result['long']` /
+  `['short']`. (The audio-native model — Qwen2-Audio 7B-Instruct / Ola — that
+  _listens_ for pacing / repetition / tone mismatch is deferred until the model
+  is available.)
 - **`media_qa` also runs:** frame **human-detection** (catches photoreal-human policy violations before ship), caption-presence, and A/V duration sync — replacing the audit-era check that only validated duration + file size.
 
 ---

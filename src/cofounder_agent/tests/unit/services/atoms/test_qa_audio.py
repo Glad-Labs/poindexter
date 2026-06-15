@@ -30,7 +30,20 @@ def _state(**kwargs):
 
 
 async def _run(state):
-    return await qa.run(state)
+    """Drive ``_qa_one`` (single-lane) the way the old ``run()`` behaved.
+
+    The legacy checks exercise one lane's QA logic over ``podcast_audio_path`` /
+    ``podcast_script``; ``_qa_one`` returns the bare per-check result dict, which
+    we wrap in ``audio_qa_result`` so the existing ``out["audio_qa_result"][...]``
+    assertions stay intact. Dual-lane orchestration is covered separately below.
+    """
+    return {"audio_qa_result": await qa._qa_one(
+        audio_path=(state.get("podcast_audio_path") or "").strip(),
+        script=state.get("podcast_script") or "",
+        task_id=state.get("task_id"),
+        label="long",
+        site_config=state.get("site_config"),
+    )}
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +257,61 @@ async def test_atom_never_raises_on_total_failure(tmp_path):
 
     assert out == {"audio_qa_result": {}}
     assert out["audio_qa_result"] is not None
+
+
+# ---------------------------------------------------------------------------
+# run() — dual-lane orchestration (#689)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_qa_audio_checks_both_lanes(monkeypatch):
+    """run() QAs the long + short narration lanes and nests the results."""
+    seen = []
+
+    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+        seen.append((label, audio_path, script))
+        return {"volume_check": "ok"}
+
+    monkeypatch.setattr(qa, "_qa_one", _fake_one)
+    out = await qa.run({
+        "task_id": "t1",
+        "long_narration_audio_path": "/tmp/long.mp3",
+        "short_narration_audio_path": "/tmp/short.mp3",
+        "video_long_script": "long script",
+        "short_summary_script": "short script",
+    })
+    assert {lbl for (lbl, _a, _s) in seen} == {"long", "short"}
+    assert out["audio_qa_result"]["long"]["volume_check"] == "ok"
+    assert out["audio_qa_result"]["short"]["volume_check"] == "ok"
+    by_label = {lbl: (a, s) for (lbl, a, s) in seen}
+    assert by_label["long"] == ("/tmp/long.mp3", "long script")
+    assert by_label["short"] == ("/tmp/short.mp3", "short script")
+
+
+@pytest.mark.asyncio
+async def test_qa_audio_long_falls_back_to_podcast_script(monkeypatch):
+    """Empty video_long_script → long lane QAs against the podcast script."""
+    seen = {}
+
+    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+        seen[label] = script
+        return {}
+
+    monkeypatch.setattr(qa, "_qa_one", _fake_one)
+    await qa.run({
+        "task_id": "t1",
+        "long_narration_audio_path": "/tmp/long.mp3",
+        "video_long_script": "",
+        "podcast_script": "podcast body",
+    })
+    assert seen["long"] == "podcast body"
+
+
+@pytest.mark.asyncio
+async def test_qa_audio_run_failsoft_no_audio_both_lanes():
+    """No narration audio in either lane → empty per-lane results, no raise."""
+    out = await qa.run({"task_id": "t-empty"})
+    assert out == {"audio_qa_result": {"long": {}, "short": {}}}
 
 
 # ---------------------------------------------------------------------------

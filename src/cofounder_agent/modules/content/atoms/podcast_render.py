@@ -13,12 +13,9 @@ the graph finishes and the ``media_reconciliation`` watchdog re-dispatches.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-
-logger = logging.getLogger(__name__)
 
 ATOM_META = AtomMeta(
     name="podcast.render",
@@ -48,33 +45,25 @@ ATOM_META = AtomMeta(
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    """Render the podcast narration MP3, returning its temp path (or '')."""
+    """Render the podcast narration MP3, returning its temp path (or '').
+
+    Delegates the CTA-append + synth + fail-soft contract to the shared
+    ``_narration_render`` helper (the same one the video lanes use), so there is
+    a single TTS code path across podcast + video narration (#689).
+    """
+    from modules.content.atoms._narration_render import render_narration
+
     task_id = state.get("task_id")
     if not task_id:
         raise ValueError("podcast.render requires task_id")
 
-    script = (state.get("podcast_script") or "").strip()
-    site_config = state.get("site_config")
-    if not script or site_config is None:
-        # No narration to render (empty script) or no config to render with —
-        # fail-soft so the graph finishes; the watchdog re-dispatches.
-        return {"podcast_audio_path": ""}
-
-    cta = (site_config.get("media.cta.podcast", "") or "").strip()
-    if cta:
-        script = f"{script}\n\n{cta}"
-
-    from services.podcast_service import PodcastService
-
-    try:
-        path, _duration = await PodcastService(site_config=site_config).synthesize(
-            script, key=str(task_id),
-        )
-    except Exception as exc:  # noqa: BLE001 — render failure must not halt the graph
-        logger.warning("[podcast.render] synthesis failed for task %s: %s", task_id, exc)
-        return {"podcast_audio_path": ""}
-
-    logger.info("[podcast.render] task=%s rendered narration -> %s", task_id, path)
+    path = await render_narration(
+        script=state.get("podcast_script") or "",
+        cta_key="media.cta.podcast",
+        site_config=state.get("site_config"),
+        task_id=task_id,
+        key=str(task_id),
+    )
     return {"podcast_audio_path": path}
 
 

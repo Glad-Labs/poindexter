@@ -341,6 +341,24 @@ class TestRenderLongVideoAtom:
         assert out == {"long_video_path": ""}
         mock_render.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_long_render_uses_long_narration_channel(self):
+        """The long atom narrates long_narration_audio_path + burns
+        long_caption_srt_path (its OWN lane), not the shared podcast audio (#689)."""
+        state = {
+            "task_id": "t1",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "long_narration_audio_path": "/tmp/long.mp3",
+            "short_narration_audio_path": "/tmp/short.mp3",
+            "long_caption_srt_path": "/tmp/long.srt",
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await run_long(state)
+        kwargs = mock_render.await_args.kwargs
+        assert kwargs["audio_path"] == "/tmp/long.mp3"
+        assert kwargs["caption_path"] == "/tmp/long.srt"
+
     def test_atom_meta_shape(self):
         from modules.content.atoms.media_render_long_video import ATOM_META
 
@@ -377,6 +395,24 @@ class TestRenderShortVideoAtom:
             out = await run_short(state)
         assert out == {"short_video_path": ""}
         mock_render.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_short_render_uses_short_narration_channel(self):
+        """The short atom narrates short_narration_audio_path + burns
+        short_caption_srt_path (its OWN lane) (#689)."""
+        state = {
+            "task_id": "t1",
+            "short_shot_list": _SHORT_SHOT_LIST,
+            "long_narration_audio_path": "/tmp/long.mp3",
+            "short_narration_audio_path": "/tmp/short.mp3",
+            "short_caption_srt_path": "/tmp/short.srt",
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await run_short(state)
+        kwargs = mock_render.await_args.kwargs
+        assert kwargs["audio_path"] == "/tmp/short.mp3"
+        assert kwargs["caption_path"] == "/tmp/short.srt"
 
     def test_atom_meta_shape(self):
         from modules.content.atoms.media_render_short_video import ATOM_META
