@@ -394,9 +394,10 @@ async def _insert_dedup_state(
             fingerprint, now, severity, source, sample_message,
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug(
+        logger.warning(
             "[alert_dispatcher] alert_dedup_state insert failed for %s "
-            "(%s) -- continuing without dedup state",
+            "(%s) -- continuing without dedup state; repeats won't be "
+            "suppressed, so the operator may be re-paged",
             fingerprint[:12], e,
         )
 
@@ -416,9 +417,10 @@ async def _bump_dedup_state(
             fingerprint, now,
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug(
+        logger.warning(
             "[alert_dispatcher] alert_dedup_state bump failed for %s "
-            "(%s)",
+            "(%s) -- repeat-count may drift; the summary's fired-N-times "
+            "line could be wrong",
             fingerprint[:12], e,
         )
 
@@ -567,6 +569,9 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
         )
         return notify_operator
     except Exception as e:  # noqa: BLE001 — narrow imports later
+        # silent-ok: expected — the worker's services/ tree is absent from
+        # the brain image, so this import normally fails and we fall back
+        # to brain.notify. Escalating would fire a warning on every poll.
         logger.debug(
             "[alert_dispatcher] worker notify_operator unavailable: %s "
             "— falling back to brain.notify", e,
@@ -1082,8 +1087,9 @@ async def _evaluate_dedup_decision(
                 fingerprint, now, severity, source, message,
             )
         except Exception as e:  # noqa: BLE001
-            logger.debug(
-                "[alert_dispatcher] dedup-state reset failed for %s (%s)",
+            logger.warning(
+                "[alert_dispatcher] dedup-state reset failed for %s (%s) "
+                "-- stale state may re-page the operator next cycle",
                 fingerprint[:12], e,
             )
         return {
@@ -1610,6 +1616,9 @@ async def _read_triage_retry_config(pool: Any) -> tuple[int, list[float]]:
         if max_value is not None:
             max_attempts = max(1, int(str(max_value).strip()))
     except Exception as e:  # noqa: BLE001
+        # silent-ok: config read with a safe default (matches the
+        # _read_app_setting_* convention) — triage still runs at the
+        # default retry max.
         logger.debug("[alert_dispatcher] ops_triage_retry_max parse failed: %s", e)
     try:
         backoff_value = await pool.fetchval(
@@ -1621,6 +1630,9 @@ async def _read_triage_retry_config(pool: Any) -> tuple[int, list[float]]:
             if isinstance(parsed, list):
                 backoff = [float(x) for x in parsed if x is not None]
     except Exception as e:  # noqa: BLE001
+        # silent-ok: config read with a safe default (matches the
+        # _read_app_setting_* convention) — triage still runs at the
+        # default backoff schedule.
         logger.debug(
             "[alert_dispatcher] ops_triage_retry_backoff_seconds parse failed: %s", e
         )
@@ -1709,6 +1721,9 @@ def _post_triage_sync(
         try:
             body = e.read()
         except Exception:  # noqa: BLE001
+            # silent-ok: best-effort read of an already-failed HTTPError
+            # body; the status code returned below is what the caller
+            # branches on, not this diagnostic body.
             pass
         return e.code, body
 

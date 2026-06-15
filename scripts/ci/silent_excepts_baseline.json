@@ -1,9 +1,7 @@
 {
-  "brain/alert_dispatcher.py": 7,
   "brain/alert_sync.py": 1,
   "brain/backup_watcher.py": 1,
   "brain/bootstrap.py": 1,
-  "brain/brain_daemon.py": 17,
   "brain/branch_drift_probe.py": 1,
   "brain/compose_drift_probe.py": 2,
   "brain/corsair_feed_probe.py": 1,

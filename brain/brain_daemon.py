@@ -1139,6 +1139,8 @@ async def send_telegram(
                     if isinstance(message_id, int):
                         return message_id
         except Exception as parse_err:  # noqa: BLE001 — best-effort parse
+            # silent-ok: the send already returned 2xx; message_id is a
+            # best-effort nicety for follow-up threading, not delivery.
             logger.debug(
                 "[BRAIN] Telegram response parse failed: %s — "
                 "send succeeded but message_id unavailable",
@@ -1240,6 +1242,8 @@ async def send_discord(
                     if message_id:
                         return str(message_id)
         except Exception as parse_err:  # noqa: BLE001 — best-effort parse
+            # silent-ok: the webhook POST already succeeded; message_id is a
+            # best-effort nicety for reply threading, not delivery.
             logger.debug(
                 "[BRAIN] Discord response parse failed: %s — "
                 "send succeeded but message_id unavailable",
@@ -1898,7 +1902,11 @@ async def auto_remediate(pool):
             try:
                 await _stamp_auto_cancelled(pool, task_ids)
             except Exception as _metric_err:
-                logger.debug("[BRAIN] auto_cancelled stamp failed: %s", _metric_err)
+                logger.warning(
+                    "[BRAIN] auto_cancelled_at stamp failed (%s) -- the "
+                    "sweeper-cancellation Prometheus gauge will undercount "
+                    "this cycle", _metric_err,
+                )
 
         # 2. Auto-expire awaiting_approval tasks older than 7 days
         # #198: auto-reject stale approval window tunable via app_settings.
@@ -1967,7 +1975,7 @@ async def auto_remediate(pool):
                     await notify(f"🔧 Auto-remediation: {action}", pool=pool)
 
     except Exception as e:
-        logger.debug("[BRAIN] Auto-remediation failed: %s", e)
+        logger.error("[BRAIN] Auto-remediation failed: %s", e, exc_info=True)
 
 
 async def generate_daily_digest(pool):
@@ -2045,7 +2053,7 @@ async def generate_daily_digest(pool):
         logger.info("[BRAIN] Operator digest sent")
 
     except Exception as e:
-        logger.debug("[BRAIN] Operator digest failed: %s", e)
+        logger.error("[BRAIN] Operator digest failed: %s", e, exc_info=True)
 
 
 async def self_maintain(pool):
@@ -2098,7 +2106,7 @@ async def update_system_metrics(pool):
             """, str(row["c"]))
 
     except Exception as e:
-        logger.debug("[BRAIN] Metrics update failed: %s", e)
+        logger.error("[BRAIN] Metrics update failed: %s", e, exc_info=True)
 
 
 async def log_electricity_cost(pool):
@@ -2122,9 +2130,10 @@ async def log_electricity_cost(pool):
                 elif line.startswith("system_total_power_estimate_watts"):
                     estimate_watts = float(line.split()[-1])
         except Exception as exc:
-            # poindexter#455 — exporter unreachable is normal during host
-            # reboots, but a sustained outage means cost watts come from the
-            # iCUE fallback or, failing that, the software estimate.
+            # silent-ok: exporter-unreachable is an expected transient (host
+            # reboots); the iCUE / software-estimate fallback below covers it,
+            # and a sustained outage still surfaces via the power_source label
+            # on the cost row. poindexter#455.
             logger.debug(
                 "[BRAIN] PSU exporter unreachable (%s: %s) — trying iCUE "
                 "fallback / software estimate this cycle",
@@ -2214,21 +2223,20 @@ async def log_electricity_cost(pool):
                 ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
             """, power_source)
         except Exception as exc:
-            # poindexter#455 — used to be silent. The watchdog's
-            # state-transition Telegram/Discord notifications above
-            # already fired; this is just the DB write that powers
-            # the NEXT-cycle comparison. Silent failure here means
-            # the next cycle sees prev_source=None and may re-fire
-            # the same "PSU dropped" alert. Debug-log so a stuck
-            # state is traceable.
-            logger.debug(
+            # poindexter#455 — the watchdog's state-transition
+            # Telegram/Discord notifications above already fired; this is
+            # the DB write that powers the NEXT-cycle comparison. A failure
+            # here means the next cycle sees prev_source=None and may
+            # re-fire the same "PSU dropped" alert — operator-facing spam,
+            # so warn rather than swallow it below the prod log level.
+            logger.warning(
                 "[BRAIN] psu_watchdog brain_knowledge write failed "
                 "(%s: %s) — next cycle may re-notify",
                 type(exc).__name__, exc,
             )
 
     except Exception as e:
-        logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
+        logger.error("[BRAIN] Electricity cost logging failed: %s", e, exc_info=True)
 
 
 async def _maybe_sync_grafana_alerts(pool) -> None:
@@ -2281,8 +2289,10 @@ async def _record_operator_paged(pool, payload: dict, detail: str) -> None:
                 }),
             )
     except Exception as e:  # noqa: BLE001
-        logger.debug(
-            "[brain_daemon] operator_paged audit insert failed: %s", e,
+        logger.warning(
+            "[brain_daemon] operator_paged audit insert failed: %s -- the "
+            "silent-alerter watchdog reads these rows to confirm delivery",
+            e,
         )
 
 
@@ -2323,7 +2333,9 @@ async def alert_dispatch_loop(pool, shutdown_event):
                 timeout=ALERT_DISPATCH_INTERVAL_SECONDS,
             )
         except TimeoutError:
-            pass  # Normal — interval elapsed, continue polling.
+            # silent-ok: normal interval tick — the wait timed out with no
+            # shutdown signal, so loop round and poll again.
+            pass
 
     logger.info("[BRAIN] Alert dispatcher loop stopping")
 
@@ -2673,8 +2685,9 @@ async def run_cycle(pool):
             "info",
         )
     except Exception as heartbeat_exc:  # noqa: BLE001 — defensive
-        logger.debug(
-            "[BRAIN] cycle heartbeat audit_log write failed: %s",
+        logger.warning(
+            "[BRAIN] cycle heartbeat audit_log write failed: %s -- "
+            "dead-probe detection relies on this row's freshness",
             heartbeat_exc,
         )
 
@@ -2876,9 +2889,10 @@ async def main():
                     name="record_operator_paged",
                 )
             except Exception as e:  # noqa: BLE001
-                logger.debug(
+                logger.warning(
                     "[brain_daemon] could not schedule operator_paged "
-                    "audit write: %s", e,
+                    "audit write: %s -- silent-alerter watchdog may miss "
+                    "this delivery", e,
                 )
 
         set_notify_audit_sink(_audit_sink)
@@ -2911,7 +2925,8 @@ async def main():
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, _signal_handler)
     except (NotImplementedError, AttributeError):
-        # Windows doesn't support add_signal_handler — use KeyboardInterrupt instead
+        # silent-ok: Windows has no add_signal_handler — KeyboardInterrupt
+        # handles shutdown there instead. Expected platform limitation.
         pass
 
     # Heartbeat file — Layer 1 of the redundancy model.
@@ -3018,7 +3033,9 @@ async def main():
         try:
             await asyncio.wait_for(shutdown.wait(), timeout=CYCLE_SECONDS)
         except TimeoutError:
-            pass  # Normal — timeout means no shutdown signal, continue loop
+            # silent-ok: normal interval tick — no shutdown signal yet,
+            # loop round to the next cycle.
+            pass
 
     logger.info("[BRAIN] Shutting down gracefully")
     if alert_dispatch_task is not None:
@@ -3027,11 +3044,14 @@ async def main():
         except (TimeoutError, asyncio.CancelledError):
             alert_dispatch_task.cancel()
         except Exception as e:  # noqa: BLE001
+            # silent-ok: best-effort cleanup during shutdown; the daemon is
+            # exiting regardless of this task's close outcome.
             logger.debug("[BRAIN] alert_dispatch_task close failed: %s", e)
     if _OAUTH_CLIENT is not None:
         try:
             await _OAUTH_CLIENT.aclose()
         except Exception as e:  # noqa: BLE001
+            # silent-ok: best-effort cleanup during shutdown.
             logger.debug("[BRAIN] OAuth client close failed: %s", e)
     await pool.close()
     logger.info("[BRAIN] Pool closed, exiting")
