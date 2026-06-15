@@ -71,7 +71,7 @@ seconds_since_event() {
     local event="$1"
     PGPASSWORD="${PGPASSWORD}" psql -h "${PG_HOST}" -p "${PG_PORT}" \
         -U "${PG_USER}" -d "${PG_DATABASE}" -tAc \
-        "SELECT COALESCE(EXTRACT(EPOCH FROM (now() - MAX(created_at)))::bigint, -1)
+        "SELECT COALESCE(EXTRACT(EPOCH FROM (now() - MAX(\"timestamp\")))::bigint, -1)
          FROM audit_log WHERE event_type='${event}'" \
         2>/dev/null | tr -d '[:space:]'
 }

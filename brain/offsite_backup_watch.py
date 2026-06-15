@@ -129,7 +129,7 @@ async def _seconds_since_heartbeat(pool: Any) -> float | None:
     """
     try:
         val = await pool.fetchval(
-            "SELECT EXTRACT(EPOCH FROM (now() - MAX(created_at)))"
+            'SELECT EXTRACT(EPOCH FROM (now() - MAX("timestamp")))'
             " FROM audit_log WHERE event_type = $1",
             _HEARTBEAT_EVENT,
         )
@@ -247,7 +247,7 @@ async def run_offsite_backup_watch_probe(
     age_fn: Callable[[], Awaitable[float | None]] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
     sleep_fn: Callable[[float], None] | None = None,
-    notify_fn: Callable[..., None] | None = None,
+    notify_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Single cycle of the offsite-backup watch.
 
@@ -266,7 +266,7 @@ async def run_offsite_backup_watch_probe(
     age_fn = age_fn or (lambda: _seconds_since_heartbeat(pool))
     restart_fn = restart_fn or _restart_offsite_container
     sleep_fn = sleep_fn or time.sleep
-    notify_fn = notify_fn or notify_operator
+    _notify: Callable[..., Any] = notify_fn or notify_operator
 
     config = await _read_config(pool)
     if not config["enabled"]:
@@ -348,7 +348,7 @@ async def run_offsite_backup_watch_probe(
         )
         if "docker CLI" in msg:
             try:
-                notify_fn(
+                _notify(
                     title="Offsite watch cannot restart container",
                     detail=detail,
                     source="brain.offsite_backup_watch",

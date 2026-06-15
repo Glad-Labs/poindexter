@@ -411,7 +411,7 @@ async def _age_of_event(dsn: str, event: str) -> float | None:
     conn = await _connect(dsn)
     try:
         return await conn.fetchval(
-            "SELECT EXTRACT(EPOCH FROM (now() - MAX(created_at)))"
+            'SELECT EXTRACT(EPOCH FROM (now() - MAX("timestamp")))'
             " FROM audit_log WHERE event_type = $1",
             event,
         )
