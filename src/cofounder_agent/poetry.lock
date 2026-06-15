@@ -509,14 +509,14 @@ gssauth = ["gssapi ; platform_system != \"Windows\"", "sspilib ; platform_system
 
 [[package]]
 name = "atproto"
-version = "0.0.67"
+version = "0.0.68"
 description = "The AT Protocol SDK"
 optional = false
 python-versions = "<3.15,>=3.9"
 groups = ["main"]
 files = [
-    {file = "atproto-0.0.67-py3-none-any.whl", hash = "sha256:161c3b729675118d35d98d37cd7ff199cbb6d9b05a6dc7b582a86a43ef917daf"},
-    {file = "atproto-0.0.67.tar.gz", hash = "sha256:c2b76e7de13252ea6f0a665a9a22cb27fe35a7d2fe2eff1a3da2802701f104f8"},
+    {file = "atproto-0.0.68-py3-none-any.whl", hash = "sha256:ddd41964d7ccd2e84e278923f89c2182bc29892ec04d1b71e4211a8ab5081024"},
+    {file = "atproto-0.0.68.tar.gz", hash = "sha256:6ac124520ef9c40f20cc584cb1efa6f68a3a7a05f6275bfedf2438f31072eed8"},
 ]
 
 [package.dependencies]
@@ -10141,4 +10141,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "f985884fd3ae6b8f6adf1087518babe6025e9dfb8ad84d7e78b22c87d8644603"
+content-hash = "0e8cb6d5eee7dba2d078ffe5fb36b6596cb3dee5807e1daeb885167c7330ebcc"

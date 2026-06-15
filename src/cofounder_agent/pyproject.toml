@@ -231,7 +231,7 @@ google-api-python-client = { version = "^2.151.0", optional = true }
 # upload path — moved from unconditional main group to the youtube extra
 # so prod images without --extras youtube don't carry the extra wheel.
 pyasn1 = { version = ">=0.6.3", optional = true }
-atproto = "^0.0.67"
+atproto = ">=0.0.67,<0.0.69"
 # Mastodon/Fediverse cross-posting (poindexter#737). Mastodon.py was
 # present in the root-level dev-harness pyproject but missing here,
 # so the worker Docker image could not import it and every Mastodon
