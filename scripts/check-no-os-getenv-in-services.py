@@ -62,6 +62,17 @@ ALLOWED_FILES: dict[str, str] = {
         "legitimate 'am I running in the local coordinator container?' signal "
         "— not a config value, a mode flag."
     ),
+    "services/validator_config.py": (
+        "Bootstrap: _resolve_dsn() resolves DATABASE_URL / LOCAL_DATABASE_URL / "
+        "POINDEXTER_MEMORY_DSN to load content_validator_rules before the pool "
+        "exists (brain.bootstrap first, env fallback) — same category as "
+        "database_service."
+    ),
+    "services/auth/oauth_issuer.py": (
+        "Bootstrap secret: reads POINDEXTER_SECRET_KEY (the JWT signing key) from "
+        "the bootstrap.toml-provisioned env. The key verifies tokens, so it lives "
+        "outside DB settings by design and fails loud when unset."
+    ),
     # --- subprocess env propagation (not config reads) ---
     "services/jobs/db_backup.py": (
         "os.environ.copy() to propagate PG env vars to a pg_dump subprocess. "
@@ -71,6 +82,40 @@ ALLOWED_FILES: dict[str, str] = {
     "services/telemetry.py": (
         "Writes to os.environ to configure the OpenTelemetry SDK in-process "
         "(OTEL_* keys read by the SDK's own bootstrap). Not a config read."
+    ),
+    # --- third-party SDK env bridges (writes settings→env / SDK reads, not
+    #     tunable-config reads — same category as telemetry.py) ---
+    "services/llm_providers/litellm_provider.py": (
+        "SDK env bridge: writes DB-configured LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY "
+        "/ LANGFUSE_SECRET_KEY into os.environ for the Langfuse SDK (same as "
+        "telemetry.py), and reads OLLAMA_API_BASE / OLLAMA_BASE_URL as the "
+        "documented docker-compose fallback for the 2026-05-16 dispatcher cutover. "
+        "Not tunable-config reads."
+    ),
+    "services/deepeval_rails.py": (
+        "SDK env write: os.environ.setdefault('DEEPEVAL_TELEMETRY_OPT_OUT', '1') "
+        "stops DeepEval's telemetry writing to the read-only container fs (the "
+        "OSError that was swallowing every g_eval call). Not a config read."
+    ),
+    # --- standalone voice-agent processes (separate containers / subprocesses
+    #     where env is the injection surface; the DB-backed paths are
+    #     site_config-first and only fall back to env) ---
+    "services/voice_agent.py": (
+        "Standalone agent process: reads per-spawn CLAUDE_BOT_EXTRA_ARGS / "
+        "CLAUDE_BOT_SESSION_ID invocation params the voice-bridge parent injects "
+        "when launching the claude-code bridge — invocation plumbing, not config."
+    ),
+    "services/voice_pipecat.py": (
+        "Standalone agent process: resolve_livekit_creds() is site_config-first, "
+        "then falls back to LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET "
+        "(SDK creds) for the sync path that runs before the async DB-first "
+        "resolver is reachable."
+    ),
+    "services/voice_agent_livekit.py": (
+        "Standalone agent process: POINDEXTER_API_URL (worker address in the "
+        "compose net), POINDEXTER_BRAIN_PARENT (brain import-path for the "
+        "read-only /app overlay), and site_config-first CLAUDE_BOT_* invocation "
+        "overrides — deployment/bootstrap signals, not tunable config."
     ),
     # --- one-shot legacy migrations ---
     "services/migrations/0023_alter_settings_table.py": (
