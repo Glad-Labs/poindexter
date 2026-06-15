@@ -683,12 +683,16 @@ class TestProbeUrlsHonorsOverrides:
 
         async def fake_probe_one(client, sem, surface, url, override=None):
             captured.append((url, override))
+            # 400 is dead-by-default but alive under the 200-499 override,
+            # so it cleanly shows the override (not the gated-by-default
+            # set) is what flips the keyed target alive. 405 would now be
+            # alive by default and wouldn't isolate the override.
             return {
                 "surface": surface,
                 "url": url,
-                "ok": oup._is_alive_per_override(405, override),
-                "status": 405,
-                "detail": "HTTP 405",
+                "ok": oup._is_alive_per_override(400, override),
+                "status": 400,
+                "detail": "HTTP 400",
                 "override_applied": bool(override),
                 "override_reason": (override or {}).get("reason", ""),
             }
@@ -897,3 +901,169 @@ class TestProbeUrlRedirect:
         assert "http://localhost:3100/ready" not in requested
         # Result still reports the original setting url for the operator.
         assert result["url"] == "http://host.docker.internal:3100"
+
+
+# ---------------------------------------------------------------------------
+# Default "alive but gated" status handling (#1594 follow-up)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDefaultAliveButGated:
+    """Without any override, a status that proves the host answered but
+    refused THIS request shape — 401 (auth), 403 (forbidden), 405 (method
+    not allowed), 501 (not implemented) — counts as ALIVE. This is the
+    recurring false-positive class: POST-only beacons return 405 to
+    HEAD/GET, and auth-gated surfaces return 401/403. 404/410/5xx and
+    connection errors stay DOWN — those are the renamed/missing/broken
+    signals the probe exists to catch (GH#214).
+    """
+
+    def test_method_and_auth_gated_codes_alive_by_default(self):
+        for code in (401, 403, 405, 501):
+            assert oup._is_alive_per_override(code, None) is True, code
+
+    def test_missing_and_server_error_codes_dead_by_default(self):
+        for code in (404, 410, 500, 502, 503, 0):
+            assert oup._is_alive_per_override(code, None) is False, code
+
+    def test_success_and_redirect_still_alive_by_default(self):
+        for code in (200, 204, 301, 302, 399):
+            assert oup._is_alive_per_override(code, None) is True, code
+
+    def test_explicit_override_still_wins_over_gated_default(self):
+        # An operator who narrows alive_codes to exclude 405 gets exactly
+        # that — the explicit config overrides the gated-by-default set.
+        override = {"alive_codes": "200-204"}
+        assert oup._is_alive_per_override(405, override) is False
+        assert oup._is_alive_per_override(200, override) is True
+
+
+@pytest.mark.unit
+class TestMergeTargets:
+    """``_merge_targets`` dedups dashboard + app_settings targets by URL,
+    preserving the dashboard surface anchor but propagating the
+    app_settings ``key`` so a shadowed URL's per-URL override still
+    applies.
+    """
+
+    def test_appsetting_key_propagates_to_shadowing_dashboard_target(self):
+        dash = [{"dashboard": "MC", "surface": "MC :: Beacon", "url": "https://b"}]
+        appset = [{"surface": "app_settings.cloudflare_beacon_url",
+                   "key": "cloudflare_beacon_url", "url": "https://b"}]
+        merged = oup._merge_targets(dash, appset)
+        assert len(merged) == 1
+        # Dashboard surface stays as the operator anchor...
+        assert merged[0]["surface"] == "MC :: Beacon"
+        # ...but the key rides along so override routing works.
+        assert merged[0]["key"] == "cloudflare_beacon_url"
+
+    def test_distinct_urls_all_kept(self):
+        dash = [{"dashboard": "D", "surface": "D :: a", "url": "https://a"}]
+        appset = [{"surface": "app_settings.x_url", "key": "x_url", "url": "https://x"}]
+        merged = oup._merge_targets(dash, appset)
+        assert {t["url"] for t in merged} == {"https://a", "https://x"}
+
+    def test_appsetting_only_url_keeps_key(self):
+        merged = oup._merge_targets(
+            [], [{"surface": "app_settings.x_url", "key": "x_url", "url": "https://x"}]
+        )
+        assert merged[0]["key"] == "x_url"
+
+    def test_dashboard_only_url_has_no_key(self):
+        merged = oup._merge_targets(
+            [{"dashboard": "D", "surface": "D :: a", "url": "https://a"}], []
+        )
+        assert not merged[0].get("key")
+
+    def test_does_not_mutate_source_lists(self):
+        dash = [{"dashboard": "MC", "surface": "MC :: Beacon", "url": "https://b"}]
+        appset = [{"surface": "app_settings.beacon_url", "key": "beacon_url",
+                   "url": "https://b"}]
+        oup._merge_targets(dash, appset)
+        assert "key" not in dash[0]  # original dashboard target untouched
+
+
+@pytest.mark.unit
+class TestShadowedOverrideRegression:
+    """Regression for the 2026-06-15 beacon false-positive root cause: a
+    URL that is BOTH a dashboard link (no key) and an app_settings surface
+    with a per-URL override must still honor that override, instead of the
+    keyless dashboard copy winning the dedup and bypassing it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dashboard_shadowed_url_still_honors_appsetting_override(
+        self, tmp_path: Path
+    ):
+        url = "https://page-views-beacon.example.workers.dev"
+        # Same URL appears as a dashboard link...
+        dash = {"title": "MC", "links": [{"title": "Beacon", "url": url}], "panels": []}
+        (tmp_path / "mc.json").write_text(json.dumps(dash))
+        # ...and as an app_settings key carrying a widen-to-4xx override.
+        pool = _make_pool([{"key": "cloudflare_beacon_url", "value": url}])
+
+        async def fetchval(_query, key):
+            if key == "operator_url_probe_target_overrides":
+                return json.dumps(
+                    {"cloudflare_beacon_url": {"alive_codes": "200-499",
+                                               "method": "HEAD"}}
+                )
+            return None
+
+        pool.fetchval = AsyncMock(side_effect=fetchval)
+
+        # Status 400 is dead-by-default but alive under the 200-499
+        # override — so this isolates the key-propagation fix, independent
+        # of the gated-by-default change (405 would pass either way).
+        async def fake_probe_one(client, sem, surface, url_, override=None):
+            return {
+                "surface": surface, "url": url_,
+                "ok": oup._is_alive_per_override(400, override),
+                "status": 400, "detail": "HTTP 400",
+                "override_applied": bool(override),
+                "override_reason": (override or {}).get("reason", ""),
+            }
+
+        notifies: list[dict] = []
+        with patch.object(oup, "_probe_one_url", new=fake_probe_one), \
+             patch.object(oup, "_run_tailscale_status", return_value=None):
+            summary = await oup.run_operator_url_probe(
+                pool, dashboards_dir=tmp_path,
+                notify_fn=lambda **k: notifies.append(k),
+            )
+
+        assert summary["url_failures"] == 0
+        assert notifies == []
+
+
+@pytest.mark.unit
+class TestDefaultHeadProbeBehavior:
+    """``_probe_one_url`` with no override: a bare HEAD that returns 405
+    (POST-only surface) is ALIVE without needing a per-URL override.
+    """
+
+    @pytest.mark.asyncio
+    async def test_head_405_is_alive_by_default(self):
+        import asyncio
+
+        import httpx
+
+        methods: list[str] = []
+
+        def handler(req):
+            methods.append(req.method)
+            return httpx.Response(405)
+
+        transport = httpx.MockTransport(handler=handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            sem = asyncio.Semaphore(1)
+            result = await oup._probe_one_url(
+                client, sem,
+                surface="app_settings.cloudflare_beacon_url",
+                url="https://beacon.example/",
+            )
+
+        assert result["ok"] is True
+        assert result["status"] == 405
+        assert "HEAD" in methods

@@ -457,18 +457,36 @@ def _parse_alive_codes(spec: str) -> list[range]:
     return out or [range(200, 400)]
 
 
+# Status codes that prove the host answered and a handler is deployed but
+# refused THIS request shape, rather than being down or missing. Treated as
+# "alive" by default (no override) so POST-only beacons (405 to HEAD/GET),
+# auth-gated surfaces (401/403), and not-implemented methods (501) don't page
+# every cycle. 404/410/5xx and connection errors (status 0) stay "down" —
+# those are the renamed/missing/broken signals the probe exists to catch
+# (GH#214). Operators can still override per-URL via ``alive_codes``, which
+# fully replaces this default set for that surface.
+ALIVE_BUT_GATED_CODES: frozenset[int] = frozenset({401, 403, 405, 501})
+
+
 def _is_alive_per_override(
     status_code: int, override: dict[str, Any] | None,
 ) -> bool:
     """Apply per-URL alive_codes override if present.
 
-    Default behavior (override is None or missing alive_codes): the
-    standard ``200 <= status < 400``. Overrides that mark e.g.
-    ``alive_codes='200-499'`` extend the alive range to cover legit
-    4xx responses from outbound-only APIs.
+    Default behavior (override is None or missing alive_codes): alive if
+    the status is 2xx/3xx **or** one of the "alive but gated" codes in
+    :data:`ALIVE_BUT_GATED_CODES` (401/403/405/501) — those prove the host
+    answered and a handler is deployed, it just refused THIS request shape
+    (POST-only beacon, auth-gated surface). 404/410/5xx and connection
+    errors (status 0) stay dead — the renamed/missing/broken signals the
+    probe exists to catch (GH#214).
+
+    An explicit ``alive_codes`` override fully replaces the default set, so
+    an operator can narrow it (e.g. ``'200-204'`` to make 405 a failure) or
+    widen it (e.g. ``'200-499'`` for an outbound-only API).
     """
     if not override or "alive_codes" not in override:
-        return 200 <= status_code < 400
+        return (200 <= status_code < 400) or status_code in ALIVE_BUT_GATED_CODES
     for r in _parse_alive_codes(override["alive_codes"]):
         if status_code in r:
             return True
@@ -521,8 +539,9 @@ async def _probe_one_url(
                 resp = await client.head(probe_url, follow_redirects=True)
                 # Some servers return 405 for HEAD even when GET works. Retry
                 # once with a small range request to avoid pulling a full body.
-                # Skip the retry when the operator's override already
-                # accepts 405 as alive — the explicit config wins.
+                # Skipped when 405/501 already count as alive — which is now
+                # the default (see ALIVE_BUT_GATED_CODES) and can also be set
+                # explicitly via an override's alive_codes.
                 if resp.status_code in (405, 501):
                     if not _is_alive_per_override(resp.status_code, override):
                         resp = await client.get(
@@ -688,6 +707,40 @@ def _format_drift_detail(drift: dict[str, str]) -> str:
     )
 
 
+def _merge_targets(
+    dashboard_targets: list[dict[str, str]],
+    appsetting_targets: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Merge dashboard + app_settings probe targets, deduped by URL.
+
+    Dashboard targets are listed first so their richer surface label
+    (``"Mission Control :: Beacon"``) wins as the operator anchor over a
+    bare ``"app_settings.<key>"``. But dashboard targets carry no ``key``,
+    and the per-URL override lookup in :func:`probe_urls` is keyed on
+    ``key`` — so if the SAME url is also an app_settings surface with an
+    override (e.g. the POST-only page-views beacon, whose 405 is widened
+    to alive via ``operator_url_probe_target_overrides``), the override
+    would be silently bypassed and the surface would page every cycle.
+
+    Fix: when a later app_settings target collides on URL with a kept
+    keyless target, propagate its ``key`` onto the kept target. The
+    surface anchor is preserved; only the override-routing key rides
+    along. Source lists are not mutated.
+    """
+    merged: list[dict[str, str]] = []
+    by_url: dict[str, int] = {}
+    for t in dashboard_targets + appsetting_targets:
+        url = t["url"]
+        if url in by_url:
+            kept = merged[by_url[url]]
+            if not kept.get("key") and t.get("key"):
+                kept["key"] = t["key"]
+            continue
+        by_url[url] = len(merged)
+        merged.append(dict(t))
+    return merged
+
+
 async def run_operator_url_probe(
     pool,
     *,
@@ -711,16 +764,12 @@ async def run_operator_url_probe(
     dashboard_targets = extract_dashboard_links(dashboards_dir)
     appsetting_targets = await collect_app_setting_urls(pool)
 
-    # Merge URL lists — keep the first surface that points at a given URL
-    # so the failure notification has a clear "this is where the link
-    # lives" anchor. (The same backend URL can appear in many panels.)
-    all_targets: list[dict[str, str]] = []
-    seen_urls: set[str] = set()
-    for t in dashboard_targets + appsetting_targets:
-        if t["url"] in seen_urls:
-            continue
-        seen_urls.add(t["url"])
-        all_targets.append(t)
+    # Merge URL lists — dashboard-first so the richer surface label wins as
+    # the operator anchor, but propagate the app_settings key onto a
+    # shadowed dashboard target so its per-URL override still applies. (The
+    # same backend URL can appear in many panels AND as an app_settings
+    # key; see _merge_targets for the beacon false-positive root cause.)
+    all_targets = _merge_targets(dashboard_targets, appsetting_targets)
 
     # ---- 1b) Load per-URL probe overrides --------------------------------
     # See migration 20260510_152609 — operator-visible per-URL config that
