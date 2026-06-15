@@ -50,6 +50,49 @@ class InternalRagSource:
         self._pool = pool
         self._site_config = site_config
 
+    async def extract(
+        self,
+        _pool: Any,
+        config: dict[str, Any],
+    ) -> list[Any]:
+        """TopicSource.extract() shim for tap_builtin_topic_source.
+
+        Adapts generate() → list[DiscoveredTopic] so this class can be
+        treated polymorphically by the tap handler alongside real plugin
+        objects.  The handler seeds niche_id into config from the tap row;
+        source_kinds defaults to all implemented kinds (everything except
+        git_commit, which is not yet plumbed).
+        """
+        from plugins.topic_source import DiscoveredTopic
+
+        niche_id = config.get("niche_id")
+        if not niche_id:
+            raise ValueError(
+                "InternalRagSource.extract: config must include niche_id "
+                "(seeded by tap_builtin_topic_source from the tap row)"
+            )
+        source_kinds: list[str] = list(
+            config.get("source_kinds")
+            or [k for k in VALID_SOURCE_KINDS if k != "git_commit"]
+        )
+        per_kind_limit = self._site_config.get_int(
+            "niche_internal_rag_per_kind_limit", 4
+        )
+        candidates = await self.generate(
+            niche_id=niche_id,
+            source_kinds=source_kinds,
+            per_kind_limit=per_kind_limit,
+        )
+        return [
+            DiscoveredTopic(
+                title=c.distilled_topic,
+                category=c.source_kind,
+                source="internal_rag",
+                description=c.distilled_angle,
+            )
+            for c in candidates
+        ]
+
     async def generate(
         self,
         *,

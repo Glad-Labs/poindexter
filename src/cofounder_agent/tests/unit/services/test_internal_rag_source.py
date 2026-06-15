@@ -358,3 +358,113 @@ async def test_valid_source_kinds_includes_all_supported_kinds():
         "memory_file",
         "post_history",
     }
+
+
+# --------------------------------------------------------------------------
+# extract() — TopicSource protocol shim
+# --------------------------------------------------------------------------
+
+
+async def test_extract_raises_without_niche_id():
+    pool = _FakePool()
+    src = InternalRagSource(pool, site_config=SiteConfig())
+    with pytest.raises(ValueError, match="niche_id"):
+        await src.extract(pool, config={})
+
+
+async def test_extract_delegates_to_generate(monkeypatch):
+    pool = _FakePool()
+    src = InternalRagSource(pool, site_config=SiteConfig())
+    captured: list[dict] = []
+
+    async def fake_generate(*, niche_id, source_kinds, per_kind_limit):
+        captured.append(
+            {"niche_id": niche_id, "source_kinds": source_kinds, "limit": per_kind_limit}
+        )
+        return [
+            InternalCandidate(
+                source_kind="claude_session",
+                primary_ref="cs-1",
+                distilled_topic="My Topic",
+                distilled_angle="My Angle",
+            )
+        ]
+
+    monkeypatch.setattr(src, "generate", fake_generate)
+
+    result = await src.extract(
+        pool,
+        config={"niche_id": "00000000-0000-0000-0000-000000000001"},
+    )
+
+    assert len(captured) == 1
+    assert captured[0]["niche_id"] == "00000000-0000-0000-0000-000000000001"
+    # git_commit excluded from default source_kinds
+    assert "git_commit" not in captured[0]["source_kinds"]
+    assert len(result) == 1
+
+
+async def test_extract_converts_candidate_to_discovered_topic(monkeypatch):
+    from plugins.topic_source import DiscoveredTopic
+
+    pool = _FakePool()
+    src = InternalRagSource(pool, site_config=SiteConfig())
+
+    async def fake_generate(*, niche_id, source_kinds, per_kind_limit):
+        return [
+            InternalCandidate(
+                source_kind="brain_knowledge",
+                primary_ref="bk-1",
+                distilled_topic="LLM Latency",
+                distilled_angle="Why it matters",
+            )
+        ]
+
+    monkeypatch.setattr(src, "generate", fake_generate)
+
+    result = await src.extract(
+        pool,
+        config={"niche_id": "00000000-0000-0000-0000-000000000002"},
+    )
+
+    assert len(result) == 1
+    t = result[0]
+    assert isinstance(t, DiscoveredTopic)
+    assert t.title == "LLM Latency"
+    assert t.description == "Why it matters"
+    assert t.category == "brain_knowledge"
+    assert t.source == "internal_rag"
+    assert t.source_url == ""
+
+
+async def test_extract_honours_source_kinds_from_config(monkeypatch):
+    pool = _FakePool()
+    src = InternalRagSource(pool, site_config=SiteConfig())
+    captured_kinds: list[list[str]] = []
+
+    async def fake_generate(*, niche_id, source_kinds, per_kind_limit):
+        captured_kinds.append(source_kinds)
+        return []
+
+    monkeypatch.setattr(src, "generate", fake_generate)
+
+    await src.extract(
+        pool,
+        config={
+            "niche_id": "00000000-0000-0000-0000-000000000001",
+            "source_kinds": ["audit_event", "post_history"],
+        },
+    )
+
+    assert captured_kinds == [["audit_event", "post_history"]]
+
+
+async def test_extract_returns_empty_when_generate_returns_empty(monkeypatch):
+    pool = _FakePool()
+    src = InternalRagSource(pool, site_config=SiteConfig())
+    monkeypatch.setattr(src, "generate", AsyncMock(return_value=[]))
+
+    result = await src.extract(
+        pool, config={"niche_id": "00000000-0000-0000-0000-000000000001"}
+    )
+    assert result == []
