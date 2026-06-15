@@ -251,6 +251,76 @@ async def test_decide_raises_when_row_does_not_exist(
 
 
 # ---------------------------------------------------------------------------
+# decide — rebuild matching feed on approve (self-healing propagation)
+# ---------------------------------------------------------------------------
+
+
+async def test_decide_approve_rebuilds_matching_feed(mock_db: MagicMock) -> None:
+    """On approve with a site_config, the matching R2 feed is rebuilt so the
+    approval reaches Apple/Spotify/the video feed immediately — media is
+    approved AFTER publish, when the publish-time R2 rebuild already ran."""
+    mock_db.fetchrow.return_value = {"status": "approved"}
+    sc = MagicMock()
+    with patch(
+        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        new=AsyncMock(),
+    ) as rebuild:
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+            approved=True, decided_by="operator:cli", site_config=sc,
+        )
+    rebuild.assert_awaited_once_with(sc, "podcast")
+
+
+async def test_decide_reject_does_not_rebuild_feed(mock_db: MagicMock) -> None:
+    """A rejection never reaches a public surface, so nothing to rebuild."""
+    mock_db.fetchrow.return_value = {"status": "rejected"}
+    sc = MagicMock()
+    with patch(
+        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        new=AsyncMock(),
+    ) as rebuild:
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+            approved=False, decided_by="operator:cli", site_config=sc,
+        )
+    rebuild.assert_not_awaited()
+
+
+async def test_decide_without_site_config_does_not_rebuild(
+    mock_db: MagicMock,
+) -> None:
+    """Backcompat: callers that don't pass site_config (existing call sites,
+    jobs, tests) still work — the rebuild is simply skipped, no error."""
+    mock_db.fetchrow.return_value = {"status": "approved"}
+    with patch(
+        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        new=AsyncMock(),
+    ) as rebuild:
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+            approved=True, decided_by="operator:cli",
+        )
+    rebuild.assert_not_awaited()
+
+
+async def test_decide_rebuild_failure_is_non_fatal(mock_db: MagicMock) -> None:
+    """A feed-rebuild failure must NOT bubble out of decide() — the approval is
+    already committed to the DB; the rebuild is additive self-healing."""
+    mock_db.fetchrow.return_value = {"status": "approved"}
+    sc = MagicMock()
+    with patch(
+        "services.media_feed_rebuild.rebuild_feed_for_medium",
+        new=AsyncMock(side_effect=RuntimeError("worker down")),
+    ):
+        # Must not raise.
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "podcast",
+            approved=True, decided_by="operator:cli", site_config=sc,
+        )
+
+
+# ---------------------------------------------------------------------------
 # list_pending
 # ---------------------------------------------------------------------------
 

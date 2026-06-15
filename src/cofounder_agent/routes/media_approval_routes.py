@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from middleware.api_token_auth import get_operator_identity, verify_api_token
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/media-approval", tags=["media-approval"])
@@ -61,12 +61,15 @@ async def decide(
     body: DecideRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Approve or reject a generated media asset for a post.
 
     ``medium`` must be a recognised value (``podcast``, ``video``, etc.).
     ``approved=true`` clears the post for dispatch; ``approved=false`` marks
-    it rejected so it can be regenerated.
+    it rejected so it can be regenerated. On approve, ``decide()`` rebuilds the
+    matching R2 RSS feed (via ``site_config``) so the approval propagates to
+    Apple/Spotify/the video feed immediately — non-fatal.
     """
     from services.media_approval_service import decide as _decide
 
@@ -81,6 +84,7 @@ async def decide(
             approved=body.approved,
             decided_by=decided_by,
             notes=body.notes,
+            site_config=site_config,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

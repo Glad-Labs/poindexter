@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import os
-import tempfile
 from typing import Any
 
 from plugins.job import JobResult
@@ -119,31 +118,15 @@ async def _deliver_podcast(pool: Any, site_config: Any, row: dict[str, Any]) -> 
 
 
 async def _rebuild_feed(site_config: Any) -> None:
-    """Rebuild podcast/feed.xml on R2 from the worker's feed route (once/cycle)."""
-    try:
-        import httpx
+    """Rebuild podcast/feed.xml on R2 (once/cycle).
 
-        from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-        from services.r2_upload_service import R2UploadService
+    Delegates to the shared ``services.media_feed_rebuild`` helper — the same
+    seam ``media_approval_service.decide`` uses to rebuild on approval — so
+    there's one rebuild implementation, not two copies.
+    """
+    from services.media_feed_rebuild import rebuild_podcast_feed
 
-        api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
-            feed = await client.get(f"{api_base}/api/podcast/feed.xml", timeout=30)
-        fd, feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-podcast-")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(feed.text)
-            await R2UploadService(site_config=site_config).upload_to_r2(
-                feed_path, "podcast/feed.xml", "application/rss+xml",
-            )
-            logger.info("[PODCAST_DISTRIBUTE] podcast RSS feed rebuilt on R2")
-        finally:
-            try:
-                os.unlink(feed_path)
-            except OSError:
-                pass
-    except Exception as exc:  # noqa: BLE001 — feed rebuild is non-fatal
-        logger.warning("[PODCAST_DISTRIBUTE] feed rebuild failed (non-fatal): %s", exc)
+    await rebuild_podcast_feed(site_config)
 
 
 class PodcastDistributeJob:

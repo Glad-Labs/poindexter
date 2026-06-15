@@ -123,6 +123,22 @@ SAFETY NET — media_reconciliation
 - ⏸ `services/jobs/backfill_podcasts.py`, `services/jobs/backfill_videos.py` (subsumed — closes #668). Deferred to §11: `media_distribute` imports `backfill_videos._build_youtube_description` / `_parse_seo_keywords`, so the helpers must be extracted first.
 - ⏸ `video_long` strings (`media_asset_recorder.py`, etc. — #569 partial, closes #573). Deferred to §11.
 
+### Feed rebuild on approval (shipped 2026-06-14)
+
+Media is approved _after_ the post publishes, but R2 feed copies are rebuilt
+only at publish time (`publish_service`), so an approval never propagated to
+Apple/Spotify/the video feed until some _later_ publish — a second mechanism of
+the 2026-05-27→06-13 freeze. Fixed: `media_approval_service.decide()` rebuilds
+the matching R2 feed on approve (when `approved` and a `site_config` is passed),
+via a shared `services/media_feed_rebuild.py` helper — `rebuild_feed_for_medium`
+routes podcast → `podcast/feed.xml`, video → `video/feed.xml`, and `video_short`
+→ no-op (shorts have no RSS surface). `podcast_distribute._rebuild_feed` now
+delegates to the same helper (one rebuild seam, not two copies). Both the CLI
+(`poindexter media approve`) and the HTTP route
+(`POST /api/media-approval/{post_id}/{medium}/decide`) load + pass a
+`site_config`. Non-fatal + idempotent — a rebuild failure never breaks the
+already-committed approval.
+
 ## 5. Vocabulary
 
 Target end-state: `media_assets.type ∈ {podcast, video, video_short}`;

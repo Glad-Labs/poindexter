@@ -60,6 +60,9 @@ class TestMediaApprovePrefix:
         assert result.exit_code == 0, result.output
         # decide() got the EXPANDED id as its post_id positional (2nd arg).
         assert fake_decide.await_args.args[1] == FULL
+        # CLI wires a loaded site_config into decide() so an approve rebuilds
+        # the matching R2 feed immediately (self-healing propagation).
+        assert fake_decide.await_args.kwargs.get("site_config") is not None
         assert "6bf91cc3" in result.output
         # Resolution is medium-scoped against media_approvals (the surface
         # `media pending` renders), not a global posts.id lookup (#1511).

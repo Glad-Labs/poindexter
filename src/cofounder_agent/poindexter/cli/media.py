@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -35,6 +36,8 @@ import click
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 from poindexter.cli._prefix import looks_like_full_uuid, resolve_uuid_prefix
 
+logger = logging.getLogger(__name__)
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -44,6 +47,30 @@ async def _make_pool():
     """Open a tiny pool for one CLI invocation."""
     import asyncpg
     return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+
+
+async def _make_site_config(pool):
+    """Load a SiteConfig so ``decide()`` can rebuild the R2 feed on approve.
+
+    Mirrors ``poindexter.cli.publish_approval._make_site_config``. The load is
+    non-fatal: an approve still succeeds on partial config (the feed rebuild
+    inside ``decide()`` is itself non-fatal — it just won't propagate).
+    """
+    from services.site_config import SiteConfig
+
+    cfg = SiteConfig(pool=pool)
+    try:
+        await cfg.load(pool)
+    except Exception as e:  # noqa: BLE001 — partial config still lets approve succeed
+        # Warn (not debug): a failed load means decide()'s R2 feed rebuild
+        # won't propagate, so the operator's approve silently won't refresh
+        # Apple/Spotify/the video feed — exactly the silent-staleness class
+        # this gate exists to surface. The approve itself still succeeds.
+        logger.warning(
+            "media CLI: site_config load failed (non-fatal) — approve will "
+            "proceed but the R2 feed rebuild won't propagate: %s", e,
+        )
+    return cfg
 
 
 _VALID_MEDIA = ("podcast", "video", "video_short")
@@ -197,11 +224,16 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
                     f"No {medium} media for a post matching {post_id!r}. "
                     f"See `poindexter media pending --medium {medium}`."
                 )
+            # Load site_config so an approve rebuilds the matching R2 feed
+            # immediately (decide() rebuild is non-fatal). Only needed on
+            # approve, but cheap + harmless to build for reject too.
+            site_config = await _make_site_config(pool)
             await media_approval_service.decide(
                 pool, resolved, medium,
                 approved=approved,
                 decided_by="operator:cli",
                 notes=note,
+                site_config=site_config,
             )
             return resolved
         finally:

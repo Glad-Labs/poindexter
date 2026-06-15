@@ -452,6 +452,7 @@ async def decide(
     approved: bool,
     decided_by: str,
     notes: str | None = None,
+    site_config: Any = None,
 ) -> None:
     """Operator decision — set status to ``approved`` or ``rejected``.
 
@@ -464,6 +465,14 @@ async def decide(
     ``feedback_no_silent_defaults``; a silent INSERT-on-decide would
     let an operator pre-approve a not-yet-generated medium, which
     bypasses the whole gate.
+
+    When ``approved`` and a ``site_config`` is supplied, the matching R2
+    RSS feed is rebuilt immediately (non-fatal) so the approval reaches
+    Apple / Spotify / the video feed without waiting for the next publish —
+    media is approved *after* the post publishes, when the publish-time R2
+    rebuild has already run. Callers without a ``site_config`` (jobs, tests,
+    legacy call sites) simply skip the rebuild — backcompat preserved
+    (``feedback_backcompat_now_required``).
 
     ``db`` accepts either an asyncpg Pool or Connection.
     """
@@ -490,6 +499,22 @@ async def decide(
         "[media_approval] %s by %s: %s for post %s",
         new_status, decided_by, medium, post_id,
     )
+
+    # Self-healing feed propagation: media is approved AFTER publish, so the
+    # R2 feed (rebuilt only on publish in publish_service) is stale until the
+    # next publish — an approval would otherwise never reach Apple/Spotify/the
+    # video feed. Rebuild the matching feed now. Non-fatal + idempotent; the
+    # approval is already committed above, so a rebuild failure must not bubble.
+    if approved and site_config is not None:
+        try:
+            from services.media_feed_rebuild import rebuild_feed_for_medium
+
+            await rebuild_feed_for_medium(site_config, medium)
+        except Exception as e:  # noqa: BLE001 — feed rebuild is additive
+            logger.warning(
+                "[media_approval] feed rebuild after approving %s for post %s "
+                "failed (non-fatal): %s", medium, post_id, e,
+            )
 
 
 async def record_dispatched(
