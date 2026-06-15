@@ -354,13 +354,30 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
             # ``.pool``, so a tiny shim exposing the CLI pool is sufficient.
             db_service = _PoolShim(pool)
 
+            # Hand the runner an EXPLICIT checkpointer DSN. TemplateRunner's
+            # own fallback resolver (``_resolve_dsn``) imports
+            # ``brain.bootstrap``, which is NOT on sys.path in the installed
+            # CLI venv (poindexter-backend ships only ``cofounder_agent``;
+            # ``brain`` lives at the repo root). That import raises
+            # ModuleNotFoundError, gets swallowed, and the runner silently
+            # degrades to MemorySaver — which holds no checkpoint, so the
+            # "resume" re-runs the graph from its entry node with the CLI's
+            # thin initial state (no ``post_id``) and halts at
+            # ``content.load_existing_post``. ``_dsn()`` is the same vendored
+            # resolver that just built the pool, so it is guaranteed set here.
+            checkpointer_dsn = _dsn()
+
             from services.template_runner import (
                 TemplateRunner,
                 has_resumable_checkpoint,
             )
 
             async def _run_resume(resume_gate: str | None):
-                runner = TemplateRunner(pool, site_config=site_config)
+                runner = TemplateRunner(
+                    pool,
+                    checkpointer_dsn=checkpointer_dsn,
+                    site_config=site_config,
+                )
                 return await runner.run(
                     template_slug,
                     {

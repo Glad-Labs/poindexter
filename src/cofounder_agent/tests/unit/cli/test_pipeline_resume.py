@@ -83,6 +83,11 @@ def _patches(
         patch("services.template_runner.TemplateRunner", new=runner_cls),
         patch("services.template_runner.has_resumable_checkpoint",
               new=AsyncMock(return_value=has_ckpt)),
+        # The CLI resolves the checkpointer DSN via its vendored resolver
+        # (brain.bootstrap isn't importable in the installed CLI venv). Stub
+        # it so the resume path never reads bootstrap.toml / DB env vars on CI.
+        patch("poindexter.cli.pipeline._dsn",
+              new=MagicMock(return_value="postgresql://test/dsn")),
     ]
     return patches, runner_cls
 
@@ -142,6 +147,29 @@ class TestApproveAndResume:
         assert kw["artifact"] == '{"title": "X"}'
         # Operator is told it's recoverable.
         assert "rolled back" in result.output.lower()
+
+    def test_passes_explicit_checkpointer_dsn_to_runner(self):
+        """Regression: the CLI must hand TemplateRunner an explicit
+        ``checkpointer_dsn``.
+
+        TemplateRunner's own fallback resolver imports ``brain.bootstrap``,
+        which is NOT on sys.path in the installed CLI venv (poindexter-backend
+        ships only ``cofounder_agent``). Without the explicit DSN the runner
+        swallows the ModuleNotFoundError, degrades to MemorySaver, and the
+        resume can't load the durable checkpoint — it re-runs from the entry
+        node with no ``post_id`` and halts at ``content.load_existing_post``.
+        """
+        bundle = _patches(
+            row=_paused_row(),
+            run_result=SimpleNamespace(ok=True, halted_at=None),
+        )
+        result = _invoke(bundle)
+        assert result.exit_code == 0, result.output
+        runner_cls = bundle[1]
+        runner_cls.assert_called_once()
+        call = runner_cls.call_args
+        assert call is not None
+        assert call.kwargs.get("checkpointer_dsn") == "postgresql://test/dsn"
 
     def test_resume_returns_halted_does_not_roll_back(self):
         """A downstream halt / QA-reject is ok=False but the gate WAS passed —
