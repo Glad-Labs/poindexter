@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+## [0.80.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.79.0...v0.80.0) (2026-06-15)
+
+
+### Features
+
+* **backup:** Tier 2 off-machine backup wizard (S3/B2/R2 via restic) ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([#1620](https://github.com/Glad-Labs/glad-labs-stack/issues/1620)) ([8c3a9c6](https://github.com/Glad-Labs/glad-labs-stack/commit/8c3a9c65bcf16567c99143135ae98abe03e73095))
+* **ci:** lint broad `except: return None` + info-only; noqa cleanup suppress ([#1588](https://github.com/Glad-Labs/glad-labs-stack/issues/1588)) ([e4f8cb8](https://github.com/Glad-Labs/glad-labs-stack/commit/e4f8cb890547a64052fc35b26f76022638597370))
+* **cli+mcp+api:** draft post body/image editing via shared post_edit_service ([#1618](https://github.com/Glad-Labs/glad-labs-stack/issues/1618)) ([ed78dd9](https://github.com/Glad-Labs/glad-labs-stack/commit/ed78dd9380e1191450b8ad5bfc32adf5eee3d9de))
+* **deploy:** auto-restart bind-mount containers on code sync ([#1607](https://github.com/Glad-Labs/glad-labs-stack/issues/1607)) ([26630c6](https://github.com/Glad-Labs/glad-labs-stack/commit/26630c678b5c8931dd6d93e941aae314e6ad8e42))
+* **media:** capture YouTube id/url on backfill_videos dispatch ([#1596](https://github.com/Glad-Labs/glad-labs-stack/issues/1596)) ([#1601](https://github.com/Glad-Labs/glad-labs-stack/issues/1601)) ([0c400c4](https://github.com/Glad-Labs/glad-labs-stack/commit/0c400c419304c9e9bcf2d774efc1b27e66eb137b))
+* **media:** gate video RSS feed on approval + grandfather live videos ([#1587](https://github.com/Glad-Labs/glad-labs-stack/issues/1587)) ([746bd19](https://github.com/Glad-Labs/glad-labs-stack/commit/746bd198ceb018ceb68b4456aa23a3b770423c41))
+* **media:** rebuild matching R2 feed on media approval (self-healing) ([#1589](https://github.com/Glad-Labs/glad-labs-stack/issues/1589)) ([30165e9](https://github.com/Glad-Labs/glad-labs-stack/commit/30165e9fbbc4ff9e5558167f7980b9ec1c279b21))
+* **media:** seed approval gate at reconciliation asset-creation ([#1586](https://github.com/Glad-Labs/glad-labs-stack/issues/1586)) ([687b538](https://github.com/Glad-Labs/glad-labs-stack/commit/687b53816f01bdff321e9f49521e7e68691fabcf))
+* **topic-sourcing:** niche-aware topic_pool + real tap ingestion (b1) ([#1598](https://github.com/Glad-Labs/glad-labs-stack/issues/1598)) ([e033637](https://github.com/Glad-Labs/glad-labs-stack/commit/e033637fb320b5bc006cc6923346ed78f17eb3d1))
+
+
+### Bug Fixes
+
+* **auto-publish:** surface bookkeeping-write failures + lint broad suppress ([#1564](https://github.com/Glad-Labs/glad-labs-stack/issues/1564)) ([d5e2c6c](https://github.com/Glad-Labs/glad-labs-stack/commit/d5e2c6c227c891b95ec3e507a8b4dddf403f4184))
+* **brain:** stop operator URL probe false-positive on POST-only beacon ([#1594](https://github.com/Glad-Labs/glad-labs-stack/issues/1594)) ([8012f24](https://github.com/Glad-Labs/glad-labs-stack/commit/8012f241c304a1a2d5064b2dace3b256b56ea476))
+* **brain:** stop operator_url_probe false-positive pages ([#1594](https://github.com/Glad-Labs/glad-labs-stack/issues/1594) follow-up) ([#1616](https://github.com/Glad-Labs/glad-labs-stack/issues/1616)) ([80e92ed](https://github.com/Glad-Labs/glad-labs-stack/commit/80e92ed947af7e2036bf206db295d058882b5832))
+* **brain:** surface silent exception handlers in watchdog + alert dispatcher ([#1583](https://github.com/Glad-Labs/glad-labs-stack/issues/1583)) ([9dd23c4](https://github.com/Glad-Labs/glad-labs-stack/commit/9dd23c49d7b85d063409fe33bd2352ce9bb28375))
+* **cli:** pass explicit checkpointer DSN on `pipeline resume` ([#1610](https://github.com/Glad-Labs/glad-labs-stack/issues/1610)) ([b071fe1](https://github.com/Glad-Labs/glad-labs-stack/commit/b071fe10f5f19a3be700a7b79813a2be262bdc63))
+* **cli:** silence langgraph allowed_objects warning on every CLI run ([#1590](https://github.com/Glad-Labs/glad-labs-stack/issues/1590)) ([983c99b](https://github.com/Glad-Labs/glad-labs-stack/commit/983c99bf4a7771ac63e381c585375d5edf8b83a3))
+* **db:** stamp app_settings.updated_at on value change ([#1594](https://github.com/Glad-Labs/glad-labs-stack/issues/1594) follow-up) ([#1619](https://github.com/Glad-Labs/glad-labs-stack/issues/1619)) ([2add821](https://github.com/Glad-Labs/glad-labs-stack/commit/2add821a115482f91c1cbf65b4be6a118785b182))
+* **dev_diary:** emit headline as body H1 so published title matches preview ([#1560](https://github.com/Glad-Labs/glad-labs-stack/issues/1560)) ([aef5c5a](https://github.com/Glad-Labs/glad-labs-stack/commit/aef5c5a79631b4609b0d42744b81dcab17ab83f1))
+* **media:** exclude grandfather rows from upload dispatchers ([#1596](https://github.com/Glad-Labs/glad-labs-stack/issues/1596) durable fix) ([#1614](https://github.com/Glad-Labs/glad-labs-stack/issues/1614)) ([3288069](https://github.com/Glad-Labs/glad-labs-stack/commit/32880692368fa74891a40f881db31549fa1e215b))
+* **media:** per-media narration — give long/short video their own script, CTA & audio ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1621](https://github.com/Glad-Labs/glad-labs-stack/issues/1621)) ([1876f53](https://github.com/Glad-Labs/glad-labs-stack/commit/1876f53d975b9540206f4b6b3317212d0e131598))
+* **media:** record YouTube external_id/url on successful dispatch ([#1584](https://github.com/Glad-Labs/glad-labs-stack/issues/1584)) ([a2ff475](https://github.com/Glad-Labs/glad-labs-stack/commit/a2ff475ca4c547b0bc20281c208cc2ae99931e59))
+* **media:** stamp dispatched_at on grandfather media_approvals (defuse re-dispatch) ([#1599](https://github.com/Glad-Labs/glad-labs-stack/issues/1599)) ([9bf6bb5](https://github.com/Glad-Labs/glad-labs-stack/commit/9bf6bb5053df2e52ac5a142387139f776c1a39f5))
+* **taps:** add TopicSource.extract() shim to InternalRagSource ([#1615](https://github.com/Glad-Labs/glad-labs-stack/issues/1615)) ([48c7995](https://github.com/Glad-Labs/glad-labs-stack/commit/48c7995ec5b52dd7f94ad805b6961c8fc7dddcac))
+* **template_runner:** warn (not silent debug) when checkpointer DSN fallback fails ([#1612](https://github.com/Glad-Labs/glad-labs-stack/issues/1612)) ([ebbaa40](https://github.com/Glad-Labs/glad-labs-stack/commit/ebbaa40a9fb2538b81bb8ac022d1d9452913def8))
+
 ## [0.79.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.78.0...v0.79.0) (2026-06-14)
 
 
