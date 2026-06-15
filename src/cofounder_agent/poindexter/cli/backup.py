@@ -387,7 +387,7 @@ def _fmt_age(seconds: float | None) -> str:
     """Human age: ``never`` / ``N.Nh ago`` (< 48h) / ``N.Nd ago``."""
     if seconds is None:
         return "never"
-    h = seconds / 3600.0
+    h = float(seconds) / 3600.0
     if h < 48:
         return f"{h:.1f}h ago"
     return f"{h / 24:.1f}d ago"
@@ -410,11 +410,12 @@ async def _age_of_event(dsn: str, event: str) -> float | None:
     """Seconds since the newest ``audit_log`` row of ``event_type=event`` (or None)."""
     conn = await _connect(dsn)
     try:
-        return await conn.fetchval(
+        val = await conn.fetchval(
             'SELECT EXTRACT(EPOCH FROM (now() - MAX("timestamp")))'
             " FROM audit_log WHERE event_type = $1",
             event,
         )
+        return float(val) if val is not None else None
     finally:
         await conn.close()
 
