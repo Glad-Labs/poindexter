@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [0.80.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.80.0...v0.80.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **backup:** cast asyncpg Decimal→float in _age_of_event ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([168a234](https://github.com/Glad-Labs/glad-labs-stack/commit/168a2346211d3be0272def89e2ea7d9d769faea5))
+* **backup:** pass AWS_DEFAULT_REGION to restic for non-us-east-1 buckets ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([0dcf368](https://github.com/Glad-Labs/glad-labs-stack/commit/0dcf368f75dc42ae56ca27c740ea81666154b4f3))
+* **backup:** use correct audit_log.\"timestamp\" column (not created_at) ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([#1628](https://github.com/Glad-Labs/glad-labs-stack/issues/1628)) ([24d1aa2](https://github.com/Glad-Labs/glad-labs-stack/commit/24d1aa240cdb7b5300f690810f4d42a7165b36d9))
+* **ci:** make mirror-guard checks inversion-proof ([#1481](https://github.com/Glad-Labs/glad-labs-stack/issues/1481)) ([#1631](https://github.com/Glad-Labs/glad-labs-stack/issues/1631)) ([fdb7411](https://github.com/Glad-Labs/glad-labs-stack/commit/fdb741137ad7f4cc2d7a55eb32865971d4044088))
+* **cli:** stamp LOG_LEVEL=WARNING into env so service imports don't flood terminal ([#1630](https://github.com/Glad-Labs/glad-labs-stack/issues/1630)) ([7de86a8](https://github.com/Glad-Labs/glad-labs-stack/commit/7de86a8577f149a45b7494e992e703b56a5b4d0f))
+* **cost_logs:** thread task_id/phase through ollama_chat_text to cost_logs ([#1627](https://github.com/Glad-Labs/glad-labs-stack/issues/1627)) ([4db4f23](https://github.com/Glad-Labs/glad-labs-stack/commit/4db4f235887e78240afadf41584de5a230456954))
+* **db:** drop two zero-scan dead indexes (poindexter[#701](https://github.com/Glad-Labs/glad-labs-stack/issues/701)) ([#1635](https://github.com/Glad-Labs/glad-labs-stack/issues/1635)) ([88790cd](https://github.com/Glad-Labs/glad-labs-stack/commit/88790cd73f1e156f860125e3cc19234f566f77b5))
+* **db:** enforce pipeline_tasks.status values + app_settings.value NOT NULL (poindexter[#700](https://github.com/Glad-Labs/glad-labs-stack/issues/700)) ([#1634](https://github.com/Glad-Labs/glad-labs-stack/issues/1634)) ([4c2073b](https://github.com/Glad-Labs/glad-labs-stack/commit/4c2073b130430525b573abb2bad5decd37a60db5))
+* **observability:** add cycle-safe patch to Langfuse EventSerializer ([#1626](https://github.com/Glad-Labs/glad-labs-stack/issues/1626)) ([54fffd7](https://github.com/Glad-Labs/glad-labs-stack/commit/54fffd7e21a27776fb179740029fdb3afcf45a17))
+* **security:** stop echoing exception detail in HTTP error responses (poindexter[#724](https://github.com/Glad-Labs/glad-labs-stack/issues/724)) ([#1633](https://github.com/Glad-Labs/glad-labs-stack/issues/1633)) ([921b5b0](https://github.com/Glad-Labs/glad-labs-stack/commit/921b5b0d631d038af56d48a6d8fb12d5006cec5f))
+
 ## [0.80.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.79.0...v0.80.0) (2026-06-15)
 
 
