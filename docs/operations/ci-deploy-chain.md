@@ -1,6 +1,6 @@
 # How Poindexter itself is tested and deployed
 
-**Last Updated:** 2026-06-03
+**Last Updated:** 2026-06-15
 
 > **What this doc is.** A transparency record of how Poindexter (the
 > project, not your self-host) is tested and shipped to [gladlabs.io](https://www.gladlabs.io).
@@ -142,6 +142,54 @@ decorators in `test_database_service.py` and
   `chore/regen-app-settings-doc` when the file drifts; the branch
   is force-pushed every run so the PR always reflects the latest
   regen. Per [poindexter#439](https://github.com/Glad-Labs/poindexter/issues/439).
+- `.github/workflows/regen-services-doc.yml` — PR-time drift guard
+  for `docs/reference/services.md`. Path-gated to
+  `src/cofounder_agent/services/**` + `modules/content/**`; regenerates
+  the catalog in-place and fails if the checked-in copy drifts. Unlike
+  `regen-app-settings-doc`, this needs no DB — the generator is pure
+  stdlib. Non-required.
+- `.github/workflows/integration-db.yml` — runs the
+  `tests/integration_db/` tier against an ephemeral pgvector Postgres.
+  These tests require a live database (migration round-trips, settings
+  seeding, claim-pending-task) and were silently omitted from CI before
+  this workflow. Path-gated to the backend tree; non-required (pending
+  a stable green track record to promote to required).
+- `.github/workflows/jest-unit.yml` — frontend Jest gate for
+  `web/public-site/**`. Path-gated; non-required (can't use the
+  always-run + internal-skip pattern that required checks need, because
+  the file-change detection itself is the skip condition).
+- `.github/workflows/public-mirror-safety.yml` — pre-merge leak guard.
+  Runs the same pattern checks as the sync-time guard in
+  `scripts/sync-to-github.sh` on every PR + push, so authors fix leaks
+  before they merge rather than after the sync freezes the mirror.
+- `.github/workflows/phantom-poindexter-set.yml` — rejects any file that
+  uses the bare top-level `set` subcommand form (which does not exist) instead
+  of the correct `poindexter settings set <key>`. No path filter (the bad
+  string can appear in any file). Non-required; fast (<2 s).
+- `.github/workflows/sync-claude-md.yml` — daily (06:17 UTC) sync of
+  repo-derivable stats in `CLAUDE.md` (file counts, dashboard count,
+  latest migration name). Opens a PR on `chore/sync-claude-md` when the
+  file drifts. DB-derived counts (posts, embeddings) require a prod-DB
+  probe and are NOT updated by this workflow.
+- `.github/workflows/triage-on-open.yml` — stamps the `type:` label
+  implied by a new issue's conventional-commit title prefix (feat / fix /
+  chore / docs / refactor). Zero-LLM; runs in both repos via the sync filter.
+- `.github/workflows/release-mirror-to-public.yml` — fires on every
+  published GitHub Release on `glad-labs-stack` and creates a matching
+  tag + release on `Glad-Labs/poindexter` so the public Releases page
+  stays in sync. Without this, the public mirror's releases froze at
+  v0.1.1 while the source ran ahead.
+- `.github/workflows/release-poindexter-to-pypi.yml` — publishes the
+  `poindexter` CLI package to PyPI on `poindexter-v*.*.*` tag pushes.
+  Uses PyPI Trusted Publishing (OIDC) — no API token stored in Secrets.
+  Manual dispatch targets TestPyPI.
+- `.github/workflows/runner-healthcheck.yml` — hosted-only control loop
+  (must run in GitHub's cloud, not on Matt's PC). Every 6 hours it probes
+  the self-hosted runners and sets or clears the `CI_RUNNER` repo variable.
+  When `>=1` self-hosted runner is online, `unit-tests` runs there ($0
+  minutes). When none are online, it clears `CI_RUNNER` so `unit-tests`
+  falls back to `ubuntu-latest` and a PR's required check can still pass.
+  Override via `CI_RUNNER_MODE` repo var (`auto` / `on` / `off`).
 - `src/cofounder_agent/tests/` — Python unit tests (pytest). The
   `test-backend` check runs the full backend suite (several thousand
   cases; the exact count drifts as agents add tests, so it is not
@@ -289,6 +337,55 @@ It is **alert-only**; the remedy it points at is
 Deploying the canary itself requires a brain image rebuild
 (`docker compose build brain-daemon && up -d brain-daemon`), since the
 `.git` mount + the `git` binary are new.
+
+## Fast rollback (pin deploy clone to a known-good SHA)
+
+The durable rollback path is `git revert` + CI + full sync — ~30+ minutes.
+For a production incident where you need the worker back on known-good code
+immediately, use the SHA-pin path instead:
+
+```powershell
+# 1. Find the last known-good SHA
+git log --oneline origin/main | head -10
+# Pick the SHA immediately before the bad commit.
+
+# 2. Pin the deploy clone to that SHA
+git -C ~/.poindexter/deploy/glad-labs-stack reset --hard <known-good-sha>
+
+# 3. Restart the affected containers (skips the automated sync's flow-run guard)
+docker restart poindexter-worker poindexter-pipeline-bot
+
+# 4. Verify the worker is healthy
+curl -s http://localhost:8002/api/health | python -m json.tool
+
+# 5. Check the worker is on the pinned SHA
+git -C ~/.poindexter/deploy/glad-labs-stack rev-parse --short HEAD
+```
+
+**What this does:** the containers bind-mount the deploy clone, so resetting
+the clone and restarting the containers immediately loads the old code without
+any CI run. The 10-minute `deploy-checkout-sync.ps1` task will try to advance
+the clone again on its next cycle — stop the scheduled task while the incident
+is live:
+
+```powershell
+# Suspend automated sync while you're pinned
+Disable-ScheduledTask -TaskName 'Poindexter-DeployCheckoutSync'
+
+# Re-enable once the revert commit has merged and you're ready to roll forward
+Enable-ScheduledTask -TaskName 'Poindexter-DeployCheckoutSync'
+```
+
+**Follow-up:** file a `git revert` PR as the durable fix. Re-enable the
+scheduled task only after the revert has merged and CI is green — otherwise
+the sync will overwrite your pin on the next cycle.
+
+> **poindexter-prefect-worker** is not pinned by `docker restart`. Each Prefect
+> flow spawns a fresh subprocess that re-imports `/app`; to pin the Prefect
+> worker to old code you would also need to reset before the next flow run
+> fires. In practice: drain in-flight flows (`poindexter tasks list --status
+in_progress`) and reset the deploy clone before the scheduler claims the next
+> pending task.
 
 ## If you're self-hosting Poindexter
 

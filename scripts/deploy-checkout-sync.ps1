@@ -75,6 +75,9 @@ param(
     [switch]$Install,
     [switch]$Uninstall,
     [switch]$NoRestart,
+    # Skip the Prefect active-run guard and reset regardless. Use for manual
+    # deploys where you've confirmed no sensitive flow is mid-execution.
+    [switch]$NoFlowCheck,
     [string[]]$RestartContainers = @('poindexter-worker', 'poindexter-pipeline-bot')
 )
 
@@ -89,9 +92,24 @@ $DeployDir = if ($env:POINDEXTER_DEPLOY_ROOT) {
 }
 $SourceRemote = if ($env:SOURCE_REMOTE) { $env:SOURCE_REMOTE } else { 'origin' }
 $SyncBranch = if ($env:SYNC_BRANCH) { $env:SYNC_BRANCH } else { 'main' }
+$PrefectApiUrl = if ($env:PREFECT_API_URL) { $env:PREFECT_API_URL } else { 'http://localhost:4200/api' }
 $TaskName = 'Poindexter-DeployCheckoutSync'
 
 function Write-Log($msg) { Write-Host "[deploy-checkout-sync] $msg" }
+
+# Returns $true if the Prefect API reports at least one RUNNING flow run.
+# Returns $false if the API is unreachable (safe default: allow the sync).
+function Test-PrefectFlowRunning {
+    try {
+        $body = '{"flow_runs":{"state":{"type":{"any_":["RUNNING"]}}},"limit":1}'
+        $resp = Invoke-RestMethod -Uri "$PrefectApiUrl/flow_runs/filter" `
+            -Method POST -ContentType 'application/json' -Body $body -TimeoutSec 3
+        return ($resp.Count -gt 0)
+    } catch {
+        # Prefect unreachable - skip the guard, proceed with sync.
+        return $false
+    }
+}
 
 if ($Uninstall) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -131,6 +149,18 @@ if (-not (Test-Path (Join-Path $DeployDir '.git'))) {
 }
 
 Write-Log "Syncing $DeployDir to $SourceRemote/$SyncBranch ..."
+
+# ---- Prefect flow-run guard -----------------------------------------------
+# git reset --hard rewrites working-tree files non-atomically. A Prefect flow
+# spawns a fresh subprocess that re-imports /app on each run; if that import
+# starts during the reset window the subprocess can read a torn file. Guard
+# against this by checking for active RUNNING runs before touching the tree.
+# -NoFlowCheck bypasses this for explicit manual deploys.
+if (-not $NoFlowCheck -and (Test-PrefectFlowRunning)) {
+    Write-Log "Active Prefect flow run detected; skipping reset this cycle to avoid mid-import file race. Will retry next cycle."
+    exit 0
+}
+
 & git -C $DeployDir fetch $SourceRemote $SyncBranch --prune
 if ($LASTEXITCODE -ne 0) { Write-Log "fetch failed (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
 & git -C $DeployDir reset --hard "$SourceRemote/$SyncBranch"

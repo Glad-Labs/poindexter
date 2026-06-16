@@ -1,6 +1,6 @@
 # Disaster Recovery Runbook
 
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-06-15
 **Audience:** solo operator (Matt) at 2am during an incident
 **Prereqs:** Local PC online, Docker running, gh CLI authed, poindexter CLI installed, `~/.poindexter/bootstrap.toml` accessible (or you have the `database_url` + `POINDEXTER_SECRET_KEY` somewhere safe)
 
@@ -183,18 +183,28 @@ This is the painful part. Encrypted secrets are gone forever. You need to:
 
 ### Step 6 — Re-import published posts from R2
 
-The frontend reads `static/posts/index.json` from R2. That's your source of truth for what was live.
-
-**TBD — needs operator to confirm the procedure once they've done it once.** There's no off-the-shelf re-import script. Sketch:
+The static export on R2 (`static/posts/index.json` + `static/posts/<slug>.json`)
+is the source of truth for what was live. `scripts/dr-reimport-posts-from-r2.py`
+replays those JSON files back into the `posts` table.
 
 ```bash
-# Pull the live index from R2
-curl -sf https://<r2-public-url>/static/posts/index.json -o /tmp/posts-index.json
-# For each slug, pull static/posts/<slug>.json and INSERT into the posts table.
-# Manual SQL or a one-off script — not currently in the repo.
+# Dry-run first — validates the R2 fetch and logs what would be written
+python scripts/dr-reimport-posts-from-r2.py --dry-run
+
+# Then write (idempotent — safe to re-run)
+python scripts/dr-reimport-posts-from-r2.py
 ```
 
-File a follow-up issue if this scenario actually happens (#TBD).
+The script resolves the database URL from `bootstrap.toml` automatically. Pass
+`--database-url` to override. Pass `--r2-url` if `NEXT_PUBLIC_STATIC_URL` env
+var is unset and the hardcoded default is stale. The upsert is keyed on `slug`
+so re-running fills gaps without overwriting rows already restored from a backup.
+
+> **Note:** `pipeline_tasks` rows and `pipeline_versions` rows are NOT
+> re-imported (they live only in the DB). Only the published `posts` rows
+> surface in the frontend, so the site is functional after this step. The
+> missing task history means the auto-publish gate and edit-distance tracker
+> start fresh — that's acceptable for a DR scenario.
 
 ### Verification
 
@@ -686,6 +696,7 @@ pythonw scripts/nvidia-smi-exporter.py
 - [`backups.md`](./backups) — backup tiers, retention, and the brain backup-watcher / restore-test probe
 - `scripts/db-backup-local.sh` — the `DbBackupJob` backup script (flat-dir tier)
 - `src/cofounder_agent/plugins/secrets.py` — encryption module reference
+- `scripts/dr-reimport-posts-from-r2.py` — re-import published posts from R2 into a fresh DB (DB-2 Step 6)
 
 ## Contact
 
