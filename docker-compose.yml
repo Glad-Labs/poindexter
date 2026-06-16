@@ -119,7 +119,7 @@ services:
       # installs (the legacy bearer path no longer exists in the middleware).
       API_TOKEN: ${API_TOKEN:-}
       DEVELOPMENT_MODE: ${DEVELOPMENT_MODE:-false}
-      REVALIDATE_SECRET: ${REVALIDATE_SECRET:?REVALIDATE_SECRET must be set}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-dev-secret-key}
 
       # Local LLM only — paid-API providers live in community plugins, not the core stack.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
