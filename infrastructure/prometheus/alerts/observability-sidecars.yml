@@ -1,7 +1,7 @@
 # Observability-sidecar liveness — promtail (log shipping), langfuse-worker
 # (LLM trace processing), glitchtip-worker (error ingest).
 #
-# Closes the monitoring blind spot in Glad-Labs/glad-labs-stack#1154: these
+# Closes the monitoring blind spot in Glad-Labs/poindexter#1154: these
 # three async sidecars had no liveness signal, so a silent crash went unnoticed
 # until someone happened to read the logs. Each is escalated to
 # `severity: critical` (issue action item #3) because a dead one takes a whole
