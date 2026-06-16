@@ -1,0 +1,129 @@
+# Nightly endpoint latency benchmarks (#1078 approach 3). Runs
+# tests/benchmarks/test_endpoint_benchmarks.py via pytest-benchmark against
+# the FastAPI TestClient (in-process — no live server needed), then uploads
+# benchmark_results.json as an artifact for latency trend tracking.
+#
+# Needs a live Postgres: the benchmark conftest imports the FastAPI app which
+# triggers the lifespan DB connection. Without a reachable DB the conftest
+# skips everything gracefully (pytest exits 0). A pgvector/pgvector service
+# container provides the isolated DB on both GitHub-hosted and the self-hosted
+# runner (the self-hosted runner is a host process on Matt's PC with Docker
+# access, so services: works without DinD).
+#
+# Not a per-PR gate — benchmark latencies vary by runner load and a hard
+# threshold would cause spurious failures. The JSON artifact is the signal:
+# open it to spot regressions (e.g. "health endpoint was 12ms, now 300ms").
+# A --benchmark-compare gate can be added once a stable baseline exists.
+name: benchmarks
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC daily — ~02:00 Central (off-peak on Matt's PC)
+  workflow_dispatch:
+
+# Never cancel a running nightly benchmark mid-run — no cancellation on
+# schedule events (they have no meaningful ref to group on). workflow_dispatch
+# re-runs are cancelled to avoid duplicate artifacts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+jobs:
+  benchmarks:
+    # Source repo only — the public mirror is force-rebuilt on every sync,
+    # its status checks gate nothing, and a nightly here is pure waste.
+    # Guard on mirror NAME (not .private): the sync script rewrites
+    # glad-labs-stack→poindexter in every file, so '!= stack' would be
+    # inverted on the mirror — '== poindexter' is inversion-proof.
+    if: github.repository != 'Glad-Labs/poindexter'
+    # CI_RUNNER seam — same pattern as unit-tests.yml. When the repo variable
+    # is set (private source only), runs on the self-hosted PC runner for $0
+    # cloud minutes; falls back to ubuntu-latest on forks / the public mirror.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # pgvector image — the schema's embeddings column uses the vector
+        # extension; matching the version used in integration-db.yml.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Points the benchmark conftest at the service container.
+      # resolve_database_url() resolution order: bootstrap.toml → DATABASE_URL
+      # → ... — a fresh runner has no ~/.poindexter/bootstrap.toml, so this wins.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4.3.1 as of 2026-05-12
+
+      - name: Free disk space
+        # Hosted-image cleanup only — self-hosted runner doesn't ship these
+        # preinstalled toolchains and `sudo` may be unavailable there.
+        if: ${{ !vars.CI_RUNNER }}
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet
+          df -h /
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5.6.0 as of 2026-05-12
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Poetry
+        run: pip install "poetry==2.2.1"
+
+      - name: Install dependencies
+        working-directory: src/cofounder_agent
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-root --no-interaction
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres > /dev/null 2>&1; then
+              echo "postgres ready"
+              exit 0
+            fi
+            echo "waiting for postgres... ($i)"
+            sleep 1
+          done
+          echo "postgres never became ready" >&2
+          exit 1
+
+      - name: Run benchmarks
+        working-directory: src/cofounder_agent
+        run: |
+          python -m pytest tests/benchmarks/ \
+            --benchmark-only \
+            --benchmark-json=benchmark_results.json \
+            -q --tb=short -p no:cacheprovider
+
+      # Upload even on test failure so a benchmark that errors mid-run still
+      # produces a partial artifact for diagnosis.
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2 as of 2026-05-12
+        with:
+          name: benchmark-results-${{ github.run_id }}
+          path: src/cofounder_agent/benchmark_results.json
+          retention-days: 90
+          # warn not error — if benchmarks skip entirely (DB unreachable),
+          # no JSON is written; that's acceptable, not a workflow failure.
+          if-no-files-found: warn
