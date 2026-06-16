@@ -5,7 +5,7 @@ operators to run ``poindexter set <key> <value>`` — a command that does not
 exist. The CLI registers a ``settings`` group (``poindexter settings set ...``);
 there is no top-level ``set``, so following the hint errors with
 ``No such command 'set'``. The same class of bug was reconciled across the docs
-tree and the secret-setting commands in Glad-Labs/glad-labs-stack#1556; this
+tree and the secret-setting commands in Glad-Labs/poindexter#1556; this
 migration fixes the DB-stored descriptions on EXISTING installs.
 
 Why a migration (and not just ``settings_defaults`` / the baseline seed): the
