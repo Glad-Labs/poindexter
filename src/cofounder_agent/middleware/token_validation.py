@@ -97,9 +97,10 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         path = request.scope["path"]
 
         try:
-            # DI seam (glad-labs-stack#330) — read site_config from
-            # app.state, populated by main.py's lifespan.
-            sc = getattr(request.app.state, "site_config", None)
+            # DI seam (#272) — read site_config from the AppContainer
+            # built by main.py's lifespan (app.state.container).
+            _container = getattr(request.app.state, "container", None)
+            sc = getattr(_container, "site_config", None)
             # Development mode: Allow bypassing authentication for testing.
             # Guard: DISABLE_AUTH_FOR_DEV only honoured when DEVELOPMENT_MODE=true,
             # ensuring it never works on staging or production (#1219).

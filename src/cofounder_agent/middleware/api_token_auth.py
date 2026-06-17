@@ -81,14 +81,24 @@ security = HTTPBearer(auto_error=False)
 
 
 def _request_site_config(request: Request) -> Any:
-    """Pull the SiteConfig from app.state (DI seam, glad-labs-stack#330).
+    """Pull the SiteConfig from the app's ``AppContainer`` (DI seam, #272).
 
-    Returns None when the lifespan hasn't populated it yet — callers
-    coalesce to fail-safe defaults so middleware never crashes a request
-    on a missing config (we'd rather refuse the request via the
-    downstream auth path than 500).
+    Mirrors ``utils.route_utils.get_site_config_dependency``: prefer
+    ``app.state.container.site_config``, then the process-wide registered
+    container, else ``None``. Returns ``None`` when the lifespan hasn't
+    built the container yet — callers coalesce to fail-safe defaults so
+    middleware never crashes a request on a missing config (we'd rather
+    refuse the request via the downstream auth path than 500).
     """
-    return getattr(request.app.state, "site_config", None)
+    container = getattr(getattr(request.app, "state", None), "container", None)
+    if container is not None:
+        return getattr(container, "site_config", None)
+    from services.container_registry import get_container
+
+    registered = get_container()
+    if registered is not None:
+        return registered.site_config
+    return None
 
 
 # Environment values that positively assert a genuine local/dev deployment

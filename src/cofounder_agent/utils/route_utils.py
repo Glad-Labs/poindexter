@@ -157,17 +157,18 @@ def get_site_config_dependency(request: Request) -> Any:
     """FastAPI dependency that returns the lifespan-bound SiteConfig.
 
     Resolution order (#272 capstone — the per-module ``site_config``
-    global + ``set_site_config`` setter were retired):
+    global + ``set_site_config`` setter were retired; the legacy
+    ``app.state.site_config`` attribute was then removed once the worker
+    hot-reload fix made the container hold that same instance, so the
+    parallel attribute was pure redundancy):
 
     1. ``request.app.state.container.site_config`` — the web process
        attaches the built ``AppContainer`` to ``app.state``; this is the
        canonical SiteConfig instance.
-    2. ``request.app.state.site_config`` — the legacy lifespan-bound
-       attribute, still set in parallel during the migration.
-    3. The process-wide ``AppContainer`` via ``get_container()`` — covers
+    2. The process-wide ``AppContainer`` via ``get_container()`` — covers
        processes that built a container but didn't stash it on
        ``app.state`` (or non-FastAPI request shims).
-    4. ``_FALLBACK_SITE_CONFIG`` — an empty SiteConfig so early-boot /
+    3. ``_FALLBACK_SITE_CONFIG`` — an empty SiteConfig so early-boot /
        test paths never crash.
 
     Usage::
@@ -186,10 +187,6 @@ def get_site_config_dependency(request: Request) -> Any:
         sc = getattr(container, "site_config", None)
         if sc is not None:
             return sc
-
-    sc = getattr(state, "site_config", None)
-    if sc is not None:
-        return sc
 
     from services.container_registry import get_container
 

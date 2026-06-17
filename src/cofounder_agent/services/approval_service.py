@@ -10,8 +10,8 @@ Design rules:
 - **DI seam.** Every public function takes ``site_config`` and ``pool``
   in its signature — no module-level singletons, no
   ``site_config.singleton``, no ``database_service.global_pool``.
-  Tests pass mocks; production wires up via ``app.state.site_config``
-  and ``database_service.pool``.
+  Tests pass mocks; production wires up via
+  ``app.state.container.site_config`` and ``database_service.pool``.
 - **DB-first config.** Gate enable flags live in ``app_settings`` under
   the ``pipeline_gate_<gate_name>`` key. ``set_gate_enabled`` writes
   there. No env vars, no code constants.

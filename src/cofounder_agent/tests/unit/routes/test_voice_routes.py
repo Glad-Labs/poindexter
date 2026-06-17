@@ -235,9 +235,13 @@ class _FakeSiteConfig:
 
 
 def _build_app_with_site_config(site_config):
+    from types import SimpleNamespace
+
     app = FastAPI()
     app.include_router(router)
-    app.state.site_config = site_config
+    # DI seam (#272): the route resolves site_config via app.state.container
+    # (get_site_config_dependency), not the retired app.state.site_config.
+    app.state.container = SimpleNamespace(site_config=site_config)
     return app
 
 

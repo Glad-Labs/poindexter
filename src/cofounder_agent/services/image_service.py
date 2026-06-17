@@ -273,9 +273,9 @@ class ImageService:
                 Phase-2e). Resolves the Pexels API key (a secret) and other
                 image-pipeline settings. Callers thread the run-bound
                 instance via ``get_image_service(site_config=...)`` —
-                ``app.state.site_config`` (FastAPI), ``context["site_config"]``
-                (pipeline stages), or ``config["_site_config"]`` (jobs /
-                image-provider plugins).
+                ``app.state.container.site_config`` (FastAPI),
+                ``context["site_config"]`` (pipeline stages), or
+                ``config["_site_config"]`` (jobs / image-provider plugins).
         """
         self._site_config = site_config
 
@@ -1304,6 +1304,6 @@ def get_image_service(site_config: SiteConfig) -> ImageService:
             Phase-2e). Forwarded to ``ImageService.__init__``. Pipeline
             stages pull this from ``context['site_config']``; jobs /
             image-provider plugins from ``config['_site_config']``; routes
-            from ``app.state.site_config``.
+            from ``app.state.container.site_config``.
     """
     return ImageService(site_config=site_config)

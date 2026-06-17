@@ -47,11 +47,10 @@ async def build_container(
 
     Pass ``site_config`` to make the container REUSE an instance the
     caller already holds, instead of constructing a fresh one. This is
-    the worker hot-reload fix: ``main.py``'s lifespan loads ``_site_cfg``,
-    attaches it to ``app.state.site_config``, and seeds it into the
-    plugin scheduler — so the periodic ``reload_site_config`` job
-    refreshes *that* object. Route handlers, however, read
-    ``app.state.container.site_config`` via
+    the worker hot-reload fix: ``main.py``'s lifespan loads ``_site_cfg``
+    and seeds it into the plugin scheduler — so the periodic
+    ``reload_site_config`` job refreshes *that* object. Route handlers
+    read ``app.state.container.site_config`` via
     ``get_site_config_dependency``. If the container held a *separate*
     SiteConfig, a runtime ``settings set`` (refreshed into the lifespan
     instance) would never reach routes until a restart. By passing the

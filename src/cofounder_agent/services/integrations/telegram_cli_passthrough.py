@@ -45,7 +45,7 @@ Design notes
   shell" mental model.
 - ``site_config`` is dependency-injected — no module-level singleton
   reads. Callers from inside the worker get the canonical instance via
-  ``app.state.site_config``; the standalone bot script builds its own.
+  ``app.state.container.site_config``; the standalone bot script builds its own.
 - All logging goes through a private logger; we never echo the bot
   token or any secret. The audit row includes the raw command line —
   if you put a secret on the CLI, it WILL be logged. (CLI doesn't

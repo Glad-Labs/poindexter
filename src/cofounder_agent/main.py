@@ -163,24 +163,25 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             app.state.settings_service = None
 
         # Load site config from DB (identity, settings — replaces env vars).
-        # Stash on app.state so routes + stages can Depends() it instead of
-        # reaching into the module-level singleton (Gitea #242).
+        # ``_site_cfg`` is the canonical instance: build_container (below)
+        # reuses it as ``app.state.container.site_config`` — the seam routes
+        # + stages reach via Depends() — and the scheduler reloads it in
+        # place, so one object is shared process-wide (the legacy parallel
+        # ``app.state.site_config`` attribute was retired, #272).
         try:
             db_pool = services["database"].pool
             loaded = await _site_cfg.load(db_pool)
-            app.state.site_config = _site_cfg
             logger.info("[LIFESPAN] Site config loaded: %d settings from DB", loaded)
         except Exception as e:
             logger.warning("[LIFESPAN] Site config load failed (using env fallbacks): %s", e)
-            # Attach the env-loaded instance so Depends() still works — it
-            # returns env/defaults for missed keys until the DB is reachable.
-            app.state.site_config = _site_cfg
+            # _site_cfg keeps env/defaults for missed keys until the DB is
+            # reachable; build_container re-probes it below.
 
         # GH#330: wire the lifespan-bound SiteConfig into every module
         # that exposes a set_site_config() setter. Each module owns its
         # own per-module ``site_config`` attribute (defaults to a fresh
         # env-fallback SiteConfig at import); the setters point them all
-        # at the SAME loaded instance carried in ``app.state.site_config``.
+        # at the SAME loaded ``_site_cfg`` (now the container's instance).
         # poindexter#477: the module list now lives in
         # ``services.di_wiring.WIRED_MODULES`` so Prefect-spawned
         # subprocesses (which never run this lifespan) can re-use the
@@ -403,7 +404,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
                 worker_service = WorkerService(
                     services["database"].pool,
-                    site_config=app.state.site_config,
+                    site_config=_site_cfg,
                 )
                 await worker_service.register()
                 await worker_service.start_heartbeat()
@@ -421,7 +422,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
                 webhook_service = WebhookDeliveryService(
                     services["database"].pool,
-                    site_config=app.state.site_config,
+                    site_config=_site_cfg,
                 )
                 await webhook_service.start()
                 app.state.webhook_service = webhook_service
@@ -680,7 +681,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # doesn't pay the 3-5s lazy-load latency. Skipped silently
         # when ``rag_rerank_enabled`` is off.
         try:
-            _site_cfg_for_warm = getattr(app.state, "site_config", None)
+            _site_cfg_for_warm = _site_cfg
             _rerank_on = bool(
                 _site_cfg_for_warm and _site_cfg_for_warm.get_bool(
                     "rag_rerank_enabled", False,
@@ -823,8 +824,9 @@ _is_production = config.environment == "production"
 
 # Phase H step 5 (GH#95): construct a fresh SiteConfig instance locally.
 # Pre-lifespan reads come from env/defaults; lifespan calls `.load(pool)`
-# on this same instance to pull DB values and then attaches it to
-# ``app.state.site_config`` for route handlers + DI.
+# on this same instance to pull DB values and then hands it to
+# ``build_container(pool, site_config=_site_cfg)`` so it becomes
+# ``app.state.container.site_config`` — the seam routes reach via DI.
 from services.site_config import SiteConfig  # noqa: E402
 
 _site_cfg = SiteConfig()
@@ -909,8 +911,8 @@ except Exception as _e:
 
 # ===== MIDDLEWARE CONFIGURATION =====
 # Register all middleware (centralized in utils.middleware_config). Uses
-# main.py's local _site_cfg — the same instance `app.state.site_config`
-# gets rebound to after `_site_cfg.load(pool)` in the lifespan.
+# main.py's local _site_cfg — the same instance the lifespan loads via
+# `_site_cfg.load(pool)` and shares as `app.state.container.site_config`.
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app, site_config=_site_cfg)
 
@@ -1202,7 +1204,7 @@ async def api_health():
             from plugins.llm_resilience import ResilienceRegistry
             from services.ollama_resilience import get_default_manager
 
-            site_cfg = getattr(app.state, "site_config", None)
+            site_cfg = getattr(getattr(app.state, "container", None), "site_config", None)
             # Ensure the Ollama default manager is registered even when
             # nobody has constructed an OllamaClient yet (warm start
             # path). Calling get_default_manager wires the registration.
@@ -1311,10 +1313,10 @@ async def prometheus_metrics_canonical():
     # app.state.database is the DatabaseService; its .pool is the asyncpg pool.
     db_service = getattr(app.state, "database", None)
     pool = getattr(db_service, "pool", None) if db_service else None
-    # Ollama URL: read from app_settings via app.state.site_config if wired,
+    # Ollama URL: read from app_settings via app.state.container if wired,
     # else fall back to the module-level _site_cfg (env/defaults only).
     try:
-        sc = getattr(app.state, "site_config", None) or _site_cfg
+        sc = getattr(getattr(app.state, "container", None), "site_config", None) or _site_cfg
         ollama_url = sc.get("ollama_base_url", "http://host.docker.internal:11434")
     except Exception as e:
         # SiteConfig.get is sync and reads from in-memory cache, so this

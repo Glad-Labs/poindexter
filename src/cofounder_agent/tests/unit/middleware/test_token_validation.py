@@ -52,7 +52,8 @@ def _make_request(
         else "true" if (k == "development_mode" and development_mode)
         else d
     )
-    req.app.state.site_config = sc
+    # DI seam (#272): middleware reads site_config off app.state.container.
+    req.app.state.container.site_config = sc
     return req
 
 

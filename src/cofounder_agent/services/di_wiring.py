@@ -8,8 +8,9 @@ and a ``set_site_config(...)`` setter that rebinds it to a real,
 DB-loaded instance carried by the FastAPI app's lifespan. ``main.py``
 loops over every wired module at lifespan startup and calls
 ``set_site_config(loaded_instance)`` so that all per-module attrs
-point at the SAME SiteConfig that ``app.state.site_config`` exposes
-to route handlers via ``Depends()``.
+point at the SAME SiteConfig the worker exposes to route handlers
+via ``Depends(get_site_config_dependency)`` (today
+``app.state.container.site_config``).
 
 This works fine for processes that go through ``main.py``'s lifespan
 (the FastAPI worker, the brain daemon). It does **not** work for

@@ -8,17 +8,18 @@ Only DATABASE_URL and PORT remain as env vars (chicken-and-egg).
 Everything else comes from the database.
 
 The module-level ``site_config`` singleton was deleted 2026-05-09
-(Glad-Labs/glad-labs-stack#330). All production callers now receive a
-SiteConfig instance through the DI seam:
+(Glad-Labs/glad-labs-stack#330); the per-module ``set_site_config``
+fan-out was then retired by the #272 constructor-DI migration (#788
+capstone). All production callers now receive a SiteConfig instance
+through the DI seam:
 
   - Route handlers:    ``site_config: SiteConfig = Depends(get_site_config_dependency)``
   - Services:          accept ``site_config`` as a ``__init__`` kwarg
   - Pipeline stages:   ``context["site_config"]``
   - Image providers /
     taps / topic sources: ``config["_site_config"]``
-  - Module-level utils: per-module ``site_config: SiteConfig`` attribute
-                         + ``set_site_config()`` setter, wired by
-                         ``main.py`` lifespan startup.
+  - Ambient-singleton modules: the process-wide ``AppContainer`` via
+                         ``services.container_registry.get_container()``
 
 Usage in code:
     site_config.get("site_name")            # "Glad Labs"
@@ -27,8 +28,12 @@ Usage in code:
 
 Startup:
     main.py's lifespan constructs ONE SiteConfig, calls ``await
-    sc.load(pool)``, attaches it to ``app.state.site_config``, and
-    fans out to every wired module via ``set_site_config(sc)``.
+    sc.load(pool)``, then hands it to ``build_container(pool,
+    site_config=sc)`` so ``app.state.container.site_config`` IS that
+    same instance (reached by routes via ``get_site_config_dependency``).
+    The scheduled ``reload_site_config`` job refreshes that object in
+    place, so runtime ``settings set`` changes propagate without a
+    restart.
 
 Testing:
     Tests should construct their own ``SiteConfig(initial_config=...)``
@@ -246,9 +251,8 @@ class SiteConfig:
 #   - Pipeline stages:   ``context["site_config"]``
 #   - Image providers /
 #     taps / topic sources: ``config["_site_config"]``
-#   - Module-level utils: per-module ``site_config: SiteConfig`` attr +
-#                         ``set_site_config()`` setter, wired by main.py
-#                         lifespan startup.
+#   - Ambient-singleton modules: the process-wide ``AppContainer`` via
+#                         ``services.container_registry.get_container()``
 #
 # Tests construct their own ``SiteConfig(initial_config={...})`` or use
 # the shared instance in ``tests/unit/conftest.py``.

@@ -38,7 +38,8 @@ def _request(dev_mode: bool = False, environment: str = "development") -> MagicM
         )
     )
     app = MagicMock()
-    app.state.site_config = sc
+    # DI seam (#272): middleware reads site_config off app.state.container.
+    app.state.container.site_config = sc
     request = MagicMock()
     request.app = app
     return request

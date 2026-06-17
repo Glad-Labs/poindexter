@@ -34,12 +34,12 @@ def _build_app() -> FastAPI:
     """
     app = FastAPI()
 
-    # DI seam (glad-labs-stack#330): middleware reads site_config off
-    # app.state. Tests just need a stand-in that returns ``""`` for every
-    # key so the dev-bypass branch never triggers.
+    # DI seam (#272): middleware reads site_config off app.state.container.
+    # Tests just need a stand-in that returns ``""`` for every key so the
+    # dev-bypass branch never triggers.
     sc = MagicMock()
     sc.get.side_effect = lambda key, default="": default
-    app.state.site_config = sc
+    app.state.container = MagicMock(site_config=sc)
 
     app.add_middleware(TokenValidationMiddleware)
 

@@ -293,8 +293,8 @@ _SHARED_TEST_MODULES = (
     # ``utils.route_utils`` migrated to the process-wide AppContainer
     # accessor 2026-05-29 (#272 capstone); the module global +
     # set_site_config setter are deleted. ``get_site_config_dependency``
-    # resolves from ``app.state.container`` / ``app.state.site_config`` /
-    # the registered container / an empty fallback.
+    # resolves from ``app.state.container`` / the registered container /
+    # an empty fallback (the legacy ``app.state.site_config`` was retired).
 )
 
 

@@ -103,7 +103,8 @@ async def get_operational_metrics(
         # are queue depth — those are "all open" and don't take a window.
         window_hours = 24
         try:
-            site_config = getattr(request.app.state, "site_config", None)
+            _container = getattr(request.app.state, "container", None)
+            site_config = getattr(_container, "site_config", None)
             if site_config is not None:
                 window_hours = int(site_config.get("operational_metrics_window_hours", "24") or 24)
         except Exception as cfg_err:

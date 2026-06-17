@@ -193,12 +193,14 @@ async def voice_join(
     traffic never carries that header, so the voice room stays protected
     even if the route is accidentally re-exposed over a Funnel.
     """
-    # DB-first creds (#1000) — app_settings, then env. site_config is bound to
-    # app.state by main.py's lifespan; absent in router-only tests, where the
-    # resolver falls back to env (monkeypatched LIVEKIT_API_* there).
+    # DB-first creds (#1000) — app_settings, then env. site_config lives on
+    # the AppContainer bound to app.state by main.py's lifespan; absent in
+    # router-only tests, where the resolver falls back to env (monkeypatched
+    # LIVEKIT_API_* there).
     from services.voice_pipecat import resolve_livekit_creds_async
 
-    site_config = getattr(getattr(request.app, "state", None), "site_config", None)
+    _container = getattr(getattr(request.app, "state", None), "container", None)
+    site_config = getattr(_container, "site_config", None)
     wss_url, api_key, api_secret = await resolve_livekit_creds_async(site_config)
     if (
         not api_secret
