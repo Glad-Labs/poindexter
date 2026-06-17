@@ -27,6 +27,7 @@ import click
 # ---------------------------------------------------------------------------
 # DSN + asyncpg helpers (mirror the qa-gates / taps CLI patterns)
 # ---------------------------------------------------------------------------
+from poindexter.cli._aliases import deprecated_alias
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 
@@ -45,6 +46,11 @@ class _SinglePool:
 
     def __init__(self, conn):
         self._conn = conn
+
+    async def fetch(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """Pool-level fetch. ``SiteConfig.load`` calls ``pool.fetch`` directly
+        (not via ``acquire``), so delegate to the wrapped connection."""
+        return await self._conn.fetch(*args, **kwargs)
 
     def acquire(self):  # type: ignore[no-untyped-def]
         conn = self._conn
@@ -72,35 +78,21 @@ async def _with_pool(fn):
         await conn.close()
 
 
-def _make_site_config():
-    """Build a SiteConfig from the same DSN the CLI just opened.
+async def _load_site_config(pool):
+    """Build a SiteConfig from app_settings via the settings loader.
 
-    Loads ``app_settings`` so ``publish_quiet_hours`` etc. are
-    available without extra plumbing. Falls back to an empty config
-    if the DB is unreachable so the CLI still parses ``--quiet-hours``
-    overrides.
+    Delegates to ``SiteConfig.load`` — the canonical non-secret settings
+    reader — instead of hand-rolling the query. #1652 / epic #1340: the CLI is
+    a thin adapter, so the app_settings read belongs in the settings service,
+    not here. Falls back to an empty config if the DB is unreachable so
+    operator CLI-flag overrides still flow through.
     """
     from services.site_config import SiteConfig
-    return SiteConfig(initial_config={})
 
-
-async def _load_site_config(pool):
-    from services.site_config import SiteConfig
-
-    cfg = SiteConfig(initial_config={})
+    cfg = SiteConfig(pool=pool)
     try:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT key, value FROM app_settings WHERE is_secret = false"
-            )
-        for r in rows:
-            if r["value"]:
-                cfg._config[r["key"]] = r["value"]  # noqa: SLF001
-        cfg._loaded = True  # noqa: SLF001
+        await cfg.load(pool)
     except Exception:
-        # If app_settings hasn't been bootstrapped yet, an empty
-        # SiteConfig is still useful — operator overrides via CLI
-        # flags still flow through.
         pass
     return cfg
 
@@ -521,3 +513,23 @@ def publish_at_command(
         sys.exit(1)
 
     sys.exit(_print_result(result, json_output=json_output))
+
+
+# ---------------------------------------------------------------------------
+# Consolidation (#1652, sibling of epic #1340): `publish-at` folds into the
+# `schedule` group as `schedule at`; the flat top-level `publish-at` survives
+# as a hidden, deprecated alias (registered on the root group by cli/app.py).
+# ---------------------------------------------------------------------------
+
+schedule_group.add_command(publish_at_command, name="at")
+
+SCHEDULE_FLAT_ALIASES = [
+    deprecated_alias(publish_at_command, name="publish-at", new_path="schedule at"),
+]
+
+
+__all__ = [
+    "schedule_group",
+    "publish_at_command",
+    "SCHEDULE_FLAT_ALIASES",
+]

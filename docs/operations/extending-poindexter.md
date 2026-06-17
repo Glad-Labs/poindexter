@@ -489,19 +489,22 @@ reject. Day-to-day flow:
 
 ```bash
 # What's pending?
-poindexter list-pending
+poindexter gates pending
 
 # What does THIS task look like?
-poindexter show-pending <task_id>
+poindexter gates show <task_id>
 
 # Approve — clears the gate and re-queues the pipeline.
-poindexter approve <task_id>
-poindexter approve <task_id> --gate topic_decision --feedback "good angle"
+poindexter gates approve <task_id>
+poindexter gates approve <task_id> --gate topic_decision --feedback "good angle"
 
 # Reject — sets status=rejected (or the gate's custom reject status)
 # and clears the gate.
-poindexter reject <task_id> --reason "off-brand"
+poindexter gates reject <task_id> --reason "off-brand"
 ```
+
+(The former flat `poindexter approve` / `reject` / `list-pending` /
+`show-pending` still work as hidden, deprecated aliases — #1652.)
 
 Every command takes `--json` for piping. MCP tools exposed by the
 `gladlabs` server (`approve`, `reject`, `list_pending`, `show_pending`,

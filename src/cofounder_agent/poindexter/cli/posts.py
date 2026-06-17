@@ -20,6 +20,7 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+from poindexter.cli._aliases import deprecated_alias  # noqa: E402
 from poindexter.cli._bootstrap import resolve_dsn as _gate_dsn  # noqa: E402
 
 
@@ -374,7 +375,11 @@ def posts_retitle(post_id: str, title: str) -> None:
 
 @click.group(
     name="post",
-    help="Per-medium approval-gate workflow (create / approve / reject).",
+    hidden=True,
+    help=(
+        "[DEPRECATED] merged into `poindexter posts` (#1652). Kept as a hidden "
+        "alias for backcompat; use `poindexter posts create`."
+    ),
 )
 def post_group() -> None:
     pass
@@ -402,7 +407,7 @@ def _compute_idempotency_key(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
-@post_group.command("create")
+@click.command("create")
 @click.option("--topic", required=True, help="Topic / working title for the post.")
 @click.option(
     "--media",
@@ -589,3 +594,18 @@ def post_create(
         )
     click.echo(f"  slug              {result['slug']}")
     click.echo(f"  media_to_generate {result['media_to_generate'] or '(none)'}")
+
+
+# ---------------------------------------------------------------------------
+# Consolidation (#1652, sibling of epic #1340): merge the singular `post` group
+# into `posts`. `post create` becomes `posts create` (canonical); the `post`
+# group stays hidden with a deprecated `create` alias for backcompat.
+# ---------------------------------------------------------------------------
+
+posts_group.add_command(post_create, name="create")
+post_group.add_command(
+    deprecated_alias(post_create, name="create", new_path="posts create"),
+)
+
+
+__all__ = ["posts_group", "post_group", "post_create"]

@@ -33,6 +33,7 @@ from typing import Any
 
 import click
 
+from poindexter.cli._aliases import deprecated_alias
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 from poindexter.cli._prefix import fetch_prefix_candidates, looks_like_full_uuid
 
@@ -531,10 +532,34 @@ def gates_set_command(gate_name: str, state: str, json_output: bool) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Consolidation (#1652, sibling of epic #1340): fold the flat HITL verbs into
+# the `gates` group; keep the old top-level names as hidden deprecated aliases.
+# ---------------------------------------------------------------------------
+#
+# The four commands above are the canonical implementations. They now mount
+# under `poindexter gates` as approve / reject / pending / show. The old flat
+# top-level names survive as hidden deprecated aliases (in APPROVAL_FLAT_ALIASES,
+# registered on the root group by cli/app.py) so existing scripts keep working.
+
+gates_group.add_command(approve_command, name="approve")
+gates_group.add_command(reject_command, name="reject")
+gates_group.add_command(list_pending_command, name="pending")
+gates_group.add_command(show_pending_command, name="show")
+
+APPROVAL_FLAT_ALIASES = [
+    deprecated_alias(approve_command, name="approve", new_path="gates approve"),
+    deprecated_alias(reject_command, name="reject", new_path="gates reject"),
+    deprecated_alias(list_pending_command, name="list-pending", new_path="gates pending"),
+    deprecated_alias(show_pending_command, name="show-pending", new_path="gates show"),
+]
+
+
 __all__ = [
     "approve_command",
     "reject_command",
     "list_pending_command",
     "show_pending_command",
     "gates_group",
+    "APPROVAL_FLAT_ALIASES",
 ]

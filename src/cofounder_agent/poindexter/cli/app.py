@@ -7,13 +7,7 @@ import os
 
 import click
 
-from .approval import (
-    approve_command,
-    gates_group,
-    list_pending_command,
-    reject_command,
-    show_pending_command,
-)
+from .approval import APPROVAL_FLAT_ALIASES, gates_group
 from .auth import auth_group
 from .auto_publish import auto_publish_group
 from .backup import backup_group
@@ -28,16 +22,11 @@ from .migrate import migrate_group
 from .pipeline import pipeline_group
 from .posts import post_group, posts_group
 from .premium import premium_group
-from .publish_approval import (
-    approve_publish_command,
-    list_pending_publish_command,
-    reject_publish_command,
-    show_pending_publish_command,
-)
+from .publish_approval import PUBLISH_FLAT_ALIASES
 from .publishers import publishers_group
 from .qa_gates import qa_gates_group
 from .retention import retention_group
-from .schedule import publish_at_command, schedule_group
+from .schedule import SCHEDULE_FLAT_ALIASES, schedule_group
 from .settings import settings_group
 from .setup import setup_command
 from .skills import skills_group
@@ -126,29 +115,26 @@ main.add_command(webhooks_group, name="webhooks")
 main.add_command(qa_gates_group, name="qa-gates")
 main.add_command(stores_group, name="stores")
 main.add_command(schedule_group, name="schedule")
-# Single-post convenience shortcut: `poindexter publish-at <id> <when>`.
-# Lives at the top level so operators don't have to remember a
-# subcommand for the most common "schedule this one post for that time"
-# operation; the group commands cover the bulk + management surface.
-main.add_command(publish_at_command, name="publish-at")
 main.add_command(migrate_group, name="migrate")
 
-# HITL approval-gate operator commands (mid-pipeline approve/reject).
-main.add_command(approve_command)
-main.add_command(reject_command)
-main.add_command(list_pending_command)
-main.add_command(show_pending_command)
+# HITL approval-gate operator commands (mid-pipeline). The verbs live under
+# `poindexter gates {approve,reject,pending,show}`; gate toggles under
+# `gates {list,set}` (#1652). Single-post + publish-gate verbs live under
+# `schedule` (see the alias loop below).
 main.add_command(gates_group)
 
 # Interrupt()-paused pipeline operator commands (list-paused / status /
 # resume) — true LangGraph checkpoint resume (Glad-Labs/poindexter#363).
 main.add_command(pipeline_group, name="pipeline")
 
-# Publish-time approval-gate operator commands (post-scheduling).
-main.add_command(approve_publish_command)
-main.add_command(reject_publish_command)
-main.add_command(list_pending_publish_command)
-main.add_command(show_pending_publish_command)
+# Backcompat (#1652, sibling of epic #1340): the 9 former flat verbs
+# (approve / reject / list-pending / show-pending, their -publish siblings,
+# and publish-at) now live under the `gates` and `schedule` noun-groups. Keep
+# the old flat names callable as hidden, deprecated aliases so existing
+# operator scripts don't break — each prints a one-line deprecation notice to
+# stderr and delegates to its grouped command.
+for _flat_alias in (*APPROVAL_FLAT_ALIASES, *PUBLISH_FLAT_ALIASES, *SCHEDULE_FLAT_ALIASES):
+    main.add_command(_flat_alias)
 
 # Module-contributed CLI groups (Module v1 Phase 5). Each registered module
 # mounts its own subcommands via register_cli, so a private module's CLI

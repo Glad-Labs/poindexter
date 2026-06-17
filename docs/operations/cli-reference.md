@@ -14,26 +14,32 @@ consolidated reference.
 
 ## Quick reference
 
-| Command group | What it does                                                     |
-| ------------- | ---------------------------------------------------------------- |
-| `setup`       | First-run wizard — generates secrets, tests DB, writes bootstrap |
-| `memory`      | Query and write the shared pgvector memory store                 |
-| `tasks`       | Manage the content pipeline task queue                           |
-| `posts`       | Query and manage published/draft blog posts                      |
-| `settings`    | Read and write `app_settings` (DB-first config)                  |
-| `costs`       | Pipeline spending and operational metrics                        |
-| `vercel`      | Vercel deployment status via the REST API                        |
-| `premium`     | Manage Poindexter Pro subscription license                       |
-| `schedule`    | Queue scheduled publishes (batch, list, shift, clear)            |
-| `publish-at`  | Schedule a single approved post for a specific time              |
-| `topics`      | Topic-decision approval queue (list/show/approve/reject/propose) |
-| `approve`     | Clear any HITL gate by task id                                   |
-| `reject`      | Reject any HITL gate by task id                                  |
-| `gates`       | List + toggle HITL approval gates                                |
-| `migrate`     | Schema migration runner (status / up / down)                     |
+| Command group | What it does                                                                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `setup`       | First-run wizard — generates secrets, tests DB, writes bootstrap                                                       |
+| `memory`      | Query and write the shared pgvector memory store                                                                       |
+| `tasks`       | Manage the content pipeline task queue                                                                                 |
+| `posts`       | Query and manage published/draft blog posts                                                                            |
+| `settings`    | Read and write `app_settings` (DB-first config)                                                                        |
+| `costs`       | Pipeline spending and operational metrics                                                                              |
+| `vercel`      | Vercel deployment status via the REST API                                                                              |
+| `premium`     | Manage Poindexter Pro subscription license                                                                             |
+| `schedule`    | Scheduled-publish queue (batch/list/show/shift/clear/at) + publish-approval gate (approve/reject/pending/show-pending) |
+| `topics`      | Topic-decision approval queue (list/show/approve/reject/propose)                                                       |
+| `gates`       | HITL pipeline gates — approve/reject/pending/show + list/set toggles                                                   |
+| `migrate`     | Schema migration runner (status / up / down)                                                                           |
 
 Run `poindexter --help` for the top-level list and
 `poindexter <group> --help` for subcommands.
+
+> **Deprecated flat aliases (#1652).** The former top-level verbs
+> `approve` / `reject` / `list-pending` / `show-pending` (now under `gates`),
+> `approve-publish` / `reject-publish` / `list-pending-publish` /
+> `show-pending-publish` (now under `schedule`), `publish-at` (now
+> `schedule at`), and the singular `post` group (now `posts`) still work as
+> **hidden, deprecated aliases** — each prints a one-line deprecation notice to
+> stderr and delegates to its grouped command. Update scripts to the grouped
+> form; the aliases will be removed in a later cleanup.
 
 ---
 
@@ -416,7 +422,7 @@ poindexter topics approve abcd1234-5678-...
 poindexter topics approve abcd1234 --feedback "great angle for hardware niche"
 ```
 
-Alias for `poindexter approve <task_id> --gate topic_decision` with
+Alias for `poindexter gates approve <task_id> --gate topic_decision` with
 the gate name asserted explicitly so a misrouted task fails loudly.
 
 ### `topics reject <task_id> [--reason TEXT] [--json]`
@@ -514,14 +520,16 @@ CLI uses. Single source of truth: `services.approval_service` /
 
 ---
 
-## `schedule` and `publish-at`
+## `schedule`
 
 Operator interface for the scheduled-publishing queue
 ([Glad-Labs/poindexter#147][issue-147]). Poindexter already has a
 background loop (`services/scheduled_publisher.py`) that publishes
 posts whose `posts.published_at` slot has arrived and whose
 `status='scheduled'`. These commands populate, inspect, and rewrite
-that queue.
+that queue. The group also hosts the **publish-approval gate** verbs
+(`approve` / `reject` / `pending` / `show-pending`) for the post-scheduling
+HITL gate.
 
 [issue-147]: https://github.com/Glad-Labs/poindexter/issues/147
 
@@ -531,16 +539,17 @@ publish slot yet (`published_at IS NULL`). The batch command pulls
 the oldest-approved-first by default; pass `--ordered-by` to change
 the source ordering.
 
-### `publish-at <post_id> <when>`
+### `schedule at <post_id> <when>`
 
-Schedule a single post.
+Schedule a single post. (Formerly the top-level `publish-at`, which
+still works as a hidden deprecated alias.)
 
 ```bash
-poindexter publish-at 0fe7… "2026-04-28 09:00"
-poindexter publish-at 0fe7… --in 2h
-poindexter publish-at 0fe7… --in 7d
-poindexter publish-at 0fe7… "tomorrow 9am"
-poindexter publish-at 0fe7… "next monday 14:00"
+poindexter schedule at 0fe7… "2026-04-28 09:00"
+poindexter schedule at 0fe7… --in 2h
+poindexter schedule at 0fe7… --in 7d
+poindexter schedule at 0fe7… "tomorrow 9am"
+poindexter schedule at 0fe7… "next monday 14:00"
 ```
 
 Flags:
@@ -548,6 +557,22 @@ Flags:
 - `--in DUR` — relative scheduling (`30m`, `2h`, `1d`, `1h30m`).
 - `--force` — overwrite an existing schedule.
 - `--json` — machine-readable output.
+
+### `schedule approve` / `reject` / `pending` / `show-pending`
+
+Operate the final publish-approval gate on the `posts` table (the gate that
+fires _after_ scheduling). Formerly the top-level `approve-publish` /
+`reject-publish` / `list-pending-publish` / `show-pending-publish`, which
+still work as hidden deprecated aliases.
+
+```bash
+poindexter schedule pending                       # list posts at the gate
+poindexter schedule show-pending <post_id>        # gate state + artifact
+poindexter schedule approve <post_id> --feedback "ship it"
+poindexter schedule reject  <post_id> --reason "off-brand"
+```
+
+Enable the gate like any other: `poindexter gates set final_publish_approval on`.
 
 ### `schedule batch`
 

@@ -34,8 +34,10 @@ from typing import Any
 
 import click
 
+from poindexter.cli._aliases import deprecated_alias
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
+from poindexter.cli.schedule import schedule_group
 
 
 def _run(coro):
@@ -349,9 +351,42 @@ def show_pending_publish_command(post_id: str, json_output: bool) -> None:
             click.echo(f"    {k}: {v_str}")
 
 
+# ---------------------------------------------------------------------------
+# Consolidation (#1652, sibling of epic #1340): fold the flat publish-gate
+# verbs into the `schedule` group; keep the old top-level names as hidden,
+# deprecated aliases (registered on the root group by cli/app.py).
+# ---------------------------------------------------------------------------
+#
+# `show-pending-publish` maps to `schedule show-pending` (NOT a bare `show`) so
+# it doesn't clobber the existing `schedule show` schedule-detail command.
+
+schedule_group.add_command(approve_publish_command, name="approve")
+schedule_group.add_command(reject_publish_command, name="reject")
+schedule_group.add_command(list_pending_publish_command, name="pending")
+schedule_group.add_command(show_pending_publish_command, name="show-pending")
+
+PUBLISH_FLAT_ALIASES = [
+    deprecated_alias(
+        approve_publish_command, name="approve-publish", new_path="schedule approve",
+    ),
+    deprecated_alias(
+        reject_publish_command, name="reject-publish", new_path="schedule reject",
+    ),
+    deprecated_alias(
+        list_pending_publish_command,
+        name="list-pending-publish", new_path="schedule pending",
+    ),
+    deprecated_alias(
+        show_pending_publish_command,
+        name="show-pending-publish", new_path="schedule show-pending",
+    ),
+]
+
+
 __all__ = [
     "approve_publish_command",
     "reject_publish_command",
     "list_pending_publish_command",
     "show_pending_publish_command",
+    "PUBLISH_FLAT_ALIASES",
 ]
