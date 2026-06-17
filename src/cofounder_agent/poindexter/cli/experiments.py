@@ -3,9 +3,12 @@
 The CLI is the canonical operator surface for the variant-experiments
 harness landed in PR #699 (schema) + #702 (runner). See the design doc
 ``docs/architecture/2026-05-28-phase-1-variant-experiments-design.md``
-for the wider picture; this file is the operator-facing thin layer over
-the ``experiments`` + ``experiment_variants`` tables + the
-``experiment_variant_scorecard_v1`` view.
+for the wider picture; this file is the operator-facing thin adapter over
+``services.experiment_admin`` — which owns the SQL against the
+``experiments`` + ``experiment_variants`` tables + the
+``experiment_variant_scorecard_v1`` view — per the transport-adapter
+contract (#1340). The CLI opens the pool, calls the service, formats the
+result, and translates ``ExperimentAdminError`` into ``click.ClickException``.
 
 Subcommands:
 
@@ -18,7 +21,8 @@ Subcommands:
 - ``poindexter experiments conclude <key> --winner=L --note=...``
                                                              — mark concluded, record winner
 
-Design constraints enforced here:
+Design constraints (enforced by ``services.experiment_admin``, surfaced
+here as friendly CLI errors):
 
 - **One active experiment per niche** — ``activate`` checks the partial
   unique index from PR #699 in the application layer too so the operator
@@ -55,6 +59,7 @@ import json
 import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from services import experiment_admin
 
 # ---------------------------------------------------------------------------
 # Status / objective constants — kept in lockstep with the CHECK constraints
@@ -122,42 +127,11 @@ def experiments_list(
         import asyncpg
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            where = ["TRUE"]
-            args: list = []
-            if status:
-                args.append(status)
-                where.append(f"e.status = ${len(args)}")
-            if niche:
-                args.append(niche)
-                where.append(f"e.niche_slug = ${len(args)}")
-            sql = f"""
-            SELECT
-                e.key,
-                e.niche_slug,
-                e.status,
-                e.objective_function,
-                e.created_at,
-                e.activated_at,
-                e.concluded_at,
-                e.winner_variant_label,
-                (
-                    SELECT COUNT(*) FROM experiment_variants ev
-                    WHERE ev.experiment_id = e.id
-                ) AS variant_count,
-                (
-                    SELECT COUNT(*) FROM capability_outcomes co
-                    JOIN experiment_variants ev2 ON ev2.id = co.variant_id
-                    WHERE ev2.experiment_id = e.id
-                ) AS outcome_count
-            FROM experiments e
-            WHERE {' AND '.join(where)}
-            ORDER BY e.created_at DESC
-            """
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(sql, *args)
+            return await experiment_admin.list_experiments(
+                pool, status=status, niche=niche,
+            )
         finally:
             await pool.close()
-        return [dict(r) for r in rows]
 
     rows = asyncio.run(_impl())
 
@@ -221,34 +195,22 @@ def experiments_create(
     """
     async def _impl():
         import asyncpg
-
-        from services.niche_service import NicheService
-
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            n = await NicheService(pool).get_by_slug(niche_slug)
-            if not n:
-                raise click.ClickException(f"unknown niche: {niche_slug}")
-            try:
-                async with pool.acquire() as conn:
-                    row = await conn.fetchrow(
-                        """
-                        INSERT INTO experiments
-                            (key, niche_slug, description, objective_function)
-                        VALUES ($1, $2, $3, $4)
-                        RETURNING id::text AS id
-                        """,
-                        key, niche_slug, description, objective,
-                    )
-            except asyncpg.UniqueViolationError as exc:
-                raise click.ClickException(
-                    f"experiment {key!r} already exists (UNIQUE key violation)"
-                ) from exc
+            return await experiment_admin.create_experiment(
+                pool,
+                key=key,
+                niche_slug=niche_slug,
+                description=description,
+                objective=objective,
+            )
         finally:
             await pool.close()
-        return row["id"]
 
-    new_id = asyncio.run(_impl())
+    try:
+        new_id = asyncio.run(_impl())
+    except experiment_admin.ExperimentAdminError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(
         f"Created experiment {key!r} (id={new_id}, niche={niche_slug}, "
         f"objective={objective}, status=draft).\n"
@@ -340,42 +302,23 @@ def experiments_add_variant(
         import asyncpg
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            async with pool.acquire() as conn:
-                exp = await conn.fetchrow(
-                    "SELECT id::text AS id, status FROM experiments WHERE key = $1",
-                    key,
-                )
-                if exp is None:
-                    raise click.ClickException(f"unknown experiment: {key}")
-                if exp["status"] != "draft":
-                    raise click.ClickException(
-                        f"experiment {key!r} is {exp['status']!r}; "
-                        "only draft experiments can take new variants"
-                    )
-                try:
-                    row = await conn.fetchrow(
-                        """
-                        INSERT INTO experiment_variants (
-                            experiment_id, label, weight,
-                            prompt_template_key, prompt_template_version,
-                            writer_model, rag_config
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-                        RETURNING id::text AS id
-                        """,
-                        exp["id"], label, weight,
-                        prompt_template_key, prompt_template_version,
-                        writer_model, json.dumps(rag_config_parsed),
-                    )
-                except asyncpg.UniqueViolationError as exc:
-                    raise click.ClickException(
-                        f"variant label {label!r} already exists on "
-                        f"experiment {key!r}"
-                    ) from exc
+            return await experiment_admin.add_variant(
+                pool,
+                key=key,
+                label=label,
+                weight=weight,
+                prompt_template_key=prompt_template_key,
+                prompt_template_version=prompt_template_version,
+                writer_model=writer_model,
+                rag_config=rag_config_parsed,
+            )
         finally:
             await pool.close()
-        return row["id"]
 
-    new_id = asyncio.run(_impl())
+    try:
+        new_id = asyncio.run(_impl())
+    except experiment_admin.ExperimentAdminError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(
         f"Added variant {label!r} to {key!r} (id={new_id}, "
         f"model={writer_model or '<inherit>'}, "
@@ -415,58 +358,21 @@ def experiments_activate(key: str) -> None:
         import asyncpg
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            async with pool.acquire() as conn:
-                exp = await conn.fetchrow(
-                    """
-                    SELECT id::text AS id, status, niche_slug,
-                           (SELECT COUNT(*) FROM experiment_variants ev
-                            WHERE ev.experiment_id = e.id) AS variant_count
-                    FROM experiments e WHERE key = $1
-                    """,
-                    key,
-                )
-                if exp is None:
-                    raise click.ClickException(f"unknown experiment: {key}")
-                if exp["status"] != "draft":
-                    raise click.ClickException(
-                        f"experiment {key!r} is {exp['status']!r}; "
-                        "only draft experiments can be activated"
-                    )
-                if exp["variant_count"] < 2:
-                    raise click.ClickException(
-                        f"experiment {key!r} has only {exp['variant_count']} "
-                        "variant(s); need >=2 to activate "
-                        "(one-variant experiment is meaningless)"
-                    )
-                # Pre-flight the "one active per niche" rule with a friendly
-                # error before the UNIQUE index would surface as UniqueViolationError.
-                conflict = await conn.fetchval(
-                    """
-                    SELECT key FROM experiments
-                    WHERE niche_slug = $1 AND status = 'active'
-                    LIMIT 1
-                    """,
-                    exp["niche_slug"],
-                )
-                if conflict:
-                    raise click.ClickException(
-                        f"niche {exp['niche_slug']!r} already has an active "
-                        f"experiment: {conflict!r}. Conclude it first with "
-                        f"`poindexter experiments conclude {conflict} "
-                        "--winner=... --note=...`"
-                    )
-                await conn.execute(
-                    """
-                    UPDATE experiments
-                    SET status = 'active', activated_at = NOW()
-                    WHERE id = $1::uuid
-                    """,
-                    exp["id"],
-                )
+            await experiment_admin.activate_experiment(pool, key=key)
         finally:
             await pool.close()
 
-    asyncio.run(_impl())
+    try:
+        asyncio.run(_impl())
+    except experiment_admin.ActiveExperimentConflict as exc:
+        raise click.ClickException(
+            f"niche {exc.niche_slug!r} already has an active experiment: "
+            f"{exc.conflict_key!r}. Conclude it first with "
+            f"`poindexter experiments conclude {exc.conflict_key} "
+            "--winner=... --note=...`"
+        ) from exc
+    except experiment_admin.ExperimentAdminError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(
         f"Activated {key!r}. The runner will now sample its variants on "
         "the niche's tasks. Watch progress with "
@@ -504,45 +410,14 @@ def experiments_status(key: str, json_output: bool) -> None:
         import asyncpg
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            async with pool.acquire() as conn:
-                exp = await conn.fetchrow(
-                    """
-                    SELECT key, niche_slug, status, objective_function,
-                           description, created_at, activated_at,
-                           concluded_at, winner_variant_label,
-                           conclusion_note
-                    FROM experiments WHERE key = $1
-                    """,
-                    key,
-                )
-                if exp is None:
-                    raise click.ClickException(f"unknown experiment: {key}")
-                rows = await conn.fetch(
-                    """
-                    SELECT
-                        variant_label,
-                        variant_active,
-                        paused_at,
-                        paused_reason,
-                        posts_attempted,
-                        posts_approved,
-                        approval_rate_pct,
-                        avg_edit_distance_pct,
-                        avg_views_24h,
-                        avg_views_7d,
-                        avg_cost_per_post,
-                        total_cost
-                    FROM experiment_variant_scorecard_v1
-                    WHERE experiment_key = $1
-                    ORDER BY approval_rate_pct DESC NULLS LAST, variant_label
-                    """,
-                    key,
-                )
+            return await experiment_admin.get_scorecard(pool, key=key)
         finally:
             await pool.close()
-        return dict(exp), [dict(r) for r in rows]
 
-    exp, rows = asyncio.run(_impl())
+    try:
+        exp, rows = asyncio.run(_impl())
+    except experiment_admin.ExperimentAdminError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     if json_output:
         click.echo(
@@ -656,58 +531,16 @@ def experiments_conclude(key: str, winner: str, note: str) -> None:
         import asyncpg
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            async with pool.acquire() as conn:
-                exp = await conn.fetchrow(
-                    """
-                    SELECT id::text AS id, status, niche_slug
-                    FROM experiments WHERE key = $1
-                    """,
-                    key,
-                )
-                if exp is None:
-                    raise click.ClickException(f"unknown experiment: {key}")
-                if exp["status"] == "concluded":
-                    raise click.ClickException(
-                        f"experiment {key!r} is already concluded"
-                    )
-                variant = await conn.fetchrow(
-                    """
-                    SELECT label, writer_model,
-                           prompt_template_key, prompt_template_version
-                    FROM experiment_variants
-                    WHERE experiment_id = $1::uuid AND label = $2
-                    """,
-                    exp["id"], winner,
-                )
-                if variant is None:
-                    labels = await conn.fetch(
-                        """
-                        SELECT label FROM experiment_variants
-                        WHERE experiment_id = $1::uuid ORDER BY label
-                        """,
-                        exp["id"],
-                    )
-                    raise click.ClickException(
-                        f"--winner={winner!r} does not match any variant on "
-                        f"{key!r}. Defined variants: "
-                        f"{[r['label'] for r in labels]}"
-                    )
-                await conn.execute(
-                    """
-                    UPDATE experiments
-                    SET status = 'concluded',
-                        concluded_at = NOW(),
-                        winner_variant_label = $2,
-                        conclusion_note = $3
-                    WHERE id = $1::uuid
-                    """,
-                    exp["id"], winner, note,
-                )
+            return await experiment_admin.conclude_experiment(
+                pool, key=key, winner=winner, note=note,
+            )
         finally:
             await pool.close()
-        return dict(exp), dict(variant)
 
-    exp, variant = asyncio.run(_impl())
+    try:
+        exp, variant = asyncio.run(_impl())
+    except experiment_admin.ExperimentAdminError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(
         f"Concluded {key!r} (niche={exp['niche_slug']}). "
         f"Winner: {winner!r}."

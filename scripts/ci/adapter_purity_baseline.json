@@ -4,7 +4,6 @@
   "src/cofounder_agent/poindexter/cli/auto_publish.py": 6,
   "src/cofounder_agent/poindexter/cli/backup.py": 3,
   "src/cofounder_agent/poindexter/cli/dev_diary.py": 3,
-  "src/cofounder_agent/poindexter/cli/experiments.py": 12,
   "src/cofounder_agent/poindexter/cli/integrations.py": 1,
   "src/cofounder_agent/poindexter/cli/memory.py": 2,
   "src/cofounder_agent/poindexter/cli/pipeline.py": 1,
