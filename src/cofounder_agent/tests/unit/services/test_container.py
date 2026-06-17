@@ -291,3 +291,52 @@ class TestBuildContainer:
         """Passing pool=None is always a programming error — fail loud."""
         with pytest.raises(RuntimeError, match="pool=None"):
             await build_container(None)
+
+    async def test_build_container_default_creates_fresh_instance(self):
+        """Without ``site_config=``, the container owns a brand-new
+        SiteConfig (the legacy CLI / brain / subprocess path)."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+        existing = SiteConfig(initial_config={"site_name": "Caller Owned"})
+        container = await build_container(pool)
+        # The container did NOT adopt some unrelated instance.
+        assert container.site_config is not existing
+
+    async def test_build_container_reuses_passed_site_config(self):
+        """When the caller passes its already-loaded SiteConfig, the
+        container holds the SAME object — the worker hot-reload fix.
+
+        This is the invariant that keeps the periodic ``reload_site_config``
+        job (which refreshes the lifespan instance) visible to route
+        handlers (which read ``container.site_config``).
+        """
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[{"key": "enforce_niche_allowlist", "value": "true"}]
+        )
+        _site_cfg = SiteConfig()
+        await _site_cfg.load(pool)
+        container = await build_container(pool, site_config=_site_cfg)
+        assert container.site_config is _site_cfg
+
+    async def test_build_container_refreshes_reused_site_config_from_db(self):
+        """Reusing an instance still runs the fail-loud probe and loads
+        its rows into that instance (so a stale caller instance is
+        brought current at build time)."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(
+            return_value=[{"key": "site_name", "value": "Fresh From DB"}]
+        )
+        stale = SiteConfig(initial_config={"site_name": "Stale"})
+        container = await build_container(pool, site_config=stale)
+        assert container.site_config is stale
+        assert stale.get("site_name") == "Fresh From DB"
+        assert stale.is_loaded is True
+
+    async def test_build_container_reuse_preserves_fail_loud(self):
+        """Passing a site_config does NOT bypass the fail-loud probe —
+        a query failure still raises (feedback_no_silent_defaults)."""
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("connection reset"))
+        with pytest.raises(RuntimeError, match="connection reset"):
+            await build_container(pool, site_config=SiteConfig())

@@ -38,8 +38,16 @@ class ReloadSiteConfigJob:
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         # The plugin scheduler seeds the lifespan-bound SiteConfig instance
         # at ``config["_site_config"]`` (per CLAUDE.md "DI seam" pattern).
-        # That's the SAME instance every wired module reads from, so
-        # calling .reload() on it refreshes the cache for every consumer.
+        # In the worker that instance (``main.py``'s ``_site_cfg``) is the
+        # SAME object the FastAPI request path reads: ``main.py`` passes it
+        # to ``build_container(..., site_config=_site_cfg)``, so
+        # ``app.state.container.site_config`` — what
+        # ``get_site_config_dependency`` returns to route handlers — IS this
+        # object. Calling ``.reload()`` here therefore refreshes the cache
+        # for routes, services, and the wired modules alike, within one
+        # cycle. (Before that wiring, the container held a separate
+        # SiteConfig and runtime changes never reached routes until a
+        # restart — the 2026-06-17 hot-reload gap.)
         site_config = config.get("_site_config")
         if site_config is None:
             return JobResult(
