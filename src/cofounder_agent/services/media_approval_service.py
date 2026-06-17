@@ -529,7 +529,7 @@ async def record_dispatched(
 
     ``success=False`` records the failed attempt so operators can see
     retry history, but does NOT set ``dispatched_at`` — the row remains
-    eligible for re-dispatch on the next BackfillVideosJob cycle.
+    eligible for re-dispatch on the next media_distribute cycle.
     """
     _validate_medium(medium)
     if success:
@@ -562,7 +562,7 @@ async def list_approved_undispatched(
 ) -> list[dict[str, Any]]:
     """Return approved rows that have never been successfully dispatched.
 
-    Used by BackfillVideosJob to find videos approved before dispatch
+    Used by media_distribute to find videos approved before dispatch
     tracking was introduced (poindexter#558), or for any retry pass
     on transiently-failed uploads.
 

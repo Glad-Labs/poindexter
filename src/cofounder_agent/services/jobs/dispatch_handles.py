@@ -1,22 +1,22 @@
-"""Shared YouTube external-handle capture+persist for the two video-dispatch jobs.
+"""Shared YouTube external-handle capture+persist for video dispatch.
 
-Both ``media_distribute`` (asset-keyed) and ``backfill_videos`` (post-keyed)
-deliver Gate-2-approved videos to the enabled ``publishing_adapters`` and, on a
-successful upload, capture the platform's external handles: the video id is
-merged into ``media_assets.platform_video_ids`` (a non-clobbering jsonb ``||``
-merge) and a ``pipeline_distributions`` row is upserted (``status='published'``)
-for observability + re-upload dedupe. After #1584 / #1601 (the #1596 incident
-remediation) both jobs carried byte-identical copies of those pieces; this module
-single-sources them: the :class:`PlatformDispatchResult` value type, the two SQL
-statements, and the per-platform merge+insert loop (:func:`persist_platform_handles`).
+``media_distribute`` (asset-keyed) delivers Gate-2-approved videos to the enabled
+``publishing_adapters`` and, on a successful upload, captures the platform's
+external handles: the video id is merged into ``media_assets.platform_video_ids``
+(a non-clobbering jsonb ``||`` merge) and a ``pipeline_distributions`` row is
+upserted (``status='published'``) for observability + re-upload dedupe. This
+module single-sources those pieces: the :class:`PlatformDispatchResult` value
+type, the two SQL statements, and the per-platform merge+insert loop
+(:func:`persist_platform_handles`).
 
-The two jobs keep their own thin ``_persist_dispatch_result`` wrappers because
-they obtain ``(asset_id, task_id)`` differently — ``media_distribute`` already has
-them on its approved-undispatched row, while post-keyed ``backfill_videos``
-resolves them first — and because each stamps ``record_dispatched`` in its own
-transaction. :func:`persist_platform_handles` therefore does the merge+insert loop
-ONLY (no ``record_dispatched``); the caller owns the transaction and the dispatch
-stamp.
+(Originally extracted after #1584 / #1601 to de-duplicate byte-identical copies
+shared with the post-keyed ``backfill_videos`` disk-scan job; ``backfill_videos``
+was retired in #1460, leaving ``media_distribute`` the sole caller.)
+
+The caller keeps its own thin ``_persist_dispatch_result`` wrapper because it
+stamps ``record_dispatched`` in its own transaction. :func:`persist_platform_handles`
+therefore does the merge+insert loop ONLY (no ``record_dispatched``); the caller
+owns the transaction and the dispatch stamp.
 """
 
 from __future__ import annotations

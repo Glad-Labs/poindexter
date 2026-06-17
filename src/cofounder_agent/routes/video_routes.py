@@ -62,7 +62,7 @@ async def video_feed(
     (task-keyed) episodes surface the same as legacy post-keyed ones. Two
     stacked gates keep un-reviewed video off the public surface:
 
-    1. ``'video'/'video_long' = ANY(media_to_generate)`` — the niche-policy
+    1. ``'video' = ANY(media_to_generate)`` — the niche-policy
        seam (``feedback_filter_on_seams_not_slugs``). dev_diary's policy is
        ``{}``, excluding those posts even if a stray asset exists.
     2. ``media_approvals.status='approved'`` (medium='video') — the
@@ -71,10 +71,10 @@ async def video_feed(
        reaches the feed; the fix for a missing episode is to approve the row
        (``poindexter media approve <id> video``), not to strip the gate.
 
-    ``media_approvals`` uses ``video`` as the long-form medium; the matching
-    ``media_assets`` *types* are ``video`` (legacy) and ``video_long``
-    (Stage-2) — see ``media_distribute._TYPE_TO_MEDIUM``. Short-form
-    (``video_short``) is dispatched to YouTube Shorts, not this RSS feed.
+    ``media_approvals`` uses ``video`` as the long-form medium; post-#1460 the
+    matching ``media_assets`` *type* is identically ``video`` (the legacy
+    ``video_long`` type was collapsed in). Short-form (``video_short``) is
+    dispatched to YouTube Shorts, not this RSS feed.
     ``DISTINCT ON (p.id)`` collapses multiple video assets per post to the
     newest.
     """
@@ -95,14 +95,13 @@ async def video_feed(
                     FROM posts p
                     JOIN media_assets mas
                       ON mas.post_id = p.id
-                     AND mas.type IN ('video', 'video_long')
+                     AND mas.type = 'video'
                     JOIN media_approvals ma
                       ON ma.post_id = p.id
                      AND ma.medium = 'video'
                      AND ma.status = 'approved'
                     WHERE p.status = 'published'
-                      AND ('video' = ANY(media_to_generate)
-                           OR 'video_long' = ANY(media_to_generate))
+                      AND 'video' = ANY(media_to_generate)
                     ORDER BY p.id, mas.created_at DESC NULLS LAST
                     """,
                 )

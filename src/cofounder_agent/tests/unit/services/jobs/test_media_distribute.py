@@ -1,6 +1,6 @@
 """Unit tests for MediaDistributeJob — the Stage-2 link + Gate-2-seed pass.
 
-The media_pipeline persists task-keyed ``media_assets`` rows (video_long /
+The media_pipeline persists task-keyed ``media_assets`` rows (video /
 video_short) with ``post_id=NULL`` (the post may not exist at render time). This
 job is the bridge to the post-keyed Gate-2 world: once the post is published
 (resolvable via ``posts.metadata->>'pipeline_task_id'``), it back-stamps
@@ -13,7 +13,7 @@ switch), so it's scheduled but dormant in prod until the operator opts in.
 """
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -71,9 +71,19 @@ class _FakePool:
     ``acquire()`` yields a shared ``conn`` so the transactional persist pass
     (``_persist_dispatch_result``) is observable via ``pool.conn.execute``."""
 
-    def __init__(self, unlinked=None, approved=None, post_id="p1"):
+    def __init__(self, unlinked=None, approved=None, post_id="p1", existing_video=None):
         self.fetch = AsyncMock(side_effect=[list(unlinked or []), list(approved or [])])
-        self.fetchval = AsyncMock(return_value=post_id)
+        self._post_id = post_id
+        self._existing_video = existing_video
+
+        async def _fetchval(sql, *args):
+            # _RESOLVE_POST_SQL resolves the post id; _EXISTING_VIDEO_SQL is the
+            # link-time guard checking for a pre-existing video-family asset.
+            if "pipeline_task_id" in sql:
+                return self._post_id
+            return self._existing_video
+
+        self.fetchval = AsyncMock(side_effect=_fetchval)
         self.execute = AsyncMock(return_value="UPDATE 1")
         self.conn = _FakeConn()
 
@@ -84,7 +94,7 @@ class _FakePool:
 @pytest.mark.asyncio
 async def test_dormant_when_flag_off():
     job = MediaDistributeJob()
-    pool = _FakePool([{"id": "a1", "task_id": "t", "type": "video_long"}])
+    pool = _FakePool([{"id": "a1", "task_id": "t", "type": "video"}])
     out = await job.run(pool, {"_site_config": _sc()})
     assert out.ok
     assert out.changes_made == 0
@@ -114,7 +124,7 @@ async def test_links_assets_and_seeds_gate2_approvals():
     job = MediaDistributeJob()
     pool = _FakePool(
         [
-            {"id": "a-long", "task_id": "abc", "type": "video_long"},
+            {"id": "a-long", "task_id": "abc", "type": "video"},
             {"id": "a-short", "task_id": "abc", "type": "video_short"},
         ],
         post_id="post-1",
@@ -134,13 +144,41 @@ async def test_links_assets_and_seeds_gate2_approvals():
         assert c.args[1] == "post-1"
 
 
+def test_type_to_medium_is_identity():
+    assert md._TYPE_TO_MEDIUM == {"video": "video", "video_short": "video_short"}
+
+
+@pytest.mark.asyncio
+async def test_link_skips_when_post_already_has_video_asset():
+    """A second task-keyed render for a post that already has a video asset must
+    NOT be linked (would violate the unique guard / double the row) — skip + finding."""
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        [{"id": "a-dup", "task_id": "abc", "type": "video"}],
+        post_id="post-1",
+        existing_video=1,  # _EXISTING_VIDEO_SQL → truthy: post already has a video asset
+    )
+    findings = []
+    pending = AsyncMock(return_value="pending")
+    with patch.object(md, "record_pending", pending), patch.object(
+        md, "emit_finding", Mock(side_effect=lambda **kw: findings.append(kw))
+    ):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    pending.assert_not_called()  # no second Gate-2 row seeded
+    pool.execute.assert_not_called()  # no back-stamp for the dup render
+    assert out.changes_made == 0
+    assert findings and findings[0]["kind"] == "duplicate_video_asset"
+
+
 @pytest.mark.asyncio
 async def test_skips_asset_with_no_published_post():
     """No post resolves from the task seam yet (not published) → leave the asset
     unlinked, seed nothing, try again next cycle."""
     job = MediaDistributeJob()
     pool = _FakePool(
-        [{"id": "a1", "task_id": "orphan", "type": "video_long"}], post_id=None
+        [{"id": "a1", "task_id": "orphan", "type": "video"}], post_id=None
     )
     pending = AsyncMock()
     with patch.object(md, "record_pending", pending):
@@ -158,7 +196,7 @@ async def test_link_failure_is_best_effort():
     job = MediaDistributeJob()
     pool = _FakePool(
         [
-            {"id": "a1", "task_id": "abc", "type": "video_long"},
+            {"id": "a1", "task_id": "abc", "type": "video"},
             {"id": "a2", "task_id": "def", "type": "video_short"},
         ],
         post_id="post-1",

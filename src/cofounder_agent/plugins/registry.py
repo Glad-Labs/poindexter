@@ -756,15 +756,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
         ("jobs", "services.jobs.regenerate_stock_images", "RegenerateStockImagesJob"),
         ("jobs", "services.jobs.collapse_old_embeddings", "CollapseOldEmbeddingsJob"),
-        # Media backfill jobs — same finding #189 root cause. PR #482
-        # fixed their slug-hack filter to use ``posts.media_to_generate``
-        # but they're never scheduled because their entry_points in
-        # pyproject.toml never made it into this imperative list. Without
-        # them, no derived media (podcasts, videos) is ever produced for
-        # already-published posts. The 2026-05-20 audit caught this:
-        # 0 audit_log rows from either job, ever.
-        ("jobs", "services.jobs.backfill_podcasts", "BackfillPodcastsJob"),
-        ("jobs", "services.jobs.backfill_videos", "BackfillVideosJob"),
+        # (backfill_podcasts / backfill_videos removed #1460 — subsumed by
+        # media_distribute (video) + the podcast lane / reconciliation
+        # approval-seed (podcast); the disk-scan producers are retired.)
         # Stage-2 trigger (#689 Plan 7): runs media_pipeline for Gate-1-approved
         # pieces that have persisted Stage-1 scripts. Scheduled but DORMANT —
         # gated on ``media_pipeline_trigger_enabled`` (default off), so it is a

@@ -16,7 +16,7 @@ record, so cleanup/retention/cost-attribution missed them.
 Schema notes (matching migrations 0057 + 0096):
 
 - ``type`` is the asset family. Conventions in use across the codebase:
-  ``video_long``, ``video_short``, ``podcast``, ``featured_image``,
+  ``video``, ``video_short``, ``podcast``, ``featured_image``,
   ``inline_image``.
 - ``source`` is the human-facing pipeline label
   (``"pipeline"``, ``"backfill"``, ``"manual"``).
@@ -97,7 +97,7 @@ async def record_media_asset(
             after the post is renamed/regenerated. Pre-2026-05-20 rows
             have ``task_id=NULL`` for this column and are orphans
             (see Glad-Labs/glad-labs-stack#193).
-        asset_type: One of ``video_long``, ``video_short``, ``podcast``,
+        asset_type: One of ``video``, ``video_short``, ``podcast``,
             ``featured_image``, ``inline_image``. Stored verbatim in
             ``media_assets.type``.
         storage_path: Absolute local path to the file on disk. Empty
@@ -133,10 +133,20 @@ async def record_media_asset(
     if not mime_type:
         mime_type = _DEFAULT_MIME_TYPES.get(asset_type, "application/octet-stream")
 
+    # Recurrence-safe video producers (#1460): a video / video_short row with a
+    # post_id upserts under the (post_id, type) unique guard so a re-stamp updates
+    # the existing row rather than raising. Task-keyed renders (post_id=None) and
+    # images/podcast keep the plain INSERT — see _VIDEO_UPSERT_CONFLICT.
+    conflict = (
+        _VIDEO_UPSERT_CONFLICT
+        if (post_id is not None and asset_type in ("video", "video_short"))
+        else ""
+    )
+
     try:
         async with pool.acquire() as conn:
             row_id = await conn.fetchval(
-                """
+                f"""
                 INSERT INTO media_assets (
                     type, source, storage_provider, url, storage_path,
                     metadata, post_id, task_id, provider_plugin,
@@ -147,7 +157,7 @@ async def record_media_asset(
                     $6::jsonb, $7, $8, $9,
                     $10, $11, $12, $13,
                     $14, $15, $16
-                )
+                ){conflict}
                 RETURNING id
                 """,
                 asset_type,
@@ -177,7 +187,6 @@ async def record_media_asset(
 
 
 _DEFAULT_MIME_TYPES = {
-    "video_long": "video/mp4",
     "video_short": "video/mp4",
     "video": "video/mp4",
     "podcast": "audio/mpeg",
@@ -187,6 +196,27 @@ _DEFAULT_MIME_TYPES = {
     "image_featured": "image/jpeg",
     "image": "image/jpeg",
 }
+
+
+# ON CONFLICT clause appended to the media_assets INSERT for video-family rows
+# that carry a post_id (#1460). The (post_id, type) target + WHERE predicate MUST
+# stay identical to the partial index uniq_media_assets_post_video_type so
+# Postgres conflict inference resolves it; DO UPDATE refreshes the physical-file
+# attributes (a re-stamp of the same logical asset) while preserving the original
+# provenance (source / provider_plugin / cost). updated_at is bumped manually —
+# same pattern as media_distribute._LINK_SQL.
+_VIDEO_UPSERT_CONFLICT = (
+    " ON CONFLICT (post_id, type) "
+    "WHERE post_id IS NOT NULL AND type IN ('video', 'video_short') "
+    "DO UPDATE SET "
+    "url = EXCLUDED.url, "
+    "storage_path = EXCLUDED.storage_path, "
+    "file_size_bytes = EXCLUDED.file_size_bytes, "
+    "width = EXCLUDED.width, "
+    "height = EXCLUDED.height, "
+    "duration_ms = EXCLUDED.duration_ms, "
+    "updated_at = NOW()"
+)
 
 
 # ---------------------------------------------------------------------------

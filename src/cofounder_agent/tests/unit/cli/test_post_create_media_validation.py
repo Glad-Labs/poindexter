@@ -176,3 +176,10 @@ class TestUnknownMediaFailsLoud:
         assert "viddeo" in combined
         for name in CANONICAL_MEDIA_NAMES:
             assert name in combined
+
+
+def test_canonical_media_names_drops_video_long():
+    """#1460: the type-valued video_long is collapsed into video. The CLI's
+    accepted-media set must not offer it any more."""
+    assert "video_long" not in CANONICAL_MEDIA_NAMES
+    assert CANONICAL_MEDIA_NAMES == ("podcast", "video", "video_short")

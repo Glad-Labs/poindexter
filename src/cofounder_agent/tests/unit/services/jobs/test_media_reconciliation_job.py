@@ -26,6 +26,7 @@ import httpx
 import pytest
 
 from services.jobs.media_reconciliation import MediaReconciliationJob
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -151,44 +152,46 @@ class TestMediaReconciliation:
         assert "in sync" in result.detail
         assert result.metrics["missing_podcast"] == 0
         assert result.metrics["missing_video"] == 0
-        # Rows already present → no stamp writes at all.
+        # Podcast row already present → no stamp writes; video rows present →
+        # video_missing=False → no re-dispatch. So no DB writes at all.
         assert result.metrics["stamped_podcast"] == 0
-        assert result.metrics["stamped_video"] == 0
         assert conn.execute.await_count == 0
         emit_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_files_present_rows_absent_get_stamped_no_regen(self):
-        """#560 core: files ARE on R2 (HEAD 200) but no media_assets rows
-        exist. Job MUST stamp a podcast + video row per post WITHOUT
-        regenerating anything and WITHOUT emitting a drift finding.
+        """#560 core: podcast files ARE on R2 (HEAD 200) but no media_assets
+        rows exist. Job MUST stamp a podcast row per post WITHOUT regenerating
+        anything and WITHOUT emitting a drift finding.
+
+        Post-#1460 video is no longer R2-reconciled (it's produced task-keyed by
+        Stage-2 and back-stamped at distribution), so these posts opt into
+        ``podcast`` only — the row-stamp pass is a podcast-only concern now.
         """
-        # No existing_assets → every (post, type) row is absent.
-        pool, conn = _make_pool([_post(id_="old1"), _post(id_="old2")])
+        # No existing_assets → the podcast (post, type) row is absent.
+        pool, conn = _make_pool([
+            _post(id_="old1", media_to_generate=["podcast"]),
+            _post(id_="old2", media_to_generate=["podcast"]),
+        ])
         with _patch_head(podcast_status=200, video_status=200), \
              patch(
                  "services.podcast_service.generate_podcast_episode",
              ) as gen_pod, \
-             patch(
-                 "services.video_service.generate_video_for_post",
-             ) as gen_vid, \
              patch(
                  "services.jobs.media_reconciliation.emit_finding"
              ) as emit_mock:
             result = await MediaReconciliationJob().run(pool, config={})
         assert result.ok is True
         assert "in sync" in result.detail
-        # 2 posts × (podcast + video) = 4 stamps.
+        # 2 posts × podcast = 2 stamps.
         assert result.metrics["stamped_podcast"] == 2
-        assert result.metrics["stamped_video"] == 2
-        assert result.changes_made == 4
+        assert result.changes_made == 2
         # No regen, no finding — the cheap pass handled everything.
         gen_pod.assert_not_called()
-        gen_vid.assert_not_called()
         emit_mock.assert_not_called()
         # Each stamp is UPDATE-then-INSERT (mock execute returns None so
-        # the INSERT branch fires): 4 stamps × 2 = 8 execute calls.
-        assert conn.execute.await_count == 8
+        # the INSERT branch fires): 2 stamps × 2 = 4 execute calls.
+        assert conn.execute.await_count == 4
         # The stamped URLs follow the deterministic R2 key pattern.
         podcast_inserts = [
             c for c in conn.execute.await_args_list
@@ -227,7 +230,7 @@ class TestMediaReconciliation:
         regen the podcast, stamp posts.podcast_url, and emit a
         warning-severity finding.
         """
-        pool, conn = _make_pool([_post(id_="p1")])
+        pool, conn = _make_pool([_post(id_="p1", media_to_generate=["podcast"])])
         # Stub the regen path — generate_podcast_episode is fire-and-
         # forget (returns None) and the R2UploadService stub returns a
         # URL on success.
@@ -277,8 +280,6 @@ class TestMediaReconciliation:
         assert len(podcast_inserts) == 1
         assert podcast_inserts[0].args[1] == "p1"
         assert podcast_inserts[0].args[3] == "https://r2.test/podcast/v2/p1.mp3"
-        # The video row was stamped by the cheap file-present pass.
-        assert result.metrics["stamped_video"] == 1
         # Finding emitted with warning severity (regen succeeded).
         emit_mock.assert_called_once()
         kwargs = emit_mock.call_args.kwargs
@@ -286,55 +287,9 @@ class TestMediaReconciliation:
         assert kwargs["kind"] == "media_drift"
 
     @pytest.mark.asyncio
-    async def test_missing_video_triggers_regen(self):
-        """Video missing → generate_video_for_post + upload + stamp."""
-        pool, conn = _make_pool([_post(id_="p2")])
-
-        video_result = MagicMock()
-        video_result.success = True
-
-        r2 = MagicMock()
-        upload_mock = AsyncMock(return_value="https://r2.test/video/p2.mp4")
-        r2.upload_video_episode = upload_mock
-        sc = MagicMock()
-        sc.get.side_effect = lambda k, d="": d
-        with _patch_head(podcast_status=200, video_status=404), \
-             patch(
-                 "services.video_service.generate_video_for_post",
-                 new=AsyncMock(return_value=video_result),
-             ) as gen_mock, \
-             patch(
-                 "services.r2_upload_service.R2UploadService", return_value=r2,
-             ), \
-             patch(
-                 "services.jobs.media_reconciliation.emit_finding"
-             ):
-            result = await MediaReconciliationJob().run(
-                pool, config={"_site_config": sc},
-            )
-
-        assert result.ok is True
-        assert result.metrics["regen_video_ok"] == 1
-        gen_mock.assert_awaited_once_with(
-            "p2", "A title", "Body markdown.", site_config=sc,
-        )
-        upload_mock.assert_awaited_once_with("p2")
-        # Video row written by the regen path (UPDATE-then-INSERT). The
-        # podcast row (HEAD 200, no existing row) is stamped by the cheap
-        # file-present pass — filter to the video writes here.
-        video_inserts = [
-            c for c in conn.execute.await_args_list
-            if "INSERT INTO media_assets" in c.args[0] and c.args[2] == "video"
-        ]
-        assert len(video_inserts) == 1
-        assert video_inserts[0].args[3] == "https://r2.test/video/p2.mp4"
-        # The podcast row was stamped by the file-present pass.
-        assert result.metrics["stamped_podcast"] == 1
-
-    @pytest.mark.asyncio
     async def test_regen_upload_failure_escalates_to_critical(self):
         """Upload returns None → regen failed; finding MUST be critical."""
-        pool, _ = _make_pool([_post(id_="p3")])
+        pool, _ = _make_pool([_post(id_="p3", media_to_generate=["podcast"])])
         r2 = MagicMock()
         r2.upload_podcast_episode = AsyncMock(return_value=None)
         sc = MagicMock()
@@ -361,7 +316,7 @@ class TestMediaReconciliation:
     @pytest.mark.asyncio
     async def test_per_cycle_cap_limits_regen_count(self):
         """Backlog of 10 missing podcasts but cap=2: only two get regen'd."""
-        rows = [_post(id_=f"p{i}") for i in range(10)]
+        rows = [_post(id_=f"p{i}", media_to_generate=["podcast"]) for i in range(10)]
         pool, _ = _make_pool(rows)
         gen_calls: list[str] = []
 
@@ -406,6 +361,7 @@ class TestMediaReconciliation:
         old = _post(
             id_="ancient",
             published_at=datetime.now(timezone.utc) - timedelta(days=400),
+            media_to_generate=["podcast"],
         )
         pool, _ = _make_pool([old])
         gen_calls: list[str] = []
@@ -436,9 +392,6 @@ class TestMediaReconciliation:
         assert result.metrics["regen_podcast_ok"] == 0
         assert result.metrics["regen_podcast_fail"] == 0
         assert gen_calls == []
-        # The video file (HEAD 200) still gets its row stamped regardless
-        # of age — the cheap pass is unbounded.
-        assert result.metrics["stamped_video"] == 1
         emit_mock.assert_called_once()
 
     @pytest.mark.asyncio
@@ -446,7 +399,7 @@ class TestMediaReconciliation:
         """Generation path raising must NOT crash the job — it counts as
         a failure and contributes to the critical-severity escalation.
         """
-        pool, _ = _make_pool([_post(id_="p_boom")])
+        pool, _ = _make_pool([_post(id_="p_boom", media_to_generate=["podcast"])])
         r2 = MagicMock()
         r2.upload_podcast_episode = AsyncMock(return_value=None)
         sc = MagicMock()
@@ -727,65 +680,6 @@ class TestMediaToGenerateFilter:
         assert out["podcast_missing"] is False  # 200 means present.
         assert out["video_missing"] is False  # Not requested → not missing.
 
-    @pytest.mark.asyncio
-    async def test_stage2_video_asset_demotes_regen(self):
-        """Regression: Stage-2 video assets live at ``{task_id}.mp4``
-        locally, NOT at R2's ``{post_id}.mp4`` path.  The R2 HEAD check
-        therefore returns 404 even though the asset was generated.
-        The reconciliation regen pass MUST NOT trigger ``_regen_video``
-        for posts that already have a ``media_assets`` row of type
-        ``video_long`` or ``video_short`` — doing so would bypass all
-        Stage-2 quality gates and produce a competing R2 asset.
-
-        (Plan 8 / #689 — reconciliation watchdog demotion)
-        """
-        post = _post(id_="stage2-post", published_at=datetime.now(timezone.utc))
-        # media_assets row already exists (Stage-2 already ran).
-        existing = [{"post_id": "stage2-post", "type": "video_long"}]
-        pool, conn = _make_pool([post], existing_assets=existing)
-
-        # R2 returns 404 for video — simulates Stage-2 asset not on R2.
-        with _patch_head(podcast_status=200, video_status=404):
-            with patch.object(
-                MediaReconciliationJob,
-                "_regen_video",
-                new_callable=AsyncMock,
-            ) as mock_regen, patch(
-                "services.jobs.media_reconciliation.emit_finding",
-            ):
-                result = await MediaReconciliationJob().run(pool, config={})
-
-        # The regen must NOT have been called — Stage-2 owns this asset.
-        mock_regen.assert_not_awaited()
-        # Job is still ok (the finding is advisory).
-        assert result.ok is True
-
-    @pytest.mark.asyncio
-    async def test_legacy_video_asset_missing_triggers_regen(self):
-        """Counterpart to ``test_stage2_video_asset_demotes_regen``.
-        A post with NO ``media_assets`` row and a 404 on R2 MUST still
-        trigger ``_regen_video`` — the legacy regen path is the safety
-        net for pre-Stage-2 posts.
-        """
-        post = _post(id_="legacy-post", published_at=datetime.now(timezone.utc))
-        # No media_assets row (pre-Stage-2 post).
-        pool, _ = _make_pool([post], existing_assets=[])
-
-        with _patch_head(podcast_status=200, video_status=404):
-            with patch.object(
-                MediaReconciliationJob,
-                "_regen_video",
-                new_callable=AsyncMock,
-                return_value=True,
-            ) as mock_regen, patch(
-                "services.jobs.media_reconciliation.emit_finding",
-            ):
-                await MediaReconciliationJob().run(pool, config={})
-
-        # Legacy post → regen MUST fire.
-        mock_regen.assert_awaited_once()
-
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestRecordMediaAssetSeedsApprovalGate:
@@ -872,3 +766,57 @@ class TestRecordMediaAssetSeedsApprovalGate:
                 url="https://r2.test/podcast/v2/post-4.mp3",
             )
         rp.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestVideoRedispatch:
+    """#1460: video drift self-heals by re-dispatching Stage-2 — clearing the
+    source task's media_pipeline_dispatched_at, capped by
+    media_pipeline_redispatch_count — NOT by regenerating video directly. The
+    direct _regen_video path is gone; the pipeline is the sole video producer.
+    """
+
+    class _RedispatchPool:
+        """Minimal pool double for _redispatch_video: fetchrow resolves the task
+        row; execute returns a command tag."""
+
+        def __init__(self, task_row, exec_tag="UPDATE 1"):
+            self._task_row = task_row
+            self.execute = AsyncMock(return_value=exec_tag)
+
+        async def fetchrow(self, *_args):
+            return self._task_row
+
+    async def test_redispatch_video_clears_marker_under_cap(self):
+        """Resolvable task below the cap → clear the marker (UPDATE 1) → True."""
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "3"})
+        pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 0})
+        ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is True
+        pool.execute.assert_awaited_once()
+
+    async def test_redispatch_video_respects_attempt_cap(self):
+        """count >= cap → do NOT clear the marker → False."""
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "2"})
+        pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 2})
+        ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+        pool.execute.assert_not_called()
+
+    async def test_redispatch_video_no_task_id_is_fail_loud_false(self):
+        """No resolvable pipeline_task_id → cannot re-dispatch → False (surfaced
+        in the media_drift finding, not silently healed)."""
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "3"})
+        pool = self._RedispatchPool(None)  # fetchrow → no row
+        ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+        pool.execute.assert_not_called()
+
+    async def test_regen_video_path_removed(self):
+        """The direct video-generation path is gone — the pipeline is the sole
+        video producer now."""
+        assert not hasattr(MediaReconciliationJob, "_regen_video")

@@ -23,20 +23,20 @@ Payload shape::
         "post_id": "<uuid>",                          # for audit linkage
     }
 
-For video-backfill uploads the ``description`` and ``tags`` are
-SEO-composed upstream (glad-labs-stack#275): ``description`` is the
-post's SEO meta description (``posts.excerpt``) + a canonical
+For video uploads the ``description`` and ``tags`` are SEO-composed
+upstream (glad-labs-stack#275): ``description`` is the post's SEO meta
+description (``posts.excerpt``) + a canonical
 "Read the full post: {site_url}/posts/{slug}" back-link + the
 markup-stripped body (capped ≤ 4800 chars under YouTube's 5000 limit),
 and ``tags`` is the parsed ``posts.seo_keywords`` list (≤ 30 tags,
-≤ 500 joined chars) or ``None`` when there are no keywords. See
-``services/jobs/backfill_videos.py::_dispatch_video_publishers``. The
-handler forwards both verbatim; the adapter re-clamps to YouTube's hard
-caps as a backstop.
+≤ 500 joined chars) or ``None`` when there are no keywords. See the
+shared builders in ``services/jobs/youtube_payload.py`` (used by
+``media_distribute``). The handler forwards both verbatim; the adapter
+re-clamps to YouTube's hard caps as a backstop.
 
 Returns the adapter's ``PublishResult`` flattened to a dict so
-:func:`services.social_poster._distribute_to_adapters` and the
-backfill jobs see a consistent shape.
+:func:`services.social_poster._distribute_to_adapters` and
+``media_distribute`` see a consistent shape.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """MediaDistributeJob — Stage-2 link + Gate-2-seed pass (#689 Plan 8 / 8b-2).
 
-The ``media_pipeline`` persists task-keyed ``media_assets`` rows (``video_long`` /
+The ``media_pipeline`` persists task-keyed ``media_assets`` rows (``video`` /
 ``video_short``) with ``post_id=NULL`` — at render time the ``posts`` row may not
 exist yet (it's created at publish). This scheduled job is the bridge from that
 task-keyed render output to the post-keyed Gate-2 distribution world:
@@ -11,8 +11,8 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
    left for a later cycle.
 2. **Seed Gate 2.** Record a ``media_approvals`` pending row so the asset
    surfaces in the operator's Gate-2 review queue — ``video`` for the long form,
-   ``video_short`` for the short (the media_approvals media vocabulary; the
-   matching media_assets *types* are ``video_long`` / ``video_short``).
+   ``video_short`` for the short (post-#1460 the media_assets *type* and the
+   approvals *medium* are identical).
 3. **Dispatch.** Deliver Gate-2-*approved* assets to the enabled video platforms
    via the publishing handler registry — long form ``shorts=False``, short
    ``shorts=True`` (the #682/#1249 Shorts-aware YouTube handler) — then stamp
@@ -27,11 +27,10 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
    Runs the same cycle as link/seed so a freshly-approved asset can reach YouTube
    without waiting a cycle.
 
-**Deconfliction with ``backfill_videos``.** That legacy dispatch-only pass fires
-only for posts whose ``VIDEO_DIR/{post_id}.mp4`` exists on disk; media_pipeline
-assets live task-keyed (``{task_id}.mp4``) at ``media_assets.storage_path``, so
-backfill skips them — the approved row stays eligible for this pass alone, no
-double-send.
+**Single video producer (#1460).** media_distribute is the sole video distributor:
+the legacy ``backfill_videos`` disk-scan pass is retired, and reconciliation
+re-dispatches Stage-2 rather than producing competing ``{post_id}.mp4`` renders.
+One asset per post per type (schema-enforced) means no double-send.
 
 **Default-OFF.** Gated on ``media_pipeline_trigger_enabled`` (the Stage-2 master
 switch, default ``false``) so the job is scheduled but a behaviour no-op in prod
@@ -52,6 +51,7 @@ from services.jobs.dispatch_handles import (
     persist_platform_handles,
 )
 from services.media_approval_service import record_dispatched, record_pending
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +66,11 @@ _PlatformDispatchResult = PlatformDispatchResult
 # publishing_adapters row + a publishing.<name> handler (the #112 contract).
 _VIDEO_PLATFORMS: frozenset[str] = frozenset({"youtube"})
 
-# media_assets.type → media_approvals.medium. The asset table distinguishes
-# long/short by ``video_long`` / ``video_short``; the approvals table uses
-# ``video`` for the long form (its historical medium name) and ``video_short``
-# for the short. Anything not in this map is not a media_pipeline video asset.
+# media_assets.type → media_approvals.medium. Post-#1460 the long-form asset type
+# and the approvals medium are identical (``video``); ``video_short`` was always
+# shared. Anything not in this map is not a media_pipeline video asset.
 _TYPE_TO_MEDIUM: dict[str, str] = {
-    "video_long": "video",
+    "video": "video",
     "video_short": "video_short",
 }
 
@@ -101,13 +100,20 @@ _RESOLVE_POST_SQL = """
 # out of _UNLINKED_SQL once post_id is set).
 _LINK_SQL = "UPDATE media_assets SET post_id = $1::uuid, updated_at = NOW() WHERE id = $2::uuid"
 
+# Link-time guard (#1460): a post holds at most one video-family asset per type
+# (enforced by uniq_media_assets_post_video_type). Before back-stamping a freshly
+# rendered task-keyed asset, check the post doesn't already have one — else the
+# link UPDATE would violate the unique index and the asset would retry forever.
+_EXISTING_VIDEO_SQL = """
+    SELECT 1 FROM media_assets
+     WHERE post_id = $1::uuid AND type = $2
+     LIMIT 1
+"""
+
 # Approved-but-undispatched media_pipeline assets, joined to the durable file
-# path. The CASE maps the media_approvals medium back to the media_assets type
-# (video → video_long, video_short → video_short) so we deliver the right file.
-# Deconfliction with backfill_videos: that legacy pass only fires for posts
-# whose VIDEO_DIR/{post_id}.mp4 exists on disk; media_pipeline assets live
-# task-keyed ({task_id}.mp4) at media_assets.storage_path, so backfill skips
-# them and the approved row stays eligible for this pass alone — no double-send.
+# path. Post-#1460 the join is identity (mas.type = ma.medium); DISTINCT ON
+# (below) collapses any duplicate video assets to the one canonical render, and
+# (post_id, type) uniqueness is also schema-enforced — so a post delivers once.
 _APPROVED_UNDISPATCHED_SQL = """
     SELECT * FROM (
         SELECT DISTINCT ON (ma.post_id, ma.medium)
@@ -122,10 +128,7 @@ _APPROVED_UNDISPATCHED_SQL = """
           JOIN posts p ON p.id = ma.post_id
           JOIN media_assets mas
             ON mas.post_id = ma.post_id
-           AND mas.type = CASE ma.medium
-                              WHEN 'video' THEN 'video_long'
-                              WHEN 'video_short' THEN 'video_short'
-                          END
+           AND mas.type = ma.medium
          WHERE ma.status = 'approved'
            AND ma.dispatched_at IS NULL
            -- Never re-deliver grandfathered media: grandfathering only blesses it
@@ -356,6 +359,35 @@ class MediaDistributeJob:
             if not post_id:
                 # Task not published yet — leave the asset unlinked for a later
                 # cycle (the post is created at publish, which may lag approval).
+                continue
+
+            try:
+                already = await pool.fetchval(_EXISTING_VIDEO_SQL, post_id, row["type"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[MEDIA_DISTRIBUTE] existing-asset check failed for post %s: %s",
+                    post_id, exc,
+                )
+                already = None
+            if already:
+                # Redundant render: the post already holds this video type. Leave
+                # the task-keyed asset unlinked (it never reaches dispatch) and
+                # surface it so the operator can prune the orphan render — linking
+                # it would violate the one-video-per-post guard.
+                emit_finding(
+                    source="media_distribute",
+                    kind="duplicate_video_asset",
+                    severity="warning",
+                    title=f"Redundant {row['type']} render for an already-covered post",
+                    body=(
+                        f"Post {post_id} already has a {row['type']} media_asset; the "
+                        f"task-keyed render {asset_id} (task {task_id}) was left "
+                        f"unlinked to honor the one-video-per-post guard. Prune the "
+                        f"orphan render."
+                    ),
+                    dedup_key=f"duplicate_video_asset:{asset_id}",
+                    extra={"post_id": str(post_id), "asset_id": str(asset_id), "type": row["type"]},
+                )
                 continue
 
             try:

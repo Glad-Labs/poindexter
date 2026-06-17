@@ -3,8 +3,8 @@
 **Status:** Podcast lane (§3 DISPATCH → STAGE 3 → DISTRIBUTE → FEED) **implemented
 2026-06-12**, dormant behind `podcast_pipeline_trigger_enabled` (default off). The
 video-side consolidation (drop `video_long`, reconciliation re-dispatch, delete the
-backfill jobs) is **deferred to a dedicated change — see §11** (it touches the live,
-flag-on YouTube lane and carries a double-upload risk that warrants an attended cutover).
+backfill jobs) **shipped 2026-06-17 as the attended two-PR change #1460 — see §11**
+(closes #573, #668, #569).
 **Epic:** [Glad-Labs/poindexter#689](https://github.com/Glad-Labs/poindexter/issues/689) (media_pipeline redesign).
 **Deviation from #689:** the approved `video-pipeline-redesign.md` keeps podcast as a
 parallel branch inside the single `media_pipeline` graph. This design **splits podcast
@@ -90,38 +90,38 @@ SAFETY NET — media_reconciliation
 
 ### New files
 
-| File                                           | Purpose                                                                                                                                                                                                                        |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `services/podcast_pipeline_spec.py`            | `PODCAST_PIPELINE_GRAPH_DEF` (pure data, no heavy imports).                                                                                                                                                                    |
-| `modules/content/atoms/podcast_load_script.py` | `podcast.load_script` — load `podcast_script` + intro path from `pipeline_versions.task_metadata` by `task_id`.                                                                                                                |
-| `modules/content/atoms/podcast_render.py`      | `podcast.render` — TTS full read (via `PodcastService.synthesize`) + intro sting + **podcast CTA** outro → temp MP3 + `podcast_duration_s`.                                                                                    |
-| `modules/content/atoms/podcast_persist.py`     | `podcast.persist` — durable move + `record_media_asset(type='podcast', task_id, post_id=None, duration_ms)`.                                                                                                                   |
-| `services/jobs/dispatch_podcast_pipeline.py`   | `DispatchPodcastPipelineJob` — mirror of `DispatchMediaPipelineJob`, own `podcast_dispatched_at` claim, `thread_id=podcast-{task_id}`.                                                                                         |
-| `services/jobs/podcast_distribute.py`          | `PodcastDistributeJob` — link → seed `record_pending` → R2 upload + feed rebuild on approval.                                                                                                                                  |
-| migration `*_podcast_pipeline_stage3.py`       | **As shipped:** add `pipeline_tasks.podcast_dispatched_at`; seed `podcast_pipeline` graph_def. (The `video_dispatched_at` column + `video_long`→`video` backfill moved to §11 — unused/unsafe without the video-side cutover.) |
+| File                                           | Purpose                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/podcast_pipeline_spec.py`            | `PODCAST_PIPELINE_GRAPH_DEF` (pure data, no heavy imports).                                                                                                                                                                                                                                   |
+| `modules/content/atoms/podcast_load_script.py` | `podcast.load_script` — load `podcast_script` + intro path from `pipeline_versions.task_metadata` by `task_id`.                                                                                                                                                                               |
+| `modules/content/atoms/podcast_render.py`      | `podcast.render` — TTS full read (via `PodcastService.synthesize`) + intro sting + **podcast CTA** outro → temp MP3 + `podcast_duration_s`.                                                                                                                                                   |
+| `modules/content/atoms/podcast_persist.py`     | `podcast.persist` — durable move + `record_media_asset(type='podcast', task_id, post_id=None, duration_ms)`.                                                                                                                                                                                  |
+| `services/jobs/dispatch_podcast_pipeline.py`   | `DispatchPodcastPipelineJob` — mirror of `DispatchMediaPipelineJob`, own `podcast_dispatched_at` claim, `thread_id=podcast-{task_id}`.                                                                                                                                                        |
+| `services/jobs/podcast_distribute.py`          | `PodcastDistributeJob` — link → seed `record_pending` → R2 upload + feed rebuild on approval.                                                                                                                                                                                                 |
+| migration `*_podcast_pipeline_stage3.py`       | **As shipped:** add `pipeline_tasks.podcast_dispatched_at`; seed `podcast_pipeline` graph_def. (The `video_long`→`video` backfill was deferred to §11, which reuses the existing `media_pipeline_dispatched_at` marker rather than adding a separate `video_dispatched_at` column — see §11.) |
 
 ### Changed files
 
-> **Legend:** ✅ shipped with the podcast lane (2026-06-12) · ⏸ deferred to §11
-> (video-side cutover). Rows below are the original full design; the ⏸ rows did
-> **not** ship in the podcast PR.
+> **Legend:** ✅ shipped with the podcast lane (2026-06-12) · ✅ (#1460) shipped
+> in the attended video-side cutover (2026-06-17, §11). The former ⏸ rows did not
+> ship in the podcast PR but landed in #1460.
 
-| File                                                     | Change                                                                                                                                                                                                                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ✅ `services/podcast_service.py`                         | Add a pure `synthesize(script, *, output_path=None, key="") -> (path, duration)` alongside `generate_episode` (reuse, don't duplicate TTS).                                                                                                      |
-| ✅ `routes/podcast_routes.py`                            | `podcast_feed` reads `posts ⋈ media_assets(type='podcast') ⋈ media_approvals(podcast,approved)`; drop the `episodes_on_disk` scan; enclosure/length/duration from the asset row. Add `limit`/`offset` to `/episodes` (closes #746 podcast part). |
-| ⏸ `services/media_pipeline_spec.py` / `media_persist.py` | Drop `video_long` → write `video` (+ `video_short`). (§11)                                                                                                                                                                                       |
-| ⏸ `services/jobs/dispatch_media_pipeline.py`             | Already uses `media_pipeline_dispatched_at` (the de-facto video marker); no rename needed. (§11)                                                                                                                                                 |
-| ⏸ `services/jobs/media_distribute.py`                    | Type map → `{video:video, video_short:video_short}`; join `mas.type = ma.medium`; de-dup to avoid double-send. (§11)                                                                                                                             |
-| ✅ `modules/content/atoms/media_render_narration.py`     | Each video lane renders its OWN narration audio (own script + `media.cta.video` / `media.cta.video_short` outro) via the shared `_narration_render` helper — no shared base narration. Shipped #689. (§6)                                        |
-| ⏸ `services/jobs/media_reconciliation.py`                | Replace `_regen_*`/`_record_media_asset` with per-medium **re-dispatch** (clear marker, capped attempts). Keep drift alert. (§11)                                                                                                                |
-| ✅ `services/settings_defaults.py`                       | Seed `podcast_pipeline_trigger_enabled` (+ caps) and `media.cta.{podcast,video,video_short}` (podcast CTA live; video CTAs seeded ahead of their §11 reader).                                                                                    |
-| ✅/⏸ `plugins/registry.py`                               | ✅ Register `dispatch_podcast_pipeline` + `podcast_distribute`. ⏸ **deregister** `backfill_podcasts` + `backfill_videos` (§11 — `media_distribute` still imports `backfill_videos` helpers).                                                     |
+| File                                                  | Change                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ✅ `services/podcast_service.py`                      | Add a pure `synthesize(script, *, output_path=None, key="") -> (path, duration)` alongside `generate_episode` (reuse, don't duplicate TTS).                                                                                                      |
+| ✅ `routes/podcast_routes.py`                         | `podcast_feed` reads `posts ⋈ media_assets(type='podcast') ⋈ media_approvals(podcast,approved)`; drop the `episodes_on_disk` scan; enclosure/length/duration from the asset row. Add `limit`/`offset` to `/episodes` (closes #746 podcast part). |
+| ✅ (#1460) `modules/content/atoms/media_persist.py`   | `_TARGETS` writes `video` (+ `video_short`), not `video_long`.                                                                                                                                                                                   |
+| ✅ (#1460) `services/jobs/dispatch_media_pipeline.py` | Unchanged — already keys off `media_pipeline_dispatched_at`, which reconciliation now NULLs to re-dispatch.                                                                                                                                      |
+| ✅ (#1460) `services/jobs/media_distribute.py`        | Identity `_TYPE_TO_MEDIUM`; join `mas.type = ma.medium`; `DISTINCT ON` dispatch de-dup (PR1) + a link-time guard that skips a second render for an already-covered post (`duplicate_video_asset` finding).                                       |
+| ✅ `modules/content/atoms/media_render_narration.py`  | Each video lane renders its OWN narration audio (own script + `media.cta.video` / `media.cta.video_short` outro) via the shared `_narration_render` helper — no shared base narration. Shipped #689. (§6)                                        |
+| ✅ (#1460) `services/jobs/media_reconciliation.py`    | Video drift re-dispatches Stage-2 (`_redispatch_video` clears the marker, capped by `media_pipeline_redispatch_count`); `_regen_video` removed. Podcast `_record_media_asset` + drift alert kept.                                                |
+| ✅ `services/settings_defaults.py`                    | Seed `podcast_pipeline_trigger_enabled` (+ caps) and `media.cta.{podcast,video,video_short}`.                                                                                                                                                    |
+| ✅ `plugins/registry.py`                              | Register `dispatch_podcast_pipeline` + `podcast_distribute` (2026-06-12). Deregister `backfill_podcasts` + `backfill_videos` from `_SAMPLES` + pyproject entry-points (#1460).                                                                   |
 
 ### Deletions
 
-- ⏸ `services/jobs/backfill_podcasts.py`, `services/jobs/backfill_videos.py` (subsumed — closes #668). Deferred to §11: `media_distribute` imports `backfill_videos._build_youtube_description` / `_parse_seo_keywords`, so the helpers must be extracted first.
-- ⏸ `video_long` strings (`media_asset_recorder.py`, etc. — #569 partial, closes #573). Deferred to §11.
+- ✅ (#1460) `services/jobs/backfill_podcasts.py` + `services/jobs/backfill_videos.py` deleted (closes #668). Their shared YouTube payload helpers (`_build_youtube_description` / `_parse_seo_keywords`) were extracted to `services/jobs/youtube_payload.py` in PR1 first.
+- ✅ (#1460) type-valued `video_long` strings dropped (recorder mime map, `cli/posts.py`, `video_routes` feed query, reconciliation read-side; closes #573, #569). State channels `video_long_script` / `long_video_path` untouched.
 
 ### Feed rebuild on approval (shipped 2026-06-14)
 
@@ -141,7 +141,7 @@ already-committed approval.
 
 ## 5. Vocabulary
 
-Target end-state: `media_assets.type ∈ {podcast, video, video_short}`;
+End-state (shipped #1460): `media_assets.type ∈ {podcast, video, video_short}`;
 `media_approvals.medium` identical. No `video_long`.
 
 **Correction (2026-06-12, from prod data):** `video_long` is NOT 2 stray rows — it
@@ -154,14 +154,15 @@ names today:
 | `media.persist` (pipeline) | `video_long`               | `{task_id}.mp4` | `media_distribute` (CASE → video_long) |
 | `media_reconciliation`     | `video`                    | `{post_id}.mp4` | `backfill_videos` (disk scan)          |
 
-`media_distribute`'s join `mas.type = CASE ma.medium WHEN 'video' THEN 'video_long'`
-is a **routing key**: it makes that job deliver _only_ the pipeline render and skip
-reconciliation's `video` rows. Collapsing both names to `video` (the rename) makes
-the join match **both** rows per post → with `media_pipeline_trigger_enabled=true`
-(live in prod) the next cycle can **double-upload the same video to YouTube**. So the
-rename is inseparable from §11's reconciliation + backfill-deletion work, and the
-existing 10 dup rows must be de-duplicated (not blindly relabeled). This is why the
-video side is deferred — see §11.
+`media_distribute`'s old join `mas.type = CASE ma.medium WHEN 'video' THEN 'video_long'`
+was a **routing key**: it made that job deliver _only_ the pipeline render and skip
+reconciliation's `video` rows. Collapsing both names to `video` makes the join match
+**both** rows per post → with `media_pipeline_trigger_enabled=true` (live in prod) a
+naive rename could **double-upload the same video to YouTube**. So the rename shipped
+as one atomic unit with the reconciliation re-dispatch + backfill deletion + a de-dup
+migration (#1460, §11): the existing dup rows were collapsed to one smart-priority
+survivor per post (platform-id > pipeline > newest), then relabeled, and a partial
+unique index `uniq_media_assets_post_video_type` now prevents recurrence — see §11.
 
 ## 6. CTAs (per-medium, DB-configurable)
 
@@ -195,8 +196,8 @@ Reject → dump = status stays `rejected`, no re-dispatch (optional R2/asset pur
 ## 9. Issues
 
 - **Closes with the podcast PR:** #746 (podcast `/episodes` pagination part).
-- **Deferred to §11 (video-side cutover):** #573 (`video_long` rows), #668 (delete
-  backfill jobs), #569 (`video_long` strings).
+- **Closed by the §11 video-side cutover (#1460):** #573 (`video_long` rows), #668
+  (delete backfill jobs), #569 (`video_long` strings).
 - **References (deferred):** #685/#686/#687/#688/#669/#1193/#531/#449/#1343.
 - New tracking issue under #689 at PR time (code → `glad-labs-stack`).
 
@@ -210,35 +211,49 @@ surface immediately via the media_assets-sourced feed (§4 `routes/podcast_route
 which no longer requires the MP3 to be present on the worker's local disk — the actual
 mechanism of the 2026-05-28 Spotify freeze.
 
-## 11. Deferred — video-side consolidation (separate, attended change)
+## 11. Video-side consolidation (shipped 2026-06-17 — #1460)
 
-The video half of #689 is **intentionally not** in the podcast-lane change. Per §5, it
-is a coordinated, all-or-nothing cutover on a **live, flag-on** lane with an
-outward-facing double-upload risk, so it warrants its own focused (ideally attended)
-PR rather than an unattended autonomous pass. It must land as one unit:
+The video half of #689 landed as a focused, **attended** two-PR change rather than an
+unattended autonomous pass, because it was a coordinated all-or-nothing cutover on a
+**live, flag-on** lane with an outward-facing double-upload risk (per §5):
 
-1. **Writer** — `media.persist` `_TARGETS`: write `video` (not `video_long`).
-2. **Distributor** — `media_distribute`: `_TYPE_TO_MEDIUM` → identity
-   `{video, video_short}`; join `mas.type = ma.medium`; and **de-dup** so a post
-   never has two `video` assets feeding the approved-undispatched query (else
-   double-send). Decide canonical between the reconciliation (`{post_id}.mp4`) and
-   pipeline (`{task_id}.mp4`) renders.
-3. **Reconciliation** — stop writing `video` assets directly; re-dispatch the video
-   medium (clear `media_pipeline_dispatched_at`, capped attempts) so `media.persist`
-   is the sole video producer. Keep the drift alert.
-4. **Backfill** — delete `backfill_videos` (and `backfill_podcasts`), first extracting
-   `_build_youtube_description` / `_parse_seo_keywords` (imported live by
-   `media_distribute`) to a shared home.
-5. **Data migration** — relabel/de-dup the 10 existing `video_long` rows → one `video`
-   row per post.
-6. **Video CTA** — ✅ shipped (#689). Each video lane renders its OWN narration
+- **PR1 (inert prep, mergeable anytime):** extract the YouTube payload helpers to
+  `services/jobs/youtube_payload.py`; add `DISTINCT ON (post_id, medium)` to
+  `media_distribute`'s approved-undispatched query (canonical priority: platform id
+  > pipeline source > newest) so a post never double-dispatches.
+- **PR2 (atomic cutover):** the seven pieces below, landing as one unit. Closes
+  #573, #668, #569.
+
+The root-cause fix is a de-dup migration (`*_dedup_and_collapse_video_long.py`) that
+keeps one video-family survivor per post by smart priority, relabels
+`video_long`→`video`, and adds the partial unique index
+`uniq_media_assets_post_video_type` (backup → `media_assets_dedup_backup`; FK-safe);
+all producers are conflict-aware so the one-video-per-post invariant holds going forward.
+
+1. ✅ **Writer** — `media.persist` `_TARGETS` writes `video` (not `video_long`).
+2. ✅ **Distributor** — `media_distribute`: identity `_TYPE_TO_MEDIUM`
+   (`{video, video_short}`); join `mas.type = ma.medium`; `DISTINCT ON` dispatch
+   de-dup (PR1) + a link-time guard that leaves a redundant render unlinked and emits
+   a `duplicate_video_asset` finding when the post already holds that video type.
+3. ✅ **Reconciliation** — stops writing `video` assets directly; on video drift it
+   re-dispatches Stage-2 (`_redispatch_video` NULLs `media_pipeline_dispatched_at`,
+   capped by `media_pipeline_redispatch_count`) so `media.persist` is the sole video
+   producer. Drift alert retained; no-`task_id` posts surface in the finding
+   (fail-loud), not silently healed.
+4. ✅ **Backfill** — `backfill_videos` + `backfill_podcasts` deleted (closes #668);
+   `_build_youtube_description` / `_parse_seo_keywords` extracted to `youtube_payload`
+   (PR1) first. Deregistered from `_SAMPLES` + pyproject entry-points.
+5. ✅ **Data migration** — `*_dedup_and_collapse_video_long.py` relabels/de-dups the
+   existing `video_long` rows → one `video` row per post + the unique guard.
+6. ✅ **Video CTA** — shipped (#689). Each video lane renders its OWN narration
    from its OWN script with its OWN spoken CTA (`media.cta.video` /
    `media.cta.video_short`) via `media.render_narration` → the shared
    `_narration_render` helper. (The earlier "video shares the base podcast
    narration" plan is superseded — Stage-2 never carried the podcast audio
    across, which is what left every rendered video silent.)
-7. **`recorder` + `cli/posts.py` + reconciliation read-side** — drop the `video_long`
-   strings (closes #573).
+7. ✅ **`recorder` + `cli/posts.py` + `video_routes` + reconciliation read-side** —
+   dropped the type-valued `video_long` strings (closes #573, #569). State-channel
+   names (`video_long_script`, `long_video_path`) deliberately untouched.
 
 > **Video-feed approval gate + grandfather (shipped 2026-06-14, ahead of the
 > full §11 cutover).** `routes/video_routes.py::video_feed` now mirrors the

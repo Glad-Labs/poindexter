@@ -44,13 +44,12 @@ def _split_csv(raw: str | None) -> list[str]:
 # Canonical media-flavor names that may legitimately appear in
 # ``posts.media_to_generate``. Distinct from the GATE namespace
 # (``MEDIUM_GATE_NAMES`` uses the bare word ``short``) — the generation
-# and backfill code keys off these exact strings:
-# ``services.media_approval_service._VALID_MEDIA``,
-# ``services.jobs.backfill_videos`` (``video``/``video_long``/``video_short``
-# array-overlap filter) and ``services.publish_service`` (``_wants_short``
-# checks ``"video_short"``).
+# and distribution code keys off these exact strings:
+# ``services.media_approval_service._VALID_MEDIA`` and
+# ``services.publish_service`` (``_wants_short`` checks ``"video_short"``).
+# (``video_long`` was collapsed into ``video`` in #1460.)
 CANONICAL_MEDIA_NAMES: tuple[str, ...] = (
-    "podcast", "video", "video_long", "video_short",
+    "podcast", "video", "video_short",
 )
 
 # Operator-friendly aliases → canonical flavor. The ``--media`` help text
@@ -413,7 +412,7 @@ def _compute_idempotency_key(
     "--media",
     default=None,
     help="Comma-separated list of media to generate "
-    "(podcast, video, video_long, video_short; 'short' is accepted as an "
+    "(podcast, video, video_short; 'short' is accepted as an "
     "alias for video_short). Empty/omitted = use default_media_to_generate "
     "from app_settings.",
 )

@@ -72,7 +72,7 @@ async def test_persist_moves_renders_and_records_both_assets(
     # One media_assets row per asset, task-keyed (post_id=None).
     assert patched_recorder.await_count == 2
     kinds = {c.kwargs["asset_type"] for c in patched_recorder.await_args_list}
-    assert kinds == {"video_long", "video_short"}
+    assert kinds == {"video", "video_short"}
     for c in patched_recorder.await_args_list:
         assert c.kwargs["task_id"] == "t1"
         assert c.kwargs["post_id"] is None

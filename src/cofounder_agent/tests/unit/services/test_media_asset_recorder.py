@@ -60,7 +60,7 @@ class TestRecordMediaAsset:
     async def test_returns_uuid_string_on_success(self):
         pool, conn = _fake_pool(fetchval_return="abc-123")
         out = await record_media_asset(
-            pool=pool, post_id="p", asset_type="video_long",
+            pool=pool, post_id="p", asset_type="video",
             storage_path="/x.mp4", public_url="https://cdn/x.mp4",
             file_size_bytes=1024, duration_ms=5000,
             width=1920, height=1080,
@@ -142,6 +142,48 @@ class TestRecordMediaAsset:
         )
         assert "application/octet-stream" in conn.fetchval.await_args.args
 
+    # ---- video-family upsert under the (post_id,type) unique guard (#1460) ----
+
+    async def test_video_family_insert_uses_on_conflict(self):
+        """A video row WITH a post_id upserts under uniq_media_assets_post_video_type
+        so a re-stamp refreshes the row instead of raising the unique violation."""
+        pool, conn = _fake_pool(fetchval_return="id-1")
+        await record_media_asset(
+            pool=pool, post_id="00000000-0000-0000-0000-000000000001",
+            asset_type="video", storage_path="/tmp/x.mp4",
+        )
+        sql = conn.fetchval.await_args.args[0]
+        assert "ON CONFLICT" in sql
+        assert "DO UPDATE" in sql
+
+    async def test_video_short_family_insert_uses_on_conflict(self):
+        pool, conn = _fake_pool(fetchval_return="id-1b")
+        await record_media_asset(
+            pool=pool, post_id="00000000-0000-0000-0000-000000000001",
+            asset_type="video_short", storage_path="/tmp/x.mp4",
+        )
+        assert "ON CONFLICT" in conn.fetchval.await_args.args[0]
+
+    async def test_video_family_without_post_id_has_no_on_conflict(self):
+        """Task-keyed renders (media.persist, post_id=None) fall outside the partial
+        index predicate, so they keep the plain INSERT — no conflict target exists."""
+        pool, conn = _fake_pool(fetchval_return="id-1c")
+        await record_media_asset(
+            pool=pool, post_id=None, task_id="t-1",
+            asset_type="video", storage_path="/tmp/x.mp4",
+        )
+        assert "ON CONFLICT" not in conn.fetchval.await_args.args[0]
+
+    async def test_image_insert_has_no_on_conflict(self):
+        """Images have no (post_id,type) guard — multiple inline_image rows per post
+        are legitimate — so they keep the plain INSERT."""
+        pool, conn = _fake_pool(fetchval_return="id-2")
+        await record_media_asset(
+            pool=pool, post_id="00000000-0000-0000-0000-000000000001",
+            asset_type="inline_image", storage_path="/tmp/x.png",
+        )
+        assert "ON CONFLICT" not in conn.fetchval.await_args.args[0]
+
 
 # ---------------------------------------------------------------------------
 # media_asset_exists
@@ -220,8 +262,15 @@ class TestFileSizeSafe:
 def test_default_mime_types_covers_known_asset_kinds():
     """Sanity check — the producers all use one of these keys."""
     expected = {
-        "video_long", "video_short", "video",
+        "video_short", "video",
         "podcast", "audio",
         "featured_image", "inline_image", "image_featured", "image",
     }
     assert expected.issubset(set(_DEFAULT_MIME_TYPES.keys()))
+
+
+def test_mime_map_has_no_video_long():
+    """#1460: video_long is collapsed into video. The mime map must not carry
+    the dropped type — new inserts only ever use 'video' / 'video_short'."""
+    assert "video_long" not in _DEFAULT_MIME_TYPES
+    assert _DEFAULT_MIME_TYPES["video"] == "video/mp4"

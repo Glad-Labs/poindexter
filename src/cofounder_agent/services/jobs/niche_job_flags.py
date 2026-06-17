@@ -1,11 +1,12 @@
 """Per-niche scheduler-job enable/disable flags (Glad-Labs/poindexter#521).
 
-The backfill jobs (``backfill_podcasts`` / ``backfill_videos``) generate
-derived media for already-published posts on a fixed cadence. Operators
-want to turn a *single* job off for a *single* niche — e.g. stop
-generating podcasts for ``dev_diary`` while videos keep flowing, and
-without touching the global master switch (``plugin.job.<job>.enabled``)
-or editing every post's ``media_to_generate`` array.
+Scheduled media jobs (e.g. the Stage-2 ``dispatch_media_pipeline`` /
+``dispatch_podcast_pipeline`` triggers) generate derived media for posts
+on a fixed cadence. Operators want to turn a *single* job off for a
+*single* niche — e.g. stop generating podcasts for ``dev_diary`` while
+videos keep flowing, and without touching the global master switch
+(``plugin.job.<job>.enabled``) or editing every post's
+``media_to_generate`` array.
 
 This module owns the one app_settings key convention that makes that
 possible::

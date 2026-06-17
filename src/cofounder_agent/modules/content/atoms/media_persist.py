@@ -67,7 +67,7 @@ ATOM_META = AtomMeta(
 #  ``{task_id}.mp4`` name (matching the legacy VIDEO_DIR convention); the short
 #  gets a ``_short`` suffix so both live side-by-side under one task id.
 _TARGETS: tuple[tuple[str, str, str, str, str], ...] = (
-    ("long_video_path", "video_shot_list", "video_long", "", "16:9"),
+    ("long_video_path", "video_shot_list", "video", "", "16:9"),
     ("short_video_path", "short_shot_list", "video_short", "_short", "9:16"),
 )
 
