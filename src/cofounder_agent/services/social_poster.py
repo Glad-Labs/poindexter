@@ -692,21 +692,22 @@ async def _distribute_to_adapters(
     """Post to each enabled publisher row from the ``publishing_adapters`` table.
 
     Row-driven dispatch (poindexter#112) — replaces the hardcoded
-    ``if "bluesky" in enabled`` / ``if "mastodon" in enabled`` branches
+    ``if "youtube" in enabled`` / ``if "mastodon" in enabled`` branches
     with a single loop over enabled rows from the declarative table.
     Adding a new platform = insert a row + register a handler under the
     ``publishing`` surface; no edit here.
 
     The ``enabled`` set is treated as **advisory** — when callers still
-    pass ``enabled = {"bluesky"}``, it intersects with the DB-loaded
+    pass ``enabled = {"mastodon"}``, it intersects with the DB-loaded
     rows so an operator who disabled the row in the DB sees no posts
     even if legacy code still lists the platform name in
     ``social_distribution_platforms``. When ``enabled`` is empty the
     advisory filter is skipped (DB rows are the single source of truth).
 
     site_config is passed through every dispatched call — that's the
-    contract :mod:`services.social_adapters.bluesky` short-circuits on
-    when missing (the 30-day distribution-dark bug fix from 2026-05-09).
+    contract the publishing adapters (e.g.
+    :mod:`services.social_adapters.mastodon`) short-circuit on when
+    missing (the 30-day distribution-dark bug fix from 2026-05-09).
     """
     _sc = site_config
     results: dict[str, dict] = {}

@@ -248,7 +248,7 @@ One pane of glass (Grafana). No new vendor UIs.
 | Resend                                                                                        | 💰 Kept (free tier 3K/mo)                                | Email                                        |
 | Google Analytics                                                                              | ⚠️ Consider Plausible / Matomo for pure-OSS theme        | Only remaining non-OSS piece                 |
 
-Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Railway, Woodpecker. dlvr.it was retired for Bluesky and Mastodon (direct adapters now, GH-36); the subscription isn't active today, so no network currently routes through it. It's the intended RSS bridge for X/Twitter if/when Matt reactivates the subscription (the X API itself is $100/mo — not worth it). Sentry is NOT removed — it's still active in the public-site and worker as the error-tracking layer.
+Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Railway, Woodpecker. dlvr.it was retired for Mastodon (direct adapter now, GH-36; Bluesky/atproto was also a direct adapter until it was dropped 2026-06-17 to unblock a cryptography CVE fix); the subscription isn't active today, so no network currently routes through it. It's the intended RSS bridge for X/Twitter if/when Matt reactivates the subscription (the X API itself is $100/mo — not worth it). Sentry is NOT removed — it's still active in the public-site and worker as the error-tracking layer.
 
 ## Known gaps (tracked, not blocking)
 

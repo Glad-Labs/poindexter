@@ -5,7 +5,7 @@ description: >
   trends for a topic, draft a platform-native post, and produce char-limited
   promo copy for a published blog post (single-tweet + LinkedIn formats). The
   promo templates are vendor-agnostic — the caller supplies the character
-  limit, so the same prompt works across X / Mastodon / Bluesky once an
+  limit, so the same prompt works across X / Mastodon once an
   adapter exists. Use after a post is published, during distribution.
 license: Apache-2.0
 metadata:
@@ -19,7 +19,7 @@ metadata:
       description: 'Default prompt — basic but functional; production-quality prompt packs ship as a premium add-on.'
     - key: social.twitter_promote
       output_format: text
-      description: 'Single-tweet promo for a published blog post. Char-limited (caller supplies the limit so this template works across X / Mastodon / Bluesky).'
+      description: 'Single-tweet promo for a published blog post. Char-limited (caller supplies the limit so this template works across X / Mastodon).'
     - key: social.linkedin_promote
       output_format: text
       description: 'LinkedIn-format promo for a published blog post — professional but approachable tone, hook → summary → CTA → URL → hashtags structure.'

@@ -35,7 +35,7 @@ def load_all() -> None:
 
     # webhook.* surface: webhook_alertmanager, webhook_revenue, webhook_subscriber
     # outbound.* surface: outbound_discord, outbound_telegram, outbound_vercel_isr
-    # publishing.* surface: publishing_bluesky, publishing_mastodon, publishing_youtube
+    # publishing.* surface: publishing_mastodon, publishing_youtube
     # retention.* surface: retention_downsample, retention_summarize_to_table, retention_ttl_prune
     # tap.* surface: tap_builtin_topic_source, tap_corsair_csv,
     #                tap_external_metrics_writer, tap_singer_subprocess
@@ -43,7 +43,6 @@ def load_all() -> None:
         outbound_discord,
         outbound_telegram,
         outbound_vercel_isr,
-        publishing_bluesky,
         publishing_mastodon,
         publishing_youtube,
         retention_downsample,
@@ -63,7 +62,7 @@ def load_all() -> None:
     _ = (
         webhook_alertmanager, webhook_revenue, webhook_subscriber,
         outbound_discord, outbound_telegram, outbound_vercel_isr,
-        publishing_bluesky, publishing_mastodon, publishing_youtube,
+        publishing_mastodon, publishing_youtube,
         retention_downsample, retention_summarize_to_table, retention_ttl_prune,
         tap_builtin_topic_source, tap_corsair_csv,
         tap_external_metrics_writer, tap_singer_subprocess,

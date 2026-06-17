@@ -11,7 +11,7 @@
 the local Ollama LLM. It then both (a) notifies the operator via
 Telegram + Discord (`#ops` channel via OpenClaw) so a human can
 copy-paste/post manually, and (b) optionally fires the generated text
-through enabled social-platform adapters (Bluesky, Mastodon today;
+through enabled social-platform adapters (Mastodon today;
 LinkedIn / Reddit / YouTube exist as `NotImplementedError` stubs per
 GH-40) for actual API posting.
 
@@ -68,8 +68,8 @@ when adapter posting is wired more broadly).
   `NotImplementedError`), increments per-platform Prometheus counters
   with `outcome={success,failure,error,skipped}`. Distribution
   continues across remaining platforms.
-- **Generic adapters use Twitter copy.** For Bluesky / Mastodon /
-  Reddit, the Twitter post text (shortest, fits everywhere) is the
+- **Generic adapters use Twitter copy.** For Mastodon / Reddit,
+  the Twitter post text (shortest, fits everywhere) is the
   default. LinkedIn uses the LinkedIn-specific copy if available,
   else falls back to the Twitter text.
 - **Module-level constants captured at import.** `SITE_BASE_URL`,
@@ -105,7 +105,7 @@ All from `app_settings` via `services.site_config`:
   newsletter-friendly brevity).
 - `social_distribution_platforms` (default empty) — comma-separated
   set of platforms to actually post to via adapters. Recognized
-  values: `bluesky`, `mastodon`, `linkedin`, `reddit`. Leave empty
+  values: `mastodon`, `linkedin`, `reddit`. Leave empty
   to skip adapter posting and rely on operator copy-paste from the
   Discord/Telegram notification.
 - `site_url` — used to build the `post_url` in tweet text.
@@ -136,7 +136,7 @@ All from `app_settings` via `services.site_config`:
   - Ollama (local) — copy generation.
   - Telegram Bot API (`https://api.telegram.org/bot<TOKEN>/sendMessage`).
   - OpenClaw (`POST /hooks/agent`) — Discord delivery.
-  - Per-adapter APIs (Bluesky, Mastodon, ...) — only when listed in
+  - Per-adapter APIs (Mastodon, ...) — only when listed in
     `social_distribution_platforms`.
 - **Callers:**
   - `services.publish_service` (post-publish hook section "Queue
@@ -177,9 +177,9 @@ Failed to generate social posts for: <title>` Telegram + Discord
 
 ## Common ops
 
-- **Enable Bluesky + Mastodon posting:**
+- **Enable Mastodon posting:**
   ```bash
-  poindexter settings set social_distribution_platforms "bluesky,mastodon"
+  poindexter settings set social_distribution_platforms "mastodon"
   ```
   Make sure the corresponding adapter credentials are configured
   in `app_settings` first.
@@ -205,6 +205,6 @@ excerpt=..., keywords=[...])` from a one-off shell.
 - `docs/architecture/services/publish_service.md` — the caller that
   triggers social posting after publish.
 - `services.social_adapters.*` — per-platform posting modules
-  (Bluesky, Mastodon real; LinkedIn/Reddit/YouTube stubs per GH-40).
+  (Mastodon real; LinkedIn/Reddit/YouTube stubs per GH-40).
 - `services.ollama_client` — local LLM client used for generation.
 - `services.telegram_config` — Telegram bot token + chat plumbing.

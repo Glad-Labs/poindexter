@@ -9,10 +9,7 @@ import pytest
 # Importing the handler modules triggers their @register_handler decorators
 # so registry.dispatch("publishing", ...) inside the dispatcher resolves.
 # Same pattern test_tap_framework / test_outbound_handlers use.
-from services.integrations.handlers import (  # noqa: F401
-    publishing_bluesky,
-    publishing_mastodon,
-)
+from services.integrations.handlers import publishing_mastodon  # noqa: F401
 from services.site_config import SiteConfig
 from services.social_poster import (
     SocialPost,
@@ -519,7 +516,7 @@ class TestSafeCallAdapter:
         async def _ok():
             return {"success": True, "post_id": "p1", "error": None}
 
-        result = await _safe_call_adapter("bluesky", _ok)
+        result = await _safe_call_adapter("mastodon", _ok)
         assert result["success"] is True
         assert result["post_id"] == "p1"
 
@@ -531,7 +528,7 @@ class TestSafeCallAdapter:
         async def _soft_fail():
             return {"success": False, "post_id": None, "error": "not configured"}
 
-        result = await _safe_call_adapter("bluesky", _soft_fail)
+        result = await _safe_call_adapter("mastodon", _soft_fail)
         assert result["success"] is False
         assert "not configured" in result["error"]
 
@@ -542,7 +539,7 @@ class TestSafeCallAdapter:
         async def _boom():
             raise RuntimeError("something blew up")
 
-        result = await _safe_call_adapter("bluesky", _boom)
+        result = await _safe_call_adapter("mastodon", _boom)
         assert result["success"] is False
         assert result["post_id"] is None
         assert "something blew up" in result["error"]
@@ -569,7 +566,7 @@ class TestSafeCallAdapter:
         async def _bad_return():
             return "unexpected string"  # not a dict — adapter contract violated
 
-        result = await _safe_call_adapter("bluesky", _bad_return)
+        result = await _safe_call_adapter("mastodon", _bad_return)
         assert result["success"] is False
         assert "non-dict" in result["error"]
 
@@ -624,84 +621,87 @@ class TestDistributeToAdapters:
     async def test_no_posts_returns_empty(self, mock_load):
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky"), _row("mastodon")]
-        result = await _distribute_to_adapters([], {"bluesky", "mastodon"}, site_config=_TEST_SC)
+        mock_load.return_value = [_row("mastodon"), _row("reddit")]
+        result = await _distribute_to_adapters([], {"mastodon", "reddit"}, site_config=_TEST_SC)
         assert result == {}
+
+    @pytest.mark.asyncio
+    @patch("services.social_poster.registry.dispatch", new_callable=AsyncMock)
+    @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
+    async def test_walks_db_loaded_rows(self, mock_load, mock_dispatch):
+        """The dispatcher loops over DB-loaded rows, not the legacy set.
+
+        Patches ``registry.dispatch`` so two platforms can be exercised
+        without a second real adapter (mastodon is the only text adapter
+        after the Bluesky retirement)."""
+        from services.social_poster import _distribute_to_adapters
+
+        mock_load.return_value = [_row("mastodon"), _row("reddit")]
+        mock_dispatch.return_value = {"success": True, "post_id": "p", "error": None}
+
+        posts = [SocialPost(platform="twitter", text="hello", post_url="https://x.com/1")]
+        result = await _distribute_to_adapters(posts, {"mastodon", "reddit"}, site_config=_TEST_SC)
+
+        assert result["mastodon"]["success"] is True
+        assert result["reddit"]["success"] is True
+        assert mock_dispatch.await_count == 2
 
     @pytest.mark.asyncio
     @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
            new_callable=AsyncMock)
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
-           new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
-    async def test_walks_db_loaded_rows(self, mock_load, mock_bsky, mock_masto):
-        """The dispatcher loops over DB-loaded rows, not the legacy set."""
-        from services.social_poster import _distribute_to_adapters
-
-        mock_load.return_value = [_row("bluesky"), _row("mastodon")]
-        mock_bsky.return_value = {"success": True, "post_id": "bsky1", "error": None}
-        mock_masto.return_value = {"success": True, "post_id": "masto1", "error": None}
-
-        posts = [SocialPost(platform="twitter", text="hello", post_url="https://x.com/1")]
-        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"}, site_config=_TEST_SC)
-
-        assert result["bluesky"]["success"] is True
-        assert result["mastodon"]["success"] is True
-        mock_bsky.assert_awaited_once()
-        mock_masto.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
-           new_callable=AsyncMock)
-    @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
-    async def test_adapters_receive_site_config_kwarg(self, mock_load, mock_bsky):
+    async def test_adapters_receive_site_config_kwarg(self, mock_load, mock_masto):
         """REGRESSION (poindexter#112): every dispatched call receives
-        ``site_config=`` so the bluesky/mastodon adapters' DI gate doesn't
+        ``site_config=`` so the mastodon adapter's DI gate doesn't
         misfire. The 30-day distribution-dark bug (fixed 2026-05-09 17:00 UTC)
         was caused by a lambda dropping the kwarg — pin it forever."""
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky")]
-        mock_bsky.return_value = {"success": True, "post_id": "x", "error": None}
+        mock_load.return_value = [_row("mastodon")]
+        mock_masto.return_value = {"success": True, "post_id": "x", "error": None}
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
-        await _distribute_to_adapters(posts, {"bluesky"}, site_config=_TEST_SC)
+        await _distribute_to_adapters(posts, {"mastodon"}, site_config=_TEST_SC)
 
-        mock_bsky.assert_awaited_once()
-        kwargs = mock_bsky.await_args.kwargs
+        mock_masto.assert_awaited_once()
+        kwargs = mock_masto.await_args.kwargs
         assert "site_config" in kwargs
         assert kwargs["site_config"] is not None
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
-           new_callable=AsyncMock)
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
-           new_callable=AsyncMock)
+    @patch("services.social_poster.registry.dispatch", new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_one_adapter_crash_does_not_kill_others(
-        self, mock_load, mock_bsky, mock_masto,
+        self, mock_load, mock_dispatch,
     ):
         """GH-36 AC#5 / poindexter#112: graceful degradation must survive
-        the registry-driven dispatch path too."""
+        the registry-driven dispatch path too. Patches ``registry.dispatch``
+        so one platform can raise while the other succeeds without needing a
+        second real adapter."""
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky"), _row("mastodon")]
-        mock_bsky.side_effect = Exception("Bluesky is down")
-        mock_masto.return_value = {"success": True, "post_id": "masto1", "error": None}
+        mock_load.return_value = [_row("mastodon"), _row("reddit")]
+
+        async def _dispatch(surface, handler_name, payload, **kwargs):
+            if handler_name == "mastodon":
+                raise Exception("Mastodon is down")
+            return {"success": True, "post_id": "r", "error": None}
+
+        mock_dispatch.side_effect = _dispatch
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
-        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"}, site_config=_TEST_SC)
+        result = await _distribute_to_adapters(posts, {"mastodon", "reddit"}, site_config=_TEST_SC)
 
-        assert result["bluesky"]["success"] is False
-        assert "Bluesky is down" in result["bluesky"]["error"]
-        assert result["mastodon"]["success"] is True
+        assert result["mastodon"]["success"] is False
+        assert "Mastodon is down" in result["mastodon"]["error"]
+        assert result["reddit"]["success"] is True
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
+    @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
            new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_advisory_filter_skips_unrowed_platforms(
-        self, mock_load, mock_bsky, caplog,
+        self, mock_load, mock_masto, caplog,
     ):
         """Legacy ``enabled`` set with a platform that has no DB row =
         WARN + skip. No more silent no-op for stale configs."""
@@ -709,54 +709,54 @@ class TestDistributeToAdapters:
 
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky")]
-        mock_bsky.return_value = {"success": True, "post_id": "b1", "error": None}
+        mock_load.return_value = [_row("mastodon")]
+        mock_masto.return_value = {"success": True, "post_id": "b1", "error": None}
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
         with caplog.at_level(logging.WARNING, logger="services.social_poster"):
-            result = await _distribute_to_adapters(posts, {"bluesky", "linkedin"}, site_config=_TEST_SC)
+            result = await _distribute_to_adapters(posts, {"mastodon", "linkedin"}, site_config=_TEST_SC)
 
-        assert result["bluesky"]["success"] is True
+        assert result["mastodon"]["success"] is True
         assert "linkedin" not in result
         assert any("linkedin" in rec.getMessage() for rec in caplog.records)
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
+    @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
            new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_missing_credentials_logs_clean_skip(
-        self, mock_load, mock_bsky, caplog,
+        self, mock_load, mock_masto, caplog,
     ):
         """GH-36 AC#7: missing credentials short-circuits with a clear log."""
         import logging
 
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky")]
-        mock_bsky.return_value = {
+        mock_load.return_value = [_row("mastodon")]
+        mock_masto.return_value = {
             "success": False,
             "post_id": None,
-            "error": "bluesky_identifier or bluesky_app_password not configured",
+            "error": "mastodon_instance_url or mastodon_access_token not configured",
         }
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
         with caplog.at_level(logging.WARNING, logger="services.social_poster"):
-            result = await _distribute_to_adapters(posts, {"bluesky"}, site_config=_TEST_SC)
+            result = await _distribute_to_adapters(posts, {"mastodon"}, site_config=_TEST_SC)
 
-        assert result["bluesky"]["success"] is False
-        assert "not configured" in result["bluesky"]["error"]
+        assert result["mastodon"]["success"] is False
+        assert "not configured" in result["mastodon"]["error"]
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
+    @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
            new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
-    async def test_counter_update_fires_after_dispatch(self, mock_load, mock_bsky):
+    async def test_counter_update_fires_after_dispatch(self, mock_load, mock_masto):
         """Per-row counter writes mirror tap_runner — ``_record_publisher_outcome``
         is invoked after each adapter call when a pool is provided."""
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky")]
-        mock_bsky.return_value = {"success": True, "post_id": "b1", "error": None}
+        mock_load.return_value = [_row("mastodon")]
+        mock_masto.return_value = {"success": True, "post_id": "b1", "error": None}
 
         # Fake pool that records UPDATE statements.
         class _Conn:
@@ -773,7 +773,7 @@ class TestDistributeToAdapters:
 
         pool = _Pool()
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
-        await _distribute_to_adapters(posts, {"bluesky"}, pool=pool, site_config=_TEST_SC)
+        await _distribute_to_adapters(posts, {"mastodon"}, pool=pool, site_config=_TEST_SC)
 
         assert any("UPDATE publishing_adapters" in q for q, _ in pool.executes)
 
@@ -791,8 +791,8 @@ class TestBumpMetricNeverRaises:
     def test_known_metric_no_raise(self):
         from services.social_poster import _bump_metric
 
-        _bump_metric("social_adapter_posts_total", platform="bluesky", outcome="success")
-        _bump_metric("social_adapter_errors_total", platform="bluesky")
+        _bump_metric("social_adapter_posts_total", platform="mastodon", outcome="success")
+        _bump_metric("social_adapter_errors_total", platform="mastodon")
 
 
 # ---------------------------------------------------------------------------

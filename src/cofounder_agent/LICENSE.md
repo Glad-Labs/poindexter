@@ -77,7 +77,7 @@ summarized below; see individual repositories for complete license texts.
 - Sentry SDK — runtime error tracking
 - APScheduler, Click, structlog, PyJWT — scheduling, CLI, logging, tokens
 - python-slugify, ddgs, BeautifulSoup4, Markdown — content processing utilities
-- Resend, Cloudinary, atproto — email, media CDN, Bluesky integration
+- Resend, Cloudinary — email, media CDN
 - MCP — Anthropic Model Context Protocol SDK
 - slowapi, python-dotenv, python-json-logger — rate limiting, config, logging
 

@@ -132,7 +132,6 @@ publishing adapters, webhooks, retention.
 - [integrations/outbound_discord_post.md](integrations/outbound_discord_post.md)
 - [integrations/outbound_telegram_post.md](integrations/outbound_telegram_post.md)
 - [integrations/outbound_vercel_isr.md](integrations/outbound_vercel_isr.md)
-- [integrations/publishing_bluesky.md](integrations/publishing_bluesky.md)
 - [integrations/publishing_mastodon.md](integrations/publishing_mastodon.md)
 - [integrations/tap_builtin_topic_source.md](integrations/tap_builtin_topic_source.md)
 - [integrations/tap_external_metrics_writer.md](integrations/tap_external_metrics_writer.md)

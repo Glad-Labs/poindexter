@@ -38,7 +38,7 @@ The instance URL is plain config (`is_secret=false`); the access token is encryp
 
 ## Caller usage
 
-Same as `publishing.bluesky` — the row-driven dispatcher in `services/social_poster.py:_distribute_to_adapters` walks every enabled `publishing_adapters` row and calls each handler.
+The row-driven dispatcher in `services/social_poster.py:_distribute_to_adapters` walks every enabled `publishing_adapters` row and calls each handler.
 
 ```python
 from services.social_poster import generate_and_distribute_social_posts
@@ -111,6 +111,6 @@ poindexter publishers disable mastodon_main
 ## Related
 
 - Framework overview: [Integrations](/docs/integrations/index)
-- Sibling handler: `publishing.bluesky`
+- Sibling handler: `publishing.youtube`
 - Issue: `Glad-Labs/poindexter#112`
 - CLI: `poindexter publishers --help`

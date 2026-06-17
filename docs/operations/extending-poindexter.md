@@ -19,7 +19,7 @@ This guide is prescriptive. If you want design rationale, read
 | --------------------------------------------------------- | ------------ | -------------------------------------- | ------------------------------------------------ |
 | Run a new step in the content pipeline                    | **Stage**    | `plugins/stage.py::Stage`              | `modules/content/stages/writer_self_review.py`   |
 | Score a draft against a new quality rule                  | **Reviewer** | `plugins/stage.py::Reviewer`           | `modules/content/content_validator.py`           |
-| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`            | `services/social_adapters/bluesky.py`            |
+| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`            | `services/social_adapters/mastodon.py`           |
 | Generate media (image / audio / video) from a new engine  | **Provider** | `plugins/stage.py::Provider`           | `services/image_providers/sdxl.py` (in-progress) |
 | Ingest content ideas from a new source (API, file, queue) | **Tap**      | `plugins/tap.py::Tap`                  | `services/topic_sources/hackernews.py`           |
 | Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`              | `brain/health_probes.py`                         |
@@ -226,7 +226,6 @@ itself.
 
 Existing adapters live in `services/social_adapters/`:
 
-- `bluesky.py` — working
 - `mastodon.py` — working
 
 Further platforms (LinkedIn, Reddit, Threads) are tracked at GH-40.

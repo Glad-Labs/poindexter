@@ -24,7 +24,7 @@ name can be reused across surfaces. Five surfaces are in flight today.
 | `outbound` | `webhook_endpoints` (direction=`outbound`) | `services/integrations/outbound_dispatcher.py` | We send an event out (Discord, Telegram, Vercel ISR purge). |
 | `tap` | `external_taps` | `services/integrations/tap_runner.py` | Pull external data on a schedule (HackerNews, Dev.to, GA4, GSC, Singer subprocesses). |
 | `retention` | `retention_policies` | `services/integrations/retention_runner.py` | Sweep aging data — TTL-prune, downsample, summarize-to-table. |
-| `publishing` | `publishing_adapters` | `services/social_poster.py:_distribute_to_adapters` | Push generated content to social platforms (Bluesky, Mastodon). |
+| `publishing` | `publishing_adapters` | `services/social_poster.py:_distribute_to_adapters` | Push generated content to social platforms (Mastodon). |
 
 ## Handler catalog
 
@@ -72,7 +72,6 @@ name can be reused across surfaces. Five surfaces are in flight today.
     `publishing_adapters`; adding a new platform is an insert plus a
     handler registration.
 
-    - [`publishing.bluesky`](/docs/integrations/publishing_bluesky) — post to a Bluesky account via the AT Protocol
     - [`publishing.mastodon`](/docs/integrations/publishing_mastodon) — post to a Mastodon (or any Fediverse) instance
   </Accordion>
 
@@ -111,7 +110,7 @@ the dispatcher.
   <Step title="Seed the adapter row">
     Add a migration that inserts the `publishing_adapters` row — copy the
     `INSERT INTO publishing_adapters` shape from
-    [`publishing_bluesky`](/docs/integrations/publishing_bluesky) or the rows
+    [`publishing_mastodon`](/docs/integrations/publishing_mastodon) or the rows
     seeded in `services/migrations/0000_baseline.py`.
   </Step>
 

@@ -89,7 +89,6 @@ Pulled from `app_settings WHERE is_secret = TRUE` plus the two bootstrap secrets
 | `cloudinary_api_key` + `cloudinary_api_secret` | `app_settings` (encrypted)                          | Image CDN                             | [§ cloudinary keys](#cloudinary-keys)                           |
 | `storage_secret_key` + `storage_token`         | `app_settings` (encrypted)                          | S3-compatible object storage (R2)     | [§ storage keys](#storage-keys)                                 |
 | `redis_url`                                    | `app_settings` (encrypted)                          | Redis connection (with AUTH password) | [§ redis_url](#redis_url)                                       |
-| `bluesky_app_password` + `bluesky_identifier`  | `app_settings` (encrypted)                          | Bluesky cross-post                    | [§ bluesky keys](#bluesky-keys)                                 |
 | `mastodon_access_token`                        | `app_settings` (encrypted)                          | Mastodon cross-post                   | [§ mastodon_access_token](#mastodon_access_token)               |
 | `devto_api_key`                                | `app_settings` (encrypted)                          | Dev.to cross-post                     | [§ devto_api_key](#devto_api_key)                               |
 | `notion_api_key`                               | `app_settings` (encrypted)                          | Notion integration                    | [§ notion_api_key](#notion_api_key)                             |
@@ -673,21 +672,6 @@ docker exec poindexter-prefect-redis redis-cli CONFIG SET requirepass "<new-pass
 
 ---
 
-### Bluesky keys
-
-Keys: `bluesky_app_password` + `bluesky_identifier` (both encrypted).
-
-**Procedure.**
-
-```bash
-# 1. Bluesky app: Settings -> App Passwords -> Add (or regenerate)
-# 2. poindexter settings set bluesky_app_password "<new-app-password>" --secret
-# (bluesky_identifier is your handle — only changes if you change handles)
-# 3. docker restart poindexter-worker
-```
-
----
-
 ### `mastodon_access_token`
 
 **Procedure.** New token from your Mastodon instance: Settings → Development → New Application (or revoke + recreate). Generic flow afterwards.
@@ -757,7 +741,7 @@ After a CONFIG-2 disaster recovery (lost encryption key), you have an empty `app
 [ ] cloudinary_api_key + secret     (image CDN)
 [ ] storage_secret_key + token      (R2/S3 — required for static export)
 [ ] redis_url                       (if Redis is wired)
-[ ] bluesky / mastodon / devto      (cross-post adapters)
+[ ] mastodon / devto                (cross-post adapters)
 [ ] grafana_api_key + token         (if calling Grafana API from worker)
 ```
 
@@ -790,7 +774,7 @@ docker logs poindexter-worker --since=2m 2>&1 | grep -i "SecretsError\|<KEY>"
 - Bot tokens (Telegram, Discord) — only on suspected compromise (rotation invalidates active sessions)
 - Paid API keys (OpenAI, Anthropic, Gemini, Resend, Cloudinary) — every 90 days, or on bill anomaly
 - Webhook secrets (Lemon Squeezy, Resend) — only when the provider rotates them or on suspected compromise
-- Cross-post adapter tokens (Bluesky, Mastodon, Dev.to) — yearly
+- Cross-post adapter tokens (Mastodon, Dev.to) — yearly
 
 A scheduled agent should be set up to remind on this cadence (see `/schedule` skill).
 

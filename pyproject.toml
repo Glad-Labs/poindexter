@@ -29,6 +29,10 @@ asyncpg = "^0.31.0"
 httpx = "^0.27.0"  # HTTP client — floor below ^0.28 (backend) because mcp-server-fetch 2025.4.7 requires httpx<0.28
 markdown = "^3.10"
 email-validator = ">=2.0.0"
+# cryptography is only a transitive dependency here, but pin a security floor
+# so the lock can't sit on a vulnerable build — >=48.0.1 clears the bundled-
+# OpenSSL advisory GHSA-537c-gmf6-5ccf (Trivy HIGH; fixed in 48.0.1).
+cryptography = ">=48.0.1"
 sentry-sdk = { version = ">=1.40.0", extras = ["fastapi"] }
 pytest = ">=9.0.3,<10.0"  # Testing framework — bumped to 9.x for the tmpdir CVE fix
 pytest-asyncio = ">=1.0,<2.0"  # Async test support — 1.0+ supports pytest 9.x
@@ -38,9 +42,10 @@ opentelemetry-sdk = "^1.41.0"
 mcp-server-fetch = "^2025.4.7"
 structlog = "^25.5.0"
 
-# Direct social-media APIs (GH-36 — retires dlvr.it). Both are MIT-licensed
-# and call the platform's free/public endpoints; no paid tier required.
-atproto = ">=0.0.55"          # Bluesky AT Protocol client
+# Direct social-media API (GH-36 — retires dlvr.it). MIT-licensed,
+# free/public endpoints, no paid tier. (atproto/Bluesky dropped 2026-06-17 —
+# its cryptography<47 cap blocked the cryptography>=48.0.1 fix for the
+# GHSA-537c-gmf6-5ccf Trivy HIGH; Bluesky cross-posting retired with it.)
 "Mastodon.py" = ">=1.8.1"     # Mastodon API client (Fediverse)
 
 [tool.poetry.extras]

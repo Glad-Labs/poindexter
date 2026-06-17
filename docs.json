@@ -145,10 +145,7 @@
           },
           {
             "group": "Publishing",
-            "pages": [
-              "docs/integrations/publishing_bluesky",
-              "docs/integrations/publishing_mastodon"
-            ]
+            "pages": ["docs/integrations/publishing_mastodon"]
           },
           {
             "group": "Taps",

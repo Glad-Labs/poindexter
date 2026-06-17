@@ -10,8 +10,8 @@ Three specialized sub-protocols for specific transformations:
   ``programmatic_validator``, ``llm_critic``, ``seo_checker``,
   ``url_verifier``.
 - :class:`Adapter` — publishes the finished post to an external platform.
-  Examples: ``bluesky``, ``linkedin``, ``mastodon``, ``reddit``,
-  ``youtube`` (already in ``services/social_adapters/``).
+  Examples: ``mastodon``, ``youtube`` (already in
+  ``services/social_adapters/``); future ``linkedin``, ``reddit``.
 - :class:`Provider` — generates media (images, audio, video). Examples:
   ``pexels``, ``sdxl``, ``ai_generation``, future ``midjourney``,
   ``flux``.
@@ -30,7 +30,7 @@ Register via ``pyproject.toml``:
     llm_critic = "poindexter.reviewers.llm_critic:LLMCriticReviewer"
 
     [project.entry-points."poindexter.adapters"]
-    bluesky = "poindexter.adapters.bluesky:BlueskyAdapter"
+    mastodon = "poindexter.adapters.mastodon:MastodonAdapter"
 
     [project.entry-points."poindexter.providers"]
     sdxl = "poindexter.providers.sdxl:SDXLProvider"
@@ -101,11 +101,11 @@ class Adapter(Stage, Protocol):
     """A Stage that publishes the finished post to an external platform.
 
     Attributes:
-        platform: Human-readable platform name (``"Bluesky"``,
+        platform: Human-readable platform name (``"Mastodon"``,
             ``"LinkedIn"``, ``"YouTube"``).
         requires_credentials: List of ``app_settings`` keys the Adapter
-            needs to function (e.g. ``["bluesky_handle",
-            "bluesky_app_password"]``). The orchestrator uses this for
+            needs to function (e.g. ``["mastodon_instance_url",
+            "mastodon_access_token"]``). The orchestrator uses this for
             pre-flight checks — skip the Adapter if any credential is
             missing, surface a single warning instead of failing mid-post.
     """

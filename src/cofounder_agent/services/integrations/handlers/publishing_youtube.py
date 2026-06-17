@@ -8,7 +8,7 @@ a thin shim that adapts the registry's
 keyword-only ``publish(*, media_path, title, description, ...)``
 signature.
 
-Same shape as :mod:`publishing_bluesky` and :mod:`publishing_mastodon`.
+Same shape as :mod:`publishing_mastodon`.
 
 Payload shape::
 

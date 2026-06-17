@@ -4,6 +4,13 @@ These complement TestDistributeToAdapters in ``test_social_poster.py``;
 they're broken out into their own file because the dispatch path is the
 new surface — the social_poster file's tests cover the broader social
 posting flow + prompt building + notification.
+
+Mastodon is the canonical example adapter here. (Bluesky/atproto was
+retired 2026-06-17 to unblock the cryptography>=48.0.1 security bump for
+GHSA-537c-gmf6-5ccf.) A second, un-rowed platform name ("reddit") stands
+in where a test needs a "listed but not wired" platform; the two-handler
+graceful-degradation case patches ``registry.dispatch`` directly so it
+exercises the loop without needing a second real adapter.
 """
 
 from __future__ import annotations
@@ -14,10 +21,7 @@ from uuid import uuid4
 import pytest
 
 # Trigger handler registration (idempotent — registry refuses dupes).
-from services.integrations.handlers import (  # noqa: F401
-    publishing_bluesky,
-    publishing_mastodon,
-)
+from services.integrations.handlers import publishing_mastodon  # noqa: F401
 from services.publishing_adapters_db import PublishingAdapterRow
 from services.site_config import SiteConfig
 from services.social_poster import SocialPost
@@ -64,51 +68,31 @@ class TestRegistryDrivenDispatch:
     """The dispatcher walks DB rows, not the legacy ``enabled`` set."""
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
-           new_callable=AsyncMock)
     @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
            new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_db_rows_drive_dispatch_not_legacy_set(
-        self, mock_load, mock_masto, mock_bsky, posts,
+        self, mock_load, mock_masto, posts,
     ):
-        """If the DB has only bluesky enabled, mastodon never fires —
-        even when the legacy ``enabled`` set still says
-        ``{'bluesky', 'mastodon'}``."""
+        """If the DB has only mastodon enabled, a legacy-only platform
+        never fires — even when the legacy ``enabled`` set still lists it."""
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky")]  # mastodon row absent
-        mock_bsky.return_value = {"success": True, "post_id": "b", "error": None}
+        mock_load.return_value = [_row("mastodon")]  # 'reddit' row absent
+        mock_masto.return_value = {"success": True, "post_id": "m", "error": None}
 
-        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"}, site_config=_TEST_SC)
+        result = await _distribute_to_adapters(posts, {"mastodon", "reddit"}, site_config=_TEST_SC)
 
-        assert "bluesky" in result
-        assert "mastodon" not in result
-        mock_masto.assert_not_awaited()
+        assert "mastodon" in result
+        assert "reddit" not in result
+        mock_masto.assert_awaited_once()
 
 
 class TestSiteConfigKwargRegression:
     """REGRESSION (poindexter#112): every dispatched call must include
-    ``site_config=`` so the bluesky/mastodon adapters' DI gate doesn't
+    ``site_config=`` so the mastodon adapter's DI gate doesn't
     short-circuit. Pin the fix that resolved the 2026-05-09 17:00 UTC
     distribution-dark bug."""
-
-    @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
-           new_callable=AsyncMock)
-    @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
-    async def test_bluesky_handler_receives_site_config(
-        self, mock_load, mock_bsky, posts,
-    ):
-        from services.social_poster import _distribute_to_adapters
-
-        mock_load.return_value = [_row("bluesky")]
-        mock_bsky.return_value = {"success": True, "post_id": "b", "error": None}
-
-        await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
-
-        kwargs = mock_bsky.await_args.kwargs
-        assert "site_config" in kwargs and kwargs["site_config"] is not None
 
     @pytest.mark.asyncio
     @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
@@ -161,23 +145,23 @@ class TestDispatchEdgeCases:
 
         mock_load.return_value = []  # nothing wired
         with caplog.at_level(logging.WARNING, logger="services.social_poster"):
-            await _distribute_to_adapters(posts, {"bluesky"}, site_config=_TEST_SC)
+            await _distribute_to_adapters(posts, {"reddit"}, site_config=_TEST_SC)
         assert any(
-            "bluesky" in rec.getMessage() and "skipping" in rec.getMessage()
+            "reddit" in rec.getMessage() and "skipping" in rec.getMessage()
             for rec in caplog.records
         )
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
+    @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
            new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_counter_update_fires_after_each_call(
-        self, mock_load, mock_bsky, posts,
+        self, mock_load, mock_masto, posts,
     ):
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky")]
-        mock_bsky.return_value = {"success": True, "post_id": "b", "error": None}
+        mock_load.return_value = [_row("mastodon")]
+        mock_masto.return_value = {"success": True, "post_id": "m", "error": None}
 
         pool = _FakePool()
         await _distribute_to_adapters(posts, set(), pool=pool, site_config=_TEST_SC)
@@ -191,23 +175,28 @@ class TestDispatchEdgeCases:
         assert args[3] is True  # success flag for CASE expression
 
     @pytest.mark.asyncio
-    @patch("services.integrations.handlers.publishing_mastodon.post_to_mastodon",
-           new_callable=AsyncMock)
-    @patch("services.integrations.handlers.publishing_bluesky.post_to_bluesky",
-           new_callable=AsyncMock)
+    @patch("services.social_poster.registry.dispatch", new_callable=AsyncMock)
     @patch("services.social_poster.load_enabled_publishers", new_callable=AsyncMock)
     async def test_one_handler_raising_does_not_stop_loop(
-        self, mock_load, mock_bsky, mock_masto, posts,
+        self, mock_load, mock_dispatch, posts,
     ):
         """Graceful-degradation regression — preserved for the dispatch
-        path. Bluesky raises, mastodon still gets called."""
+        path. One platform's handler raises; the other still gets called
+        and the loop returns a well-formed result for both. Patching
+        ``registry.dispatch`` exercises the loop without a second real
+        adapter."""
         from services.social_poster import _distribute_to_adapters
 
-        mock_load.return_value = [_row("bluesky"), _row("mastodon")]
-        mock_bsky.side_effect = RuntimeError("boom")
-        mock_masto.return_value = {"success": True, "post_id": "m", "error": None}
+        mock_load.return_value = [_row("mastodon"), _row("reddit")]
+
+        async def _dispatch(surface, handler_name, payload, **kwargs):
+            if handler_name == "mastodon":
+                raise RuntimeError("boom")
+            return {"success": True, "post_id": "r", "error": None}
+
+        mock_dispatch.side_effect = _dispatch
 
         result = await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
-        assert result["bluesky"]["success"] is False
-        assert "boom" in result["bluesky"]["error"]
-        assert result["mastodon"]["success"] is True
+        assert result["mastodon"]["success"] is False
+        assert "boom" in result["mastodon"]["error"]
+        assert result["reddit"]["success"] is True

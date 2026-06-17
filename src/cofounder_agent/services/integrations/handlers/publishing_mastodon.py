@@ -2,7 +2,7 @@
 
 Posts a status to a Mastodon/Fediverse instance via the existing
 :func:`services.social_adapters.mastodon.post_to_mastodon` adapter.
-Same shim shape as :mod:`publishing_bluesky`.
+Same shim shape as the sibling ``publishing.*`` handlers.
 
 Payload shape::
 
