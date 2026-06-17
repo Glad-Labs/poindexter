@@ -11,7 +11,7 @@ Handles all task-related database operations including:
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from asyncpg import Pool
@@ -569,13 +569,13 @@ class TasksDatabase(DatabaseServiceMixin):
                             return None
                 if row:
                     task_response = ModelConverter.to_task_response(row)
-                    return ModelConverter.to_dict(task_response)
+                    return cast(TaskRecord, ModelConverter.to_dict(task_response))
                 return None
         except Exception as e:
             logger.error("Failed to get task %s: %s", task_id, e, exc_info=True)
             return None
 
-    async def get_tasks_by_ids(self, task_ids: list[str]) -> dict[str, dict]:
+    async def get_tasks_by_ids(self, task_ids: list[str]) -> dict[str, dict[str, Any]]:
         """
         Fetch multiple tasks in a single query.
 
@@ -673,7 +673,7 @@ class TasksDatabase(DatabaseServiceMixin):
             return None
 
     @log_query_performance(operation="update_task", category="task_write")
-    async def update_task(self, task_id: str, updates: dict[str, Any]) -> dict | None:
+    async def update_task(self, task_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
         """
         Update task fields in content_tasks.
 
@@ -689,7 +689,7 @@ class TasksDatabase(DatabaseServiceMixin):
         logger.debug("update_task(%s) keys=%s", task_id, list(updates.keys()))
 
         if not updates:
-            return await self.get_task(task_id)
+            return cast(dict[str, Any] | None, await self.get_task(task_id))
 
         # Extract task_metadata for normalization
         task_metadata = safe_json_load(updates.get("task_metadata"), fallback={})
@@ -964,7 +964,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     updated = await conn.fetchval(_sql, *params)
                     if updated is None:
                         return None
-                    return prev
+                    return str(prev)  # prev is status text from SELECT; fetchval returns Any
         except Exception as e:
             logger.error(
                 "update_task_status_guarded(%s → %s) failed: %s",
@@ -1062,7 +1062,7 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql_list, *params)
                 total = rows[0]["total_count"] if rows else 0
-                tasks = [self._convert_row_to_dict(row) for row in rows]
+                tasks: list[TaskRecord] = [cast(TaskRecord, self._convert_row_to_dict(row)) for row in rows]
                 logger.info("Listed %d tasks (total: %d)", len(tasks), total)
                 return tasks, total
         except Exception as e:

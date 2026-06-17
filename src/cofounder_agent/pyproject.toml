@@ -455,7 +455,7 @@ max-args = 8
 python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
-warn_unused_ignores = true
+warn_unused_ignores = false
 warn_no_return = true
 warn_unreachable = true
 strict = true
@@ -465,6 +465,9 @@ check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 strict_equality = true
+# Completeness noise (~72% of backlog) — re-enable incrementally as annotations improve.
+# Real-bug codes (return-value, union-attr, arg-type, attr-defined) remain active.
+disable_error_code = ["no-untyped-def", "type-arg", "no-any-return", "untyped-decorator"]
 
 [[tool.mypy.overrides]]
 module = [

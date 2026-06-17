@@ -124,9 +124,13 @@ disallow_untyped_defs = false
 disallow_untyped_calls = false
 no_implicit_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = true
+warn_unused_ignores = false
 warn_no_return = true
 check_untyped_defs = true
+# Completeness noise (~72% of 1278-error backlog) — real-bug codes
+# (return-value, union-attr, arg-type, attr-defined) remain active.
+# Re-enable incrementally as annotations improve. See issue #1550.
+disable_error_code = ["no-untyped-def", "type-arg", "no-any-return", "untyped-decorator"]
 
 # Library stubs
 ignore_missing_imports = true

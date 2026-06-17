@@ -43,13 +43,16 @@ Usage:
 
 import functools
 import time
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Coroutine
+from typing import Any, ParamSpec, TypeVar
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 class Decorators:
@@ -96,7 +99,7 @@ class Decorators:
         operation: str,
         category: str = "database",
         slow_threshold_ms: int | None = None,
-    ):
+    ) -> Callable[[Callable[_P, Coroutine[Any, Any, _T]]], Callable[_P, Coroutine[Any, Any, _T]]]:
         """Method form — bound to this instance's SiteConfig."""
         return _build_log_query_performance(
             decorators=self,
@@ -176,7 +179,7 @@ def _build_log_query_performance(
     operation: str,
     category: str,
     slow_threshold_ms: int | None,
-) -> Callable:
+) -> Callable[[Callable[_P, Coroutine[Any, Any, _T]]], Callable[_P, Coroutine[Any, Any, _T]]]:
     """Construct the actual decorator.
 
     ``decorators`` is captured at decoration time and used as the source
@@ -207,9 +210,11 @@ def _build_log_query_performance(
             return _log_all_queries()
         return decorators._log_all_queries()
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(
+        func: Callable[_P, Coroutine[Any, Any, _T]]
+    ) -> Callable[_P, Coroutine[Any, Any, _T]]:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs) -> Any:
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
             # Skip if monitoring disabled
             if not _read_enable_query_monitoring():
                 return await func(*args, **kwargs)
@@ -313,7 +318,7 @@ def log_query_performance(
     operation: str,
     category: str = "database",
     slow_threshold_ms: int | None = None,
-):
+) -> Callable[[Callable[_P, Coroutine[Any, Any, _T]]], Callable[_P, Coroutine[Any, Any, _T]]]:
     """
     Decorator to log query performance metrics.
 
