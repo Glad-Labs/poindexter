@@ -8,6 +8,9 @@ Provides advanced cost analytics by querying the cost_logs PostgreSQL table:
 - Generate budget alerts
 
 Built on top of DatabaseService's log_cost() and get_task_costs() methods.
+
+Module-level helpers (no class instantiation required):
+    :func:`get_spend_totals` — raw monthly + daily totals for operator dashboards.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -568,3 +571,30 @@ class CostAggregationService:
             "status": "healthy",
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
+
+
+# ---------------------------------------------------------------------------
+# Module-level helper — no class instantiation required.
+# ---------------------------------------------------------------------------
+
+_SPEND_MONTHLY_SQL = (
+    "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
+    "WHERE created_at >= date_trunc('month', NOW())"
+)
+_SPEND_DAILY_SQL = (
+    "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
+    "WHERE created_at >= date_trunc('day', NOW())"
+)
+
+
+async def get_spend_totals(pool: Any) -> dict[str, float]:
+    """Return current month and current day spend totals from ``cost_logs``.
+
+    Returns ``{"monthly_total_usd": float, "daily_total_usd": float}``.
+    """
+    monthly = await pool.fetchval(_SPEND_MONTHLY_SQL)
+    daily = await pool.fetchval(_SPEND_DAILY_SQL)
+    return {
+        "monthly_total_usd": float(monthly or 0),
+        "daily_total_usd": float(daily or 0),
+    }

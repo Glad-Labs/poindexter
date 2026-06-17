@@ -1,6 +1,5 @@
 {
   "mcp-server/oauth_client.py": 2,
-  "mcp-server/server.py": 19,
   "src/cofounder_agent/poindexter/cli/auto_publish.py": 6,
   "src/cofounder_agent/poindexter/cli/backup.py": 3,
   "src/cofounder_agent/poindexter/cli/dev_diary.py": 3,

@@ -363,19 +363,8 @@ async def list_tasks(status: str = "all", limit: int = 10) -> str:
     """List content tasks with their status and quality scores."""
     try:
         pool = await _get_pool()
-        limit = min(limit, 100)
-        if status != "all":
-            rows = await pool.fetch(
-                "SELECT task_id, topic, status, quality_score, created_at "
-                "FROM pipeline_tasks_view WHERE status = $1 ORDER BY created_at DESC LIMIT $2",
-                status, limit,
-            )
-        else:
-            rows = await pool.fetch(
-                "SELECT task_id, topic, status, quality_score, created_at "
-                "FROM pipeline_tasks_view ORDER BY created_at DESC LIMIT $1",
-                limit,
-            )
+        from services.tasks_mcp import list_tasks as _svc_list_tasks
+        rows = await _svc_list_tasks(pool, status=status, limit=limit)
         if not rows:
             return "No tasks found."
         lines = [f"Tasks ({len(rows)}):"]
@@ -392,19 +381,12 @@ async def list_tasks(status: str = "all", limit: int = 10) -> str:
 
 async def _resolve_task_id(task_id: str) -> str:
     """Resolve a short task ID prefix to the full UUID via database lookup."""
-    if len(task_id) >= 32:
-        return task_id
     try:
         pool = await _get_pool()
-        row = await pool.fetchrow(
-            "SELECT task_id FROM pipeline_tasks_view WHERE task_id::text LIKE $1 || '%' LIMIT 1",
-            task_id,
-        )
-        if row:
-            return str(row["task_id"])
+        from services.tasks_mcp import resolve_task_prefix
+        return await resolve_task_prefix(pool, task_id)
     except Exception:
-        pass
-    return task_id  # Fall back to whatever was given
+        return task_id  # Fall back to whatever was given
 
 
 @mcp.tool()
@@ -628,18 +610,9 @@ async def get_budget() -> str:
     """Get current AI spending status (daily and monthly)."""
     try:
         pool = await _get_pool()
-        monthly = await pool.fetchval(
-            "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-            "WHERE created_at >= date_trunc('month', NOW())"
-        )
-        daily = await pool.fetchval(
-            "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-            "WHERE created_at >= date_trunc('day', NOW())"
-        )
-        return json.dumps({
-            "monthly_total_usd": float(monthly),
-            "daily_total_usd": float(daily),
-        }, indent=2)
+        from services.cost_aggregation_service import get_spend_totals
+        totals = await get_spend_totals(pool)
+        return json.dumps(totals, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -676,20 +649,17 @@ async def get_setting(key: str) -> str:
     try:
         pool = await _get_pool()
         bare_key, declared_category = _strip_category_prefix(key)
-        row = await pool.fetchrow(
-            "SELECT key, value, category, is_secret FROM app_settings WHERE key = $1",
-            bare_key,
-        )
-        if not row:
+        from services.admin_db import AdminDatabase
+        setting = await AdminDatabase(pool).get_setting(bare_key)
+        if not setting:
             return f"Setting '{key}' not found."
-        if declared_category and declared_category != (row["category"] or ""):
+        if declared_category and declared_category != (setting.category or ""):
             logger.warning(
                 "get_setting: supplied category prefix %r does not match "
                 "row's actual category %r for key %r — proceeding anyway",
-                declared_category, row["category"] or "", bare_key,
+                declared_category, setting.category or "", bare_key,
             )
-        val = "********" if row["is_secret"] else row["value"]
-        return f"{row['key']} = {val} (category: {row['category'] or '?'})"
+        return f"{setting.key} = {setting.value} (category: {setting.category or '?'})"
     except Exception as e:
         return f"Error: {e}"
 
@@ -714,16 +684,19 @@ async def set_setting(key: str, value: str) -> str:
     # the agent_permissions query failed (poindexter#750).
     try:
         pool = await _get_pool()
-        perm = await pool.fetchrow(
-            "SELECT allowed, requires_approval FROM agent_permissions "
-            "WHERE agent_name = 'mcp_server' AND resource = 'app_settings' AND action = 'write'",
+        from services.agent_permissions import check_write_permission, queue_for_approval
+        allowed, requires_approval = await check_write_permission(
+            pool, "mcp_server", "app_settings", "write"
         )
-        if perm and not perm["allowed"]:
-            if perm["requires_approval"]:
-                await pool.execute(
-                    "INSERT INTO approval_queue (agent_name, resource, action, proposed_change, reason) "
-                    "VALUES ('mcp_server', 'app_settings', 'write', $1, 'MCP set_setting tool')",
-                    json.dumps({"key": bare_key, "value": value}),
+        if not allowed:
+            if requires_approval:
+                await queue_for_approval(
+                    pool,
+                    agent_name="mcp_server",
+                    resource="app_settings",
+                    action="write",
+                    proposed_change={"key": bare_key, "value": value},
+                    reason="MCP set_setting tool",
                 )
                 return f"Permission denied: change to {bare_key} queued for approval"
             return "Permission denied: mcp_server cannot write to app_settings"
@@ -744,26 +717,17 @@ async def list_settings(category: str = "") -> str:
     """List all configuration settings, optionally filtered by category."""
     try:
         pool = await _get_pool()
-        if category:
-            rows = await pool.fetch(
-                "SELECT key, value, category, is_secret FROM app_settings "
-                "WHERE category = $1 ORDER BY key",
-                category,
-            )
-        else:
-            rows = await pool.fetch(
-                "SELECT key, value, category, is_secret FROM app_settings ORDER BY key"
-            )
-        if not rows:
+        from services.admin_db import AdminDatabase
+        settings = await AdminDatabase(pool).get_all_settings(category or None)
+        if not settings:
             return "No settings found."
-        lines = [f"Settings ({len(rows)}):"]
+        lines = [f"Settings ({len(settings)}):"]
         # Leftmost token is the bare key — see ``_strip_category_prefix``
         # for the phantom-key context (Glad-Labs/poindexter#253). Naive
         # copy-paste of the leftmost token into ``set_setting`` lands on
         # the canonical row.
-        for r in rows:
-            val = "********" if r["is_secret"] else (r["value"] or "")
-            lines.append(f"  {r['key']} [{r['category'] or '?'}] = {val}")
+        for s in settings:
+            lines.append(f"  {s.key} [{s.category or '?'}] = {s.value}")
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"
@@ -948,33 +912,11 @@ async def get_audit_log(event_type: str = "", severity: str = "", limit: int = 2
     """
     try:
         pool = await _get_pool()
-        limit = min(limit, 100)
-
-        conditions = []
-        params: list[Any] = []
-        idx = 1
-
-        if event_type:
-            conditions.append(f"event_type = ${idx}")
-            params.append(event_type)
-            idx += 1
-        if severity:
-            conditions.append(f"severity = ${idx}")
-            params.append(severity)
-            idx += 1
-
-        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        params.append(limit)
-
-        rows = await pool.fetch(
-            f"""
-            SELECT timestamp, event_type, source, task_id, severity, details
-            FROM audit_log
-            {where}
-            ORDER BY timestamp DESC
-            LIMIT ${idx}
-            """,
-            *params,
+        from services.audit_log import AuditLogger
+        rows = await AuditLogger(pool).query(
+            event_type=event_type or None,
+            severity=severity or None,
+            limit=min(limit, 100),
         )
 
         if not rows:
@@ -1000,13 +942,8 @@ async def get_audit_summary(hours: int = 24) -> str:
     """Get a summary of audit log activity over the last N hours."""
     try:
         pool = await _get_pool()
-        rows = await pool.fetch("""
-            SELECT event_type, severity, COUNT(*) as count
-            FROM audit_log
-            WHERE timestamp > NOW() - $1 * INTERVAL '1 hour'
-            GROUP BY event_type, severity
-            ORDER BY count DESC
-        """, hours)
+        from services.audit_log import query_summary
+        rows = await query_summary(pool, hours=hours)
 
         if not rows:
             return f"No audit activity in the last {hours} hours."
@@ -1018,12 +955,6 @@ async def get_audit_summary(hours: int = 24) -> str:
         return "\n".join(lines)
     except Exception as e:
         return _format_tool_error("Audit summary", e)
-
-
-# Severities the findings_alert_router actually forwards to delivery
-# channels. ``info`` stays in audit_log only (queryable, never paged), so it
-# never counts as "pending delivery".
-_FINDINGS_ROUTABLE_SEVERITIES = ("warn", "warning", "critical")
 
 
 @mcp.tool()
@@ -1060,110 +991,36 @@ async def findings_list(
     """
     try:
         pool = await _get_pool()
-        hours = max(1, min(hours, 720))
-        limit = max(1, min(limit, 100))
-
-        # Route watermark: highest audit_log.id the router has forwarded.
-        wm_row = await pool.fetchrow(
-            "SELECT NULLIF(value, '')::bigint AS wm FROM app_settings "
-            "WHERE key = 'findings_alert_route_watermark'"
+        from datetime import datetime as _dt
+        from services.findings_read import read_findings
+        data = await read_findings(
+            pool,
+            kind=kind,
+            severity=severity,
+            hours=hours,
+            pending_only=pending_only,
+            limit=limit,
         )
-        watermark = int(wm_row["wm"]) if wm_row and wm_row["wm"] is not None else 0
+        findings = data["findings"]
+        watermark = data["watermark"]
+        hours = data["hours"]
 
-        # Per-kind delivery policies (findings.<kind>.delivery). The router
-        # ignores findings.default and routes unconfigured kinds loud, so we
-        # mirror that: a kind absent here displays as "route".
-        pol_rows = await pool.fetch(
-            "SELECT key, value FROM app_settings WHERE key LIKE 'findings.%.delivery'"
-        )
-        delivery_by_kind: dict[str, str] = {}
-        for r in pol_rows:
-            parts = r["key"].split(".")
-            if len(parts) == 3 and parts[1] not in ("", "default"):
-                delivery_by_kind[parts[1]] = r["value"]
-
-        conditions = ["event_type = 'finding'"]
-        params: list[Any] = []
-        idx = 1
-
-        conditions.append(f"timestamp > NOW() - ${idx} * INTERVAL '1 hour'")
-        params.append(hours)
-        idx += 1
-
-        if kind:
-            conditions.append(f"details->>'kind' = ${idx}")
-            params.append(kind)
-            idx += 1
-        if severity:
-            sev = severity.strip().lower()
-            if sev in ("warn", "warning"):
-                conditions.append(f"LOWER(severity) = ANY(${idx}::text[])")
-                params.append(["warn", "warning"])
-            else:
-                conditions.append(f"LOWER(severity) = ${idx}")
-                params.append(sev)
-            idx += 1
-        if pending_only:
-            conditions.append(f"id > ${idx}")
-            params.append(watermark)
-            idx += 1
-            conditions.append(f"severity = ANY(${idx}::text[])")
-            params.append(list(_FINDINGS_ROUTABLE_SEVERITIES))
-            idx += 1
-
-        where = " AND ".join(conditions)
-        params.append(limit)
-
-        rows = await pool.fetch(
-            f"""
-            SELECT id, timestamp, source, severity, details
-            FROM audit_log
-            WHERE {where}
-            ORDER BY id DESC
-            LIMIT ${idx}
-            """,
-            *params,
-        )
-
-        if not rows:
+        if not findings:
             scope = "pending " if pending_only else ""
             return f"No {scope}findings in the last {hours}h."
 
         header = (
-            f"Findings ({len(rows)}, last {hours}h"
+            f"Findings ({len(findings)}, last {hours}h"
             + (", pending only" if pending_only else "")
             + f"; route watermark id={watermark}):\n"
         )
         lines = [header]
-        for row in rows:
-            details = (
-                json.loads(row["details"])
-                if isinstance(row["details"], str)
-                else (row["details"] or {})
-            )
-            fkind = details.get("kind") or "?"
-            title = (details.get("title") or "").strip()
-            ts = row["timestamp"].strftime("%m-%d %H:%M") if row["timestamp"] else "?"
-            sev = (row["severity"] or "info").lower()
-            routable = sev in _FINDINGS_ROUTABLE_SEVERITIES
-
-            delivery = delivery_by_kind.get(fkind, "route")
-            # The router refuses to suppress a critical finding even when its
-            # kind is log_only — reflect that so the operator isn't misled.
-            if delivery == "log_only" and sev == "critical":
-                delivery = "route (critical override)"
-
-            if not routable:
-                status = "log-only"
-            elif row["id"] <= watermark:
-                status = "routed"
-            else:
-                status = "PENDING"
-
+        for f in findings:
+            ts = _dt.fromisoformat(f["timestamp"]).strftime("%m-%d %H:%M") if f["timestamp"] else "?"
             lines.append(
-                f"  [{ts}] {sev:8s} {fkind:26s} → {delivery:12s} [{status}] "
-                f"id={row['id']} src={row['source'] or '?'}"
-                + (f"\n           {title[:100]}" if title else "")
+                f"  [{ts}] {f['severity']:8s} {f['kind']:26s} → {f['delivery']:12s} [{f['status']}] "
+                f"id={f['id']} src={f['source'] or '?'}"
+                + (f"\n           {f['title'][:100]}" if f["title"] else "")
             )
         return "\n".join(lines)
     except Exception as e:
@@ -1216,32 +1073,8 @@ async def get_brain_knowledge(entity: str = "", attribute: str = "", limit: int 
     """
     try:
         pool = await _get_pool()
-        conditions = []
-        params: list[Any] = []
-        idx = 1
-
-        if entity:
-            conditions.append(f"entity LIKE ${idx}")
-            params.append(f"%{entity}%")
-            idx += 1
-        if attribute:
-            conditions.append(f"attribute = ${idx}")
-            params.append(attribute)
-            idx += 1
-
-        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        params.append(min(limit, 100))
-
-        rows = await pool.fetch(
-            f"""
-            SELECT entity, attribute, value, confidence, source, tags, updated_at
-            FROM brain_knowledge
-            {where}
-            ORDER BY updated_at DESC
-            LIMIT ${idx}
-            """,
-            *params,
-        )
+        from services.brain_knowledge_read import query_knowledge
+        rows = await query_knowledge(pool, entity=entity, attribute=attribute, limit=limit)
 
         if not rows:
             return "No brain knowledge entries found."
@@ -1278,15 +1111,12 @@ async def topics_show_batch(niche: str) -> str:
         n = await NicheService(pool).get_by_slug(niche)
         if not n:
             return f"unknown niche: {niche}"
-        async with pool.acquire() as conn:
-            bid = await conn.fetchval(
-                "SELECT id FROM topic_batches WHERE niche_id = $1 AND status = 'open'",
-                n.id,
-            )
+        site_config = await _get_site_config()
+        svc = TopicBatchService(pool, site_config=site_config)
+        bid = await svc.get_open_batch_id(n.id)
         if bid is None:
             return f"No open batch for niche {niche}."
-        site_config = await _get_site_config()
-        view = await TopicBatchService(pool, site_config=site_config).show_batch(batch_id=bid)
+        view = await svc.show_batch(batch_id=bid)
         lines = [f"Batch {view.id} (status={view.status}, niche={niche})"]
         for c in view.candidates:
             marker = f"#{c.operator_rank}" if c.operator_rank else f"sys#{c.rank_in_batch}"
@@ -1445,45 +1275,34 @@ async def start_voice_call(
             brain = normalised
 
         pool = await _get_pool()
+        from services.admin_db import AdminDatabase
+        db = AdminDatabase(pool)
 
         # Optional brain flip — persist BEFORE we read back so the
         # response carries the just-flipped value, not whatever was
         # there before.
         if brain is not None:
-            await pool.execute(
-                """
-                INSERT INTO app_settings (key, value, category, description, is_secret, is_active)
-                VALUES ($1, $2, 'voice',
-                        'LLM stage the always-on voice agent uses '
-                        '(written by start_voice_call MCP tool).',
-                        FALSE, TRUE)
-                ON CONFLICT (key) DO UPDATE
-                    SET value = EXCLUDED.value,
-                        updated_at = NOW()
-                """,
-                "voice_agent_brain_mode", brain,
+            await db.set_setting(
+                "voice_agent_brain_mode",
+                brain,
+                category="voice",
+                description=(
+                    "LLM stage the always-on voice agent uses "
+                    "(written by start_voice_call MCP tool)."
+                ),
             )
 
         # Read back the effective mode + the public join URL. Falling
         # back to the legacy ``voice_agent_brain`` key for read so
         # operators who set the legacy key but never migrated still see
         # the right effective mode.
-        row = await pool.fetchrow(
-            """
-            SELECT
-                COALESCE(
-                    (SELECT value FROM app_settings WHERE key = 'voice_agent_brain_mode'),
-                    (SELECT value FROM app_settings WHERE key = 'voice_agent_brain'),
-                    'ollama'
-                ) AS brain_mode,
-                COALESCE(
-                    (SELECT value FROM app_settings WHERE key = 'voice_agent_public_join_url'),
-                    ''
-                ) AS join_url
-            """,
+        brain_mode = (
+            (await db.get_setting_value("voice_agent_brain_mode"))
+            or (await db.get_setting_value("voice_agent_brain"))
+            or "ollama"
         )
-        brain_mode = (row["brain_mode"] or "ollama").strip().lower()
-        join_url = (row["join_url"] or "").strip()
+        brain_mode = str(brain_mode).strip().lower()
+        join_url = str(await db.get_setting_value("voice_agent_public_join_url") or "").strip()
 
         if not join_url:
             # No silent fallback — fail loud so the operator notices and

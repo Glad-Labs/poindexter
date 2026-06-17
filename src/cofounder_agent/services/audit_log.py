@@ -283,3 +283,25 @@ class AuditLogger:
 
         rows = await self.pool.fetch(sql, *params)
         return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Module-level helper — no class instantiation required.
+# ---------------------------------------------------------------------------
+
+_AUDIT_SUMMARY_SQL = """
+SELECT event_type, severity, COUNT(*) AS count
+FROM audit_log
+WHERE timestamp > NOW() - $1 * INTERVAL '1 hour'
+GROUP BY event_type, severity
+ORDER BY count DESC
+"""
+
+
+async def query_summary(pool: Any, hours: int = 24) -> list[dict[str, Any]]:
+    """Return aggregate audit-log event counts grouped by (event_type, severity).
+
+    ``hours`` specifies the look-back window in hours (default 24).
+    """
+    rows = await pool.fetch(_AUDIT_SUMMARY_SQL, hours)
+    return [dict(r) for r in rows]

@@ -23,6 +23,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -135,21 +137,59 @@ def _resolve_tool_callable(mod, tool_name: str):
 
 
 # ---------------------------------------------------------------------------
-# Fake asyncpg pool — records writes, returns configurable readback row
+# Fake asyncpg pool — records writes, returns configurable readback rows
 # ---------------------------------------------------------------------------
+
+_SETTINGS_DT = datetime(2026, 1, 1)
+
+
+def _settings_row(key: str, value: str) -> dict[str, Any]:
+    """Build a minimal app_settings row dict for AdminDatabase.get_setting()."""
+    return {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "key": key,
+        "value": value,
+        "category": "voice",
+        "description": "",
+        "is_secret": False,
+        "is_active": True,
+        "created_at": _SETTINGS_DT,
+        "updated_at": _SETTINGS_DT,
+    }
+
+
+class _FakeConn:
+    """Fake asyncpg connection — delegates execute recording to the pool."""
+
+    def __init__(self, pool: "_FakePool") -> None:
+        self._pool = pool
+
+    async def execute(self, sql: str, *args: Any) -> str:
+        self._pool.executes.append((sql, args))
+        return "INSERT 0 1"
+
+    async def fetchrow(self, sql: str, *args: Any) -> dict[str, Any] | None:
+        # AdminDatabase always passes the setting key as $1 (args[0]).
+        key = args[0] if args else None
+        if not key or key not in self._pool._settings:
+            return None
+        return _settings_row(key, self._pool._settings[key])
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        return None
+
+    async def fetch(self, sql: str, *args: Any) -> list:
+        return []
 
 
 class _FakePool:
-    def __init__(self, fetchrow_result: dict[str, Any] | None) -> None:
-        self.fetchrow_result = fetchrow_result
+    def __init__(self, settings: dict[str, str]) -> None:
+        self._settings: dict[str, str] = dict(settings)
         self.executes: list[tuple[str, tuple[Any, ...]]] = []
 
-    async def execute(self, sql: str, *args: Any) -> str:
-        self.executes.append((sql, args))
-        return "INSERT 0 1"
-
-    async def fetchrow(self, sql: str, *args: Any) -> Any:
-        return self.fetchrow_result
+    @asynccontextmanager
+    async def acquire(self):  # type: ignore[override]
+        yield _FakeConn(self)
 
 
 @pytest.fixture
@@ -161,12 +201,10 @@ def mcp_server_with_fake_pool(monkeypatch):
     tool wrapper each time.
     """
     server_mod = _import_mcp_server()
-    pool = _FakePool(
-        fetchrow_result={
-            "brain_mode": "ollama",
-            "join_url": "https://example.test/voice/join",
-        },
-    )
+    pool = _FakePool(settings={
+        "voice_agent_brain_mode": "ollama",
+        "voice_agent_public_join_url": "https://example.test/voice/join",
+    })
 
     async def _get_pool() -> _FakePool:
         return pool
@@ -191,11 +229,9 @@ async def test_mcp_start_voice_call_happy_path_with_brain_flip(
     """
     _server, pool, start_voice_call = mcp_server_with_fake_pool
 
-    # Readback reflects the post-write state.
-    pool.fetchrow_result = {
-        "brain_mode": "claude-code",
-        "join_url": "https://example.test/voice/join",
-    }
+    # Pre-seed post-flip value so AdminDatabase.get_setting_value() returns
+    # it immediately after set_setting() invalidates the in-memory cache.
+    pool._settings["voice_agent_brain_mode"] = "claude-code"
 
     raw = await start_voice_call(brain="claude-code", note="got a draft to review")
     payload = json.loads(raw)
@@ -209,7 +245,8 @@ async def test_mcp_start_voice_call_happy_path_with_brain_flip(
     assert len(pool.executes) == 1
     sql, args = pool.executes[0]
     assert "INSERT INTO app_settings" in sql
-    assert args == ("voice_agent_brain_mode", "claude-code")
+    assert args[0] == "voice_agent_brain_mode"
+    assert args[1] == "claude-code"
 
 
 @pytest.mark.asyncio
@@ -266,7 +303,9 @@ async def test_mcp_start_voice_call_fails_loud_on_missing_join_url(
     Tailscale Funnel URL that doesn't reach their box.
     """
     _server, pool, start_voice_call = mcp_server_with_fake_pool
-    pool.fetchrow_result = {"brain_mode": "ollama", "join_url": ""}
+    # Simulate missing setting — AdminDatabase.get_setting_value returns None
+    # when the key is absent, which collapses to an empty join_url.
+    del pool._settings["voice_agent_public_join_url"]
 
     raw = await start_voice_call()
     payload = json.loads(raw)

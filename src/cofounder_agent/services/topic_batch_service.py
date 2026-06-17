@@ -1029,6 +1029,19 @@ class TopicBatchService:
             )
         return out
 
+    async def get_open_batch_id(self, niche_id: UUID) -> UUID | None:
+        """Return the ``id`` of the current open batch for ``niche_id``, or ``None``.
+
+        Used by the MCP ``topics_show_batch`` tool to avoid an inline SQL
+        call in the adapter layer (transport-adapter contract #1344).
+        """
+        async with self._pool.acquire() as conn:
+            bid = await conn.fetchval(
+                "SELECT id FROM topic_batches WHERE niche_id = $1 AND status = 'open'",
+                niche_id,
+            )
+        return bid
+
     async def _handoff_to_pipeline(
         self,
         winner: CandidateView,
