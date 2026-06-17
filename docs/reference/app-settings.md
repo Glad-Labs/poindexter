@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-06-15.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 855 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 856 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -29,7 +29,7 @@ The worker re-reads on every poll; no restart needed.
 
 - [alerts](#alerts) (5 keys)
 - [api_keys](#api-keys) (1 key)
-- [backup](#backup) (30 keys)
+- [backup](#backup) (31 keys)
 - [bench](#bench) (2 keys)
 - [brain](#brain) (13 keys)
 - [brain-probes](#brain-probes) (7 keys)
@@ -133,6 +133,7 @@ The worker re-reads on every poll; no restart needed.
 | `offsite_backup_prune_enabled` | `false` |  | When false (default) the runner never forget/prunes — keeps an append-only S3 key safe. Enable ONLY with a privileged... |
 | `offsite_backup_repository` | `` |  | restic repository URL, e.g. s3:https://s3.us-west-002.backblazeb2.com/<bucket>/<path>. Empty = Tier 2 inert. Set by `... |
 | `offsite_backup_restic_image` | `restic/restic:0.16.4` |  | Pinned restic image the wizard + brain verify use via `docker run`. Matches the alpine restic baked into the backup i... |
+| `offsite_backup_s3_region` | `` |  | SigV4 signing region for the S3 endpoint (e.g. B2 us-east-005). restic signs with us-east-1 by default, which a non-u... |
 | `offsite_backup_source_tier` | `daily` |  | Which Tier 1 dump subdir under /backups to ship off-machine. |
 | `offsite_backup_verify_enabled` | `true` |  | Master switch for the weekly remote `restic check`. |
 | `offsite_backup_verify_interval_hours` | `168` |  | How often the runner runs `restic check` against the remote repo (weekly). |

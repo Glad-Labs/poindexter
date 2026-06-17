@@ -211,9 +211,19 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # startup_error. A worker that can't read app_settings has a
         # real problem (DB not actually ready / schema not migrated) and
         # MUST surface, not silently boot with a missing container.
+        #
+        # Pass ``site_config=_site_cfg`` so the container REUSES the
+        # lifespan instance instead of building a second one. This is
+        # the runtime hot-reload fix: the periodic ``reload_site_config``
+        # job refreshes ``_site_cfg`` (the scheduler-seeded instance),
+        # and route handlers read ``app.state.container.site_config`` via
+        # ``get_site_config_dependency``. Sharing ONE object means a
+        # runtime ``settings set`` reaches routes within one reload cycle
+        # — no restart. (A separate instance here is exactly what made
+        # ``enforce_niche_allowlist`` go stale until restart, 2026-06-17.)
         from services.bootstrap import build_container
         app.state.container = await build_container(
-            services["database"].pool
+            services["database"].pool, site_config=_site_cfg
         )
         logger.info(
             "[LIFESPAN] AppContainer built and attached to app.state.container"

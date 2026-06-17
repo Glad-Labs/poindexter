@@ -729,9 +729,14 @@ DEFAULTS: dict[str, str] = {
     'dev_diary_auto_publish_min_clean_runs': '3',
     'dev_diary_auto_publish_threshold': '-1',
     # Niche allowlist publish gate (#729). When 'true', publish_service
-    # refuses to publish a task whose niche_slug is not an active niche
-    # (the manual-approve backstop; auto_publish_gate already blocks the
-    # auto path). Set 'false' to disable the gate.
+    # refuses to publish a task whose niche_slug is not a KNOWN niche
+    # (no matching ``niches`` row) or is missing -- the manual-approve
+    # backstop against orphan/garbage niches reaching readers
+    # (auto_publish_gate already blocks the auto path). A known but
+    # discovery-inactive niche (e.g. dev_diary -- website-post only, kept
+    # out of the topic sweep + media backfill) is still publishable;
+    # ``niches.active`` gates discovery/media, not publishability. Set
+    # 'false' to disable the gate entirely.
     'enforce_niche_allowlist': 'true',
 
     # ----- Gitea / external integrations -----

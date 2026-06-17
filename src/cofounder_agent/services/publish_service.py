@@ -812,6 +812,50 @@ async def _promote_or_skip_existing(
     )
 
 
+async def _niche_allowlist_block(
+    pool: Any,
+    task: dict[str, Any],
+    task_id: str,
+    *,
+    draft_mode: bool,
+    site_config: SiteConfig,
+) -> "PublishResult | None":
+    """#729 backstop -- block a post whose niche is unknown or missing.
+
+    The gate guards against orphan/garbage niches reaching readers. A
+    *known* niche that is merely discovery-inactive (e.g. ``dev_diary`` --
+    deliberately kept out of the autonomous topic sweep + media backfill,
+    yet still a legitimate website-post target) IS allowed: ``niches.active``
+    gates topic-discovery + media generation, NOT publishability (separate
+    seams). Blocking keys off niche *existence*, not its ``active`` flag.
+
+    Returns a failed ``PublishResult`` when blocked, else ``None``. Drafts
+    (WIP) are exempt; toggle the whole gate via ``enforce_niche_allowlist``
+    (default true). Fail-open on an empty known-set (niches table
+    unreadable) so a transient DB error can't halt all publishing.
+    """
+    if draft_mode or not site_config.get_bool("enforce_niche_allowlist", True):
+        return None
+
+    from services.niche_service import get_known_niche_slugs
+
+    task_niche = (task.get("niche_slug") or "").strip()
+    known = await get_known_niche_slugs(pool)
+    if known and task_niche not in known:
+        from services.integrations.operator_notify import notify_operator
+
+        msg = (
+            f"publish blocked (#729): task {task_id} "
+            f"niche={task_niche or '<none>'} is not a known niche "
+            f"(known: {sorted(known)})"
+        )
+        logger.error("[publish_service] %s", msg)
+        with suppress(Exception):  # noqa: silent-ok best-effort notify; the real error is returned below
+            await notify_operator(msg, critical=False, site_config=site_config)
+        return PublishResult(success=False, error=msg)
+    return None
+
+
 async def _resolve_tag_ids(
     pool: Any,
     task: dict[str, Any],
@@ -1350,32 +1394,19 @@ async def publish_post_from_task(
         return _existing_result
 
     # ---------------------------------------------------------------
-    # 1c. Niche allowlist gate (#729) -- a post whose task has no
-    # resolved/active niche must never reach readers. ``auto_publish_gate``
-    # already blocks the auto path; this is the hard backstop on the
-    # manual approve/publish path. Drafts (WIP) are exempt; already-
-    # published promotions returned above. Toggle via
-    # ``enforce_niche_allowlist`` (default true).
+    # 1c. Niche allowlist gate (#729) -- a post whose niche is unknown
+    # (no matching ``niches`` row) or missing must never reach readers.
+    # A known-but-inactive niche (e.g. dev_diary -- kept out of topic
+    # discovery + media backfill, website-post only) IS allowed.
+    # ``auto_publish_gate`` already blocks the auto path; this is the
+    # hard backstop on the manual approve/publish path. Drafts are
+    # exempt; already-published promotions returned above.
     # ---------------------------------------------------------------
-    if _sc.get_bool("enforce_niche_allowlist", True) and not draft_mode:
-        from services.niche_service import get_active_niche_slugs
-
-        _task_niche = (task.get("niche_slug") or "").strip()
-        _allowed = await get_active_niche_slugs(pool)
-        # Fail-open on an empty allowlist (niches table unreadable) so a
-        # transient DB error can't halt all publishing; block only when we
-        # positively know the niche isn't active.
-        if _allowed and _task_niche not in _allowed:
-            from services.integrations.operator_notify import notify_operator
-            _msg = (
-                f"publish blocked (#729): task {task_id} "
-                f"niche={_task_niche or '<none>'} not in active "
-                f"allowlist {sorted(_allowed)}"
-            )
-            logger.error("[publish_service] %s", _msg)
-            with suppress(Exception):  # noqa: silent-ok best-effort notify; the real error is returned below
-                await notify_operator(_msg, critical=False, site_config=_sc)
-            return PublishResult(success=False, error=_msg)
+    _niche_block = await _niche_allowlist_block(
+        pool, task, task_id, draft_mode=draft_mode, site_config=_sc,
+    )
+    if _niche_block is not None:
+        return _niche_block
 
     # ---------------------------------------------------------------
     # 2. Extract title from content (LLM often puts # Title at top)

@@ -8,6 +8,24 @@ compatibility_date = "2026-05-01"
 binding = "ANALYTICS_ENGINE"
 dataset = "analytics_events"
 
+# Rate limiting — 60 requests per minute per IP. Well above one page view per
+# tab but kills a curl inflation loop. Workers Standard plan or higher required.
+# The namespace_id is a per-worker integer you pick; the CF dashboard will show
+# it under Workers > Rate Limiting after the first deploy.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
+# Allowed origins — comma-separated public-site origins checked against the
+# browser-sent Origin header. Set via `wrangler secret put ALLOWED_ORIGINS`
+# or the CF dashboard. Empty string (the default here) disables origin
+# enforcement — safe for local dev, but MUST be set in production.
+# Example: "https://gladlabs.io,https://www.gladlabs.io"
+[vars]
+ALLOWED_ORIGINS = ""
+
 # Custom domain — operator routes their own subdomain (e.g. beacon.example.com)
 # to this Worker via Cloudflare dashboard or `wrangler routes add`.
 # Don't commit a route block with an operator-specific hostname.

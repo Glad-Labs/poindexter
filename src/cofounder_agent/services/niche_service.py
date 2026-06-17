@@ -163,19 +163,28 @@ def _row_to_niche(row: Any) -> Niche:
     )
 
 
-async def get_active_niche_slugs(pool) -> set[str]:
-    """Active niche slugs -- the publish allowlist (#729).
+async def get_known_niche_slugs(pool) -> set[str]:
+    """All known niche slugs -- the publish allowlist (#729).
+
+    Returns *every* niche slug regardless of ``active``. The #729 publish
+    backstop blocks a post whose niche is unknown (no matching ``niches``
+    row) or missing, but a known niche that is merely discovery-inactive
+    (e.g. ``dev_diary`` -- deliberately kept out of the autonomous topic
+    sweep + media backfill, yet still a legitimate website-post target)
+    must stay publishable. ``active`` gates topic-discovery + media
+    generation (``NicheService.list_active`` + the backfill jobs), NOT
+    publishability -- they are separate seams.
 
     Best-effort: returns an empty set on any failure (or ``pool=None``)
     so callers can fail-open rather than brick publishing on a transient
-    DB error. The caller decides how to treat an empty allowlist.
+    DB error. The caller decides how to treat an empty set.
     """
     if pool is None:
         return set()
     try:
         async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT slug FROM niches WHERE active")
+            rows = await conn.fetch("SELECT slug FROM niches")
         return {r["slug"] for r in rows if r["slug"]}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[niche_service] active-niche fetch failed: %s", exc)
+        logger.warning("[niche_service] known-niche fetch failed: %s", exc)
         return set()

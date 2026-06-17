@@ -109,30 +109,42 @@ _LINK_SQL = "UPDATE media_assets SET post_id = $1::uuid, updated_at = NOW() WHER
 # task-keyed ({task_id}.mp4) at media_assets.storage_path, so backfill skips
 # them and the approved row stays eligible for this pass alone — no double-send.
 _APPROVED_UNDISPATCHED_SQL = """
-    SELECT ma.post_id::text AS post_id,
-           ma.medium,
-           p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
-           mas.id::text AS asset_id,
-           mas.task_id,
-           mas.storage_path
-      FROM media_approvals ma
-      JOIN posts p ON p.id = ma.post_id
-      JOIN media_assets mas
-        ON mas.post_id = ma.post_id
-       AND mas.type = CASE ma.medium
-                          WHEN 'video' THEN 'video_long'
-                          WHEN 'video_short' THEN 'video_short'
-                      END
-     WHERE ma.status = 'approved'
-       AND ma.dispatched_at IS NULL
-       -- Never re-deliver grandfathered media: grandfathering only blesses it
-       -- 'approved' for the RSS-feed gate; it is already live, so queuing it
-       -- for upload re-detonates glad-labs-stack#1596. NULL-safe via COALESCE.
-       AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
-       AND ma.medium = ANY($1::text[])
-       AND COALESCE(mas.storage_path, '') <> ''
-     ORDER BY ma.created_at ASC
-     LIMIT $2
+    SELECT * FROM (
+        SELECT DISTINCT ON (ma.post_id, ma.medium)
+               ma.post_id::text AS post_id,
+               ma.medium,
+               ma.created_at AS _appr_created,
+               p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
+               mas.id::text AS asset_id,
+               mas.task_id,
+               mas.storage_path
+          FROM media_approvals ma
+          JOIN posts p ON p.id = ma.post_id
+          JOIN media_assets mas
+            ON mas.post_id = ma.post_id
+           AND mas.type = CASE ma.medium
+                              WHEN 'video' THEN 'video_long'
+                              WHEN 'video_short' THEN 'video_short'
+                          END
+         WHERE ma.status = 'approved'
+           AND ma.dispatched_at IS NULL
+           -- Never re-deliver grandfathered media: grandfathering only blesses it
+           -- 'approved' for the RSS-feed gate; it is already live, so queuing it
+           -- for upload re-detonates glad-labs-stack#1596. NULL-safe via COALESCE.
+           AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
+           AND ma.medium = ANY($1::text[])
+           AND COALESCE(mas.storage_path, '') <> ''
+         -- One asset per (post, medium): DISTINCT ON keeps the canonical render
+         -- (already on a platform > pipeline-produced > newest) so a post with
+         -- multiple matching video assets never double-uploads (#1460).
+         ORDER BY ma.post_id, ma.medium,
+                  (mas.platform_video_ids IS NOT NULL
+                   AND mas.platform_video_ids::text NOT IN ('', 'null', '{}')) DESC,
+                  (mas.source = 'pipeline') DESC,
+                  mas.created_at DESC
+    ) t
+    ORDER BY t._appr_created ASC
+    LIMIT $2
 """
 
 # Enabled video-platform adapter rows (the registry routes the handler by name).
@@ -164,10 +176,10 @@ async def _dispatch_asset(
     """
     # Reuse the pure YouTube-payload helpers — they compose the description
     # (SEO excerpt + canonical back-link + stripped body, ≤4800 chars) and parse
-    # seo_keywords into capped tags. (Shared home: services/jobs/backfill_videos.)
+    # seo_keywords into capped tags. (Shared home: services/jobs/youtube_payload.)
     from services.integrations import registry
     from services.integrations.handlers import load_all
-    from services.jobs.backfill_videos import (
+    from services.jobs.youtube_payload import (
         _build_youtube_description,
         _parse_seo_keywords,
     )

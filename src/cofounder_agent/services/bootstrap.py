@@ -36,12 +36,37 @@ _LOAD_NON_SECRET_SETTINGS_SQL = (
 )
 
 
-async def build_container(pool: Any) -> AppContainer:
+async def build_container(
+    pool: Any, *, site_config: SiteConfig | None = None
+) -> AppContainer:
     """Build a fully-loaded ``AppContainer`` for the given pool.
 
-    Loads non-secret ``app_settings`` rows into a fresh ``SiteConfig``
+    Loads non-secret ``app_settings`` rows into a ``SiteConfig``
     instance (secrets stay async per-call via ``SiteConfig.get_secret``),
     then constructs the container with that config + the pool.
+
+    Pass ``site_config`` to make the container REUSE an instance the
+    caller already holds, instead of constructing a fresh one. This is
+    the worker hot-reload fix: ``main.py``'s lifespan loads ``_site_cfg``,
+    attaches it to ``app.state.site_config``, and seeds it into the
+    plugin scheduler — so the periodic ``reload_site_config`` job
+    refreshes *that* object. Route handlers, however, read
+    ``app.state.container.site_config`` via
+    ``get_site_config_dependency``. If the container held a *separate*
+    SiteConfig, a runtime ``settings set`` (refreshed into the lifespan
+    instance) would never reach routes until a restart. By passing the
+    lifespan instance here, the whole worker shares ONE object: the
+    instance the scheduler reloads IS the instance routes read.
+
+    Callers that have no pre-loaded instance (CLI, brain daemon, Prefect
+    subprocess, tests) omit ``site_config`` and get a fresh one — the
+    original behaviour, unchanged.
+
+    Either way the fail-loud probe below runs: the non-secret settings
+    query executes and, on a passed instance, atomically refreshes its
+    cache from the result (so a stale caller instance is brought current
+    at build time, and keys deleted from the DB drop out — matching
+    ``SiteConfig.reload`` semantics).
 
     Per ``feedback_no_silent_defaults``: if the ``app_settings`` query
     fails, this raises ``RuntimeError`` with the SQL it tried in the
@@ -56,6 +81,10 @@ async def build_container(pool: Any) -> AppContainer:
         pool: An asyncpg-style connection pool. Anything that exposes
             an awaitable ``fetch(sql)`` method works — the unit tests
             use an ``AsyncMock`` shaped that way.
+        site_config: Optional pre-constructed ``SiteConfig`` to reuse.
+            When provided, the container holds this exact object (``is``
+            identity), and its cache is refreshed from the probe rows.
+            When ``None`` (default), a fresh instance is created.
 
     Returns:
         A constructed ``AppContainer``. During the migration period
@@ -75,8 +104,8 @@ async def build_container(pool: Any) -> AppContainer:
             "construct an asyncpg pool before building the container."
         )
 
-    site_config = SiteConfig(pool=pool)
-
+    # Fail-loud probe — runs in BOTH the fresh and reuse paths so a
+    # broken pool surfaces here, not three layers downstream.
     try:
         rows = await pool.fetch(_LOAD_NON_SECRET_SETTINGS_SQL)
     except Exception as exc:
@@ -89,10 +118,18 @@ async def build_container(pool: Any) -> AppContainer:
             "connected and the app_settings table exists."
         ) from exc
 
-    for row in rows:
-        value = row["value"]
-        if value:  # Skip empty values, matching SiteConfig.load semantics
-            site_config._config[row["key"]] = value  # noqa: SLF001
+    if site_config is None:
+        site_config = SiteConfig(pool=pool)
+    else:
+        # Reuse the caller's instance → one SiteConfig per process.
+        # Make sure it can resolve secrets on demand from this pool.
+        site_config._pool = pool  # noqa: SLF001
+
+    # Atomic refresh from the probe rows (replace, matching
+    # SiteConfig.reload — empty values skipped, like SiteConfig.load).
+    site_config._config = {  # noqa: SLF001
+        row["key"]: row["value"] for row in rows if row["value"]
+    }
     site_config._loaded = True  # noqa: SLF001
 
     logger.info(
