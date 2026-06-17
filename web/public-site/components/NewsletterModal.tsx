@@ -465,10 +465,10 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
               {/* No opacity dimming on this small print — at full --gl-text /
                   --gl-text-muted it clears 4.5:1, but opacity-50/60 dropped it
                   below the AA threshold (#976). */}
-              <p className="gl-mono gl-mono--upper text-center mt-3" style={{ fontSize: '0.6875rem' }}>
+              <p className="gl-mono gl-mono--upper gl-mono--label text-center mt-3">
                 We respect your privacy · Unsubscribe any time
               </p>
-              <p className="gl-body gl-body--sm text-center mt-1" style={{ fontSize: '0.6875rem' }}>
+              <p className="gl-mono gl-mono--label text-center mt-1">
                 Your IP address and user-agent are collected with your
                 subscription for security and fraud prevention purposes.
               </p>

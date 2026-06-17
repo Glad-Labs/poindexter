@@ -133,21 +133,18 @@ export default function TopNavigation() {
           </Link>
 
           {/* Desktop nav + CTAs — hidden on mobile */}
-          <div
-            className="hidden md:flex gap-8 items-center gl-mono gl-mono--upper"
-            style={{ fontSize: 'var(--gl-size-eyebrow)' }}
-          >
-            <Link href="/archive/1" className="gl-focus-ring nav-link">
+          <div className="hidden md:flex gap-8 items-center gl-mono gl-mono--upper gl-mono--eyebrow">
+            <Link href="/archive/1" className="gl-focus-ring gl-nav-link">
               Articles
             </Link>
-            <Link href="/about" className="gl-focus-ring nav-link">
+            <Link href="/about" className="gl-focus-ring gl-nav-link">
               About
             </Link>
             <a
               href="https://www.gladlabs.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="gl-focus-ring nav-link"
+              className="gl-focus-ring gl-nav-link"
               style={{ color: 'var(--gl-amber)' }}
             >
               Poindexter ↗
@@ -272,20 +269,17 @@ export default function TopNavigation() {
               </form>
 
               {/* Nav links — mono uppercase column */}
-              <div
-                className="flex flex-col gl-mono gl-mono--upper"
-                style={{ fontSize: 'var(--gl-size-eyebrow)' }}
-              >
+              <div className="flex flex-col gl-mono gl-mono--upper gl-mono--eyebrow">
                 <Link
                   href="/archive/1"
-                  className="gl-focus-ring nav-link py-3"
+                  className="gl-focus-ring gl-nav-link py-3"
                   style={{ borderBottom: '1px solid var(--gl-hairline)' }}
                 >
                   Articles
                 </Link>
                 <Link
                   href="/about"
-                  className="gl-focus-ring nav-link py-3"
+                  className="gl-focus-ring gl-nav-link py-3"
                   style={{ borderBottom: '1px solid var(--gl-hairline)' }}
                 >
                   About
@@ -294,7 +288,7 @@ export default function TopNavigation() {
                   href="https://www.gladlabs.ai"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="gl-focus-ring nav-link py-3"
+                  className="gl-focus-ring gl-nav-link py-3"
                   style={{
                     color: 'var(--gl-amber)',
                     borderBottom: '1px solid var(--gl-hairline)',

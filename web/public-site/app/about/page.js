@@ -236,15 +236,15 @@ export default function AboutPage() {
           <div className="container mx-auto max-w-3xl">
             <div className="grid grid-cols-2 gap-6">
               <Card accent="cyan" className="text-center">
-                <p className="gl-display text-4xl md:text-5xl">
-                  <span className="gl-accent">1</span>
-                </p>
+                <Display as="p" xl>
+                  <Display.Accent>1</Display.Accent>
+                </Display>
                 <Card.Meta className="mt-2">HUMAN OPERATOR</Card.Meta>
               </Card>
               <Card accent="cyan" className="text-center">
-                <p className="gl-display text-4xl md:text-5xl">
-                  <span className="gl-accent">24/7</span>
-                </p>
+                <Display as="p" xl>
+                  <Display.Accent>24/7</Display.Accent>
+                </Display>
                 <Card.Meta className="mt-2">AI UPTIME</Card.Meta>
               </Card>
             </div>

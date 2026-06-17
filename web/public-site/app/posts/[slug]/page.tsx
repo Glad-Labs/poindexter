@@ -290,10 +290,7 @@ export default async function PostPage({
           >
             <div className="container mx-auto max-w-4xl">
               <Eyebrow>GLAD LABS · ARTICLE</Eyebrow>
-              <h1
-                className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-[-0.02em]"
-                style={{ letterSpacing: '-0.02em' }}
-              >
+              <h1 className="mt-2">
                 {title}
               </h1>
 
@@ -423,13 +420,10 @@ export default async function PostPage({
             </article>
 
             {/* AI Disclosure — EU AI Act Article 50 compliance */}
-            <div className="mt-10 border-l-2 border-[color:var(--gl-hairline-strong)] pl-4 py-2 gl-mono gl-mono--upper text-xs text-[color:var(--gl-text-muted)]">
+            <div className="gl-log gl-mono--upper mt-10">
               Generated with AI assistance · Reviewed by a human editor ·
               Published by{' '}
-              <a
-                href="https://www.gladlabs.io/about"
-                className="text-[color:var(--gl-cyan)] hover:underline"
-              >
+              <a href="https://www.gladlabs.io/about" className="hl hover:underline">
                 Glad Labs
               </a>
             </div>

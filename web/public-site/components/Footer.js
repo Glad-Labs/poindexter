@@ -6,8 +6,7 @@ import { Button, Eyebrow, Logo } from '@glad-labs/brand';
 import NewsletterModal from './NewsletterModal';
 import { SITE_NAME } from '@/lib/site.config';
 
-const FOOTER_LINK_CLASS =
-  'gl-mono gl-mono--upper gl-focus-ring inline-block py-1 transition-colors hover:text-[color:var(--gl-cyan)]';
+const FOOTER_LINK_CLASS = 'gl-footer-link gl-focus-ring inline-block py-1';
 
 const Footer = () => {
   // currentYear is computed at render time. suppressHydrationWarning on the
@@ -60,7 +59,7 @@ const Footer = () => {
                 Poindexter →
               </a>
             </p>
-            <p className="gl-mono gl-mono--upper" style={{ fontSize: '0.6875rem' }}>
+            <p className="gl-mono gl-mono--upper gl-mono--label">
               Built for innovation · Powered by AI
             </p>
           </div>
@@ -202,10 +201,7 @@ const Footer = () => {
           <p className="gl-mono gl-mono--upper text-xs">
             © {currentYear} {SITE_NAME} · All rights reserved
           </p>
-          <p
-            className="gl-mono gl-mono--upper"
-            style={{ fontSize: '0.6875rem' }}
-          >
+          <p className="gl-mono gl-mono--upper gl-mono--label">
             {'// ONE PERSON · LOCAL AI · UNLIMITED SCALE'}
           </p>
         </div>

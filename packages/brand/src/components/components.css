@@ -14,7 +14,7 @@
   border: 0;
   border-radius: 0;
   font-family: var(--gl-font-mono);
-  font-size: 0.6875rem; /* 11px */
+  font-size: var(--gl-size-label);
   font-weight: 600;
   letter-spacing: var(--gl-tracking-wide);
   text-transform: uppercase;
@@ -65,7 +65,7 @@
 }
 .gl-card__meta {
   color: var(--gl-text-muted);
-  font-size: 0.625rem; /* 10px — small metadata stamp */
+  font-size: var(--gl-size-card-meta);
   letter-spacing: 0.15em;
   margin-bottom: 0.625rem;
 }
@@ -233,7 +233,7 @@
 /* ─── Log block (terminal-style metadata readout) ───────────── */
 .gl-log {
   font-family: var(--gl-font-mono);
-  font-size: 0.75rem;
+  font-size: var(--gl-size-eyebrow);
   line-height: 1.65;
   background: var(--gl-surface);
   color: var(--gl-text-muted);
@@ -249,4 +249,40 @@
 }
 .gl-log .ok {
   color: var(--gl-mint);
+}
+
+/* ─── Nav link — top nav, mono, muted → cyan on hover ──────── */
+.gl-nav-link {
+  color: var(--gl-text-muted);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.gl-nav-link:hover {
+  color: var(--gl-cyan);
+}
+
+/* ─── Footer link — mono uppercase label, muted → cyan ─────── */
+.gl-footer-link {
+  font-family: var(--gl-font-mono);
+  font-size: var(--gl-size-label);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--gl-tracking-wide);
+  color: var(--gl-text-muted);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.gl-footer-link:hover {
+  color: var(--gl-cyan);
+}
+
+/* ─── Inline link — cyan underline for body/prose anchors ───── */
+.gl-link {
+  color: var(--gl-cyan);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: opacity 150ms ease;
+}
+.gl-link:hover {
+  opacity: 0.8;
 }

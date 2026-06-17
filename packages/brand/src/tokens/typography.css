@@ -28,6 +28,8 @@
 
   /* Type scale — compact, display leans larger to earn the uppercase */
   --gl-size-eyebrow: 0.75rem; /* 12px — mono eyebrow */
+  --gl-size-label: 0.6875rem; /* 11px — button labels, footer stamps */
+  --gl-size-card-meta: 0.625rem; /* 10px — card/table metadata */
   --gl-size-body-sm: 0.8125rem; /* 13px — log lines, card body */
   --gl-size-body: 0.9375rem; /* 15px — standard body */
   --gl-size-body-lg: 1.125rem; /* 18px — lede, intro paragraph */
@@ -110,11 +112,17 @@
   line-height: var(--gl-leading-relaxed);
   color: var(--gl-text-muted);
 }
+.gl-body--sm {
+  font-size: var(--gl-size-body-sm);
+}
 .gl-body--lg {
   font-size: var(--gl-size-body-lg);
 }
 .gl-body--primary {
   color: var(--gl-text);
+}
+.gl-body--muted {
+  color: var(--gl-text-muted);
 }
 
 /* ─── Mono UI fabric ─────────────────────────────────────── */
@@ -135,4 +143,10 @@
 .gl-mono--upper {
   text-transform: uppercase;
   letter-spacing: var(--gl-tracking-wide);
+}
+.gl-mono--eyebrow {
+  font-size: var(--gl-size-eyebrow);
+}
+.gl-mono--label {
+  font-size: var(--gl-size-label);
 }

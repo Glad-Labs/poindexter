@@ -50,24 +50,16 @@
      — article h1s and legal-page h1s need to stay mixed-case for readability. */
   h1 em, h1 .gl-accent { font-style: normal; color: var(--gl-amber); }
 
-  /* Top-nav link — mono, uppercase, cyan on hover. */
-  .nav-link {
-    color: var(--gl-text-muted);
-    transition: color 150ms ease;
-    text-decoration: none;
-  }
-  .nav-link:hover { color: var(--gl-cyan); }
-
   h2 {
-    @apply text-3xl md:text-4xl lg:text-5xl;
+    font-size: var(--gl-size-h2);
   }
 
   h3 {
-    @apply text-xl md:text-2xl;
+    font-size: var(--gl-size-h3);
   }
 
   h4 {
-    @apply text-lg md:text-xl;
+    font-size: var(--gl-size-body-lg);
   }
 
   p {
