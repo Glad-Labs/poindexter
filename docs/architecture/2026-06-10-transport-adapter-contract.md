@@ -65,6 +65,15 @@ all for the in-process callers.
    direct. They run before the substrate exists; routing them through HTTP is not
    possible, and listing them keeps a future reader from "fixing" them.
 
+   **Allowlist (the guard's exact carve-out).** These commands live in four CLI
+   files — `poindexter/cli/setup.py`, `migrate.py`, `auth.py`, and the
+   `_bootstrap.py` helper. The adapter-purity guard (rule below) excludes exactly
+   those filenames from its scan; everything else under `poindexter/cli/`,
+   `routes/`, and `mcp-server/` is held to the no-inline-SQL rule. To add a new
+   permanently-direct command, put it in one of those files (or extend
+   `_CLI_BOOTSTRAP_ALLOWLIST` in `scripts/ci/adapter_purity_lint.py` with a
+   one-line justification) — do **not** weaken the rule for the whole tree.
+
 ## Why HTTP becomes mandatory at the boundary
 
 Rule #3 is forward-looking. Today every consumer (API, CLI, MCP, Prefect tasks,
@@ -124,7 +133,9 @@ publishers/validators — which have no service at all yet). → #1343.
 
 - Extract `posts_service` (and pull gate-history / metrics / go-live into their
   services). Net new routes for the service-only surfaces.
-- A CI adapter-purity guard so the rule doesn't re-rot (#1344).
+- A CI adapter-purity guard so the rule doesn't re-rot (#1344) — shipped as
+  `scripts/ci/adapter_purity_lint.py`, a per-file ratchet baselining the existing
+  inline-SQL adapters and failing on any net-new one.
 
 **Non-goals**
 

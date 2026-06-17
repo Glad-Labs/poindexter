@@ -300,6 +300,16 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/lint_silent_excepts.py
 
+      # Transport-adapter contract (#1340 / #1344): no NEW inline SQL in an
+      # adapter. Routes / CLI / MCP tools must delegate to a service, not run
+      # SQL. Existing sites are baselined (adapter_purity_baseline.json,
+      # ratchet-only-shrinks); the lint fails on net-new inline SQL. The
+      # bootstrap-direct CLI commands (setup/migrate/auth/_bootstrap) are
+      # allowlisted. Pure-Python AST scan, no deps beyond stdlib.
+      - name: Adapter-purity lint (transport contract #1344)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/adapter_purity_lint.py
+
       # DB-first config guard (GH#93 Phase 3): no NEW os.getenv / os.environ
       # reads in services/ outside the bootstrap / SDK-bridge allowlist. Pure-
       # Python AST scan, no deps beyond stdlib. Was pre-commit-only, so
@@ -556,6 +566,8 @@ jobs:
         run: python scripts/ci/kernel_purity_lint.py
       - name: Silent-except lint (audit H2)
         run: python scripts/ci/lint_silent_excepts.py
+      - name: Adapter-purity lint (transport contract #1344)
+        run: python scripts/ci/adapter_purity_lint.py
       - name: Services os.getenv lint (DB-first config, GH#93)
         run: python scripts/check-no-os-getenv-in-services.py
       - name: Notify operator — main fails a ratchet lint
@@ -573,7 +585,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "⚠️ main fails a ratchet lint (run ${{ github.run_id }})" \
             --label "bug" \
-            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / services-os.getenv) failed on the push to **main**.
+            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / adapter-purity / services-os.getenv) failed on the push to **main**.
 
           **Run:** ${RUN_URL}
           **Commit:** \`${{ github.sha }}\`
