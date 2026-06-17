@@ -1,42 +1,41 @@
 """``poindexter qa-gates`` — manage the ``qa_gates`` table (GH-115).
 
-Declarative QA chain. Each row describes one gate instance. The runtime
-walks enabled rows in ``execution_order`` and dispatches to the named
-reviewer plugin.
+Declarative QA chain. Each row describes one gate instance. The runtime walks
+enabled rows in ``execution_order`` and dispatches to the named reviewer.
 
-Commands:
-
-    poindexter qa-gates list                         # all rows
-    poindexter qa-gates list --state enabled         # filter
-    poindexter qa-gates show NAME                    # full row dump
+    poindexter qa-gates list [--state ...] [--stage qa]
+    poindexter qa-gates show NAME
     poindexter qa-gates enable NAME
     poindexter qa-gates disable NAME
-    poindexter qa-gates reorder NAME NEW_ORDER       # change execution_order
+    poindexter qa-gates reorder NAME NEW_ORDER
 
-Mutations are persisted directly to PostgreSQL — no app restart
-required. The ReloadSiteConfigJob and the runtime ``qa_gates`` lookup
-both pick up changes on the next pipeline tick.
+Thin adapter over :mod:`services.declarative_config_service` (#1522, epic
+#1340) — config mutations persist through the service (no app restart needed;
+the runtime ``qa_gates`` lookup picks them up next tick). The runtime *read*
+path stays in :mod:`services.qa_gates_db`. No raw SQL or asyncpg connection
+lives here.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import sys
-from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._dataplane import dump_row, render_table, run_service
+from services import declarative_config_service as dcs
 
+_SURFACE = "qa-gates"
 
-def _run(coro):
-    return asyncio.run(coro)
-
-
-async def _connect():
-    import asyncpg
-    return await asyncpg.connect(_dsn())
+_COLUMNS = [
+    ("execution_order", "ORDER", 6, None),
+    ("name", "NAME", 24, None),
+    ("reviewer", "REVIEWER", 24, None),
+    ("required_to_pass", "REQUIRED", 9, lambda v: "yes" if v else "no"),
+    ("enabled", "STATE", 9, lambda v: "enabled" if v else "disabled"),
+    ("total_runs", "RUNS", 6, None),
+    ("total_rejections", "REJECT", 7, None),
+]
 
 
 @click.group(
@@ -53,100 +52,36 @@ def qa_gates_group() -> None:
     type=click.Choice(["", "enabled", "disabled"]),
     help="Filter by enabled state.",
 )
-@click.option(
-    "--stage", default="qa",
-    help="Filter by stage_name (default: qa).",
-)
+@click.option("--stage", default="qa", help="Filter by stage_name (default: qa).")
 def qa_gates_list(state: str, stage: str) -> None:
     """List every gate row with current status, ordered by execution_order."""
-    async def _impl() -> list[dict[str, Any]]:
-        conn = await _connect()
-        try:
-            where = ["stage_name = $1"]
-            args: list[Any] = [stage]
-            if state == "enabled":
-                where.append("enabled = TRUE")
-            elif state == "disabled":
-                where.append("enabled = FALSE")
-            where_sql = " AND ".join(where)
-            rows = await conn.fetch(
-                f"""
-                SELECT name, stage_name, execution_order, reviewer,
-                       required_to_pass, enabled, total_runs, total_rejections,
-                       last_run_at, last_run_status, last_error
-                  FROM qa_gates
-                 WHERE {where_sql}
-              ORDER BY execution_order ASC, name ASC
-                """,
-                *args,
-            )
-            return [dict(r) for r in rows]
-        finally:
-            await conn.close()
-
+    filters: dict = {"stage_name": stage}
+    if state == "enabled":
+        filters["enabled"] = True
+    elif state == "disabled":
+        filters["enabled"] = False
     try:
-        rows = _run(_impl())
+        rows = run_service(lambda p: dcs.list_rows(p, _SURFACE, filters=filters))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not rows:
-        click.echo("(no qa_gates rows — run migrations 0093/0094)")
-        return
-
-    click.echo(
-        f"{'ORDER':<6} {'NAME':<24} {'REVIEWER':<24} {'REQUIRED':<9} "
-        f"{'STATE':<9} {'RUNS':<6} {'REJECT':<7}"
-    )
-    for r in rows:
-        state_txt = "enabled" if r["enabled"] else "disabled"
-        color = (
-            "red" if r["last_error"]
-            else ("green" if r["enabled"] else "yellow")
-        )
-        line = (
-            f"{r['execution_order']:<6} {r['name']:<24} {r['reviewer']:<24} "
-            f"{('yes' if r['required_to_pass'] else 'no'):<9} "
-            f"{state_txt:<9} {r['total_runs']:<6} {r['total_rejections']:<7}"
-        )
-        click.secho(line, fg=color)
+    # The generic service orders by the key column; QA gates read in
+    # execution_order, so sort here for display.
+    rows.sort(key=lambda r: (r.get("execution_order", 0), r.get("name", "")))
+    render_table(rows, _COLUMNS, empty="(no qa_gates rows — run migrations 0093/0094)")
 
 
 @qa_gates_group.command("show")
 @click.argument("name")
 def qa_gates_show(name: str) -> None:
     """Show full details of a single gate row."""
-    async def _impl():
-        conn = await _connect()
-        try:
-            row = await conn.fetchrow(
-                "SELECT * FROM qa_gates WHERE name = $1", name,
-            )
-            return dict(row) if row else None
-        finally:
-            await conn.close()
-
     try:
-        row = _run(_impl())
+        row = run_service(lambda p: dcs.get_row(p, _SURFACE, name))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not row:
-        click.echo(f"(no qa_gates row named {name!r})", err=True)
+    if not dump_row(row, missing=f"(no qa_gates row named {name!r})"):
         sys.exit(1)
-
-    for key in (
-        "name", "stage_name", "execution_order", "reviewer",
-        "required_to_pass", "enabled", "config", "metadata",
-        "last_run_at", "last_run_duration_ms", "last_run_status",
-        "total_runs", "total_rejections", "last_error",
-        "created_at", "updated_at",
-    ):
-        val = row.get(key)
-        if isinstance(val, (dict, list)):
-            val = json.dumps(val, default=str)
-        click.echo(f"  {key:<20} {val!r}")
 
 
 @qa_gates_group.command("enable")
@@ -164,23 +99,20 @@ def qa_gates_disable(name: str) -> None:
 
 
 def _set_enabled(name: str, enabled: bool) -> None:
-    async def _impl():
-        conn = await _connect()
-        try:
-            return await conn.execute(
-                "UPDATE qa_gates SET enabled = $2 WHERE name = $1",
-                name, enabled,
-            )
-        finally:
-            await conn.close()
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return False
+        await dcs.upsert_row(pool, _SURFACE, {**row, "enabled": enabled})
+        return True
 
     try:
-        result = _run(_impl())
+        ok = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    if result.endswith(" 0"):
+    if not ok:
         click.echo(f"(no qa_gates row named {name!r})", err=True)
         sys.exit(1)
     state = "enabled" if enabled else "disabled"
@@ -192,23 +124,20 @@ def _set_enabled(name: str, enabled: bool) -> None:
 @click.argument("new_order", type=int)
 def qa_gates_reorder(name: str, new_order: int) -> None:
     """Change a gate's execution_order. Effective on the next pipeline tick."""
-    async def _impl():
-        conn = await _connect()
-        try:
-            return await conn.execute(
-                "UPDATE qa_gates SET execution_order = $2 WHERE name = $1",
-                name, new_order,
-            )
-        finally:
-            await conn.close()
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return False
+        await dcs.upsert_row(pool, _SURFACE, {**row, "execution_order": new_order})
+        return True
 
     try:
-        result = _run(_impl())
+        ok = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    if result.endswith(" 0"):
+    if not ok:
         click.echo(f"(no qa_gates row named {name!r})", err=True)
         sys.exit(1)
     click.secho(f"{name}: execution_order = {new_order}", fg="cyan")

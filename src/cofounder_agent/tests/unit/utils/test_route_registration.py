@@ -120,8 +120,10 @@ class TestRouteManifestStructure:
         (probe-findings triage summary at /api/findings, #461).
         Updated 2026-06-13 (Phase 11 operator console): added seo_router
         (SEO-refresh opportunity summary at /api/seo, #1466).
+        Updated 2026-06-17 (#1522): added data_plane_router (declarative
+        data-plane CRUD at /api/data-plane/*).
         """
-        assert len(_WORKER_ROUTES) == 26
+        assert len(_WORKER_ROUTES) == 27
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

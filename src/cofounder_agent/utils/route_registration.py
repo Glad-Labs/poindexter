@@ -65,6 +65,7 @@ _WORKER_ROUTES = [
     ("routes.scheduling_routes", "router", "scheduling_router", "scheduling (list / assign / batch / shift / clear, #1343)"),
     ("routes.topic_batch_routes", "router", "topic_batch_router", "topic-batch operator surface (show / rank / resolve / reject, #1343)"),
     ("routes.media_approval_routes", "router", "media_approval_router", "media-approval (list-pending / decide, #1343)"),
+    ("routes.data_plane_routes", "router", "data_plane_router", "declarative data-plane CRUD (taps/retention/webhooks/publishers/qa-gates, #1522)"),
     ("routes.cms_routes", "router", "cms_router", "CMS (posts, preview, categories)"),
     ("routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
     ("routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),

@@ -1,46 +1,41 @@
 """`poindexter taps` — manage the external_taps table (GH-103).
 
-Minimal v1 set: list / show / enable / disable / run. Full CRUD
-(add / remove / set-credentials) lands in v1.1 once Singer subprocess
-support is live.
+Thin adapter over :mod:`services.declarative_config_service` (#1522, epic
+#1340): list / show / enable / disable read & write config through the
+service; `run` delegates to the tap_runner. No raw SQL or asyncpg connection
+lives here — the shared ``_dataplane`` helper owns the pool lifecycle.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
-from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._dataplane import dump_row, fmt_age, render_table, run_service
+from services import declarative_config_service as dcs
+
+_SURFACE = "taps"
+
+_COLUMNS = [
+    ("name", "NAME", 18, None),
+    ("handler_name", "HANDLER", 22, None),
+    ("tap_type", "TAP TYPE", 12, None),
+    ("schedule", "SCHEDULE", 17, None),
+    ("enabled", "STATE", 9, lambda v: "enabled" if v else "disabled"),
+    ("last_run_at", "LAST", 12, fmt_age),
+    ("total_runs", "RUNS", 5, None),
+    ("total_records", "RECORDS", 8, None),
+]
 
 
-def _run(coro):
-    return asyncio.run(coro)
-
-
-async def _connect():
-    import asyncpg
-    return await asyncpg.connect(_dsn())
-
-
-def _format_age(ts: Any) -> str:
-    if ts is None:
-        return "—"
-    import datetime as _dt
-    now = _dt.datetime.now(_dt.timezone.utc)
-    secs = int((now - ts).total_seconds())
-    if secs < 0:
-        return "future"
-    if secs < 60:
-        return f"{secs}s ago"
-    if secs < 3600:
-        return f"{secs // 60}m ago"
-    if secs < 86400:
-        return f"{secs // 3600}h ago"
-    return f"{secs // 86400}d ago"
+def _state_filter(state: str) -> dict | None:
+    if state == "enabled":
+        return {"enabled": True}
+    if state == "disabled":
+        return {"enabled": False}
+    return None
 
 
 @click.group(
@@ -59,86 +54,25 @@ def taps_group() -> None:
 )
 def taps_list(state: str) -> None:
     """List every tap with current status."""
-    async def _impl():
-        conn = await _connect()
-        try:
-            where = ""
-            if state == "enabled":
-                where = "WHERE enabled = TRUE"
-            elif state == "disabled":
-                where = "WHERE enabled = FALSE"
-            rows = await conn.fetch(
-                f"""
-                SELECT name, handler_name, tap_type, schedule, enabled,
-                       last_run_at, last_run_status, total_runs, total_records,
-                       last_error
-                  FROM external_taps
-                  {where}
-              ORDER BY name
-                """
-            )
-            return [dict(r) for r in rows]
-        finally:
-            await conn.close()
-
     try:
-        rows = _run(_impl())
+        rows = run_service(lambda p: dcs.list_rows(p, _SURFACE, filters=_state_filter(state)))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not rows:
-        click.echo("(no external taps)")
-        return
-
-    click.echo(
-        f"{'NAME':<18} {'HANDLER':<22} {'TAP TYPE':<12} {'SCHEDULE':<17} "
-        f"{'STATE':<9} {'LAST':<12} {'RUNS':<5} {'RECORDS':<8}"
-    )
-    for r in rows:
-        state_txt = "enabled" if r["enabled"] else "disabled"
-        color = "red" if r["last_error"] else ("green" if r["enabled"] else "yellow")
-        line = (
-            f"{r['name']:<18} {r['handler_name']:<22} {r['tap_type']:<12} "
-            f"{(r['schedule'] or ''):<17} {state_txt:<9} "
-            f"{_format_age(r['last_run_at']):<12} "
-            f"{r['total_runs']:<5} {r['total_records']:<8}"
-        )
-        click.secho(line, fg=color)
+    render_table(rows, _COLUMNS, empty="(no external taps)")
 
 
 @taps_group.command("show")
 @click.argument("name")
 def taps_show(name: str) -> None:
     """Show full details of one tap row."""
-    async def _impl():
-        conn = await _connect()
-        try:
-            row = await conn.fetchrow(
-                "SELECT * FROM external_taps WHERE name = $1", name
-            )
-            return dict(row) if row else None
-        finally:
-            await conn.close()
-
     try:
-        row = _run(_impl())
+        row = run_service(lambda p: dcs.get_row(p, _SURFACE, name))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not row:
-        click.echo(f"(no tap named {name!r})", err=True)
+    if not dump_row(row, missing=f"(no tap named {name!r})"):
         sys.exit(1)
-
-    for key in (
-        "name", "handler_name", "tap_type", "target_table", "record_handler",
-        "schedule", "config", "state", "enabled", "metadata",
-        "last_run_at", "last_run_duration_ms", "last_run_status",
-        "last_run_records", "last_error", "total_runs", "total_records",
-        "created_at", "updated_at",
-    ):
-        click.echo(f"  {key:<22} {row[key]!r}")
 
 
 @taps_group.command("enable")
@@ -154,23 +88,20 @@ def taps_disable(name: str) -> None:
 
 
 def _set_enabled(name: str, enabled: bool) -> None:
-    async def _impl():
-        conn = await _connect()
-        try:
-            return await conn.execute(
-                "UPDATE external_taps SET enabled = $2 WHERE name = $1",
-                name, enabled,
-            )
-        finally:
-            await conn.close()
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return False
+        await dcs.upsert_row(pool, _SURFACE, {**row, "enabled": enabled})
+        return True
 
     try:
-        result = _run(_impl())
+        ok = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    if result.endswith(" 0"):
+    if not ok:
         click.echo(f"(no tap named {name!r})", err=True)
         sys.exit(1)
     state = "enabled" if enabled else "disabled"
@@ -185,21 +116,12 @@ def taps_run(name: str | None) -> None:
     Without NAME: runs every enabled tap.
     With NAME: runs just that tap (requires enabled=TRUE).
     """
-    import asyncpg
-
-    async def _impl():
+    async def _impl(pool):
         from services.integrations import tap_runner
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
-        try:
-            summary = await tap_runner.run_all(
-                pool, only_names=[name] if name else None,
-            )
-        finally:
-            await pool.close()
-        return summary
+        return await tap_runner.run_all(pool, only_names=[name] if name else None)
 
     try:
-        summary = _run(_impl())
+        summary = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

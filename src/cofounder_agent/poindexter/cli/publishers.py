@@ -1,52 +1,43 @@
 """``poindexter publishers`` — operate on the declarative publishing_adapters table.
 
-Sibling of ``poindexter webhooks`` / ``poindexter taps`` /
-``poindexter retention``. v1 ships list / show / enable / disable /
-set-secret / fire — the moves an operator actually makes when wiring a
-new social platform. Full CRUD (add / remove) lands once the seed flow
-has been exercised enough to know the ergonomics.
+Sibling of ``poindexter webhooks`` / ``taps`` / ``retention``. v1 ships
+list / show / enable / disable / set-secret / fire.
 
-All commands hit the DB directly via the same DSN-resolution pattern as
-the other CLI groups. No HTTP layer — the table is small, operator-only,
-and doesn't need a worker round-trip.
+Thin adapter over :mod:`services.declarative_config_service` (#1522, epic
+#1340): config reads/writes go through the service. ``set-secret`` hands a
+connection to :mod:`plugins.secrets` (encrypted write); ``fire`` loads the row
+via the service then dispatches through the integrations registry. No raw
+config SQL or asyncpg connection lives here.
 """
 
 from __future__ import annotations
 
-import asyncio
 import sys
-from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._dataplane import dump_row, fmt_age, render_table, run_service
+from services import declarative_config_service as dcs
+
+_SURFACE = "publishers"
+
+_COLUMNS = [
+    ("name", "NAME", 22, None),
+    ("platform", "PLATFORM", 12, None),
+    ("handler_name", "HANDLER", 14, None),
+    ("enabled", "STATE", 9, lambda v: "enabled" if v else "disabled"),
+    ("last_run_at", "LAST RUN", 12, fmt_age),
+    ("total_runs", "RUNS", 6, None),
+    ("total_failures", "FAIL", 5, None),
+]
 
 
-async def _connect():
-    import asyncpg
-    return await asyncpg.connect(_dsn())
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-def _format_age(ts: Any) -> str:
-    if ts is None:
-        return "—"
-    import datetime as _dt
-    now = _dt.datetime.now(_dt.timezone.utc)
-    delta = now - ts
-    secs = int(delta.total_seconds())
-    if secs < 0:
-        return "future"
-    if secs < 60:
-        return f"{secs}s ago"
-    if secs < 3600:
-        return f"{secs // 60}m ago"
-    if secs < 86400:
-        return f"{secs // 3600}h ago"
-    return f"{secs // 86400}d ago"
+def _state_filter(state: str) -> dict | None:
+    if state == "enabled":
+        return {"enabled": True}
+    if state == "disabled":
+        return {"enabled": False}
+    return None
 
 
 @click.group(
@@ -65,86 +56,26 @@ def publishers_group() -> None:
 )
 def publishers_list(state: str) -> None:
     """List all publisher rows with current status."""
-    async def _run_list():
-        conn = await _connect()
-        try:
-            where = ""
-            if state == "enabled":
-                where = "WHERE enabled = TRUE"
-            elif state == "disabled":
-                where = "WHERE enabled = FALSE"
-            rows = await conn.fetch(
-                f"""
-                SELECT name, platform, handler_name, enabled,
-                       last_run_at, last_run_status,
-                       total_runs, total_failures, last_error
-                  FROM publishing_adapters
-                  {where}
-              ORDER BY platform, name
-                """,
-            )
-            return [dict(r) for r in rows]
-        finally:
-            await conn.close()
-
     try:
-        rows = _run(_run_list())
+        rows = run_service(lambda p: dcs.list_rows(p, _SURFACE, filters=_state_filter(state)))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not rows:
-        click.echo("(no publishing adapters)")
-        return
-
-    click.echo(
-        f"{'NAME':<22} {'PLATFORM':<12} {'HANDLER':<14} {'STATE':<9} "
-        f"{'LAST RUN':<12} {'RUNS':<6} {'FAIL':<5}"
-    )
-    for r in rows:
-        state_txt = "enabled" if r["enabled"] else "disabled"
-        color = "green" if r["enabled"] else "yellow"
-        line = (
-            f"{r['name']:<22} {r['platform']:<12} {r['handler_name']:<14} "
-            f"{state_txt:<9} {_format_age(r['last_run_at']):<12} "
-            f"{r['total_runs']:<6} {r['total_failures']:<5}"
-        )
-        click.secho(line, fg=color)
+    rows.sort(key=lambda r: (r.get("platform", ""), r.get("name", "")))
+    render_table(rows, _COLUMNS, empty="(no publishing adapters)")
 
 
 @publishers_group.command("show")
 @click.argument("name")
 def publishers_show(name: str) -> None:
     """Show full details of one publisher row including config + metadata."""
-    async def _run_show():
-        conn = await _connect()
-        try:
-            row = await conn.fetchrow(
-                "SELECT * FROM publishing_adapters WHERE name = $1", name
-            )
-            return dict(row) if row else None
-        finally:
-            await conn.close()
-
     try:
-        row = _run(_run_show())
+        row = run_service(lambda p: dcs.get_row(p, _SURFACE, name))
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not row:
-        click.echo(f"(no publishing adapter named {name!r})", err=True)
+    if not dump_row(row, missing=f"(no publishing adapter named {name!r})"):
         sys.exit(1)
-
-    for key in (
-        "name", "platform", "handler_name", "credentials_ref", "enabled",
-        "default_tags", "rate_limit_per_day",
-        "last_run_at", "last_run_status", "last_run_duration_ms",
-        "total_runs", "total_failures", "last_error",
-        "config", "metadata",
-        "created_at", "updated_at",
-    ):
-        click.echo(f"  {key:<22} {row[key]!r}")
 
 
 @publishers_group.command("enable")
@@ -162,23 +93,20 @@ def publishers_disable(name: str) -> None:
 
 
 def _set_enabled(name: str, enabled: bool) -> None:
-    async def _run_update():
-        conn = await _connect()
-        try:
-            return await conn.execute(
-                "UPDATE publishing_adapters SET enabled = $2 WHERE name = $1",
-                name, enabled,
-            )
-        finally:
-            await conn.close()
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return False
+        await dcs.upsert_row(pool, _SURFACE, {**row, "enabled": enabled})
+        return True
 
     try:
-        result = _run(_run_update())
+        ok = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    if result.endswith(" 0"):
+    if not ok:
         click.echo(f"(no row named {name!r})", err=True)
         sys.exit(1)
     state = "enabled" if enabled else "disabled"
@@ -195,15 +123,10 @@ def _set_enabled(name: str, enabled: bool) -> None:
 def publishers_set_secret(name: str, key: str, value: str | None) -> None:
     """Store an encrypted credential under app_settings for the publisher.
 
-    Secrets live in ``app_settings`` (with ``is_secret=true`` flag),
-    NOT in ``publishing_adapters.config``. The row's ``credentials_ref``
-    column is the prefix for the keys this publisher uses — e.g. for
-    ``bluesky_main`` (credentials_ref=``bluesky_``), valid keys are
-    ``bluesky_identifier`` and ``bluesky_app_password``.
-
-    The command verifies ``key`` starts with ``credentials_ref`` so an
-    operator can't accidentally write a key to the wrong publisher's
-    namespace.
+    Secrets live in ``app_settings`` (``is_secret=true``), NOT in
+    ``publishing_adapters.config``. The row's ``credentials_ref`` column is
+    the prefix for the keys this publisher uses; ``key`` must start with it so
+    an operator can't cross-write another publisher's namespace.
     """
     if value is None:
         value = click.prompt(
@@ -211,32 +134,29 @@ def publishers_set_secret(name: str, key: str, value: str | None) -> None:
         )
     assert value is not None
 
-    async def _run_set():
-        conn = await _connect()
-        try:
-            ref = await conn.fetchval(
-                "SELECT credentials_ref FROM publishing_adapters WHERE name = $1",
-                name,
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            raise RuntimeError(f"no publisher named {name!r}")
+        ref = row.get("credentials_ref")
+        if ref and not key.startswith(ref):
+            raise RuntimeError(
+                f"key {key!r} does not match publisher's credentials_ref "
+                f"prefix {ref!r}; refusing to cross-write namespaces"
             )
-            if ref is None:
-                raise RuntimeError(f"no publisher named {name!r}")
-            if ref and not key.startswith(ref):
-                raise RuntimeError(
-                    f"key {key!r} does not match publisher's credentials_ref "
-                    f"prefix {ref!r}; refusing to cross-write namespaces"
-                )
-            from plugins.secrets import ensure_pgcrypto, set_secret
+        # plugins.secrets owns the encrypted write; we just hand it a conn.
+        from plugins.secrets import ensure_pgcrypto, set_secret
+
+        async with pool.acquire() as conn:
             await ensure_pgcrypto(conn)
             await set_secret(
                 conn, key, value,
                 description=f"Credential for publisher {name!r} (poindexter#112)",
             )
-            return key
-        finally:
-            await conn.close()
+        return key
 
     try:
-        stored = _run(_run_set())
+        stored = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -255,62 +175,44 @@ def publishers_set_secret(name: str, key: str, value: str | None) -> None:
 def publishers_fire(name: str, text: str, url: str) -> None:
     """Trigger one publisher manually — the 'did I configure this right?' smoke test.
 
-    Loads the row, ensures handlers are registered, dispatches through
-    the registry with the lifespan SiteConfig, prints the adapter's
-    return dict.
+    Loads the row via the service, ensures handlers are registered, dispatches
+    through the registry with a run-bound SiteConfig, prints the return dict.
     """
-    async def _run_fire():
-        import asyncpg
-
+    async def _impl(pool):
         from services.integrations import registry
         from services.integrations.handlers import load_all
         from services.publishing_adapters_db import PublishingAdapterRow
         from services.site_config import SiteConfig
 
         load_all()  # idempotent — registry refuses duplicate registrations
-        # SiteConfig DI (#272 Phase-2e): the social_poster module global was
-        # removed. Build a run-bound SiteConfig from a short-lived pool so the
-        # publishing dispatcher gets a real, DB-loaded instance (the adapters
+        # SiteConfig DI (#272): build a run-bound instance from the pool so the
+        # publishing dispatcher gets a real, DB-loaded config (adapters
         # short-circuit when site_config is missing).
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        site_cfg = SiteConfig(pool=pool)
         try:
-            site_cfg = SiteConfig(pool=pool)
-            try:
-                await site_cfg.load(pool)
-            except Exception:
-                # Defensive — keep the smoke test usable in odd environments
-                # (partial bootstrap); the dispatch still gets a usable config.
-                pass
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT id, name, platform, handler_name, credentials_ref, "
-                    "       enabled, config, metadata "
-                    "  FROM publishing_adapters "
-                    " WHERE name = $1",
-                    name,
-                )
-                if row is None:
-                    raise RuntimeError(f"no publisher named {name!r}")
-                pub = PublishingAdapterRow(
-                    id=row["id"], name=row["name"], platform=row["platform"],
-                    handler_name=row["handler_name"],
-                    credentials_ref=row["credentials_ref"],
-                    enabled=bool(row["enabled"]),
-                    config=dict(row["config"] or {}),
-                    metadata=dict(row["metadata"] or {}),
-                )
-            return await registry.dispatch(
-                "publishing", pub.handler_name,
-                {"text": text, "url": url},
-                site_config=site_cfg,
-                row=pub.as_dict(),
-                pool=None,
-            )
-        finally:
-            await pool.close()
+            await site_cfg.load(pool)
+        except Exception:  # noqa: silent-ok — keep the smoke test usable on partial bootstrap
+            pass
+
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            raise RuntimeError(f"no publisher named {name!r}")
+        pub = PublishingAdapterRow(
+            id=row["id"], name=row["name"], platform=row["platform"],
+            handler_name=row["handler_name"], credentials_ref=row.get("credentials_ref"),
+            enabled=bool(row["enabled"]), config=dict(row.get("config") or {}),
+            metadata=dict(row.get("metadata") or {}),
+        )
+        return await registry.dispatch(
+            "publishing", pub.handler_name,
+            {"text": text, "url": url},
+            site_config=site_cfg,
+            row=pub.as_dict(),
+            pool=None,
+        )
 
     try:
-        result = _run(_run_fire())
+        result = run_service(_impl)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
