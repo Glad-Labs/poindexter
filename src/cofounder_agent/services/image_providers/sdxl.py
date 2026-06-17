@@ -67,7 +67,7 @@ class SdxlProvider:
             logger.warning("[SdxlProvider] image_service unavailable: %s", e)
             return []
 
-        svc = get_image_service(site_config=config.get("_site_config"))
+        svc = get_image_service(site_config=config.get("_site_config"))  # type: ignore[arg-type]
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             output_path = tmp.name

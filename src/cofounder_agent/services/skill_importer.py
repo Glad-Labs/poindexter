@@ -85,7 +85,7 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str]:
 
     Raises ``SkillImportError`` if frontmatter is missing or malformed.
     """
-    import yaml  # lazy import — not always needed
+    import yaml  # lazy import — not always needed  # type: ignore[import-untyped]
 
     if not raw.startswith("---"):
         raise SkillImportError(

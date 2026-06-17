@@ -77,7 +77,7 @@ class UrlValidationStage:
             # always threads a real site_config via context. None is safe;
             # URLValidator handles site_config=None.
             site_config = context.get("site_config")
-            validator = URLValidator(site_config=site_config)
+            validator = URLValidator(site_config=site_config)  # type: ignore[arg-type]
             urls = validator.extract_urls(content_text)
             if not urls:
                 return StageResult(

@@ -100,7 +100,7 @@ try:
 
 except ImportError:  # pragma: no cover — try legacy v3 path
     try:
-        from langfuse.decorators import langfuse_context, observe  # type: ignore[import-not-found]
+        from langfuse.decorators import langfuse_context, observe  # type: ignore[import-not-found, no-redef]
         LANGFUSE_AVAILABLE = True
     except ImportError:
         # langfuse not installed at all (brain daemon, minimal-dep test runs)

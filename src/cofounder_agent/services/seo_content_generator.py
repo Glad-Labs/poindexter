@@ -358,7 +358,7 @@ class SEOOptimizedContentGenerator:
 
         # Build complete metadata
         metadata = ContentMetadata(
-            seo_title=seo_assets.get("seo_title", title),
+            seo_title=str(seo_assets.get("seo_title") or title),
             meta_description=seo_assets.get("meta_description", excerpt),
             slug=seo_assets.get("slug", ""),
             meta_keywords=seo_assets.get("meta_keywords", []),

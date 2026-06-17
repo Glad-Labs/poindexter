@@ -123,7 +123,7 @@ class SettingResponse(SettingBase):
     """Model for returning setting data"""
 
     # Override strict enum — DB has many categories beyond the original enum
-    category: str | None = Field(None, description="Setting category for organization")
+    category: str | None = Field(None, description="Setting category for organization")  # type: ignore[assignment]
     id: int = Field(..., description="Setting database ID")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")

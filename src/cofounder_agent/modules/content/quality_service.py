@@ -680,7 +680,7 @@ class UnifiedQualityService:
             "enabled": _sc.get_bool("qa_llm_patterns_enabled", True),
         }
 
-        issues = []
+        issues: list[str] = []
         penalty = 0.0
 
         if not _t["enabled"]:

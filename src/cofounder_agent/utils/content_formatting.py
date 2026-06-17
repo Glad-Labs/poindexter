@@ -57,7 +57,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         return ""
 
     try:
-        import markdown as md  # noqa: PLC0415 — lazy import keeps startup fast
+        import markdown as md  # noqa: PLC0415 — lazy import keeps startup fast  # type: ignore[import-untyped]
 
         stripped = markdown_content.strip()
 

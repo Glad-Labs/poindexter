@@ -154,7 +154,7 @@ def _resolve_hostname(hostname: str, port: int) -> list[str]:
     out: list[str] = []
     for info in infos:
         sockaddr = info[4]
-        ip = sockaddr[0]
+        ip = str(sockaddr[0])
         if ip not in seen:
             seen.add(ip)
             out.append(ip)
@@ -497,10 +497,10 @@ def _meta_content(soup: BeautifulSoup, name: str) -> str:
     """Extract <meta name=X> or <meta property=X> content attribute."""
     el = soup.find("meta", attrs={"name": name})
     if el and el.get("content"):
-        return el["content"]
+        return str(el["content"])
     el = soup.find("meta", attrs={"property": name})
     if el and el.get("content"):
-        return el["content"]
+        return str(el["content"])
     return ""
 
 

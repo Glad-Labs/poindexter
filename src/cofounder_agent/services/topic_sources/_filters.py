@@ -84,7 +84,7 @@ def classify_category(title: str) -> str:
         keywords = " ".join(searches).lower().split()
         score = sum(1 for kw in keywords if kw in title_lower)
         scores[cat] = score
-    best = max(scores, key=scores.get) if scores else "technology"
+    best = max(scores, key=lambda k: scores.get(k, 0)) if scores else "technology"
     return best if scores.get(best, 0) > 0 else "technology"
 
 

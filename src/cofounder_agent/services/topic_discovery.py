@@ -22,9 +22,9 @@ Usage:
 import asyncio
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
+from plugins.topic_source import DiscoveredTopic
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from services.topic_length import pick_target_length
@@ -32,16 +32,10 @@ from services.topic_sources._filters import CATEGORY_SEARCHES
 
 logger = get_logger(__name__)
 
-
-@dataclass
-class DiscoveredTopic:
-    """A topic discovered from web sources."""
-    title: str
-    category: str
-    source: str
-    source_url: str
-    relevance_score: float = 0.0
-    is_duplicate: bool = False
+# Re-export so legacy callers that do
+#   from services.topic_discovery import DiscoveredTopic
+# keep working without change.
+__all__ = ["DiscoveredTopic", "QueueTopicsResult", "TopicDiscovery"]
 
 
 class QueueTopicsResult(int):
@@ -71,6 +65,8 @@ class QueueTopicsResult(int):
     # non-empty slots on a variable-width built-in subtype (``int``).
     # Two instance attributes on a return-value object are not worth
     # the dict-suppression anyway.
+    skipped: bool
+    reason: str | None
 
     def __new__(cls, value: int = 0, *, skipped: bool = False,
                 reason: str | None = None) -> "QueueTopicsResult":
@@ -709,7 +705,7 @@ class TopicDiscovery:
             keywords = " ".join(searches).lower().split()
             score = sum(1 for kw in keywords if kw in title_lower)
             scores[cat] = score
-        best = max(scores, key=scores.get) if scores else "technology"
+        best = max(scores, key=lambda k: scores.get(k, 0)) if scores else "technology"
         return best if scores.get(best, 0) > 0 else "technology"
 
     # Patterns that indicate news/current events (not evergreen editorial

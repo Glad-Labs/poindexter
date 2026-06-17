@@ -312,8 +312,8 @@ async def content_generation_flow(
         # globally via the SDK, not via the app instance.
         try:
             from services.sentry_integration import SentryIntegration
-            SentryIntegration.initialize(  # type: ignore[arg-type]
-                None,
+            SentryIntegration.initialize(
+                None,  # type: ignore[arg-type]
                 _wired_site_config,
                 service_name="cofounder-agent-prefect",
             )

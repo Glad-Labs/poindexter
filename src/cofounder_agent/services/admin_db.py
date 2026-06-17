@@ -302,7 +302,7 @@ class AdminDatabase(DatabaseServiceMixin):
                     "Retrieved costs for task %s: $%.6f across %d entries",
                     task_id, total_cost, len(entries),
                 )
-                return TaskCostBreakdownResponse(**response_data)
+                return TaskCostBreakdownResponse(**response_data)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(
                 "[get_task_costs] Error getting task costs for task_id=%s: %s",

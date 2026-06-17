@@ -94,7 +94,7 @@ async def ensure_pgcrypto(conn: Any) -> None:
 
 def is_encrypted(value: str | None) -> bool:
     """True if ``value`` has already been through :func:`set_secret`."""
-    return bool(value) and value.startswith(_ENC_PREFIX)
+    return value is not None and value.startswith(_ENC_PREFIX)
 
 
 async def get_secret(conn: Any, key: str) -> str | None:

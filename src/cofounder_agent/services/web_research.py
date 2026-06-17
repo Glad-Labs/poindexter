@@ -117,7 +117,7 @@ class WebResearcher:
             from ddgs import DDGS
         except ImportError:
             try:
-                from duckduckgo_search import DDGS  # legacy fallback
+                from duckduckgo_search import DDGS  # type: ignore[no-redef]  # legacy fallback
             except Exception as e:  # both client libs unavailable
                 logger.warning("[RESEARCH] DuckDuckGo client unavailable: %s", e)
                 return []

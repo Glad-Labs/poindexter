@@ -294,7 +294,7 @@ async def evaluate_sample(
             embeddings=embeddings,
             raise_exceptions=False,
         )
-        scores_raw = result.scores[0] if result.scores else {}
+        scores_raw = result.scores[0] if result.scores else {}  # type: ignore[union-attr]
         scores = {
             "faithfulness": float(scores_raw.get("faithfulness", -1.0) or -1.0),
             "answer_relevancy": float(scores_raw.get("answer_relevancy", -1.0) or -1.0),

@@ -811,7 +811,7 @@ class MultiModelQA:
         validator_weight = 0.4
         critic_weight = 0.6
         gate_weight = 0.3  # topic-delivery + internal-consistency gates
-        approval_threshold = 70
+        approval_threshold: float = 70
         if self.settings:
             validator_weight = float(await self.settings.get("qa_validator_weight") or 0.4)
             critic_weight = float(await self.settings.get("qa_critic_weight") or 0.6)

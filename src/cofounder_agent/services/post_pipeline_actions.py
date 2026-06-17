@@ -400,7 +400,6 @@ async def _maybe_auto_publish(
                     niche_slug=niche_slug,
                     category=category,
                     quality_score=quality_score,
-                    site_config=site_config,
                 )
                 auto_publish_gate = {
                     "would_fire": decision.would_fire,

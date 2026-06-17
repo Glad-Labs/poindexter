@@ -113,7 +113,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)
-    review = await qa._web_fact_check(title, topic, content, existing)
+    review = await qa._web_fact_check(title, topic, content, existing)  # type: ignore[arg-type]
     if review is None:
         # No checkable claims / search failed — legacy no-op. The
         # known_wrong_fact rescue in qa.aggregate then finds no web review and

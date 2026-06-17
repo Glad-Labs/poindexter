@@ -394,7 +394,7 @@ class LiteLLMProvider:
         """
         try:
             import litellm
-            litellm.set_verbose = False  # noqa: SLF001 — public surface
+            litellm.set_verbose = False  # type: ignore[attr-defined]  # noqa: SLF001
             litellm.drop_params = self._drop_params
             if self._api_base:
                 litellm.api_base = self._api_base

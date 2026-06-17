@@ -94,7 +94,7 @@ class PexelsProvider:
             resp = await http_client.get(
                 f"{_PEXELS_API_BASE}/search",
                 headers=headers,
-                params=params,
+                params=params,  # type: ignore[arg-type]
                 timeout=10.0,
             )
         else:
@@ -102,7 +102,7 @@ class PexelsProvider:
                 resp = await client.get(
                     f"{_PEXELS_API_BASE}/search",
                     headers=headers,
-                    params=params,
+                    params=params,  # type: ignore[arg-type]
                 )
         resp.raise_for_status()
         data = resp.json()

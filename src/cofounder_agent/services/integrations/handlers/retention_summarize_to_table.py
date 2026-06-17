@@ -644,7 +644,7 @@ def _aggregate(
     avg_confidence: float | None = None
     if confidence_column:
         vals = [
-            float(r.get(confidence_column))
+            float(r.get(confidence_column))  # type: ignore[arg-type]
             for r in raw_rows
             if r.get(confidence_column) is not None
         ]
@@ -761,7 +761,7 @@ async def _write_summary_and_delete(
     # Cast JSONB columns explicitly so asyncpg doesn't fail on str→jsonb
     # coercion. The trailing ::jsonb is on the placeholders we already
     # know are JSON-serialized strings.
-    casts = []
+    casts: list[str | None] = []
     for c in columns:
         if c == "summary_text" or c == "summary_method":
             casts.append("text")

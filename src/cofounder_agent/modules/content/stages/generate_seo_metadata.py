@@ -64,7 +64,7 @@ class GenerateSeoMetadataStage:
             get_content_generator(
                 site_config=site_config, platform=context.get("platform")
             ),
-            site_config=site_config,
+            site_config=site_config,  # type: ignore[arg-type]
         )
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic, content=content_text, topic=topic,

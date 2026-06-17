@@ -146,6 +146,10 @@ class TaskResponse(BaseModel):
     post_slug: str | None = Field(None, description="Post slug for URL generation")
     published_url: str | None = Field(None, description="Published post URL")
 
+    # Pass-through columns from content_tasks view
+    site_id: str | None = Field(None, description="Site UUID this task belongs to")
+    metadata: dict[str, Any] | None = Field(None, description="Stage-derived metadata (JSON)")
+
 
 class TaskCountsResponse(BaseModel):
     """Task counts grouped by status."""

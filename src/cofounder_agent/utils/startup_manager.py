@@ -41,9 +41,9 @@ class StartupManager:
                 test that constructs StartupManager() bare still works.
         """
         self._site_config = site_config
-        self.database_service = None
-        self.redis_cache = None
-        self.startup_error = None
+        self.database_service: Any = None
+        self.redis_cache: Any = None
+        self.startup_error: Any = None
         # Hold strong refs to long-running background tasks so asyncio's
         # weakref tracking doesn't GC them mid-loop. (ruff RUF006)
         self._background_tasks: set = set()

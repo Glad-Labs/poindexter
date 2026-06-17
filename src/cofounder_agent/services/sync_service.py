@@ -48,7 +48,8 @@ def _resolve_cloud_database_url() -> str:
     the cloud one. Empty string means "not configured" — ``connect()``
     logs and skips rather than raising.
     """
-    return (os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")).strip()
+    url = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL") or ""
+    return url.strip()
 
 
 def _resolve_local_database_url() -> str:
@@ -95,8 +96,8 @@ class SyncService:
         # override (CLI overrides, tests).
         self.cloud_url = cloud_url if cloud_url is not None else _resolve_cloud_database_url()
         self.local_url = local_url if local_url is not None else _resolve_local_database_url()
-        self._cloud_pool: asyncpg.Pool | None = None
-        self._local_pool: asyncpg.Pool | None = None
+        self._cloud_pool: asyncpg.Pool = None  # type: ignore[assignment]
+        self._local_pool: asyncpg.Pool = None  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
     # Context manager
@@ -117,7 +118,7 @@ class SyncService:
         """Open connection pools to both databases."""
         if not self.cloud_url:
             logger.info("Sync disabled — no CLOUD_DATABASE_URL configured (#198)")
-            self._cloud_pool = None
+            self._cloud_pool = None  # type: ignore[assignment]
         else:
             try:
                 self._cloud_pool = await asyncpg.create_pool(
@@ -126,11 +127,11 @@ class SyncService:
                 logger.info("Connected to cloud DB")
             except Exception as exc:
                 logger.exception("Failed to connect to cloud DB: %s", exc)
-                self._cloud_pool = None
+                self._cloud_pool = None  # type: ignore[assignment]
 
         if not self.local_url:
             logger.info("Sync disabled — no LOCAL_DATABASE_URL configured (#198)")
-            self._local_pool = None
+            self._local_pool = None  # type: ignore[assignment]
         else:
             try:
                 self._local_pool = await asyncpg.create_pool(
@@ -139,7 +140,7 @@ class SyncService:
                 logger.info("Connected to local DB")
             except Exception as exc:
                 logger.exception("Failed to connect to local DB: %s", exc)
-                self._local_pool = None
+                self._local_pool = None  # type: ignore[assignment]
 
     async def close(self) -> None:
         """Close both connection pools gracefully."""
@@ -150,8 +151,8 @@ class SyncService:
                     logger.info("Closed %s DB pool", label)
                 except Exception as exc:
                     logger.warning("Error closing %s pool: %s", label, exc)
-        self._cloud_pool = None
-        self._local_pool = None
+        self._cloud_pool = None  # type: ignore[assignment]
+        self._local_pool = None  # type: ignore[assignment]
 
     def _require_pools(self) -> bool:
         """Return True if both pools are live; log and return False otherwise."""

@@ -94,7 +94,7 @@ try:
 
     DIFFUSERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
-    StableDiffusionXLPipeline = None
+    StableDiffusionXLPipeline = None  # type: ignore[misc, assignment]
     _import_logger.warning("Diffusers library not available: %s", e)
 
 # Optional optimization packages. find_spec instead of try/import —
@@ -286,7 +286,7 @@ class ImageService:
         self.pexels_base_url = self._site_config.get(
             "pexels_api_base", "https://api.pexels.com/v1"
         ).rstrip("/")
-        self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
+        self.pexels_headers: dict[str, str] = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
 
         # Image generation state (lazy-loaded on first generate_image call)
         self._gen_pipe = None  # Active generation pipeline
@@ -934,7 +934,7 @@ class ImageService:
                 response = await http_client.get(
                     f"{self.pexels_base_url}/search",
                     headers=self.pexels_headers,
-                    params=params,
+                    params=params,  # type: ignore[arg-type]
                     timeout=10.0,
                 )
             else:
@@ -942,7 +942,7 @@ class ImageService:
                     response = await client.get(
                         f"{self.pexels_base_url}/search",
                         headers=self.pexels_headers,
-                        params=params,
+                        params=params,  # type: ignore[arg-type]
                     )
             response.raise_for_status()
             data = response.json()

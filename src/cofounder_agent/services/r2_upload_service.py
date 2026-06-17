@@ -63,9 +63,9 @@ def _convert_to_webp(path: Path) -> "io.BytesIO | None":
             # Convert palette/P mode images to RGBA first so WebP saves them
             # correctly; convert other non-RGB(A) modes to RGB.
             if img.mode in ("P", "RGBA"):
-                img = img.convert("RGBA")
+                img = img.convert("RGBA")  # type: ignore[assignment]
             elif img.mode not in ("RGB", "RGBA"):
-                img = img.convert("RGB")
+                img = img.convert("RGB")  # type: ignore[assignment]
             buf = io.BytesIO()
             img.save(buf, format="WEBP", quality=_WEBP_QUALITY, method=4)
             buf.seek(0)

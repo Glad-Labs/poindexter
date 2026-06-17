@@ -526,7 +526,7 @@ class MemoryClient:
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql, *args)
 
-        hits: list[MemoryHit] = []
+        hits: list[MemoryHit] = []  # type: ignore[no-redef]
         for row in rows:
             meta = row["metadata"]
             if isinstance(meta, str):

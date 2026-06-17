@@ -348,7 +348,7 @@ async def _handle_blog_post_creation(
     effective_length = cc.get("word_count") or request.target_length or 1500
 
     # Resolve "auto" topic to a fresh discovered topic
-    resolved_topic = request.topic.strip()
+    resolved_topic = (request.topic or "").strip()
     if resolved_topic.lower() == "auto":
         try:
             from services.topic_discovery import TopicDiscovery
@@ -459,7 +459,7 @@ async def _handle_social_media_creation(
         "id": task_id,
         "task_name": f"Social Media: {request.topic}",
         "task_type": "social_media",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "tone": request.tone or "professional",
         "style": request.style,
@@ -500,7 +500,7 @@ async def _handle_email_creation(
         "id": task_id,
         "task_name": f"Email: {request.topic}",
         "task_type": "email",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "tone": request.tone or "professional",
         "model_selections": request.models_by_phase or {},
@@ -535,7 +535,7 @@ async def _handle_newsletter_creation(
         "id": task_id,
         "task_name": f"Newsletter: {request.topic}",
         "task_type": "newsletter",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -569,7 +569,7 @@ async def _handle_business_analytics_creation(
         "id": task_id,
         "task_name": f"Analytics: {request.topic}",
         "task_type": "business_analytics",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -608,7 +608,7 @@ async def _handle_data_retrieval_creation(
         "id": task_id,
         "task_name": f"Data Retrieval: {request.topic}",
         "task_type": "data_retrieval",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "status": "pending",
@@ -645,7 +645,7 @@ async def _handle_market_research_creation(
         "id": task_id,
         "task_name": f"Market Research: {request.topic}",
         "task_type": "market_research",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -679,7 +679,7 @@ async def _handle_financial_analysis_creation(
         "id": task_id,
         "task_name": f"Financial Analysis: {request.topic}",
         "task_type": "financial_analysis",
-        "topic": request.topic.strip(),
+        "topic": (request.topic or "").strip(),
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -752,7 +752,7 @@ async def list_tasks(
             task = raw_task
             if isinstance(task, dict):
                 # Normalize seo_keywords in all nested locations
-                task = _normalize_seo_keywords_in_task(task)
+                task = _normalize_seo_keywords_in_task(task)  # type: ignore[arg-type, assignment]
 
                 # CRITICAL: 'id' must match what POST /api/tasks returns so the
                 # frontend can correlate optimistic inserts with server data.
@@ -786,7 +786,7 @@ async def list_tasks(
                         )
                         task["cost_breakdown"] = None
 
-                validated_tasks.append(UnifiedTaskResponse(**task))
+                validated_tasks.append(UnifiedTaskResponse(**task))  # type: ignore[arg-type, misc]
             else:
                 validated_tasks.append(task)
 
@@ -830,8 +830,8 @@ async def get_task(
 
         # Convert task dict if needed, normalizing seo_keywords
         if isinstance(task, dict):
-            task = _normalize_seo_keywords_in_task(task)
-            return UnifiedTaskResponse(**task)
+            task = _normalize_seo_keywords_in_task(task)  # type: ignore[arg-type, assignment]
+            return UnifiedTaskResponse(**task)  # type: ignore[arg-type, misc]
         return task
     except HTTPException:
         raise

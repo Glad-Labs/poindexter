@@ -153,7 +153,7 @@ async def update_task_status_enterprise(
             "operator"
         )
 
-        update_dict = {
+        update_dict: dict[str, Any] = {
             "status": target_status.value,
             "status_updated_at": now,
             "status_updated_by": updated_by,
@@ -379,7 +379,8 @@ async def get_task_status_info(
         if status_updated_at:
             if isinstance(status_updated_at, str):
                 status_updated_at = datetime.fromisoformat(status_updated_at.replace("Z", "+00:00"))
-            duration_minutes = (datetime.now(timezone.utc) - status_updated_at).total_seconds() / 60
+            if isinstance(status_updated_at, datetime):
+                duration_minutes = (datetime.now(timezone.utc) - status_updated_at).total_seconds() / 60
 
         # Get allowed transitions
         allowed_transitions = sorted(get_allowed_transitions(status))
@@ -388,7 +389,7 @@ async def get_task_status_info(
             task_id=task_id,
             current_status=status.value,
             status_updated_at=status_updated_at or task.get("created_at"),  # type: ignore[arg-type]
-            status_updated_by=task.get("status_updated_by"),
+            status_updated_by=task.get("status_updated_by"),  # type: ignore[arg-type]
             created_at=task.get("created_at"),  # type: ignore[arg-type]
             started_at=task.get("started_at"),
             completed_at=task.get("completed_at"),
@@ -609,7 +610,7 @@ async def update_task(
             _check_task_ownership(task, token)
 
         # Prepare update data
-        update_dict = {
+        update_dict: dict[str, Any] = {
             "status": update_data.status,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -627,7 +628,7 @@ async def update_task(
         # Merge metadata if provided
         if update_data.metadata:
             task["metadata"] = {**(task.get("metadata") or {}), **update_data.metadata}
-            update_dict["metadata"] = task["metadata"]  # type: ignore[assignment]
+            update_dict["metadata"] = task["metadata"]
 
         # Update task status - pass result dict (asyncpg handles JSONB conversion)
         await db_service.update_task_status(
@@ -701,7 +702,7 @@ async def update_task_content(
         updated_task = await db_service.get_task(task_id)
         if not updated_task:
             raise HTTPException(status_code=404, detail="Task not found after update")
-        return UnifiedTaskResponse(**_normalize_seo_keywords_in_task(updated_task))
+        return UnifiedTaskResponse(**_normalize_seo_keywords_in_task(updated_task))  # type: ignore[arg-type, misc]
     except HTTPException:
         raise
     except Exception as e:

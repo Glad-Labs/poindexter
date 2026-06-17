@@ -92,6 +92,8 @@ class TaskRecord(TypedDict, total=False):
     post_id: str | None
     post_slug: str | None
     published_url: str | None
+    site_id: str | None
+    metadata: dict[str, Any] | None
 
 
 # ============================================================================

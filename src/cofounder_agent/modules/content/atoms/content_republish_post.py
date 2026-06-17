@@ -136,7 +136,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     # Propagation — a DB update alone does NOT reach the live site (R2 JSON +
     # ISR). Await inline (export) per the cancelled-bg-task lesson in publish_service.
-    exported = await export_post(pool, slug, site_config=site_config)
+    exported = await export_post(pool, slug, site_config=site_config)  # type: ignore[arg-type]
     revalidated = await trigger_isr_revalidate(slug, site_config=site_config)
     logger.info(
         "[content.republish_post] task=%s post=%s slug=%s exported=%s revalidated=%s status=completed",

@@ -317,8 +317,8 @@ async def _patch_post(post_id: str, updates: dict) -> dict:
         resp = await c.put(f"/api/posts/{post_id}", json=updates)
         # cms_routes uses PATCH but httpx doesn't expose it on our wrapper.
         # Try PATCH via the raw _client if we got method-not-allowed.
-        if resp.status_code == 405 and c._client is not None:
-            resp = await c._client.patch(f"/api/posts/{post_id}", json=updates)
+        if resp.status_code == 405 and c._http is not None:
+            resp = await c._http.patch(f"/api/posts/{post_id}", json=updates)
         return await c.json_or_raise(resp)
 
 

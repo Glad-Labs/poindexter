@@ -163,7 +163,7 @@ _MANUAL_RESET_PHRASE = re.compile(
 )
 
 
-class ClaudeCodeBridgeLLMService(LLMService):
+class ClaudeCodeBridgeLLMService(LLMService):  # type: ignore[misc]
     """Replaces the model-API LLM stage with a subprocess to the Claude CLI.
 
     Receives an :class:`LLMContextFrame` per user turn (via the standard

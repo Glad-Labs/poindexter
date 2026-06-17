@@ -17,6 +17,7 @@ All configuration is DB-first via app_settings keys:
 """
 
 import asyncio
+from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
@@ -260,7 +261,7 @@ async def send_post_newsletter(
         dict with sent, failed, skipped counts
     """
     cfg = await _cfg(site_config=site_config)
-    result = {"sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0}
+    result: dict[str, Any] = {"sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0}
 
     if not cfg["enabled"]:
         logger.info("[NEWSLETTER] Disabled via app_settings (newsletter_enabled=false)")

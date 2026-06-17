@@ -155,7 +155,7 @@ async def caption_image(
         ):
             result = await dispatch_complete(
                 pool=pool,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 model=vmodel,
                 tier="standard",
                 task_id=task_id,

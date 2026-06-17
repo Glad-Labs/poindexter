@@ -743,10 +743,17 @@ class DevDiarySource:
         notes_task = _collect_operator_notes(pool, "dev_diary")
 
         import asyncio
-        prs, commits, decisions, audit, posts, cost, notes = await asyncio.gather(
+        _gathered = await asyncio.gather(
             prs_task, commits_task, decisions_task, audit_task, posts_task,
             cost_task, notes_task,
         )
+        prs: list[dict[str, Any]] = _gathered[0]  # type: ignore[assignment]
+        commits: list[dict[str, Any]] = _gathered[1]  # type: ignore[assignment]
+        decisions: list[dict[str, Any]] = _gathered[2]  # type: ignore[assignment]
+        audit: list[dict[str, Any]] = _gathered[3]  # type: ignore[assignment]
+        posts: list[dict[str, Any]] = _gathered[4]  # type: ignore[assignment]
+        cost: dict[str, Any] = _gathered[5]  # type: ignore[assignment]
+        notes: list[dict[str, Any]] = _gathered[6]  # type: ignore[assignment]
 
         # Day label — UTC, as that's what all the source timestamps are in.
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")

@@ -98,7 +98,7 @@ class FinanceModule:
             )
         from modules.finance.cli import finance_group
 
-        parser.add_command(finance_group, name="finance")
+        parser.add_command(finance_group, name="finance")  # type: ignore[attr-defined]
 
     def register_dashboards(self, grafana: object) -> None:
         """Phase 4 — finance dashboards (balance trend, burn rate)

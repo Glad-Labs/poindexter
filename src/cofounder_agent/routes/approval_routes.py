@@ -118,7 +118,7 @@ async def reject_task(
         rejection_date = datetime.now(timezone.utc)
 
         # Update task with rejection metadata
-        metadata_updates = {
+        metadata_updates: dict[str, Any] = {
             **(task.get("metadata") or {}),
             "rejection_date": rejection_date.isoformat(),
             "rejected_by": operator["id"],

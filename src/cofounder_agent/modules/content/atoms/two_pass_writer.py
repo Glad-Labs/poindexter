@@ -265,7 +265,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
         if site_config is not None else 20
     )
     qvec = await embed_text(
-        f"{state['topic']} — {state['angle']}", site_config=site_config,
+        f"{state['topic']} — {state['angle']}", site_config=site_config,  # type: ignore[arg-type]
     )
     # Convert to pgvector text format. asyncpg has no built-in codec for
     # Python list → pgvector; passing the raw list crashes with
@@ -456,7 +456,7 @@ async def _research_each(state: _State) -> _State:
     results = []
     for need in state["needs"]:
         aug = await research_topic(
-            query=need, max_sources=max_sources, site_config=site_config,
+            query=need, max_sources=max_sources, site_config=site_config,  # type: ignore[arg-type]
         )
         results.append({"need": need, "research": aug})
     cumulative = list(state.get("external_lookups") or []) + results

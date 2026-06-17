@@ -320,7 +320,7 @@ def migrate_up(to_target: str | None, json_output: bool) -> None:
             # honor the cap.
             applied = await _fetch_applied(pool)
             files = _list_migration_files()
-            newly_applied: list[str] = []
+            newly_applied: list[str] = []  # type: ignore[no-redef]
             failed: list[str] = []
 
             for f in files:

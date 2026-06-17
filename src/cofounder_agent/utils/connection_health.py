@@ -215,7 +215,7 @@ async def diagnose_connection_issues(site_config: Any = None) -> dict[str, Any]:
     Returns:
         Dictionary with diagnostic information
     """
-    diagnostics = {
+    diagnostics: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "issues": [],
         "recommendations": [],

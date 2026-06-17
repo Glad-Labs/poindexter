@@ -207,7 +207,7 @@ class SourceFeaturedImageStage:
         # ``get_image_service`` requires a real ``site_config`` (#272
         # Phase-2e), seeded into the context by content_router_service.
         image_service = context.get("image_service") or get_image_service(
-            site_config=site_config
+            site_config=site_config  # type: ignore[arg-type]
         )
 
         logger.info("STAGE 3: Sourcing featured image...")

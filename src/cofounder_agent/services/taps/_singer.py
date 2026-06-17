@@ -221,6 +221,7 @@ class SingerTap:
                 await proc.wait()
 
             if proc.returncode != 0:
+                assert proc.stderr is not None  # guaranteed: stderr=PIPE above
                 err = (await proc.stderr.read()).decode("utf-8", errors="replace")
                 logger.error(
                     "SingerTap %s: binary exited %d: %s",

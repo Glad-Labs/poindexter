@@ -272,10 +272,10 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
         text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
-        text = pattern.sub(replacement, text)
+        text = pattern.sub(replacement, text)  # type: ignore[call-overload]
     # Acronym replacements (DB-configurable via tts_acronym_replacements)
     for pattern, replacement in _get_acronym_regex(site_config=site_config):
-        text = pattern.sub(replacement, text)
+        text = pattern.sub(replacement, text)  # type: ignore[call-overload]
     # Smart quotes → straight quotes (TTS handles these better)
     text = text.replace("\u201c", '"').replace("\u201d", '"')
     text = text.replace("\u2018", "'").replace("\u2019", "'")

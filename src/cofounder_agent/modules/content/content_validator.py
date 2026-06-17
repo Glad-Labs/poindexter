@@ -1794,7 +1794,7 @@ def validate_content(
             r"\bIn this (?:post|article|guide|blog post|tutorial)[,\s]",
             r"\bIn today'?s (?:fast-paced|digital|modern|competitive)",
         ):
-            m = re.search(pat, first_500, re.IGNORECASE)
+            m = re.search(pat, first_500, re.IGNORECASE)  # type: ignore[assignment]
             if m:
                 issues.append(ValidationIssue(
                     severity="warning",

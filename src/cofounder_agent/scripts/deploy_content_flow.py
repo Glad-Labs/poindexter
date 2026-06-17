@@ -235,7 +235,7 @@ async def main() -> None:
     # MODULE_PATH, the worker uses its existing PYTHONPATH — which the
     # ``poetry run prefect worker start`` command + the eventual
     # prefect-worker compose service both have wired correctly.
-    deployment = await content_generation_flow.to_deployment(
+    deployment = await content_generation_flow.to_deployment(  # type: ignore[misc]
         name="content-generation",
         description=(
             "Drives one pipeline_tasks row through the canonical_blog "

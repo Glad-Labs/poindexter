@@ -314,7 +314,7 @@ class PoindexterOAuthProvider(OAuthAuthorizationServerProvider[
                 )
 
         access_token, claims = issue_token(
-            client.client_id, authorization_code.scopes,
+            client.client_id or "", authorization_code.scopes,
         )
         return OAuthToken(
             access_token=access_token,

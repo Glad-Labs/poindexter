@@ -29,7 +29,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
@@ -491,7 +491,7 @@ class UnifiedPromptManager:
         # YAML "version" is a string like "v1.1" — try to extract the
         # major-int for the outcome row. Non-numeric versions land as
         # None; consumers expect that.
-        version: int | None = None
+        version: int | None = None  # type: ignore[no-redef]
         raw_version = entry.get("version") or ""
         if isinstance(raw_version, str) and raw_version.startswith("v"):
             head = raw_version[1:].split(".", 1)[0]

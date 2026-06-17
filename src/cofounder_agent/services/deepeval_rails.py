@@ -222,7 +222,7 @@ def _build_brand_fabrication_metric():
             return self.measure(test_case)
 
         def is_successful(self) -> bool:
-            return self.success
+            return bool(self.success)
 
     return BrandFabricationMetric
 

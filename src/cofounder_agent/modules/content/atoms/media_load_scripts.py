@@ -77,7 +77,7 @@ ATOM_META = AtomMeta(
 # Defaults surfaced when a task has no persisted media artifacts (e.g. a post
 # created before Stage-1 persistence, or a non-media task). The render nodes
 # downstream no-op gracefully on empty inputs.
-_EMPTY = {
+_EMPTY: dict[str, Any] = {
     "podcast_script": "",
     "video_long_script": "",
     "video_scenes": [],

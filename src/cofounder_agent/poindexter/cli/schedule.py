@@ -112,7 +112,7 @@ def _format_row_line(r: dict) -> str:
         pid = pid[:8]
     title = r.get("title") or "(no title)"
     pa = r.get("published_at")
-    pa_s = pa.isoformat() if hasattr(pa, "isoformat") else str(pa) if pa else "—"
+    pa_s = pa.isoformat() if hasattr(pa, "isoformat") else str(pa) if pa else "—"  # type: ignore[union-attr]
     status = r.get("status") or "?"
     return f"  {pid}  {status:<10}  {pa_s:<25}  {title[:55]}"
 

@@ -1201,7 +1201,7 @@ class TemplateRunner:
                     Command(resume=resume_value) if resume else data_state
                 )
                 try:
-                    final_state = await compiled.ainvoke(invoke_input, config)
+                    final_state = await compiled.ainvoke(invoke_input, config)  # type: ignore[call-overload]
                 except Exception as exc:
                     return await self._handle_run_exception(
                         exc, template_slug, initial_state, records,

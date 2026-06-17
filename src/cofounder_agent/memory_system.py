@@ -29,7 +29,7 @@ try:
 
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
-    SentenceTransformer = None
+    SentenceTransformer = None  # type: ignore[misc, assignment]
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 
@@ -128,7 +128,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         self.logger = logging.getLogger("ai_memory_system")
 
         # Embedding model for semantic similarity (loaded async in initialize())
-        self.embedding_model = None
+        self.embedding_model: Any = None
 
         # Memory caches
         self.recent_memories: list[Memory] = []
@@ -187,7 +187,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         """Initialize sentence embedding model for semantic similarity"""
         try:
             # Use a lightweight but effective sentence transformer model
-            if SENTENCE_TRANSFORMERS_AVAILABLE and SentenceTransformer:
+            if SENTENCE_TRANSFORMERS_AVAILABLE and SentenceTransformer is not None:
                 self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
                 self.logger.info("Embedding model initialized successfully")
             else:
@@ -669,7 +669,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         """Extract common meaningful words from text"""
         # Simple word frequency analysis
         words = text.split()
-        word_counts = {}
+        word_counts: dict[str, int] = {}
 
         # Filter and count words
         for raw in words:

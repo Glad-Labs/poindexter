@@ -53,7 +53,7 @@ class EnhancedStatusChangeService:
                 logger.error("%s", error)
                 return False, error, ["task_not_found"]
 
-            current_status = task.get("status", "pending")
+            current_status = str(task.get("status") or "pending")
 
             # Validate transition
             is_valid, errors = self.validator.validate_transition(

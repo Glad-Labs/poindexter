@@ -354,7 +354,7 @@ def configure_structlog() -> bool:
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
                 # Inject current request ID from contextvar
-                _add_request_id,
+                _add_request_id,  # type: ignore[list-item]
                 # Format positional arguments
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 # Add timestamps in ISO format
@@ -363,7 +363,7 @@ def configure_structlog() -> bool:
                 # Runs after the timestamper so internal `_record`-style
                 # keys are already in place, and before the renderer so
                 # the masked dict is what actually hits stdout / Loki / disk.
-                redact_secrets,
+                redact_secrets,  # type: ignore[list-item]
                 # Include stack information for exceptions
                 structlog.processors.StackInfoRenderer(),
                 # Format exception information
@@ -555,10 +555,10 @@ def set_log_level(level: str) -> None:
                 structlog.stdlib.filter_by_level,
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
-                _add_request_id,
+                _add_request_id,  # type: ignore[list-item]
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 structlog.processors.TimeStamper(fmt="ISO"),
-                redact_secrets,
+                redact_secrets,  # type: ignore[list-item]
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),

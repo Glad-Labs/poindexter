@@ -33,8 +33,8 @@ class WorkerService:
         self.worker_type = worker_type
         self.worker_id = f"{worker_type}-{socket.gethostname()}-{os.getpid()}"
         self._running = False
-        self._capabilities = {}
-        self._current_task_id = None
+        self._capabilities: dict[str, Any] = {}
+        self._current_task_id: str | None = None
         self._site_config: SiteConfig = site_config if site_config is not None else SiteConfig()
         # Strong ref to the heartbeat task so asyncio doesn't GC it.
         self._heartbeat_task: asyncio.Task | None = None

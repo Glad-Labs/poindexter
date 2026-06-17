@@ -85,7 +85,7 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
     class _NoopTracer:
         start_as_current_span = staticmethod(_noop_span)
 
-    _tracer = _NoopTracer()
+    _tracer = _NoopTracer()  # type: ignore[assignment]
 
 
 # Positive sentinel cost so check_budget runs its ACCUMULATED daily/monthly

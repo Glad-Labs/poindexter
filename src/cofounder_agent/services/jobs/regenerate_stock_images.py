@@ -85,7 +85,7 @@ class RegenerateStockImagesJob:
             )
 
             from services.image_service import get_image_service
-            svc = get_image_service(site_config=sc)
+            svc = get_image_service(site_config=sc)  # type: ignore[arg-type]
 
             import cloudinary
             import cloudinary.uploader
@@ -125,7 +125,7 @@ class RegenerateStockImagesJob:
                         import asyncio
                         result = await asyncio.get_running_loop().run_in_executor(
                             None,
-                            lambda p=output_path, c=cat: cloudinary.uploader.upload(
+                            lambda p=output_path, c=cat: cloudinary.uploader.upload(  # type: ignore[misc]
                                 p, folder="generated/",
                                 resource_type="image", tags=["featured", c],
                             ),

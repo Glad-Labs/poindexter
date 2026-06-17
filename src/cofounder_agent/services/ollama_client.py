@@ -843,7 +843,7 @@ class OllamaClient:
                 max_retries=attempts,
                 model=model,
             )
-            raise exc.last_attempt.exception() from exc
+            raise exc.last_attempt.exception() from exc  # type: ignore[misc]
 
         # AsyncRetrying with reraise=True always either returns or raises
         # — this fallback only fires if the loop never iterated (attempts<1).

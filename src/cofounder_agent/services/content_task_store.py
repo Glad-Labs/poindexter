@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Any
 
+from schemas.typed_records import TaskRecord
 from services.audit_log import audit_log_bg
 from services.database_service import DatabaseService
 
@@ -106,7 +107,7 @@ class ContentTaskStore:
             logger.error("[CONTENT_TASK_STORE] ERROR: %s", e, exc_info=True)
             raise
 
-    async def get_task(self, task_id: str) -> dict[str, Any] | None:
+    async def get_task(self, task_id: str) -> TaskRecord | None:
         """Get task by ID from persistent storage (async, non-blocking)."""
         if not self.database_service:
             return None
@@ -114,10 +115,10 @@ class ContentTaskStore:
 
     async def update_task(
         self, task_id: str, updates: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> bool:
         """Update task data in persistent storage (async, non-blocking)."""
         if not self.database_service:
-            return False  # type: ignore[return-value]  # legacy return shape
+            return False
 
         if "metadata" in updates:
             updates["task_metadata"] = json.dumps(updates.pop("metadata"))
@@ -131,7 +132,7 @@ class ContentTaskStore:
 
     async def list_tasks(
         self, status: str | None = None, limit: int = 50, offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[TaskRecord]:
         """List tasks from persistent storage with optional filtering."""
         if not self.database_service:
             return []
@@ -140,10 +141,10 @@ class ContentTaskStore:
         )
         return tasks
 
-    async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
+    async def get_drafts(self, limit: int = 20, offset: int = 0) -> Any:
         """Get list of drafts from persistent storage (async, non-blocking)."""
         if not self.database_service:
-            return []  # type: ignore[return-value]  # legacy return shape
+            return []
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 

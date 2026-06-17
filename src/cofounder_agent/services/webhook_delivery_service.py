@@ -43,7 +43,7 @@ class WebhookDeliveryService:
         # sync .get() value at __init__ would store the ciphertext. Read
         # via the async get_secret accessor at delivery time instead.
         self._running = False
-        self._client = None
+        self._client: httpx.AsyncClient | None = None
         # Strong ref to the delivery loop task so asyncio doesn't GC it.
         self._delivery_task: asyncio.Task | None = None
 
@@ -120,7 +120,7 @@ class WebhookDeliveryService:
             if webhook_token:
                 headers["Authorization"] = f"Bearer {webhook_token}"
 
-            response = await self._client.post(
+            response = await self._client.post(  # type: ignore[union-attr]
                 f"{self.webhook_url}/hooks/agent",
                 json={"message": message, "sessionKey": "hook:pipeline"},
                 headers=headers,

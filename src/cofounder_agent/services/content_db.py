@@ -622,7 +622,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
 
                 # Average execution time (already computed in the same query)
-                avg_execution_time = 0
+                avg_execution_time: float = 0
                 try:
                     raw_avg = counts_row["avg_seconds"]
                     if raw_avg is not None:
@@ -636,7 +636,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Calculate total cost from financial tracking (if implemented).
                 # Kept as a separate query because cost_logs is a different table and
                 # may not exist in all environments.
-                total_cost = 0
+                total_cost: float = 0
                 # DI seam (glad-labs-stack#330) — content_db is called
                 # from a route handler with site_config-aware database
                 # service. Fall through to the documented 30-day default

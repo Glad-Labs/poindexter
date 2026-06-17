@@ -93,15 +93,15 @@ def costs_operational(json_output: bool) -> None:
             else:
                 click.echo(line)
 
-    e = d.get("executor") or {}
+    executor = d.get("executor") or {}
     click.echo()
     click.secho("  executor", fg="cyan")
-    running = e.get("is_running")
+    running = executor.get("is_running")
     running_color = "green" if running else "red"
     click.secho(f"    is_running       {running}", fg=running_color)
-    click.echo(f"    task_count       {e.get('task_count', '?')}")
-    click.echo(f"    success_count    {e.get('success_count', '?')}")
-    click.echo(f"    error_count      {e.get('error_count', '?')}")
+    click.echo(f"    task_count       {executor.get('task_count', '?')}")
+    click.echo(f"    success_count    {executor.get('success_count', '?')}")
+    click.echo(f"    error_count      {executor.get('error_count', '?')}")
 
     ws = d.get("websocket_connections")
     if ws is not None:

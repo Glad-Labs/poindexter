@@ -353,7 +353,7 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
                 "SELECT value FROM app_settings WHERE key = 'embedding_model'"
             )
             embed_model = _embed_model_row or "nomic-embed-text"
-            svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db, embed_model=embed_model)
+            svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db, embed_model=embed_model)  # type: ignore[arg-type]
 
             embedded, skipped, failed = 0, 0, 0
             with click.progressbar(rows, label="Embedding posts") as bar:

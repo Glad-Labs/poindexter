@@ -87,7 +87,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # We return it here so the state seam preserves it.
             result_extra = {"featured_image_plan": plan["featured_image_plan"]}
         else:
-            result_extra: dict[str, Any] = {}
+            result_extra: dict[str, Any] = {}  # type: ignore[no-redef]
         placeholders = _PLACEHOLDER_RE.findall(content_text)
     else:
         result_extra = {}

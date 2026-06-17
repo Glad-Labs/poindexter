@@ -48,8 +48,8 @@ KERNEL_PURITY_BASELINE = {
     "services/pipeline_templates/__init__.py:106",
     # post_pipeline_actions calls auto_publish_gate lazily (3 import sites).
     "services/post_pipeline_actions.py:396",
-    "services/post_pipeline_actions.py:446",
-    "services/post_pipeline_actions.py:522",
+    "services/post_pipeline_actions.py:445",
+    "services/post_pipeline_actions.py:521",
     # publish_service calls record_post_approve_metrics lazily (via
     # modules/content/api public seam — same pattern as post_pipeline_actions).
     # Line shifted 1038 -> 1082 by the #729 _niche_allowlist_block helper.

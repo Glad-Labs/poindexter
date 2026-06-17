@@ -496,7 +496,7 @@ async def approve_task(
                 from services.publish_service import publish_post_from_task
 
                 stage_result = await publish_post_from_task(
-                    db_service, task, task_id,
+                    db_service, task, task_id,  # type: ignore[arg-type]
                     publisher="operator",
                     trigger_revalidation=False,
                     queue_social=False,
@@ -529,7 +529,7 @@ async def approve_task(
                 from services.publish_service import publish_post_from_task
 
                 pub_result = await publish_post_from_task(
-                    db_service, task, task_id,
+                    db_service, task, task_id,  # type: ignore[arg-type]
                     publisher="operator",
                     trigger_revalidation=True,
                     queue_social=True,
@@ -591,6 +591,8 @@ async def approve_task(
         task_result_data = updated_task.get("result", {})
         if isinstance(task_result_data, str):
             task_result_data = json.loads(task_result_data) if task_result_data else {}
+        if not isinstance(task_result_data, dict):
+            task_result_data = {}
 
         published_url = task_result_data.get("published_url")
         post_id = task_result_data.get("post_id")
@@ -727,7 +729,7 @@ async def publish_task(
         from services.publish_service import publish_post_from_task
 
         pub_result = await publish_post_from_task(
-            db_service, task, task_id,
+            db_service, task, task_id,  # type: ignore[arg-type]
             publisher="operator",
             trigger_revalidation=True,
             queue_social=True,
@@ -1011,7 +1013,7 @@ async def generate_task_image(
                     async with session.get(
                         f"{_pex_base}/search",
                         params={
-                            "query": search_query,
+                            "query": str(search_query or ""),
                             "per_page": 50,  # Get more results for better variety
                             "page": page,
                             "orientation": "landscape",
@@ -1153,7 +1155,7 @@ async def generate_task_image(
 
                 from services.image_service import ImageService
 
-                image_service = ImageService()
+                image_service = ImageService(site_config=site_config_dep)
 
                 # Build generation prompt from topic and content
                 generation_prompt = f"{request.topic}"

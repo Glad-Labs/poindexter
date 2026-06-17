@@ -319,7 +319,7 @@ class CostAggregationService:
                     start_date,
                 )
 
-                daily_data = []
+                daily_data: list[dict[str, Any]] = []
                 total_cost = 0.0
                 task_count = 0
 

@@ -19,6 +19,7 @@ All existing methods are delegated to appropriate modules.
 """
 
 import os
+from typing import Any
 
 import asyncpg
 
@@ -124,10 +125,11 @@ class DatabaseService:
                         if str(_p) not in _sys.path:
                             _sys.path.insert(0, str(_p))
                         break
-                from brain.bootstrap import require_database_url as _require
-                from brain.bootstrap import resolve_database_url as _resolve
+                from brain.bootstrap import require_database_url as _require  # type: ignore[no-redef]
+                from brain.bootstrap import resolve_database_url as _resolve  # type: ignore[no-redef]
 
-                resolved = _resolve()
+                if _resolve is not None:
+                    resolved = _resolve()
             except Exception:
                 # Bootstrap module unavailable (odd — Docker test contexts
                 # without the brain mount). Fall through to env var.
@@ -161,17 +163,20 @@ class DatabaseService:
                 "DatabaseService local pool configured: %s...", self.local_database_url[:50]
             )
 
-        self.pool = None
-        self.local_pool = None
+        self.pool: asyncpg.Pool = None  # type: ignore[assignment]
+        self.local_pool: asyncpg.Pool = None  # type: ignore[assignment]
 
-        # Delegate modules will be initialized after pool is created
-        self.users: UsersDatabase | None = None
-        self.tasks: TasksDatabase | None = None
-        self.content: ContentDatabase | None = None
-        self.admin: AdminDatabase | None = None
-        self.writing_style: WritingStyleDatabase | None = None
-        self.embeddings: EmbeddingsDatabase | None = None
-        self.audit: AuditLogger | None = None
+        # Delegate modules will be initialized after pool is created.
+        # Typed as non-Optional so delegation methods typecheck without
+        # per-method asserts. The None sentinel is intentional for
+        # the window before initialize() runs. type: ignore[assignment]
+        self.users: UsersDatabase = None  # type: ignore[assignment]
+        self.tasks: TasksDatabase = None  # type: ignore[assignment]
+        self.content: ContentDatabase = None  # type: ignore[assignment]
+        self.admin: AdminDatabase = None  # type: ignore[assignment]
+        self.writing_style: WritingStyleDatabase = None  # type: ignore[assignment]
+        self.embeddings: EmbeddingsDatabase = None  # type: ignore[assignment]
+        self.audit: AuditLogger = None  # type: ignore[assignment]
 
     async def initialize(self) -> None:
         """Initialize connection pool(s) and all delegate modules."""
@@ -273,36 +278,36 @@ class DatabaseService:
     # USER OPERATIONS
     async def get_user_by_id(self, user_id: str) -> dict | None:
         """Delegate to users module."""
-        return await self.users.get_user_by_id(user_id)
+        return await self.users.get_user_by_id(user_id)  # type: ignore[return-value]
 
     async def get_user_by_email(self, email: str) -> dict | None:
         """Delegate to users module."""
-        return await self.users.get_user_by_email(email)
+        return await self.users.get_user_by_email(email)  # type: ignore[return-value]
 
     async def get_user_by_username(self, username: str) -> dict | None:
         """Delegate to users module."""
-        return await self.users.get_user_by_username(username)
+        return await self.users.get_user_by_username(username)  # type: ignore[return-value]
 
     async def create_user(self, user_data: dict) -> dict:
         """Delegate to users module."""
-        return await self.users.create_user(user_data)
+        return await self.users.create_user(user_data)  # type: ignore[return-value]
 
     async def get_or_create_oauth_user(
         self, provider: str, provider_user_id: str, provider_data: dict
     ) -> dict:
         """Delegate to users module."""
-        return await self.users.get_or_create_oauth_user(provider, provider_user_id, provider_data)
+        return await self.users.get_or_create_oauth_user(provider, provider_user_id, provider_data)  # type: ignore[return-value]
 
     async def get_oauth_accounts(self, user_id: str) -> list[dict]:
         """Delegate to users module."""
-        return await self.users.get_oauth_accounts(user_id)
+        return await self.users.get_oauth_accounts(user_id)  # type: ignore[return-value]
 
     async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
         """Delegate to users module."""
-        return await self.users.unlink_oauth_account(user_id, provider)
+        return await self.users.unlink_oauth_account(user_id, provider)  # type: ignore[return-value]
 
     # TASK OPERATIONS
-    async def add_task(self, task_data: dict) -> dict:
+    async def add_task(self, task_data: dict) -> str:
         """Delegate to tasks module."""
         return await self.tasks.add_task(task_data)
 
@@ -314,7 +319,7 @@ class DatabaseService:
         self, task_id: str, status: str, result: str | None = None
     ) -> bool:
         """Delegate to tasks module."""
-        return await self.tasks.update_task_status(task_id, status, result)
+        return await self.tasks.update_task_status(task_id, status, result)  # type: ignore[return-value]
 
     async def get_tasks_by_ids(self, task_ids: list) -> dict:
         """Delegate bulk task fetch to tasks module (1 query for all IDs)."""
@@ -326,7 +331,7 @@ class DatabaseService:
 
     async def update_task(self, task_id: str, updates: dict) -> bool:
         """Delegate to tasks module."""
-        return await self.tasks.update_task(task_id, updates)
+        return await self.tasks.update_task(task_id, updates)  # type: ignore[return-value]
 
     async def get_tasks_paginated(
         self,
@@ -353,7 +358,7 @@ class DatabaseService:
 
     async def get_task_counts(self) -> dict:
         """Delegate to tasks module."""
-        return await self.tasks.get_task_counts()
+        return await self.tasks.get_task_counts()  # type: ignore[return-value]
 
     async def get_pending_tasks(self, limit: int = 10) -> list[dict]:
         """Delegate to tasks module."""
@@ -361,11 +366,11 @@ class DatabaseService:
 
     async def get_all_tasks(self, limit: int = 100) -> list[dict]:
         """Delegate to tasks module."""
-        return await self.tasks.get_all_tasks(limit)
+        return await self.tasks.get_all_tasks(limit)  # type: ignore[return-value]
 
     async def get_queued_tasks(self, limit: int = 5) -> list[dict]:
         """Delegate to tasks module."""
-        return await self.tasks.get_queued_tasks(limit)
+        return await self.tasks.get_queued_tasks(limit)  # type: ignore[return-value]
 
     async def get_tasks_by_date_range(
         self, start_date=None, end_date=None, status: str | None = None, limit: int = 500
@@ -383,7 +388,7 @@ class DatabaseService:
 
     async def get_drafts(self, limit: int = 20, offset: int = 0) -> list[dict]:
         """Delegate to tasks module."""
-        return await self.tasks.get_drafts(limit, offset)
+        return await self.tasks.get_drafts(limit, offset)  # type: ignore[return-value]
 
     async def sweep_stale_tasks(
         self, timeout_minutes: int = 60, max_retries: int = 3
@@ -405,18 +410,18 @@ class DatabaseService:
         **fields,
     ):
         """Delegate to tasks module — status-guarded terminal write (GH-90)."""
-        return await self.tasks.update_task_status_guarded(
+        return await self.tasks.update_task_status_guarded(  # type: ignore[return-value]
             task_id, new_status, allowed_from=allowed_from, **fields
         )
 
     # CONTENT OPERATIONS
     async def create_post(self, post_data: dict) -> dict:
         """Delegate to content module."""
-        return await self.content.create_post(post_data)
+        return await self.content.create_post(post_data)  # type: ignore[return-value]
 
     async def get_post_by_slug(self, slug: str) -> dict | None:
         """Delegate to content module."""
-        return await self.content.get_post_by_slug(slug)
+        return await self.content.get_post_by_slug(slug)  # type: ignore[return-value]
 
     async def update_post(self, post_id: int, updates: dict) -> bool:
         """Delegate to content module."""
@@ -424,31 +429,31 @@ class DatabaseService:
 
     async def get_all_categories(self) -> list[dict]:
         """Delegate to content module."""
-        return await self.content.get_all_categories()
+        return await self.content.get_all_categories()  # type: ignore[return-value]
 
     async def get_all_tags(self) -> list[dict]:
         """Delegate to content module."""
-        return await self.content.get_all_tags()
+        return await self.content.get_all_tags()  # type: ignore[return-value]
 
     async def get_author_by_name(self, name: str) -> dict | None:
         """Delegate to content module."""
-        return await self.content.get_author_by_name(name)
+        return await self.content.get_author_by_name(name)  # type: ignore[return-value]
 
     async def create_quality_evaluation(self, eval_data: dict) -> dict:
         """Delegate to content module."""
-        return await self.content.create_quality_evaluation(eval_data)
+        return await self.content.create_quality_evaluation(eval_data)  # type: ignore[return-value]
 
     async def create_quality_improvement_log(self, log_data: dict) -> dict:
         """Delegate to content module."""
-        return await self.content.create_quality_improvement_log(log_data)
+        return await self.content.create_quality_improvement_log(log_data)  # type: ignore[return-value]
 
     async def get_metrics(self) -> dict:
         """Delegate to content module."""
-        return await self.content.get_metrics()
+        return await self.content.get_metrics()  # type: ignore[return-value]
 
     async def create_orchestrator_training_data(self, train_data: dict) -> dict:
         """Delegate to content module."""
-        return await self.content.create_orchestrator_training_data(train_data)
+        return await self.content.create_orchestrator_training_data(train_data)  # type: ignore[return-value]
 
     # ADMIN OPERATIONS
     async def add_financial_entry(self, entry_data: dict) -> dict:
@@ -461,7 +466,7 @@ class DatabaseService:
 
     async def log_cost(self, cost_log: dict) -> dict:
         """Delegate to admin module."""
-        return await self.admin.log_cost(cost_log)
+        return await self.admin.log_cost(cost_log)  # type: ignore[return-value]
 
     async def mark_model_performance_outcome(
         self,
@@ -479,7 +484,7 @@ class DatabaseService:
 
     async def get_task_costs(self, task_id: str) -> dict:
         """Delegate to admin module."""
-        return await self.admin.get_task_costs(task_id)
+        return await self.admin.get_task_costs(task_id)  # type: ignore[return-value]
 
     async def update_agent_status(
         self, agent_name: str, status: str, last_run=None, metadata: dict | None = None
@@ -497,11 +502,11 @@ class DatabaseService:
 
     async def get_setting(self, key: str) -> dict | None:
         """Delegate to admin module."""
-        return await self.admin.get_setting(key)
+        return await self.admin.get_setting(key)  # type: ignore[return-value]
 
     async def get_all_settings(self, category: str | None = None) -> list[dict]:
         """Delegate to admin module."""
-        return await self.admin.get_all_settings(category)
+        return await self.admin.get_all_settings(category)  # type: ignore[return-value]
 
     async def set_setting(
         self,
@@ -512,13 +517,13 @@ class DatabaseService:
         description: str | None = None,
     ) -> dict:
         """Delegate to admin module."""
-        return await self.admin.set_setting(key, value, category, display_name, description)
+        return await self.admin.set_setting(key, value, category, display_name, description)  # type: ignore[return-value]
 
     async def delete_setting(self, key: str) -> bool:
         """Delegate to admin module."""
         return await self.admin.delete_setting(key)
 
-    async def get_setting_value(self, key: str, default=None) -> any:
+    async def get_setting_value(self, key: str, default=None) -> Any:
         """Delegate to admin module."""
         return await self.admin.get_setting_value(key, default)
 

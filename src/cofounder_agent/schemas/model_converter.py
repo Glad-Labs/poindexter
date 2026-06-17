@@ -397,11 +397,11 @@ class ModelConverter:
             SettingResponse: ModelConverter.to_setting_response,
         }
 
-        converter = converter_map.get(model_class)
+        converter = converter_map.get(model_class)  # type: ignore[call-overload]
         if not converter:
             raise ValueError(f"No converter found for {model_class}")
 
-        return [converter(row) for row in rows]
+        return [converter(row) for row in rows]  # type: ignore[call-overload]
 
     @staticmethod
     def to_dict(model: Any) -> dict[str, Any]:

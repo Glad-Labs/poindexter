@@ -217,7 +217,7 @@ def _markdown_to_html(content: str) -> str:
     if stripped.startswith("<") and not _MARKDOWN_MARKER_RE.search(stripped):
         return content
     try:
-        import markdown as md
+        import markdown as md  # type: ignore[import-untyped]
         return md.markdown(
             stripped,
             extensions=["extra", "codehilite", "sane_lists", "smarty"],

@@ -410,7 +410,7 @@ async def _generate_to_path(
 
     if resp.status_code == 200 and ct.startswith("application/json"):
         rendered = await asyncio.to_thread(
-            _materialize_sidecar_json, resp, output_path,
+            _materialize_sidecar_json, resp, output_path,  # type: ignore[arg-type]
         )
         if rendered is not None:
             return rendered

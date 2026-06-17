@@ -203,7 +203,7 @@ async def _render_wan21_clip(
 
     if not results:
         return False
-    return bool(results[0].file_path) and os.path.exists(results[0].file_path)
+    return bool(results[0].file_path) and os.path.exists(results[0].file_path)  # type: ignore[arg-type]
 
 
 async def _render_one_shot(

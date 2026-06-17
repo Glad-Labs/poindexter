@@ -128,7 +128,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                 source_id=source_id,
                 dimensions=len(embedding),
             )
-            return embedding_id
+            return embedding_id  # type: ignore[return-value]
         except Exception as e:
             logger.error(
                 "[store_embedding] Failed to store embedding: %s",
