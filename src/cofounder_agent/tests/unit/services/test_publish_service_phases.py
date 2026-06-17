@@ -13,6 +13,7 @@ import pytest
 
 from services.publish_service import (
     PublishResult,
+    _niche_allowlist_block,
     _parse_publish_inputs,
     _promote_or_skip_existing,
 )
@@ -159,3 +160,90 @@ class TestPromoteOrSkipExisting:
         sql = "\n".join(s for s, _ in conn.executed)
         assert "UPDATE posts SET status = 'published'" in sql
         assert "UPDATE pipeline_tasks" in sql
+
+
+# ---------------------------------------------------------------------------
+# Phase 1c — _niche_allowlist_block (#729 backstop)
+# ---------------------------------------------------------------------------
+
+
+_ENFORCED = SiteConfig(initial_config={"enforce_niche_allowlist": "true"})
+
+
+def _patch_known(slugs):
+    return patch(
+        "services.niche_service.get_known_niche_slugs",
+        new=AsyncMock(return_value=set(slugs)),
+    )
+
+
+def _patch_notify():
+    return patch(
+        "services.integrations.operator_notify.notify_operator",
+        new=AsyncMock(),
+    )
+
+
+class TestNicheAllowlistBlock:
+    async def test_draft_mode_is_exempt(self):
+        # Drafts (WIP) never hit the gate, even with an unknown niche.
+        out = await _niche_allowlist_block(
+            None, {"niche_slug": "ghost"}, "t1",
+            draft_mode=True, site_config=_ENFORCED,
+        )
+        assert out is None
+
+    async def test_disabled_gate_is_exempt(self):
+        sc = SiteConfig(initial_config={"enforce_niche_allowlist": "false"})
+        out = await _niche_allowlist_block(
+            None, {"niche_slug": "ghost"}, "t1",
+            draft_mode=False, site_config=sc,
+        )
+        assert out is None
+
+    async def test_known_active_niche_allowed(self):
+        with _patch_known({"glad-labs", "dev_diary"}):
+            out = await _niche_allowlist_block(
+                None, {"niche_slug": "glad-labs"}, "t1",
+                draft_mode=False, site_config=_ENFORCED,
+            )
+        assert out is None
+
+    async def test_known_inactive_niche_allowed(self):
+        # The #729 fix: dev_diary is discovery-inactive (no topic sweep /
+        # media backfill) but a known niche, so it must publish.
+        with _patch_known({"glad-labs", "dev_diary"}):
+            out = await _niche_allowlist_block(
+                None, {"niche_slug": "dev_diary"}, "t1",
+                draft_mode=False, site_config=_ENFORCED,
+            )
+        assert out is None
+
+    async def test_unknown_niche_blocked(self):
+        with _patch_known({"glad-labs", "dev_diary"}), _patch_notify():
+            out = await _niche_allowlist_block(
+                None, {"niche_slug": "totally-unknown"}, "t1",
+                draft_mode=False, site_config=_ENFORCED,
+            )
+        assert isinstance(out, PublishResult)
+        assert out.success is False
+        assert "not a known niche" in (out.error or "")
+
+    async def test_missing_niche_blocked(self):
+        with _patch_known({"glad-labs"}), _patch_notify():
+            out = await _niche_allowlist_block(
+                None, {}, "t1",
+                draft_mode=False, site_config=_ENFORCED,
+            )
+        assert isinstance(out, PublishResult)
+        assert out.success is False
+        assert "<none>" in (out.error or "")
+
+    async def test_empty_known_set_fails_open(self):
+        # DB unreadable -> empty set -> never block (can't brick publishing).
+        with _patch_known(set()):
+            out = await _niche_allowlist_block(
+                None, {"niche_slug": "anything"}, "t1",
+                draft_mode=False, site_config=_ENFORCED,
+            )
+        assert out is None
