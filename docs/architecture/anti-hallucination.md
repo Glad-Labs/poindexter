@@ -30,6 +30,36 @@ checks) and appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
 on reject. `multi_model_qa.py` stays as the rail library the atoms
 delegate to.
 
+#### The scoring contract: advisory rails inform, they don't gate (2026-06)
+
+`aggregate_rail_reviews` (`modules/content/atoms/_qa_rail_common.py`) folds the
+rail reviews into one decision via two **independent** gates:
+
+1. **Veto** — any _non-advisory_ rail with `approved=False` rejects outright
+   (`vetoed_by`), regardless of score.
+2. **Threshold** — `qa_final_score` = the provider-weighted mean of the
+   _non-advisory_ rail scores; a pass also needs
+   `qa_final_score >= qa_final_score_threshold` (prod `80`).
+
+**Advisory rails (`qa_gates.<rail>.required_to_pass=false`) are excluded from
+both gates** — they cannot veto _and_ their scores no longer feed the weighted
+mean. Previously they were vetoless but still averaged in, so a cluster of
+low-scoring advisory rails (`deepeval_g_eval`, `ragas_eval`,
+`internal_consistency`, all ~65-70) silently dragged otherwise-clean posts under
+the 80 bar and rejected them — the 2026-06 "nothing passes QA" throughput
+incident. The required rails alone (`programmatic_validator`, `llm_critic`,
+`deepeval_brand_fabrication`, `deepeval_faithfulness`) average ~87, comfortably
+clear of 80, so dropping the advisory drag makes the gate reachable _without
+lowering the threshold_. A degenerate all-advisory review set falls back to
+scoring everything, so the score can't collapse to a spurious `0`. Pinned by
+`test_qa_rail_common.py::test_advisory_reviews_excluded_from_score`.
+
+The programmatic validator's warning penalty is gentler and DB-tunable too: each
+non-critical warning shaves `qa_validator_warning_penalty` points (default `5`,
+was a hard-coded `10`) so soft nits nudge the score instead of sinking a clean
+draft (7 warnings → 65, not 30). A _critical_ fabrication still zeroes the score
+and vetoes.
+
 The rails call the individual per-rail check methods, **not** the full
 `MultiModelQA.review()` — so the programmatic validator that `review()`
 ran as its first step (Layer 2, below) is no longer co-located in the QA
@@ -140,9 +170,10 @@ Four additional `MultiModelQA.review()` checks went cold the same way the
 vision gate did — they only ever lived inside the deleted `review()`, so the
 #355 cutover stopped running them on the live path. Each is restored as a thin
 rail atom (between `qa.vision` and `qa.aggregate`), mirroring `qa.vision`'s
-shape, and is **advisory-first**: it scores + feeds the weighted average but
-does not yet veto, to be graduated later via `qa_gates.<gate>.required_to_pass`
-(poindexter#454) once verified live.
+shape, and is **advisory-first**: it scores + surfaces feedback but neither
+vetoes nor feeds the gated score (advisory rails are excluded from the weighted
+mean — see the scoring contract above), to be graduated later via
+`qa_gates.<gate>.required_to_pass` (poindexter#454) once verified live.
 
 - **`qa.topic_delivery`** (`_check_topic_delivery` → reviewer `topic_delivery`,
   `consistency_gate` provider; Glad-Labs/poindexter#658) — the bait-and-switch
@@ -225,9 +256,9 @@ at draft time, the fix is a deterministic lookup, not a guess:
   repair). It scores that density (gentle penalty, floored) and lists the
   offenders in its feedback (→ `qa_feedback` + the QA Rails dashboard, which
   groups by reviewer dynamically). **Advisory** via
-  `qa_gates.unlinked_attribution.required_to_pass` (seeded `false`) — it nudges
-  the weighted QA mean but never vetoes; graduate it with the poindexter#454
-  lever. Returns nothing when there's no corpus (real-vs-fabricated is then the
+  `qa_gates.unlinked_attribution.required_to_pass` (seeded `false`) — it surfaces
+  feedback but neither vetoes nor feeds the gated score (advisory rails are
+  excluded from the weighted mean); graduate it with the poindexter#454 lever. Returns nothing when there's no corpus (real-vs-fabricated is then the
   deferred grounded-LLM pass's job).
 
 A grounded LLM citation pass is intentionally deferred — measure the

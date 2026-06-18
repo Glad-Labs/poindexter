@@ -107,7 +107,18 @@ def aggregate_rail_reviews(
         except (TypeError, ValueError):
             return 0.0
 
-    scored = [r for r in reviews if _score(r) > 0]
+    # Advisory rails (required_to_pass=False) inform but MUST NOT gate. They
+    # already cannot veto (see vetoed_by below); excluding them from the
+    # weighted score too keeps the "advisory" contract honest. Without this,
+    # low-scoring advisory rails (g_eval, ragas, internal_consistency) silently
+    # dragged the gated mean below threshold and rejected otherwise-clean posts
+    # (2026-06 incident). Fall back to all positive-scored reviews only in the
+    # degenerate case where no non-advisory rail scored, so the score stays
+    # non-zero instead of collapsing to a spurious reject.
+    non_advisory_scored = [
+        r for r in reviews if _score(r) > 0 and not r.get("advisory")
+    ]
+    scored = non_advisory_scored or [r for r in reviews if _score(r) > 0]
     if scored:
         total_w = sum(
             _weight_for(r.get("provider"), validator_weight=validator_weight,

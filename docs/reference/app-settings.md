@@ -556,7 +556,7 @@ The worker re-reads on every poll; no restart needed.
 | `rag_rerank_enabled` | `true` |  |  |
 | `rag_rerank_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
-| `rag_source_filter` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `rag_source_filter` | `posts` |  | CSV of embeddings.source_table values the writer's research RAG may draw from. Content-only by default; empty means "all tables" and leaks claude_sessions/brain/audit ops-logs into drafts. |
 | `resend_audience_id` | `33b1580d-cfda-4428-9890-d52f443b023b` |  |  |
 | `restore_test_backup_dir` | `/host-backups/auto` |  |  |
 | `restore_test_critical_tables` | `posts,app_settings,audit_log` |  |  |
@@ -1140,6 +1140,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_critic_weight` | `0.6` |  | Weight for LLM critic in final score |
 | `qa_final_score_threshold` | `80` |  | Multi-model QA final approval score threshold |
 | `qa_overall_score_threshold` | `80` |  | Minimum overall quality score to pass QA (0-100) |
+| `qa_validator_warning_penalty` | `5.0` |  | Points the programmatic validator shaves per non-critical warning when scoring an otherwise-clean draft (was a hard-coded 10). |
 | `qa_validator_weight` | `0.4` |  | Weight for programmatic validator in final score |
 
 ## rag

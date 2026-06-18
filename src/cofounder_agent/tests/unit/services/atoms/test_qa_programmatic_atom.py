@@ -227,3 +227,38 @@ class TestQaProgrammaticAtom:
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
         assert "qa_known_wrong_fact_only" not in out
+
+    def test_warning_penalty_is_gentler_than_legacy(self):
+        """Warnings are soft, non-fabrication nits and must not sink a clean post
+        below the gate. Default penalty is 5/warning (was 10): a clean post with
+        7 nits scores 65, not 30. A critical still zeroes (and vetoes)."""
+        assert qa_programmatic._score(0, 0) == 100.0
+        assert qa_programmatic._score(0, 7) == 65.0  # 100 - 5*7
+        assert qa_programmatic._score(1, 0) == 0.0  # critical zeroes regardless
+
+    async def test_warning_penalty_is_db_configurable(self, monkeypatch):
+        """The per-warning penalty is a DB-tunable knob
+        (qa_validator_warning_penalty) per the 'every tunable in app_settings'
+        principle — an operator can retune it without a deploy."""
+        two_warnings = ValidationResult(
+            passed=True,
+            issues=[
+                ValidationIssue(severity="warning", category="a", description="d", matched_text="m"),
+                ValidationIssue(severity="warning", category="b", description="d", matched_text="m"),
+            ],
+        )
+        monkeypatch.setattr(
+            "modules.content.content_validator.validate_content", lambda **kw: two_warnings
+        )
+        _patch_gates(monkeypatch, _HARD_GATE_STATES)
+
+        class _CfgPenalty:
+            def get(self, key, default=None):
+                return 20.0 if key == "qa_validator_warning_penalty" else default
+
+        state = _state()
+        state["site_config"] = _CfgPenalty()
+        out = await qa_programmatic.run(state)
+        rev = out["qa_rail_reviews"][0]
+        assert rev["score"] == 60.0  # 100 - 20*2, operator-set penalty
+        assert rev["approved"] is True  # warnings still never veto

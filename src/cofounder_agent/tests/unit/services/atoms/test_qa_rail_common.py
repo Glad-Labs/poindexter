@@ -42,7 +42,9 @@ class TestAggregate:
         out = aggregate_rail_reviews(reviews, validator_weight=0.4, critic_weight=0.6, gate_weight=0.3, threshold=70.0)
         assert out["approved"] is True
         assert out["qa_final_verdict"] == "approve"
-        assert out["qa_final_score"] == 85.0  # equal weights (both ollama=0.6) → mean
+        # Advisory g_eval (80) is excluded from the score; only the non-advisory
+        # ollama_qa (90) counts → 90.0 (was 85.0 when advisory was averaged in).
+        assert out["qa_final_score"] == 90.0
         assert out["vetoed_by"] == []
 
     def test_nonadvisory_failure_vetoes(self):
@@ -87,6 +89,36 @@ class TestAggregate:
         out = aggregate_rail_reviews(reviews, validator_weight=0.4, critic_weight=0.6, gate_weight=0.3, threshold=10.0)
         # (100*0.4 + 50*0.6) / (0.4+0.6) = (40+30)/1.0 = 70.0
         assert out["qa_final_score"] == 70.0
+
+    def test_advisory_reviews_excluded_from_score(self):
+        # An advisory rail (required_to_pass=False) MUST NOT drag the gated
+        # score down — advisory means "informs, does not gate". Regression for
+        # the 2026-06 incident where advisory g_eval/ragas (~30-46) sank
+        # otherwise-clean posts below the 80 threshold while a strong
+        # non-advisory critic passed. Only non-advisory rails feed the score.
+        reviews = [
+            {"reviewer": "ollama_critic", "approved": True, "score": 90.0, "provider": "ollama", "advisory": False},
+            {"reviewer": "ragas_eval", "approved": True, "score": 30.0, "provider": "ragas", "advisory": True},
+        ]
+        out = aggregate_rail_reviews(reviews, validator_weight=0.4, critic_weight=0.6, gate_weight=0.0, threshold=80.0)
+        assert out["qa_final_score"] == 90.0  # only the non-advisory critic counts
+        assert out["approved"] is True
+        assert out["vetoed_by"] == []
+
+    def test_falls_back_to_all_scored_when_only_advisory(self):
+        # Defensive guard: if NO non-advisory rail produced a positive score,
+        # fall back to scoring the advisory rails rather than collapsing to 0
+        # and spuriously rejecting. canonical_blog always has non-advisory
+        # rails, so this only protects degenerate inputs.
+        reviews = [
+            {"reviewer": "topic_delivery", "approved": True, "score": 88.0, "provider": "consistency_gate", "advisory": True},
+            {"reviewer": "self_consistency", "approved": True, "score": 92.0, "provider": "self_consistency_gate", "advisory": True},
+        ]
+        out = aggregate_rail_reviews(reviews, validator_weight=0.4, critic_weight=0.6, gate_weight=0.3, threshold=70.0)
+        # consistency_gate weight 0.3, self_consistency_gate unknown 0.5:
+        # (88*0.3 + 92*0.5)/(0.3+0.5) = (26.4+46)/0.8 = 90.5
+        assert out["qa_final_score"] == 90.5
+        assert out["approved"] is True
 
 
 @pytest.mark.unit

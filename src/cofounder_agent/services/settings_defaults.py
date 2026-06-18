@@ -186,7 +186,13 @@ DEFAULTS: dict[str, str] = {
     'rag_rerank_enabled': 'false',
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     'rag_rrf_k': '60',
-    'rag_source_filter': '',
+    # CSV of embeddings.source_table values the writer's research RAG may draw
+    # from. MUST default to content-only ('posts'): an empty value means "all
+    # tables", which pulls claude_sessions / brain / audit ops-logs into the
+    # writer's grounding context and leaks meta-commentary + agent instructions
+    # into drafts (2026-06 contamination incident). Operators add more content-
+    # bearing tables (e.g. 'posts,samples') as their corpus grows.
+    'rag_source_filter': 'posts',
     # Minimum acceptable writer-draft length; below this the draft is treated
     # as a generation failure (empty/too-short → status='failed' + finding,
     # not a misleading reviewer_count:0 QA reject). A real canonical_blog post
@@ -268,6 +274,10 @@ DEFAULTS: dict[str, str] = {
     'qa_seo_baseline': '6.0',
     'qa_title_originality_enabled': 'true',
     'qa_title_similarity_threshold': '0.6',
+    # Points the programmatic validator shaves per (non-critical) warning when
+    # scoring an otherwise-clean draft. Default 5 (was a hard-coded 10): soft
+    # nits should nudge the score, not sink a clean post under the QA gate.
+    'qa_validator_warning_penalty': '5.0',
     'title_max_length': '90',
     'qa_topic_dedup_hours': '48',
     # Web fact-check rail (qa.web_factcheck) claim-verification heuristics.

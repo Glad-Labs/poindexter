@@ -56,18 +56,22 @@ ATOM_META = AtomMeta(
 )
 
 
-def _score(critical_count: int, warning_count: int) -> float:
+def _score(critical_count: int, warning_count: int, warning_penalty: float = 5.0) -> float:
     """Map validator counts to a 0-100 rail score.
 
     100 when clean; a critical issue zeroes the score (it also vetoes via
-    ``approved=False``); warnings shave 10 points each so the weighted trend
-    reflects soft quality without flipping the gate. A 0-score failing review
-    is excluded from the weighted mean by ``aggregate_rail_reviews`` — the veto,
-    not the score, is what rejects.
+    ``approved=False``). Warnings are soft, non-fabrication nits: each shaves
+    ``warning_penalty`` points (DB-tunable via ``qa_validator_warning_penalty``,
+    default 5) so the score reflects soft quality without sinking an otherwise-
+    clean post below the gate. The legacy 10-point shave dropped a clean post
+    with 7 nits to 30 — unreachable under an 80 threshold once advisory rails
+    stopped propping up the weighted mean (2026-06 throughput incident). A
+    0-score failing review is excluded from the weighted mean by
+    ``aggregate_rail_reviews`` — the veto, not the score, is what rejects.
     """
     if critical_count > 0:
         return 0.0
-    return max(0.0, 100.0 - 10.0 * warning_count)
+    return max(0.0, 100.0 - warning_penalty * warning_count)
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
@@ -75,6 +79,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     site_config = state.get("site_config")
     if not content or site_config is None:
         return {}
+
+    # Per-warning score penalty is a DB-tunable knob (qa_validator_warning_penalty,
+    # default 5) — every tunable belongs in app_settings, not pinned in code.
+    try:
+        warning_penalty = float(site_config.get("qa_validator_warning_penalty", 5.0))
+    except (TypeError, ValueError):
+        warning_penalty = 5.0
 
     from modules.content.content_validator import validate_content
     from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
@@ -118,7 +129,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         review = ReviewerResult(
             reviewer="programmatic_validator",
             approved=bool(result.passed) and crit == 0,
-            score=_score(crit, warn),
+            score=_score(crit, warn, warning_penalty),
             feedback=feedback,
             provider="programmatic",
         )
