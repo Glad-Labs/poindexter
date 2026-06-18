@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import asyncpg
 import pytest
 
 HERE = Path(__file__).resolve().parent
@@ -70,6 +71,34 @@ async def test_permission_check_fail_closed_blocks_write() -> None:
     assert "permission_check" in result or "failed" in result.lower()
     # The REST API must NOT have been reached
     mock_api.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_missing_permissions_table_allows_write() -> None:
+    """A missing ``agent_permissions`` TABLE (``UndefinedTableError``) means the
+    gate is unconfigured, so the write must PROCEED via REST — not fail closed.
+
+    Regression for the production outage where #687's dead-Gitea-table sweep
+    dropped ``agent_permissions`` while the gate code stayed live, so every MCP
+    ``set_setting`` write blocked with ``UndefinedTableError``. The boundary is
+    deliberate: a *missing table* (this test) is allowed, but an indeterminate
+    error like connection-refused (the test above) still fails closed (#750)."""
+    pool = _FakePool(
+        fetchrow_exc=asyncpg.exceptions.UndefinedTableError(
+            'relation "agent_permissions" does not exist'
+        )
+    )
+    with (
+        patch.object(server, "_get_pool", AsyncMock(return_value=pool)),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={"key": "mykey", "value": "v"}),
+        ) as mock_api,
+    ):
+        result = await server.set_setting("mykey", "v")
+
+    mock_api.assert_called_once_with("PUT", "/api/settings/mykey", {"value": "v"})
+    assert "Updated" in result
 
 
 @pytest.mark.asyncio

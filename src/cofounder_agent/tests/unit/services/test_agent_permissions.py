@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncpg
+import pytest
+
 from services import agent_permissions
 
 
@@ -56,6 +59,46 @@ class TestCheckWritePermission:
         assert "agent_permissions" in sql
         assert "allowed" in sql
         assert "requires_approval" in sql
+
+
+class TestMissingTableFailsOpen:
+    """A missing ``agent_permissions`` TABLE means the gate is unconfigured —
+    it must be treated like a missing ROW (permissive ``(True, False)``),
+    NOT like an indeterminate query error.
+
+    The table was created in 2026-04, accidentally dropped by #687's
+    dead-Gitea-table sweep, and the gate code (#750 / #1663) was reactivated
+    without recreating it — so every MCP ``set_setting`` write started failing
+    closed with ``UndefinedTableError``. The documented contract is "absence of
+    a row is implicitly allowed (permissive default for an unconfigured gate)";
+    absence of the whole table is just a more-complete absence.
+    """
+
+    async def test_missing_table_returns_allowed(self):
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(
+            side_effect=asyncpg.exceptions.UndefinedTableError(
+                'relation "agent_permissions" does not exist'
+            )
+        )
+        allowed, requires_approval = await agent_permissions.check_write_permission(
+            pool, "mcp_server", "app_settings", "write"
+        )
+        assert allowed is True
+        assert requires_approval is False
+
+    async def test_other_db_error_still_propagates(self):
+        """An indeterminate error (e.g. connection refused) must NOT be
+        swallowed — it propagates so the MCP adapter fails CLOSED (#750).
+        Only ``UndefinedTableError`` is treated as 'gate unconfigured'."""
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(
+            side_effect=ConnectionError("pg: connection refused")
+        )
+        with pytest.raises(ConnectionError):
+            await agent_permissions.check_write_permission(
+                pool, "mcp_server", "app_settings", "write"
+            )
 
 
 class TestQueueForApproval:
