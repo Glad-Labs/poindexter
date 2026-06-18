@@ -165,35 +165,49 @@ class TestSeedAllDefaults:
         assert _run(seed_all_defaults(None)) == 0
 
     def test_inserts_count_matches_status_strings(self):
-        """When every INSERT returns 'INSERT 0 1', the count == len(DEFAULTS)."""
-        from services.settings_defaults import DEFAULTS, seed_all_defaults
+        """When every execute() returns 'INSERT 0 1', inserted count == len(DEFAULTS).
+
+        The total execute() call count is len(DEFAULTS) INSERTs + len(METADATA)
+        UPDATE metadata passes (poindexter#756).
+        """
+        from services.settings_defaults import DEFAULTS, METADATA, seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 1")
         n = _run(seed_all_defaults(pool))
         assert n == len(DEFAULTS)
-        assert conn.execute.await_count == len(DEFAULTS)
+        assert conn.execute.await_count == len(DEFAULTS) + len(METADATA)
 
     def test_idempotent_on_full_conflict(self):
-        """When every INSERT returns 'INSERT 0 0' (ON CONFLICT fired), count is 0."""
-        from services.settings_defaults import DEFAULTS, seed_all_defaults
+        """When every INSERT returns 'INSERT 0 0' (ON CONFLICT fired), count is 0.
+
+        The UPDATE metadata pass still runs (len(METADATA) calls) even when all
+        INSERTs conflict — metadata is applied to both new and existing rows.
+        """
+        from services.settings_defaults import DEFAULTS, METADATA, seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 0")
         n = _run(seed_all_defaults(pool))
         assert n == 0
-        # Still issued the SQL — that's by design (lets Postgres own the
-        # conflict resolution rather than a pre-fetch + diff dance).
-        assert conn.execute.await_count == len(DEFAULTS)
+        # Still issued all SQL — that's by design.
+        assert conn.execute.await_count == len(DEFAULTS) + len(METADATA)
 
     def test_uses_on_conflict_do_nothing(self):
-        """Verify the SQL does NOT overwrite operator-tuned values."""
+        """Verify INSERT calls do NOT overwrite operator-tuned values.
+
+        The seeder also issues UPDATE calls for METADATA — those are intentional
+        and don't have ON CONFLICT DO NOTHING (they're not INSERTs).  Only the
+        INSERT calls are checked here.
+        """
         from services.settings_defaults import seed_all_defaults
 
         pool, conn = _make_pool("INSERT 0 0")
         _run(seed_all_defaults(pool))
 
-        # Inspect every SQL statement we executed
+        # Inspect only INSERT SQL calls (not UPDATE metadata calls)
         for call in conn.execute.await_args_list:
             sql = call.args[0]
+            if "INSERT INTO app_settings" not in sql:
+                continue  # skip METADATA UPDATE calls
             assert "ON CONFLICT (key) DO NOTHING" in sql, (
                 f"Seeder must use ON CONFLICT DO NOTHING — found:\n{sql}"
             )
@@ -226,19 +240,33 @@ class TestSeedAllDefaults:
 
 class TestGroupingMakesSense:
     def test_qa_keys_are_grouped_together(self):
-        """All qa_* keys should appear in the same logical block of the file.
+        """All qa_* keys in DEFAULTS should appear in the same logical block.
 
-        Catches the regression where a new section is added that splits qa_*
-        across two non-adjacent blocks (annoying for grep / review).
+        Catches the regression where a new section splits qa_* across
+        non-adjacent blocks in the DEFAULTS dict (annoying for grep/review).
+        Only DEFAULTS is checked — the METADATA dict groups keys by concern
+        (security, QA, RAG, …) not by name prefix, so qa_ entries scattered
+        across METADATA are expected.
         """
         from pathlib import Path
 
         import services.settings_defaults as mod
         text = Path(mod.__file__).read_text(encoding="utf-8")
 
-        # Grab the line index of every qa_ key occurrence
+        # Restrict to lines inside the DEFAULTS dict only (stop at METADATA).
+        lines = text.splitlines()
+        defaults_lines = []
+        in_defaults = False
+        for line in lines:
+            if line.startswith("DEFAULTS"):
+                in_defaults = True
+            if in_defaults and line.startswith("METADATA"):
+                break
+            if in_defaults:
+                defaults_lines.append(line)
+
         qa_lines = []
-        for i, line in enumerate(text.splitlines(), start=1):
+        for i, line in enumerate(defaults_lines, start=1):
             stripped = line.lstrip()
             if stripped.startswith("'qa_") or stripped.startswith('"qa_'):
                 qa_lines.append(i)
@@ -246,11 +274,11 @@ class TestGroupingMakesSense:
         if len(qa_lines) < 2:
             return  # Nothing to check
         span = qa_lines[-1] - qa_lines[0]
-        # All qa_ keys should fit inside a contiguous-ish block
+        # All qa_ keys in DEFAULTS should fit inside a contiguous-ish block
         # (some interleaving with comments is fine)
         assert span < 200, (
-            f"qa_ keys span {span} lines — likely split across non-adjacent "
-            "sections of the registry file (regression in GROUPS classifier)."
+            f"qa_ keys span {span} lines in DEFAULTS — likely split across "
+            "non-adjacent sections (regression in GROUPS classifier)."
         )
 
 

@@ -43,8 +43,11 @@ def _reset_active_container():
     set_container(None)
 
 
-def _rows(**settings: str) -> list[dict[str, str]]:
-    return [{"key": k, "value": v} for k, v in settings.items()]
+def _rows(**settings: str) -> list[dict]:
+    return [
+        {"key": k, "value": v, "deprecated": False, "superseded_by": None}
+        for k, v in settings.items()
+    ]
 
 
 def _fake_request(*, container, site_config) -> SimpleNamespace:

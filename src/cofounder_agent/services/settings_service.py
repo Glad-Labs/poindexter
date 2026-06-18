@@ -139,6 +139,10 @@ class SettingsService:
                 "description": entry.get("description"),
                 "is_secret": entry.get("is_secret", False),
                 "updated_at": entry.get("updated_at"),
+                "owner": entry.get("owner"),
+                "value_type": entry.get("value_type"),
+                "deprecated": entry.get("deprecated", False),
+                "superseded_by": entry.get("superseded_by"),
             }
             out.append(row)
         return out
@@ -147,22 +151,50 @@ class SettingsService:
         """Force refresh the in-memory cache from DB."""
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT key, value, category, description, is_secret, updated_at "
-                    "FROM app_settings"
-                )
-            self._cache = {
-                row["key"]: {
-                    "value": row["value"],
-                    "category": row["category"],
-                    "description": row["description"],
-                    "is_secret": row["is_secret"],
-                    "updated_at": (
-                        row["updated_at"].isoformat() if row["updated_at"] else None
-                    ),
-                }
-                for row in rows
-            }
+                try:
+                    rows = await conn.fetch(
+                        "SELECT key, value, category, description, is_secret, "
+                        "updated_at, owner, value_type, deprecated, superseded_by "
+                        "FROM app_settings"
+                    )
+                    self._cache = {
+                        row["key"]: {
+                            "value": row["value"],
+                            "category": row["category"],
+                            "description": row["description"],
+                            "is_secret": row["is_secret"],
+                            "updated_at": (
+                                row["updated_at"].isoformat() if row["updated_at"] else None
+                            ),
+                            "owner": row["owner"],
+                            "value_type": row["value_type"],
+                            "deprecated": row["deprecated"],
+                            "superseded_by": row["superseded_by"],
+                        }
+                        for row in rows
+                    }
+                except Exception:
+                    # Lifecycle columns absent (pre-migration schema).
+                    rows = await conn.fetch(
+                        "SELECT key, value, category, description, is_secret, updated_at "
+                        "FROM app_settings"
+                    )
+                    self._cache = {
+                        row["key"]: {
+                            "value": row["value"],
+                            "category": row["category"],
+                            "description": row["description"],
+                            "is_secret": row["is_secret"],
+                            "updated_at": (
+                                row["updated_at"].isoformat() if row["updated_at"] else None
+                            ),
+                            "owner": None,
+                            "value_type": None,
+                            "deprecated": False,
+                            "superseded_by": None,
+                        }
+                        for row in rows
+                    }
             self._last_refresh = time.monotonic()
             logger.debug("[SETTINGS] Cache refreshed -- %d keys loaded", len(self._cache))
         except Exception:

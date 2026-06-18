@@ -79,6 +79,13 @@ class SiteConfig:
         self._config: dict[str, str] = dict(initial_config or {})
         self._loaded = bool(initial_config)
         self._pool = pool
+        # Populated by load()/reload() from the deprecated+superseded_by columns
+        # (poindexter#756).  Keys with deprecated=True appear here; the value is
+        # the superseded_by key (or None).  Empty when initial_config is used
+        # (tests) so the warning never fires in unit tests.
+        self._deprecated_keys: dict[str, str | None] = {}
+        # Guards against re-emitting the same warning on every get() call.
+        self._deprecation_warned: set[str] = set()
 
     async def load(self, pool) -> int:
         """Load all non-secret settings from app_settings.
@@ -98,19 +105,38 @@ class SiteConfig:
 
         try:
             rows = await pool.fetch(
-                "SELECT key, value FROM app_settings WHERE is_secret = false"
+                "SELECT key, value, deprecated, superseded_by "
+                "FROM app_settings WHERE is_secret = false"
             )
+            new_config: dict[str, str] = {}
+            new_deprecated: dict[str, str | None] = {}
             for row in rows:
-                if row["value"]:  # Skip empty values
-                    self._config[row["key"]] = row["value"]
-
+                if row["value"]:
+                    new_config[row["key"]] = row["value"]
+                if row["deprecated"]:
+                    new_deprecated[row["key"]] = row["superseded_by"]
+            self._config = new_config
+            self._deprecated_keys = new_deprecated
             self._loaded = True
             self._pool = pool  # Retain for on-demand get_secret() lookups
             logger.info("[SITE_CONFIG] Loaded %d settings from database", len(self._config))
             return len(self._config)
-        except Exception as e:
-            logger.warning("[SITE_CONFIG] Failed to load from DB: %s — using env fallbacks", e)
-            return 0
+        except Exception:
+            # Graceful fallback for schema pre-migration (deprecated column absent).
+            try:
+                rows = await pool.fetch(
+                    "SELECT key, value FROM app_settings WHERE is_secret = false"
+                )
+                for row in rows:
+                    if row["value"]:
+                        self._config[row["key"]] = row["value"]
+                self._loaded = True
+                self._pool = pool
+                logger.info("[SITE_CONFIG] Loaded %d settings (legacy schema)", len(self._config))
+                return len(self._config)
+            except Exception as e2:
+                logger.warning("[SITE_CONFIG] Failed to load from DB: %s — using env fallbacks", e2)
+                return 0
 
     async def reload(self, pool) -> int:
         """Reload settings from DB. Call periodically or after settings change.
@@ -121,18 +147,40 @@ class SiteConfig:
             return 0
         try:
             rows = await pool.fetch(
-                "SELECT key, value FROM app_settings WHERE is_secret = false"
+                "SELECT key, value, deprecated, superseded_by "
+                "FROM app_settings WHERE is_secret = false"
             )
-            new_config = {}
+            new_config: dict[str, str] = {}
+            new_deprecated: dict[str, str | None] = {}
             for row in rows:
                 if row["value"]:
                     new_config[row["key"]] = row["value"]
+                if row["deprecated"]:
+                    new_deprecated[row["key"]] = row["superseded_by"]
             self._config = new_config
+            self._deprecated_keys = new_deprecated
+            # Reset warned set so keys deprecated mid-run get a fresh warning
+            # on the next read after a reload.
+            self._deprecation_warned.clear()
             logger.debug("[SITE_CONFIG] Reloaded %d settings", len(new_config))
             return len(new_config)
-        except Exception as e:
-            logger.warning("[SITE_CONFIG] Reload failed: %s", e)
-            return 0
+        except Exception:
+            # Graceful fallback for schema pre-migration (deprecated column absent).
+            try:
+                rows = await pool.fetch(
+                    "SELECT key, value FROM app_settings WHERE is_secret = false"
+                )
+                new_config = {}
+                for row in rows:
+                    if row["value"]:
+                        new_config[row["key"]] = row["value"]
+                self._config = new_config
+                self._deprecation_warned.clear()
+                logger.debug("[SITE_CONFIG] Reloaded %d settings (legacy schema)", len(new_config))
+                return len(new_config)
+            except Exception as e2:
+                logger.warning("[SITE_CONFIG] Reload failed: %s", e2)
+                return 0
 
     async def get_secret(self, key: str, default: str = "") -> str:
         """Async-fetch and decrypt a secret value from app_settings.
@@ -194,7 +242,23 @@ class SiteConfig:
         """Get a config value. Priority: DB > env var > default.
 
         For optional settings only. Use require() for required settings.
+        Emits a one-time WARNING per boot when the key is deprecated
+        (poindexter#756).
         """
+        # One-time deprecation warning — fires at most once per key per reload
+        # cycle so Loki doesn't get spammed on hot paths.
+        if key in self._deprecated_keys and key not in self._deprecation_warned:
+            self._deprecation_warned.add(key)
+            successor = self._deprecated_keys[key]
+            if successor:
+                logger.warning(
+                    "[SITE_CONFIG] Key %r is deprecated — migrate callers to %r",
+                    key,
+                    successor,
+                )
+            else:
+                logger.warning("[SITE_CONFIG] Key %r is deprecated", key)
+
         # DB value takes priority
         if key in self._config:
             return self._config[key]

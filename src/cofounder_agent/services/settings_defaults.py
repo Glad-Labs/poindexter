@@ -904,6 +904,99 @@ DEFAULTS: dict[str, str] = {
 }
 
 
+# Per-key lifecycle metadata for high-risk settings (poindexter#756).
+#
+# Keys NOT listed here get NULL for owner/value_type and deprecated=FALSE —
+# the schema defaults are safe.  Add entries incrementally as keys are
+# annotated; there is no requirement that every key in DEFAULTS has an entry.
+#
+# Fields:
+#   owner        (str)  Module/service that is the primary reader.
+#   value_type   (str)  One of: string boolean integer float url model csv
+#                       json duration.  Matches the CHECK constraint on the
+#                       value_type column.
+#   deprecated   (bool) True when the key has been renamed/superseded.
+#                       SiteConfig.get() emits a once-per-boot WARNING.
+#   superseded_by (str) The replacement key to migrate to (with deprecated).
+#
+# seed_all_defaults() applies these on every boot via UPDATE … WHERE … IS
+# DISTINCT FROM so the pass is a no-op on up-to-date deployments.
+METADATA: dict[str, dict[str, str | bool | None]] = {
+    # ----- Cost guard (incident: spend-limit rename fallthrough 2026-05-27) -----
+    'daily_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
+    'monthly_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
+
+    # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
+    'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
+    'pipeline_fallback_model': {'owner': 'content_router', 'value_type': 'model'},
+    'qa_fallback_writer_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'structured_extraction_model': {'owner': 'content_router', 'value_type': 'model'},
+    'embed_model': {'owner': 'rag_engine', 'value_type': 'model'},
+    'niche_embedding_model': {'owner': 'topic_discovery', 'value_type': 'model'},
+    'qa_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'qa_preview_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
+    'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
+
+    # ----- LLM provider gates (security — paid-API lock) -----
+    'plugin.llm_provider.litellm.allow_paid_base_url': {
+        'owner': 'litellm_provider', 'value_type': 'boolean',
+    },
+    'plugin.llm_provider.openai_compat.allow_paid_base_url': {
+        'owner': 'openai_compat', 'value_type': 'boolean',
+    },
+
+    # ----- QA thresholds -----
+    'qa_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'qa_rewrite_max_attempts': {'owner': 'qa_aggregate', 'value_type': 'integer'},
+    'qa_critical_floor': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'ragas_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+
+    # ----- RAG / retrieval (incident: rag_source_filter empty = corpus pollution 2026-06) -----
+    'rag_source_filter': {'owner': 'rag_engine', 'value_type': 'csv'},
+    'rag_hybrid_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
+    'rag_rerank_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
+    'rag_engine_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
+
+    # ----- Auto-publish gate (incident: niche-leak 2026-05-26) -----
+    'dev_diary_auto_publish_threshold': {'owner': 'auto_publish_gate', 'value_type': 'float'},
+    'dev_diary_auto_publish_dry_run': {'owner': 'auto_publish_gate', 'value_type': 'boolean'},
+    'dev_diary_auto_publish_max_edit_distance': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
+    'dev_diary_auto_publish_min_clean_runs': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
+    'enforce_niche_allowlist': {'owner': 'publish_service', 'value_type': 'boolean'},
+
+    # ----- Pipeline gates -----
+    'pipeline_gate_draft_gate': {'owner': 'template_runner', 'value_type': 'string'},
+    'pipeline_gate_seo_refresh_gate': {'owner': 'seo_refresh', 'value_type': 'boolean'},
+
+    # ----- Media pipeline master switches -----
+    'media_pipeline_trigger_enabled': {'owner': 'dispatch_media_pipeline', 'value_type': 'boolean'},
+    'podcast_pipeline_trigger_enabled': {'owner': 'dispatch_podcast_pipeline', 'value_type': 'boolean'},
+
+    # ----- Content pipeline behaviour -----
+    'content_flow_stale_inprogress_minutes': {'owner': 'content_generation_flow', 'value_type': 'integer'},
+    'template_runner_use_postgres_checkpointer': {'owner': 'template_runner', 'value_type': 'boolean'},
+
+    # ----- Observability -----
+    'enable_tracing': {'owner': 'otel', 'value_type': 'boolean'},
+    'enable_pyroscope': {'owner': 'pyroscope', 'value_type': 'boolean'},
+    'langfuse_tracing_enabled': {'owner': 'prompt_manager', 'value_type': 'boolean'},
+
+    # ----- Brain / migration drift -----
+    'migration_drift_auto_sync_enabled': {'owner': 'brain_migration_drift_probe', 'value_type': 'boolean'},
+    'migration_drift_defer_while_inflight': {'owner': 'brain_migration_drift_probe', 'value_type': 'boolean'},
+
+    # ----- Deprecated keys — emit warning on read (add new ones here) -----
+    # Example pattern (uncomment + fill in when retiring a key):
+    # 'old_key_name': {
+    #     'owner': 'cost_guard', 'value_type': 'float',
+    #     'deprecated': True, 'superseded_by': 'new_key_name',
+    # },
+}
+
+
 async def seed_all_defaults(pool: Any) -> int:
     """Insert every DEFAULTS entry into app_settings, skipping existing rows.
 
@@ -912,6 +1005,11 @@ async def seed_all_defaults(pool: Any) -> int:
 
     Operator-tuned values survive — the ``ON CONFLICT (key) DO NOTHING``
     clause means an existing row is never overwritten by this seeder.
+
+    A second pass writes lifecycle metadata (owner, value_type, deprecated,
+    superseded_by) for keys listed in ``METADATA``.  The UPDATE fires only
+    when at least one column differs from the stored value (``IS DISTINCT
+    FROM``), so it is a no-op on up-to-date deployments.
 
     Args:
         pool: An asyncpg pool. ``DatabaseService`` instances expose this
@@ -949,6 +1047,36 @@ async def seed_all_defaults(pool: Any) -> int:
                     inserted += 1
             except Exception:
                 pass
+
+        # Second pass: write lifecycle metadata where the columns differ.
+        # Skips silently if the lifecycle columns don't exist yet (migration
+        # hasn't run — e.g. fresh-clone worktree with an older schema).
+        try:
+            for key, meta in METADATA.items():
+                await conn.execute(
+                    """
+                    UPDATE app_settings SET
+                        owner       = $2,
+                        value_type  = $3,
+                        deprecated  = $4,
+                        superseded_by = $5
+                    WHERE key = $1
+                      AND (
+                          owner         IS DISTINCT FROM $2
+                       OR value_type    IS DISTINCT FROM $3
+                       OR deprecated    IS DISTINCT FROM $4
+                       OR superseded_by IS DISTINCT FROM $5
+                      )
+                    """,
+                    key,
+                    meta.get('owner'),
+                    meta.get('value_type'),
+                    meta.get('deprecated', False),
+                    meta.get('superseded_by'),
+                )
+        except Exception:  # noqa: silent-ok: lifecycle columns absent (pre-20260618 schema); INSERT pass ran, metadata deferred until migration runs
+            pass
+
     return inserted
 
 
