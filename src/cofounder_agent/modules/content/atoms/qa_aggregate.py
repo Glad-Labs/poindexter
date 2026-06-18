@@ -22,6 +22,7 @@ from typing import Any
 
 from modules.content.atoms._qa_rail_common import (
     aggregate_rail_reviews,
+    is_rescuable_reject,
     missing_required_gates,
     resolve_gate_states,
 )
@@ -58,6 +59,18 @@ def _weight(config: Any, key: str, default: float) -> float:
         return float(config.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _max_attempts(config: Any, default: int = 1) -> int:
+    """Read qa_rewrite_max_attempts (clamped to [0,3]). 0 disables the rescue
+    cycle; None-tolerant for the no-platform path (returns the default)."""
+    if config is None:
+        return default
+    try:
+        raw = int(float(config.get("qa_rewrite_max_attempts", default)))
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(3, raw))
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +154,57 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         early = 0.0
     promoted = max(early, float(final_score))
 
+    # --- QA rescue cycle dispatch (deferred reject) ---------------------------
+    # A rescuable reject (soft critic veto, or below-threshold score with no
+    # hard veto — never fabrication/gate/missing_required) gets ONE revision
+    # pass before it is persisted. Defer to qa.rewrite via _goto while the
+    # durable attempt counter is under budget. The branch router
+    # (build_graph_from_spec._branch_router) routes _goto=="qa_rewrite" to the
+    # rewrite node; qa.rewrite increments qa_rewrite_attempts and resets the
+    # review channel, then the loop edge re-runs the QA block.
+    attempts = int(state.get("qa_rewrite_attempts") or 0)
+    max_attempts = _max_attempts(config)
+    if (
+        not approved
+        and attempts < max_attempts
+        and is_rescuable_reject(
+            reviews, result.get("vetoed_by", []),
+            final_score=float(final_score), threshold=float(threshold),
+        )
+    ):
+        _platform = state.get("platform")
+        if _platform is not None:
+            try:
+                _platform.audit.write_bg(
+                    "qa_rescue_scheduled",
+                    source="qa.aggregate",
+                    details={
+                        "final_score": round(float(final_score), 2),
+                        "threshold": float(threshold),
+                        "attempt": attempts + 1,
+                        "max_attempts": max_attempts,
+                        "vetoed_by": list(result.get("vetoed_by", [])),
+                    },
+                    task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
+                    severity="info",
+                )
+            except Exception as exc:  # noqa: BLE001
+                # silent-ok: a telemetry audit write must never break the QA gate
+                logger.debug("[qa.aggregate] qa_rescue_scheduled audit skipped: %s", exc)
+        # Defer: route to qa.rewrite. NO persist, NO _halt, NO qa_pass_completed
+        # (the terminal pass emits that). Omit qa_reviews — its operator.add
+        # reducer would concat stale+fresh on the terminal pass; the terminal
+        # pass populates it once. Pass the counter through unchanged (qa.rewrite
+        # bumps it).
+        return {
+            "qa_final_score": final_score,
+            "qa_final_verdict": result["qa_final_verdict"],
+            "qa_rewrite_attempts": attempts,
+            "vetoed_by": result.get("vetoed_by", []),
+            "_goto": "qa_rewrite",
+        }
+    # --- end rescue dispatch --------------------------------------------------
+
     out: dict[str, Any] = {
         "qa_final_score": final_score,
         "qa_final_verdict": result["qa_final_verdict"],
@@ -149,7 +213,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # in canonical_blog (rails write qa_rail_reviews), so this populates it
         # for finalize_task's qa_feedback.
         "qa_reviews": list(reviews),
-        "qa_rewrite_attempts": 0,
+        # Pass the rescue counter through unchanged (qa.rewrite owns the bump).
+        # Was hardcoded 0; that reset the durable counter mid-cycle.
+        "qa_rewrite_attempts": attempts,
+        # Clear any rescue routing on the terminal (approve / hard-reject) pass
+        # so the branch router continues to seo_all_metadata (or halts on
+        # reject — _halt is checked first in _branch_router).
+        "_goto": "",
         # Surface veto reasons for callers and tests; empty list on approve.
         "vetoed_by": result.get("vetoed_by", []),
     }

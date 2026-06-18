@@ -187,3 +187,89 @@ class TestMissingRequiredGates:
     def test_empty_gate_states_reports_nothing(self):
         # No-DB / fresh-checkout fallback: resolve_gate_states returns {}.
         assert missing_required_gates(self._passing_reviews(), {}) == []
+
+
+from modules.content.atoms._qa_rail_common import is_rescuable_reject
+
+
+@pytest.mark.unit
+class TestIsRescuableReject:
+    def _critic_veto(self):
+        # A soft LLM-critic veto: reviewer ollama_critic, provider ollama, failed.
+        return [
+            {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+             "provider": "ollama", "advisory": False, "feedback": "weak intro"},
+        ]
+
+    def test_critic_only_veto_is_rescuable(self):
+        reviews = self._critic_veto()
+        assert is_rescuable_reject(
+            reviews, ["ollama_critic"], final_score=55.0, threshold=70.0,
+        ) is True
+
+    def test_score_threshold_reject_is_rescuable(self):
+        # Critic APPROVED (no veto) but the weighted score fell below the floor.
+        reviews = [
+            {"reviewer": "ollama_critic", "approved": True, "score": 62.0,
+             "provider": "ollama", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, [], final_score=62.0, threshold=70.0,
+        ) is True
+
+    def test_score_at_or_above_threshold_not_rescuable(self):
+        # Empty veto + score >= threshold is an APPROVE, not a reject — guard
+        # against calling this on an approve.
+        assert is_rescuable_reject(
+            [], [], final_score=90.0, threshold=70.0,
+        ) is False
+
+    def test_programmatic_veto_not_rescuable(self):
+        # Fabrication veto from the programmatic validator — never rescue.
+        reviews = [
+            {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+             "provider": "programmatic", "advisory": False, "feedback": "fake_person"},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["programmatic_validator"], final_score=0.0, threshold=70.0,
+        ) is False
+
+    def test_gate_provider_veto_not_rescuable(self):
+        # A consistency/vision/web gate veto is a hard correctness signal.
+        reviews = [
+            {"reviewer": "guardrails_brand", "approved": False, "score": 30.0,
+             "provider": "consistency_gate", "advisory": False, "feedback": "off-brand"},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["guardrails_brand"], final_score=30.0, threshold=70.0,
+        ) is False
+
+    def test_missing_required_synthetic_veto_not_rescuable(self):
+        # The vacuous-pass guard's synthetic veto — infra, not content.
+        reviews = [
+            {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+             "provider": "ollama", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["ollama_critic", "missing_required:deepeval_g_eval"],
+            final_score=55.0, threshold=70.0,
+        ) is False
+
+    def test_mixed_critic_plus_programmatic_not_rescuable(self):
+        # If ANY veto is non-critic, the whole reject is non-rescuable.
+        reviews = [
+            {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+             "provider": "ollama", "advisory": False},
+            {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+             "provider": "programmatic", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["ollama_critic", "programmatic_validator"],
+            final_score=27.0, threshold=70.0,
+        ) is False
+
+    def test_unknown_veto_name_not_rescuable(self):
+        # A veto whose reviewer isn't in the reviews list — fail safe.
+        assert is_rescuable_reject(
+            [], ["ghost_reviewer"], final_score=10.0, threshold=70.0,
+        ) is False

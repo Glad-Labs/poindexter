@@ -481,6 +481,11 @@ def _validate_spec(
     if not errors:
         adj: dict[str, list[str]] = {nid: [] for nid in seen_ids}
         for e in edges:
+            # A "loop"-flagged edge is the one designated rescue back-edge
+            # (qa.rewrite -> qa.programmatic). Skip it in cycle detection so
+            # the deliberate cycle validates; unflagged back-edges still error.
+            if e.get("loop"):
+                continue
             src, dst = e["from"], e["to"]
             if dst != "END":
                 adj.setdefault(src, []).append(dst)
@@ -505,6 +510,12 @@ def _validate_spec(
         indeg = dict.fromkeys(seen_ids, 0)
         adj2: dict[str, list[str]] = {nid: [] for nid in seen_ids}
         for e in edges:
+            # Skip the designated rescue back-edge: counting it would inflate
+            # the loopback target's indegree so it never reaches 0, silently
+            # dropping it and its whole downstream chain from the requires
+            # reachability check below. The cycle itself is permitted (above).
+            if e.get("loop"):
+                continue
             if e.get("to") != "END" and e.get("from") in seen_ids and e.get("to") in seen_ids:
                 adj2[e["from"]].append(e["to"])
                 indeg[e["to"]] += 1
@@ -759,6 +770,14 @@ def build_graph_from_spec(
     for e in edges:
         out_by_src.setdefault(e["from"], []).append(e["to"])
 
+    # Pre-scan for branch edges: a source with a "branch": true out-edge gets
+    # a _goto-aware conditional router (see _branch_router) instead of the
+    # default halt/fan-out routers. Maps source node id -> branch target id.
+    branch_by_src: dict[str, str] = {}
+    for e in edges:
+        if e.get("branch"):
+            branch_by_src[e["from"]] = e["to"]
+
     def _halt_router_single(target: Any) -> Callable[[PipelineState], Any]:
         """Halt-aware router for a single successor."""
 
@@ -789,7 +808,45 @@ def build_graph_from_spec(
         )
         return _route
 
+    def _branch_router(
+        branch_target: Any, default_target: Any,
+    ) -> Callable[[PipelineState], Any]:
+        """Conditional router for a node with a ``branch``-flagged out-edge.
+
+        Priority: ``_halt`` (-> END) > ``_goto == branch_target`` (-> the
+        branch/rescue node) > the default forward target. This is how
+        qa.aggregate routes a deferred-rescue reject to qa.rewrite while a
+        normal approve/exhausted-reject continues down the default edge (or
+        halts).
+        """
+
+        def _route(state: PipelineState) -> Any:
+            if state.get("_halt"):
+                return END
+            if state.get("_goto") == branch_target:
+                return branch_target
+            return default_target
+
+        _route.__name__ = (
+            f"branch_to_{branch_target}_or_"
+            f"{'END' if default_target is END else default_target}"
+        )
+        return _route
+
     for src, dsts in out_by_src.items():
+        # Branch case: a _goto-aware conditional router. Exactly one of this
+        # source's out-edges carries "branch": true; the other (non-branch,
+        # non-loop) edge is the default forward target.
+        if src in branch_by_src:
+            branch_target = _resolve(branch_by_src[src])
+            defaults = [d for d in dsts if d != branch_by_src[src]]
+            default_target = _resolve(defaults[0]) if defaults else END
+            mapping = {branch_target: branch_target, END: END}
+            mapping[default_target] = default_target
+            g.add_conditional_edges(
+                src, _branch_router(branch_target, default_target), mapping,
+            )
+            continue
         resolved = [_resolve(d) for d in dsts]
         # Single-target case: simple halt-aware edge.
         if len(resolved) == 1:

@@ -31,7 +31,8 @@ class TestQaAggregateAtom:
 
     async def test_reject_halts(self):
         state = {
-            "platform": FakePlatform(),
+            # rescue disabled (max_attempts=0) — this test pins the hard-reject/halt path
+            "platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
             "qa_rail_reviews": [
                 {"reviewer": "ollama_qa", "approved": False, "score": 95.0, "provider": "ollama", "advisory": False},
             ],
@@ -66,7 +67,10 @@ class TestQaAggregateAtom:
         assert out["qa_final_score"] == 90.0
 
     async def test_missing_reviews_key_rejects_at_zero(self):
-        out = await qa_aggregate.run({"platform": FakePlatform()})
+        # rescue disabled (max_attempts=0) — this test pins the hard-reject/halt path
+        out = await qa_aggregate.run(
+            {"platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"})}
+        )
         assert out["qa_final_score"] == 0.0
         assert out["_halt"] is True
 
@@ -172,13 +176,14 @@ class TestQaAggregateParity:
 
     async def test_reject_does_db_writes_and_halts(self, monkeypatch):
         class _FakePipelineDB:
-            def __init__(self, pool): ...
-            async def upsert_version(self, task_id, fields): ...
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
 
         monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = {
-            "platform": FakePlatform(),
+            # rescue disabled (max_attempts=0) — this test pins the hard-reject/halt path
+            "platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
             "task_id": "task-9",
             "content": "the body",
             "title": "A Title",
@@ -198,7 +203,8 @@ class TestQaAggregateParity:
         assert any("pipeline_gate_history" in sql for sql, _ in db.pool.execs)
 
     async def test_reject_without_db_service_still_halts(self):
-        state = {"platform": FakePlatform(), "task_id": "t",
+        # rescue disabled (max_attempts=0) — this test pins the hard-reject/halt path
+        state = {"platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}), "task_id": "t",
                  "qa_rail_reviews": [{"reviewer": "x", "approved": False, "score": 10.0, "provider": "ollama", "advisory": False, "feedback": "no"}]}
         out = await qa_aggregate.run(state)  # no database_service
         assert out["_halt"] is True
@@ -284,8 +290,8 @@ class TestQaAggregateBumpsGateCounters:
 
     async def test_reject_also_bumps_counters(self, monkeypatch):
         class _FakePipelineDB:
-            def __init__(self, pool): ...
-            async def upsert_version(self, task_id, fields): ...
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
 
         monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _GateDB()
@@ -463,4 +469,138 @@ class TestQaAggregateVacuousPassGuard:
         }
         out = await qa_aggregate.run(state)
         assert out["qa_final_verdict"] == "approve"
+        assert "_halt" not in out
+
+
+@pytest.mark.unit
+class TestQaAggregateRescueDispatch:
+    """QA rescue cycle: a rescuable reject defers to qa.rewrite (emits _goto,
+    no _halt, no DB persist) while attempts remain; a non-rescuable or
+    exhausted reject hard-rejects as before."""
+
+    def _critic_reject_state(self, **extra):
+        # ollama_critic (provider ollama) fails non-advisory, score below 70.
+        state = {
+            "platform": FakePlatform(),  # default max_attempts -> 1 (rescue on)
+            "task_id": "task-r",
+            "content": "the body",
+            "title": "T",
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak intro"},
+            ],
+        }
+        state.update(extra)
+        return state
+
+    async def test_critic_veto_defers_to_rewrite(self):
+        out = await qa_aggregate.run(self._critic_reject_state())
+        assert out["_goto"] == "qa_rewrite"
+        assert "_halt" not in out
+        assert "status" not in out           # no reject persistence
+        # The attempt counter is passed through unchanged (qa.rewrite bumps it).
+        assert out["qa_rewrite_attempts"] == 0
+
+    async def test_rescue_dispatch_does_no_db_writes(self, monkeypatch):
+        # persist_qa_reject must NOT be called on a deferred rescue.
+        called = {"persist": False}
+
+        async def _spy_persist(*a, **kw):
+            called["persist"] = True
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_reject", _spy_persist,
+        )
+        out = await qa_aggregate.run(self._critic_reject_state())
+        assert out["_goto"] == "qa_rewrite"
+        assert called["persist"] is False
+
+    async def test_rescue_dispatch_omits_qa_reviews(self):
+        # qa_reviews uses operator.add; emitting it on the deferred pass would
+        # concat stale+fresh on the terminal pass. The rescue path must omit it.
+        out = await qa_aggregate.run(self._critic_reject_state())
+        assert "qa_reviews" not in out
+
+    async def test_rescue_emits_qa_rescue_scheduled_audit(self):
+        fake = FakePlatform()
+        state = self._critic_reject_state(platform=fake)
+        await qa_aggregate.run(state)
+        events = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_rescue_scheduled"]
+        assert len(events) == 1
+        assert events[0]["details"]["attempt"] == 1
+        # The terminal qa_pass_completed is NOT emitted on a deferred rescue.
+        passes = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
+        assert passes == []
+
+    async def test_score_threshold_reject_defers(self):
+        # Critic APPROVED, but the weighted score (62) is below the 70 floor.
+        state = {
+            "platform": FakePlatform(),
+            "task_id": "task-s",
+            "content": "body", "title": "T",
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 62.0,
+                 "provider": "ollama", "advisory": False, "feedback": "ok-ish"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_goto"] == "qa_rewrite"
+        assert "_halt" not in out
+
+    async def test_exhausted_attempts_hard_rejects(self, monkeypatch):
+        # attempts already == max(1): no more rescue → hard reject + halt + persist.
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        state = self._critic_reject_state(
+            qa_rewrite_attempts=1, database_service=db, models_used_by_phase={},
+        )
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        assert out["_goto"] == ""
+        assert out["status"] == "rejected"
+        assert db.update_task_calls[0][1]["status"] == "rejected"
+
+    async def test_fabrication_veto_never_rescues(self, monkeypatch):
+        # programmatic_validator veto (fabrication) is NON-rescuable even with
+        # attempts available → hard reject immediately, no _goto to rewrite.
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        state = {
+            "platform": FakePlatform(),       # rescue ON (max 1)
+            "task_id": "task-fab",
+            "content": "body", "title": "T",
+            "models_used_by_phase": {},
+            "database_service": db,
+            "qa_rail_reviews": [
+                {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+                 "provider": "programmatic", "advisory": False, "feedback": "fake_person"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        assert out["_goto"] == ""
+        assert out.get("status") == "rejected"
+
+    async def test_approve_clears_goto(self):
+        state = {
+            "platform": FakePlatform(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False, "feedback": "great"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "approve"
+        assert out["_goto"] == ""
         assert "_halt" not in out

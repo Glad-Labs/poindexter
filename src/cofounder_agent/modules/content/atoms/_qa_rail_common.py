@@ -81,6 +81,47 @@ def known_wrong_fact_rescued(
     return bool(web is not None and web.get("approved"))
 
 
+def is_rescuable_reject(
+    reviews: list[dict[str, Any]],
+    vetoed_by: list[Any],
+    *,
+    final_score: float,
+    threshold: float,
+) -> bool:
+    """Decide whether a qa.aggregate REJECT is eligible for one rewrite pass.
+
+    Rescuable iff the reject came from a SOFT judgment a targeted revision
+    could plausibly fix — never from a hard correctness gate:
+
+    (a) Critic-only veto: ``vetoed_by`` is non-empty AND every vetoing
+        reviewer resolves to a critic provider (anthropic/google/ollama). A
+        ``programmatic_validator`` veto (fabrication/structure), a
+        gate-provider veto (consistency/vision/web_factcheck/url), or a
+        synthetic ``missing_required:*`` veto makes the reject NON-rescuable.
+    (b) Score-threshold reject: ``vetoed_by == []`` (no hard veto — the
+        critic approved) AND ``final_score < threshold`` (the weighted score
+        fell below the floor). A rewrite can lift the score.
+
+    Returns False for any veto that is not purely critic-sourced, and for an
+    empty veto whose score already clears the threshold (i.e. an approve).
+    """
+    # (b) Score-threshold reject: nothing vetoed, just below the bar.
+    if not vetoed_by:
+        return final_score < threshold
+
+    # (a) Critic-only veto: map each vetoing reviewer back to its provider.
+    by_name = {r.get("reviewer"): r for r in reviews}
+    for name in vetoed_by:
+        if isinstance(name, str) and name.startswith("missing_required:"):
+            return False  # vacuous-pass guard veto — infra, not content
+        review = by_name.get(name)
+        if review is None:
+            return False  # unknown veto source — fail safe, don't rescue
+        if review.get("provider") not in _CRITIC_PROVIDERS:
+            return False  # programmatic / gate veto — hard correctness
+    return True
+
+
 def aggregate_rail_reviews(
     reviews: list[dict[str, Any]],
     *,
@@ -214,6 +255,7 @@ async def resolve_gate_states(qa: Any) -> dict[str, Any]:
 
 __all__ = [
     "aggregate_rail_reviews",
+    "is_rescuable_reject",
     "known_wrong_fact_rescued",
     "missing_required_gates",
     "resolve_gate_states",

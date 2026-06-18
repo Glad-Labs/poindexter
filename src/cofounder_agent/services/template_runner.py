@@ -355,6 +355,27 @@ async def _emit_progress(
 # ---------------------------------------------------------------------------
 
 
+def _merge_rail_reviews(existing: list, incoming: list) -> list:
+    """Reducer for the ``qa_rail_reviews`` channel.
+
+    Behaves like ``operator.add`` (list concat so parallel rail atoms can
+    each append) EXCEPT it honors a reset sentinel ``{"__reset__": True}``.
+    ``qa.rewrite`` emits the sentinel before the rescue cycle's second QA
+    pass so stale first-pass reviews (which carry the now-addressed veto)
+    don't accumulate and re-reject. When the sentinel is present in
+    ``incoming``, the prior reviews are dropped and only the non-sentinel
+    elements of ``incoming`` survive. Backward-compatible: nothing else
+    emits a dict element with ``__reset__``.
+    """
+    for item in incoming:
+        if isinstance(item, dict) and item.get("__reset__"):
+            return [
+                x for x in incoming
+                if not (isinstance(x, dict) and x.get("__reset__"))
+            ]
+    return list(existing) + list(incoming)
+
+
 class PipelineState(TypedDict, total=False):
     """Permissive state for v1 POC.
 
@@ -416,10 +437,12 @@ class PipelineState(TypedDict, total=False):
     qa_reviews: Annotated[list, operator.add]
     # qa_rail_reviews (#355 Plan 3): the per-rail ReviewerResult dicts
     # emitted by the qa.* rail atoms (qa.deepeval / qa.guardrails /
-    # qa.ragas / qa.critic). operator.add so a parallel fan-out of rails
-    # (Plan 4's graph_def) can each append concurrently without
-    # InvalidUpdateError. qa.aggregate reads the merged list.
-    qa_rail_reviews: Annotated[list, operator.add]
+    # qa.ragas / qa.critic). Uses _merge_rail_reviews (not bare operator.add)
+    # so the QA rescue cycle's qa.rewrite atom can emit a {"__reset__": True}
+    # sentinel to clear stale first-pass reviews before the second QA pass.
+    # Parallel rail atoms still append concurrently (the reducer concats when
+    # no sentinel is present). qa.aggregate reads the merged list.
+    qa_rail_reviews: Annotated[list, _merge_rail_reviews]
     # qa_known_wrong_fact_only (#661): qa.programmatic sets this last-value flag
     # when EVERY critical it found is a known_wrong_fact (the stale-regex
     # false-positive on a real post-cutoff product). qa.aggregate reads it +
@@ -517,6 +540,12 @@ class PipelineState(TypedDict, total=False):
     # undeclared keys get dropped by LangGraph on the graph_def path).
     _halt: bool
     _halt_reason: str
+    # _goto (QA rescue cycle): qa.aggregate sets this to "qa_rewrite" on a
+    # rescuable reject so build_graph_from_spec's branch router routes to the
+    # qa.rewrite node instead of halting/continuing. Cleared to "" on approve
+    # and on hard reject. Declared as a last-value channel so it survives the
+    # graph_def adapter (undeclared keys are dropped on the graph_def path).
+    _goto: str
     gate_name: str
     awaiting_gate: str
     gate_artifact: dict

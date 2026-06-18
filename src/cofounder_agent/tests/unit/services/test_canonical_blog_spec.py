@@ -131,3 +131,28 @@ class TestCanonicalBlogSpec:
         # qa.* node has a registered callable and the wiring is valid.
         compiled = graph.compile()
         assert compiled is not None
+
+    def test_qa_rescue_cycle_wired(self):
+        spec = CANONICAL_BLOG_GRAPH_DEF
+
+        node_atoms = {n["atom"] for n in spec["nodes"]}
+        assert "qa.rewrite" in node_atoms
+
+        edges = spec["edges"]
+        pairs = {(e["from"], e["to"]) for e in edges}
+        # Branch edge: qa_aggregate -> qa_rewrite, flagged branch.
+        assert ("qa_aggregate", "qa_rewrite") in pairs
+        branch_edge = next(
+            e for e in edges if e["from"] == "qa_aggregate" and e["to"] == "qa_rewrite"
+        )
+        assert branch_edge.get("branch") is True
+        # Loop edge: qa_rewrite -> qa_programmatic, flagged loop.
+        loop_edge = next(
+            e for e in edges if e["from"] == "qa_rewrite" and e["to"] == "qa_programmatic"
+        )
+        assert loop_edge.get("loop") is True
+        # The default forward edge from qa_aggregate is unchanged.
+        assert ("qa_aggregate", "seo_all_metadata") in pairs
+
+    def test_node_count_is_37(self):
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 37

@@ -38,6 +38,16 @@ class TestQaRailRegistry:
         assert "qa_rail_reviews" in m.requires
         assert "qa_final_score" in m.produces and "qa_final_verdict" in m.produces
 
+    def test_rewrite_atom_discovered(self):
+        # QA rescue cycle: qa.rewrite must resolve through the registry so
+        # build_graph_from_spec can compile the rescue node.
+        discover()
+        m = get_atom_meta("qa.rewrite")
+        assert m is not None, "qa.rewrite not registered"
+        assert callable(get_atom_callable("qa.rewrite"))
+        assert "content" in m.requires and "qa_rewrite_attempts" in m.requires
+        assert {"content", "qa_rewrite_attempts", "qa_rail_reviews"} <= set(m.produces)
+
     def test_fanout_spec_validates(self):
         """A graph that runs the rails then aggregate must pass the Plan-1
         requires/produces validator — the safety net Plan 4 relies on."""

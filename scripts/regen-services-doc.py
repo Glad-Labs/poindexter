@@ -150,12 +150,25 @@ def _load_graph_def() -> dict:
 def pipeline_node_order(graph_def: dict) -> list[tuple[str, str]]:
     """``(node_id, atom)`` in execution order by walking edges entry -> END.
 
-    canonical_blog is a linear chain (one outgoing edge per node), so a simple
-    ``from -> to`` map suffices. Raises on a cycle so a malformed spec fails
-    loud instead of looping.
+    canonical_blog is a linear backbone with one bounded QA rescue cycle (a
+    ``branch``-flagged conditional edge qa_aggregate -> qa_rewrite + a
+    ``loop``-flagged back-edge qa_rewrite -> qa_programmatic). Those two flagged
+    edges are skipped when building the forward chain so the walk stays linear;
+    the branch target (the rescue node) is spliced in right after its source so
+    the rendered order still shows where it sits. Raises on an UNflagged cycle
+    so a malformed spec fails loud instead of looping.
     """
     by_id = {n["id"]: n["atom"] for n in graph_def["nodes"]}
-    nxt = {e["from"]: e["to"] for e in graph_def["edges"]}
+    # Primary forward chain: skip the rescue cycle's branch + loop edges.
+    nxt: dict[str, str] = {}
+    for e in graph_def["edges"]:
+        if e.get("loop") or e.get("branch"):
+            continue
+        nxt.setdefault(e["from"], e["to"])
+    # Branch targets (rescue nodes) keyed by their source, to splice in-place.
+    branch_targets = {
+        e["from"]: e["to"] for e in graph_def["edges"] if e.get("branch")
+    }
     order: list[tuple[str, str]] = []
     cur: str | None = graph_def["entry"]
     seen: set[str] = set()
@@ -164,6 +177,14 @@ def pipeline_node_order(graph_def: dict) -> list[tuple[str, str]]:
             raise ValueError(f"cycle detected at node {cur!r}")
         seen.add(cur)
         order.append((cur, by_id[cur]))
+        # Splice the rescue/branch target right after its source node so the
+        # rendered chain shows qa_rewrite between qa_aggregate and the default
+        # forward target. The rescue node has no forward edge of its own (only
+        # the loop back-edge), so the walk continues down the primary chain.
+        bt = branch_targets.get(cur)
+        if bt and bt not in seen:
+            seen.add(bt)
+            order.append((bt, by_id[bt]))
         cur = nxt.get(cur)
     return order
 

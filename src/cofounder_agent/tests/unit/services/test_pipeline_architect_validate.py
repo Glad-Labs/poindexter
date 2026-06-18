@@ -152,3 +152,64 @@ def test_real_registered_atoms_validate_with_defaults():
     }
     ok, errors = pipeline_architect._validate_spec(spec)
     assert ok is True, errors
+
+
+# ---------------------------------------------------------------------------
+# QA rescue cycle: loop-flagged back-edges are exempt from DAG validation,
+# while unflagged accidental cycles still fail loud.
+# ---------------------------------------------------------------------------
+
+
+def test_loop_flagged_back_edge_validates():
+    # a -> b -> c, with c -> a flagged "loop": the designated rescue cycle.
+    catalog = {"a": _meta("a"), "b": _meta("b"), "c": _meta("c")}
+    spec = _spec(
+        [{"id": "na", "atom": "a"}, {"id": "nb", "atom": "b"}, {"id": "nc", "atom": "c"}],
+        [
+            {"from": "na", "to": "nb"},
+            {"from": "nb", "to": "nc"},
+            {"from": "nc", "to": "na", "loop": True},
+            {"from": "nc", "to": "END"},
+        ],
+    )
+    with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+        ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+    assert ok is True, errors
+
+
+def test_unflagged_back_edge_still_errors():
+    # Same shape but WITHOUT the loop flag — an accidental cycle must fail loud.
+    catalog = {"a": _meta("a"), "b": _meta("b"), "c": _meta("c")}
+    spec = _spec(
+        [{"id": "na", "atom": "a"}, {"id": "nb", "atom": "b"}, {"id": "nc", "atom": "c"}],
+        [
+            {"from": "na", "to": "nb"},
+            {"from": "nb", "to": "nc"},
+            {"from": "nc", "to": "na"},
+            {"from": "nc", "to": "END"},
+        ],
+    )
+    with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+        ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+    assert ok is False
+    assert any("cycle" in e.lower() for e in errors), errors
+
+
+def test_loop_edge_does_not_drop_downstream_require_check():
+    # The loop edge must not inflate the loopback target's indegree and silently
+    # drop the whole chain from the requires-reachability pass. nc requires "k"
+    # which nothing produces -> the check must still fire and error on nc.
+    catalog = {"a": _meta("a"), "b": _meta("b"), "c": _meta("c", requires=("k",))}
+    spec = _spec(
+        [{"id": "na", "atom": "a"}, {"id": "nb", "atom": "b"}, {"id": "nc", "atom": "c"}],
+        [
+            {"from": "na", "to": "nb"},
+            {"from": "nb", "to": "nc"},
+            {"from": "nc", "to": "na", "loop": True},
+            {"from": "nc", "to": "END"},
+        ],
+    )
+    with patch.object(pipeline_architect, "get_atom_meta", _fake_get_atom_meta(catalog)):
+        ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
+    assert ok is False
+    assert any("nc" in e and "k" in e for e in errors), errors

@@ -114,6 +114,10 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_self_consistency", "atom": "qa.self_consistency"},
         {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
+        # QA rescue cycle: qa.aggregate emits _goto="qa_rewrite" on a rescuable
+        # reject; the branch router (build_graph_from_spec) routes here for one
+        # bounded revision pass, then the loop edge re-runs the QA block.
+        {"id": "qa_rewrite", "atom": "qa.rewrite"},
         # seo.* collapsed into one structured call (#734) — replaces the
         # three-atom serial chain (seo.generate_title → seo.generate_description
         # → seo.extract_keywords) with a single LLM round-trip that returns
@@ -162,6 +166,12 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},
         # seo.* collapsed (#734) — single structured call
         {"from": "qa_aggregate", "to": "seo_all_metadata"},
+        # QA rescue cycle (default-on, qa_rewrite_max_attempts=1):
+        # qa_aggregate -> qa_rewrite is the conditional branch (taken when
+        # qa.aggregate sets _goto="qa_rewrite"); qa_rewrite -> qa_programmatic
+        # is the bounded back-edge (loop-flagged so DAG validation permits it).
+        {"from": "qa_aggregate", "to": "qa_rewrite", "branch": True},
+        {"from": "qa_rewrite", "to": "qa_programmatic", "loop": True},
         {"from": "seo_all_metadata", "to": "generate_media_scripts"},
         {"from": "generate_media_scripts", "to": "generate_video_shot_list"},
         {"from": "generate_video_shot_list", "to": "capture_training_data"},

@@ -60,6 +60,29 @@ was a hard-coded `10`) so soft nits nudge the score instead of sinking a clean
 draft (7 warnings → 65, not 30). A _critical_ fabrication still zeroes the score
 and vetoes.
 
+#### The bounded rescue cycle: one rewrite pass before a salvageable reject
+
+Before hard-rejecting, `qa.aggregate` checks whether the reject is _rescuable_
+(`_qa_rail_common.is_rescuable_reject`): a soft LLM-critic veto (every vetoing
+reviewer's `provider ∈ {anthropic, google, ollama}`), or a below-threshold
+score with no hard veto at all (`vetoed_by == []`, `final_score < threshold` —
+exactly the scoring-contract reject described above). A `programmatic_validator`
+veto (fabrication), a gate-provider veto (consistency / vision / web_factcheck /
+url), or a synthetic `missing_required:*` veto is **never** rescuable. On a
+rescuable reject (and while the durable `qa_rewrite_attempts` counter is under
+`app_settings.qa_rewrite_max_attempts`, default 1), `qa.aggregate` defers — it
+emits `_goto="qa_rewrite"` instead of persisting the reject, and the compiler's
+branch router routes to the `qa.rewrite` atom for one targeted revision pass.
+`qa.rewrite` increments the counter and resets the `qa_rail_reviews` channel (a
+`{"__reset__": True}` sentinel honored by the `_merge_rail_reviews` reducer) so
+the re-run scores the revised draft cleanly; a `loop`-flagged back-edge re-runs
+the whole QA block. The counter lives in the LangGraph checkpoint, so the cycle
+is bounded even across a kill-and-resume. Like the `known_wrong_fact` rescue
+below, this only ever PREVENTS a salvageable hard-reject — a fabrication veto
+still halts immediately. Pinned by `test_qa_rail_common.py`
+(`is_rescuable_reject`), `test_qa_rewrite_atom.py`, and
+`test_qa_aggregate_atom.py::TestQaAggregateRescueDispatch`.
+
 The rails call the individual per-rail check methods, **not** the full
 `MultiModelQA.review()` — so the programmatic validator that `review()`
 ran as its first step (Layer 2, below) is no longer co-located in the QA

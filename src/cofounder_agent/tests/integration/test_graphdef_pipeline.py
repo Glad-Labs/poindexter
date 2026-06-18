@@ -358,3 +358,118 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
     assert seen.get("short_shot_list") == {"version": 1, "aspect": "9:16", "shots": [{"idx": 0}]}
     assert seen.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
     assert seen.get("podcast_intro_audio_path") == "/tmp/intro.wav"
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — the QA rescue cycle fires once then terminates (QA rescue cycle)
+# ---------------------------------------------------------------------------
+
+from unittest.mock import patch as _patch
+
+from plugins.atom import AtomMeta as _AtomMeta
+from services import pipeline_architect as _pa
+
+
+def _rescue_meta(name: str) -> _AtomMeta:
+    return _AtomMeta(name=name, type="atom", version="1.0.0", description=name)
+
+
+def _compile_rescue_graph(gate_fn, rewrite_fn):
+    """gate --branch--> qa_rewrite --loop--> gate; gate --default--> END.
+
+    Compiles the REAL spec shape through build_graph_from_spec with synthetic
+    atoms, exercising the branch router + the loop back-edge + the
+    _merge_rail_reviews reducer end-to-end."""
+    catalog = {"t.gate": _rescue_meta("t.gate"), "t.rewrite": _rescue_meta("t.rewrite")}
+    callables = {"t.gate": gate_fn, "t.rewrite": rewrite_fn}
+    spec = {
+        "name": "canonical_blog",
+        "entry": "gate",
+        "nodes": [
+            {"id": "gate", "atom": "t.gate"},
+            {"id": "qa_rewrite", "atom": "t.rewrite"},
+        ],
+        "edges": [
+            {"from": "gate", "to": "qa_rewrite", "branch": True},
+            {"from": "gate", "to": "END"},
+            {"from": "qa_rewrite", "to": "gate", "loop": True},
+        ],
+    }
+    with (
+        _patch.object(_pa, "get_atom_meta", lambda n: catalog.get(n)),
+        _patch.object(_pa, "get_atom_callable", lambda n: callables.get(n)),
+        _patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+    ):
+        return _pa.build_graph_from_spec(spec, pool=None).compile()
+
+
+@pytest.mark.asyncio
+async def test_graphdef_rescue_cycle_runs_once_then_approves():
+    """The gate defers (emits _goto) on the first pass; qa_rewrite revises the
+    content + increments the durable counter + emits the review-reset sentinel;
+    on the second pass the gate approves. Proves branch+loop+reducer compose so
+    the cycle runs exactly once — through the REAL compiler."""
+    log: list[str] = []
+
+    async def _gate(state):
+        log.append("gate")
+        # Second pass (rewrite set content="REVISED") -> approve via default edge.
+        if state.get("content") == "REVISED":
+            return {"_goto": "", "status": "awaiting_approval"}
+        return {"_goto": "qa_rewrite"}
+
+    async def _rewrite(state):
+        log.append("rewrite")
+        attempts = int(state.get("qa_rewrite_attempts") or 0)
+        return {
+            "content": "REVISED",
+            "qa_rewrite_attempts": attempts + 1,
+            "qa_rail_reviews": [{"__reset__": True}],
+        }
+
+    compiled = _compile_rescue_graph(_gate, _rewrite)
+    final = await compiled.ainvoke(
+        {"task_id": "t-rescue", "content": "ORIG"},
+        config={"configurable": {"thread_id": "t-rescue"}},
+    )
+
+    # gate(defer) -> rewrite -> gate(approve). Exactly one rescue.
+    assert log == ["gate", "rewrite", "gate"], log
+    assert final.get("content") == "REVISED"
+    assert final.get("qa_rewrite_attempts") == 1
+
+
+@pytest.mark.asyncio
+async def test_graphdef_rescue_cycle_terminates_when_rewrite_keeps_failing():
+    """When the rewrite doesn't fix the draft, the durable counter still
+    terminates the loop: the gate only defers while attempts < max(1); the
+    second pass halts. Guards against an unbounded rescue loop."""
+    log: list[str] = []
+
+    async def _gate(state):
+        log.append("gate")
+        attempts = int(state.get("qa_rewrite_attempts") or 0)
+        if attempts < 1:
+            return {"_goto": "qa_rewrite"}
+        # Exhausted — hard halt (mirrors qa.aggregate's terminal reject).
+        return {"_halt": True, "_halt_reason": "exhausted", "_goto": ""}
+
+    async def _rewrite(state):
+        log.append("rewrite")
+        attempts = int(state.get("qa_rewrite_attempts") or 0)
+        # Writer "fails" — content unchanged, but the counter still burns.
+        return {
+            "qa_rewrite_attempts": attempts + 1,
+            "qa_rail_reviews": [{"__reset__": True}],
+        }
+
+    compiled = _compile_rescue_graph(_gate, _rewrite)
+    final = await compiled.ainvoke(
+        {"task_id": "t-exhaust", "content": "ORIG"},
+        config={"configurable": {"thread_id": "t-exhaust"}},
+    )
+
+    # gate(defer) -> rewrite -> gate(halt). The loop ran exactly once.
+    assert log == ["gate", "rewrite", "gate"], log
+    assert final.get("qa_rewrite_attempts") == 1
+    assert final.get("_halt") is True
