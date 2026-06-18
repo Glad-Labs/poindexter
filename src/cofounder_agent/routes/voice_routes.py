@@ -243,6 +243,15 @@ async def voice_join(
     identity = f"{display_name}-{secrets.token_hex(3)}"
     # wss_url: already resolved DB-first by resolve_livekit_creds_async above
     # via voice_agent_livekit_url (app_settings) → LIVEKIT_URL → ws://localhost:7880.
+    #
+    # voice_agent_livekit_url is the bot's internal Docker URL (ws://livekit:7880).
+    # Browsers served over HTTPS can't use a plain ws:// URL (mixed content) and
+    # can't resolve Docker hostnames. voice_agent_public_livekit_url is the
+    # browser-facing WSS URL (e.g. wss://<your-tailnet-host>.ts.net:7880, where
+    # Tailscale Serve proxies LiveKit). Falls back to wss_url when unset.
+    browser_wss_url = (
+        site_config.get("voice_agent_public_livekit_url", "") if site_config is not None else ""
+    ) or wss_url
 
     secret_warn = ""
 
@@ -293,7 +302,7 @@ button:disabled {{ opacity: 0.4; cursor: not-allowed; }}
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.5.6/dist/livekit-client.umd.min.js"></script>
 <script>
 const TOKEN = {json.dumps(token)};
-const WSS_URL = {json.dumps(wss_url)};
+const WSS_URL = {json.dumps(browser_wss_url)};
 const logEl = document.getElementById('log');
 const log = (msg, cls='') => {{
     const div = document.createElement('div');

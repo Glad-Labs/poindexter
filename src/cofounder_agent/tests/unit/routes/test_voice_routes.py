@@ -136,7 +136,7 @@ class TestVoiceJoinHappyPath:
         assert "const WSS_URL =" in body
 
     def test_respects_public_wss_url_override(self, monkeypatch):
-        """DB-supplied voice_agent_livekit_url appears as WSS_URL in the page."""
+        """voice_agent_livekit_url is used as WSS_URL when public override is unset."""
         monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
         monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
         cfg = _FakeSiteConfig(
@@ -147,6 +147,25 @@ class TestVoiceJoinHappyPath:
         resp = client.get("/voice/join", headers=_TAILNET)
         assert resp.status_code == 200
         assert "wss://voice.example.ts.net/livekit" in resp.text
+
+    def test_browser_url_overrides_bot_url(self, monkeypatch):
+        """voice_agent_public_livekit_url takes precedence over voice_agent_livekit_url
+        in the HTML page, so the bot's internal ws:// URL stays separate from the
+        browser-facing wss:// URL (mixed-content fix)."""
+        monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+        monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
+        cfg = _FakeSiteConfig(
+            secrets={"livekit_api_key": "lk_api_key", "livekit_api_secret": "real-secret-value"},
+            values={
+                "voice_agent_livekit_url": "ws://livekit:7880",
+                "voice_agent_public_livekit_url": "wss://voice.example.ts.net:7880",
+            },
+        )
+        client = TestClient(_build_app_with_site_config(cfg))
+        resp = client.get("/voice/join", headers=_TAILNET)
+        assert resp.status_code == 200
+        assert "wss://voice.example.ts.net:7880" in resp.text
+        assert "ws://livekit:7880" not in resp.text
 
 
 # ---------------------------------------------------------------------------
