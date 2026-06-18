@@ -17,9 +17,13 @@ from tests.unit.services.test_voice_agent_service_mode import (
 )
 
 
-def _stub_openai_services() -> tuple[type, type]:
+def _stub_openai_services(*, module_valid_voices: dict | None = None) -> tuple[type, type]:
     """Inject fake pipecat.services.openai.{stt,tts} modules and return the
     two sentinel classes so tests can assert the sidecar path used them.
+
+    Pass ``module_valid_voices`` to simulate pipecat 1.1.0 where VALID_VOICES
+    is a module-level dict (not a class attribute).  Omit it to simulate an
+    older pipecat build or a version that dropped the dict entirely.
     """
     stt_cls = type(
         "OpenAISTTService",
@@ -29,10 +33,7 @@ def _stub_openai_services() -> tuple[type, type]:
     tts_cls = type(
         "OpenAITTSService",
         (),
-        {
-            "__init__": lambda self, **kw: setattr(self, "kw", kw),
-            "VALID_VOICES": {},  # Mock the class attribute
-        },
+        {"__init__": lambda self, **kw: setattr(self, "kw", kw)},
     )
     pkg = types.ModuleType("pipecat.services.openai")
     sys.modules["pipecat.services.openai"] = pkg
@@ -41,6 +42,8 @@ def _stub_openai_services() -> tuple[type, type]:
     sys.modules["pipecat.services.openai.stt"] = stt_mod
     tts_mod = types.ModuleType("pipecat.services.openai.tts")
     tts_mod.OpenAITTSService = tts_cls
+    if module_valid_voices is not None:
+        tts_mod.VALID_VOICES = module_valid_voices
     sys.modules["pipecat.services.openai.tts"] = tts_mod
     return stt_cls, tts_cls
 
@@ -131,15 +134,14 @@ def test_build_tts_sidecar_uses_override_voice_and_speed():
     assert tts.kw["speed"] == 1.25
 
 
-def test_build_tts_sidecar_without_valid_voices_attr():
-    """pipecat 1.1.0 (the voice image) has NO ``VALID_VOICES`` attribute.
+def test_build_tts_sidecar_without_valid_voices_in_module():
+    """When the pipecat module has no VALID_VOICES at all, voice flows straight through.
 
-    Regression for the crash-loop introduced by #1153/#1157: the unconditional
-    ``OpenAITTSService.VALID_VOICES.setdefault(...)`` raised AttributeError on
-    every agent start. The guarded version must pass the raw voice straight
-    through without touching the (absent) map.
+    Regression for the crash-loop introduced by #1153/#1157 where the code did
+    ``OpenAITTSService.VALID_VOICES.setdefault(...)`` (class attribute) and
+    raised AttributeError.  The guarded version must skip the patch gracefully.
     """
-    # Stub an OpenAITTSService that, like pipecat 1.1.0, has no VALID_VOICES.
+    # Stub with no VALID_VOICES anywhere.
     tts_cls = type(
         "OpenAITTSService",
         (),
@@ -148,7 +150,7 @@ def test_build_tts_sidecar_without_valid_voices_attr():
     pkg = types.ModuleType("pipecat.services.openai")
     sys.modules["pipecat.services.openai"] = pkg
     tts_mod = types.ModuleType("pipecat.services.openai.tts")
-    tts_mod.OpenAITTSService = tts_cls
+    tts_mod.OpenAITTSService = tts_cls  # type: ignore[attr-defined]
     sys.modules["pipecat.services.openai.tts"] = tts_mod
 
     import services.voice_agent as va
@@ -158,11 +160,39 @@ def test_build_tts_sidecar_without_valid_voices_attr():
         voice_agent_tts_model="speaches-ai/Kokoro-82M-v1.0-ONNX",
         voice_agent_tts_voice="bf_emma",
     )
-    # Must NOT raise AttributeError; voice flows straight through.
+    # Must NOT raise; voice flows straight through.
     tts = va._build_tts(cfg, None)
     assert isinstance(tts, tts_cls)
-    assert tts.kw["voice"] == "bf_emma"
-    assert not hasattr(tts_cls, "VALID_VOICES")
+    assert tts.kw["voice"] == "bf_emma"  # type: ignore[attr-defined]
+    assert not hasattr(tts_mod, "VALID_VOICES")
+
+
+def test_build_tts_sidecar_registers_kokoro_voice_in_module_dict():
+    """pipecat 1.1.0 has VALID_VOICES as a module-level dict (not a class attr).
+
+    ``run_tts`` does ``VALID_VOICES[voice]`` — Kokoro voices (bf_emma,
+    bf_isabella) are not in OpenAI's catalog so this raises KeyError on every
+    TTS call, silently killing audio responses.  The fix patches the module-level
+    dict so the voice is registered as an identity pass-through before
+    ``OpenAITTSService`` is constructed.
+    """
+    openai_catalog: dict[str, str] = {"alloy": "alloy", "nova": "nova", "echo": "echo"}
+    _, tts_cls = _stub_openai_services(module_valid_voices=openai_catalog)
+
+    import services.voice_agent as va
+    cfg = _Cfg(
+        voice_agent_tts_mode="sidecar",
+        voice_agent_tts_base_url="http://speaches:8000/v1",
+        voice_agent_tts_model="speaches-ai/Kokoro-82M-v1.0-ONNX",
+        voice_agent_tts_voice="bf_emma",
+    )
+    tts = va._build_tts(cfg, None)
+    assert isinstance(tts, tts_cls)
+    assert tts.kw["voice"] == "bf_emma"  # type: ignore[attr-defined]
+    # bf_emma must be in the module-level dict so pipecat's run_tts lookup succeeds.
+    import pipecat.services.openai.tts as _m
+    assert "bf_emma" in _m.VALID_VOICES  # type: ignore[attr-defined]
+    assert _m.VALID_VOICES["bf_emma"] == "bf_emma"  # identity pass-through
 
 
 def test_build_tts_sidecar_empty_model_fails_loud():
