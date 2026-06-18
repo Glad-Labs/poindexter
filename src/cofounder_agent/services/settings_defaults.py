@@ -341,7 +341,12 @@ DEFAULTS: dict[str, str] = {
     'content_router_contradiction_revise_max_tokens': '8000',
     'content_router_contradiction_timeout_seconds': '120',
     'content_router_qa_rewrite_max_tokens': '8000',
-    'content_router_qa_rewrite_timeout_seconds': '240',
+    # The qa.rewrite rescue pass is a writer-class full-revision LLM call, so it
+    # gets the same budget as the writer (niche_ollama_chat_timeout_seconds=600).
+    # The inherited 240s default (orphaned from the deleted cross_model_qa) was
+    # too low: under glm<->gemma single-GPU thrash the revise call always timed
+    # out and the rescue (#1674) was silently skipped on salvageable drafts.
+    'content_router_qa_rewrite_timeout_seconds': '600',
     'content_router_seo_title_max_tokens': '4000',
     # Content-validator per-category promotion thresholds. 0 = never promote
     # this warning category to a hard critical (Glad-Labs/poindexter#692):

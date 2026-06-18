@@ -178,9 +178,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             model=model,
             site_config=site_config,
             pool=pool,
-            # Reuse the orphaned cross_model_qa timeout setting (240s default).
+            # Writer-class full revision — same budget as the writer (600s).
+            # The old 240s default timed out under GPU thrash, skipping rescue.
             timeout_setting="content_router_qa_rewrite_timeout_seconds",
-            timeout_default=240.0,
+            timeout_default=600.0,
             task_id=task_id,
             phase="qa_rewrite",
         )

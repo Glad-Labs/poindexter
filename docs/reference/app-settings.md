@@ -323,7 +323,7 @@ The worker re-reads on every poll; no restart needed.
 | `content_router_contradiction_revise_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_timeout_seconds` | `120` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_qa_rewrite_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
-| `content_router_qa_rewrite_timeout_seconds` | `240` |  | Auto-seeded by services.settings_defaults (#379) |
+| `content_router_qa_rewrite_timeout_seconds` | `600` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_seo_title_max_tokens` | `4000` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_validator_warning_reject_threshold` | `5` |  |  |
 | `database_pool_max_size` | `20` |  | Max DB pool connections |
