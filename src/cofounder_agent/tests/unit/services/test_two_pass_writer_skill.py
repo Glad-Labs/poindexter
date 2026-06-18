@@ -166,3 +166,17 @@ def test_format_snippet_block_skips_empty_and_defaults_missing_source() -> None:
     assert "Kept." in block
     assert block.count("From ") == 1
     assert "None" not in block
+
+
+def test_generate_prompt_bans_footnotes_and_placeholder_urls() -> None:
+    """The #1680 re-run (task 2b0255ad) passed the gate but the writer, denied
+    its inline-label trick, switched to academic footnotes ([^1]) plus a bottom
+    reference block of placeholder/guessed URLs (e.g. "[markaicode.com/...]",
+    "Placeholder URLs derived from..."). Pin the explicit bans so un-URLed
+    (internal) facts go in plain prose and only real external URLs become inline
+    links (glad-labs-stack#1680 follow-up)."""
+    pm = UnifiedPromptManager()
+    g = pm.prompts["atoms.two_pass_writer.generate_with_context"]["template"].lower()
+    assert "footnote" in g          # bans [^1]-style footnote markers
+    assert "reference list" in g    # bans a bottom References/Sources section
+    assert "guessed" in g           # bans placeholder / guessed URLs

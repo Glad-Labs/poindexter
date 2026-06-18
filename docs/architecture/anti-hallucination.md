@@ -194,6 +194,20 @@ reproduce a background-note label". Both prompt directives are pinned by
 `test_two_pass_writer_skill.py::test_generate_prompt_carries_citation_and_antifabrication_directives`
 and the renderer by its `test_format_snippet_block_*` cases.
 
+The re-run of _that_ fix (task `2b0255ad`) cleared the fabrication veto and
+**passed the gate** (`awaiting_approval`, score 88 — the first canonical*blog
+post through QA in the thread), but the citation behaviour \_mutated* rather than
+resolved: denied the inline `[source/ref]` echo, the writer switched to academic
+footnotes (`[^1]`) plus a bottom reference block of guessed/placeholder URLs
+(`[markaicode.com/...]`, a literal "Placeholder URLs derived from text snippet
+domains" note). The fix is structural — the writer has internal facts with no
+URL and keeps trying to cite them — so the prompt now bans the leaky forms
+outright: no footnote markers, no "Sources/References/Footnotes/Further reading"
+section, no placeholder/guessed URLs. Un-URLed (internal) facts go in plain prose
+with no marker; the pipeline's `resolve_internal_link_placeholders` /
+`internal_link_coherence` stages add the real `/posts/<slug>` links afterward.
+Pinned by `test_generate_prompt_bans_footnotes_and_placeholder_urls`.
+
 #### The draft-presence gate: the writer must produce a non-empty draft
 
 The `qa.*` rails all guard `if not content: return {}` — so on an **empty

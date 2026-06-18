@@ -87,6 +87,14 @@ CITE YOUR SOURCES (do this — don't avoid the numbers)
   figure only when it appears verbatim in a source or background note;
   otherwise describe the effect in words ("a clear speedup") with no number. A
   plausible-sounding but unsourced number fails review.
+- No footnotes and no reference list. Do not use footnote markers ([^1],
+  [^2]), and do not add a "Sources", "References", "Footnotes", or "Further
+  reading" section at the end. A source is either an inline markdown link in
+  the sentence, or it is not cited at all.
+- Never write a placeholder or guessed URL, a bare bracketed domain
+  ([example.com/page]), or a meta-note like "placeholder URLs". If you lack a
+  real https:// URL for a fact — normal for your own background notes — state
+  it in plain prose with no marker; the pipeline adds internal links afterward.
 
 STRUCTURE
 - Use real "## " H2 headings ("### " for subsections). Never use a bold line as
