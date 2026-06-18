@@ -17,9 +17,10 @@ This atom:
 
 A ``loop``-flagged edge (qa_rewrite -> qa_programmatic) re-runs the whole QA
 block. The bound is the durable ``qa_rewrite_attempts`` counter: qa.aggregate
-only rescues while ``attempts < qa_rewrite_max_attempts`` (default 1), so the
+only rescues while ``attempts < qa_rewrite_max_attempts`` (default 2), so the
 cycle runs at most N times — even across a kill-and-resume, because the counter
-lives in the LangGraph postgres checkpoint.
+lives in the LangGraph postgres checkpoint. qa.aggregate keeps the best-scoring
+draft across passes, so a worse revision never replaces a better earlier draft.
 
 Degrade-to-reject: if the writer errors or returns empty, keep the prior
 content unchanged (omit the ``content`` key) and STILL increment the counter —

@@ -451,6 +451,17 @@ class PipelineState(TypedDict, total=False):
     # so it survives the graph_def adapter's last-value channel merge.
     qa_known_wrong_fact_only: bool
     qa_rewrite_attempts: int
+    # qa_best_content / qa_best_score (keep-best regression guard): the
+    # best-scoring draft body + its aggregate score seen so far across the QA
+    # rescue cycle. qa.aggregate updates these last-value channels on each
+    # rescuable-reject DEFER pass; on a terminal REJECT it restores the best
+    # body when the final rescue revision regressed below an earlier draft (a
+    # revision can amplify placeholders and drop the score 52 -> 35). Last-value
+    # channels so they survive qa.rewrite (which doesn't write them) and the
+    # graph_def adapter's state merge — undeclared keys are dropped on the
+    # graph_def path (same lesson as seo_keywords_list / research_context).
+    qa_best_content: str
+    qa_best_score: float
     # preview_token / preview_url (#563): the rendered-preview QA rail
     # (qa.vision) screenshots the post's /preview/{token} page, so it needs a
     # preview_url DURING the qa.* block — which runs BEFORE finalize_task. The

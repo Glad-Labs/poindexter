@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-06-18.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 846 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 847 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -44,7 +44,7 @@ The worker re-reads on every poll; no restart needed.
 - [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (324 keys)
+- [general](#general) (325 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (5 keys)
@@ -540,6 +540,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_relevance_no_topic_default` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_relevance_stuffing_hard_density` | `5.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_relevance_stuffing_soft_density` | `3.0` |  | Auto-seeded by services.settings_defaults (#379) |
+| `qa_rewrite_max_attempts` | `2` |  | QA rescue cycle: max bounded rewrite passes before a salvageable reject is hard-rejected (write->qa->revise->qa->revise). 0 disables; clamped [0,3]. Only soft critic vetoes + below-threshold scores are rescued; the cycle keeps the best-scoring draft across passes. |
 | `qa_seo_baseline` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_title_originality_enabled` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_title_similarity_threshold` | `0.6` |  | Auto-seeded by services.settings_defaults (#379) |

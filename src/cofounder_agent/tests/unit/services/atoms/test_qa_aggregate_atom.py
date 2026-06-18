@@ -481,7 +481,7 @@ class TestQaAggregateRescueDispatch:
     def _critic_reject_state(self, **extra):
         # ollama_critic (provider ollama) fails non-advisory, score below 70.
         state = {
-            "platform": FakePlatform(),  # default max_attempts -> 1 (rescue on)
+            "platform": FakePlatform(),  # default max_attempts -> 2 (rescue on)
             "task_id": "task-r",
             "content": "the body",
             "title": "T",
@@ -549,7 +549,9 @@ class TestQaAggregateRescueDispatch:
         assert "_halt" not in out
 
     async def test_exhausted_attempts_hard_rejects(self, monkeypatch):
-        # attempts already == max(1): no more rescue → hard reject + halt + persist.
+        # attempts already == max: no more rescue → hard reject + halt + persist.
+        # Pin max_attempts=1 so attempts=1 is exhausted regardless of the global
+        # default (which is now 2, #1692 follow-up).
         class _FakePipelineDB:
             def __init__(self, pool): pass
             async def upsert_version(self, task_id, fields): pass
@@ -557,6 +559,7 @@ class TestQaAggregateRescueDispatch:
         monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
         db = _DB2()
         state = self._critic_reject_state(
+            platform=FakePlatform(config={"qa_rewrite_max_attempts": "1"}),
             qa_rewrite_attempts=1, database_service=db, models_used_by_phase={},
         )
         out = await qa_aggregate.run(state)
@@ -604,3 +607,241 @@ class TestQaAggregateRescueDispatch:
         assert out["qa_final_verdict"] == "approve"
         assert out["_goto"] == ""
         assert "_halt" not in out
+
+
+@pytest.mark.unit
+class TestQaAggregateMaxAttemptsDefault:
+    """#1692 follow-up: the default qa_rewrite_max_attempts is now 2, so the
+    rescue cycle can do write -> qa -> revise -> qa -> revise before hard-reject.
+    Pins the new default via the no-explicit-config FakePlatform path."""
+
+    def _critic_reject_state(self, **extra):
+        state = {
+            "platform": FakePlatform(),  # no qa_rewrite_max_attempts -> default
+            "task_id": "task-ma",
+            "content": "the body",
+            "title": "T",
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak"},
+            ],
+        }
+        state.update(extra)
+        return state
+
+    async def test_default_allows_second_revision_pass(self):
+        # attempts=1 would have hard-rejected under the old default of 1; under
+        # the new default of 2 it still DEFERS for a second revision.
+        out = await qa_aggregate.run(self._critic_reject_state(qa_rewrite_attempts=1))
+        assert out["_goto"] == "qa_rewrite"
+        assert "_halt" not in out
+
+    async def test_default_exhausts_at_two(self, monkeypatch):
+        # attempts=2 == default max -> terminal hard reject (no third pass).
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        out = await qa_aggregate.run(self._critic_reject_state(
+            qa_rewrite_attempts=2, database_service=db, models_used_by_phase={},
+        ))
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        assert out["_goto"] == ""
+
+
+@pytest.mark.unit
+class TestQaAggregateKeepBest:
+    """Keep-best regression guard (#1692 follow-up): a rescue revision can score
+    LOWER than the draft it replaced (observed: placeholders amplified, critic
+    score 52 -> 35). qa.aggregate tracks the best-scoring body across the rescue
+    cycle in the qa_best_content / qa_best_score channels and, on a terminal
+    REJECT, retains the higher-scoring draft. On APPROVE the revision always
+    wins (it cleared the gate the earlier drafts failed)."""
+
+    async def test_defer_stashes_running_best_first_pass(self):
+        # First rescuable-reject defer: the current draft + its score become the
+        # running best carried forward for the next pass.
+        state = {
+            "platform": FakePlatform(),
+            "task_id": "task-kb1",
+            "content": "draft v0",
+            "title": "T",
+            "qa_rewrite_attempts": 0,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 50.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["_goto"] == "qa_rewrite"
+        assert out["qa_best_content"] == "draft v0"
+        assert out["qa_best_score"] == 50.0
+
+    async def test_defer_keeps_prior_higher_stash(self):
+        # Second defer: the current revision (40) scored BELOW the stashed
+        # earlier draft (55) -> the running best stays the earlier, higher draft.
+        state = {
+            "platform": FakePlatform(),
+            "task_id": "task-kb2",
+            "content": "draft v1 (worse)",
+            "title": "T",
+            "qa_rewrite_attempts": 1,            # 1 < default max 2 -> still defers
+            "qa_best_content": "draft v0 (better)",
+            "qa_best_score": 55.0,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 40.0,
+                 "provider": "ollama", "advisory": False, "feedback": "worse"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["_goto"] == "qa_rewrite"
+        assert out["qa_best_content"] == "draft v0 (better)"
+        assert out["qa_best_score"] == 55.0
+
+    async def test_defer_adopts_improved_current_as_best(self):
+        # Second defer where the revision (60) IMPROVED over the stash (52) but is
+        # still a reject -> the running best advances to the current draft.
+        state = {
+            "platform": FakePlatform(),
+            "task_id": "task-kb3",
+            "content": "draft v1 (better)",
+            "title": "T",
+            "qa_rewrite_attempts": 1,
+            "qa_best_content": "draft v0",
+            "qa_best_score": 52.0,
+            "qa_rail_reviews": [
+                # critic approves but weighted score 60 < 70 threshold -> reject.
+                {"reviewer": "ollama_critic", "approved": True, "score": 60.0,
+                 "provider": "ollama", "advisory": False, "feedback": "closer"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["_goto"] == "qa_rewrite"
+        assert out["qa_best_content"] == "draft v1 (better)"
+        assert out["qa_best_score"] == 60.0
+
+    async def test_terminal_reject_restores_higher_scoring_earlier_draft(self, monkeypatch):
+        # The exhausting revision (35) regressed below the stashed earlier draft
+        # (52) -> keep-best restores the earlier body + score for persistence.
+        captured = {}
+
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields):
+                captured["version"] = fields
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        state = {
+            "platform": FakePlatform(config={"qa_rewrite_max_attempts": "1"}),
+            "task_id": "task-kb4",
+            "content": "regressed revision body",      # the worse final revision
+            "title": "T",
+            "models_used_by_phase": {},
+            "database_service": db,
+            "qa_rewrite_attempts": 1,                  # == max -> terminal
+            "qa_best_content": "original better body",
+            "qa_best_score": 52.0,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 35.0,
+                 "provider": "ollama", "advisory": False, "feedback": "now worse"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        # Higher-scoring earlier draft retained — not the regression.
+        assert out["content"] == "original better body"
+        assert out["qa_final_score"] == 52.0
+        assert out["quality_score"] == 52.0
+        # ...and that is what lands in pipeline_versions + pipeline_tasks.
+        assert captured["version"]["content"] == "original better body"
+        assert db.update_task_calls[0][1]["quality_score"] == 52.0
+
+    async def test_terminal_reject_keeps_improved_revision(self, monkeypatch):
+        # The final revision (60) beat the stash (52) but is still below the 70
+        # threshold -> reject, and the improved revision is kept (no restore).
+        captured = {}
+
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields):
+                captured["version"] = fields
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        state = {
+            "platform": FakePlatform(config={"qa_rewrite_max_attempts": "1"}),
+            "task_id": "task-kb5",
+            "content": "improved revision body",
+            "title": "T",
+            "models_used_by_phase": {},
+            "database_service": db,
+            "qa_rewrite_attempts": 1,
+            "qa_best_content": "older worse body",
+            "qa_best_score": 52.0,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 60.0,
+                 "provider": "ollama", "advisory": False, "feedback": "better but low"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        # No restore: the higher-scoring current revision stays.
+        assert "content" not in out
+        assert out["qa_final_score"] == 60.0
+        assert captured["version"]["content"] == "improved revision body"
+
+    async def test_approve_never_restores_vetoed_higher_scoring_draft(self):
+        # The pre-rescue draft scored 90 but was critic-VETOED (rescuable). The
+        # revision scores 75 and the critic now approves -> APPROVE. The approved
+        # (lower-scoring) body must win; a vetoed draft is never published just
+        # because its weighted score was higher.
+        state = {
+            "platform": FakePlatform(),
+            "task_id": "task-kb6",
+            "content": "approved revision body",
+            "qa_rewrite_attempts": 1,
+            "qa_best_content": "vetoed original body",
+            "qa_best_score": 90.0,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 75.0,
+                 "provider": "ollama", "advisory": False, "feedback": "good now"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "approve"
+        assert "_halt" not in out
+        assert "content" not in out          # revision body left untouched in state
+        assert out["quality_score"] == 75.0  # not the vetoed draft's 90
+
+    async def test_first_pass_hard_reject_does_not_restore(self, monkeypatch):
+        # A non-rescuable first-pass reject (no prior stash) must behave exactly
+        # as before keep-best: persist the current body, no spurious content key.
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        state = {
+            "platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
+            "task_id": "task-kb7",
+            "content": "the only body",
+            "title": "T",
+            "models_used_by_phase": {},
+            "database_service": db,
+            "qa_rail_reviews": [
+                {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+                 "provider": "programmatic", "advisory": False, "feedback": "fake_person"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["_halt"] is True
+        assert "content" not in out
+        assert db.update_task_calls[0][1]["status"] == "rejected"

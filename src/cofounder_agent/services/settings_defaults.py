@@ -315,9 +315,13 @@ DEFAULTS: dict[str, str] = {
     'qa_web_factcheck_min_term_len': '2',
     'qa_web_factcheck_max_claims': '3',
     # QA rescue cycle: max bounded rewrite passes before a salvageable reject is
-    # hard-rejected. 0 disables; clamped [0,3]. Fabrication/gate/missing_required
-    # vetoes are never rescued — only soft critic vetoes + below-threshold scores.
-    'qa_rewrite_max_attempts': '1',
+    # hard-rejected. Default 2 = write -> qa -> revise -> qa -> revise (the
+    # one-shot default was 0-for-4 at saving a post). 0 disables; clamped [0,3].
+    # Fabrication/gate/missing_required vetoes are never rescued — only soft
+    # critic vetoes + below-threshold scores. The cycle keeps the best-scoring
+    # draft across passes (qa.aggregate keep-best guard), so a worse revision
+    # never replaces a better earlier draft.
+    'qa_rewrite_max_attempts': '2',
 
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',

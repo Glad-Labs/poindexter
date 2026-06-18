@@ -61,9 +61,11 @@ def _weight(config: Any, key: str, default: float) -> float:
         return default
 
 
-def _max_attempts(config: Any, default: int = 1) -> int:
+def _max_attempts(config: Any, default: int = 2) -> int:
     """Read qa_rewrite_max_attempts (clamped to [0,3]). 0 disables the rescue
-    cycle; None-tolerant for the no-platform path (returns the default)."""
+    cycle; None-tolerant for the no-platform path (returns the default). The
+    default is 2 (write -> qa -> revise -> qa -> revise) — matches the seeded
+    app_settings default; operators tune via qa_rewrite_max_attempts."""
     if config is None:
         return default
     try:
@@ -152,13 +154,31 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         early = float(state.get("quality_score") or 0.0)
     except (TypeError, ValueError):
         early = 0.0
-    promoted = max(early, float(final_score))
+
+    # --- Keep-best regression guard: running best across the rescue cycle -----
+    # A rescue revision can make the draft WORSE (observed: a revision amplified
+    # placeholders and dropped the score 52 -> 35). Track the best-scoring body +
+    # its aggregate score seen so far in two durable last-value channels
+    # (qa_best_content / qa_best_score). On a rescuable-reject DEFER we carry the
+    # running best forward; on a terminal REJECT we restore the best body if the
+    # final revision regressed below an earlier draft, so the human reviewer +
+    # learning signal keep the least-bad draft. On APPROVE we never restore — the
+    # revision cleared the gate the pre-rescue drafts failed, so a vetoed
+    # pre-rescue draft with a higher *weighted* score must never be kept.
+    current_content = str(state.get("content") or "")
+    prev_best_score = state.get("qa_best_score")
+    prev_best_content = state.get("qa_best_content")
+    if prev_best_score is None or float(final_score) >= float(prev_best_score):
+        best_content, best_score = current_content, float(final_score)
+    else:
+        best_content, best_score = str(prev_best_content or ""), float(prev_best_score)
 
     # --- QA rescue cycle dispatch (deferred reject) ---------------------------
     # A rescuable reject (soft critic veto, or below-threshold score with no
-    # hard veto — never fabrication/gate/missing_required) gets ONE revision
-    # pass before it is persisted. Defer to qa.rewrite via _goto while the
-    # durable attempt counter is under budget. The branch router
+    # hard veto — never fabrication/gate/missing_required) gets up to
+    # qa_rewrite_max_attempts revision passes before it is persisted. Defer to
+    # qa.rewrite via _goto while the durable attempt counter is under budget. The
+    # branch router
     # (build_graph_from_spec._branch_router) routes _goto=="qa_rewrite" to the
     # rewrite node; qa.rewrite increments qa_rewrite_attempts and resets the
     # review channel, then the loop edge re-runs the QA block.
@@ -201,12 +221,35 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "qa_final_verdict": result["qa_final_verdict"],
             "qa_rewrite_attempts": attempts,
             "vetoed_by": result.get("vetoed_by", []),
+            # Keep-best: carry the running best body+score forward so a later
+            # terminal reject can restore it if every revision regressed.
+            "qa_best_content": best_content,
+            "qa_best_score": best_score,
             "_goto": "qa_rewrite",
         }
     # --- end rescue dispatch --------------------------------------------------
 
+    # Keep-best (terminal): on a REJECT, fall back to the higher-scoring earlier
+    # draft when the final rescue revision regressed below it. No-op on approve
+    # (the approved revision always wins) and on a first-pass reject with no
+    # prior stash (best_score == final_score), so non-rescued paths are unchanged.
+    kept_content = current_content
+    kept_score = float(final_score)
+    kept_best_applied = False
+    if not approved and best_content and best_score > float(final_score):
+        kept_content = best_content
+        kept_score = best_score
+        kept_best_applied = True
+        logger.info(
+            "[qa.aggregate] keep-best: final rescue revision (%.2f) scored below "
+            "an earlier draft (%.2f) for task=%s — retaining the higher-scoring body",
+            float(final_score), best_score, str(state.get("task_id") or "?")[:8],
+        )
+
+    promoted = max(early, kept_score)
+
     out: dict[str, Any] = {
-        "qa_final_score": final_score,
+        "qa_final_score": kept_score,
         "qa_final_verdict": result["qa_final_verdict"],
         "quality_score": promoted,
         # qa_reviews uses an operator.add reducer; it's empty before this node
@@ -223,6 +266,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # Surface veto reasons for callers and tests; empty list on approve.
         "vetoed_by": result.get("vetoed_by", []),
     }
+    # Only override the body channel when keep-best actually restored an earlier
+    # draft — leaves the approve / normal-reject state byte-identical to before.
+    if kept_best_applied:
+        out["content"] = kept_content
 
     if not approved:
         from modules.content.atoms._qa_persist import (
@@ -230,19 +277,29 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             build_reject_reason,
             persist_qa_reject,
         )
-        reason = build_reject_reason(reviews, result["vetoed_by"], float(final_score))
+        reason = build_reject_reason(reviews, result["vetoed_by"], kept_score)
+        qa_feedback = build_qa_feedback(reviews, kept_score, approved=False)
+        if kept_best_applied:
+            # The body is an earlier draft but the per-rail breakdown is from the
+            # final revision — note the swap so the operator record stays honest.
+            qa_feedback = (
+                f"[keep-best] Retained an earlier draft (score {kept_score:.0f}) "
+                f"that outscored the final rescue revision (score "
+                f"{float(final_score):.0f}); the per-rail breakdown below is from "
+                f"the final revision.\n" + qa_feedback
+            )
         await persist_qa_reject(
             state.get("database_service"),
             task_id=str(state.get("task_id") or ""),
             reason=reason,
-            final_score=float(final_score),
-            content=str(state.get("content") or ""),
+            final_score=kept_score,
+            content=kept_content,
             title=str(state.get("title") or state.get("topic") or ""),
-            qa_feedback=build_qa_feedback(reviews, float(final_score), approved=False),
+            qa_feedback=qa_feedback,
             models_used_by_phase=state.get("models_used_by_phase") or {},
         )
         out["_halt"] = True
-        out["_halt_reason"] = f"qa.aggregate: reject (score={final_score}, {reason[:120]})"
+        out["_halt_reason"] = f"qa.aggregate: reject (score={kept_score}, {reason[:120]})"
         # Belt-and-suspenders: the DB write above is load-bearing (status is
         # not a PipelineState channel), but set it in state too in case a
         # caller reads final_state.
