@@ -180,3 +180,18 @@ def test_generate_prompt_bans_footnotes_and_placeholder_urls() -> None:
     assert "footnote" in g          # bans [^1]-style footnote markers
     assert "reference list" in g    # bans a bottom References/Sources section
     assert "guessed" in g           # bans placeholder / guessed URLs
+
+
+def test_generate_prompt_bans_bracketed_placeholders() -> None:
+    """Post-#1685 re-runs showed the writer substituting GENERIC bracketed
+    placeholders for grounded specifics — a "RTX 5090 vs RTX 4090" draft that
+    never named either GPU, writing [High-End Consumer GPU] / [Enterprise
+    Accelerator] instead (anti-fabrication discipline over-firing). Pin the
+    BE SPECIFIC directives that license naming grounded entities and forbid
+    fill-in-the-blank placeholders, so a later edit can't silently reopen it
+    (glad-labs-stack writer-quality follow-up)."""
+    pm = UnifiedPromptManager()
+    g = pm.prompts["atoms.two_pass_writer.generate_with_context"]["template"].lower()
+    assert "be specific" in g          # the BE SPECIFIC — USE REAL NAMES block
+    assert "placeholder" in g          # forbids bracketed fill-in-the-blank tokens
+    assert "name the actual" in g      # affirmatively licenses naming grounded entities

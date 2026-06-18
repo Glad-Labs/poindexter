@@ -76,14 +76,21 @@ _REVIEW_RESET = [{"__reset__": True}]
 _REVISE_PROMPT_KEY = "atoms.qa_rewrite.revise_prompt"
 
 _REVISE_PROMPT_FALLBACK = """\
-You are revising a draft article that an editorial critic flagged for specific, \
-fixable issues. Apply ONLY the fixes the critic asked for. Preserve the \
-article's structure, headings, length, links, citations, and voice. Do not add \
-new sections or remove existing ones unless a fix requires it. Return the \
-COMPLETE revised article in Markdown — body only, no preamble, no commentary, \
-no JSON envelope.
+You are revising a draft article that review flagged for specific, fixable \
+issues. Apply the fixes listed below. Preserve the article's structure, \
+headings, length, links, citations, and voice — do not add new sections or \
+remove existing ones unless a fix requires it.
 
-CRITIC FEEDBACK TO ADDRESS:
+Use real names and numbers, never placeholders. Replace every bracketed \
+stand-in (e.g. [High-End Consumer GPU], [Product Name], [source], [TBD]) with \
+the actual name or figure from the draft's topic and context — if the title \
+names a product, name it. A bracketed placeholder is always worse than naming \
+the thing; leave no fill-in-the-blank token in the result.
+
+Return the COMPLETE revised article in Markdown — body only, no preamble, no \
+commentary, no JSON envelope.
+
+FIXES TO ADDRESS:
 {feedback}
 
 ORIGINAL DRAFT:
@@ -108,19 +115,32 @@ def _resolve_revise_prompt(*, content: str, feedback: str) -> str:
         return _REVISE_PROMPT_FALLBACK.format(content=content, feedback=feedback)
 
 
-def _failing_critic_feedback(reviews: list[dict[str, Any]]) -> str:
-    """Collect the actionable feedback: non-advisory FAILING reviews only.
-    Advisory rails and passing reviews carry no veto to fix."""
-    notes = [
-        str(r.get("feedback") or "").strip()
-        for r in reviews
-        if not r.get("approved")
-        and not r.get("advisory")
-        and str(r.get("feedback") or "").strip()
+def _failing_review_feedback(reviews: list[dict[str, Any]]) -> str:
+    """Collect actionable feedback from ALL failing reviews.
+
+    Blocking (non-advisory) vetoes come first as ``- ``; advisory rails that
+    also FAILED (topic_delivery, deepeval_g_eval, ragas …) follow as
+    ``- (advisory) `` so the reviser still hears them — they frequently carry
+    the most specific fix ("name the product", "add the missing benchmark")
+    even though they don't veto the gate. Previously advisory feedback was
+    dropped, so the reviser was blind to the very issues most worth fixing.
+    Passing reviews are skipped (nothing to fix)."""
+    def _note(r: dict[str, Any]) -> str:
+        return str(r.get("feedback") or "").strip()
+
+    blocking = [
+        _note(r) for r in reviews
+        if not r.get("approved") and not r.get("advisory") and _note(r)
     ]
-    if not notes:
+    advisory = [
+        _note(r) for r in reviews
+        if not r.get("approved") and r.get("advisory") and _note(r)
+    ]
+    if not blocking and not advisory:
         return "- (no specific feedback; tighten weak claims and improve clarity)"
-    return "\n".join(f"- {n}" for n in notes)
+    return "\n".join(
+        [f"- {n}" for n in blocking] + [f"- (advisory) {n}" for n in advisory]
+    )
 
 
 def _emit_empty_finding(model: str) -> None:
@@ -164,7 +184,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     reviews = state.get("qa_rail_reviews") or []
-    feedback = _failing_critic_feedback(reviews)
+    feedback = _failing_review_feedback(reviews)
     pool = getattr(state.get("database_service"), "pool", None)
     task_id = state.get("task_id")
     # model=None chains pipeline_writer_model → cost_tier.standard.model.
