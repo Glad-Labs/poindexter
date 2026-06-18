@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-15.**  
+> **Auto-generated from live `app_settings` table on 2026-06-18.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 856 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 846 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -35,7 +35,7 @@ The worker re-reads on every poll; no restart needed.
 - [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
 - [cloudflare](#cloudflare) (2 keys)
-- [content](#content) (20 keys)
+- [content](#content) (19 keys)
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
 - [cost](#cost) (8 keys)
@@ -44,10 +44,10 @@ The worker re-reads on every poll; no restart needed.
 - [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (8 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (325 keys)
+- [general](#general) (324 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
-- [image](#image) (6 keys)
+- [image](#image) (5 keys)
 - [infrastructure](#infrastructure) (1 key)
 - [integration](#integration) (2 keys)
 - [integrations](#integrations) (9 keys)
@@ -57,8 +57,8 @@ The worker re-reads on every poll; no restart needed.
 - [memory](#memory) (4 keys)
 - [memory_alerts](#memory-alerts) (4 keys)
 - [memory_compression](#memory-compression) (6 keys)
-- [model_roles](#model-roles) (10 keys)
-- [models](#models) (6 keys)
+- [model_roles](#model-roles) (5 keys)
+- [models](#models) (5 keys)
 - [monitoring](#monitoring) (45 keys)
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
@@ -67,7 +67,7 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (37 keys)
+- [pipeline](#pipeline) (36 keys)
 - [plugins](#plugins) (47 keys)
 - [plugin_telemetry](#plugin-telemetry) (81 keys)
 - [podcast](#podcast) (2 keys)
@@ -212,7 +212,6 @@ The worker re-reads on every poll; no restart needed.
 | `content_target_word_count` | `1500` |  | Target word count for blog posts |
 | `default_ollama_model` | `auto` |  | Default Ollama model for LLM calls. "auto" → OllamaClient picks the first available pulled model. Override with a spe... |
 | `local_llm_api_url` | `http://host.docker.internal:11434` |  | Ollama API base URL for local LLM calls (e.g. http://localhost:11434). Empty value means 'Ollama not configured' — ca... |
-| `local_llm_model_name` | `auto` |  | Ollama model fallback used by agents/content_agent/config when no per-task model is configured. 'auto' lets OllamaCli... |
 | `title_originality_cache_ttl_hours` | `24` |  | GH-87: TTL (hours) for the in-process cache that dedupes repeated DuckDuckGo queries for the same title. DDG rate-lim... |
 | `title_originality_external_check_enabled` | `true` |  | GH-87: enable DuckDuckGo HTML search for the exact post title at approval time. Verbatim external matches subtract ti... |
 | `title_originality_external_penalty` | `-50` |  | GH-87: points subtracted from the QA score when the post title appears verbatim in external search results. Stored as... |
@@ -340,7 +339,6 @@ The worker re-reads on every poll; no restart needed.
 | `devto_top_days` | `7` |  |  |
 | `disable_auth_for_dev` | `true` |  | Disable auth in development |
 | `docker_port_forward_watch_list` | `[{"container": "poindexter-pyroscope"...` |  |  |
-| `embedding_model` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `embedding_retention_days.audit` | `90` |  | Days to keep audit_log embeddings before prune_stale_embeddings drops them. 90d covers the typical operator post-mort... |
 | `embedding_retention_days.brain` | `365` |  | Days to keep brain_knowledge embeddings before prune. Brain memory is designed to compound; long horizon by design. |
 | `embedding_retention_days.claude_sessions` | `21` |  | Days to keep Claude Code session embeddings before prune_stale_embeddings drops them. 21d balances semantic-search re... |
@@ -556,7 +554,7 @@ The worker re-reads on every poll; no restart needed.
 | `rag_rerank_enabled` | `true` |  |  |
 | `rag_rerank_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
-| `rag_source_filter` | `posts` |  | CSV of embeddings.source_table values the writer's research RAG may draw from. Content-only by default; empty means "all tables" and leaks claude_sessions/brain/audit ops-logs into drafts. |
+| `rag_source_filter` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `resend_audience_id` | `33b1580d-cfda-4428-9890-d52f443b023b` |  |  |
 | `restore_test_backup_dir` | `/host-backups/auto` |  |  |
 | `restore_test_critical_tables` | `posts,app_settings,audit_log` |  |  |
@@ -662,7 +660,6 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `enable_featured_image` | `true` |  | Generate/search featured images for posts |
-| `image_generation_model` | `sdxl_lightning` |  | AI image generation model (sdxl_base, sdxl_lightning, flux_schnell) |
 | `image_negative_prompt` | `text, words, letters, numbers, waterm...` |  | Negative prompt for all SDXL generations |
 | `image_primary_source` | `ai_generation` |  | Primary image source: pexels or ai_generation |
 | `image_style_default` | `professional digital art, abstract te...` |  | Default SDXL style for uncategorized posts |
@@ -762,12 +759,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft SDXL prompts for inline images in blog posts |
-| `model_role_critic` | `ollama/gemma4:31b` |  | Best at: quality scoring, detecting issues, structured JSON output. Shootout score: 96 standalone. |
 | `model_role_factchecker` | `ollama/gemma4:31b` |  | Best at: factual accuracy, catching hallucinated claims, conservative reviewer. Different training data from writer. |
-| `model_role_image_prompt` | `ollama/qwen3:8b` |  | Best at: generating SDXL prompts, visual descriptions. Fast. |
-| `model_role_seo` | `ollama/qwen3:8b` |  | Best at: concise output, title generation, keyword extraction. Fast for metadata tasks. |
-| `model_role_summarizer` | `ollama/phi3:latest` |  | Best at: fast summaries, social media copy, short-form content. Lightweight. |
-| `model_role_writer` | `ollama/glm-4.7-5090:latest` |  | Best at: long-form content, structured output, follows instructions. Shootout score: 96 in hybrid config. |
 | `podcast_script_model` | `ollama/gemma4:31b` |  | Ollama model used to generate podcast scripts from article content |
 | `qa_fallback_critic_model` | `ollama/gemma4:31b` |  | Fallback critic model used when pipeline_critic_model returns empty or errors |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |
@@ -780,7 +772,6 @@ The worker re-reads on every poll; no restart needed.
 | `cloud_api_mode` | `emergency_only` |  | Cloud API usage mode: disabled, emergency_only, fallback, always |
 | `pipeline_critic_model` | `ollama/glm-4.7-5090:latest` |  | Model for QA/content review |
 | `pipeline_fallback_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Fallback model when primary is unavailable |
-| `pipeline_seo_model` | `ollama/qwen3:8b` |  | Model for SEO title/description generation |
 | `pipeline_social_model` | `ollama/qwen3:8b` |  | Model for social media post generation |
 
 ## monitoring
@@ -923,7 +914,6 @@ The worker re-reads on every poll; no restart needed.
 | `min_curation_score` | `75` |  | Minimum QA score to surface for human review (below this = auto-reject) |
 | `pipeline_architect_model` | `ollama/glm-4.7-5090:latest` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
-| `pipeline_factcheck_model` | `programmatic` |  | Model for fact-checking -- programmatic or LLM provider |
 | `pipeline_gate_draft_gate` | `off` |  | HITL approval gate 'draft_gate': on/off. When on, the canonical_blog pipeline pauses after the writer stage via LangG... |
 | `pipeline_refinement_model` | `ollama/glm-4.7-5090:latest` |  | Model for content refinement (stage 5) |
 | `pipeline_research_model` | `ollama/glm-4.7-5090:latest` |  | Model for research stage (stage 1) |
@@ -1135,12 +1125,11 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `content_validator_warning_qa_penalty` | `3` |  | Points subtracted from final QA score per validator warning (GH-91) |
-| `qa_allow_first_person_niches` | `dev_diary` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per Matt's v... |
+| `qa_allow_first_person_niches` | `dev_diary,glad-labs` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per Matt's v... |
 | `qa_critical_dimension_floor` | `50` |  | Minimum score on any single quality dimension |
 | `qa_critic_weight` | `0.6` |  | Weight for LLM critic in final score |
 | `qa_final_score_threshold` | `80` |  | Multi-model QA final approval score threshold |
 | `qa_overall_score_threshold` | `80` |  | Minimum overall quality score to pass QA (0-100) |
-| `qa_validator_warning_penalty` | `5.0` |  | Points the programmatic validator shaves per non-critical warning when scoring an otherwise-clean draft (was a hard-coded 10). |
 | `qa_validator_weight` | `0.4` |  | Weight for programmatic validator in final score |
 
 ## rag
@@ -1179,7 +1168,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `mastodon_instance_url` | `` |  | GH-36: Full Mastodon instance URL, e.g. 'https://mastodon.social'. Empty = Mastodon distribution skipped. |
-| `social_distribution_platforms` | `bluesky` |  | GH-36: Comma-separated list of platforms social_poster should push to after a successful publish. Valid values: 'blue... |
+| `social_distribution_platforms` | `` |  | GH-36: Comma-separated list of platforms social_poster should push to after a successful publish. Valid values: 'mast... |
 | `social_linkedin_url` | `*(per-operator)*` | per-operator | LinkedIn profile URL |
 | `social_x_handle` | `*(per-operator)*` | per-operator | X/Twitter handle |
 | `social_x_url` | `*(per-operator)*` | per-operator | X/Twitter profile URL |
