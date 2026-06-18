@@ -1,46 +1,41 @@
 """
-Retention janitor — periodic cleanup of unbounded high-churn tables.
+Retention janitor — legacy background loop, now a noop executor.
 
-Part of internal tracker Phase 4.1. Several tables grow without bound and were
-flagged in the schema audit as unbounded:
+## Status: consolidated into retention_policies (Glad-Labs/poindexter#699)
 
-  - gpu_metrics         — per-second GPU snapshots
-  - audit_log           — pipeline event log
-  - cost_logs           — LLM/API cost accounting
-  - routing_outcomes    — feedback-loop routing signal
-  - model_performance   — feedback-loop model signal
-  - webhook_events      — incoming webhook trail
-  - task_status_history — task state transitions
+All per-table retention windows were migrated into ``retention_policies``
+rows (migration ``20260617_200000_seed_retention_policies_unified.py``) and
+are now executed by ``RunRetentionJob`` via ``retention_runner.run_all()``
+every 6 hours. The ``_JANITOR_TARGETS`` list is intentionally empty — the
+janitor's ``run_once`` is a safe noop that returns ``{}`` immediately.
 
-Each table has an app_settings retention key:
-    retention_days__<table_name>   (integer; 0 or missing ⇒ skip)
+The background loop (``run_forever``) is still started by
+``startup_manager`` (harmless: it sleeps and does nothing), and the
+``AppContainer.retention_janitor`` cached property is preserved for
+callers that hold a reference. Neither will be removed until a future
+cleanup pass removes the startup wiring.
 
-The janitor runs once per ``retention_janitor_interval_hours`` (default 24)
-and deletes rows older than the configured window.
+## Why two systems existed
 
-Rules:
-  - embeddings is NEVER pruned — that's the knowledge base.
-  - Gitea's action_* / commit_* / issue / etc. tables are Gitea's, not ours.
-  - cost_logs is truncated more gently (financial record; default 365).
+The original janitor (Phase 4.1) pre-dated the declarative
+``retention_policies`` / ``retention_runner`` framework. Both ran
+concurrently with different intervals and conflicting windows on the same
+tables (e.g. ``audit_log`` was 90d summarize-first in the declarative
+pipeline vs. 180d hard-delete in the janitor). That race could destroy
+rows the declarative pipeline intended to summarize first.
 
-Usage:
+## Usage
+
     from services.retention_janitor import RetentionJanitor
 
     janitor = RetentionJanitor(site_config=site_config)
-    await janitor.run_once(pool)         # single pass
-    await janitor.run_forever(pool)      # background loop
-
-The composition root (``services/container.py::AppContainer``) wires a
-``RetentionJanitor`` via ``container.retention_janitor``. Callers that are
-not yet migrated build one per-call from their own lifespan-bound
-``site_config`` (caller-bridge pattern).
+    await janitor.run_once(pool)    # returns {} — noop
+    await janitor.run_forever(pool) # sleeps indefinitely, never pruning
 
 2026-05-29 — SiteConfig DI migration (#272 leaf batch 3) converted this
-module from the module-level ``site_config`` singleton + ``set_site_config``
-setter + free functions (``run_once`` / ``run_forever``) to a
-``RetentionJanitor`` class with constructor DI. The free functions became
-instance methods with identical signatures (minus the now-redundant
-``site_config=`` kwarg, which is held on ``self._site_config``).
+module to a ``RetentionJanitor`` class with constructor DI.
+2026-06-17 — #699 emptied ``_JANITOR_TARGETS``; all tables moved to the
+declarative pipeline.
 """
 
 from __future__ import annotations
@@ -55,29 +50,11 @@ from services.site_config import SiteConfig
 logger = get_logger(__name__)
 
 
-# Tables the janitor is allowed to prune. Tuples of
-# (table, timestamp_column, default_retention_days).
-#
-# The default values are conservative — operators can lower them via
-# app_settings once they're comfortable with the history they actually
-# reach for.
-_JANITOR_TARGETS: list[tuple[str, str, int]] = [
-    ("gpu_metrics", "timestamp", 90),
-    ("audit_log", "timestamp", 180),
-    ("cost_logs", "created_at", 365),
-    ("routing_outcomes", "created_at", 365),
-    ("model_performance", "created_at", 365),
-    ("webhook_events", "created_at", 90),
-    ("task_status_history", "created_at", 180),
-    ("page_views", "created_at", 180),
-    # Brain decision trails — long retention since these feed the
-    # "what did Claude/the agent decide before" semantic search path.
-    ("brain_decisions", "created_at", 365),
-    ("decision_log", "created_at", 365),
-    # post_performance snapshots grow ~N_posts per day; 180d is plenty
-    # of history for week-over-week comparisons without bloating forever.
-    ("post_performance", "measured_at", 180),
-]
+# Intentionally empty — all tables migrated to retention_policies rows
+# (migration 20260617_200000_seed_retention_policies_unified.py) and
+# executed by RunRetentionJob via retention_runner.run_all() every 6h.
+# Keeping the symbol avoids breaking callers that import it (e.g. tests).
+_JANITOR_TARGETS: list[tuple[str, str, int]] = []
 
 
 class RetentionJanitor:

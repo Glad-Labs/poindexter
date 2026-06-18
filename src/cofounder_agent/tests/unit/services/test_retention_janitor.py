@@ -8,6 +8,12 @@ with constructor DI. The class exposes:
 - ``run_once(pool)`` — single pruning pass over every janitor target
 - ``run_forever(pool)`` — background loop (interval from SiteConfig)
 
+2026-06-17 (#699) — ``_JANITOR_TARGETS`` emptied; all tables moved to the
+declarative ``retention_policies`` pipeline. Tests updated accordingly:
+``run_once`` now returns ``{}`` (noop), ``_prune_one`` and
+``_retention_days_for`` still exist for callers that reference them, but
+are exercised as standalone helpers rather than as part of a full run cycle.
+
 Tests construct ``RetentionJanitor(site_config=SiteConfig(initial_config=...))``
 directly with a real (empty/seeded) SiteConfig — zero shared module state.
 A mock asyncpg pool stands in for the DB so no Postgres is required.
@@ -118,32 +124,21 @@ class TestPruneOne:
 
 class TestRunOnce:
     @pytest.mark.asyncio
-    async def test_prunes_every_target_and_returns_counts(self):
+    async def test_run_once_is_noop_returns_empty_dict(self):
+        # _JANITOR_TARGETS was emptied in #699 — all tables moved to
+        # retention_policies; run_once is now a safe noop.
         janitor = RetentionJanitor(site_config=SiteConfig())
         pool, _conn = _mock_pool(execute_return="DELETE 3")
         results = await janitor.run_once(pool)
-        # Every whitelisted target is represented in the result map.
-        assert set(results) == {t[0] for t in _JANITOR_TARGETS}
-        # Each non-skipped table reported 3 deletions.
-        assert all(v == 3 for v in results.values())
+        assert results == {}
+        # Pool should not have been touched since the loop had nothing to do.
+        _conn.execute.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_single_table_failure_does_not_tank_cycle(self):
-        janitor = RetentionJanitor(site_config=SiteConfig())
-        conn = MagicMock()
-        # First execute raises, the rest succeed.
-        conn.execute = AsyncMock(side_effect=[RuntimeError("boom")] + ["DELETE 1"] * 50)
-        acm = MagicMock()
-        acm.__aenter__ = AsyncMock(return_value=conn)
-        acm.__aexit__ = AsyncMock(return_value=False)
-        pool = MagicMock()
-        pool.acquire = MagicMock(return_value=acm)
-
-        results = await janitor.run_once(pool)
-        # The failing table is tagged -1; the cycle still covered the rest.
-        assert any(v == -1 for v in results.values())
-        assert any(v == 1 for v in results.values())
-        assert set(results) == {t[0] for t in _JANITOR_TARGETS}
+    async def test_run_once_targets_list_is_empty(self):
+        # Verify the emptied list drives the noop behaviour (not just a
+        # coincidence of the pool mock).
+        assert _JANITOR_TARGETS == []
 
 
 # ---------------------------------------------------------------------------

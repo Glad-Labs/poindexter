@@ -27,7 +27,7 @@ Once per cycle, for every published post:
 The view counts are per SLUG (not per post_id) because page_views only
 stores the request path — we join slug → posts.id so the FK is valid.
 Snapshots accumulate over time, so the table doubles as the history.
-Retention is bounded by the retention_janitor (defaults to 180d).
+Retention is bounded by the ``post_performance`` retention_policies row (defaults to 180d).
 
 ## Config (``plugin.job.rollup_post_performance``)
 
