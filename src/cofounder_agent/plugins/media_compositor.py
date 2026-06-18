@@ -77,6 +77,13 @@ class CompositionRequest:
     dataclass instead of taking a long kwargs list."""
 
     scenes: list[CompositionScene]
+    # Full-length narration laid over the WHOLE concatenated video at full
+    # volume (the soundtrack/ambient, if any, is mixed UNDER it). This is the
+    # correct home for voiceover that spans every scene — the per-scene
+    # ``CompositionScene.narration_path`` only covers its own scene's duration,
+    # so binding a multi-scene narration to scene 0 truncated it at the first
+    # transition (#media-render-fixes). ``None`` = no full-length narration.
+    narration_track_path: str | None = None
     soundtrack_path: str | None = None
     caption_track_path: str | None = None
     output_path: str = ""

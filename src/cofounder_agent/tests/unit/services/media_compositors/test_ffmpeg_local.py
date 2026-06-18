@@ -31,6 +31,7 @@ from services.media_compositors.ffmpeg_local import (
     _build_concat_cmd,
     _build_ken_burns_filter,
     _build_normalize_cmd,
+    _build_soundtrack_mix_cmd,
     _is_still_image,
     _parse_probe,
     _validate_inputs,
@@ -210,6 +211,15 @@ class TestValidateInputs:
         err = _validate_inputs(request)
         assert err is not None
         assert "narration_path" in err
+
+    def test_missing_narration_track_rejected(self, tmp_path):
+        request = _make_request(
+            tmp_path,
+            narration_track_path=str(tmp_path / "missing-narr.mp3"),
+        )
+        err = _validate_inputs(request)
+        assert err is not None
+        assert "narration_track_path" in err
 
     def test_missing_soundtrack_rejected(self, tmp_path):
         request = _make_request(
@@ -510,6 +520,73 @@ class TestBuildConcatCmd:
 
 
 # ---------------------------------------------------------------------------
+# _build_soundtrack_mix_cmd  (#media-render-fixes: narration overlay)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSoundtrackMixCmd:
+    def _kwargs(self, **overrides):
+        base = dict(
+            binary="/usr/bin/ffmpeg",
+            video_in="/tmp/concat.mp4",
+            soundtrack_path="/tmp/narration.mp3",
+            soundtrack_dbfs=0.0,
+            encoder="libx264",
+            preset="medium",
+            crf=20,
+            audio_bitrate="192k",
+            loglevel="error",
+            hwaccel="",
+        )
+        base.update(overrides)
+        return base
+
+    def test_two_inputs_video_then_audio(self):
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs())
+        # First -i is the composed video, second is the audio to overlay.
+        first = cmd.index("-i")
+        second = cmd.index("-i", first + 1)
+        assert cmd[first + 1] == "/tmp/concat.mp4"
+        assert cmd[second + 1] == "/tmp/narration.mp3"
+
+    def test_normalize_false_sums_keeps_voice_full_volume(self):
+        # The narration overlay sums voice over a silent concat — amix
+        # normalize=0 keeps the voice at 100% instead of halving it.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(normalize=False))
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "normalize=0" in af
+
+    def test_normalize_true_averages(self):
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(normalize=True))
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "normalize=1" in af
+
+    def test_default_normalize_is_true(self):
+        # Backcompat: the default behaviour (no normalize kwarg) averages.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs())
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "normalize=1" in af
+
+    def test_full_volume_voiceover_uses_zero_db(self):
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(soundtrack_dbfs=0.0))
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "volume=0.0dB" in af
+
+    def test_ambient_bed_uses_requested_dbfs(self):
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(soundtrack_dbfs=-18.0))
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "volume=-18.0dB" in af
+
+    def test_duration_follows_video_not_audio(self):
+        # duration=first → the mix length tracks the video (input 0), so a
+        # short narration doesn't truncate the video and a long one is cut
+        # to the visual length.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs())
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "duration=first" in af
+
+
+# ---------------------------------------------------------------------------
 # _build_burn_captions_cmd
 # ---------------------------------------------------------------------------
 
@@ -740,6 +817,66 @@ class TestComposeHappyPath:
         assert result.cost_usd == 0.0
         assert result.metadata["scene_count"] == 1
         assert result.metadata["encoder"] == "libx264"
+
+    @pytest.mark.asyncio
+    async def test_narration_track_overlaid_over_whole_concat(self, tmp_path):
+        """#media-render-fixes: a full-length narration_track_path is mixed
+        over the whole concat (not bound to scene 0) at full volume — the
+        overlay command must reference the narration file and sum (normalize=0)
+        so the voice spans every scene."""
+        compositor = _make_compositor({"binary_path": "ffmpeg"})
+        narr = tmp_path / "narration.mp3"
+        narr.write_bytes(b"\x00" * 64)
+        request = _make_request(
+            tmp_path,
+            scenes=[_make_scene(tmp_path, "a"), _make_scene(tmp_path, "b")],
+            narration_track_path=str(narr),
+        )
+
+        captured_cmds: list[list[str]] = []
+
+        def fake_run(cmd: list[str]):
+            captured_cmds.append(list(cmd))
+            out_path = cmd[-1]
+            try:
+                with open(out_path, "wb") as f:
+                    f.write(b"\x00FAKE_MP4")
+            except OSError:
+                pass
+            return (0, "", "")
+
+        ffprobe_payload = (
+            '{"format": {"duration": "4.0", "size": "9", "format_name": "mp4"},'
+            '"streams": [{"codec_type": "video", "codec_name": "h264",'
+            '"width": 1920, "height": 1080, "r_frame_rate": "30/1"}]}'
+        )
+
+        with patch(
+            "services.media_compositors.ffmpeg_local.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        ):
+            with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
+                with patch.object(
+                    ffmpeg_mod, "_ffprobe_blocking",
+                    return_value=(0, ffprobe_payload, ""),
+                ):
+                    result = await compositor.compose(request)
+
+        assert result.success is True, f"unexpected error: {result.error}"
+
+        # Exactly one overlay command must reference the narration file via
+        # -filter_complex and sum it (normalize=0) at full volume.
+        overlay_cmds = [
+            c for c in captured_cmds
+            if "-filter_complex" in c and str(narr) in c
+        ]
+        assert len(overlay_cmds) == 1, (
+            "expected one narration overlay mix referencing the narration "
+            f"file; got {len(overlay_cmds)}"
+        )
+        af = overlay_cmds[0][overlay_cmds[0].index("-filter_complex") + 1]
+        assert "normalize=0" in af  # sum → voice stays at full volume
+        assert "volume=0.0dB" in af  # full-volume voiceover
 
 
 class TestComposeFailurePath:

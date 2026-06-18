@@ -308,6 +308,9 @@ class TestRenderShotList:
             async def compose(self, request, **kwargs):
                 captured_request["scenes"] = list(request.scenes)
                 captured_request["soundtrack_path"] = request.soundtrack_path
+                captured_request["narration_track_path"] = (
+                    request.narration_track_path
+                )
                 captured_request["output_path"] = request.output_path
                 with open(request.output_path, "wb") as f:
                     f.write(b"fake composed mp4 bytes")
@@ -346,15 +349,18 @@ class TestRenderShotList:
         assert scenes[0].duration_s == 3.0
         assert scenes[1].duration_s == 2.0
         assert scenes[2].duration_s == 4.0
-        # Only the first scene carries narration_path so the soundtrack
-        # plays as one stream over the concat.
-        assert scenes[0].narration_path == audio_path
+        # ALL scenes are silent — the narration is laid over the whole
+        # concat via narration_track_path, not bound to scene 0 (binding
+        # to scene 0 truncated the voiceover at the first transition;
+        # #media-render-fixes).
+        assert scenes[0].narration_path is None
         assert scenes[1].narration_path is None
         assert scenes[2].narration_path is None
+        # The full-length narration rides narration_track_path.
+        assert captured_request["narration_track_path"] == audio_path
         # The soundtrack is the AMBIENT bed (None here, since no ambient
         # was passed) — NOT the narration. Passing narration as the
-        # soundtrack double-used it (full-volume on scene 0 AND again at
-        # -18dB across the whole concat). #679 fix.
+        # soundtrack double-used it. #679 fix.
         assert captured_request["soundtrack_path"] is None
 
 
@@ -592,3 +598,189 @@ class TestRenderShotListAspectAndAmbient:
             )
 
         assert captured["caption_track_path"] is None
+
+
+class TestPexelsSource:
+    """#media-render-fixes: pexels shots fetch a REAL stock photo and NEVER
+    fall back to SDXL — AI-generated humans (six-fingered hands) are a hard
+    brand no-no. On any Pexels miss the renderer holds over the prior clip.
+    """
+
+    def _pexels_shot(self, *, idx=0, offset=0.0):
+        return Shot(
+            idx=idx,
+            duration_s=4.0,
+            intent="a real developer at a desk",
+            source="pexels",
+            query="developer working at desk",
+            narration_offset_s=offset,
+        )
+
+    @pytest.mark.asyncio
+    async def test_pexels_fetches_real_photo_not_sdxl(self, tmp_path):
+        """A configured key + a Pexels hit writes a .jpg and never touches
+        SDXL."""
+        # Download client returns jpeg bytes.
+        mock_resp = MagicMock()
+        mock_resp.content = b"\xff\xd8\xff\xe0_fake_jpeg_bytes"
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        from services.image_providers import pexels as pexels_mod
+
+        async def _fake_fetch(self, query, config):
+            return [MagicMock(url="https://images.pexels.com/photos/x.jpg")]
+
+        sdxl_spy = AsyncMock()
+        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch), \
+             patch(
+                "services.video_renderers.shot_list_renderer._render_sdxl_image",
+                sdxl_spy,
+             ):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                http_client_factory=_factory,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+            )
+
+        assert result.success is True
+        assert result.clip_path is not None
+        assert result.clip_path.endswith(".jpg")
+        sdxl_spy.assert_not_called()  # the whole point: no AI human
+
+    @pytest.mark.asyncio
+    async def test_pexels_miss_holds_over_prior_never_sdxl(self, tmp_path):
+        """No key (or no result) → hold over the prior clip; SDXL is never
+        invoked to fake the human."""
+        prior = str(tmp_path / "shot_00.png")
+        with open(prior, "wb") as f:
+            f.write(b"prior image bytes")
+
+        sdxl_spy = AsyncMock()
+        with patch(
+            "services.video_renderers.shot_list_renderer._render_sdxl_image",
+            sdxl_spy,
+        ):
+            result = await _render_one_shot(
+                self._pexels_shot(idx=1, offset=4.0),
+                prior_clip=prior,
+                work_dir=tmp_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                http_client_factory=AsyncMock,
+                pexels_key="",  # no key → Pexels miss
+                orientation="landscape",
+            )
+
+        assert result.success is True
+        assert result.clip_path == prior  # held over
+        sdxl_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pexels_miss_at_idx0_fails_never_sdxl(self, tmp_path):
+        """A Pexels miss as the FIRST shot has nothing to hold over — fail
+        (the shot drops out) rather than SDXL-faking a person."""
+        sdxl_spy = AsyncMock()
+        with patch(
+            "services.video_renderers.shot_list_renderer._render_sdxl_image",
+            sdxl_spy,
+        ):
+            result = await _render_one_shot(
+                self._pexels_shot(idx=0),
+                prior_clip=None,
+                work_dir=tmp_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=None,
+                http_client_factory=AsyncMock,
+                pexels_key="",
+                orientation="landscape",
+            )
+
+        assert result.success is False
+        assert "pexels" in (result.error or "")
+        sdxl_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_render_shot_list_threads_secret_key_and_aspect(self, tmp_path):
+        """render_shot_list loads pexels_api_key via get_secret and derives
+        orientation from the shot list's aspect, threading both to the
+        pexels render."""
+        shots = [self._pexels_shot(idx=0)]
+        shot_list = VideoShotList(
+            version=1,
+            aspect="9:16",
+            total_duration_s=4.0,
+            shots=shots,
+            director_model="ollama/test-model",
+            director_prompt_version="v1",
+            director_decided_at=datetime.now(timezone.utc),
+        )
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "short.mp4")
+
+        captured: dict = {}
+
+        async def _fake_pexels(
+            *, query, output_path, api_key, orientation, http_client_factory,
+        ):
+            captured["api_key"] = api_key
+            captured["orientation"] = orientation
+            with open(output_path, "wb") as f:
+                f.write(b"jpg")
+            return True
+
+        class _SC:
+            def get(self, k, d=None):
+                return d
+
+            async def get_secret(self, k, d=None):
+                return "SEKRIT" if k == "pexels_api_key" else d
+
+        class _MockCompositor:
+            def __init__(self, site_config=None):
+                pass
+
+            async def compose(self, request, **kwargs):
+                with open(request.output_path, "wb") as f:
+                    f.write(b"mp4")
+                return MagicMock(
+                    success=True,
+                    output_path=request.output_path,
+                    file_size_bytes=3,
+                    duration_s=4.0,
+                )
+
+        with patch(
+            "services.video_renderers.shot_list_renderer._render_pexels_image",
+            _fake_pexels,
+        ), patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            _MockCompositor,
+        ):
+            result = await render_shot_list(
+                post_id="p",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                sdxl_url="http://sdxl:9836",
+                site_config=_SC(),
+                pool=None,
+                http_client_factory=AsyncMock,
+            )
+
+        assert result.success is True
+        assert captured["api_key"] == "SEKRIT"
+        assert captured["orientation"] == "portrait"  # 9:16 → portrait

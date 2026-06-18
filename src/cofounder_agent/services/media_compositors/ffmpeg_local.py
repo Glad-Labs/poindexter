@@ -158,6 +158,10 @@ def _validate_inputs(request: CompositionRequest) -> str | None:
             return (
                 f"scene[{idx}].narration_path missing: {scene.narration_path!r}"
             )
+    if request.narration_track_path and not os.path.exists(
+        request.narration_track_path,
+    ):
+        return f"narration_track_path missing: {request.narration_track_path!r}"
     if request.soundtrack_path and not os.path.exists(request.soundtrack_path):
         return f"soundtrack_path missing: {request.soundtrack_path!r}"
     if request.caption_track_path and not os.path.exists(
@@ -355,6 +359,7 @@ def _build_soundtrack_mix_cmd(
     audio_bitrate: str,
     loglevel: str,
     hwaccel: str,
+    normalize: bool = True,
 ) -> list[str]:
     """Mix ``soundtrack_path`` under the existing audio at the requested
     dBFS, re-muxing into a fresh MP4.
@@ -362,6 +367,12 @@ def _build_soundtrack_mix_cmd(
     Re-encodes video too (libx264 over a stream-copy pass would be
     cheaper, but mixing audio without a re-encode is fragile across
     ffmpeg versions when the source has a non-standard atom order).
+
+    ``normalize`` toggles amix's per-input ``1/n`` gain scaling. The
+    default (``True``) halves both inputs — fine for blending two peers.
+    Pass ``False`` to SUM instead: used for the narration overlay (full-
+    volume voiceover over a silent concat) and the ambient-under-narration
+    mix, so the voice never drops to 50% just because a quiet bed exists.
     """
     cmd: list[str] = [binary, "-loglevel", loglevel, "-y"]
     if hwaccel:
@@ -372,10 +383,12 @@ def _build_soundtrack_mix_cmd(
 
     # ``volume`` in dB is exactly what the operator wants. Then amix
     # blends. ``duration=first`` means the music follows the video,
-    # not the other way around.
+    # not the other way around. ``normalize=0`` sums (keeps the primary
+    # track at full volume); ``normalize=1`` averages.
     af = (
         f"[1:a]volume={soundtrack_dbfs}dB[bg];"
-        f"[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]"
+        f"[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2:"
+        f"normalize={1 if normalize else 0}[a]"
     )
     cmd.extend([
         "-filter_complex", af,
@@ -709,8 +722,43 @@ class FFmpegLocalCompositor:
                         ffmpeg_log_tail = err.strip()[-1000:]
                         error = f"concat step failed (rc={rc}): {ffmpeg_log_tail or '(no stderr)'}"
 
-                # 3. Soundtrack mix (optional).
+                # 2.5 Narration overlay (optional). Lay the full-length
+                # voiceover over the WHOLE concat at full volume. Scenes are
+                # silent (per-scene narration is no longer used by the shot-list
+                # renderer), so this single stream is the audio for the entire
+                # video — fixing the bug where a multi-scene narration bound to
+                # scene 0 cut off at the first transition. Runs BEFORE the
+                # ambient mix so the music sits under the voice.
                 stage_in = concat_path
+                if success and request.narration_track_path:
+                    narrated_path = os.path.join(tmpdir, "narrated.mp4")
+                    cmd = _build_soundtrack_mix_cmd(
+                        binary=binary,
+                        video_in=stage_in,
+                        soundtrack_path=request.narration_track_path,
+                        soundtrack_dbfs=0.0,  # full-volume voiceover
+                        encoder=encoder,
+                        preset=preset,
+                        crf=crf,
+                        audio_bitrate=audio_bitrate,
+                        loglevel=loglevel,
+                        hwaccel=hwaccel,
+                        normalize=False,  # sum over silence → keep voice at 100%
+                    ) + [narrated_path]
+                    rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
+                    if rc != 0:
+                        success = False
+                        ffmpeg_log_tail = err.strip()[-1000:]
+                        error = (
+                            f"narration overlay failed (rc={rc}): "
+                            f"{ffmpeg_log_tail or '(no stderr)'}"
+                        )
+                    else:
+                        stage_in = narrated_path
+
+                # 3. Soundtrack (ambient) mix (optional) — mixed UNDER the
+                # narration. normalize=False so the voice stays at full volume
+                # rather than being halved by the presence of a quiet bed.
                 if success and request.soundtrack_path:
                     mixed_path = os.path.join(tmpdir, "mixed.mp4")
                     cmd = _build_soundtrack_mix_cmd(
@@ -724,6 +772,7 @@ class FFmpegLocalCompositor:
                         audio_bitrate=audio_bitrate,
                         loglevel=loglevel,
                         hwaccel=hwaccel,
+                        normalize=False,
                     ) + [mixed_path]
                     rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
                     if rc != 0:
