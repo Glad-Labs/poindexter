@@ -226,7 +226,7 @@ DEFAULTS: dict[str, str] = {
     'qa_accuracy_good_link_max_bonus': '1.0',
     'qa_accuracy_meta_commentary_max_penalty': '2.0',
     'qa_accuracy_meta_commentary_penalty': '0.5',
-    'qa_allow_first_person_niches': '',
+    'qa_allow_first_person_niches': 'dev_diary,glad-labs',
     'qa_artifact_penalty_max': '20.0',
     'qa_artifact_penalty_per': '5.0',
     'qa_clarity_good_max_wps': '25',

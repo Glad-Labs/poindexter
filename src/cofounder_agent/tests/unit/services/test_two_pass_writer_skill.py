@@ -56,3 +56,53 @@ def test_two_pass_templates_end_with_single_newline() -> None:
         template = pm.prompts[key]["template"]
         assert template.endswith("\n"), f"{key} should end with a newline"
         assert not template.endswith("\n\n"), f"{key} has extra trailing newlines"
+
+
+def test_two_pass_templates_render_without_stray_braces() -> None:
+    """get_prompt() str.format()s the template — any literal ``{`` that isn't a
+    real placeholder raises KeyError/ValueError. Render both via the production
+    path to prove the enriched bodies have no stray braces."""
+    pm = UnifiedPromptManager()
+    generate = pm.get_prompt(
+        "atoms.two_pass_writer.generate_with_context",
+        topic="RTX 5090 local LLM inference",
+        angle="real benchmarks",
+        instructions="SOURCES: ...",
+        snippet_block="[posts/1] we ran it on a 32GB card",
+    )
+    assert "RTX 5090 local LLM inference" in generate
+    revise = pm.get_prompt(
+        "atoms.two_pass_writer.revise_prompt",
+        draft="a draft",
+        aug_block="[EXTERNAL_NEEDED: x] -> fact",
+    )
+    assert "a draft" in revise
+
+
+def test_generate_prompt_carries_assembly_directives() -> None:
+    """The enriched draft prompt must keep the directives that stop the local
+    model's assembly failures (duplication, truncation, unlinked citations,
+    fake headings) and enable grounded first-person. Pinned so a future prompt
+    edit can't silently drop them and reopen the QA-veto regression
+    (glad-labs-stack#1672 follow-up)."""
+    pm = UnifiedPromptManager()
+    g = pm.prompts["atoms.two_pass_writer.generate_with_context"]["template"].lower()
+    # Anti-duplication + clean-ending (the two ollama_critic vetoes)
+    assert "once" in g and ("repeat" in g or "duplicate" in g)
+    assert "mid-sentence" in g
+    # Markdown-link citation (the programmatic unlinked-citation veto)
+    assert "markdown link" in g and "url" in g
+    # Real H2 headings, not bold fakes
+    assert "## " in pm.prompts["atoms.two_pass_writer.generate_with_context"]["template"]
+    # Grounded first-person voice (Matt's voice-policy update)
+    assert "first person" in g
+
+
+def test_revise_prompt_guards_against_duplication() -> None:
+    """The revise pass feeds the model the full draft; without an explicit
+    'exactly once / do not duplicate' guard a weak model re-emits it doubled
+    (the observed second-half-duplicate failure)."""
+    pm = UnifiedPromptManager()
+    r = pm.prompts["atoms.two_pass_writer.revise_prompt"]["template"].lower()
+    assert "once" in r
+    assert "duplicate" in r or "repeat" in r

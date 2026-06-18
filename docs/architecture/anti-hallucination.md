@@ -148,6 +148,34 @@ facts/numbers, so two settings govern how much real text it carries:
 `Source text:` excerpt per source, so the writer sees a titled, summarised, and
 substantiated source rather than a bare link.
 
+#### Assembling the draft: the canonical_blog writer prompt must carry structure
+
+Good grounding (above) is necessary but not sufficient: a local writer model
+also has to _assemble_ 1,000+ words cleanly. The `canonical_blog` niche writer
+is `atoms.two_pass_writer`, whose draft prompt is
+`atoms.two_pass_writer.generate_with_context`
+(`skills/content/two-pass-writer/SKILL.md`) — **not** the richer
+`blog-generation/SKILL.md` (that's the non-niche `generate_with_ai` path). When
+the niche prompt was bare (topic + angle + snippets, no structure/length/voice
+guidance), the local model rambled: it duplicated whole sections, left
+placeholder scaffolding unresolved, emitted prose citations instead of inline
+links, and overran into a mid-sentence truncation — the `ollama_critic` +
+`programmatic` hard-gate vetoes that reject a draft even when
+`deepeval_faithfulness` scores a perfect 100 (grounding fine, assembly broken;
+glad-labs-stack#1672 follow-up).
+
+The enriched prompt carries the discipline the rails grade against: real `##`
+H2 headings (not bold-text fakes), "cover each point once — no duplication or
+padding, finish on a complete sentence", positive citation ("use the numbers,
+link each inline to its source URL"), and **grounded first person** — "we"/"our"
+is welcome for work that appears in a source, never for invented work. The voice
+change ships with its scorer: `qa_allow_first_person_niches` gains `glad-labs`
+so `quality_scorers`' `first_person_claims` rail stops penalising the
+publisher's real first-hand voice. The `revise_prompt` carries the same
+"return the post exactly once, do not duplicate" guard, and its inline
+`_REVISE_PROMPT_FALLBACK` is pinned byte-for-byte to the skill default by
+`test_two_pass_writer_prompts.py`.
+
 #### The draft-presence gate: the writer must produce a non-empty draft
 
 The `qa.*` rails all guard `if not content: return {}` — so on an **empty

@@ -169,10 +169,16 @@ def _resolve_revise_prompt(
 # Inline fallback — last-resort for bootstrap / test / registry-unreachable
 # paths. Canonical prompt lives in prompts/writer_rag_modes.yaml.
 _REVISE_PROMPT_FALLBACK = """\
-Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker,
-substitute the corresponding external fact provided below. Keep everything else unchanged.
-If revision exposes a new claim that needs outside support, mark it [EXTERNAL_NEEDED: ...]
-again so the next pass can fill it.
+Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker, substitute
+the corresponding external fact below and link it inline to its source URL.
+Leave all other content as-is.
+
+Return the COMPLETE revised post exactly once. Do not repeat, duplicate, or
+append a second copy of any section, and do not pad the length — the revision
+should be about as long as the original and end on a complete sentence.
+
+If revision exposes a new claim that needs outside support, mark it
+[EXTERNAL_NEEDED: ...] again so the next pass can fill it.
 
 Original draft:
 {draft}
