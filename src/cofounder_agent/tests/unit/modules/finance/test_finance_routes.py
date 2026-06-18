@@ -435,13 +435,16 @@ class TestFinanceTransactions:
 class TestFinanceModuleRegisterRoutes:
     def test_register_routes_mounts_finance_router(self):
         """register_routes(app) should mount /api/finance/* on the app.
-        We assert via app.routes — the simplest contract check."""
+        Use app.openapi() rather than app.routes to enumerate paths —
+        Starlette 0.45+ wraps included routers in _IncludedRouter objects
+        that lack a top-level .path attribute, so walking app.routes
+        directly is version-sensitive."""
         from modules.finance.finance_module import FinanceModule
 
         app = FastAPI()
         FinanceModule().register_routes(app)
 
-        finance_paths = [r.path for r in app.routes if r.path.startswith("/api/finance")]
+        finance_paths = [p for p in app.openapi()["paths"] if p.startswith("/api/finance")]
         assert "/api/finance/healthcheck" in finance_paths
         assert "/api/finance/balances" in finance_paths
         assert "/api/finance/transactions" in finance_paths

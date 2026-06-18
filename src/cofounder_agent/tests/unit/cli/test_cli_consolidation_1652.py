@@ -119,7 +119,7 @@ class TestApprovalFlatAliases:
             "services.approval_service.list_pending",
             new=AsyncMock(return_value=[]),
         ):
-            result = CliRunner(mix_stderr=False).invoke(alias, [])
+            result = CliRunner().invoke(alias, [])
 
         assert result.exit_code == 0
         assert "deprecated" in result.stderr.lower()
@@ -263,7 +263,7 @@ class TestScheduleFlatAliases:
             "services.posts_approval_service.approve_publish",
             new=AsyncMock(return_value={"gate_name": "final_publish_approval"}),
         ):
-            result = CliRunner(mix_stderr=False).invoke(alias, ["p-1"])
+            result = CliRunner().invoke(alias, ["p-1"])
 
         assert result.exit_code == 0
         assert "deprecated" in result.stderr.lower()
@@ -285,7 +285,7 @@ class TestScheduleFlatAliases:
             "services.scheduling_service.assign_slot",
             new=AsyncMock(return_value=_sched_result()),
         ):
-            result = CliRunner(mix_stderr=False).invoke(alias, ["6bf91cc3", "now"])
+            result = CliRunner().invoke(alias, ["6bf91cc3", "now"])
 
         assert result.exit_code == 0
         assert "deprecated" in result.stderr.lower()
@@ -322,7 +322,7 @@ class TestPostsMerge:
             "poindexter.cli.posts._make_gate_pool",
             new=AsyncMock(side_effect=RuntimeError("no db")),
         ):
-            result = CliRunner(mix_stderr=False).invoke(
+            result = CliRunner().invoke(
                 post_group, ["create", "--topic", "x"]
             )
 

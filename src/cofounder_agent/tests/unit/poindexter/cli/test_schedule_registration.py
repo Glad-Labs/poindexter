@@ -98,7 +98,7 @@ def test_schedule_shift_exits_2_when_neither_post_id_nor_all():
     """shift with no target is a user error; must exit 2 before any DB IO."""
     from poindexter.cli.schedule import schedule_group
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(schedule_group, ["shift", "--by", "1h"])
     assert result.exit_code == 2
 
@@ -108,7 +108,7 @@ def test_schedule_shift_exits_2_when_both_post_id_and_all():
     """shift rejects ambiguous input (both a specific post_id and --all)."""
     from poindexter.cli.schedule import schedule_group
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(schedule_group, ["shift", "--all", "--by", "1h", "abc123"])
     assert result.exit_code == 2
 
@@ -123,7 +123,7 @@ def test_schedule_clear_exits_2_when_neither_post_id_nor_all():
     """clear with no target must exit 2 before any DB IO."""
     from poindexter.cli.schedule import schedule_group
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(schedule_group, ["clear"])
     assert result.exit_code == 2
 
@@ -133,7 +133,7 @@ def test_schedule_clear_exits_2_when_both_post_id_and_all():
     """clear rejects both a specific post_id and --all being supplied."""
     from poindexter.cli.schedule import schedule_group
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(schedule_group, ["clear", "--all", "abc123"])
     assert result.exit_code == 2
 
@@ -148,7 +148,7 @@ def test_publish_at_exits_2_when_neither_time_spec_nor_in_given():
     """publish-at with no time information exits 2 before any DB IO."""
     from poindexter.cli.schedule import publish_at_command
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(publish_at_command, ["abc123"])
     assert result.exit_code == 2
 
@@ -158,7 +158,7 @@ def test_publish_at_exits_2_when_both_time_spec_and_in_given():
     """publish-at rejects both a positional TIME_SPEC and --in being supplied."""
     from poindexter.cli.schedule import publish_at_command
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(
         publish_at_command, ["abc123", "2026-06-10T09:00:00", "--in", "2h"]
     )

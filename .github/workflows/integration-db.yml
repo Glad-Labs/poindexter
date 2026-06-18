@@ -116,6 +116,9 @@ jobs:
         run: |
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
+          # Explicitly install asyncpg after poetry in case the runner's pre-baked
+          # Python already has a stale/incompatible version that poetry skips.
+          pip install "asyncpg>=0.31,<0.32"
 
       - name: Wait for Postgres
         run: |
