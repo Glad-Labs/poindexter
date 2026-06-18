@@ -1353,6 +1353,26 @@ async def _resolve_rag_writer_model(
     ) from tier_exc
 
 
+def _format_snippet_block(snippets: list[dict[str, Any]], max_chars: int) -> str:
+    """Render background snippets as plainly-labelled notes for the writer.
+
+    Deliberately avoids the old ``[source/ref] text`` form. Weak/thinking
+    models mimic whatever bracket shape their context is shown in and emit the
+    internal snippet identifiers into the prose as pseudo-citations (e.g.
+    ``[token_efficiency.md feedback_token]``) — the #1 residual on the
+    post-#1676 re-run (task 601283cc), which the citation validator flags. A
+    plain ``From <source>:`` prefix keeps the framing the writer needs (whose
+    work this is, for first- vs third-person voice) with no inline-bracket
+    template to copy, and drops the ``ref`` slug entirely (it was the
+    most-echoed token and the writer has no use for it).
+    """
+    return "\n\n".join(
+        f"From {s.get('source') or 'a prior note'}:\n{s['snippet'][:max_chars]}"
+        for s in snippets
+        if s.get("snippet")
+    )
+
+
 async def generate_with_context(
     *, topic: str, angle: str, snippets: list[dict],
     extra_instructions: str | None = None,
@@ -1379,10 +1399,7 @@ async def generate_with_context(
         "writer_rag_context_snippet_max_chars", 500,
     )
     model = await _resolve_rag_writer_model(site_config=_sc)
-    snippet_block = "\n".join(
-        f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
-        for s in snippets if s.get('snippet')
-    )
+    snippet_block = _format_snippet_block(snippets, snippet_max_chars)
     instructions = extra_instructions or ""
     prompt = get_prompt_manager().get_prompt(
         "atoms.two_pass_writer.generate_with_context",

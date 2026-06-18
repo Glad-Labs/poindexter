@@ -106,3 +106,63 @@ def test_revise_prompt_guards_against_duplication() -> None:
     r = pm.prompts["atoms.two_pass_writer.revise_prompt"]["template"].lower()
     assert "once" in r
     assert "duplicate" in r or "repeat" in r
+
+
+def test_generate_prompt_carries_citation_and_antifabrication_directives() -> None:
+    """After #1676 cleared the assembly vetoes, the live re-run (task
+    601283cc, score 89) had two residual QA blockers: the writer (1) invented
+    a statistic ("~25% increase") and (2) echoed the internal [source/ref]
+    snippet labels inline as pseudo-citations (e.g. "[token_efficiency.md
+    feedback_token]"). Pin the directives that close both so a later prompt
+    edit can't silently reopen them (glad-labs-stack#1676 follow-up)."""
+    pm = UnifiedPromptManager()
+    g = pm.prompts["atoms.two_pass_writer.generate_with_context"]["template"].lower()
+    # Anti-fabrication — never invent a number
+    assert "never invent" in g
+    assert "statistic" in g or "percentage" in g
+    # Internal background-note labels are NOT citations; don't reproduce them
+    assert "never reproduce" in g
+    assert "label" in g
+    # The only brackets allowed in the body are real markdown links
+    assert "markdown link" in g
+
+
+def test_format_snippet_block_drops_citation_bracket_template() -> None:
+    """Root-cause fix for the snippet-echo bug: a weak/thinking model mimics
+    whatever bracket form its background notes are shown in. The old
+    ``[source/ref] text`` format taught it to emit
+    ``[token_efficiency.md feedback_token]`` pseudo-citations into the prose.
+    ``_format_snippet_block`` uses a plain ``From <source>:`` prefix — same
+    framing (whose work this is, for first/third-person voice), no inline
+    bracket to copy — and drops the ref slug entirely (the most-echoed token).
+    """
+    import modules.content.ai_content_generator as acg
+    snippets = [
+        {"source": "token_efficiency.md", "ref": "feedback_token",
+         "snippet": "Cut tokens to cut cost."},
+        {"source": "posts", "ref": "a51d-why-local",
+         "snippet": "We moved inference on-prem."},
+    ]
+    block = acg._format_snippet_block(snippets, 500)
+    # snippet text survives, with the source framing
+    assert "Cut tokens to cut cost." in block
+    assert "We moved inference on-prem." in block
+    assert "From token_efficiency.md:" in block
+    # no '[source/ref]' bracket template and no ref slug for the model to echo
+    assert "[token_efficiency.md" not in block
+    assert "feedback_token" not in block
+    assert "a51d-why-local" not in block
+
+
+def test_format_snippet_block_skips_empty_and_defaults_missing_source() -> None:
+    """Empty snippets are skipped; a missing source falls back to a neutral
+    label (never a KeyError, never a bare 'None')."""
+    import modules.content.ai_content_generator as acg
+    snippets = [
+        {"source": "posts", "ref": "x", "snippet": ""},  # skipped — no snippet
+        {"ref": "y", "snippet": "Kept."},                # missing source
+    ]
+    block = acg._format_snippet_block(snippets, 500)
+    assert "Kept." in block
+    assert block.count("From ") == 1
+    assert "None" not in block

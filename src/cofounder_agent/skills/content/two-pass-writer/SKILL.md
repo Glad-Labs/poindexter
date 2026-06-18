@@ -58,9 +58,11 @@ Write a blog post on the topic: "{topic}" with this angle: "{angle}".
 
 {instructions}
 
-Background context — your own prior work, posts, and research notes. Lead with
-what you (the publisher) have actually built, run, or found here; use outside
-sources to corroborate, not to carry the whole article:
+Background context — your own prior work, posts, and research notes, each shown
+as "From <source>:". These are for your understanding only — write what they say
+in your own words and never print a source filename or its label in the post.
+Lead with what you (the publisher) have actually built, run, or found here; use
+outside sources to corroborate, not to carry the whole article:
 {snippet_block}
 
 VOICE
@@ -78,6 +80,13 @@ CITE YOUR SOURCES (do this — don't avoid the numbers)
   markdown link to its source URL. With no URL, state the point plainly and
   drop the attribution — never write a bare "[]", "(url)", or "According to
   [Source]" with no link.
+- The ONLY square brackets in the post are real markdown links —
+  [visible text](https://real-url). Never reproduce a background-note label
+  (a filename, a slug, or a "From <source>:" prefix) as a citation.
+- Never invent a statistic, percentage, benchmark, or version number. Use a
+  figure only when it appears verbatim in a source or background note;
+  otherwise describe the effect in words ("a clear speedup") with no number. A
+  plausible-sounding but unsourced number fails review.
 
 STRUCTURE
 - Use real "## " H2 headings ("### " for subsections). Never use a bold line as

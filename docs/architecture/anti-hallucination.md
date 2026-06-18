@@ -176,6 +176,24 @@ publisher's real first-hand voice. The `revise_prompt` carries the same
 `_REVISE_PROMPT_FALLBACK` is pinned byte-for-byte to the skill default by
 `test_two_pass_writer_prompts.py`.
 
+Re-running the enriched prompt end-to-end (task `601283cc`) cleared all four
+assembly vetoes — the draft came back tight (5K chars, no duplication, no
+`[verbatim]` echoes, complete ending) and `ollama_critic` rose 35 → 92 — leaving
+two narrower residuals that the **citation-discipline** follow-up targets. (1)
+The writer invented a statistic ("~25% increase") with no source; the prompt now
+bans it outright — "never invent a statistic, percentage, benchmark, or version
+number; use a figure only when it appears verbatim in a source". (2) The writer
+echoed the internal `[source/ref]` labels its background snippets were _shown_
+in, inline, as pseudo-citations (`[token_efficiency.md feedback_token]`). The
+root cause is the snippet renderer itself, so the fix lives there
+(`ai_content_generator._format_snippet_block`): background notes are now rendered
+as plain `From <source>:` prose with **no inline-bracket template to copy** and
+the `ref` slug dropped (it was the most-echoed token), and the prompt reinforces
+that "the only square brackets in the post are real markdown links — never
+reproduce a background-note label". Both prompt directives are pinned by
+`test_two_pass_writer_skill.py::test_generate_prompt_carries_citation_and_antifabrication_directives`
+and the renderer by its `test_format_snippet_block_*` cases.
+
 #### The draft-presence gate: the writer must produce a non-empty draft
 
 The `qa.*` rails all guard `if not content: return {}` — so on an **empty
