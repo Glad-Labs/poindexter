@@ -105,10 +105,8 @@ DEFAULTS: dict[str, str] = {
     # ----- LLM model selection -----
     'default_ollama_model': 'auto',
     'embed_model': 'nomic-embed-text',
-    'embedding_model': '',
     'inline_image_prompt_model': 'llama3:latest',
     'local_llm_api_url': 'http://localhost:11434',
-    'local_llm_model_name': 'auto',
     'model_role_image_decision': 'qwen3:8b',
     'pipeline_architect_timeout_seconds': '120.0',
     # why: VRAM guard against the writer (~20GB) + SDXL (~12GB) overlap
@@ -127,8 +125,8 @@ DEFAULTS: dict[str, str] = {
     # poindexter#716: vision QA model keys — seeded here so the DB always has
     # a value and code never falls back to a hardcoded literal.  Empty string =
     # operator deliberately cleared the key — the vision check is skipped.
-    'qa_preview_vision_model': 'qwen3-vl:30b',
-    'qa_vision_model': 'qwen3-vl:30b',
+    'qa_preview_vision_model': 'ollama/qwen3-vl:30b',
+    'qa_vision_model': 'ollama/qwen3-vl:30b',
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
