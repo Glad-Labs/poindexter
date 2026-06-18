@@ -252,14 +252,14 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "`poindexter migrate status` (or `--json` for machine-readable)."
         ),
     },
-    # --- GPU hardware (audit C3) ---
-    # These COMPLEMENT the Grafana "GPU Temperature High" alert (rule #14),
-    # which reads the `gpu_metrics` DB table fed by the hand-started
-    # scripts/gpu-scraper.py daemon and is `noDataState: OK` (so it goes silent
-    # if that daemon dies). These rules target the container-supervised
-    # nvidia-smi exporter (job="nvidia-smi") that Prometheus scrapes directly,
-    # giving a GPU-temp alert that survives a dead scraper — an independently-
-    # supervised second path. VRAM had no alert at all before this.
+    # --- GPU hardware (audit C3, poindexter#653) ---
+    # These are the SOLE GPU temperature/VRAM alert path. The former Grafana SQL
+    # rules "GPU Temperature High" (#14) and "GPU Metrics Stale" (#13) were removed
+    # 2026-06-18 — they read the `gpu_metrics` DB table fed by the hand-started
+    # scripts/gpu-scraper.py, causing the stale-metrics rule to flap whenever the
+    # scraper wasn't running. These Prometheus rules source nvidia_gpu_* directly
+    # from the container-supervised nvidia-smi exporter (job="nvidia-smi"); a dead
+    # exporter is caught by the static WindowsExporterDown alert in infrastructure.yml.
     "GpuTemperatureHigh": {
         "enabled": True,
         "group": "poindexter-infra",

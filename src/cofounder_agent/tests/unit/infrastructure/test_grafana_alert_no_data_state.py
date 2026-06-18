@@ -71,7 +71,9 @@ PAGE_WORTHY_UIDS = {
     "brain-content-quality-drop",  # AVG over pipeline_tasks_view (a VIEW)
     "brain-traffic-anomaly",  # CTE over page_views
     "brain-ollama-down",  # CASE over pipeline_tasks_view + cost_logs
-    "brain-gpu-temp-high",  # SELECT temperature ... LIMIT 1 over gpu_metrics
+    # brain-gpu-temp-high and brain-gpu-metrics-stale were REMOVED 2026-06-18
+    # (poindexter#653). GPU temp alerting moved to Prometheus GpuTemperatureHigh;
+    # exporter death is caught by the static WindowsExporterDown rule.
 }
 
 # The single documented exception (#581): a non-page-worthy capacity

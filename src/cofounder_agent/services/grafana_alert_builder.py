@@ -52,10 +52,9 @@ DEFAULT_GRAFANA_THRESHOLDS: dict[str, str] = {
     "ollama_down_hours": "6",              # SQL INTERVAL: absence of local inference
     # alert #11 — brain-heartbeat-stale
     "brain_heartbeat_stale_minutes": "15", # condition: minutes since last brain_decision
-    # alert #13 — brain-gpu-metrics-stale
-    "gpu_metrics_stale_minutes": "30",     # condition: minutes since last gpu_metrics row
-    # alert #14 — brain-gpu-temp-high
-    "gpu_temperature_celsius": "85",       # condition: GPU temperature °C
+    # alerts #13 (GPU Metrics Stale) and #14 (GPU Temperature High) were removed
+    # 2026-06-18 (poindexter#653). GPU temp alerting moved to Prometheus
+    # GpuTemperatureHigh in prometheus_rule_builder.py DEFAULT_RULES.
 }
 
 THRESHOLD_PREFIX = "grafana.threshold."

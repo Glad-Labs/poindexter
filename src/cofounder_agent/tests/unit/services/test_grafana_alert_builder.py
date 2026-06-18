@@ -17,7 +17,7 @@ class _FakePool:
     def __init__(self, rows: list[dict[str, Any]]):
         self._rows = rows
 
-    async def fetch(self, _query: str, _arg: str) -> list[dict[str, Any]]:
+    async def fetch(self, _query: str, _arg: str) -> list[dict[str, Any]]:  # noqa: ARG002
         prefix = _arg.rstrip("%").replace("\\%", "%").replace("\\_", "_").replace("\\\\", "\\")
         return [r for r in self._rows if r["key"].startswith(prefix)]
 
@@ -67,7 +67,10 @@ class TestLoadThresholds:
         thresholds = await ab.load_thresholds(pool)
         assert thresholds["error_rate_hourly_max"] == "5"
         assert thresholds["db_size_warning_gb"] == "5"
-        assert thresholds["gpu_temperature_celsius"] == "85"
+        # gpu_temperature_celsius and gpu_metrics_stale_minutes were removed
+        # (poindexter#653) — GPU temp now alerts via Prometheus GpuTemperatureHigh.
+        assert "gpu_temperature_celsius" not in thresholds
+        assert "gpu_metrics_stale_minutes" not in thresholds
 
     @pytest.mark.asyncio
     async def test_db_row_overrides_default(self):
