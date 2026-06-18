@@ -95,6 +95,36 @@ contract so this can't silently regress. (This is the same channel-dropping
 failure mode the `seo_keywords_list` channel hit — see the PipelineState
 comment in `template_runner.py`.)
 
+#### Grounding the writer: the corpus must carry real source text, not just links
+
+Threading the corpus into state (above) is necessary but not sufficient — the
+corpus also has to _contain_ something worth grounding on.
+`ResearchService.build_context` assembles three source kinds into
+`research_context`: verified reference links, internal post links, and **fresh
+web sources**. The web slice is where the writer gets current, citable
+facts/numbers, so two settings govern how much real text it carries:
+
+- **`research_extract_web_content`** (default `true`) — when on, `_web_search`
+  calls `WebResearcher.search()`, which fetches each DuckDuckGo result and
+  extracts up to `web_research_max_content_chars` (2000) of clean page text via
+  BeautifulSoup. When off, it falls back to `search_simple()` — titles, URLs,
+  and DDG snippets only, **no page text**. Snippet-only grounding starves the
+  writer: the prompt carries a title and a ~100-char teaser per source and zero
+  numbers, so the model fills the gap by inventing them — which `qa.critic` and
+  the `ragas` / `faithfulness` rails then (correctly) flag. This is the
+  fabrication-pressure sibling of the RAG-corpus-pollution failure
+  (`rag_source_filter`): one _starves_ the corpus, the other _poisons_ it; both
+  surface as "QA rejects everything."
+- **`research_web_content_chars_per_source`** (default `600`) — caps how much of
+  each source's extracted text is injected into the generation prompt (~one
+  substantial paragraph × up-to-5 sources ≈ 3 KB), keeping the prompt lean while
+  still handing the writer real sourced material. Tune up for denser grounding,
+  down for tighter token budgets.
+
+`build_context` keeps the one-line DDG snippet **and** appends a bounded
+`Source text:` excerpt per source, so the writer sees a titled, summarised, and
+substantiated source rather than a bare link.
+
 #### The draft-presence gate: the writer must produce a non-empty draft
 
 The `qa.*` rails all guard `if not content: return {}` — so on an **empty

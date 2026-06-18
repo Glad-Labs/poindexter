@@ -203,6 +203,17 @@ DEFAULTS: dict[str, str] = {
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',
     'writer_rag_two_pass_snippet_limit': '20',
+    # Web-research grounding. When true (default) the writer's research step
+    # FETCHES and extracts real page text from each web source (up to
+    # web_research_max_content_chars) via WebResearcher.search — instead of
+    # just a title + a 100-char DuckDuckGo snippet — so drafts cite sourced
+    # facts/numbers rather than inventing them. Flip false for the cheaper
+    # snippet-only path (search_simple) when fetch latency/bandwidth matters.
+    # research_web_content_chars_per_source caps how much of each source's
+    # extracted text is injected into the generation prompt (token budget;
+    # 600 ≈ one substantial paragraph × up-to-5 sources).
+    'research_extract_web_content': 'true',
+    'research_web_content_chars_per_source': '600',
 
     # ----- Quality assurance pipeline -----
     'qa_accuracy_bad_link_max_penalty': '2.0',

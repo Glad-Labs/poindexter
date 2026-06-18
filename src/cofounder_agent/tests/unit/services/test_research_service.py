@@ -138,9 +138,10 @@ class TestFindInternalLinks:
 class TestWebSearch:
     @pytest.mark.asyncio
     async def test_returns_results(self, service):
+        # Default path extracts page content via search() (not search_simple()).
         mock_researcher = MagicMock()
-        mock_researcher.search_simple = AsyncMock(return_value=[
-            {"title": "Docker Guide", "url": "https://example.com/docker", "snippet": "A guide"},
+        mock_researcher.search = AsyncMock(return_value=[
+            {"title": "Docker Guide", "url": "https://example.com/docker", "snippet": "A guide", "content": ""},
         ])
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
             results = await service._web_search("Docker tips")
@@ -156,7 +157,7 @@ class TestWebSearch:
     @pytest.mark.asyncio
     async def test_returns_empty_on_search_exception(self, service):
         mock_researcher = MagicMock()
-        mock_researcher.search_simple = AsyncMock(side_effect=RuntimeError("network error"))
+        mock_researcher.search = AsyncMock(side_effect=RuntimeError("network error"))
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
             results = await service._web_search("Docker tips")
         assert results == []
@@ -237,6 +238,111 @@ class TestBuildContext:
             context = await service.build_context("Docker tips", category="devops")
         # Should not raise; category is accepted but currently unused
         assert isinstance(context, str)
+
+
+# ---------------------------------------------------------------------------
+# _web_search content extraction — research_extract_web_content gate
+# ---------------------------------------------------------------------------
+
+
+class TestWebSearchContentExtraction:
+    """research_extract_web_content controls whether _web_search fetches real
+    page text (WebResearcher.search) or just DDG snippets (search_simple).
+
+    Default is true. Snippet-only grounding was starving the writer: the
+    research context carried titles + a 100-char teaser and NO sourced facts,
+    so the model invented numbers. search() fetches up to
+    web_research_max_content_chars of real page text per source.
+    """
+
+    @pytest.mark.asyncio
+    async def test_extracts_content_by_default(self):
+        """Setting unset → default true → _web_search calls search() (the
+        fetch+extract path), NOT search_simple()."""
+        svc = ResearchService(pool=None, site_config=SiteConfig())
+        mock_researcher = MagicMock()
+        mock_researcher.search = AsyncMock(return_value=[
+            {"title": "T", "url": "https://e.com", "snippet": "s", "content": "real body text"},
+        ])
+        mock_researcher.search_simple = AsyncMock(return_value=[])
+        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+            results = await svc._web_search("topic")
+        mock_researcher.search.assert_awaited_once()
+        mock_researcher.search_simple.assert_not_called()
+        assert results[0]["content"] == "real body text"
+
+    @pytest.mark.asyncio
+    async def test_snippet_only_when_extraction_disabled(self):
+        """research_extract_web_content=false → cheaper snippet-only path
+        (search_simple); search() is not called."""
+        sc = SiteConfig(initial_config={"research_extract_web_content": "false"})
+        svc = ResearchService(pool=None, site_config=sc)
+        mock_researcher = MagicMock()
+        mock_researcher.search = AsyncMock(return_value=[])
+        mock_researcher.search_simple = AsyncMock(return_value=[
+            {"title": "T", "url": "https://e.com", "snippet": "s", "content": ""},
+        ])
+        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+            results = await svc._web_search("topic")
+        mock_researcher.search_simple.assert_awaited_once()
+        mock_researcher.search.assert_not_called()
+        assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
+# build_context — extracted source-text injection (research grounding)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildContextSourceText:
+    """When a web result carries extracted content, build_context injects a
+    bounded 'Source text:' excerpt so the writer has real sourced facts to
+    cite — not just a title and a 100-char snippet."""
+
+    @pytest.mark.asyncio
+    async def test_includes_extracted_source_text(self, service, mock_pool):
+        web_results = [
+            {
+                "title": "GPU Benchmark",
+                "url": "https://example.com/bench",
+                "snippet": "short teaser",
+                "content": "The RTX 5090 sustained 142 fps at 4K Ultra in our 30-run average.",
+            },
+        ]
+        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=web_results):
+            context = await service.build_context("GPU benchmarks")
+        assert "Source text:" in context
+        # The real number reaches the prompt — the whole point of the fix.
+        assert "142 fps" in context
+
+    @pytest.mark.asyncio
+    async def test_source_text_bounded_by_setting(self, mock_pool):
+        sc = SiteConfig(initial_config={"research_web_content_chars_per_source": "50"})
+        svc = ResearchService(pool=mock_pool, site_config=sc)
+        web_results = [
+            {"title": "T", "url": "https://e.com", "snippet": "s", "content": "X" * 500},
+        ]
+        with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=web_results):
+            context = await svc.build_context("topic")
+        for line in context.split("\n"):
+            if "Source text:" in line:
+                injected = line.split("Source text:", 1)[1].strip()
+                assert len(injected) <= 50
+                break
+        else:
+            pytest.fail("expected a 'Source text:' line in the context")
+
+    @pytest.mark.asyncio
+    async def test_no_source_text_line_when_content_empty(self, service, mock_pool):
+        """Snippet-only results (content == '') must not emit a blank
+        'Source text:' line — that would be prompt noise."""
+        web_results = [
+            {"title": "T", "url": "https://e.com", "snippet": "teaser", "content": ""},
+        ]
+        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=web_results):
+            context = await service.build_context("topic")
+        assert "RECENT WEB SOURCES" in context
+        assert "Source text:" not in context
 
 
 # ---------------------------------------------------------------------------

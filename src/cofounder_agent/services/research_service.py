@@ -213,9 +213,23 @@ class ResearchService:
         # 3. Free web search via DuckDuckGo (replaces Serper)
         web_results = await self._web_search(topic)
         if web_results:
+            try:
+                content_budget = self._site_config.get_int(
+                    "research_web_content_chars_per_source", 600
+                )
+            except Exception:
+                content_budget = 600
             web_lines = ["RECENT WEB SOURCES (cite if relevant):"]
             for result in web_results:
-                web_lines.append(f"- [{result['title']}]({result['url']}): {result.get('snippet', '')[:100]}")
+                snippet = result.get("snippet", "")[:100]
+                web_lines.append(f"- [{result['title']}]({result['url']}): {snippet}")
+                # Inject the extracted page text (when _web_search fetched it
+                # via WebResearcher.search) so the writer has real sourced
+                # facts/numbers to cite — bounded by
+                # research_web_content_chars_per_source to keep the prompt lean.
+                content = (result.get("content") or "").strip()
+                if content and content_budget > 0:
+                    web_lines.append(f"  Source text: {content[:content_budget]}")
             sections.append("\n".join(web_lines))
 
         # 4. Add writing guidance based on available sources
@@ -288,12 +302,27 @@ class ResearchService:
             return []
 
     async def _web_search(self, topic: str) -> list[dict[str, str]]:
-        """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
+        """Search the web for fresh sources (free — DuckDuckGo, no API key).
+
+        When ``research_extract_web_content`` is true (the default), this
+        fetches and extracts real page text from each result via
+        ``WebResearcher.search`` so the writer gets sourced facts/numbers —
+        not just a title and a 100-char snippet. Flip it false to fall back
+        to the cheaper snippet-only path (``search_simple``) when fetch
+        latency or bandwidth is a concern.
+        """
         try:
             from services.web_research import WebResearcher
             researcher = WebResearcher(site_config=self._site_config)
-            results = await researcher.search_simple(topic, num_results=5)
-            return results
+            try:
+                extract = self._site_config.get_bool(
+                    "research_extract_web_content", True
+                )
+            except Exception:
+                extract = True
+            if extract:
+                return await researcher.search(topic, num_results=5)
+            return await researcher.search_simple(topic, num_results=5)
         except Exception as e:
             logger.debug("[RESEARCH] Web search failed: %s", e)
             return []
