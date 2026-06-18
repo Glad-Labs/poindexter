@@ -20,6 +20,7 @@ from modules.content.atoms._citation_match import (
     link_matched_attributions,
     match_subject,
     parse_corpus,
+    repoint_fabricated_citations,
 )
 
 # --- parse_corpus -----------------------------------------------------------
@@ -191,3 +192,127 @@ def test_unmatched_empty_when_no_corpus():
     # pass rather than flagging every attribution. Returns [].
     content = "As noted by Someone Important, this matters."
     assert find_unmatched_attributions(content, []) == []
+
+
+# --- repoint_fabricated_citations (repair, scan-3) --------------------------
+#
+# The writer sometimes wraps a brand in a markdown link to that brand's OWN
+# domain but invents the path (a 404 the host-only link scrub keeps because the
+# host is trusted). When the corpus holds the real URL for that brand on that
+# exact domain, re-pointing the fabricated path to it is high-precision.
+#
+# The hard precision boundary: this is safe ONLY on single-brand domains where
+# "same registrable domain" implies "same source". On multi-tenant platforms
+# (github.com, arxiv.org, dev.to, …) a different path is DIFFERENT CONTENT — a
+# different repo/paper/article — so re-pointing there would silently mis-cite.
+# Those are excluded by denylist and must stay excluded.
+
+def _brand_sources():
+    return [
+        CorpusSource(url="https://getmaxim.ai/blog/drift", title="Context Drift", text="context drift coherence maxim"),
+        CorpusSource(url="https://kore.ai/memory", title="Agent Memory", text="agent memory kore"),
+    ]
+
+
+def test_repoint_fixes_brand_domain_wrong_path():
+    # [GetMaxim] linked to a fabricated path on getmaxim.ai; corpus holds the
+    # real getmaxim.ai URL → re-point to it, preserving the link text.
+    content = "Insight from [GetMaxim](https://getmaxim.ai/blog/fabricated-slug) on drift."
+    new, repointed = repoint_fabricated_citations(content, _brand_sources())
+    assert "[GetMaxim](https://getmaxim.ai/blog/drift)" in new
+    assert "fabricated-slug" not in new
+    assert len(repointed) == 1
+    assert repointed[0]["old"] == "https://getmaxim.ai/blog/fabricated-slug"
+    assert repointed[0]["new"] == "https://getmaxim.ai/blog/drift"
+    assert repointed[0]["text"] == "GetMaxim"
+
+
+def test_repoint_skips_multitenant_arxiv():
+    # arXiv is multi-tenant: a different /abs/ id is a DIFFERENT paper. Even
+    # though "arXiv" matches the arxiv.org corpus source by handle, re-pointing
+    # would cite the wrong paper → must NOT fire.
+    sources = [CorpusSource(url="https://arxiv.org/abs/2601.11653", title="Unbounded Context", text="unbounded context growth")]
+    content = "See [arXiv](https://arxiv.org/abs/9999.00000) for the proof."
+    new, repointed = repoint_fabricated_citations(content, sources)
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_skips_multitenant_github():
+    sources = [CorpusSource(url="https://github.com/real/repo", title="Real Repo", text="real repo")]
+    content = "Code lives at [GitHub](https://github.com/fake/repo)."
+    new, repointed = repoint_fabricated_citations(content, sources)
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_skips_multitenant_devto():
+    sources = [CorpusSource(url="https://dev.to/authora/why-x", title="Why X", text="why x agent memory")]
+    content = "As [dev.to](https://dev.to/someoneelse/other-post) explains it."
+    new, repointed = repoint_fabricated_citations(content, sources)
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_noop_when_url_already_correct():
+    # The writer already linked the real corpus URL → nothing to change.
+    content = "Insight from [GetMaxim](https://getmaxim.ai/blog/drift) on drift."
+    new, repointed = repoint_fabricated_citations(content, _brand_sources())
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_skips_cross_domain():
+    # The fabricated link is on a DIFFERENT domain than the corpus source. We
+    # only fix wrong PATHS on the same brand site, never redirect across domains.
+    content = "Insight from [GetMaxim](https://someblog.example/p/x) on drift."
+    new, repointed = repoint_fabricated_citations(content, _brand_sources())
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_skips_ambiguous_multiple_sources_same_domain():
+    # Two corpus sources share getmaxim.ai → no unambiguous re-point target.
+    sources = [
+        CorpusSource(url="https://getmaxim.ai/blog/drift", title="Drift", text="drift maxim"),
+        CorpusSource(url="https://getmaxim.ai/blog/memory", title="Memory", text="memory maxim"),
+    ]
+    content = "Insight from [GetMaxim](https://getmaxim.ai/blog/fabricated) on drift."
+    new, repointed = repoint_fabricated_citations(content, sources)
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_skips_when_text_does_not_name_brand():
+    # Generic link text ("this guide") doesn't name the brand → no confident
+    # match → leave the writer's link alone.
+    content = "See [this guide](https://getmaxim.ai/blog/fabricated)."
+    new, repointed = repoint_fabricated_citations(content, _brand_sources())
+    assert new == content
+    assert repointed == []
+
+
+def test_repoint_is_idempotent():
+    content = "Insight from [GetMaxim](https://getmaxim.ai/blog/fabricated) on drift."
+    once, first = repoint_fabricated_citations(content, _brand_sources())
+    twice, second = repoint_fabricated_citations(once, _brand_sources())
+    assert once == twice
+    assert len(first) == 1
+    assert second == []  # nothing left to re-point the second time
+
+
+def test_repoint_noop_without_corpus():
+    content = "Insight from [GetMaxim](https://getmaxim.ai/blog/fabricated)."
+    assert repoint_fabricated_citations(content, []) == (content, [])
+    assert repoint_fabricated_citations("", _brand_sources()) == ("", [])
+
+
+def test_repoint_honors_explicit_multitenant_override():
+    # An operator can add a brand-like host to the denylist to suppress
+    # re-pointing on it; passing it in must short-circuit the match.
+    content = "Insight from [GetMaxim](https://getmaxim.ai/blog/fabricated) on drift."
+    new, repointed = repoint_fabricated_citations(
+        content, _brand_sources(), multi_tenant_hosts=frozenset({"getmaxim.ai"}),
+    )
+    assert new == content
+    assert repointed == []

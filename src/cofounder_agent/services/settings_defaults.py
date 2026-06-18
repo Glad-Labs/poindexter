@@ -364,6 +364,15 @@ DEFAULTS: dict[str, str] = {
     # the URL for, matched against the research corpus by domain handle — free,
     # high-precision, on by default.
     'citation_reconcile_enabled': 'true',
+    # why: re-point pass in the same atom — swaps a writer-fabricated path on a
+    # single-brand corpus domain for that source's real URL (a 404 the trusted-
+    # host scrub keeps) before qa.citations flags it dead. On by default.
+    'citation_repoint_enabled': 'true',
+    # Multi-tenant hosts where "same domain, different path" = DIFFERENT content
+    # (re-pointing would mis-cite), so the re-point pass skips them. Empty =
+    # use the built-in DEFAULT_MULTITENANT_HOSTS denylist; a non-empty CSV
+    # REPLACES it wholesale (mirrors trusted_source_domains' override semantics).
+    'citation_repoint_multitenant_hosts': '',
     # why: advisory rail scoring named-source attributions left unlinked +
     # unmatched against the corpus; on by default, feeds qa_feedback + Grafana.
     'unlinked_attribution_enabled': 'true',

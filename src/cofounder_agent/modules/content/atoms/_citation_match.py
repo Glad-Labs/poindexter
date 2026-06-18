@@ -359,12 +359,119 @@ def find_unmatched_attributions(
     return out
 
 
+# --- re-point already-linked fabricated citations (repair, scan-3) ----------
+
+# Multi-tenant platforms: the registrable domain is a HOST for many distinct
+# sources, so "same domain, different path" means DIFFERENT CONTENT (a different
+# repo / paper / article / video), NOT the same source at a wrong path. The
+# writer naming the platform itself ("arXiv", "GitHub") matches the platform's
+# domain handle, so without this denylist a fabricated ``arxiv.org/abs/<fake>``
+# would be re-pointed to whatever arxiv source the corpus holds — silently
+# citing the wrong paper. Re-pointing is high-precision ONLY on single-brand
+# domains; these are excluded by construction. Registrable (2-label) forms,
+# matched against ``_registrable_and_sld(url)[0]``.
+DEFAULT_MULTITENANT_HOSTS: frozenset[str] = frozenset({
+    "github.com", "gitlab.com", "bitbucket.org",
+    "huggingface.co", "kaggle.com",
+    "arxiv.org", "ssrn.com", "researchgate.net",
+    "dev.to", "medium.com", "substack.com", "hashnode.dev",
+    "blogspot.com", "wordpress.com", "tumblr.com",
+    "wikipedia.org", "fandom.com",
+    "stackoverflow.com", "stackexchange.com", "superuser.com", "serverfault.com",
+    "reddit.com", "ycombinator.com", "quora.com",
+    "youtube.com", "youtu.be", "vimeo.com",
+    "pypi.org", "npmjs.com", "crates.io", "rubygems.org", "nuget.org", "packagist.org",
+})
+
+
+def repoint_fabricated_citations(
+    content: str | None,
+    sources: list[CorpusSource],
+    multi_tenant_hosts: frozenset[str] | set[str] | None = None,
+) -> tuple[str, list[dict]]:
+    """REPAIR (scan-3): re-point an already-linked citation whose URL is a
+    writer-invented path on a single-brand domain to the corpus source's real
+    URL on that same domain.
+
+    The writer sometimes wraps a brand in a markdown link to that brand's own
+    domain but fabricates the path — a 404 the host-only ``scrub_fabricated_links``
+    keeps (the host is trusted) and that ``qa.citations`` then flags dead. When
+    the corpus holds the real URL for that brand on that exact domain, swapping
+    the href is high-precision.
+
+    Fires for a markdown link ``[text](url)`` only when ALL hold:
+
+    1. ``url``'s registrable domain is NOT a multi-tenant platform (denylist) —
+       there a different path is different content, so re-pointing would
+       mis-cite. Defaults to :data:`DEFAULT_MULTITENANT_HOSTS`.
+    2. exactly ONE corpus source sits on ``url``'s registrable domain (an
+       unambiguous re-point target).
+    3. ``text`` names that brand via the repair-grade ``_domain_match`` handle
+       check (the same precision bar as the unlinked-attribution repair).
+    4. ``url`` is not already that source's URL (idempotent; also subsumes
+       "the writer used the real research URL" — never overrides a corpus URL).
+
+    Returns ``(new_content, repointed)`` where ``repointed`` is a list of
+    ``{"text", "old", "new"}`` in document order. Idempotent. Never re-points
+    across domains, to an ambiguous target, or on a multi-tenant host.
+    """
+    if not content or not sources:
+        return content or "", []
+
+    denylist = (
+        multi_tenant_hosts if multi_tenant_hosts is not None
+        else DEFAULT_MULTITENANT_HOSTS
+    )
+
+    # registrable domain -> sole corpus source on it (None marks 2+ → ambiguous).
+    by_domain: dict[str, CorpusSource | None] = {}
+    for src in sources:
+        rs = _registrable_and_sld(src.url)
+        if rs is None:
+            continue
+        reg = rs[0]
+        by_domain[reg] = None if reg in by_domain else src
+
+    edits: list[tuple[int, int, str, str, str]] = []
+    for m in _MD_LINK_RE.finditer(content):
+        text = m.group(1).strip()
+        url = m.group(2).strip().rstrip(".,;:!?)")
+        rs = _registrable_and_sld(url)
+        if rs is None:
+            continue
+        reg = rs[0]
+        if reg in denylist:
+            continue
+        src = by_domain.get(reg)
+        if src is None:  # no corpus source on this domain, or ambiguous (2+)
+            continue
+        if url == src.url:  # already the real URL — nothing to fix
+            continue
+        if _domain_match(text, [src]) is None:  # link text must name the brand
+            continue
+        url_start, url_end = m.span(2)
+        edits.append((url_start, url_end, text, url, src.url))
+
+    if not edits:
+        return content, []
+
+    new = content
+    for url_start, url_end, _text, _old, new_url in sorted(
+        edits, key=lambda x: x[0], reverse=True,
+    ):
+        new = f"{new[:url_start]}{new_url}{new[url_end:]}"
+    repointed = [{"text": t, "old": o, "new": n} for _s, _e, t, o, n in edits]
+    return new, repointed
+
+
 __all__ = [
     "Attribution",
     "CorpusSource",
+    "DEFAULT_MULTITENANT_HOSTS",
     "find_attributions",
     "find_unmatched_attributions",
     "link_matched_attributions",
     "match_subject",
     "parse_corpus",
+    "repoint_fabricated_citations",
 ]

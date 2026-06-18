@@ -64,13 +64,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content.strip():
         return {}
 
+    # One guarded config read for all three flags — config reads must never
+    # break the pipeline, so a single try/except covers the whole block.
     site_config = state.get("site_config")
+    repoint_on = True
+    mt_hosts: frozenset[str] | None = None
     if site_config is not None:
         try:
             if not site_config.get_bool("citation_reconcile_enabled", True):
                 return {}
+            repoint_on = site_config.get_bool("citation_repoint_enabled", True)
+            mt_list = site_config.get_list("citation_repoint_multitenant_hosts", "")
+            mt_hosts = frozenset(h.lower() for h in mt_list) if mt_list else None
         except Exception:  # noqa: BLE001 — config read must never break the pipeline
-            pass
+            repoint_on, mt_hosts = True, None
 
     research_context = state.get("research_context") or ""
     if not research_context.strip():
@@ -79,23 +86,43 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from modules.content.atoms._citation_match import (
         link_matched_attributions,
         parse_corpus,
+        repoint_fabricated_citations,
     )
 
     sources = parse_corpus(research_context)
     if not sources:
         return {}
 
+    # Scan-1: link UNLINKED attribution subjects that match a corpus source.
     new_content, linked = link_matched_attributions(content, sources)
-    if not linked:
+
+    # Scan-3: re-point ALREADY-linked citations whose URL is a writer-invented
+    # path on a single-brand corpus domain to that source's real URL — fixing a
+    # 404 the trusted-host scrub keeps before qa.citations flags it dead.
+    # Multi-tenant platforms (github/arxiv/dev.to/…) are excluded by construction.
+    repointed: list[dict] = []
+    if repoint_on:
+        new_content, repointed = repoint_fabricated_citations(new_content, sources, mt_hosts)
+
+    if not linked and not repointed:
         return {}
 
-    logger.info(
-        "[content.reconcile_citations] linked %d corpus-matched attribution(s) "
-        "(task=%s): %s",
-        len(linked),
-        str(state.get("task_id") or "?")[:8],
-        ", ".join(f"{lk['subject']}→{lk['url']}" for lk in linked[:5]),
-    )
+    if linked:
+        logger.info(
+            "[content.reconcile_citations] linked %d corpus-matched attribution(s) "
+            "(task=%s): %s",
+            len(linked),
+            str(state.get("task_id") or "?")[:8],
+            ", ".join(f"{lk['subject']}→{lk['url']}" for lk in linked[:5]),
+        )
+    if repointed:
+        logger.info(
+            "[content.reconcile_citations] re-pointed %d fabricated brand-domain "
+            "citation(s) (task=%s): %s",
+            len(repointed),
+            str(state.get("task_id") or "?")[:8],
+            ", ".join(f"{rp['text']}: {rp['old']}→{rp['new']}" for rp in repointed[:5]),
+        )
     return {"content": new_content}
 
 

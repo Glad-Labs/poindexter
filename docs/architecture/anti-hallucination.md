@@ -279,6 +279,27 @@ at draft time, the fix is a deterministic lookup, not a guess:
   link. High precision by construction; the inserted links then flow through
   `qa.citations`' dead-link check. Gated by `citation_reconcile_enabled` (default
   on). The pure matching core is `modules/content/atoms/_citation_match.py`.
+  - **Re-point pass (scan-3, same atom).** The writer also fabricates citations
+    the other way: it wraps a brand in a markdown link to that brand's _own_
+    domain but invents the **path** — a 404 the host-only `scrub_fabricated_links`
+    keeps (the host is trusted) and that `qa.citations` then counts dead.
+    `repoint_fabricated_citations` swaps the fabricated href for the corpus
+    source's real URL when, and only when: (1) the link URL's registrable domain
+    is **not** a multi-tenant platform, (2) exactly **one** corpus source sits on
+    that domain (unambiguous target), (3) the link text names that brand by
+    domain handle, and (4) the URL isn't already the corpus URL. The
+    multi-tenant denylist (`DEFAULT_MULTITENANT_HOSTS`, override
+    `citation_repoint_multitenant_hosts`) is load-bearing: on `github.com` /
+    `arxiv.org` / `dev.to` a _different path is different content_ (a different
+    repo/paper/article), so re-pointing there would silently mis-cite — the exact
+    "a wrong auto-link is worse than a missing one" regression this machinery
+    forbids. Gated by `citation_repoint_enabled` (default on). **Scope, measured:**
+    real dead trusted-domain citations are dominated by fabricated links on those
+    multi-tenant platforms _with no corpus source to re-point to_ (e.g. an
+    invented `dev.to/<handle>/<slug>` article); those are out of reach of any
+    deterministic same-domain repair and stay **advisory** under `qa.citations`.
+    The durable lever for them is writer-prompt discipline (cite only
+    corpus-provided URLs), not broader matching here.
 
 - **`qa.unlinked_attribution`** (advisory rail, after `qa.citations`): sees the
   RESIDUAL — attribution subjects that match no corpus source and aren't already
