@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## [0.81.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.80.1...v0.81.0) (2026-06-18)
+
+
+### Features
+
+* **api:** declarative data-plane service + HTTP routes + CLI de-SQL ([#1522](https://github.com/Glad-Labs/glad-labs-stack/issues/1522)) ([#1651](https://github.com/Glad-Labs/glad-labs-stack/issues/1651)) ([8cd4d38](https://github.com/Glad-Labs/glad-labs-stack/commit/8cd4d38c07770bf0db4763c81134d58a6f033a0b))
+* **brand+site:** close type-scale gaps, promote nav/link patterns, wire expressive range ([#1659](https://github.com/Glad-Labs/glad-labs-stack/issues/1659)) ([3b54d9b](https://github.com/Glad-Labs/glad-labs-stack/commit/3b54d9b2cde528acb3dd674edb88b1348d061f86))
+* **ci:** adapter-purity guard + bootstrap-allowlist docs ([#1344](https://github.com/Glad-Labs/glad-labs-stack/issues/1344), closes epic [#1340](https://github.com/Glad-Labs/glad-labs-stack/issues/1340)) ([#1655](https://github.com/Glad-Labs/glad-labs-stack/issues/1655)) ([138852e](https://github.com/Glad-Labs/glad-labs-stack/commit/138852e748bd8cb9c7cf5b22c3dc01193580290e))
+* **image:** make image gen prompts + Pexels fallbacks niche-configurable (closes [#219](https://github.com/Glad-Labs/glad-labs-stack/issues/219)) ([#1670](https://github.com/Glad-Labs/glad-labs-stack/issues/1670)) ([4c1c1b7](https://github.com/Glad-Labs/glad-labs-stack/commit/4c1c1b700a59e1c60c311aae78adaef764c73223))
+* **qa:** bounded 1-shot rewrite/rescue cycle before a salvageable QA reject ([#1674](https://github.com/Glad-Labs/glad-labs-stack/issues/1674)) ([fdc4f05](https://github.com/Glad-Labs/glad-labs-stack/commit/fdc4f052d3d3550fddd741f98f98763b397c95f4))
+* **settings:** add lifecycle metadata columns to app_settings (poindexter[#756](https://github.com/Glad-Labs/glad-labs-stack/issues/756)) ([#1678](https://github.com/Glad-Labs/glad-labs-stack/issues/1678)) ([6fb6efa](https://github.com/Glad-Labs/glad-labs-stack/commit/6fb6efa08c11c3ff4a0cfdf68baa8055af772981))
+
+
+### Bug Fixes
+
+* **content:** re-point already-linked fabricated citations to corpus URLs (brand-domain subset) ([#1673](https://github.com/Glad-Labs/glad-labs-stack/issues/1673)) ([93b1e8c](https://github.com/Glad-Labs/glad-labs-stack/commit/93b1e8ce107ec88662266fb96a5b137712c56e2e))
+* **content:** repair orphaned anchor text when scrubbing fabricated links ([#1671](https://github.com/Glad-Labs/glad-labs-stack/issues/1671)) ([1c2fa48](https://github.com/Glad-Labs/glad-labs-stack/commit/1c2fa48fa620f716068988fa1368733c5e8501cf))
+* **deploy:** deploy-sync waits for a flow gap instead of skipping forever ([#1665](https://github.com/Glad-Labs/glad-labs-stack/issues/1665)) ([479d2cb](https://github.com/Glad-Labs/glad-labs-stack/commit/479d2cb0271d6fb19a891738492cd4c8eb142ef4))
+* **deps:** bump cryptography to 49 (Trivy HIGH GHSA-537c-gmf6-5ccf) by retiring atproto/Bluesky ([#1658](https://github.com/Glad-Labs/glad-labs-stack/issues/1658)) ([858411f](https://github.com/Glad-Labs/glad-labs-stack/commit/858411f57ace450768f04cf86096b4a85c93c594))
+* **mcp:** recreate agent_permissions/approval_queue tables; gate fails open on missing table ([#1669](https://github.com/Glad-Labs/glad-labs-stack/issues/1669)) ([df62af1](https://github.com/Glad-Labs/glad-labs-stack/commit/df62af14ea6fd9ac120448420af6778a91f62f82))
+* **obs:** drop GPU SQL alert rules [#13](https://github.com/Glad-Labs/glad-labs-stack/issues/13)/[#14](https://github.com/Glad-Labs/glad-labs-stack/issues/14), single-source to Prometheus (poindexter[#653](https://github.com/Glad-Labs/glad-labs-stack/issues/653)) ([#1675](https://github.com/Glad-Labs/glad-labs-stack/issues/1675)) ([ef94513](https://github.com/Glad-Labs/glad-labs-stack/commit/ef945134e666e45a46a7a38b778a761a6dae07e2))
+* **publish:** [#729](https://github.com/Glad-Labs/glad-labs-stack/issues/729) gate allows known-but-inactive niches (unblocks dev_diary) ([#1648](https://github.com/Glad-Labs/glad-labs-stack/issues/1648)) ([300fd71](https://github.com/Glad-Labs/glad-labs-stack/commit/300fd715d95a303e4c5af452f5cde330749329ac))
+* **qa:** exclude advisory rails from gated score; soften validator warning penalty ([#1668](https://github.com/Glad-Labs/glad-labs-stack/issues/1668)) ([50aba11](https://github.com/Glad-Labs/glad-labs-stack/commit/50aba1111579fcf74d48d5c1d8115e745235e4f4))
+* **research:** ground the writer on real page text, not 100-char snippets ([#1672](https://github.com/Glad-Labs/glad-labs-stack/issues/1672)) ([ee803be](https://github.com/Glad-Labs/glad-labs-stack/commit/ee803be48463d5b4585e4853b3abcb9109604427))
+* **retention:** consolidate dual retention systems into single source of truth (closes [#699](https://github.com/Glad-Labs/glad-labs-stack/issues/699)) ([#1667](https://github.com/Glad-Labs/glad-labs-stack/issues/1667)) ([e7133a4](https://github.com/Glad-Labs/glad-labs-stack/commit/e7133a4db1ff4be43c5ae764cf3253a7617e80a2))
+* **settings:** prune 10 dead model keys and fix qa vision ollama prefix ([#1666](https://github.com/Glad-Labs/glad-labs-stack/issues/1666)) ([4e5a499](https://github.com/Glad-Labs/glad-labs-stack/commit/4e5a499cf7fe61eee92ce8c71368075e01ce536f))
+* **site-config:** share one SiteConfig in the worker so runtime settings reload reaches routes ([#1649](https://github.com/Glad-Labs/glad-labs-stack/issues/1649)) ([aff8c5c](https://github.com/Glad-Labs/glad-labs-stack/commit/aff8c5cb46beb671943c7de0ece2d2d19731a711))
+* **types:** reduce mypy strict backlog 1278→282 errors ([#1550](https://github.com/Glad-Labs/glad-labs-stack/issues/1550)) ([#1660](https://github.com/Glad-Labs/glad-labs-stack/issues/1660)) ([62cbc86](https://github.com/Glad-Labs/glad-labs-stack/commit/62cbc86010d837203f0a94c1436070fb87bbc17d))
+* **types:** resolve remaining 282→0 mypy strict errors ([#1550](https://github.com/Glad-Labs/glad-labs-stack/issues/1550) part 2) ([#1664](https://github.com/Glad-Labs/glad-labs-stack/issues/1664)) ([caad251](https://github.com/Glad-Labs/glad-labs-stack/commit/caad2512e48c96deb01a02986468a7bfd80fed56))
+* **voice:** patch module-level VALID_VOICES dict for Kokoro TTS voices ([#1679](https://github.com/Glad-Labs/glad-labs-stack/issues/1679)) ([7441862](https://github.com/Glad-Labs/glad-labs-stack/commit/74418627cb1dcc6484e0f335b7c5d27b19050c05))
+* **voice:** separate browser WSS URL from bot internal URL (mixed-content fix) ([#1677](https://github.com/Glad-Labs/glad-labs-stack/issues/1677)) ([ef2b5ba](https://github.com/Glad-Labs/glad-labs-stack/commit/ef2b5ba3d0ded06b04ef58b6d4bf65d5b3cf9169))
+* **writer:** enrich bare canonical_blog prompt to clear assembly QA vetoes ([#1676](https://github.com/Glad-Labs/glad-labs-stack/issues/1676)) ([f621b3d](https://github.com/Glad-Labs/glad-labs-stack/commit/f621b3dabeb5df58957f8f5fbd835225d3172fb7))
+* **writer:** stop canonical_blog writer fabricating stats + echoing snippet labels ([#1680](https://github.com/Glad-Labs/glad-labs-stack/issues/1680)) ([9e62803](https://github.com/Glad-Labs/glad-labs-stack/commit/9e62803fbb025fc19697552805ba3251b5394827))
+
 ## [0.80.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.80.0...v0.80.1) (2026-06-16)
 
 
