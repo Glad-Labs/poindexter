@@ -758,6 +758,13 @@ class ImageService:
             logger.warning("Pexels API key not configured (checked env + DB)")
             return None
 
+        # Respect image_aspect_ratio setting for niche-appropriate orientation.
+        # Only overrides the default "landscape"; explicit caller-supplied values
+        # are left alone so per-call overrides remain authoritative.
+        _cfg_aspect = self._site_config.get("image_aspect_ratio", "")
+        if _cfg_aspect and orientation == "landscape":
+            orientation = _cfg_aspect
+
         # Build search queries, prioritizing a concept-level query over
         # the raw topic. An LLM preprocessing step converts topics like
         # "DuckDB vs Postgres for analytics" into "data analytics
@@ -792,29 +799,30 @@ class ImageService:
         # alt-text), the raw topic might still hit something.
         search_queries.append(topic)
 
-        # Add concept-based fallbacks (no people)
-        concept_keywords = [
-            "technology",
-            "digital",
-            "abstract",
-            "modern",
-            "innovation",
-            "data",
-            "network",
-            "background",
-            "desktop",
-            "workspace",
-            "object",
-            "product",
-            "design",
-            "pattern",
-            "texture",
-            "nature",
-            "landscape",
-            "environment",
-            "system",
-            "interface",
-        ]
+        # Niche-specific fallback keywords: operator-configurable via
+        # image_pexels_fallback_keywords (comma-separated).  When unset the
+        # default list is used; it's intentionally generic so it doesn't skew
+        # non-tech niches the way the original tech-heavy list did (#219).
+        _fallback_kw_setting = self._site_config.get("image_pexels_fallback_keywords", "")
+        if _fallback_kw_setting:
+            concept_keywords = [
+                kw.strip() for kw in _fallback_kw_setting.split(",") if kw.strip()
+            ]
+        else:
+            concept_keywords = [
+                "abstract",
+                "modern",
+                "background",
+                "workspace",
+                "object",
+                "product",
+                "design",
+                "pattern",
+                "texture",
+                "nature",
+                "landscape",
+                "environment",
+            ]
 
         # Add user keywords but avoid person/people related terms
         if keywords:

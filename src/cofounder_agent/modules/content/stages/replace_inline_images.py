@@ -89,6 +89,27 @@ SDXL_NEGATIVE_PROMPT = (
 )
 
 
+def _get_sdxl_negative_prompt(site_config: Any) -> str:
+    """Return operator-configured negative prompt, or the safe default."""
+    if site_config is None:
+        return SDXL_NEGATIVE_PROMPT
+    override = (site_config.get("image_negative_prompt", "") or "").strip()
+    return override if override else SDXL_NEGATIVE_PROMPT
+
+
+def _apply_base_style(prompt: str, site_config: Any) -> str:
+    """Append operator-configured base style suffix to an SDXL prompt.
+
+    ``image_base_style_prompt`` lets operators set a niche-wide style
+    (e.g. ``cyberpunk, neon accents`` for tech, ``natural light, botanical``
+    for gardening) without editing per-post prompts.  Empty setting = no-op.
+    """
+    if site_config is None:
+        return prompt
+    base = (site_config.get("image_base_style_prompt", "") or "").strip()
+    return f"{prompt}, {base}" if base else prompt
+
+
 # ---------------------------------------------------------------------------
 # Stage
 # ---------------------------------------------------------------------------
@@ -574,6 +595,7 @@ async def _batch_generate_all_sdxl_images(
     # ------------------------------------------------------------------ #
     # Phase 1: generate ALL prompts under a single Ollama lock            #
     # ------------------------------------------------------------------ #
+    neg_prompt = _get_sdxl_negative_prompt(site_config)
     sdxl_prompts: list[str | None] = []
     try:
         async with gpu.lock(
@@ -599,6 +621,7 @@ async def _batch_generate_all_sdxl_images(
                         max_tokens=100,
                     )
                     sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+                    sdxl_prompt = _apply_base_style(sdxl_prompt, site_config)
                     if sdxl_prompt and len(sdxl_prompt) > 20:
                         logger.info(
                             "  [IMAGE-%s] SDXL prompt (batch): %s...", num, sdxl_prompt[:60],
@@ -632,7 +655,7 @@ async def _batch_generate_all_sdxl_images(
                             f"{sdxl_url}/generate",
                             json={
                                 "prompt": sdxl_prompt,
-                                "negative_prompt": SDXL_NEGATIVE_PROMPT,
+                                "negative_prompt": neg_prompt,
                                 "steps": 8, "guidance_scale": 2.0,
                             },
                             timeout=60,
@@ -715,6 +738,7 @@ async def _try_sdxl(
                     "platform handle required for dispatch — check pipeline context threading"
                 )
             sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+        sdxl_prompt = _apply_base_style(sdxl_prompt, site_config)
 
         if not sdxl_prompt or len(sdxl_prompt) <= 20:
             return None
@@ -722,6 +746,7 @@ async def _try_sdxl(
         logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_prompt[:60])
 
         # Step 2: SDXL renders the image
+        neg_prompt = _get_sdxl_negative_prompt(site_config)
         async with gpu.lock(
             "sdxl", model="sdxl_lightning",
             task_id=task_id, phase="inline_image",
@@ -731,7 +756,7 @@ async def _try_sdxl(
                     f"{sdxl_url}/generate",
                     json={
                         "prompt": sdxl_prompt,
-                        "negative_prompt": SDXL_NEGATIVE_PROMPT,
+                        "negative_prompt": neg_prompt,
                         "steps": 8, "guidance_scale": 2.0,
                     },
                     timeout=60,

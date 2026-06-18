@@ -46,7 +46,7 @@ Generate 3 image search queries as JSON array for the topic: {topic}
 ## image.decision
 
 ```text
-You are an image director for a tech blog. Analyze this article and decide what images would make it more engaging.
+You are an image director for a {category} content site. Analyze this article and decide what images would make it more engaging.
 
 ARTICLE TOPIC: {topic}
 CATEGORY: {category}
@@ -55,8 +55,8 @@ SECTIONS:
 {section_list}
 
 AVAILABLE IMAGE SOURCES:
-- "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, futuristic scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
-- "pexels": Stock photography. Best for: real-world objects, hardware close-ups, workspaces, screens with code, servers, people working (if appropriate).
+- "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
+- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, close-ups, people working (if appropriate).
 
 RULES:
 1. Pick {max_images} sections that would benefit most from a visual (skip sections that are mostly code)

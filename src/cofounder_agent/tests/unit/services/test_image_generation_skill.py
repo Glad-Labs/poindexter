@@ -47,7 +47,7 @@ def test_image_templates_carry_placeholders() -> None:
     assert "image search queries as JSON array for the topic: {topic}" in queries
 
     decision = pm.prompts["image.decision"]["template"]
-    assert "image director for a tech blog" in decision
+    assert "image director for a {category} content site" in decision
     assert "ARTICLE TOPIC: {topic}" in decision
     assert "CATEGORY: {category}" in decision
     assert "{section_list}" in decision

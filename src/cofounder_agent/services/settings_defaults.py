@@ -364,7 +364,19 @@ DEFAULTS: dict[str, str] = {
     # ----- Image generation -----
     'enable_sdxl_warmup': '',
     'image_model': 'sdxl_lightning',
+    # Operator-supplied negative prompt overrides the built-in default.
+    # Leave empty to keep "text, words, letters, watermark, face, person, ..."
     'image_negative_prompt': '',
+    # Style suffix appended to every SDXL prompt — niche brand voice.
+    # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
+    'image_base_style_prompt': '',
+    # Pexels orientation default for featured + inline images.
+    # Options: landscape (default) | portrait | square
+    'image_aspect_ratio': 'landscape',
+    # Comma-separated fallback keywords for Pexels when the semantic query
+    # returns zero results.  Leave empty to use the built-in generic list.
+    # Example for gardening: "plants, garden, outdoor, nature, floral"
+    'image_pexels_fallback_keywords': '',
     'image_styles': '',
     # In-process featured-image style-rotation dedup window
     # (services/image_style_rotation.py). `size` caps how many recent picks
