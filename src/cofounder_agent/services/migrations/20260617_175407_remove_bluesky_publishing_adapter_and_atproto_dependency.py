@@ -1,6 +1,6 @@
 """Migration 20260617_175407: remove bluesky publishing adapter and atproto dependency
 
-ISSUE: Glad-Labs/glad-labs-stack — Trivy HIGH GHSA-537c-gmf6-5ccf
+ISSUE: Glad-Labs/poindexter — Trivy HIGH GHSA-537c-gmf6-5ccf
        ("Vulnerable OpenSSL included in cryptography wheels")
 
 The ``cryptography`` wheels bundled a vulnerable OpenSSL through 46.x; the

@@ -74,7 +74,7 @@ if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
     # Without this, restarting Grafana directly leaves the
     # contact-point's Bearer credential empty and the worker logs
     # ~200 401s/day on the Alertmanager webhook (2026-05-27 audit
-    # finding). Glad-Labs/glad-labs-stack#231 — wire-it-once,
+    # finding). Glad-Labs/poindexter#231 — wire-it-once,
     # survive-every-restart hardening.
     #
     # Writes to ``.poindexter-grafana.env`` next to docker-compose.local.yml;
