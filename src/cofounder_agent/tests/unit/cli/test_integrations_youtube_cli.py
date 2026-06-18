@@ -364,6 +364,7 @@ class TestSetupFailures:
         result = runner.invoke(
             integrations_module.integrations_group,
             ["youtube", "setup", "--client-id", "c", "--client-secret", "s"],
+            input="n\n",  # decline enable prompt (Click 8.2+ aborts on EOF)
         )
         assert result.exit_code == 0
         assert "Channel read-back skipped" in result.output

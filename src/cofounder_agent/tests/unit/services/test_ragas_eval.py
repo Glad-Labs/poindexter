@@ -26,9 +26,25 @@ import pytest
 # happy-path test still guards on Ragas being installed via ``requires_ragas``.
 from services.ragas_eval import evaluate_sample, is_enabled
 
+def _ragas_importable() -> bool:
+    """Return True only when ragas is installed AND its transitive deps resolve.
+
+    ragas 0.4.x imports langchain-community internals (chat_models.vertexai)
+    that were removed in langchain-community 0.4.2.  A find_spec() check alone
+    doesn't catch that breakage — try-import does.
+    """
+    if find_spec("ragas") is None:
+        return False
+    try:
+        __import__("ragas")
+        return True
+    except ImportError:
+        return False
+
+
 requires_ragas = pytest.mark.skipif(
-    find_spec("ragas") is None,
-    reason="Ragas is an opt-in dep; install via `pip install ragas` to run.",
+    not _ragas_importable(),
+    reason="Ragas not importable (missing or has broken transitive deps).",
 )
 
 

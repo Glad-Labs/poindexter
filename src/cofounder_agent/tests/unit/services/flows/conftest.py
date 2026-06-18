@@ -20,6 +20,13 @@ Also blocks the ephemeral-server fallback explicitly via
 fails to set up, every Prefect call inside the tests fails fast
 with a clear "Failed to reach API" message instead of silently
 re-summoning the leaky ephemeral server.
+
+NOTE (anyio 4.9 compat): tests that call ``content_generation_flow.fn()``
+now patch ``reclaim_stale_inprogress_tasks`` and ``claim_pending_task`` at
+the module level so those @task calls never reach the Prefect task engine.
+``prefect_test_harness`` is retained for tests that directly exercise
+@task functions without the ``.fn()`` escape hatch, but ``flow.fn()``
+tests no longer depend on it.
 """
 
 from __future__ import annotations

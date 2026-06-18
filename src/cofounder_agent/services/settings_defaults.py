@@ -115,13 +115,24 @@ DEFAULTS: dict[str, str] = {
     # ~3-5s reload tax (see services/llm_providers/ollama_unload.py).
     'pipeline_explicit_writer_unload_before_sdxl': 'true',
     'pipeline_fallback_model': 'ollama/gemma-4-31B-it-qat:latest',
-    'pipeline_writer_model': 'ollama/glm-4.7-5090:latest',
+    # Daily-driver content writer. gemma-4-31B won the 2026-06-18 writer bakeoff
+    # (98/100): it names grounded specifics without the glm writer's [placeholder]
+    # hedging or qwen2.5's stat fabrication, and rarely needs the rescue. The
+    # cross-model rescue reviser is glm (qa_rewrite_model). Operators tune live.
+    'pipeline_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
     # releases VRAM before the inline-image /generate lands. 2s is the
     # sweet spot — long enough for the kernel to free, short enough to
     # stay invisible in pipeline latency.
     'pipeline_writer_unload_grace_seconds': '2',
     'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # Cross-model rescue reviser. The qa.rewrite step routes here instead of the
+    # writer (pipeline_writer_model). Default glm-4.7: cautious and never
+    # fabricates — the ideal final-pass reviser. Its [placeholder] weakness is a
+    # from-scratch-WRITER failure mode; when revising already-concrete text it
+    # just applies the targeted fix. Cross-model vs the gemma writer so their
+    # biases cancel (#1692 bakeoff). Empty = use the writer model.
+    'qa_rewrite_model': 'ollama/glm-4.7-5090:latest',
     # poindexter#716: vision QA model keys — seeded here so the DB always has
     # a value and code never falls back to a hardcoded literal.  Empty string =
     # operator deliberately cleared the key — the vision check is skipped.

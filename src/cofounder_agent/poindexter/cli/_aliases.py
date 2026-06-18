@@ -41,15 +41,16 @@ def deprecated_alias(
     invokes ``target``'s callback with the parsed values.
     """
 
-    @click.pass_context
-    def _forward(ctx: click.Context, /, **kwargs: Any) -> None:
+    def _forward(**kwargs: Any) -> None:
         click.secho(
             f"warning: `poindexter {name}` is deprecated and will be removed; "
             f"use `poindexter {new_path}` instead.",
             fg="yellow",
             err=True,
         )
-        ctx.invoke(target, **kwargs)
+        if target.callback is None:
+            raise click.ClickException(f"alias target '{target.name}' has no callback")
+        target.callback(**kwargs)
 
     return click.Command(
         name=name,

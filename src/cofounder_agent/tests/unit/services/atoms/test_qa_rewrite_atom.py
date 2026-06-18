@@ -50,7 +50,12 @@ class TestQaRewriteAtom:
         assert out["qa_rail_reviews"] == [{"__reset__": True}]
         assert out["qa_known_wrong_fact_only"] is False
 
-    async def test_only_failing_nonadvisory_feedback_used(self, monkeypatch):
+    async def test_failing_feedback_includes_advisory_excludes_passing(self, monkeypatch):
+        # The reviser must hear ALL failing reviews — blocking vetoes AND
+        # advisory rails (topic_delivery / g_eval / ragas), which carry the
+        # most specific fixes ("name the product"). Only PASSING reviews are
+        # dropped. (Prior behavior excluded advisory feedback, leaving the
+        # reviser blind to the issues most worth fixing.)
         seen = {}
 
         async def _fake_chat(prompt, **kw):
@@ -66,16 +71,17 @@ class TestQaRewriteAtom:
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
                  "provider": "ollama", "advisory": False, "feedback": "FIX_THIS"},
-                {"reviewer": "ragas_eval", "approved": False, "score": 40.0,
-                 "provider": "ollama", "advisory": True, "feedback": "ADVISORY_NOISE"},
+                {"reviewer": "topic_delivery", "approved": False, "score": 20.0,
+                 "provider": "consistency_gate", "advisory": True, "feedback": "NAME_THE_PRODUCT"},
                 {"reviewer": "deepeval_g_eval", "approved": True, "score": 90.0,
                  "provider": "ollama", "advisory": False, "feedback": "PASSED_NOISE"},
             ],
         }
         await qa_rewrite.run(state)
-        assert "FIX_THIS" in seen["prompt"]
-        assert "ADVISORY_NOISE" not in seen["prompt"]   # advisory excluded
-        assert "PASSED_NOISE" not in seen["prompt"]      # passing excluded
+        assert "FIX_THIS" in seen["prompt"]              # blocking veto — included
+        assert "NAME_THE_PRODUCT" in seen["prompt"]      # failing advisory — now included
+        assert "(advisory)" in seen["prompt"]            # …and labeled as advisory
+        assert "PASSED_NOISE" not in seen["prompt"]      # passing review — excluded
 
     async def test_empty_writer_output_degrades_to_reject(self, monkeypatch):
         async def _fake_chat(prompt, **kw):
@@ -124,3 +130,52 @@ class TestQaRewriteAtom:
         assert "content" not in out
         assert out["qa_rewrite_attempts"] == 1
         assert out["qa_rail_reviews"] == [{"__reset__": True}]
+
+    async def test_uses_cross_model_reviser_when_set(self, monkeypatch):
+        # qa_rewrite_model routes the revise step to a DIFFERENT model than the
+        # writer (resolve_local_model strips the ollama/ prefix).
+        seen = {}
+
+        async def _fake_chat(prompt, **kw):
+            seen["model"] = kw.get("model")
+            return "revised body"
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        sc = SiteConfig(initial_config={
+            "pipeline_writer_model": "glm-writer",
+            "qa_rewrite_model": "ollama/gemma-reviser",
+        })
+        state = {
+            "task_id": "t5", "content": "draft", "qa_rewrite_attempts": 0,
+            "site_config": sc,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "advisory": False,
+                 "provider": "ollama", "feedback": "fix"},
+            ],
+        }
+        await qa_rewrite.run(state)
+        assert seen["model"] == "gemma-reviser"
+
+    async def test_falls_back_to_writer_when_reviser_unset(self, monkeypatch):
+        # Empty qa_rewrite_model → reviser=None → writer model (backcompat).
+        seen = {}
+
+        async def _fake_chat(prompt, **kw):
+            seen["model"] = kw.get("model")
+            return "revised body"
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        sc = SiteConfig(initial_config={
+            "pipeline_writer_model": "glm-writer",
+            "qa_rewrite_model": "",
+        })
+        state = {
+            "task_id": "t6", "content": "draft", "qa_rewrite_attempts": 0,
+            "site_config": sc,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "advisory": False,
+                 "provider": "ollama", "feedback": "fix"},
+            ],
+        }
+        await qa_rewrite.run(state)
+        assert seen["model"] == "glm-writer"

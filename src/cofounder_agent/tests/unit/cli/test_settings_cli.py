@@ -401,7 +401,7 @@ class TestSettingsGetReveal:
     def test_reveal_prints_value_only_to_stdout(self, monkeypatch):
         """stdout is the bare plaintext (scriptable); warning goes to stderr."""
         monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         ctx, _conn = self._patch_reveal_conn(
             row={"value": "enc:v1:abc", "is_secret": True},
             decrypted="the-decrypted-secret",
@@ -421,7 +421,7 @@ class TestSettingsGetReveal:
     def test_reveal_json_includes_plaintext(self, monkeypatch):
         """--reveal --json emits structured output with the plaintext value."""
         monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         ctx, _conn = self._patch_reveal_conn(
             row={"value": "enc:v1:abc", "is_secret": True},
             decrypted="plain",
@@ -438,7 +438,7 @@ class TestSettingsGetReveal:
     def test_reveal_missing_key_fails_loud(self, monkeypatch):
         """An absent key exits non-zero rather than printing an empty secret."""
         monkeypatch.setenv("POINDEXTER_SECRET_KEY", "unit-test-key")
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         ctx, _conn = self._patch_reveal_conn(row=None, decrypted=None)
         with _patch_resolve_dsn(), ctx:
             result = runner.invoke(settings_group, ["get", "nope", "--reveal"])

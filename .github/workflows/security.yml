@@ -297,7 +297,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install Poetry
-        run: pipx install poetry
+        run: pip install "poetry==2.2.1"
       - name: Verify poetry.lock matches pyproject.toml
         run: |
           cd src/cofounder_agent

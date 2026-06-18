@@ -153,7 +153,18 @@ class TestContentGenerationFlow:
         pool = _make_pool(claim_row=None)
         db = _make_db_service(pool)
 
+        # Patch the two @task-decorated calls inside the flow body.
+        # Calling flow.fn() bypasses the flow engine but NOT the task
+        # engine — @task calls still route through Prefect's TaskRunner
+        # and need a live API server.  Patching at the module level avoids
+        # the dependency on prefect_test_harness, which broke in anyio 4.9.
         with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
             "services.content_router_service.process_content_generation_task",
         ) as pipeline_mock:
             result = await content_generation_flow.fn(database_service=db)
@@ -184,6 +195,12 @@ class TestContentGenerationFlow:
 
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
         with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=row),
+        ), patch(
             "services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
@@ -209,6 +226,9 @@ class TestContentGenerationFlow:
         pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
 
         with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
             "services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
@@ -242,7 +262,10 @@ class TestContentGenerationFlow:
         db = _make_db_service(pool)
 
         # task_id explicitly supplied but topic missing → real error
-        with pytest.raises(ValueError, match="requires a topic"):
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), pytest.raises(ValueError, match="requires a topic"):
             await content_generation_flow.fn(
                 task_id="no-topic-task",
                 database_service=db,
@@ -279,6 +302,9 @@ class TestFlowCrashMarksTaskFailed:
         pipeline_mock = AsyncMock(side_effect=boom)
 
         with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
             "services.content_router_service.process_content_generation_task",
             new=pipeline_mock,
         ):
@@ -559,11 +585,13 @@ class TestReclaimStaleInprogress:
         with patch(
             "services.flows.content_generation.reclaim_stale_inprogress_tasks",
             new=AsyncMock(return_value={"reset": 0, "failed": 0}),
-        ) as mock_reclaim:
-            with patch(
-                "services.content_router_service.process_content_generation_task",
-            ):
-                await content_generation_flow.fn(database_service=db)
+        ) as mock_reclaim, patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ):
+            await content_generation_flow.fn(database_service=db)
 
         mock_reclaim.assert_called_once()
 
@@ -615,6 +643,12 @@ class TestPrefectSentryInit:
             "services.llm_providers.litellm_provider.configure_langfuse_callback",
             new=AsyncMock(),
         ), patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
             "services.content_router_service.process_content_generation_task",
         ), patch(
             "services.di_wiring.build_platform_for_subprocess",
@@ -643,6 +677,12 @@ class TestPrefectSentryInit:
         with patch(
             "services.sentry_integration.SentryIntegration.initialize",
         ) as mock_sentry_init, patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
             "services.content_router_service.process_content_generation_task",
         ):
             await content_generation_flow.fn(database_service=db)
@@ -673,6 +713,12 @@ class TestPrefectSentryInit:
         ), patch(
             "services.llm_providers.litellm_provider.configure_langfuse_callback",
             new=AsyncMock(),
+        ), patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
         ), patch(
             "services.content_router_service.process_content_generation_task",
         ), patch(

@@ -49,7 +49,7 @@ def test_alias_warns_to_stderr_and_delegates():
     target, seen = _make_target()
     alias = deprecated_alias(target, name="old-name", new_path="group realname")
 
-    result = CliRunner(mix_stderr=False).invoke(alias, ["t-1", "--flag", "--note", "hi"])
+    result = CliRunner().invoke(alias, ["t-1", "--flag", "--note", "hi"])
 
     assert result.exit_code == 0
     # Delegated to the canonical callback with the parsed argv.
@@ -64,7 +64,13 @@ def test_alias_warns_to_stderr_and_delegates():
 
 def test_alias_keeps_stdout_clean_for_json_piping():
     """The warning must not land on stdout — a JSON consumer piping stdout
-    must see only the canonical command's output."""
+    must see only the canonical command's output.
+
+    Click 8.2+ CliRunner always mixes stderr into result.output (mix_stderr
+    was removed as a parameter and the mixed behaviour became permanent).
+    result.stderr still captures stderr-only, so strip it from result.output
+    to recover the stdout-only portion for the JSON assertion.
+    """
 
     @click.command("realname")
     @click.option("--json", "json_output", is_flag=True)
@@ -73,7 +79,11 @@ def test_alias_keeps_stdout_clean_for_json_piping():
         click.echo(json.dumps({"ok": True}))
 
     alias = deprecated_alias(target, name="old", new_path="grp realname")
-    result = CliRunner(mix_stderr=False).invoke(alias, ["--json"])
+    result = CliRunner().invoke(alias, ["--json"])
     assert result.exit_code == 0
     import json as _json
-    assert _json.loads(result.output) == {"ok": True}  # stdout is pure JSON
+    # Deprecation warning must go to stderr (real-world piping stays clean).
+    assert "deprecated" in result.stderr.lower()
+    # Strip the stderr prefix from the mixed output to recover stdout-only.
+    stdout_only = result.output[len(result.stderr):]
+    assert _json.loads(stdout_only) == {"ok": True}  # stdout is pure JSON

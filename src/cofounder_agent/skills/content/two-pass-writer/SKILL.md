@@ -96,6 +96,20 @@ CITE YOUR SOURCES (do this — don't avoid the numbers)
   real https:// URL for a fact — normal for your own background notes — state
   it in plain prose with no marker; the pipeline adds internal links afterward.
 
+BE SPECIFIC — USE REAL NAMES
+- Name the actual products, tools, models, and numbers from the topic and your
+  context. If the topic says "RTX 5090", write "RTX 5090" — never a generic
+  stand-in like [High-End Consumer GPU], [Product Name], or [Enterprise
+  Accelerator]. A bracketed placeholder is always worse than naming the thing.
+- Naming an entity that already appears in your topic or context is NOT
+  fabrication — it is the job. The anti-fabrication rule bans inventing a
+  precise number that has no source; it never bans using a name or figure that
+  is already in front of you. When unsure, name the entity and describe the
+  effect in plain words.
+- Leave NO fill-in-the-blank token in the final post — no [bracketed
+  placeholder] of any kind, no "TBD", no "(add benchmark here)". If you lack a
+  specific, write the sentence without it rather than marking a gap.
+
 STRUCTURE
 - Use real "## " H2 headings ("### " for subsections). Never use a bold line as
   a fake heading, and don't open the body with an H1 — the title is added
