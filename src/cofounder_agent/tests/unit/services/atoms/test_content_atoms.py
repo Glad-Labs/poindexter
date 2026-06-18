@@ -161,6 +161,20 @@ class TestContentNormalizeDraft:
         assert "Hello" in result
         assert "World" in result
 
+    async def test_repairs_orphaned_fabricated_citation_end_to_end(self):
+        # Real scrubber (not mocked): a fabricated appended Title-Case citation
+        # must not survive node 5 as an orphaned anchor stranded mid-sentence.
+        from modules.content.atoms import content_normalize_draft as atom
+        content = (
+            "Memory bandwidth dominates. We've seen the trend elsewhere too "
+            "[Local LLM Hardware Requirements](https://made-up.example/x). "
+            "The hardware press is full of benchmarks."
+        )
+        out = await atom.run(_base_state(content=content))
+        assert "made-up.example" not in out["content"]
+        assert "Local LLM Hardware Requirements" not in out["content"]
+        assert "elsewhere too. The hardware press" in out["content"]
+
 
 # ---------------------------------------------------------------------------
 # TestContentPlanImageMarkers

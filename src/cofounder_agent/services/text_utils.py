@@ -74,6 +74,83 @@ DEFAULT_TRUSTED_DOMAINS: frozenset[str] = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# Orphaned-anchor repair
+# ---------------------------------------------------------------------------
+#
+# Scrubbing a fabricated markdown link by dropping only its href keeps the
+# anchor text — fine when the anchor is inline prose ("A [fake source](url)
+# claim." -> "A fake source claim.") but BROKEN when the writer appended a
+# Title-Case citation reference ("...elsewhere too [Local LLM Hardware
+# Requirements](url). The..." -> "...elsewhere too Local LLM Hardware
+# Requirements. The...", a capitalized fragment that reads as broken English).
+#
+# Local writer models fabricate such cross-link citations on most runs, so we
+# discriminate: an *appended citation* anchor gets the whole construct removed
+# (sentence repairs itself); an *inline prose* anchor keeps its text as before.
+
+# Words that, if left dangling by removing the following noun phrase, would
+# read worse than the orphan ("...as explained in." / "...details for.").
+# When one of these immediately precedes the link we keep the anchor text
+# (the safe, non-regressing direction) instead of dropping the whole phrase.
+_DANGLING_CONNECTORS: frozenset[str] = frozenset({
+    # articles / determiners
+    "a", "an", "the", "this", "that", "these", "those",
+    "my", "our", "your", "its", "their",
+    # prepositions
+    "in", "on", "at", "to", "of", "for", "with", "from", "by", "via",
+    "as", "into", "about", "over", "under", "through", "per",
+    # cue verbs/words that take the title as their object
+    "see", "read", "check", "visit", "like", "including",
+    "called", "titled", "named",
+    # conjunctions
+    "and", "or", "but", "nor",
+})
+
+# Punctuation that marks the end of a clause/sentence. An appended citation is
+# only dropped when it butts against one of these (or end-of-line/text) — i.e.
+# it was tacked on at a clause boundary rather than woven into the prose.
+_CLAUSE_END_PUNCT: frozenset[str] = frozenset({".", ",", ";", ":", "!", "?", ")"})
+
+_PREV_TOKEN_RE = re.compile(r"(\S+)\s*$")
+
+
+def _is_appended_citation_anchor(anchor: str) -> bool:
+    """True if the anchor reads as an appended title/citation reference rather
+    than inline prose — a Title-Case phrase (>=2 tokens, >=2 capitalized) or a
+    truncated title ending in an ellipsis. Inline prose ("fake source") and
+    single words ("docs", "GitHub") are not citations."""
+    text = anchor.strip()
+    if not text:
+        return False
+    if text.endswith(("...", "…")):
+        return True
+    tokens = text.split()
+    if len(tokens) < 2:
+        return False
+    capitalized = sum(1 for t in tokens if t[:1].isupper())
+    return capitalized >= 2
+
+
+def _should_drop_scrubbed_link(
+    anchor: str, preceding_text: str, following_char: str,
+) -> bool:
+    """Decide whether a scrubbed fabricated link should be removed whole
+    (returns True) or collapsed to its anchor text (returns False).
+
+    Drop the whole construct only when the anchor is an appended citation
+    AND it sits at a clause boundary AND the preceding word is not a connector
+    that would dangle. Otherwise keep the anchor text — the conservative
+    direction that never makes prose worse than the legacy behavior."""
+    if not _is_appended_citation_anchor(anchor):
+        return False
+    if following_char != "" and following_char != "\n" and following_char not in _CLAUSE_END_PUNCT:
+        return False
+    m = _PREV_TOKEN_RE.search(preceding_text)
+    prev_tok = m.group(1).lower().rstrip(".,;:!?") if m else ""
+    return prev_tok not in _DANGLING_CONNECTORS
+
+
 def scrub_fabricated_links(
     content: str,
     known_slugs: set[str] | None = None,
@@ -137,17 +214,25 @@ def scrub_fabricated_links(
 
     def _replace_md_link(m: re.Match[str]) -> str:
         nonlocal scrubbed_count
-        text, url = m.group(1), m.group(2)
-        if not _is_trusted(url):
-            scrubbed_count += 1
-            return text
-        if not _is_real_internal_link(url):
-            scrubbed_count += 1
-            return text
-        return m.group(0)
+        lead_ws, text, url = m.group(1), m.group(2), m.group(3)
+        if _is_trusted(url) and _is_real_internal_link(url):
+            return m.group(0)  # keep link intact (incl. leading whitespace)
+        scrubbed_count += 1
+        if _should_drop_scrubbed_link(
+            text, m.string[: m.start()], m.string[m.end(): m.end() + 1],
+        ):
+            # Appended Title-Case citation — remove the whole construct
+            # (leading space + anchor + href) so the sentence repairs itself
+            # instead of stranding the anchor mid-prose.
+            return ""
+        # Inline-prose anchor — drop only the href, keep the text as before.
+        return f"{lead_ws}{text}"
 
+    # The leading ``[ \t]*`` capture lets us absorb the link's preceding space
+    # when we remove an appended citation outright ("too [Title](url). X" ->
+    # "too. X"), without disturbing real markdown links we keep.
     content = re.sub(
-        r"\[([^\]]+)\]\((https?://[^\)]+)\)",
+        r"([ \t]*)\[([^\]]+)\]\((https?://[^\)]+)\)",
         _replace_md_link, content,
     )
 
