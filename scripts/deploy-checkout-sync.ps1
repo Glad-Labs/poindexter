@@ -150,15 +150,36 @@ if (-not (Test-Path (Join-Path $DeployDir '.git'))) {
 
 Write-Log "Syncing $DeployDir to $SourceRemote/$SyncBranch ..."
 
-# ---- Prefect flow-run guard -----------------------------------------------
+# ---- Prefect flow-run guard (bounded wait-for-gap) ------------------------
 # git reset --hard rewrites working-tree files non-atomically. A Prefect flow
 # spawns a fresh subprocess that re-imports /app on each run; if that import
-# starts during the reset window the subprocess can read a torn file. Guard
-# against this by checking for active RUNNING runs before touching the tree.
-# -NoFlowCheck bypasses this for explicit manual deploys.
-if (-not $NoFlowCheck -and (Test-PrefectFlowRunning)) {
-    Write-Log "Active Prefect flow run detected; skipping reset this cycle to avoid mid-import file race. Will retry next cycle."
-    exit 0
+# starts during the reset window the subprocess can read a torn file. So only
+# reset in a gap between flow runs.
+#
+# The original guard SKIPPED the whole cycle on any RUNNING flow ("retry next
+# cycle"). That silently failed once content_generation_flow moved to a ~2-min
+# cadence on even-minute marks: the 10-min sync fired on even minutes too, so
+# every sync landed inside a ~14s flow and skipped *every* time, leaving the
+# deploy clone (and prod) arbitrarily stale behind a green-looking, 0x0 task.
+# content flows are short (~14s) with ~100s gaps, so instead of skipping we
+# WAIT briefly for the in-flight flow to clear, then reset in the gap. We only
+# skip if still blocked after the cap (a genuinely stuck/long flow), where
+# deferring to the next cycle is correct. Cap is tunable via
+# SYNC_FLOW_WAIT_MAX_SEC (default 90s; fits the task's 5-min execution limit).
+# -NoFlowCheck bypasses the wait entirely for explicit manual deploys.
+if (-not $NoFlowCheck) {
+    $maxWaitSec = if ($env:SYNC_FLOW_WAIT_MAX_SEC) { [int]$env:SYNC_FLOW_WAIT_MAX_SEC } else { 90 }
+    $waited = 0
+    while ((Test-PrefectFlowRunning) -and ($waited -lt $maxWaitSec)) {
+        Write-Log "Active Prefect flow run; waiting for a gap before reset (${waited}/${maxWaitSec}s)..."
+        Start-Sleep -Seconds 5
+        $waited += 5
+    }
+    if (Test-PrefectFlowRunning) {
+        Write-Log "Flow still RUNNING after ${maxWaitSec}s (stuck/long run?); skipping reset this cycle, will retry next."
+        exit 0
+    }
+    if ($waited -gt 0) { Write-Log "Flow gap reached after ${waited}s; proceeding with sync." }
 }
 
 & git -C $DeployDir fetch $SourceRemote $SyncBranch --prune
