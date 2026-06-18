@@ -449,7 +449,7 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_explicit_writer_unload_before_sdxl` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_gate_final_publish_approval` | `off` |  | HITL approval gate 'final_publish_approval': on/off (auto-managed by approval_service) |
 | `pipeline_use_graph_def` | `true` |  |  |
-| `pipeline_writer_model` | `ollama/glm-4.7-5090:latest` |  |  |
+| `pipeline_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  |  |
 | `pipeline_writer_unload_grace_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.default_duration_s` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.output_format` | `` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -500,6 +500,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_critical_floor` | `50.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_engagement_baseline` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_fallback_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Auto-seeded by services.settings_defaults (#379) |
+| `qa_rewrite_model` | `ollama/glm-4.7-5090:latest` |  | Cross-model rescue reviser (qa.rewrite); empty = use the writer model |
 | `qa_fk_target_max` | `12.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_fk_target_min` | `8.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_gate_weight` | `0` |  |  |

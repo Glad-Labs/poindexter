@@ -130,3 +130,52 @@ class TestQaRewriteAtom:
         assert "content" not in out
         assert out["qa_rewrite_attempts"] == 1
         assert out["qa_rail_reviews"] == [{"__reset__": True}]
+
+    async def test_uses_cross_model_reviser_when_set(self, monkeypatch):
+        # qa_rewrite_model routes the revise step to a DIFFERENT model than the
+        # writer (resolve_local_model strips the ollama/ prefix).
+        seen = {}
+
+        async def _fake_chat(prompt, **kw):
+            seen["model"] = kw.get("model")
+            return "revised body"
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        sc = SiteConfig(initial_config={
+            "pipeline_writer_model": "glm-writer",
+            "qa_rewrite_model": "ollama/gemma-reviser",
+        })
+        state = {
+            "task_id": "t5", "content": "draft", "qa_rewrite_attempts": 0,
+            "site_config": sc,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "advisory": False,
+                 "provider": "ollama", "feedback": "fix"},
+            ],
+        }
+        await qa_rewrite.run(state)
+        assert seen["model"] == "gemma-reviser"
+
+    async def test_falls_back_to_writer_when_reviser_unset(self, monkeypatch):
+        # Empty qa_rewrite_model → reviser=None → writer model (backcompat).
+        seen = {}
+
+        async def _fake_chat(prompt, **kw):
+            seen["model"] = kw.get("model")
+            return "revised body"
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        sc = SiteConfig(initial_config={
+            "pipeline_writer_model": "glm-writer",
+            "qa_rewrite_model": "",
+        })
+        state = {
+            "task_id": "t6", "content": "draft", "qa_rewrite_attempts": 0,
+            "site_config": sc,
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "advisory": False,
+                 "provider": "ollama", "feedback": "fix"},
+            ],
+        }
+        await qa_rewrite.run(state)
+        assert seen["model"] == "glm-writer"

@@ -187,8 +187,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     feedback = _failing_review_feedback(reviews)
     pool = getattr(state.get("database_service"), "pool", None)
     task_id = state.get("task_id")
-    # model=None chains pipeline_writer_model → cost_tier.standard.model.
-    model = resolve_local_model(model=None, site_config=site_config)
+    # Cross-model revision: route the revise step to a DIFFERENT model than the
+    # writer (qa_rewrite_model). Default gemma — it's instruct-tuned (follows
+    # "replace [placeholder] with the real name" literally, where the glm writer
+    # hedges) AND already resident from the QA rails, so the revise call skips
+    # the glm 19GB reload that timed out the same-model rescue under GPU thrash.
+    # Empty setting → None → falls back to the writer model (pipeline_writer_model).
+    reviser = (site_config.get("qa_rewrite_model", "") or "").strip() or None
+    model = resolve_local_model(model=reviser, site_config=site_config)
     revise_prompt = _resolve_revise_prompt(content=content, feedback=feedback)
 
     revised = ""
