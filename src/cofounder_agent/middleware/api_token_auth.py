@@ -64,9 +64,13 @@ def _verify_oauth_jwt(token: str) -> str:
         claims = verify_token(token)
     except InvalidToken as e:
         logger.warning("OAuth JWT rejected: %s", e)
+        # Generic detail only — the exception text (which claim/step failed:
+        # expiry, signature, audience...) is logged above but must not be
+        # echoed to the client (poindexter#724; the routes/-scoped sweep that
+        # filed it missed this middleware site).
         raise HTTPException(
             status_code=401,
-            detail=f"invalid_token: {e}",
+            detail="invalid_token",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         ) from e
     logger.debug(
@@ -168,7 +172,7 @@ def _is_dev_token_blocked(sc: Any) -> bool:
 
 async def verify_api_token(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> str:
     """Verify the Bearer token as an OAuth JWT.
 
@@ -238,7 +242,7 @@ def get_operator_identity(request: Request | None = None) -> dict[str, Any]:
 
 async def verify_api_token_optional(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> str | None:
     """Like verify_api_token but returns None instead of raising 401.
 

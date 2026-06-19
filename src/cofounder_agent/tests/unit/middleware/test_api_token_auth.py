@@ -190,13 +190,21 @@ class TestVerifyApiToken:
         assert result == token
 
     @pytest.mark.asyncio
-    async def test_expired_jwt_returns_401(self):
+    async def test_expired_jwt_returns_401_with_generic_detail(self):
+        """#724: an expired JWT is rejected with a GENERIC detail.
+
+        The detail must not echo the JWT library's exception text — which
+        names exactly which claim/step failed (expiry, signature, audience)
+        and is useful feedback to someone forging tokens. The specifics are
+        logged server-side (``logger.warning`` in ``_verify_oauth_jwt``), not
+        returned to the client. Pre-fix this echoed ``invalid_token: <exc>``.
+        """
         token = _mint_jwt(ttl_seconds=-60)
         cred = _make_credentials(token)
         with pytest.raises(HTTPException) as exc_info:
             await verify_api_token(request=_request(), credentials=cred)
         assert exc_info.value.status_code == 401
-        assert "expired" in exc_info.value.detail.lower()
+        assert exc_info.value.detail == "invalid_token"
 
     @pytest.mark.asyncio
     async def test_malformed_jwt_returns_401(self):

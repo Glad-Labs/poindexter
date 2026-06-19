@@ -310,6 +310,14 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/adapter_purity_lint.py
 
+      # Information-disclosure guard (security audit L2, #724): no
+      # HTTPException whose detail= echoes a caught exception to the client
+      # (resolved IPs from an httpx ConnectError, which JWT claim failed...).
+      # Fail-on-any AST scan, no baseline; escape hatch `# noqa: detail-ok`.
+      - name: HTTP detail-leak lint (security #724)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/lint_http_detail_leak.py
+
       # DB-first config guard (GH#93 Phase 3): no NEW os.getenv / os.environ
       # reads in services/ outside the bootstrap / SDK-bridge allowlist. Pure-
       # Python AST scan, no deps beyond stdlib. Was pre-commit-only, so
@@ -568,6 +576,8 @@ jobs:
         run: python scripts/ci/lint_silent_excepts.py
       - name: Adapter-purity lint (transport contract #1344)
         run: python scripts/ci/adapter_purity_lint.py
+      - name: HTTP detail-leak lint (security #724)
+        run: python scripts/ci/lint_http_detail_leak.py
       - name: Services os.getenv lint (DB-first config, GH#93)
         run: python scripts/check-no-os-getenv-in-services.py
       - name: Notify operator — main fails a ratchet lint
