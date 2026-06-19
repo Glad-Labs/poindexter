@@ -343,6 +343,15 @@ REVISE it against these criteria, then output the REVISED shot list:
    Never photoreal.
 
 CONSTRAINTS (keep the draft valid):
+- FIELD RULES (the #1 thing to get right) - each shot carries ONLY the field its
+  source needs, and when you CHANGE a shot's source you MUST swap its field:
+    * pexels                       -> "query": a stock-footage search string
+    * sdxl / sdxl_kenburns / wan21 -> "prompt": a non-empty, on-brand image
+      description (dark-techno palette, stylized, no humans) and NO "query"
+    * holdover                     -> neither "query" nor "prompt"
+  A wan21 / sdxl / sdxl_kenburns shot with an empty or missing "prompt" is
+  INVALID and the whole revision is discarded - always write the "prompt" when
+  you choose those sources.
 - HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
   human noun in an sdxl / sdxl_kenburns / wan21 prompt, not even as "no people".
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
@@ -380,7 +389,11 @@ REVISE for retention, then output the REVISED list:
    palette, stylized not photoreal, humans go to pexels, no human noun in an AI
    prompt).
 
-CONSTRAINTS: aspect "9:16"; idx contiguous; sum of duration_s equals
+CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; sdxl /
+sdxl_kenburns / wan21 use a non-empty on-brand "prompt" (no humans) and NO
+"query"; holdover uses neither. When you change a shot's source, swap its field
+to match - a wan21/sdxl/sdxl_kenburns shot with no "prompt" makes the whole
+revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
 total_duration_s within 0.5s; narration_offset_s cumulative; never more than 2
 consecutive shots with the same source. Output ONE JSON object in the draft's
 schema, no prose or fences. Set director_model to "{model}",

@@ -31,3 +31,10 @@ def test_review_prompt_renders_and_substitutes(key: str, script_kwarg: str) -> N
     # The draft list value was injected, and the revise instruction is present.
     assert '{"shots": []}' in text
     assert "REVISE" in text.upper()
+    # Field-rule contract (prompt hardening): the review prompt must spell out
+    # that AI-render sources carry a non-empty "prompt", or gemma omits it and
+    # the revised list fails VideoShotList validation (silently falling back to
+    # the unreviewed draft). Locks in the per-source field guidance.
+    assert "FIELD RULES" in text
+    assert '"prompt"' in text
+    assert "wan21" in text
