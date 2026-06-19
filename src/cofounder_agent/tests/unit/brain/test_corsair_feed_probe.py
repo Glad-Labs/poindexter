@@ -1,4 +1,4 @@
-"""Unit tests for ``brain/corsair_feed_probe.py`` (Glad-Labs/glad-labs-stack#868).
+"""Unit tests for ``brain/corsair_feed_probe.py`` (Glad-Labs/poindexter#868).
 
 Pins the iCUE corsair_csv feed-freshness watchdog: it emits an
 ``audit_log`` ``finding`` (severity warning, kind ``sensor_feed_stale``,
