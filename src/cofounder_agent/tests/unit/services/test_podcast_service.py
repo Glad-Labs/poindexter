@@ -492,6 +492,69 @@ class TestGetAcronymRegex:
 
 
 # ===========================================================================
+# Word-boundary safety + new computing-unit entries
+# ===========================================================================
+
+
+class TestNormalizeForSpeechWordBoundaries:
+    """Pure-letter tokens must not fire inside longer words."""
+
+    def test_gb_replaced_standalone(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("256 GB SSD", site_config=_TEST_SC)
+        assert "gigabyte" in result.lower()
+
+    def test_gb_does_not_fire_inside_rgb(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("RGB lighting", site_config=_TEST_SC)
+        assert "gigabyte" not in result.lower()
+        assert "rgb" in result.lower()
+
+    def test_mb_replaced_standalone(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("The file is 512 MB", site_config=_TEST_SC)
+        assert "megabyte" in result.lower()
+
+    def test_tb_replaced_standalone(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("4 TB drive", site_config=_TEST_SC)
+        assert "terabyte" in result.lower()
+
+    def test_ghz_replaced(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("running at 3.5 GHz", site_config=_TEST_SC)
+        assert "gigahertz" in result.lower()
+
+    def test_mbps_replaced(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("1000 Mbps link", site_config=_TEST_SC)
+        assert "megabits per second" in result.lower()
+
+    def test_fps_replaced_standalone(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("running at 60 fps", site_config=_TEST_SC)
+        assert "frames per second" in result.lower()
+
+    def test_vs_does_not_corrupt_versus(self):
+        # Regression: "vs" fired inside "versus" → "versuserus".
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("Team A versus Team B", site_config=_TEST_SC)
+        assert "versuserus" not in result
+        assert "versus" in result
+
+    def test_db_override_respects_word_boundary(self):
+        from services.podcast_service import _normalize_for_speech
+        sc = SiteConfig(initial_config={
+            "tts_pronunciations": '{"API": "A P I"}',
+            "tts_acronym_replacements": "",
+        })
+        # "RAPID" contains "API" but word boundary should prevent a match
+        result = _normalize_for_speech("RAPID API calls", site_config=sc)
+        # "RAPID" must remain untouched
+        assert "RAPID" in result or "rapid" in result.lower()
+
+
+# ===========================================================================
 # generate_podcast_episode (fire-and-forget wrapper)
 # ===========================================================================
 

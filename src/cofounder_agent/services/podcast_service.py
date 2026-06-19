@@ -168,8 +168,24 @@ _SPOKEN_REPLACEMENTS = [
     ("VRAM", "Vee RAM"),
     ("SRAM", "Ess RAM"),
     ("DRAM", "Dee RAM"),
+    # Storage units — without \b these would fire inside "RGB", "MBR", etc.
+    # _normalize_for_speech applies \b boundaries for all pure-letter entries.
+    ("PB", "petabyte"),
+    ("TB", "terabyte"),
+    ("GB", "gigabyte"),
+    ("MB", "megabyte"),
+    ("KB", "kilobyte"),
+    # Frequency units
+    ("GHz", "gigahertz"),
+    ("MHz", "megahertz"),
+    ("kHz", "kilohertz"),
+    # Network / throughput speeds
+    ("Gbps", "gigabits per second"),
+    ("Mbps", "megabits per second"),
+    ("Kbps", "kilobits per second"),
+    # Display / media
+    ("fps", "frames per second"),
     # Technical abbreviations with punctuation
-    ("CI/CD", "CI CD"),
     ("I/O", "I O"),
     ("TCP/IP", "TCP IP"),
     ("OS/2", "OS 2"),
@@ -272,10 +288,15 @@ def _get_acronym_regex(*, site_config: "SiteConfig | None" = None) -> list:
 
 def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Convert written English conventions to natural spoken form."""
-    # Simple replacements (DB-configurable via tts_pronunciations)
+    # Simple replacements (DB-configurable via tts_pronunciations).
+    # Pure-letter tokens (e.g. "GB", "VRAM", "vs") get \b word boundaries so
+    # they don't fire inside longer words — "GB" must not match inside "RGB".
+    # Entries with punctuation (e.g. "vs.", "e.g.", "->") use plain re.escape.
     for written, spoken in _get_tts_replacements(site_config=site_config):
-        # Case-insensitive replace for pronunciation fixes
-        text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
+        if re.fullmatch(r'\w+', written):
+            text = re.sub(r'\b' + re.escape(written) + r'\b', spoken, text, flags=re.IGNORECASE)
+        else:
+            text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
         text = pattern.sub(replacement, text)  # type: ignore[call-overload]

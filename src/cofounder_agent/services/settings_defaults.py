@@ -488,8 +488,32 @@ DEFAULTS: dict[str, str] = {
     'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
     'podcast_tts_format': 'mp3',
     'scheduled_publisher_poll_seconds': '60',
-    'tts_acronym_replacements': '',
-    'tts_pronunciations': '',
+    # TTS pronunciation defaults — JSON objects operators can tune via
+    # `poindexter settings set`. The code merges DB values on top of the
+    # hardcoded constants in podcast_service, so DB entries add-to / override
+    # defaults. See skills/content/tts/SKILL.md for format and examples.
+    # NOTE: settings seeding uses ON CONFLICT DO NOTHING, so changing these
+    # values here only affects new installs. Existing installs keep whatever
+    # was seeded first; update via `poindexter settings set` to override.
+    'tts_acronym_replacements': (
+        '{"SOC": "security operations", "CRM": "customer relationship management",'
+        ' "SLA": "service level agreement", "KPI": "key performance indicator",'
+        ' "ROI": "return on investment", "MVP": "minimum viable product",'
+        ' "POC": "proof of concept", "EOL": "end of life"}'
+    ),
+    'tts_pronunciations': (
+        '{"VRAM": "Vee RAM", "SRAM": "Ess RAM", "DRAM": "Dee RAM",'
+        ' "PB": "petabyte", "TB": "terabyte", "GB": "gigabyte",'
+        ' "MB": "megabyte", "KB": "kilobyte",'
+        ' "GHz": "gigahertz", "MHz": "megahertz", "kHz": "kilohertz",'
+        ' "Gbps": "gigabits per second", "Mbps": "megabits per second",'
+        ' "Kbps": "kilobits per second", "fps": "frames per second",'
+        ' "GitFlow": "git flow", "GitHub": "git hub", "GitLab": "git lab",'
+        ' "DevSecOps": "dev sec ops", "DevOps": "dev ops",'
+        ' "FastAPI": "fast A P I", "PostgreSQL": "postgres",'
+        ' "GraphQL": "graph Q L", "TypeScript": "type script",'
+        ' "JavaScript": "java script"}'
+    ),
     # Voice-rotation pool (#689 Plan 7) — DB-configurable override of the
     # podcast_service VOICE_POOL constant. Default-off / empty falls back to
     # the constant (zero behavior change); an operator supplies engine-
