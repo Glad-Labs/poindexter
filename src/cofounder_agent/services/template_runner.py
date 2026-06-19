@@ -611,10 +611,9 @@ class PipelineState(TypedDict, total=False):
     post_slug: str                   # content.persist_task: URL slug of the published post
     task_metadata: dict              # content.persist_task: snapshot of pipeline_tasks metadata
 
-    # QA aggregate outputs (#753): qa.aggregate / atoms.aggregate_reviews writes these;
-    # qa_final_verdict is the string pass/fail summary read by downstream consumers.
-    qa_final_verdict: str            # qa.aggregate / aggregate_reviews: 'pass' | 'fail' | advisory summary
-    qa_aggregate_issues: list        # atoms.aggregate_reviews: aggregated issue list
+    # QA aggregate output (#753): qa.aggregate writes qa_final_verdict, the
+    # string pass/fail summary read by downstream consumers.
+    qa_final_verdict: str            # qa.aggregate: 'pass' | 'fail' | advisory summary
 
     # Auto-publish gate output (#753): content.evaluate_auto_publish writes this;
     # consumed downstream to decide whether to auto-publish or halt for approval.
@@ -622,13 +621,6 @@ class PipelineState(TypedDict, total=False):
 
     # Media-pipeline outputs (#753): media.persist writes this confirmation flag.
     media_assets_recorded: bool      # media.persist: True = media rows written to DB
-
-    # Programmatic validator outputs (#753): atoms.run_validators writes these;
-    # consumed by qa.aggregate for the hard-gate decision.
-    validator_passed: bool           # run_validators: True = all critical rules passed
-    validator_issues: list           # run_validators: list of ValidationIssue dicts
-    validator_critical_count: int    # run_validators: count of critical-severity issues
-    validator_warning_count: int     # run_validators: count of warning-severity issues
 
     # SEO Harvest Loop Phase 2 (#763): the seo_refresh graph hydrates these
     # from the source posts row + its seo_opportunities row at entry. Declared
