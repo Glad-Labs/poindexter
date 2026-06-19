@@ -79,6 +79,18 @@ def build_task_metadata(
         "featured_image_height": state.get("featured_image_height"),
         "featured_image_photographer": state.get("featured_image_photographer"),
         "featured_image_source": state.get("featured_image_source"),
+        # image_style — the rotation pick (e.g. "cyberpunk neon style"). The
+        # cross-post style dedup (source_featured_image._load_recent_published_styles)
+        # reads posts.metadata->>'image_style' to filter the last N published
+        # styles; it was NULL on all 110 posts, silently disabling cross-post
+        # rotation so styles repeated. Persisting it here (the unified builder
+        # feeds both finalize paths) restores the dedup. #image-zimage-and-variety.
+        "image_style": state.get("image_style", ""),
+        # featured_image_data — SDXL reproducibility blob (model / seed / prompt /
+        # negative_prompt / dimensions). publish_service reads it from the metadata
+        # to populate posts.featured_image_data, which was NULL on every post —
+        # an auditability gap (no way to see which style/seed produced an image).
+        "featured_image_data": state.get("featured_image_data") or {},
         "content": content_text,
         # Pre-approve snapshot for the auto_publish_gate edit-distance
         # signal — publish_service diffs this against the post-approve

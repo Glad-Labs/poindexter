@@ -59,6 +59,34 @@ def test_next_retry_delay_contract():
     assert sdxl.next_retry_delay(1) <= sdxl.next_retry_delay(0)
 
 
+def test_z_image_turbo_registry_contract():
+    """The Z-Image-Turbo entry must carry its guidance-distilled config so the
+    model swap renders correctly: a distinct pipeline kind, bf16, 9 steps,
+    guidance 0, no fp16 variant, no negative prompt. #image-zimage-and-variety.
+    """
+    cfg = sdxl.REGISTRY.get("z_image_turbo")
+    assert cfg is not None, "z_image_turbo missing from SDXL server REGISTRY"
+    assert cfg.model_id == "Tongyi-MAI/Z-Image-Turbo"
+    assert cfg.pipeline_kind == "zimage"
+    assert cfg.torch_dtype == "bfloat16"
+    assert cfg.use_fp16_variant is False
+    assert cfg.supports_negative_prompt is False
+    assert cfg.default_steps == 9
+    assert cfg.default_guidance_scale == 0.0
+
+
+def test_sdxl_models_keep_sdxl_pipeline_defaults():
+    """The SDXL entries must stay on the sdxl pipeline kind with an fp16
+    variant + negative prompt — the new ModelConfig fields default correctly
+    so existing models are unaffected by the Z-Image addition.
+    """
+    light = sdxl.REGISTRY["sdxl_lightning"]
+    assert light.pipeline_kind == "sdxl"
+    assert light.use_fp16_variant is True
+    assert light.supports_negative_prompt is True
+    assert light.torch_dtype == "float16"
+
+
 def test_reload_config_preserves_pipeline_on_transient_db_failure():
     """Postgres-restart cascade regression (stack#1152).
 

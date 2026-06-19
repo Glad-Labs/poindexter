@@ -11,7 +11,10 @@ metadata:
   prompts:
     - key: image.featured_image
       output_format: text
-      description: 'Generate a featured-image prompt for a blog post topic'
+      description: 'Generate a featured-image prompt for a blog post topic in a chosen art style'
+    - key: image.inline_illustration
+      output_format: text
+      description: 'Generate an inline section-illustration prompt in a chosen art style'
     - key: image.search_queries
       output_format: json
       description: 'Generate stock-image search queries for a topic'
@@ -33,8 +36,28 @@ Default prompts — basic but functional; production-quality prompt packs ship a
 ## image.featured_image
 
 ```text
-Generate an image prompt for a featured blog image about: {topic}
-Style: professional, modern, relevant to the content.
+Write a single Stable Diffusion XL image prompt for a magazine-style editorial cover illustration.
+
+Article topic: {topic}
+Art style: {style} — {style_tags}
+
+Depict a concrete, specific subject or scene that represents the topic (a recognizable object, place, or visual metaphor), rendered fully in the "{style}" art style. Commit to that style's medium, palette, and composition. Do NOT default to a generic glowing-circuit board or abstract floating-data backdrop, and do not lock every image to teal/cyan — vary the focal subject, composition, and color treatment so it reads differently from a typical tech illustration. Faceless silhouettes are fine; no identifiable faces, no hands, no text or words in the image.
+
+Output ONLY the image prompt, 1-2 sentences, nothing else.
+```
+
+## image.inline_illustration
+
+```text
+Write a single Stable Diffusion XL image prompt for a blog section illustration.
+
+Section subject: {search_query}
+Article topic: {topic}
+Art style: {style}
+
+Depict a specific, concrete scene for the section subject, rendered fully in the "{style}" art style — commit to that style's medium and palette rather than a generic tech render or screenshot. No people, no identifiable faces, no hands, no text or words. Vary the composition so it doesn't look like every other section image.
+
+Output ONLY the image prompt, 1 sentence, nothing else.
 ```
 
 ## image.search_queries

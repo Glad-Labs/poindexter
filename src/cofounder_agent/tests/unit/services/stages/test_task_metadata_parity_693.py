@@ -42,6 +42,8 @@ EXPECTED_METADATA_KEYS = frozenset(
         "featured_image_height",
         "featured_image_photographer",
         "featured_image_source",
+        "image_style",
+        "featured_image_data",
         "content",
         "pre_approve_content",
         "seo_title",

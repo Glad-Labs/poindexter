@@ -80,6 +80,7 @@ class ImageModel(str, Enum):
     SDXL_BASE = "sdxl_base"
     SDXL_LIGHTNING = "sdxl_lightning"
     FLUX_SCHNELL = "flux_schnell"
+    Z_IMAGE_TURBO = "z_image_turbo"
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,20 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
         torch_dtype_str="bfloat16",
         vram_gb=12.0,
         notes="Best quality, needs ~12GB VRAM",
+    ),
+    ImageModel.Z_IMAGE_TURBO: ImageModelConfig(
+        model_id="Tongyi-MAI/Z-Image-Turbo",
+        display_name="Z-Image-Turbo",
+        default_steps=9,
+        default_guidance_scale=0.0,
+        pipeline_class="diffusers.ZImagePipeline",
+        torch_dtype_str="bfloat16",
+        vram_gb=13.0,
+        notes=(
+            "Apache-2.0 6B guidance-distilled turbo (9 steps / CFG 0 / bf16, "
+            "no negative prompt). 2026-06-19 bake-off default. Mirrors the SDXL "
+            "HTTP server registry (scripts/sdxl-server.py), the live render path."
+        ),
     ),
 }
 

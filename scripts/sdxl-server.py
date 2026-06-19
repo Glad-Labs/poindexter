@@ -84,6 +84,13 @@ class ModelConfig:
     lora_repo: str | None = None
     lora_weight_name: str | None = None
     scheduler_trailing: bool = False
+    # pipeline_kind selects the diffusers pipeline class + call convention.
+    # "sdxl"  -> StableDiffusionXLPipeline (fp16 variant, negative prompt, LoRA)
+    # "zimage" -> ZImagePipeline (bf16, guidance-distilled: no negative prompt)
+    pipeline_kind: str = "sdxl"
+    torch_dtype: str = "float16"  # "float16" or "bfloat16"
+    use_fp16_variant: bool = True  # SDXL repos ship an fp16 variant; Z-Image does not
+    supports_negative_prompt: bool = True
     notes: str = ""
 
 
@@ -114,6 +121,23 @@ REGISTRY: Dict[str, ModelConfig] = {
         default_steps=30,
         default_guidance_scale=7.5,
         notes="Original SDXL — high quality, slower.",
+    ),
+    "z_image_turbo": ModelConfig(
+        friendly_name="z_image_turbo",
+        display_name="Z-Image-Turbo (Tongyi-MAI, 6B)",
+        model_id="Tongyi-MAI/Z-Image-Turbo",
+        default_steps=9,
+        default_guidance_scale=0.0,
+        pipeline_kind="zimage",
+        torch_dtype="bfloat16",
+        use_fp16_variant=False,
+        supports_negative_prompt=False,
+        notes=(
+            "Apache-2.0 6B guidance-distilled turbo. Runs at 9 steps / "
+            "guidance_scale=0 / bf16, no negative prompt. ~13GB VRAM. "
+            "Bake-off winner 2026-06-19: sharper than Lightning, less garbled "
+            "text, ~3x fewer steps than DreamShaper."
+        ),
     ),
 }
 
@@ -240,22 +264,35 @@ def _ask_ollama_to_unload() -> None:
 
 def load_pipeline(config: ModelConfig):
     """Build a diffusers pipeline for the given config. Raises on failure."""
-    from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
-
     _ask_ollama_to_unload()
+    dtype = torch.bfloat16 if config.torch_dtype == "bfloat16" else torch.float16
     logger.info(
-        "Loading %s (%s) on %s (%d MB VRAM)",
-        config.display_name, config.model_id,
+        "Loading %s (%s, kind=%s, %s) on %s (%d MB VRAM)",
+        config.display_name, config.model_id, config.pipeline_kind,
+        config.torch_dtype,
         torch.cuda.get_device_name(0),
         torch.cuda.get_device_properties(0).total_memory // 1024 // 1024,
     )
 
-    pipe = StableDiffusionXLPipeline.from_pretrained(
-        config.model_id,
-        torch_dtype=torch.float16,
-        variant="fp16",
-        use_safetensors=True,
-    )
+    if config.pipeline_kind == "zimage":
+        # Z-Image-Turbo: a 6B guidance-distilled model with its own pipeline
+        # class. low_cpu_mem_usage defaults to True so the checkpoint streams
+        # onto the meta-device target (~13GB peak) instead of materializing the
+        # full model in CPU RAM (~24GB, which OOM-kills the container). No fp16
+        # variant, no LoRA, no scheduler override, no attention-slicing knobs.
+        from diffusers import ZImagePipeline
+
+        pipe = ZImagePipeline.from_pretrained(config.model_id, torch_dtype=dtype)
+        pipe = pipe.to("cuda")
+        logger.info("%s ready", config.display_name)
+        return pipe
+
+    from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
+
+    from_kwargs: dict[str, Any] = {"torch_dtype": dtype, "use_safetensors": True}
+    if config.use_fp16_variant:
+        from_kwargs["variant"] = "fp16"
+    pipe = StableDiffusionXLPipeline.from_pretrained(config.model_id, **from_kwargs)
 
     if config.lora_repo:
         logger.info("Loading LoRA from %s (%s)",
@@ -492,6 +529,13 @@ async def generate(req: GenerateRequest):
             logger.info("Clamping guidance_scale %.2f -> 0 for sdxl_turbo",
                         guidance_scale)
             guidance_scale = 0.0
+    elif config.friendly_name == "z_image_turbo":
+        # Guidance-distilled: CFG>0 reintroduces the artifacts distillation
+        # removed. Clamp to 0 regardless of what the caller sent.
+        if guidance_scale != 0.0:
+            logger.info("Clamping guidance_scale %.2f -> 0 for z_image_turbo",
+                        guidance_scale)
+            guidance_scale = 0.0
 
     seed = req.seed if req.seed >= 0 else int(torch.randint(0, 2**32, (1,)).item())
     generator = torch.Generator(device="cuda").manual_seed(seed)
@@ -505,15 +549,19 @@ async def generate(req: GenerateRequest):
     )
     start = time.time()
     try:
-        result = pipe(
+        gen_kwargs: Dict[str, Any] = dict(
             prompt=req.prompt,
-            negative_prompt=req.negative_prompt,
             width=req.width,
             height=req.height,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,
         )
+        # Guidance-distilled models (Z-Image) run at CFG 0, where a negative
+        # prompt has no effect and the pipeline doesn't accept the kwarg.
+        if config.supports_negative_prompt:
+            gen_kwargs["negative_prompt"] = req.negative_prompt
+        result = pipe(**gen_kwargs)
         result.images[0].save(str(output_path))
     except torch.cuda.OutOfMemoryError:
         torch.cuda.empty_cache()

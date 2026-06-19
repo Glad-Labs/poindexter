@@ -41,6 +41,7 @@ like — artifacts LLMs sometimes emit adjacent to image placeholders.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -74,12 +75,20 @@ _HEADING_RE = re.compile(r"^#{2,4}\s+(.+)$", re.MULTILINE)
 _BOLD_HEADING_RE = re.compile(r"^\*\*(.{1,80}?)\*\*\s*$", re.MULTILINE)
 
 
+# Stylized-only fallback pool for inline illustrations. The photoreal styles
+# ("photorealistic scene", "editorial photograph", "macro photograph") were
+# removed deliberately: low-step SDXL butchers photoreal detail (the "PC
+# hardware slop" / mangled-hands problem) and the brand is stylized, not
+# photographic. Operators tune the live pool via the ``inline_image_styles``
+# app_setting (JSON array of style strings); this tuple is the fallback.
+# #image-zimage-and-variety.
 INLINE_STYLES: tuple[str, ...] = (
-    "photorealistic scene, cinematic lighting",
     "isometric 3D illustration, clean vector style, soft shadows",
-    "dark moody editorial photograph, dramatic lighting",
-    "clean minimal flat design, pastel colors, geometric shapes",
-    "macro close-up photograph, extreme detail, bokeh",
+    "flat vector illustration, bold geometric shapes, limited palette",
+    "thin line art on a dark background, technical schematic feel",
+    "low-poly 3D geometric render, faceted surfaces",
+    "cel-shaded digital illustration, crisp clean outlines",
+    "dramatic silhouette composition, single accent color",
 )
 
 
@@ -108,6 +117,54 @@ def _apply_base_style(prompt: str, site_config: Any) -> str:
         return prompt
     base = (site_config.get("image_base_style_prompt", "") or "").strip()
     return f"{prompt}, {base}" if base else prompt
+
+
+def _load_inline_styles(site_config: Any) -> tuple[str, ...]:
+    """Inline illustration style pool — DB-configurable via the
+    ``inline_image_styles`` app_setting (JSON array of style strings), with the
+    stylized ``INLINE_STYLES`` tuple as the fallback. Parallels the featured
+    pool's ``image_styles`` setting. #image-zimage-and-variety.
+    """
+    if site_config is None:
+        return INLINE_STYLES
+    raw = (site_config.get("inline_image_styles", "") or "").strip()
+    if not raw:
+        return INLINE_STYLES
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return INLINE_STYLES
+    styles = tuple(s for s in parsed if isinstance(s, str) and s.strip())
+    return styles or INLINE_STYLES
+
+
+def _build_inline_prompt_instruction(
+    search_query: str, topic: str, style: str,
+) -> str:
+    """LLM instruction for an inline SDXL prompt.
+
+    The wording lives in the ``image.inline_illustration`` skill prompt
+    (UnifiedPromptManager: Langfuse override → skill YAML default), so it's
+    tunable without a code edit. Falls back to a de-funnelled instruction that
+    demands a concrete scene rendered in the chosen art style (replacing the
+    old "describe a specific scene" line that produced literal tech slop).
+    #image-zimage-and-variety.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        return get_prompt_manager().get_prompt(
+            "image.inline_illustration",
+            search_query=search_query, topic=topic, style=style,
+        )
+    except Exception:  # noqa: BLE001 — prompt resolution is best-effort
+        return (
+            f"Write a Stable Diffusion XL image prompt for a {style} blog "
+            f"illustration depicting a concrete, specific scene about: "
+            f"{search_query} (article topic: {topic}). Commit to the named art "
+            "style; no people, no faces, no hands, no text. 1 sentence. "
+            "Output ONLY the prompt."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -603,12 +660,9 @@ async def _batch_generate_all_sdxl_images(
         ):
             for num, desc in placeholders:
                 search_query = desc.strip() if desc else topic
-                inline_style = random.choice(INLINE_STYLES)
-                img_prompt_req = (
-                    f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
-                    f"Article topic: {topic}\n\n"
-                    f"Requirements: {inline_style}, no people, no text, no faces. "
-                    "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
+                inline_style = random.choice(_load_inline_styles(site_config))
+                img_prompt_req = _build_inline_prompt_instruction(
+                    search_query, topic, inline_style,
                 )
                 try:
                     result = await platform.dispatch.complete(
@@ -616,9 +670,9 @@ async def _batch_generate_all_sdxl_images(
                         messages=[{"role": "user", "content": img_prompt_req}],
                         model=model,
                         tier="standard",
-                        timeout_s=90,
-                        temperature=0.8,
-                        max_tokens=100,
+                        timeout_s=site_config.get_int("image_prompt_timeout_seconds", 90),
+                        temperature=site_config.get_float("image_prompt_temperature", 0.8),
+                        max_tokens=site_config.get_int("image_prompt_max_tokens", 150),
                     )
                     sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
                     sdxl_prompt = _apply_base_style(sdxl_prompt, site_config)
@@ -641,11 +695,13 @@ async def _batch_generate_all_sdxl_images(
     # Phase 2: render ALL images under a single SDXL lock                #
     # ------------------------------------------------------------------ #
     sdxl_urls: list[str | None] = []
+    render_timeout = site_config.get_int("image_render_timeout_seconds", 90) if site_config is not None else 90
+    gpu_model_label = site_config.get("image_generation_model", "sdxl") if site_config is not None else "sdxl"
     try:
         async with gpu.lock(
-            "sdxl", model="sdxl_lightning", task_id=task_id, phase="inline_image_batch",
+            "sdxl", model=gpu_model_label, task_id=task_id, phase="inline_image_batch",
         ):
-            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(render_timeout, connect=5.0)) as client:
                 for (num, _desc), sdxl_prompt in zip(placeholders, sdxl_prompts, strict=False):
                     if sdxl_prompt is None:
                         sdxl_urls.append(None)
@@ -656,9 +712,10 @@ async def _batch_generate_all_sdxl_images(
                             json={
                                 "prompt": sdxl_prompt,
                                 "negative_prompt": neg_prompt,
-                                "steps": 8, "guidance_scale": 2.0,
+                                # steps / guidance omitted — server's per-model
+                                # registry drives them. #image-zimage-and-variety.
                             },
-                            timeout=60,
+                            timeout=render_timeout,
                         )
                         if img_resp.status_code != 200:
                             logger.warning(
@@ -702,12 +759,9 @@ async def _try_sdxl(
     try:
         sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
         model = site_config.get("inline_image_prompt_model", "llama3:latest")
-        inline_style = random.choice(INLINE_STYLES)
-        img_prompt_req = (
-            f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
-            f"Article topic: {topic}\n\n"
-            f"Requirements: {inline_style}, no people, no text, no faces. "
-            "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
+        inline_style = random.choice(_load_inline_styles(site_config))
+        img_prompt_req = _build_inline_prompt_instruction(
+            search_query, topic, inline_style,
         )
 
         # Step 1: dispatcher generates the SDXL prompt. When no pool is
@@ -729,9 +783,9 @@ async def _try_sdxl(
                     messages=[{"role": "user", "content": img_prompt_req}],
                     model=model,
                     tier="standard",
-                    timeout_s=90,
-                    temperature=0.8,
-                    max_tokens=100,
+                    timeout_s=site_config.get_int("image_prompt_timeout_seconds", 90),
+                    temperature=site_config.get_float("image_prompt_temperature", 0.8),
+                    max_tokens=site_config.get_int("image_prompt_max_tokens", 150),
                 )
             else:
                 raise RuntimeError(
@@ -747,19 +801,23 @@ async def _try_sdxl(
 
         # Step 2: SDXL renders the image
         neg_prompt = _get_sdxl_negative_prompt(site_config)
+        render_timeout = site_config.get_int("image_render_timeout_seconds", 90) if site_config is not None else 90
+        gpu_model_label = site_config.get("image_generation_model", "sdxl") if site_config is not None else "sdxl"
         async with gpu.lock(
-            "sdxl", model="sdxl_lightning",
+            "sdxl", model=gpu_model_label,
             task_id=task_id, phase="inline_image",
         ):
-            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(render_timeout, connect=5.0)) as client:
                 img_resp = await client.post(
                     f"{sdxl_url}/generate",
                     json={
                         "prompt": sdxl_prompt,
                         "negative_prompt": neg_prompt,
-                        "steps": 8, "guidance_scale": 2.0,
+                        # steps / guidance_scale omitted — the SDXL server's
+                        # per-model registry drives them (see featured-image
+                        # stage). #image-zimage-and-variety.
                     },
-                    timeout=60,
+                    timeout=render_timeout,
                 )
 
         if img_resp.status_code != 200:

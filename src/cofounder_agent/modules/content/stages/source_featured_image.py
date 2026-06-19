@@ -548,8 +548,17 @@ async def _try_sdxl_featured(
             if site_config is not None
             else "http://host.docker.internal:9836"
         )
+        render_timeout = (
+            site_config.get_int("image_render_timeout_seconds", 90)
+            if site_config is not None else 90
+        )
+        gpu_model_label = (
+            site_config.get("image_generation_model", "sdxl")
+            if site_config is not None else "sdxl"
+        )
         output_path, server_meta = await _render_sdxl(
             sdxl_url, sdxl_prompt, negative, task_id=task_id,
+            timeout_seconds=render_timeout, gpu_model_label=gpu_model_label,
         )
         if output_path is None:
             return None
@@ -577,6 +586,35 @@ async def _try_sdxl_featured(
         return None
 
 
+def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
+    """Resolve an image-direction prompt via UnifiedPromptManager.
+
+    Resolution order: Langfuse production override → ``image-generation`` skill
+    YAML default. Operators tune the wording live (Langfuse, no restart) or via
+    the skill — that's the "db/skill configurable" seam. Falls back to a
+    deterministic, de-funnelled instruction if the prompt manager is
+    unavailable (tests / bootstrap) or the key is missing, so a missing prompt
+    never hard-fails the image stage. #image-zimage-and-variety.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        return get_prompt_manager().get_prompt(key, **kwargs)
+    except Exception as exc:  # noqa: BLE001 — prompt resolution is best-effort
+        logger.debug(
+            "[IMAGE] prompt %s resolution failed (%s); using fallback", key, exc,
+        )
+        style = kwargs.get("style", "")
+        style_tags = kwargs.get("style_tags", "")
+        subject = kwargs.get("topic") or kwargs.get("search_query") or ""
+        return (
+            f"Write a Stable Diffusion XL image prompt for a {style} illustration "
+            f"depicting a concrete, specific scene about: {subject}. {style_tags}. "
+            "Commit to the named art style; no people, no faces, no hands, no text. "
+            "1-2 sentences. Output ONLY the prompt."
+        )
+
+
 async def _build_sdxl_prompt(
     topic: str,
     on_style_picked: Any,
@@ -585,7 +623,16 @@ async def _build_sdxl_prompt(
     site_config: Any = None,
     platform: Any = None,
 ) -> str:
-    """Pick a rotation style + ask Ollama for an editorial prompt."""
+    """Pick a rotation style + ask the LLM for an editorial prompt.
+
+    The instruction wording lives in the ``image.featured_image`` skill
+    prompt (UnifiedPromptManager: Langfuse override → skill YAML default),
+    so it's tunable without a code edit. It receives the rotated ``style`` +
+    ``style_tags`` and is written to depict a concrete subject *in* that
+    style — not the old "evoke the FEELING / do not depict literally"
+    funnel that collapsed every style into the same teal abstraction.
+    #image-zimage-and-variety.
+    """
     styles = _load_styles_from_settings(site_config) or list(DEFAULT_STYLES)
 
     recent = await _load_recent_published_styles(site_config)
@@ -601,15 +648,11 @@ async def _build_sdxl_prompt(
         site_config.get("inline_image_prompt_model", "llama3:latest")
         if site_config is not None else "llama3:latest"
     )
-    img_prompt = (
-        "Write a Stable Diffusion XL image prompt for a magazine-style editorial cover image.\n"
-        f"The article is about: {topic}\n"
-        "DO NOT depict the topic literally. Instead, create an atmospheric scene that evokes the FEELING of the topic.\n"
-        f"Style direction: {chosen_style}\n\n"
-        f"Requirements: {style_tags}, faceless silhouettes OK but no identifiable faces, "
-        "no text or words in the image, no hands. "
-        "Think editorial magazine art — mood, atmosphere, imagination. "
-        "1-2 sentences only. Output ONLY the prompt, nothing else."
+    img_prompt = _resolve_image_prompt(
+        "image.featured_image",
+        topic=topic,
+        style=chosen_style,
+        style_tags=style_tags,
     )
 
     pool = getattr(site_config, "_pool", None) if site_config is not None else None
@@ -628,9 +671,9 @@ async def _build_sdxl_prompt(
                 messages=[{"role": "user", "content": img_prompt}],
                 model=prompt_model,
                 tier="standard",
-                timeout_s=30,
-                temperature=0.7,
-                max_tokens=150,
+                timeout_s=site_config.get_int("image_prompt_timeout_seconds", 90),
+                temperature=site_config.get_float("image_prompt_temperature", 0.8),
+                max_tokens=site_config.get_int("image_prompt_max_tokens", 150),
             )
         else:
             raise RuntimeError(
@@ -661,7 +704,20 @@ def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]
 
 
 async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
-    """Fetch the 5 most-recently-published posts' image_style from metadata.
+    """Fetch recently-published posts' image_style for cross-post dedup.
+
+    Reads the chosen rotation style off ``featured_image_data->>'image_style'``
+    (the SDXL reproducibility blob, reliably persisted on both finalize paths)
+    and falls back to ``metadata->>'image_style'``. The window size is the
+    ``image_style_dedup_window`` setting (default 5).
+
+    History: this read ``metadata->>'image_style'`` exclusively, but that key
+    was NULL on every published post (the finalize metadata builder never wrote
+    it), so the query always returned [] and cross-post rotation was silently
+    dead — the same style recurred across posts. ``featured_image_data`` carries
+    ``image_style`` from ``_build_sdxl_featured_image_data`` and now persists via
+    ``build_task_metadata``, so this read is populated going forward.
+    #image-zimage-and-variety.
 
     2026-05-27 fix (Glad-Labs/glad-labs-stack#234): previously opened a
     raw ``asyncpg.connect`` on every image-stage run (one per published
@@ -674,18 +730,31 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
     if site_config is None:
         return []
 
+    try:
+        window = int(site_config.get("image_style_dedup_window", 5) or 5)
+    except (TypeError, ValueError):
+        window = 5
+    if window <= 0:
+        return []
+
     _QUERY = """
-        SELECT metadata->>'image_style' as style
+        SELECT COALESCE(
+            featured_image_data->>'image_style',
+            metadata->>'image_style'
+        ) AS style
         FROM posts WHERE status = 'published'
-        AND metadata->>'image_style' IS NOT NULL
-        ORDER BY published_at DESC LIMIT 5
+        AND COALESCE(
+            featured_image_data->>'image_style',
+            metadata->>'image_style'
+        ) IS NOT NULL
+        ORDER BY published_at DESC LIMIT $1
     """
 
     pool = getattr(site_config, "_pool", None)
     if pool is not None:
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch(_QUERY)
+                rows = await conn.fetch(_QUERY, window)
             return [r["style"] for r in rows if r["style"]]
         except Exception:
             # Pool errors are recoverable — fall through to the
@@ -700,7 +769,7 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
             return []
         conn = await asyncpg.connect(cloud_url)
         try:
-            rows = await conn.fetch(_QUERY)
+            rows = await conn.fetch(_QUERY, window)
             return [r["style"] for r in rows if r["style"]]
         finally:
             await conn.close()
@@ -713,6 +782,9 @@ async def _render_sdxl(
     sdxl_prompt: str,
     negative_prompt: str,
     task_id: str | None = None,
+    *,
+    timeout_seconds: float = 90.0,
+    gpu_model_label: str = "sdxl",
 ) -> tuple[str | None, dict[str, Any]]:
     """Call the SDXL server, return (local_path, sdxl_meta).
 
@@ -721,25 +793,35 @@ async def _render_sdxl(
     ``filename``) so the caller can persist it on
     ``posts.featured_image_data`` for later regeneration. Empty dict
     on the image-bytes branch (no JSON to parse) or on failure.
+
+    ``timeout_seconds`` (the ``image_render_timeout_seconds`` setting) and
+    ``gpu_model_label`` (the active ``image_generation_model``) are passed by
+    the caller from ``site_config`` so neither the render cap nor the GPU-session
+    attribution is hardcoded to a single model. #image-zimage-and-variety.
     """
     from services.gpu_scheduler import gpu
 
     async with gpu.lock(
-        "sdxl", model="sdxl_lightning",
+        "sdxl", model=gpu_model_label,
         task_id=task_id, phase="featured_image",
     ):
-        # 60s cap — Lightning is ~2s; headroom for cold load + upload.
+        # Cap from image_render_timeout_seconds — headroom for a cold model
+        # load (Z-Image ~21s) + render + upload.
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=5.0)
+            timeout=httpx.Timeout(timeout_seconds, connect=5.0)
         ) as client:
             resp = await client.post(
                 f"{sdxl_url}/generate",
                 json={
                     "prompt": sdxl_prompt,
                     "negative_prompt": negative_prompt,
-                    "steps": 8, "guidance_scale": 2.0,
+                    # steps / guidance_scale are intentionally omitted: the SDXL
+                    # server drives them from its per-model registry
+                    # (sdxl_lightning=4/0, z_image_turbo=9/0). Hardcoding them
+                    # here forced wrong values on a model swap (and was already
+                    # clamped away for Lightning). #image-zimage-and-variety.
                 },
-                timeout=60,
+                timeout=timeout_seconds,
             )
 
     if resp.status_code != 200:

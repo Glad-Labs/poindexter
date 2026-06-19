@@ -407,9 +407,15 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Image generation -----
     'enable_sdxl_warmup': '',
-    'image_model': 'sdxl_lightning',
+    # Worker in-process diffusers registry default (services/image_providers).
+    # The live render path is the SDXL HTTP server, which reads the separate
+    # 'image_generation_model' key (seeded in 0000_baseline.seeds.sql); both
+    # point at z_image_turbo as of the 2026-06-19 bake-off. #image-zimage-and-variety.
+    'image_model': 'z_image_turbo',
     # Operator-supplied negative prompt overrides the built-in default.
     # Leave empty to keep "text, words, letters, watermark, face, person, ..."
+    # (Ignored by guidance-distilled models like z_image_turbo, which run at
+    # CFG 0 and take no negative prompt.)
     'image_negative_prompt': '',
     # Style suffix appended to every SDXL prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
@@ -422,6 +428,17 @@ DEFAULTS: dict[str, str] = {
     # Example for gardening: "plants, garden, outdoor, nature, floral"
     'image_pexels_fallback_keywords': '',
     'image_styles': '',
+    # Inline-illustration style pool (JSON array of style strings). Empty =>
+    # the stylized code fallback (modules/content/stages/replace_inline_images.py
+    # INLINE_STYLES). Parallels 'image_styles' for the featured image. Photoreal
+    # styles were dropped from the fallback — low-step SDXL butchers photoreal
+    # detail and the brand is stylized. #image-zimage-and-variety.
+    'inline_image_styles': '',
+    # Cross-post style-dedup window: how many recently-published posts' image
+    # styles to filter out when picking the next featured style
+    # (source_featured_image._load_recent_published_styles). 0 disables the
+    # cross-post filter (in-process per-worker dedup still applies).
+    'image_style_dedup_window': '5',
     # In-process featured-image style-rotation dedup window
     # (services/image_style_rotation.py). `size` caps how many recent picks
     # are remembered; `ttl_seconds` caps how long a pick blocks its own reuse.
@@ -430,10 +447,18 @@ DEFAULTS: dict[str, str] = {
     'image_style_history_size': '10',
     'image_style_history_ttl_seconds': '3600',
     # Per-call HTTP timeout (seconds) for a local image inference server
-    # (SDXL / FLUX `/generate`) to render one image. A render that exceeds
-    # this is abandoned so a hung GPU server can't wedge the pipeline. Was a
-    # hardcoded literal at each provider call site.
+    # (SDXL / FLUX / Z-Image `/generate`) to render one image. A render that
+    # exceeds this is abandoned so a hung GPU server can't wedge the pipeline.
+    # Wired into the featured + inline render calls (was hardcoded 60 there,
+    # which is tight for a cold Z-Image load). #image-zimage-and-variety.
     'image_render_timeout_seconds': '90',
+    # LLM params for the image-PROMPT generation step — the small model that
+    # writes the SDXL prompt from the topic + chosen style (NOT the image
+    # render itself). Externalised so prompt creativity / length / patience are
+    # tunable without a code edit. #image-zimage-and-variety.
+    'image_prompt_temperature': '0.8',
+    'image_prompt_max_tokens': '150',
+    'image_prompt_timeout_seconds': '90',
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',

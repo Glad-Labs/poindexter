@@ -20,6 +20,7 @@ from services.prompt_manager import UnifiedPromptManager
 
 _IMAGE_KEYS = (
     "image.featured_image",
+    "image.inline_illustration",
     "image.search_queries",
     "image.decision",
 )
@@ -40,8 +41,20 @@ def test_image_templates_carry_placeholders() -> None:
     """
     pm = UnifiedPromptManager()
 
+    # featured_image was rewritten (#image-zimage-and-variety) to be style-aware
+    # and drop the "evoke the FEELING" funnel — it now carries the rotated style
+    # + tags alongside the topic.
     featured = pm.prompts["image.featured_image"]["template"]
-    assert "featured blog image about: {topic}" in featured
+    assert "{topic}" in featured
+    assert "{style}" in featured
+    assert "{style_tags}" in featured
+
+    # inline_illustration is the new per-section prompt; carries the section
+    # subject, topic, and the chosen art style.
+    inline = pm.prompts["image.inline_illustration"]["template"]
+    assert "{search_query}" in inline
+    assert "{topic}" in inline
+    assert "{style}" in inline
 
     queries = pm.prompts["image.search_queries"]["template"]
     assert "image search queries as JSON array for the topic: {topic}" in queries
