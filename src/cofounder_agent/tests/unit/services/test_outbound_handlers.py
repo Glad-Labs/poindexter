@@ -1,15 +1,19 @@
-"""Unit tests for outbound handler modules (Phase 1b)."""
+"""Unit tests for the vercel_isr outbound handler.
+
+The discord_post / telegram_post handler tests were removed when those
+per-channel handlers were superseded by the generic
+``outbound.apprise_notify`` handler (see
+``tests/unit/services/integrations/handlers/test_outbound_apprise.py``).
+The Telegram Bot API helpers that survived the cutover are covered by
+``tests/unit/services/test_pipeline_streaming.py``.
+"""
 
 from __future__ import annotations
 
 import httpx
 import pytest
 
-from services.integrations.handlers import (
-    outbound_discord,
-    outbound_telegram,
-    outbound_vercel_isr,
-)
+from services.integrations.handlers import outbound_vercel_isr
 
 
 class _FakeSiteConfig:
@@ -46,177 +50,6 @@ def patch_httpx(monkeypatch):
         return transport
 
     return _apply
-
-
-# ---------------------------------------------------------------------------
-# discord_post
-# ---------------------------------------------------------------------------
-
-
-class TestDiscordPost:
-    @pytest.mark.asyncio
-    async def test_string_payload_wrapped_as_content(self, patch_httpx):
-        transport = patch_httpx(_CapturingTransport(status_code=204, body=b""))
-        row = {"name": "discord_ops", "url": "https://discord.com/api/webhooks/x/y"}
-        result = await outbound_discord.discord_post(
-            "hello world",
-            site_config=_FakeSiteConfig(),
-            row=row,
-            pool=None,
-        )
-        assert result["status_code"] == 204
-        req = transport.captured
-        assert req is not None
-        assert req.url.host == "discord.com"
-        assert b"hello world" in req.content
-
-    @pytest.mark.asyncio
-    async def test_dict_payload_passthrough(self, patch_httpx):
-        transport = patch_httpx(_CapturingTransport(status_code=204, body=b""))
-        row = {"name": "d", "url": "https://discord.com/api/webhooks/x/y"}
-        await outbound_discord.discord_post(
-            {"content": "x", "embeds": [{"title": "T"}]},
-            site_config=_FakeSiteConfig(),
-            row=row,
-            pool=None,
-        )
-        assert b"embeds" in transport.captured.content
-
-    @pytest.mark.asyncio
-    async def test_missing_url_raises(self):
-        with pytest.raises(ValueError):
-            await outbound_discord.discord_post(
-                "x",
-                site_config=_FakeSiteConfig(),
-                row={"name": "d"},
-                pool=None,
-            )
-
-    @pytest.mark.asyncio
-    async def test_non_2xx_raises(self, patch_httpx):
-        patch_httpx(_CapturingTransport(status_code=500, body=b"boom"))
-        with pytest.raises(RuntimeError, match="HTTP 500"):
-            await outbound_discord.discord_post(
-                "x",
-                site_config=_FakeSiteConfig(),
-                row={"name": "d", "url": "https://discord.com/api/webhooks/x/y"},
-                pool=None,
-            )
-
-    @pytest.mark.asyncio
-    async def test_secret_key_ref_takes_precedence_over_row_url(self, patch_httpx):
-        """Resolution preference: secret_key_ref → row.url.
-
-        Operator rotates the URL in ``app_settings``; the dispatcher row's
-        denormalized ``url`` field will be stale until something syncs it.
-        Preferring ``secret_key_ref`` makes rotation propagate immediately
-        and avoids the 2026-05-20 incident where the embedded URL kept
-        getting Discord 404 "Unknown Webhook" responses even after Matt
-        had rotated the value in ``app_settings.discord_ops_webhook_url``.
-        """
-        transport = patch_httpx(_CapturingTransport(status_code=204, body=b""))
-        live_url = "https://discord.com/api/webhooks/NEW/live-from-app-settings"
-        stale_url = "https://discord.com/api/webhooks/OLD/stale-embedded"
-        sc = _FakeSiteConfig({"discord_ops_webhook_url": live_url})
-        row = {
-            "name": "discord_ops",
-            "url": stale_url,
-            "secret_key_ref": "discord_ops_webhook_url",
-        }
-        await outbound_discord.discord_post(
-            "ping", site_config=sc, row=row, pool=None,
-        )
-        req = transport.captured
-        assert req is not None
-        assert str(req.url) == live_url, (
-            "discord_post must prefer the secret_key_ref-resolved URL "
-            "over any stale value denormalized into row.url"
-        )
-
-    @pytest.mark.asyncio
-    async def test_falls_back_to_row_url_when_no_secret_key_ref(self, patch_httpx):
-        """Back-compat: rows without secret_key_ref still work via row.url."""
-        transport = patch_httpx(_CapturingTransport(status_code=204, body=b""))
-        embedded = "https://discord.com/api/webhooks/legacy/embedded-url"
-        row = {"name": "discord_legacy", "url": embedded}
-        await outbound_discord.discord_post(
-            "ping", site_config=_FakeSiteConfig(), row=row, pool=None,
-        )
-        assert transport.captured is not None
-        assert str(transport.captured.url) == embedded
-
-
-# ---------------------------------------------------------------------------
-# telegram_post
-# ---------------------------------------------------------------------------
-
-
-class TestTelegramPost:
-    @pytest.mark.asyncio
-    async def test_happy_path(self, patch_httpx):
-        transport = patch_httpx(_CapturingTransport(status_code=200, body=b'{"ok":true}'))
-        row = {
-            "name": "tg",
-            "url": "https://api.telegram.org",
-            "secret_key_ref": "telegram_bot_token",
-            "config": {"chat_id": "5318613610"},
-        }
-        result = await outbound_telegram.telegram_post(
-            "hi",
-            site_config=_FakeSiteConfig({"telegram_bot_token": "TOKEN"}),
-            row=row,
-            pool=None,
-        )
-        assert result["status_code"] == 200
-        assert result["chat_id"] == "5318613610"
-        assert transport.captured.url.path == "/botTOKEN/sendMessage"
-        assert b'"text":"hi"' in transport.captured.content
-
-    @pytest.mark.asyncio
-    async def test_missing_token_raises(self):
-        row = {
-            "name": "tg",
-            "url": "https://api.telegram.org",
-            "secret_key_ref": "telegram_bot_token",
-            "config": {"chat_id": "123"},
-        }
-        with pytest.raises(RuntimeError, match="bot token"):
-            await outbound_telegram.telegram_post(
-                "x", site_config=_FakeSiteConfig(), row=row, pool=None
-            )
-
-    @pytest.mark.asyncio
-    async def test_missing_chat_id_raises(self):
-        row = {
-            "name": "tg",
-            "url": "https://api.telegram.org",
-            "secret_key_ref": "telegram_bot_token",
-            "config": {},
-        }
-        with pytest.raises(RuntimeError, match="chat_id"):
-            await outbound_telegram.telegram_post(
-                "x",
-                site_config=_FakeSiteConfig({"telegram_bot_token": "TOKEN"}),
-                row=row,
-                pool=None,
-            )
-
-    @pytest.mark.asyncio
-    async def test_dict_payload_with_text(self, patch_httpx):
-        transport = patch_httpx(_CapturingTransport(status_code=200))
-        row = {
-            "name": "tg",
-            "url": "https://api.telegram.org",
-            "secret_key_ref": "telegram_bot_token",
-            "config": {"chat_id": "42"},
-        }
-        await outbound_telegram.telegram_post(
-            {"text": "dict-payload"},
-            site_config=_FakeSiteConfig({"telegram_bot_token": "T"}),
-            row=row,
-            pool=None,
-        )
-        assert b"dict-payload" in transport.captured.content
 
 
 # ---------------------------------------------------------------------------

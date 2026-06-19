@@ -121,6 +121,12 @@ playwright = "^1.47"
 mcp = ">=1.23.0"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.2"
+# Apprise — unified push-notification library backing the generic
+# services/integrations/handlers/outbound_apprise.py handler. Already
+# resolved in poetry.lock at 1.11.0 via Prefect's dependency tree;
+# declared directly here so the outbound notify path owns its floor
+# instead of riding a transitive pin. BSD-2-Clause (permissive).
+apprise = ">=1.11,<2.0"
 prometheus-client = "^0.25.0"
 # Continuous profiling — LGTM+P stack (GH #75). Opt-in via app_settings
 # enable_pyroscope; services/profiling.py configures the agent.

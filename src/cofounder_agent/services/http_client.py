@@ -127,7 +127,6 @@ WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     "services.image_providers.flux_schnell",
     "services.image_providers.ai_generation",
     "services.integrations.operator_notify",
-    "services.integrations.handlers.outbound_discord",
     "services.metrics_exporter",
     "modules.content.multi_model_qa",
 )

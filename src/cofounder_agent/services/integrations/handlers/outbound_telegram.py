@@ -1,28 +1,11 @@
-"""Handler: ``outbound.telegram_post``.
+"""Telegram Bot API helpers (``sendMessage`` / ``editMessageText``).
 
-Sends a Telegram message via the Bot API ``sendMessage`` endpoint.
-Telegram isn't a webhook-style destination (no fire-and-forget URL);
-instead the handler wraps the Bot API call so from the dispatcher's
-perspective it's one more outbound integration row.
-
-Payload shape:
-
-.. code:: python
-
-    {"text": "message body"}
-
-or a plain string — the handler coerces both.
-
-Row configuration:
-
-- ``url`` — must be set to the Bot API base
-  ``https://api.telegram.org``. The handler composes the path.
-- ``signing_algorithm`` — always ``bearer``; the bot token is the
-  bearer auth for the Bot API.
-- ``secret_key_ref`` — app_settings key holding the bot token
-  (typically ``telegram_bot_token``, encrypted).
-- ``config.chat_id`` — which chat to send to. Read at dispatch time
-  from the row's ``config`` JSONB.
+These low-level helpers back the pipeline edit-streaming path
+(``services/pipeline_streaming.py``), which sends a message and then
+edits it in place as a run progresses — behaviour Apprise's
+fire-and-forget model cannot express. Operator notifications now go
+through the generic ``outbound.apprise_notify`` handler, so this module
+no longer registers a dispatcher handler; it is a helper library only.
 """
 
 from __future__ import annotations
@@ -32,75 +15,7 @@ from typing import Any
 
 import httpx
 
-from services.integrations.registry import register_handler
-from services.integrations.secret_resolver import resolve_secret
-
 logger = logging.getLogger(__name__)
-
-
-@register_handler("outbound", "telegram_post")
-async def telegram_post(
-    payload: Any,
-    *,
-    site_config: Any,
-    row: dict[str, Any],
-    pool: Any,  # noqa: ARG001 — handler protocol signature; pool unused by telegram_post
-) -> dict[str, Any]:
-    """Send a message via Telegram Bot API."""
-    base_url = (row.get("url") or "https://api.telegram.org").rstrip("/")
-
-    text: str
-    if isinstance(payload, str):
-        text = payload
-    elif isinstance(payload, dict) and "text" in payload:
-        text = str(payload["text"])
-    else:
-        raise TypeError(
-            "telegram_post: payload must be str or dict with 'text' key"
-        )
-
-    bot_token = await resolve_secret(row, site_config)
-    if not bot_token:
-        raise RuntimeError(
-            "telegram_post: bot token not configured "
-            "(set secret_key_ref or populate the referenced app_settings key)"
-        )
-    bot_token = bot_token.strip()
-
-    config = row.get("config") or {}
-    if isinstance(config, dict):
-        chat_id = config.get("chat_id")
-    else:
-        chat_id = None
-    if not chat_id:
-        raise RuntimeError(
-            "telegram_post: config.chat_id is required on the row"
-        )
-
-    result = await send_telegram_message(base_url, bot_token, chat_id, text)
-
-    logger.debug(
-        "[outbound.telegram_post] delivered to chat %s (row=%s, message_id=%s)",
-        chat_id, row.get("name"), result.get("message_id"),
-    )
-    return {
-        "status_code": 200,
-        "chat_id": str(chat_id),
-        "message_id": result.get("message_id"),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Low-level Bot API helpers (Glad-Labs/poindexter#361 part 2)
-#
-# The handler above DISCARDED the returned message_id, so there was no way to
-# edit a message in place. The pipeline edit-streaming channel
-# (services/pipeline_streaming.py) needs both (a) the message_id from the
-# initial sendMessage and (b) an editMessageText call to update that single
-# message as the run progresses (instead of spamming N messages). These two
-# helpers expose exactly that, reused by the handler above + the streaming
-# callback.
-# ---------------------------------------------------------------------------
 
 
 async def send_telegram_message(

@@ -138,8 +138,7 @@
           {
             "group": "Outbound",
             "pages": [
-              "docs/integrations/outbound_discord_post",
-              "docs/integrations/outbound_telegram_post",
+              "docs/integrations/outbound_apprise",
               "docs/integrations/outbound_vercel_isr"
             ]
           },

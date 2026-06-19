@@ -129,8 +129,7 @@ publishing adapters, webhooks, retention.
 
 - [integrations/index.mdx](integrations/index.mdx) — integrations
   framework overview (handler registry + declarative tables)
-- [integrations/outbound_discord_post.md](integrations/outbound_discord_post.md)
-- [integrations/outbound_telegram_post.md](integrations/outbound_telegram_post.md)
+- [integrations/outbound_apprise.md](integrations/outbound_apprise.md)
 - [integrations/outbound_vercel_isr.md](integrations/outbound_vercel_isr.md)
 - [integrations/publishing_mastodon.md](integrations/publishing_mastodon.md)
 - [integrations/tap_builtin_topic_source.md](integrations/tap_builtin_topic_source.md)

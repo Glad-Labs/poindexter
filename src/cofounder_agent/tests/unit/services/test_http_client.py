@@ -31,7 +31,6 @@ import services.image_providers.ai_generation as ai_generation
 import services.image_providers.flux_schnell as flux_schnell
 import services.image_providers.pexels as pexels_provider
 import services.image_service as image_service
-import services.integrations.handlers.outbound_discord as outbound_discord
 import services.integrations.operator_notify as operator_notify
 import services.metrics_exporter as metrics_exporter
 from services.http_client import (
@@ -60,7 +59,6 @@ def _reset_module_attrs():
         flux_schnell,
         ai_generation,
         operator_notify,
-        outbound_discord,
         metrics_exporter,
         multi_model_qa,
     ):
@@ -77,7 +75,6 @@ def _reset_module_attrs():
         flux_schnell,
         ai_generation,
         operator_notify,
-        outbound_discord,
         metrics_exporter,
         multi_model_qa,
     ):
@@ -111,8 +108,8 @@ def test_wire_http_client_modules_fans_out():
     client = httpx.AsyncClient()
     wired = wire_http_client_modules(client)
 
-    # We migrated 11 modules in the first sweep; image_decision_agent was
-    # removed in poindexter#706 (migrated to dispatch_complete), leaving 10.
+    # Sweep migrated several modules; image_decision_agent was removed in
+    # poindexter#706 and outbound_discord in the apprise cutover, leaving 9.
     # Assert a reasonable lower bound rather than an exact count — adding a
     # module to WIRED_HTTP_CLIENT_MODULES shouldn't break this test.
     assert wired >= 9
@@ -125,7 +122,6 @@ def test_wire_http_client_modules_fans_out():
     # image_decision_agent is intentionally absent — it no longer participates
     # in the http_client wiring (migrated to dispatch_complete in #706).
     assert operator_notify.http_client is client
-    assert outbound_discord.http_client is client
 
 
 def test_wire_http_client_modules_unwire_with_none():
@@ -136,77 +132,9 @@ def test_wire_http_client_modules_unwire_with_none():
     assert citation_verifier.http_client is client
 
     cleared = wire_http_client_modules(None)
-    assert cleared >= 10
+    assert cleared >= 9
     assert citation_verifier.http_client is None
     assert multi_model_qa.http_client is None
-
-
-@pytest.mark.asyncio
-async def test_outbound_discord_prefers_wired_client():
-    """The migrated outbound_discord handler routes the POST through
-    the wired client when one is present."""
-    calls: list[str] = []
-
-    def _handler(request: httpx.Request) -> httpx.Response:
-        calls.append(str(request.url))
-        return httpx.Response(204)
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(_handler)) as fake:
-        outbound_discord.set_http_client(fake)
-        result = await outbound_discord.discord_post(
-            "hello",
-            site_config=None,
-            row={"name": "test", "url": "http://discord.test/webhook"},
-            pool=None,
-        )
-        assert result == {"status_code": 204}
-        assert calls == ["http://discord.test/webhook"]
-
-
-@pytest.mark.asyncio
-async def test_outbound_discord_falls_back_when_unwired():
-    """With ``http_client = None``, the handler reverts to its
-    per-call ``httpx.AsyncClient`` so test-time imports still work."""
-    # Stub the httpx import inside the handler so we don't hit the
-    # network. ``monkeypatch`` would be cleaner but we want to keep
-    # the AsyncMock contract narrow — the handler imports httpx at
-    # module level, so we replace it on the module attribute.
-    calls: list[str] = []
-
-    class _StubAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def post(self, url, json=None):
-            calls.append(url)
-            return httpx.Response(204)
-
-    original = outbound_discord.httpx
-    try:
-        # Build a shim that exposes AsyncClient + the underlying types
-        # we don't touch in this branch.
-        outbound_discord.httpx = type(
-            "_Shim",
-            (),
-            {"AsyncClient": _StubAsyncClient},
-        )()
-        outbound_discord.set_http_client(None)
-        result = await outbound_discord.discord_post(
-            "hi",
-            site_config=None,
-            row={"name": "t", "url": "http://discord.test/wh"},
-            pool=None,
-        )
-        assert result == {"status_code": 204}
-        assert calls == ["http://discord.test/wh"]
-    finally:
-        outbound_discord.httpx = original
 
 
 @pytest.mark.asyncio
@@ -245,7 +173,7 @@ async def test_lifespan_wiring_via_app_state():
     )
     try:
         wired = wire_http_client_modules(fake_app.state.http_client)
-        assert wired >= 10
+        assert wired >= 9
         assert citation_verifier.http_client is fake_app.state.http_client
         assert fake_app.state.http_client.timeout.read == 5.0
     finally:
@@ -335,7 +263,7 @@ def test_wired_modules_all_receive_same_instance():
 
     client = httpx.AsyncClient()
     wired = wire_http_client_modules(client)
-    assert wired >= 10
+    assert wired >= 9
 
     for modname in WIRED_HTTP_CLIENT_MODULES:
         mod = importlib.import_module(modname)

@@ -10238,4 +10238,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "9af4c4812b7d7deb87b36075dfed37a659c0ce5d9b34bfac5a382b7f9f28a4f6"
+content-hash = "c21746a9194a020d6f1e80cbf0074394254e9e72d620676d77bed57966a7f04d"

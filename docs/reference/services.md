@@ -269,8 +269,8 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | File | Summary |
 | --- | --- |
 | `__init__.py` | Handler modules for each integration surface. |
-| `outbound_discord.py` | Handler: ``outbound.discord_post``. |
-| `outbound_telegram.py` | Handler: ``outbound.telegram_post``. |
+| `outbound_apprise.py` | Handler: ``outbound.apprise_notify`` — generic notification delivery. |
+| `outbound_telegram.py` | Telegram Bot API helpers (``sendMessage`` / ``editMessageText``). |
 | `outbound_vercel_isr.py` | Handler: ``outbound.vercel_isr``. |
 | `publishing_mastodon.py` | Handler: ``publishing.mastodon``. |
 | `publishing_youtube.py` | Handler: ``publishing.youtube``. |
