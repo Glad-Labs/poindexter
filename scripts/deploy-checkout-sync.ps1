@@ -331,9 +331,18 @@ if ($Install) {
 
     $action = New-ScheduledTaskAction -Execute $pwshExe `
         -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`""
-    # Every 10 minutes, indefinitely, starting at the next round minute.
-    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-        -RepetitionInterval (New-TimeSpan -Minutes 10)
+    # A daily anchor whose repetition fires every 10 min for 24h = a continuous
+    # 10-minute cadence. This two-trigger composition is the robust idiom: a lone
+    # -Once trigger's RepetitionDuration default varies by build, and on builds
+    # where it defaults to a finite duration the task silently STOPS repeating
+    # after it - the deploy sync would "appear broken" with no signal. The daily
+    # anchor re-arms the 24h repetition window each day so the cadence never ends.
+    $trigger = New-ScheduledTaskTrigger -Daily -At (Get-Date).Date.AddHours(3)
+    $trigger.Repetition = (
+        New-ScheduledTaskTrigger -Once -At (Get-Date) `
+            -RepetitionInterval (New-TimeSpan -Minutes 10) `
+            -RepetitionDuration (New-TimeSpan -Days 1)
+    ).Repetition
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable `
         -DontStopOnIdleEnd -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 
