@@ -97,10 +97,10 @@ def audit_worker_imports(site_config: Any) -> dict[str, str]:
         ),
         # sentence_transformers is intentionally NOT in this list. The
         # production embedding path flows through Ollama's nomic-embed-text
-        # via services.embeddings; memory_system.py's SentenceTransformer
-        # branch is legacy and silently falls back to the alternative
-        # cosine path. If we ever wire up a SentenceTransformer-required
-        # feature, add a conditional-required check tied to a feature flag.
+        # via services.embeddings; sentence-transformers is only pulled in
+        # by the optional cross-encoder reranker (rag_rerank_enabled). If we
+        # ever make a SentenceTransformer feature non-optional, add a
+        # conditional-required check tied to its feature flag.
         (
             "slowapi",
             "Rate limiting is silently disabled — every @limiter.limit() "

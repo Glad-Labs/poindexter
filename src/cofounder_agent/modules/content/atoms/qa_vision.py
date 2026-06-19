@@ -4,7 +4,7 @@ Restores the two vision-model gates that stopped running on the live path
 when the #355 atom-cutover replaced ``MultiModelQA.review()`` with the
 ``qa.*`` atom chain. ``review()`` ran two vision checks inline (sections 2d
 and 2h) — the cutover ported the text rails (``qa.critic`` / ``qa.deepeval``
-/ ``qa.guardrails`` / ``qa.ragas``) and the programmatic net (``qa.programmatic``)
+/ ``qa.ragas``) and the programmatic net (``qa.programmatic``)
 but NOT the vision legs, so both went cold (Glad-Labs/poindexter#563):
 
 1. **Image relevance** (``_check_image_relevance`` → reviewer ``image_relevance``,

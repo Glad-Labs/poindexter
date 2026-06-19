@@ -9,7 +9,7 @@ from services import pipeline_architect
 from services.atom_registry import discover, get_atom_callable, get_atom_meta
 
 _RAILS = (
-    "qa.programmatic", "qa.deepeval", "qa.guardrails", "qa.ragas", "qa.critic",
+    "qa.programmatic", "qa.deepeval", "qa.ragas", "qa.critic",
     "qa.vision",
     # Four checks restored from the #355 silent-drop (advisory-first):
     # #658 / #659 / #660 / #661.
@@ -58,15 +58,13 @@ class TestQaRailRegistry:
             "nodes": [
                 {"id": "critic", "atom": "qa.critic"},
                 {"id": "deepeval", "atom": "qa.deepeval"},
-                {"id": "guardrails", "atom": "qa.guardrails"},
                 {"id": "ragas", "atom": "qa.ragas"},
                 {"id": "vision", "atom": "qa.vision"},
                 {"id": "aggregate", "atom": "qa.aggregate"},
             ],
             "edges": [
                 {"from": "critic", "to": "deepeval"},
-                {"from": "deepeval", "to": "guardrails"},
-                {"from": "guardrails", "to": "ragas"},
+                {"from": "deepeval", "to": "ragas"},
                 {"from": "ragas", "to": "vision"},
                 {"from": "vision", "to": "aggregate"},
                 {"from": "aggregate", "to": "END"},

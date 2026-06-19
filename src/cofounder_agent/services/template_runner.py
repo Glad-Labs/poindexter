@@ -447,8 +447,8 @@ class PipelineState(TypedDict, total=False):
     # state value.
     qa_reviews: Annotated[list, operator.add]
     # qa_rail_reviews (#355 Plan 3): the per-rail ReviewerResult dicts
-    # emitted by the qa.* rail atoms (qa.deepeval / qa.guardrails /
-    # qa.ragas / qa.critic). Uses _merge_rail_reviews (not bare operator.add)
+    # emitted by the qa.* rail atoms (qa.deepeval / qa.ragas / qa.critic).
+    # Uses _merge_rail_reviews (not bare operator.add)
     # so the QA rescue cycle's qa.rewrite atom can emit a {"__reset__": True}
     # sentinel to clear stale first-pass reviews before the second QA pass.
     # Parallel rail atoms still append concurrently (the reducer concats when

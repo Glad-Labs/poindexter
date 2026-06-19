@@ -61,7 +61,7 @@ tenacity = "^9.1"
 aiolimiter = "^1.2"
 
 # Data Processing
-# pandas, numpy removed — never imported in production code. Legacy memory_system.py superseded by pgvector.
+# pandas, numpy removed — never imported in production code.
 
 # Logging & Monitoring
 setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#3932)
