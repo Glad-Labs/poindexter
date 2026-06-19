@@ -482,6 +482,45 @@ _LEAK_PATTERNS = (
         "the operator sets these via `poindexter setup`.",
         multiline=True,
     ),
+    LeakPattern(
+        # Telegram chat_id seeded into a webhook_endpoints config JSONB (the
+        # telegram_ops row). The 2026-05-27 audit's app_settings-form guard
+        # (the ``'telegram_chat_id', '<digits>'`` pattern above) did NOT
+        # catch this — the chat_id lived in a DIFFERENT column (a JSONB
+        # ``config`` value, not an app_settings VALUE), so a literal
+        # ``"chat_id": "<digits>"`` shipped live to the public mirror until
+        # 2026-06-19. Scoped to a SQL ``VALUES`` tuple (like the gladlabs.io
+        # rule) so synthetic test fixtures and prose can't false-positive;
+        # ``multiline``+``DOTALL`` so a pretty-printed tuple is caught too.
+        # The fix is to carry NO chat_id literal: resolve it from
+        # app_settings.telegram_chat_id via the {telegram_chat_id} placeholder.
+        re.compile(
+            r'VALUES\s*\([^)]*?"chat_id"\s*:\s*"-?[0-9]{6,}"',
+            re.DOTALL,
+        ),
+        "Telegram chat_id seeded into a webhook config (operator identity)",
+        "Don't seed a chat_id literal — carry no operator identity in the "
+        "row. Use the {telegram_chat_id} placeholder so the apprise handler "
+        "resolves it from app_settings.telegram_chat_id at send time.",
+        multiline=True,
+    ),
+    LeakPattern(
+        # Defense-in-depth: a chat_id inlined straight into a ``tgram://``
+        # apprise URL (``tgram://<bot-token>/<chat-id>/``) inside a seed
+        # VALUES tuple. Catches a future row that bakes the chat_id into the
+        # URL instead of using the {telegram_chat_id} placeholder. Same
+        # VALUES scope so a unit-test fixture URL (a Python string, not a
+        # SQL VALUES tuple) doesn't false-positive.
+        re.compile(
+            r"VALUES\s*\([^)]*?tgram://[^/'\"]+/-?[0-9]{6,}",
+            re.DOTALL,
+        ),
+        "Telegram chat_id inlined into a seeded tgram:// URL",
+        "Use the {telegram_chat_id} placeholder in the apprise_url so the "
+        "chat_id resolves from app_settings at send time — never inline the "
+        "operator's chat ID into a seeded URL.",
+        multiline=True,
+    ),
     # Note: ``Glad-Labs/glad-labs-stack`` is intentionally NOT a CI-time
     # leak pattern. The sync filter rewrites it to ``Glad-Labs/poindexter``
     # at push time across every text file (see the Python substitution
@@ -661,7 +700,7 @@ def main() -> int:
     print(f"[public-mirror-safety] FAIL — {len(hits)} leak(s) across "
           f"{len(by_file)} file(s):")
     print()
-    for file, file_hits in sorted(by_file.items()):
+    for _file, file_hits in sorted(by_file.items()):
         for h in file_hits:
             print(_format_hit(h))
             print()

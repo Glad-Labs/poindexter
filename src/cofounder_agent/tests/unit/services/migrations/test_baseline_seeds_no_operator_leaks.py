@@ -81,6 +81,26 @@ _BANNED_PATTERNS = [
         "telegram_chat_id description must not say 'Matt DM'",
         re.compile(r"'telegram_chat_id'[^;]*Matt DM"),
     ),
+    # Telegram chat_id baked into a webhook_endpoints ``config`` JSONB (the
+    # ``telegram_ops`` row). This is the webhook-config shape the 2026-05-27
+    # app_settings-form guard above MISSED — same operator identifier, a
+    # different column — which let a ``"chat_id": "<operator-id>"`` literal
+    # ship live to the public mirror until the Apprise notify-handler work
+    # surfaced it. The chat_id must resolve from ``app_settings.telegram_chat_id``
+    # at send time (the ``{telegram_chat_id}`` placeholder), exactly like the
+    # bot token resolves via ``secret_key_ref=telegram_bot_token``.
+    (
+        "telegram_ops config chat_id literal",
+        re.compile(r'"chat_id"\s*:\s*"[0-9]{6,}"'),
+    ),
+    # Defense-in-depth: a numeric chat_id baked straight into a ``tgram://``
+    # apprise URL path (``tgram://<bot-token>/<chat-id>/``). A future row
+    # that inlines the chat_id instead of using a placeholder leaks the same
+    # way; catch that shape too.
+    (
+        "tgram:// apprise URL with a literal chat_id",
+        re.compile(r"tgram://[^/'\"]+/[0-9]{6,}"),
+    ),
 ]
 
 
@@ -149,4 +169,59 @@ def test_seed_row_is_idempotent(key: str, baseline_seeds_text: str) -> None:
         f"INSERT for '{key}' is missing ON CONFLICT clause. "
         "Without it, replaying the baseline on an existing DB would "
         "overwrite the operator's runtime-configured value with ''."
+    )
+
+
+# ---------------------------------------------------------------------------
+# telegram_ops webhook_endpoints row: operator identity must resolve from
+# app_settings, never be a literal in the seeded config (the Apprise-handler
+# leak, surfaced 2026-06-19).
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def telegram_ops_insert(baseline_seeds_text: str) -> str:
+    """The single ``INSERT INTO webhook_endpoints ... 'telegram_ops' ...;``."""
+    match = re.search(
+        r"INSERT INTO webhook_endpoints[^;]*?'telegram_ops'[^;]*?;",
+        baseline_seeds_text,
+        re.DOTALL,
+    )
+    assert match is not None, (
+        "telegram_ops webhook_endpoints row is missing from baseline seeds — "
+        "fresh installs need it (with a placeholder chat_id) so operator "
+        "notifications route once telegram_chat_id is configured."
+    )
+    return match.group(0)
+
+
+def test_telegram_ops_carries_no_literal_chat_id(telegram_ops_insert: str) -> None:
+    """The seeded telegram_ops config must embed no operator chat_id literal.
+
+    Mirrors ``discord_ops``, which carries zero operator identity in its
+    config (the whole secret resolves via ``secret_key_ref``). The chat_id
+    is operator-tenant data; seeding a literal ships it to the public mirror.
+    """
+    leak = re.search(r'"chat_id"\s*:\s*"[0-9]', telegram_ops_insert)
+    assert leak is None, (
+        "telegram_ops config embeds a literal chat_id "
+        f"({leak.group(0)!r}). Resolve it from app_settings.telegram_chat_id "
+        "via the {telegram_chat_id} placeholder instead — the same "
+        "per-operator path the bot token uses via secret_key_ref."
+    )
+
+
+def test_telegram_ops_resolves_chat_id_via_app_settings_placeholder(
+    telegram_ops_insert: str,
+) -> None:
+    """telegram_ops must reference the app_settings key in its apprise_url.
+
+    ``{telegram_chat_id}`` is resolved from ``app_settings.telegram_chat_id``
+    by the apprise_notify handler at send time, so the chat_id has exactly
+    one home (app_settings) — no duplicated literal to leak or keep in sync.
+    """
+    assert "{telegram_chat_id}" in telegram_ops_insert, (
+        "telegram_ops apprise_url must use the {telegram_chat_id} placeholder "
+        "so the chat_id resolves from app_settings at send time (single "
+        "source of truth, symmetric with discord_ops + the bot token)."
     )

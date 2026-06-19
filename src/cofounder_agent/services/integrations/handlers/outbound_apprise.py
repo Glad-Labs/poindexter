@@ -7,13 +7,25 @@ insert, not a new module.
 
 Template substitution (``config.apprise_url``):
 
-- ``{secret}``       -> resolved via ``secret_key_ref`` (see secret_resolver)
-- ``{<config-key>}`` -> any other key in the row's ``config`` (e.g. ``{chat_id}``)
+- ``{secret}``  -> resolved via ``secret_key_ref`` (see secret_resolver)
+- ``{<token>}`` -> the row's ``config[<token>]`` when set and non-empty,
+                   else the operator setting ``app_settings.<token>``
+                   (resolved through ``site_config`` — the DB-first single
+                   source of truth). Empty/unset on BOTH paths fails loud
+                   rather than emitting a blank URL segment (no send to a
+                   blank destination — feedback_no_silent_defaults). Only
+                   NON-secret settings are reachable this way: ``SiteConfig``
+                   filters ``is_secret`` rows out of its cache, so a
+                   placeholder can never exfiltrate a secret — secrets use
+                   ``{secret}`` + ``secret_key_ref``.
 
 Examples:
 
-- telegram_ops : ``tgram://{secret}/{chat_id}/`` + ``secret_key_ref=telegram_bot_token``
-- discord_ops  : ``{secret}``                    + ``secret_key_ref=discord_ops_webhook_url``
+- telegram_ops : ``tgram://{secret}/{telegram_chat_id}/``
+                 + ``secret_key_ref=telegram_bot_token``. The chat_id
+                 resolves from ``app_settings.telegram_chat_id`` — the seeded
+                 row carries NO operator identity (symmetric with discord_ops).
+- discord_ops  : ``{secret}`` + ``secret_key_ref=discord_ops_webhook_url``
   (Apprise accepts the native ``https://discord.com/api/webhooks/ID/TOKEN`` URL directly.)
 
 Payload: a plain ``str`` or a dict carrying one of
@@ -62,9 +74,22 @@ def _coerce_body(payload: Any) -> str:
 
 
 def _build_url(
-    template: str, secret: str | None, config: dict[str, Any], row_name: Any
+    template: str,
+    secret: str | None,
+    config: dict[str, Any],
+    site_config: Any,
+    row_name: Any,
 ) -> str:
-    """Substitute ``{secret}`` + ``{config-key}`` placeholders in the template."""
+    """Substitute ``{secret}`` + ``{token}`` placeholders in the template.
+
+    Resolution order for a ``{token}`` (other than ``{secret}``):
+
+    1. a non-empty ``config[token]`` — explicit per-row override
+    2. a non-empty ``site_config.get(token)`` — operator ``app_settings``
+       (DB-first single source of truth, e.g. ``{telegram_chat_id}``)
+    3. otherwise fail loud — never emit a blank segment / send to a blank
+       destination (feedback_no_silent_defaults)
+    """
 
     def _replace(match: re.Match[str]) -> str:
         token = match.group(1)
@@ -76,11 +101,21 @@ def _build_url(
                     "the referenced app_settings key"
                 )
             return secret
-        if token in config:
-            return str(config[token])
+        # Per-row config override wins when present and non-empty.
+        cfg_val = config.get(token)
+        if cfg_val is not None and str(cfg_val).strip():
+            return str(cfg_val)
+        # Fall back to the operator's app_settings value (single source of
+        # truth). SiteConfig.get reads the non-secret cache, so this can never
+        # resolve an is_secret key — secrets must use {secret}.
+        if site_config is not None and hasattr(site_config, "get"):
+            setting_val = site_config.get(token, "")
+            if setting_val and str(setting_val).strip():
+                return str(setting_val)
         raise RuntimeError(
             f"apprise_notify: row {row_name!r} apprise_url references "
-            f"{{{token}}} but row config has no such key"
+            f"{{{token}}} but it resolved empty — set app_settings.{token} "
+            f"(or row config.{token}) so the notification has a destination"
         )
 
     return _PLACEHOLDER.sub(_replace, template)
@@ -109,7 +144,7 @@ async def apprise_notify(
 
     body = _coerce_body(payload)
     secret = await resolve_secret(row, site_config)
-    url = _build_url(str(template), secret, config, row_name)
+    url = _build_url(str(template), secret, config, site_config, row_name)
 
     aobj = apprise.Apprise()
     if not aobj.add(url):

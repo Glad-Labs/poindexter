@@ -39,4 +39,12 @@ async def test_ops_rows_repointed_to_apprise(test_pool):
     assert by_name["telegram_ops"]["cfg_type"] == "object"
 
     assert by_name["discord_ops"]["apprise_url"] == "{secret}"
-    assert by_name["telegram_ops"]["apprise_url"] == "tgram://{secret}/{chat_id}/"
+    # The seeded telegram_ops row carries NO operator identity (2026-06-19
+    # leak fix): the chat_id resolves from app_settings.telegram_chat_id via
+    # the {telegram_chat_id} placeholder at send time, symmetric with
+    # discord_ops. (The legacy {chat_id}-from-config form only survives on
+    # pre-existing installs whose row predates this change.)
+    assert (
+        by_name["telegram_ops"]["apprise_url"]
+        == "tgram://{secret}/{telegram_chat_id}/"
+    )
