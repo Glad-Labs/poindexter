@@ -28,6 +28,8 @@ Issue: Glad-Labs/poindexter#360.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -155,6 +157,32 @@ class AtomMeta:
             "fallback": list(self.fallback),
             "parallelizable": self.parallelizable,
         }
+
+    def contract_fingerprint(self) -> str:
+        """Stable 12-hex digest of this atom's *structural I/O contract*.
+
+        Hashes only the parts that determine whether a stored graph_def's
+        wiring is still valid: ``requires``, ``produces``, and each
+        ``inputs``/``outputs`` field's ``(name, type, required)``. Excludes
+        description, cost, tier, retry, side_effects, etc. — changing those
+        must NOT trip the graph_def drift gate (poindexter#755).
+        """
+
+        def _fields(fs: tuple[FieldSpec, ...]) -> list[list[Any]]:
+            # sorted by name; (name, type, required) only — description excluded
+            return [
+                [f.name, f.type, f.required]
+                for f in sorted(fs, key=lambda x: x.name)
+            ]
+
+        payload = {
+            "requires": sorted(self.requires),
+            "produces": sorted(self.produces),
+            "inputs": _fields(self.inputs),
+            "outputs": _fields(self.outputs),
+        }
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
 
 
 __all__ = [

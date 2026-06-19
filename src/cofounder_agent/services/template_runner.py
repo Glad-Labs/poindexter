@@ -403,6 +403,13 @@ class PipelineState(TypedDict, total=False):
     task_id: str
     topic: str
 
+    # Graph identity for checkpoint compatibility (poindexter#755). Seeded by
+    # TemplateRunner.run on the graph_def path so a checkpoint records which
+    # graph signature produced it; declared here or LangGraph would drop it on
+    # the graph_def path (undeclared-key lesson). A checkpoint whose stored
+    # value differs from the current graph's is discarded before resume.
+    __graph_signature__: str
+
     # Filled by various stages:
     content: str
     title: str
@@ -1023,6 +1030,43 @@ async def has_resumable_checkpoint(pool: Any, thread_id: str) -> bool:
         return False
 
 
+async def _discard_thread_checkpoints(pool: Any, thread_id: str) -> int:
+    """Delete LangGraph checkpoint rows for ``thread_id`` (poindexter#755).
+
+    Mirrors ``TasksDatabase._clear_checkpoints_for_threads``: guarded by
+    ``to_regclass`` so it is a safe no-op when the Postgres checkpointer was
+    never initialised. ``thread_id`` is text — never cast to uuid. Returns the
+    number of rows deleted across the three checkpoint tables (0 when skipped).
+    Never raises — checkpoint discard is defense-in-depth, never blocks the run.
+    """
+    if not pool or not thread_id:
+        return 0
+    try:
+        async with pool.acquire() as conn:
+            present = await conn.fetchval(
+                "SELECT to_regclass('public.checkpoints') IS NOT NULL"
+            )
+            if not present:
+                return 0
+            total = 0
+            for tbl in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                res = await conn.execute(
+                    f"DELETE FROM {tbl} WHERE thread_id = $1::text", str(thread_id)
+                )
+                # asyncpg returns a status tag like "DELETE 2"; take the count
+                # when present without a swallowing try/except.
+                tag = str(res).split()
+                if tag and tag[-1].isdigit():
+                    total += int(tag[-1])
+            return total
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[template_runner] _discard_thread_checkpoints(%s) failed: %s",
+            thread_id, exc,
+        )
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -1141,10 +1185,38 @@ class TemplateRunner:
         # downstream (partition / checkpointer / compile / ainvoke / outcome)
         # is identical for both paths.
         graph: StateGraph | None = None
+        # Graph signature for checkpoint compatibility (poindexter#755); stays
+        # None on the legacy-factory path (no spec → no signature → no discard).
+        current_graph_sig: str | None = None
         if self._site_config.get_bool("pipeline_use_graph_def", False):
             graph_def = await load_active_graph_def(self._pool, template_slug)
             if graph_def:
-                from services.pipeline_architect import build_graph_from_spec
+                from services.pipeline_architect import (
+                    GraphContractError,
+                    assert_graph_def_current,
+                    build_graph_from_spec,
+                    graph_signature,
+                )
+
+                # poindexter#755 — refuse to run a graph whose atoms have
+                # drifted from the registry it was seeded against. Fail loud +
+                # notify; do NOT degrade to the legacy factory (deleted for
+                # canonical_blog → KeyError would be a silent failure).
+                try:
+                    assert_graph_def_current(graph_def)
+                except GraphContractError as exc:
+                    await _emit_progress(
+                        self._pool,
+                        event_type="template.contract_drift",
+                        payload={"template_slug": template_slug, "error": str(exc)},
+                        notify_operator_message=(
+                            f"⛔ {template_slug}: graph_def contract drift — "
+                            f"refusing to run.\n{exc}"
+                        ),
+                        site_config=self._site_config,
+                        on_event=on_event,
+                    )
+                    raise
                 logger.info(
                     "[template_runner] graph_def path for slug=%r "
                     "(pipeline_use_graph_def on)", template_slug,
@@ -1153,6 +1225,7 @@ class TemplateRunner:
                     graph_def, pool=self._pool, record_sink=records,
                     on_event=on_event,
                 )
+                current_graph_sig = graph_signature(graph_def)
 
         if graph is None:
             factory = TEMPLATES.get(template_slug)
@@ -1232,6 +1305,39 @@ class TemplateRunner:
                         _CONFIG_SERVICES_KEY: services,
                     },
                 }
+                # poindexter#755 — if a durable checkpoint exists for this
+                # thread but was produced under a different graph signature,
+                # discard it so we never resume across a graph change (the
+                # checkpoint-poisoning class). Best-effort: never break the run.
+                if current_graph_sig is not None and checkpointer is not None:
+                    try:
+                        existing = await checkpointer.aget_tuple(config)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "[template_runner] checkpoint introspection failed "
+                            "for thread %s (%s) — proceeding without the "
+                            "graph-signature check", thread_id, exc,
+                        )
+                        existing = None
+                    if existing is not None:
+                        prev_sig = (
+                            (existing.checkpoint or {})
+                            .get("channel_values", {})
+                            .get("__graph_signature__")
+                        )
+                        if prev_sig is not None and prev_sig != current_graph_sig:
+                            discarded = await _discard_thread_checkpoints(
+                                self._pool, thread_id
+                            )
+                            logger.warning(
+                                "[template_runner] graph signature changed for "
+                                "thread %s (checkpoint %s != current %s) — "
+                                "discarded %d checkpoint row(s), starting fresh "
+                                "(poindexter#755)",
+                                thread_id, prev_sig, current_graph_sig, discarded,
+                            )
+                            resume = False
+                    data_state["__graph_signature__"] = current_graph_sig
                 compiled = graph.compile(checkpointer=checkpointer)
                 # Resume seam (#363): on resume LangGraph loads the durable
                 # checkpoint for thread_id and continues from the paused

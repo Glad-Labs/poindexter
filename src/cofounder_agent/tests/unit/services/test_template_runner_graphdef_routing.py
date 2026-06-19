@@ -74,6 +74,11 @@ class TestGraphDefRouting:
 
         monkeypatch.setitem(TEMPLATES, "canonical_blog", fake_factory)
         monkeypatch.setattr(pipeline_architect, "build_graph_from_spec", fake_build)
+        # This test exercises *routing* (flag on → build path), not the
+        # contract gate (poindexter#755, covered in
+        # test_template_runner_contract_gate.py). The fake graph_def's node is
+        # unstamped, so stub the gate to a no-op to isolate the routing.
+        monkeypatch.setattr(pipeline_architect, "assert_graph_def_current", lambda spec: None)
         # The runner does `from services.pipeline_templates import load_active_graph_def`
         # lazily inside run(); patch it on that module so the lazy import resolves
         # to the fake at call time.

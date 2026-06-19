@@ -36,6 +36,8 @@ Issue: Glad-Labs/poindexter#364.
 from __future__ import annotations
 
 import asyncio
+import copy
+import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -1089,6 +1091,91 @@ def _wrap_atom(
 from services.llm_text import ollama_chat_text as _ollama_chat_text  # noqa: E402
 
 # ---------------------------------------------------------------------------
+# Contract handshake: stamp atom fingerprints, gate drift at load (poindexter#755)
+# ---------------------------------------------------------------------------
+
+
+class GraphContractError(RuntimeError):
+    """A stored graph_def references an atom whose contract has drifted from
+    the live registry (or is unstamped / missing). Raised at load time so a
+    drifted graph fails loud instead of running against the wrong contract
+    (poindexter#755)."""
+
+
+def stamp_graph_def(spec: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``spec`` with each node stamped with the atom's current
+    contract fingerprint (``_contract_fp``) and version (``_atom_version``).
+
+    Raises :class:`GraphContractError` if a node names an atom that is not in
+    the registry — you cannot stamp what you cannot resolve.
+    """
+    out = copy.deepcopy(spec)
+    for node in out.get("nodes", []):
+        atom = node.get("atom")
+        meta = get_atom_meta(atom) if isinstance(atom, str) else None
+        if meta is None:
+            raise GraphContractError(
+                f"FIX: node {node.get('id')!r} names atom {atom!r} which is not "
+                f"in the registry — cannot stamp. Check the atom name."
+            )
+        node["_contract_fp"] = meta.contract_fingerprint()
+        node["_atom_version"] = meta.version
+    return out
+
+
+def assert_graph_def_current(spec: dict[str, Any]) -> None:
+    """Raise :class:`GraphContractError` if any node is unstamped, names a
+    missing atom, or carries a ``_contract_fp`` that no longer matches the
+    registry's current contract for that atom."""
+    drift: list[str] = []
+    for node in spec.get("nodes", []):
+        nid, atom = node.get("id"), node.get("atom")
+        stored = node.get("_contract_fp")
+        if not stored:
+            drift.append(
+                f"node {nid!r} (atom {atom!r}) is unstamped — re-seed this "
+                f"graph_def to record contract fingerprints"
+            )
+            continue
+        meta = get_atom_meta(atom) if isinstance(atom, str) else None
+        if meta is None:
+            drift.append(
+                f"node {nid!r}: atom {atom!r} no longer exists in the registry"
+            )
+            continue
+        current = meta.contract_fingerprint()
+        if current != stored:
+            drift.append(
+                f"node {nid!r}: atom {atom!r} contract drifted "
+                f"(stamped {stored}, current {current})"
+            )
+    if drift:
+        raise GraphContractError(
+            "FIX: stored graph_def is out of date with the atom registry:\n  - "
+            + "\n  - ".join(drift)
+            + "\nRe-seed the affected graph_def (re-run its seeder/migration) so "
+            "the stamps match the current atom contracts."
+        )
+
+
+def graph_signature(spec: dict[str, Any]) -> str:
+    """12-hex digest over node ``(id, _contract_fp)`` pairs + edges — identifies
+    the exact graph a checkpoint was produced under (poindexter#755)."""
+    nodes = sorted(
+        (n.get("id"), n.get("_contract_fp")) for n in spec.get("nodes", [])
+    )
+    edges = sorted(
+        (e.get("from"), e.get("to"))
+        for e in spec.get("edges", [])
+        if isinstance(e, dict)
+    )
+    blob = json.dumps(
+        {"nodes": nodes, "edges": edges}, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+
+
+# ---------------------------------------------------------------------------
 # Cache: persist successful compositions as named templates
 # ---------------------------------------------------------------------------
 
@@ -1110,9 +1197,13 @@ async def cache_template(pool: Any, spec: dict[str, Any]) -> str:
     slug = _re.sub(r"[^a-z0-9_]+", "_", raw_name.lower()).strip("_") or "architect_composed"
 
     description = (spec.get("description") or "").strip()
-    payload = json.dumps(spec, default=str)
 
     try:
+        # Stamp contract fingerprints so the load-time gate can detect drift
+        # (poindexter#755). stamp_graph_def raises if a node names an unknown
+        # atom; keeping it inside the try preserves cache_template's
+        # best-effort contract (log and skip, never block architect output).
+        payload = json.dumps(stamp_graph_def(spec), default=str)
         async with pool.acquire() as conn:
             await conn.execute(
                 """
@@ -1139,7 +1230,11 @@ async def cache_template(pool: Any, spec: dict[str, Any]) -> str:
 
 __all__ = [
     "ArchitectResult",
+    "GraphContractError",
+    "assert_graph_def_current",
     "build_graph_from_spec",
     "cache_template",
     "compose",
+    "graph_signature",
+    "stamp_graph_def",
 ]

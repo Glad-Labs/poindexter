@@ -231,7 +231,13 @@ async def test_graphdef_run_propagates_content_to_finalize(monkeypatch):
     # load_active_graph_def is what TemplateRunner.run reads to get the
     # graph_def for the slug — return our minimal spec (no DB).
     async def _fake_load_active_graph_def(_pool, _slug):
-        return minimal_spec
+        # The real load path returns a graph_def stamped with per-node atom
+        # contract fingerprints (poindexter#755); mirror that so the run's
+        # contract gate (assert_graph_def_current) sees current fingerprints
+        # instead of refusing an unstamped spec.
+        from services.pipeline_architect import stamp_graph_def
+
+        return stamp_graph_def(minimal_spec)
 
     monkeypatch.setattr(
         "services.pipeline_templates.load_active_graph_def",
@@ -339,7 +345,13 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
     }
 
     async def _fake_load_active_graph_def(_pool, _slug):
-        return minimal_spec
+        # The real load path returns a graph_def stamped with per-node atom
+        # contract fingerprints (poindexter#755); mirror that so the run's
+        # contract gate (assert_graph_def_current) sees current fingerprints
+        # instead of refusing an unstamped spec.
+        from services.pipeline_architect import stamp_graph_def
+
+        return stamp_graph_def(minimal_spec)
 
     monkeypatch.setattr(
         "services.pipeline_templates.load_active_graph_def",
