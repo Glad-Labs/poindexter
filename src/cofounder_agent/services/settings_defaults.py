@@ -512,6 +512,9 @@ DEFAULTS: dict[str, str] = {
     'podcast_tts_voice': 'bf_emma',
     'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
     'podcast_tts_format': 'mp3',
+    # Repair the duration header after Speaches byte-concatenates its internal
+    # segments (else players cut off mid-episode). Fail-soft; needs ffmpeg.
+    'podcast_tts_remux_enabled': 'true',
     'scheduled_publisher_poll_seconds': '60',
     # TTS pronunciation defaults — JSON objects operators can tune via
     # `poindexter settings set`. The code merges DB values on top of the
