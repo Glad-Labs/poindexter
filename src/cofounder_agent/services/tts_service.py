@@ -15,7 +15,11 @@ Configuration (all in app_settings, default-off):
 - podcast_tts_base_url      http://speaches:8000/v1  — compose URL
 - podcast_tts_voice         bf_emma  — Kokoro voice id
 - podcast_tts_model         speaches-ai/Kokoro-82M-v1.0-ONNX
-- podcast_tts_format        wav  — output format
+- podcast_tts_format        mp3  — output format. MUST be a self-
+  synchronizing format (mp3/opus/aac), NOT wav: Speaches splits long
+  input into segments internally and byte-concatenates them, so a
+  multi-segment WAV has only the FIRST segment's RIFF header valid and
+  players stop at ~24s. Concatenated MP3 frames play to completion.
 
 Never raises — callers in generate_media_scripts treat audio as
 best-effort; a missing Speaches container is logged, not fatal.
@@ -33,7 +37,10 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BASE_URL = "http://speaches:8000/v1"
 _DEFAULT_VOICE = "bf_emma"
 _DEFAULT_MODEL = "speaches-ai/Kokoro-82M-v1.0-ONNX"
-_DEFAULT_FORMAT = "wav"
+# mp3, NOT wav: Speaches byte-concatenates per-segment WAVs for long input,
+# leaving only the first segment's RIFF header valid so players cut off at
+# ~24s. Self-synchronizing MP3 frames concatenate cleanly and play in full.
+_DEFAULT_FORMAT = "mp3"
 _HTTP_TIMEOUT = httpx.Timeout(120.0, connect=5.0)
 
 

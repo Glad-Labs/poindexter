@@ -74,3 +74,44 @@ async def test_synthesize_raises_when_all_voices_fail(tmp_path: Path) -> None:
     with patch.object(svc, "_generate_with_voice", side_effect=always_fail):
         with pytest.raises(RuntimeError):
             await svc.synthesize(_SCRIPT, output_path=tmp_path / "x.mp3", key="t1")
+
+
+def test_pronunciation_map_includes_memory_acronyms() -> None:
+    """VRAM/SRAM/DRAM are spelled out so TTS says "Vee RAM" not "vram"."""
+    from services.podcast_service import _normalize_for_speech
+
+    sc = SiteConfig(initial_config={})
+    out = _normalize_for_speech(
+        "Choosing VRAM over SRAM and DRAM matters.", site_config=sc,
+    )
+    assert "Vee RAM" in out
+    assert "Ess RAM" in out
+    assert "Dee RAM" in out
+    assert "VRAM" not in out
+    assert "SRAM" not in out
+
+
+@pytest.mark.asyncio
+async def test_generate_with_voice_applies_pronunciation(tmp_path: Path) -> None:
+    """The TTS render boundary rewrites memory acronyms before synthesis, so
+    the EXISTING (already-generated) script backlog gets the fix on re-render
+    without regeneration."""
+    svc = _svc(tmp_path)
+    out = tmp_path / "render.mp3"
+    captured: dict = {}
+
+    async def fake_synth(text, *, site_config, output_path, voice):
+        captured["text"] = text
+        Path(output_path).write_bytes(b"audio-bytes")
+        return b"audio-bytes"
+
+    with patch("services.tts_service.synthesize_speech", side_effect=fake_synth):
+        result = await svc._generate_with_voice(
+            "Choosing VRAM over SRAM matters for local inference.", "bf_emma", out,
+        )
+
+    assert result.success is True
+    assert "Vee RAM" in captured["text"]
+    assert "Ess RAM" in captured["text"]
+    assert "VRAM" not in captured["text"]
+    assert "SRAM" not in captured["text"]

@@ -486,7 +486,7 @@ DEFAULTS: dict[str, str] = {
     'podcast_tts_base_url': 'http://speaches:8000/v1',
     'podcast_tts_voice': 'bf_emma',
     'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
-    'podcast_tts_format': 'wav',
+    'podcast_tts_format': 'mp3',
     'scheduled_publisher_poll_seconds': '60',
     'tts_acronym_replacements': '',
     'tts_pronunciations': '',

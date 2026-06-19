@@ -64,6 +64,43 @@ class TestTtsService:
 
         assert result == b"RIFF_fake_audio_bytes"
 
+    def test_default_format_is_mp3(self):
+        """Speaches byte-concatenates per-segment WAVs for long input, so wav
+        cuts off at ~24s; self-synchronizing MP3 frames play in full. The
+        default MUST be mp3 (regression guard for #media-render-fixes)."""
+        from services.tts_service import _DEFAULT_FORMAT
+        assert _DEFAULT_FORMAT == "mp3"
+
+    async def test_request_uses_default_mp3_when_unset(self):
+        """When podcast_tts_format is unset, the request body carries the mp3
+        default — not wav."""
+        from services.tts_service import synthesize_speech
+
+        class _NoFmtCfg(_Cfg):
+            def get(self, key, default=None):
+                if key == "podcast_tts_format":
+                    return default  # exercise the _DEFAULT_FORMAT fallback
+                return super().get(key, default)
+
+        captured = {}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"audio"
+
+        async def _post(url, **kwargs):
+            captured["json"] = kwargs.get("json")
+            return mock_response
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=_post)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            await synthesize_speech("Hello", site_config=_NoFmtCfg())
+
+        assert captured["json"]["response_format"] == "mp3"
+
     async def test_synthesize_returns_none_when_disabled(self):
         from services.tts_service import synthesize_speech
         result = await synthesize_speech("Hello", site_config=_Cfg(enabled=False))

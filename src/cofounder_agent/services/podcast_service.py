@@ -163,6 +163,11 @@ _SPOKEN_REPLACEMENTS = [
     ("Next.js", "next J S"),
     ("Node.js", "node J S"),
     ("Vue.js", "view J S"),
+    # Memory acronyms TTS reads as words ("vram"/"sram") — spell the
+    # leading letter so they're pronounced "Vee RAM" / "Ess RAM".
+    ("VRAM", "Vee RAM"),
+    ("SRAM", "Ess RAM"),
+    ("DRAM", "Dee RAM"),
     # Technical abbreviations with punctuation
     ("CI/CD", "CI CD"),
     ("I/O", "I O"),
@@ -986,6 +991,15 @@ class PodcastService:
     ) -> EpisodeResult:
         """Generate audio via Speaches/Kokoro TTS with the given voice."""
         from services import tts_service
+
+        # Apply DB-configurable pronunciation fixes at the TTS render boundary
+        # (e.g. VRAM → "Vee RAM"). The structural normalization runs at script
+        # generation (generate_media_scripts); re-applying ONLY the simple
+        # pronunciation map here lets operator-tuned pronunciations reach the
+        # EXISTING script backlog on re-render without regeneration. Idempotent
+        # — the spoken forms never contain their written keys.
+        for written, spoken in _get_tts_replacements(site_config=self._site_config):
+            script = re.sub(re.escape(written), spoken, script, flags=re.IGNORECASE)
 
         audio_bytes = await tts_service.synthesize_speech(
             script,
