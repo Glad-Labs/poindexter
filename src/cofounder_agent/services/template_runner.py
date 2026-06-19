@@ -197,6 +197,17 @@ _KNOWN_SERVICE_KEYS: frozenset[str] = frozenset({
     "settings_service",
     "image_style_tracker",
     "site_config",
+    # ``platform`` is content's capability-scoped kernel handle (Seam 1
+    # Wave 3c/3f, Glad-Labs/poindexter#667). It's a live service handle —
+    # never checkpointed data — so register it explicitly: the partition
+    # then threads it to EVERY node via __services__ regardless of whether
+    # the concrete handle (or a None placeholder) happens to round-trip
+    # through ormsgpack. Before this, a real handle reached services only by
+    # the msgpack heuristic while a ``None`` (or any future serializable
+    # handle) routed to the data state — where, being undeclared in
+    # PipelineState, LangGraph silently dropped it, so the image stages'
+    # LLM prompt build fell back to a generic style-only prompt (#667 3f).
+    "platform",
 })
 
 

@@ -126,6 +126,38 @@ class TestPartitionHelpers:
         assert data["task_id"] == "abc"
         assert data["topic"] == "Hello"
 
+    def test_partition_routes_platform_handle_to_services(self) -> None:
+        """The ``platform`` capability handle (#667 Seam 1) is a KNOWN
+        service key — partitioned to services deterministically, even when
+        ``None``, so every node (writer, inline-image atom, AND the
+        featured-image stage) receives it via ``__services__`` rather than
+        via the checkpointed LangGraph state.
+
+        Pre-fix ``platform`` was NOT in ``_KNOWN_SERVICE_KEYS``: a real
+        (unserializable) handle reached services only by the msgpack
+        heuristic, while a ``None`` handle — and any future serializable
+        handle — routed to the data state. There, being undeclared in
+        ``PipelineState``, LangGraph silently dropped it, so the image
+        stages' LLM prompt build raised "platform handle required for
+        dispatch" and fell back to a generic style-only prompt (#667
+        Wave 3f, observed live 2026-06-18).
+        """
+        handle = MagicMock()
+        data, services = _partition_state_and_services(
+            {"task_id": "abc", "topic": "Hello", "platform": handle}
+        )
+        assert "platform" not in data
+        assert services["platform"] is handle
+
+        # Deterministic even when None — the KEY decides the routing, not
+        # whether the value happens to round-trip through ormsgpack.
+        data_none, services_none = _partition_state_and_services(
+            {"task_id": "abc", "platform": None}
+        )
+        assert "platform" not in data_none
+        assert "platform" in services_none
+        assert services_none["platform"] is None
+
     def test_partition_routes_unknown_unserializable_to_services(self) -> None:
         """Unknown keys with unserializable values still get partitioned.
 
@@ -215,6 +247,7 @@ def _service_aware_factory_with_capture(
             capture["topic_seen"] = context.get("topic")
             capture["db_seen"] = context.get("database_service")
             capture["img_seen"] = context.get("image_service")
+            capture["platform_seen"] = context.get("platform")
             capture["state_keys_at_node_entry"] = sorted(state.keys())
             return {"content": f"ran with topic={context.get('topic')}"}
 
@@ -378,6 +411,49 @@ class TestRunnerPartitionsServicesFromState:
             f"saw msgpack-serializability errors after partition fix: "
             f"{[r.message for r in msgpack_errors]}"
         )
+
+    @pytest.mark.asyncio
+    async def test_runner_threads_platform_handle_to_node(
+        self, flag_off_for_partition, monkeypatch,
+    ):
+        """Contract: an image-stage-shaped node receives a non-None
+        ``platform`` handle on the graph_def path.
+
+        The featured-image stage + the inline-image atom both reach the
+        capability kernel through ``context.get("platform")`` to build
+        LLM-crafted SDXL prompts (``platform.dispatch.complete``). This
+        pins the runner guarantee that a platform handle seeded into the
+        initial state survives the state/services partition and lands in
+        the node's merged context — i.e. the image stages DO receive it,
+        and it never leaks onto the checkpointed LangGraph state.
+        """
+        capture: dict[str, Any] = {}
+        factory = _service_aware_factory_with_capture(capture)
+        import services.pipeline_templates as pt
+        monkeypatch.setattr(pt, "TEMPLATES", {"svc_platform": factory})
+
+        runner = TemplateRunner(
+            pool=None, checkpointer_dsn=None,
+            site_config=flag_off_for_partition,
+        )
+        platform = MagicMock(name="capability_handle")
+        summary = await runner.run(
+            "svc_platform",
+            {
+                "task_id": "platform-thread-1",
+                "topic": "platform threading",
+                "platform": platform,
+            },
+            thread_id="platform-thread-thread-1",
+        )
+        assert summary.ok, f"run failed: {summary.to_dict()}"
+        assert capture["platform_seen"] is platform, (
+            "the node did not receive the seeded platform handle via "
+            "__services__ — image stages would fall back to generic prompts"
+        )
+        # It's a service handle, not data — must stay off the checkpointed
+        # LangGraph state (undeclared in PipelineState → would be dropped).
+        assert "platform" not in capture["state_keys_at_node_entry"]
 
     @pytest.mark.asyncio
     async def test_summary_final_state_is_msgpack_clean(

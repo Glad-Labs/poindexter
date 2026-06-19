@@ -191,6 +191,15 @@ class SourceFeaturedImageStage:
         # DI seam (glad-labs-stack#330) — content_router_service seeds
         # site_config into the stage context.
         site_config = context.get("site_config")
+        # Seam 1 Wave 3f (#667) — content's capability-scoped kernel handle,
+        # threaded onto the stage context by the TemplateRunner (__services__
+        # merge), exactly as the writer + inline-image atom receive it. It MUST
+        # be forwarded into _try_sdxl_featured so the SDXL prompt build can run
+        # the LLM; without it _build_sdxl_prompt raises "platform handle
+        # required for dispatch" and the featured image falls back to the bare
+        # style-only prompt (generic, not subject-specific — the 2026-06-18
+        # production bug).
+        platform = context.get("platform")
 
         stages = context.setdefault("stages", {})
 
@@ -299,6 +308,7 @@ class SourceFeaturedImageStage:
                 on_style_picked=_on_style_picked_sync,
                 style_tracker=style_tracker,
                 site_config=site_config,
+                platform=platform,
             )
             if sdxl_image is not None:
                 stages["3_featured_image_found"] = True

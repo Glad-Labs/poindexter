@@ -258,7 +258,7 @@ async def process_content_generation_task(
     #
     # TemplateRunner extracts service handles from this dict via
     # ``_KNOWN_SERVICE_KEYS`` ({database_service, image_service,
-    # settings_service, image_style_tracker, site_config}). Stages
+    # settings_service, image_style_tracker, site_config, platform}). Stages
     # read inputs (topic / style / tone / target_length / tags /
     # generate_featured_image / models_by_phase / category /
     # target_audience) and accumulate outputs (content, quality_result,
