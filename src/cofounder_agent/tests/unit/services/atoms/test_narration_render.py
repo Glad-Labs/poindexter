@@ -111,6 +111,36 @@ class TestStripScriptLabels:
         out = _narration_render._strip_script_labels("Hook\nVRAM is the bottleneck.")
         assert out == "VRAM is the bottleneck."
 
+    def test_drops_bracketed_opening_hook_line(self):
+        # The real writer output that leaked "Hook" into the long video — a
+        # whole-line bracketed stage direction with a qualifier word.
+        out = _narration_render._strip_script_labels(
+            "[Opening Hook]\nIn today's GPU world, VRAM is everything.",
+        )
+        assert out == "In today's GPU world, VRAM is everything."
+
+    def test_strips_leading_bracket_annotation_prefix(self):
+        # Bracket annotation and prose on the SAME line — drop the bracket,
+        # keep the sentence.
+        out = _narration_render._strip_script_labels(
+            "[Opening Hook] In today's GPU world, VRAM is everything.",
+        )
+        assert out == "In today's GPU world, VRAM is everything."
+
+    def test_drops_qualifier_prefixed_label_line(self):
+        assert _narration_render._strip_script_labels("Opening Hook") == ""
+        assert _narration_render._strip_script_labels("Closing Outro") == ""
+
+    def test_strips_qualifier_prefixed_label_with_separator(self):
+        out = _narration_render._strip_script_labels("Final CTA: Subscribe now.")
+        assert out == "Subscribe now."
+
+    def test_drops_bracketed_non_label_direction(self):
+        # Square-bracket lines are stage directions regardless of content —
+        # "[pause]", "[music swells]" must never be spoken.
+        for raw in ("[pause]", "[music swells]", "[beat]"):
+            assert _narration_render._strip_script_labels(raw) == ""
+
     def test_strips_label_prefix_keeps_sentence(self):
         out = _narration_render._strip_script_labels("Hook: VRAM is the bottleneck.")
         assert out == "VRAM is the bottleneck."

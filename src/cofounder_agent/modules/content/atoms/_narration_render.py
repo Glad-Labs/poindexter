@@ -19,34 +19,56 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# Structural section labels the script generator sometimes emits as
-# spoken-looking text ("Hook: ...", "Outro", "Segment 2:"). They are
-# stage directions, not narration — TTS read "Hook" aloud at the top of
-# a video (#media-render-fixes). Stripped line-by-line: a label is removed
-# only when it is the WHOLE (de-marked) line, or a prefix followed by a
-# ``:`` / ``-`` / ``)`` separator — so prose like "Body cameras changed…"
-# is never touched.
+# Structural section labels the script generator emits as spoken-looking
+# text. They are stage directions, not narration — TTS read "Hook" aloud at
+# the top of a video (#media-render-fixes). The real writer output wraps them
+# in square brackets on their own line ("[Opening Hook]") and often prefixes a
+# qualifier word ("Opening Hook", "Final CTA"), so the matchers cover four
+# shapes: a whole-line ``[...]`` annotation, a leading ``[...]`` prefix on a
+# real line, a bare/marked-up label-only line, and a ``Label:`` prefix — while
+# leaving prose that merely STARTS with a label word ("Body cameras changed…")
+# untouched.
 _SECTION_LABELS = (
     r"hook|teaser|intro(?:duction)?|body|segment|section|scene|part|"
     r"outro|conclusion|wrap[\s-]?up|cta|call[\s-]?to[\s-]?action|"
     r"narrator|voice[\s-]?over|vo"
 )
+# Qualifier words that commonly precede a section label in a stage direction
+# ("Opening Hook", "Closing Outro", "Main Body", "Final CTA").
+_LABEL_QUALIFIERS = r"opening|closing|main|final"
+
+# A line that is wholly a square-bracket annotation ("[Opening Hook]",
+# "[pause]") — always a stage direction in a narration script, drop outright.
+_BRACKET_ONLY_RE = re.compile(r"^\s*\[[^\]]*\]\s*$")
+# A leading "[...]" annotation on an otherwise-real line
+# ("[Opening Hook] In today's world…") — drop the bracket, keep the prose.
+_BRACKET_PREFIX_RE = re.compile(r"^\s*\[[^\]]*\]\s*")
+
 _LABEL_LINE_RE = re.compile(
-    rf"^[\s>#*_\[\(\-]*(?:{_SECTION_LABELS})\s*\d*\s*[:.\)\]\-–—]+\s*",
+    rf"^[\s>#*_\(\-]*(?:(?:{_LABEL_QUALIFIERS})\s+)?(?:{_SECTION_LABELS})"
+    rf"\s*\d*\s*[:.\)\]\-–—]+\s*",
     re.IGNORECASE,
 )
 _LABEL_ONLY_RE = re.compile(
-    rf"^[\s>#*_\[\(\-]*(?:{_SECTION_LABELS})\s*\d*\s*[\]\)\*_>.]*\s*$",
+    rf"^[\s>#*_\(\-]*(?:(?:{_LABEL_QUALIFIERS})\s+)?(?:{_SECTION_LABELS})"
+    rf"\s*\d*\s*[\]\)\*_>.]*\s*$",
     re.IGNORECASE,
 )
 
 
 def _strip_script_labels(text: str) -> str:
-    """Drop leading structural section labels so TTS doesn't read them aloud."""
+    """Drop structural section labels so TTS doesn't read them aloud."""
     out: list[str] = []
     for line in text.splitlines():
+        if _BRACKET_ONLY_RE.match(line.strip()):
+            # Whole line is a bracketed stage direction ("[Opening Hook]").
+            continue
+        # A leading "[...]" annotation on a real line — drop the bracket,
+        # keep the sentence.
+        line = _BRACKET_PREFIX_RE.sub("", line, count=1)
         if _LABEL_ONLY_RE.match(line):
-            # The entire line is just a label ("Hook", "**Outro**") — drop it.
+            # The (de-marked) line is just a label ("Hook", "Opening Hook",
+            # "**Outro**") — drop it.
             continue
         # A label prefix on an otherwise-real line ("Hook: VRAM is…") — strip
         # the prefix, keep the sentence.
