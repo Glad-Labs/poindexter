@@ -177,6 +177,7 @@ _SPOKEN_REPLACEMENTS = [
     ("e.g.", "for example"),
     ("i.e.", "that is"),
     ("etc.", "and so on"),
+    ("vs", "versus"),
     ("vs.", "versus"),
     ("approx.", "approximately"),
     ("incl.", "including"),
