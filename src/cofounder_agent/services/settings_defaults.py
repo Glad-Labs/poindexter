@@ -120,6 +120,12 @@ DEFAULTS: dict[str, str] = {
     # hedging or qwen2.5's stat fabrication, and rarely needs the rescue. The
     # cross-model rescue reviser is glm (qa_rewrite_model). Operators tune live.
     'pipeline_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # Video director + self-critique run on the writer model — scene judgment is
+    # the top video-quality lever (video-quality spec §3.1). One shared key feeds
+    # both the generate_video_shot_list draft pass and the review_video_shot_list
+    # critique; kept equal to pipeline_writer_model (asserted in tests). Was unset
+    # before, falling through to default_ollama_model=auto → weak standard tier.
+    'video_director_model': 'ollama/gemma-4-31B-it-qat:latest',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
     # releases VRAM before the inline-image /generate lands. 2s is the
     # sweet spot — long enough for the kernel to free, short enough to
@@ -1017,6 +1023,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
+    'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'pipeline_fallback_model': {'owner': 'content_router', 'value_type': 'model'},
     'qa_fallback_writer_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'structured_extraction_model': {'owner': 'content_router', 'value_type': 'model'},

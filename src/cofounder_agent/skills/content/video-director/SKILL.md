@@ -17,6 +17,12 @@ metadata:
     - key: video.director_short_v1
       output_format: json
       description: 'Short-form (9:16) director — purpose-built vertical retention hook, not a trim of the long video'
+    - key: video.review_v1
+      output_format: json
+      description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
+    - key: video.review_short_v1
+      output_format: json
+      description: 'Director self-critique — revise the 9:16 short-form shot list for retention'
 ---
 
 # Video director skill
@@ -303,4 +309,82 @@ SCHEMA (output this shape):
 }}
 
 OUTPUT THE SHOT LIST JSON NOW:
+```
+
+## video.review_v1
+
+```text
+You are the senior video director reviewing a JUNIOR director's shot list
+for a {site_name} blog post before it goes to a human for approval. Improve it.
+
+POST TITLE: {title}
+
+POST BODY:
+{content}
+
+PODCAST SCRIPT (the narration the video plays over):
+{podcast_script}
+
+THE DRAFT SHOT LIST you are revising (JSON):
+{current_shot_list}
+
+REVISE it against these criteria, then output the REVISED shot list:
+1. COVERAGE - every important beat of the narration has a shot that carries
+   it; no dead air where the visual stops tracking the script.
+2. VARIETY - kill runs of near-identical shots. Vary subject AND source
+   (pexels / sdxl_kenburns / sdxl / wan21). Visual monotony is the #1 quality
+   killer.
+3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
+   reveal, the close) and upgrade them to source "wan21" for real motion. Keep
+   wan21 OFF the very first and very last shot. Never exceed 3 wan21 shots.
+4. ON-BRAND - sdxl / sdxl_kenburns / wan21 prompts use the dark-techno palette
+   (deep navy, cyan, teal, gold accents) and a stylized modifier (flat vector /
+   cinematic illustration / isometric 3D / cyberpunk neon / glassmorphism).
+   Never photoreal.
+
+CONSTRAINTS (keep the draft valid):
+- HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
+  human noun in an sdxl / sdxl_kenburns / wan21 prompt, not even as "no people".
+- shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
+  within 0.5s; narration_offset_s equals the cumulative prior durations; never
+  more than 2 consecutive shots with the same source.
+- Output EXACTLY one JSON object in the same schema as the draft. No prose, no
+  code fences.
+- Set director_model to "{model}", director_prompt_version to "review_v1",
+  director_decided_at to "{now_iso}".
+
+OUTPUT THE REVISED SHOT LIST JSON NOW:
+```
+
+## video.review_short_v1
+
+```text
+You are the senior short-form director revising a 9:16 vertical shot list for
+a {site_name} post before human approval.
+
+POST TITLE: {title}
+
+SHORT NARRATION (audio over the vertical clip):
+{short_script}
+
+THE DRAFT SHOT LIST you are revising (JSON):
+{current_shot_list}
+
+REVISE for retention, then output the REVISED list:
+1. COLD-OPEN - shot 0 is at most 2.5s and visually arresting; lands the promise
+   in the first second. Never "holdover" or "wan21" on the open.
+2. PACE - punchy; kill slow holds. 4-8 shots, each 2-6s.
+3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "wan21"
+   for motion (never the first or last shot; never more than 2 wan21 in a short).
+4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
+   palette, stylized not photoreal, humans go to pexels, no human noun in an AI
+   prompt).
+
+CONSTRAINTS: aspect "9:16"; idx contiguous; sum of duration_s equals
+total_duration_s within 0.5s; narration_offset_s cumulative; never more than 2
+consecutive shots with the same source. Output ONE JSON object in the draft's
+schema, no prose or fences. Set director_model to "{model}",
+director_prompt_version to "review_short_v1", director_decided_at to "{now_iso}".
+
+OUTPUT THE REVISED SHOT LIST JSON NOW:
 ```

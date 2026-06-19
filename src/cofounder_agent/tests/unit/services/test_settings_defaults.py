@@ -44,6 +44,13 @@ class TestRegistryShape:
             assert k, "empty key in DEFAULTS"
             assert isinstance(v, str), f"value for {k!r} is not str: {type(v).__name__}"
 
+    def test_video_director_model_is_writer_grade(self):
+        # Director + self-critique run on the writer model, not the standard
+        # tier (video-quality spec §3.1) — shared video_director_model key.
+        from services.settings_defaults import DEFAULTS, METADATA
+        assert DEFAULTS["video_director_model"] == DEFAULTS["pipeline_writer_model"]
+        assert METADATA["video_director_model"]["value_type"] == "model"
+
     def test_no_duplicate_keys(self):
         # Python dicts can't actually contain duplicates — but verify that
         # the post-import iteration order is stable and matches the

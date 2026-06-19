@@ -121,8 +121,8 @@ def test_render_pipeline_section_matches_real_spec(mod: ModuleType) -> None:
     gd = mod._load_graph_def()
     lines = mod.render_pipeline_section(gd)
     body = "\n".join(lines)
-    assert lines[0] == "## Content pipeline (`canonical_blog` graph_def) — 37 nodes"
-    assert "10 `stage.*`" in body
+    assert lines[0] == "## Content pipeline (`canonical_blog` graph_def) — 38 nodes"
+    assert "11 `stage.*`" in body
     assert "12 `content.*`" in body
     assert "13 `qa.*`" in body
     assert "1 `seo.*`" in body
@@ -165,7 +165,7 @@ def test_build_document_has_all_sections(mod: ModuleType) -> None:
     doc = mod.build_document(entries, gd)
     assert doc.startswith("# Poindexter Services Reference")
     assert "## Table of contents" in doc
-    assert "## Content pipeline (`canonical_blog` graph_def) — 37 nodes" in doc
+    assert "## Content pipeline (`canonical_blog` graph_def) — 38 nodes" in doc
     assert "## What's NOT in this catalog" in doc
     assert "## Conventions" in doc
     assert doc.endswith("\n")

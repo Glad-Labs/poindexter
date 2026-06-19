@@ -862,6 +862,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("stages", "modules.content.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
         ("stages", "modules.content.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
         ("stages", "modules.content.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
+        ("stages", "modules.content.stages.review_video_shot_list", "ReviewVideoShotListStage"),
         ("stages", "modules.content.stages.capture_training_data", "CaptureTrainingDataStage"),
         ("stages", "modules.content.stages.finalize_task", "FinalizeTaskStage"),
     ]

@@ -126,6 +126,9 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "seo_all_metadata", "atom": "seo.generate_all_metadata"},
         {"id": "generate_media_scripts", "atom": "stage.generate_media_scripts"},
         {"id": "generate_video_shot_list", "atom": "stage.generate_video_shot_list"},
+        # Director self-critique (#video-quality §3.1): revise the shot list
+        # before Gate 1 on the writer-grade video_director_model.
+        {"id": "review_video_shot_list", "atom": "stage.review_video_shot_list"},
         {"id": "capture_training_data", "atom": "stage.capture_training_data"},
         # content.finalize_task decomposition (#362):
         {"id": "compile_meta", "atom": "content.compile_meta"},
@@ -174,7 +177,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_rewrite", "to": "qa_programmatic", "loop": True},
         {"from": "seo_all_metadata", "to": "generate_media_scripts"},
         {"from": "generate_media_scripts", "to": "generate_video_shot_list"},
-        {"from": "generate_video_shot_list", "to": "capture_training_data"},
+        {"from": "generate_video_shot_list", "to": "review_video_shot_list"},
+        {"from": "review_video_shot_list", "to": "capture_training_data"},
         # finalize_task atom chain
         {"from": "capture_training_data", "to": "compile_meta"},
         {"from": "compile_meta", "to": "persist_task"},

@@ -64,6 +64,16 @@ class TestCanonicalBlogSpec:
         ):
             assert f"stage.{s}" in node_atoms, s
 
+    def test_review_video_shot_list_node_between_director_and_training(self):
+        spec = CANONICAL_BLOG_GRAPH_DEF
+        node_atoms = {n["atom"] for n in spec["nodes"]}
+        assert "stage.review_video_shot_list" in node_atoms
+        edges = {(e["from"], e["to"]) for e in spec["edges"]}
+        assert ("generate_video_shot_list", "review_video_shot_list") in edges
+        assert ("review_video_shot_list", "capture_training_data") in edges
+        # The old direct edge is gone — review sits in between now.
+        assert ("generate_video_shot_list", "capture_training_data") not in edges
+
     def test_programmatic_runs_before_critic(self):
         """The programmatic validator is the cheap deterministic gate and must
         sit FIRST in the qa block (caption_images → qa_programmatic → qa_critic)."""
@@ -154,5 +164,6 @@ class TestCanonicalBlogSpec:
         # The default forward edge from qa_aggregate is unchanged.
         assert ("qa_aggregate", "seo_all_metadata") in pairs
 
-    def test_node_count_is_37(self):
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 37
+    def test_node_count_is_38(self):
+        # 37 + review_video_shot_list (director self-critique, video-quality §3.1)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 38
