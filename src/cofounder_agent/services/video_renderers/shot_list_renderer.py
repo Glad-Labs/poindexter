@@ -45,6 +45,8 @@ from typing import Any
 
 from plugins.media_compositor import CompositionRequest, CompositionScene
 from schemas.video_shot_list import Shot, VideoShotList
+from services.video_renderers.shot_vision_qa import score_shot_frame
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,11 @@ logger = logging.getLogger(__name__)
 # 6s for wan21. Defensive ceiling here in case the director sneaks
 # something through.
 _WAN21_MAX_DURATION_S = 6
+
+# Stochastic sources worth re-rolling on a vision-QA miss — a fresh SDXL/Wan
+# seed yields a different image. Pexels is deterministic (same top result), so
+# it's excluded: a pexels miss falls straight through to the holdover fallback.
+_REGENERABLE_SOURCES = frozenset({"sdxl", "sdxl_kenburns", "wan21"})
 
 
 @dataclass
@@ -81,11 +88,48 @@ class ShotListRenderResult:
     error: str | None = None
 
 
+@dataclass
+class _QAConfig:
+    """Render-check loop tunables, read once per render off the DI seam."""
+
+    enabled: bool
+    threshold: float
+    max_retries: int
+
+
+def _build_qa_config(site_config: Any) -> _QAConfig:
+    """Read the render-check tunables off the site_config DI seam.
+
+    ``site_config=None`` (the legacy/test path, and the captionless
+    ``video_service`` caller) ⇒ disabled, so the existing render behaviour
+    and its whole test suite are unaffected. Defaults mirror
+    ``settings_defaults.py`` (enabled / 60 / 2).
+    """
+    if site_config is None:
+        return _QAConfig(enabled=False, threshold=60.0, max_retries=2)
+    enabled = str(
+        site_config.get("video_shot_qa_enabled", "true") or "true",
+    ).strip().lower() in ("true", "1", "yes")
+    try:
+        threshold = float(site_config.get("video_shot_qa_threshold", "60") or "60")
+    except (TypeError, ValueError):
+        threshold = 60.0
+    try:
+        max_retries = int(site_config.get("video_shot_qa_max_retries", "2") or "2")
+    except (TypeError, ValueError):
+        max_retries = 2
+    return _QAConfig(
+        enabled=enabled, threshold=threshold, max_retries=max(0, max_retries),
+    )
+
+
 async def _log_shot_audit(
     pool: Any,
     *,
     post_id: str,
     shot_result: ShotRenderResult,
+    qa_score: float | None = None,
+    qa_outcome: str | None = None,
 ) -> None:
     """Best-effort audit_log insert for a single shot's render result.
 
@@ -109,6 +153,8 @@ async def _log_shot_audit(
                 "success": shot_result.success,
                 "duration_s": shot_result.duration_s,
                 "error": shot_result.error,
+                "qa_score": qa_score,
+                "qa_outcome": qa_outcome,
             }),
             "info" if shot_result.success else "warning",
         )
@@ -419,6 +465,90 @@ async def _render_one_shot(
     )
 
 
+async def _render_shot_with_qa(
+    shot: Shot,
+    *,
+    prior_clip: str | None,
+    qa: _QAConfig,
+    site_config: Any,
+    render_kwargs: dict[str, Any],
+    http_client_factory: Any,
+    post_id: str,
+) -> tuple[ShotRenderResult, float | None, str | None]:
+    """Render one shot, then verify-and-repair against the vision-QA score.
+
+    Returns ``(result, qa_score, qa_outcome)`` where ``qa_outcome`` is one of
+    ``None`` | ``"accepted"`` | ``"regenerated"`` | ``"fallback_holdover"`` |
+    ``"kept_below"``. Bounded: at most ``qa.max_retries`` re-renders for
+    stochastic sources, then a deterministic holdover fallback — never loops.
+    """
+    result = await _render_one_shot(shot, prior_clip=prior_clip, **render_kwargs)
+
+    # QA off / nothing rendered / reused the prior clip (a holdover, or a
+    # pexels miss that already held over) → no scoring: the prior clip was
+    # already vetted when it was first produced.
+    if (not qa.enabled or not result.success or not result.clip_path
+            or result.clip_path == prior_clip):
+        return result, None, None
+
+    best = result
+    best_qa = await score_shot_frame(
+        frame_path=result.clip_path, shot=shot, site_config=site_config,
+        http_client_factory=http_client_factory,
+    )
+    # Could not score (no model / infra down) → accept as-is, don't penalise.
+    if best_qa.score is None:
+        return best, None, None
+
+    attempts = 0
+    while (best_qa.score < qa.threshold and attempts < qa.max_retries
+           and shot.source in _REGENERABLE_SOURCES):
+        attempts += 1
+        cand = await _render_one_shot(shot, prior_clip=prior_clip, **render_kwargs)
+        if not (cand.success and cand.clip_path):
+            continue
+        cand_qa = await score_shot_frame(
+            frame_path=cand.clip_path, shot=shot, site_config=site_config,
+            http_client_factory=http_client_factory,
+        )
+        if cand_qa.score is not None and cand_qa.score > best_qa.score:
+            best, best_qa = cand, cand_qa
+
+    if best_qa.score is not None and best_qa.score < qa.threshold:
+        if prior_clip:
+            emit_finding(
+                source="shot_list_renderer", kind="shot_quality_fallback",
+                title=f"shot {shot.idx} ({shot.source}) fell back to holdover",
+                body=(f"shot {shot.idx} scored {best_qa.score:.0f} < "
+                      f"{qa.threshold:.0f} after {attempts} regen(s); held over the "
+                      f"prior clip. reason: {best_qa.reason}"),
+                severity="warn",
+                dedup_key=f"shot_quality_fallback:{post_id}:{shot.idx}",
+                extra={"shot_idx": shot.idx, "source": shot.source,
+                       "score": best_qa.score, "threshold": qa.threshold},
+            )
+            held = ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path=prior_clip, duration_s=shot.duration_s,
+            )
+            return held, best_qa.score, "fallback_holdover"
+        # idx 0 with no prior clip to hold over: ship the best attempt, flag it.
+        emit_finding(
+            source="shot_list_renderer", kind="shot_quality_fallback",
+            title=f"shot {shot.idx} ({shot.source}) kept below threshold",
+            body=(f"shot {shot.idx} scored {best_qa.score:.0f} < {qa.threshold:.0f} "
+                  f"and has no prior clip to hold over; kept the best attempt. "
+                  f"reason: {best_qa.reason}"),
+            severity="warn",
+            dedup_key=f"shot_quality_fallback:{post_id}:{shot.idx}",
+            extra={"shot_idx": shot.idx, "source": shot.source,
+                   "score": best_qa.score, "threshold": qa.threshold},
+        )
+        return best, best_qa.score, "kept_below"
+
+    return best, best_qa.score, ("regenerated" if attempts else "accepted")
+
+
 async def render_shot_list(
     *,
     post_id: str,
@@ -495,20 +625,32 @@ async def render_shot_list(
         post_id, len(shot_list.shots), shot_list.total_duration_s, work_dir,
     )
 
+    qa = _build_qa_config(site_config)
+    render_kwargs = dict(
+        work_dir=work_dir,
+        sdxl_url=sdxl_url,
+        site_config=site_config,
+        http_client_factory=http_client_factory,
+        pexels_key=pexels_key,
+        orientation=orientation,
+    )
+
     shot_results: list[ShotRenderResult] = []
     prior_clip: str | None = None
     for shot in shot_list.shots:
-        result = await _render_one_shot(
+        result, qa_score, qa_outcome = await _render_shot_with_qa(
             shot,
             prior_clip=prior_clip,
-            work_dir=work_dir,
-            sdxl_url=sdxl_url,
+            qa=qa,
             site_config=site_config,
+            render_kwargs=render_kwargs,
             http_client_factory=http_client_factory,
-            pexels_key=pexels_key,
-            orientation=orientation,
+            post_id=post_id,
         )
-        await _log_shot_audit(pool, post_id=post_id, shot_result=result)
+        await _log_shot_audit(
+            pool, post_id=post_id, shot_result=result,
+            qa_score=qa_score, qa_outcome=qa_outcome,
+        )
         shot_results.append(result)
         if result.success and result.clip_path:
             prior_clip = result.clip_path

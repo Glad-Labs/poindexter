@@ -51,6 +51,15 @@ class TestRegistryShape:
         assert DEFAULTS["video_director_model"] == DEFAULTS["pipeline_writer_model"]
         assert METADATA["video_director_model"]["value_type"] == "model"
 
+    def test_video_shot_qa_keys_seeded(self):
+        # Per-shot vision-QA render-check loop tunables (video-quality spec §3.2).
+        from services.settings_defaults import DEFAULTS, METADATA
+        assert DEFAULTS["video_shot_qa_enabled"] == "true"
+        assert DEFAULTS["video_shot_qa_threshold"] == "60"
+        assert DEFAULTS["video_shot_qa_max_retries"] == "2"
+        assert METADATA["video_shot_qa_enabled"]["value_type"] == "boolean"
+        assert METADATA["video_shot_qa_threshold"]["value_type"] == "integer"
+
     def test_no_duplicate_keys(self):
         # Python dicts can't actually contain duplicates — but verify that
         # the post-import iteration order is stable and matches the

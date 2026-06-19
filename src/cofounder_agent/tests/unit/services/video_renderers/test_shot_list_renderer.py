@@ -784,3 +784,184 @@ class TestPexelsSource:
         assert result.success is True
         assert captured["api_key"] == "SEKRIT"
         assert captured["orientation"] == "portrait"  # 9:16 → portrait
+
+
+class _QASC:
+    """site_config stub for the render-check loop tests.
+
+    Sync ``.get`` for the ``video_shot_qa_*`` tunables + ``qa_vision_model``,
+    async ``.get_secret`` for the pexels key ``render_shot_list`` fetches.
+    """
+
+    def __init__(self, **over):
+        self._cfg = {
+            "video_shot_qa_enabled": "true",
+            "video_shot_qa_threshold": "60",
+            "video_shot_qa_max_retries": "2",
+            "qa_vision_model": "qwen3-vl:30b",
+        }
+        self._cfg.update(over)
+
+    def get(self, k, d=None):
+        return self._cfg.get(k, d)
+
+    async def get_secret(self, k, d=None):
+        return d
+
+
+class TestRenderCheckLoop:
+    """Per-shot vision-QA verify-and-repair loop (video-quality Piece 2, §3.2)."""
+
+    def _sdxl_factory(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.headers = {"content-type": "image/png"}
+        resp.content = b"fake-png-bytes"
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = AsyncMock(return_value=resp)
+        return lambda *a, **k: client
+
+    def _mock_compositor(self):
+        class _C:
+            def __init__(self, site_config=None):
+                pass
+
+            async def compose(self, request, **kw):
+                with open(request.output_path, "wb") as f:
+                    f.write(b"mp4")
+                return MagicMock(
+                    success=True, output_path=request.output_path,
+                    file_size_bytes=3, duration_s=request.scenes[0].duration_s,
+                )
+        return _C
+
+    @pytest.mark.asyncio
+    async def test_accept_above_threshold_no_regen(self, tmp_path):
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                      prompt="a cyan abstract circuit", narration_offset_s=0.0)]
+        scorer = AsyncMock(return_value=ShotQAResult(score=90.0, reason="great"))
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            result = await render_shot_list(
+                post_id="p", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836", site_config=_QASC(),
+                http_client_factory=self._sdxl_factory())
+        assert result.success is True
+        assert scorer.await_count == 1  # scored once, accepted, no regen
+
+    @pytest.mark.asyncio
+    async def test_regenerate_then_fallback_emits_finding(self, tmp_path):
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                      prompt="cyan grid", narration_offset_s=0.0),
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="sdxl",
+                      prompt="teal mesh", narration_offset_s=3.0)]
+        # shot 0 passes (90, gives a prior clip); shot 1 fails every attempt.
+        scorer = AsyncMock(side_effect=[ShotQAResult(90.0), ShotQAResult(20.0),
+                                        ShotQAResult(25.0), ShotQAResult(30.0)])
+        findings = []
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch.object(mod, "emit_finding", lambda **kw: findings.append(kw)), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            result = await render_shot_list(
+                post_id="p", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836", site_config=_QASC(),
+                http_client_factory=self._sdxl_factory())
+        assert result.success is True
+        # shot 0: 1 score; shot 1: 1 initial + 2 regens = 3 → 4 total.
+        assert scorer.await_count == 4
+        assert any(f["kind"] == "shot_quality_fallback" for f in findings)
+
+    @pytest.mark.asyncio
+    async def test_qa_disabled_when_site_config_none(self, tmp_path):
+        """site_config=None ⇒ QA never runs (backcompat for the existing suite)."""
+        import services.video_renderers.shot_list_renderer as mod
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                      prompt="cyan grid", narration_offset_s=0.0)]
+        scorer = AsyncMock()
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            result = await render_shot_list(
+                post_id="p", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836", site_config=None,
+                http_client_factory=self._sdxl_factory())
+        assert result.success is True
+        scorer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_disabled_via_flag(self, tmp_path):
+        import services.video_renderers.shot_list_renderer as mod
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                      prompt="cyan grid", narration_offset_s=0.0)]
+        scorer = AsyncMock()
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            await render_shot_list(
+                post_id="p", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836",
+                site_config=_QASC(video_shot_qa_enabled="false"),
+                http_client_factory=self._sdxl_factory())
+        scorer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_pexels_not_regenerated(self, tmp_path):
+        """Pexels is deterministic — a low score falls back without re-fetching."""
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                      prompt="cyan grid", narration_offset_s=0.0),
+                 Shot(idx=1, duration_s=3.0, intent="person", source="pexels",
+                      query="developer at desk", narration_offset_s=3.0)]
+        scorer = AsyncMock(side_effect=[ShotQAResult(90.0), ShotQAResult(10.0)])
+        pexels = AsyncMock(return_value=True)
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch.object(mod, "_render_pexels_image", pexels), \
+             patch.object(mod, "emit_finding", lambda **kw: None), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            await render_shot_list(
+                post_id="p", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836", site_config=_QASC(),
+                http_client_factory=self._sdxl_factory())
+        # pexels shot scored once (10 < 60) but NOT re-fetched (deterministic).
+        assert pexels.await_count == 1
+        assert scorer.await_count == 2  # sdxl(1) + pexels(1), no regen
+
+    @pytest.mark.asyncio
+    async def test_fallback_finding_shape_is_dashboard_ready(self, tmp_path):
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                      prompt="cyan grid", narration_offset_s=0.0),
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="sdxl",
+                      prompt="teal mesh", narration_offset_s=3.0)]
+        scorer = AsyncMock(side_effect=[ShotQAResult(90.0)] + [ShotQAResult(15.0)] * 3)
+        captured = []
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch.object(mod, "emit_finding", lambda **kw: captured.append(kw)), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            await render_shot_list(
+                post_id="post-xyz", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836", site_config=_QASC(),
+                http_client_factory=self._sdxl_factory())
+        f = next(f for f in captured if f["kind"] == "shot_quality_fallback")
+        assert f["source"] == "shot_list_renderer"
+        assert f["severity"] == "warn"
+        assert f["dedup_key"] == "shot_quality_fallback:post-xyz:1"
+        assert f["extra"]["score"] == 15.0

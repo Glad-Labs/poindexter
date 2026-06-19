@@ -126,6 +126,13 @@ DEFAULTS: dict[str, str] = {
     # critique; kept equal to pipeline_writer_model (asserted in tests). Was unset
     # before, falling through to default_ollama_model=auto → weak standard tier.
     'video_director_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # Per-shot vision-QA render-check loop (video-quality spec §3.2). The render
+    # loop in shot_list_renderer scores each rendered frame with qa_vision_model
+    # and regenerates (stochastic sources) or falls back to holdover on a miss.
+    # site_config=None (legacy/test path) disables it regardless of this default.
+    'video_shot_qa_enabled': 'true',
+    'video_shot_qa_threshold': '60',
+    'video_shot_qa_max_retries': '2',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
     # releases VRAM before the inline-image /generate lands. 2s is the
     # sweet spot — long enough for the kernel to free, short enough to
@@ -1024,6 +1031,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
+    'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
+    'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
     'pipeline_fallback_model': {'owner': 'content_router', 'value_type': 'model'},
     'qa_fallback_writer_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'structured_extraction_model': {'owner': 'content_router', 'value_type': 'model'},

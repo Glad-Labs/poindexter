@@ -47,6 +47,9 @@ metadata:
     - key: qa.vision_preview_screenshot
       output_format: json
       description: 'Vision-QA: full-page screenshot review. A vision-capable Ollama model rates the rendered preview 0-100 on layout, image rendering, and visual professionalism. Used by MultiModelQA.review_preview_screenshot. Migrated from inline string 2026-05-28.'
+    - key: qa.video_shot_quality
+      output_format: json
+      description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one rendered video shot 0-100 on match-to-intent, on-brand palette, and usability. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
 ---
 
 # Content QA skill
@@ -344,4 +347,25 @@ A clean, professional post scores 80+. A post with any ONE serious visual defect
 
 Respond with ONLY valid JSON:
 {{"score": int, "approved": true/false, "issues": ["specific visual problem 1", ...]}}
+```
+
+## qa.video_shot_quality
+
+```text
+You are a video-quality reviewer scoring a SINGLE rendered shot from a Glad Labs
+explainer video. Judge only this one image as this one shot.
+
+SHOT INTENT (why this shot exists): {intent}
+SHOT SUBJECT (what it should show): {visual}
+SHOT SOURCE: {source}
+
+Judge:
+- MATCH - does the image depict the shot's subject / intent?
+- BRAND - dark-techno palette (deep navy, cyan, teal, gold), stylized not photoreal
+  for AI sources; clean real footage for pexels. No garbled text, no warped
+  artifacts, no melted faces / six-fingered hands.
+- USABLE - would this hold the screen for a few seconds, or is it AI slop?
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"score": <integer 0-100>, "reason": "<one short sentence>"}}
 ```

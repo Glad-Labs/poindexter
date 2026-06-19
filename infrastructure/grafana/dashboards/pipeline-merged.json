@@ -4920,6 +4920,70 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 76,
+      "title": "Shot vision-QA outcomes (window)",
+      "type": "table",
+      "description": "Per-shot vision-QA render-check outcomes (video-quality Piece 2). accepted = passed first try; regenerated = re-rolled then passed; fallback_holdover = below threshold, held over the prior clip; kept_below = below threshold at idx 0, kept best. Sourced from video_shot_rendered audit rows enriched by shot_list_renderer; shot_quality_fallback findings also land on /d/findings.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 203
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  details->>'qa_outcome'                         AS \"Outcome\",\n  COUNT(*)                                       AS \"Shots\",\n  ROUND(AVG((details->>'qa_score')::numeric), 1) AS \"Avg score\"\nFROM audit_log\nWHERE event_type = 'video_shot_rendered'\n  AND details->>'qa_outcome' IS NOT NULL\n  AND $__timeFilter(timestamp)\nGROUP BY 1\nORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
