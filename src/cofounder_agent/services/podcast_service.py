@@ -146,59 +146,6 @@ _SPOKEN_REPLACEMENTS = [
     ("The following section", "The next section"),
     ("Scroll down", "Keep listening"),
     ("scroll down", "keep listening"),
-    # Words TTS mispronounces
-    ("GitFlow", "git flow"),
-    ("GitHub", "git hub"),
-    ("GitLab", "git lab"),
-    ("DevSecOps", "dev sec ops"),
-    ("DevOps", "dev ops"),
-    ("DevEx", "dev ex"),
-    ("FastAPI", "fast A P I"),
-    ("PostgreSQL", "postgres"),
-    ("MongoDB", "mongo D B"),
-    ("GraphQL", "graph Q L"),
-    ("WebSocket", "web socket"),
-    ("TypeScript", "type script"),
-    ("JavaScript", "java script"),
-    ("Next.js", "next J S"),
-    ("Node.js", "node J S"),
-    ("Vue.js", "view J S"),
-    # Memory acronyms TTS reads as words ("vram"/"sram") — spell the
-    # leading letter so they're pronounced "Vee RAM" / "Ess RAM".
-    ("VRAM", "Vee RAM"),
-    ("SRAM", "Ess RAM"),
-    ("DRAM", "Dee RAM"),
-    # Storage units — without \b these would fire inside "RGB", "MBR", etc.
-    # _normalize_for_speech applies \b boundaries for all pure-letter entries.
-    ("PB", "petabyte"),
-    ("TB", "terabyte"),
-    ("GB", "gigabyte"),
-    ("MB", "megabyte"),
-    ("KB", "kilobyte"),
-    # Frequency units
-    ("GHz", "gigahertz"),
-    ("MHz", "megahertz"),
-    ("kHz", "kilohertz"),
-    # Network / throughput speeds
-    ("Gbps", "gigabits per second"),
-    ("Mbps", "megabits per second"),
-    ("Kbps", "kilobits per second"),
-    # Display / media
-    ("fps", "frames per second"),
-    # Technical abbreviations with punctuation
-    ("I/O", "I O"),
-    ("TCP/IP", "TCP IP"),
-    ("OS/2", "OS 2"),
-    # Common abbreviations
-    ("e.g.", "for example"),
-    ("i.e.", "that is"),
-    ("etc.", "and so on"),
-    ("vs", "versus"),
-    ("vs.", "versus"),
-    ("approx.", "approximately"),
-    ("incl.", "including"),
-    ("w/", "with"),
-    ("w/o", "without"),
     # Symbols people don't say
     ("&", "and"),
     ("\u2014", "; "),  # em dash — as pause
@@ -232,56 +179,50 @@ _SPOKEN_REGEX_STATIC = [
     (re.compile(r"\s*\(([^)]{1,50})\)\s*"), r", \1, "),
 ]
 
-# Default acronym-to-plain-English mappings (overridden by DB key: tts_acronym_replacements)
-_DEFAULT_ACRONYM_REPLACEMENTS = {
-    "SOC": "security operations",
-    "CRM": "customer relationship management",
-    "SLA": "service level agreement",
-    "KPI": "key performance indicator",
-    "ROI": "return on investment",
-    "MVP": "minimum viable product",
-    "POC": "proof of concept",
-    "EOL": "end of life",
-}
-
-
 def _get_tts_replacements(*, site_config: "SiteConfig | None" = None) -> list:
-    """Load TTS pronunciation replacements, merging DB overrides with defaults."""
+    """Return structural transforms (always applied) plus DB pronunciation entries.
+
+    Pronunciation opinions (brand names, abbreviations, units) live entirely in the
+    DB under ``tts_pronunciations``.  If that key is empty, only the structural
+    transforms above are applied — no hardcoded pronunciation fallback.
+    Configure via ``poindexter settings set tts_pronunciations '{"GB": "gigabyte"}'``.
+    """
     import json as _json
 
     _sc = _resolve_site_config(site_config)
 
-    # Simple replacements: DB key tts_pronunciations (JSON object: {"written": "spoken"})
     db_pronunciations = _sc.get("tts_pronunciations", "")
-    if db_pronunciations:
-        try:
-            db_map = _json.loads(db_pronunciations)
-            # Merge: DB entries override defaults with same key
-            merged = dict(_SPOKEN_REPLACEMENTS)
-            merged.update(db_map.items())
-            simple = list(merged.items())
-        except (ValueError, TypeError):
-            simple = list(_SPOKEN_REPLACEMENTS)
-    else:
-        simple = list(_SPOKEN_REPLACEMENTS)
+    if not db_pronunciations:
+        return list(_SPOKEN_REPLACEMENTS)
 
-    return simple
+    try:
+        db_map = _json.loads(db_pronunciations)
+    except (ValueError, TypeError):
+        logger.warning("tts_pronunciations is not valid JSON — pronunciation table skipped")
+        return list(_SPOKEN_REPLACEMENTS)
+
+    return list(_SPOKEN_REPLACEMENTS) + list(db_map.items())
 
 
 def _get_acronym_regex(*, site_config: "SiteConfig | None" = None) -> list:
-    """Load acronym replacements from DB, compile to regex list."""
+    """Load acronym replacements from DB only — no hardcoded fallback.
+
+    Returns an empty list when ``tts_acronym_replacements`` is unset or invalid.
+    Configure via ``poindexter settings set tts_acronym_replacements '{"SOC": "security operations"}'``.
+    """
     import json as _json
 
     _sc = _resolve_site_config(site_config)
 
     db_acronyms = _sc.get("tts_acronym_replacements", "")
-    if db_acronyms:
-        try:
-            acronyms = _json.loads(db_acronyms)
-        except (ValueError, TypeError):
-            acronyms = _DEFAULT_ACRONYM_REPLACEMENTS
-    else:
-        acronyms = _DEFAULT_ACRONYM_REPLACEMENTS
+    if not db_acronyms:
+        return []
+
+    try:
+        acronyms = _json.loads(db_acronyms)
+    except (ValueError, TypeError):
+        logger.warning("tts_acronym_replacements is not valid JSON — acronym expansion skipped")
+        return []
 
     return [(re.compile(rf"\b{re.escape(k)}\b"), v) for k, v in acronyms.items()]
 

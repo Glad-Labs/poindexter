@@ -534,10 +534,16 @@ DEFAULTS: dict[str, str] = {
         ' "Gbps": "gigabits per second", "Mbps": "megabits per second",'
         ' "Kbps": "kilobits per second", "fps": "frames per second",'
         ' "GitFlow": "git flow", "GitHub": "git hub", "GitLab": "git lab",'
-        ' "DevSecOps": "dev sec ops", "DevOps": "dev ops",'
-        ' "FastAPI": "fast A P I", "PostgreSQL": "postgres",'
-        ' "GraphQL": "graph Q L", "TypeScript": "type script",'
-        ' "JavaScript": "java script"}'
+        ' "DevSecOps": "dev sec ops", "DevOps": "dev ops", "DevEx": "dev ex",'
+        ' "FastAPI": "fast A P I", "PostgreSQL": "postgres", "MongoDB": "mongo D B",'
+        ' "GraphQL": "graph Q L", "WebSocket": "web socket",'
+        ' "TypeScript": "type script", "JavaScript": "java script",'
+        ' "Next.js": "next J S", "Node.js": "node J S", "Vue.js": "view J S",'
+        ' "CI/CD": "CI CD", "I/O": "I O", "TCP/IP": "TCP IP", "OS/2": "OS 2",'
+        ' "e.g.": "for example", "i.e.": "that is", "etc.": "and so on",'
+        ' "vs": "versus", "vs.": "versus",'
+        ' "approx.": "approximately", "incl.": "including",'
+        ' "w/": "with", "w/o": "without"}'
     ),
     # Voice-rotation pool (#689 Plan 7) — DB-configurable override of the
     # podcast_service VOICE_POOL constant. Default-off / empty falls back to

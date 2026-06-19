@@ -25,6 +25,17 @@ from services.site_config import SiteConfig
 # default)`` defaults the old empty module global provided.
 _TEST_SC = SiteConfig()
 
+# SiteConfig with tts_pronunciations seeded — used by word-boundary tests that
+# verify pronunciation entries are DB-driven (not hardcoded in _SPOKEN_REPLACEMENTS).
+_TTS_SC = SiteConfig(initial_config={
+    "tts_pronunciations": (
+        '{"GB": "gigabyte", "MB": "megabyte", "TB": "terabyte",'
+        ' "GHz": "gigahertz", "Mbps": "megabits per second",'
+        ' "fps": "frames per second", "vs": "versus", "vs.": "versus"}'
+    ),
+    "tts_acronym_replacements": "",
+})
+
 
 class TestStripMarkdown:
     """Test markdown-to-plain-text conversion."""
@@ -410,13 +421,13 @@ class TestNormalizeForSpeech:
         result = _normalize_for_speech("Visit GitHub today", site_config=sc)
         assert "git hub" in result.lower() or "git hub" in result
 
-    def test_invalid_db_pronunciations_falls_back_to_defaults(self):
+    def test_invalid_db_pronunciations_does_not_raise(self):
         from services.podcast_service import _normalize_for_speech
         sc = SiteConfig(initial_config={
             "tts_pronunciations": "not valid json {",
             "tts_acronym_replacements": "",
         })
-        # Should not raise — falls back to defaults
+        # Invalid JSON: structural transforms still apply, pronunciation table skipped
         result = _normalize_for_speech("Some text", site_config=sc)
         assert isinstance(result, str)
 
@@ -461,16 +472,12 @@ class TestGetTtsReplacements:
 
 
 class TestGetAcronymRegex:
-    def test_returns_default_list_when_no_db_config(self):
+    def test_returns_empty_when_no_db_config(self):
         from services.podcast_service import _get_acronym_regex
         sc = SiteConfig(initial_config={"tts_acronym_replacements": ""})
         result = _get_acronym_regex(site_config=sc)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        # Each entry is (compiled_pattern, replacement_string)
-        for pattern, replacement in result[:3]:
-            assert hasattr(pattern, "sub")  # compiled regex
-            assert isinstance(replacement, str)
+        # No hardcoded fallback — empty DB key = no acronym expansion
+        assert result == []
 
     def test_db_acronyms_compiled_to_regex(self):
         from services.podcast_service import _get_acronym_regex
@@ -482,13 +489,12 @@ class TestGetAcronymRegex:
         replacements = [r for _, r in result]
         assert "ay double-yoo ess" in replacements
 
-    def test_invalid_json_falls_back_to_defaults(self):
+    def test_invalid_json_returns_empty(self):
         from services.podcast_service import _get_acronym_regex
         sc = SiteConfig(initial_config={"tts_acronym_replacements": "not json"})
         result = _get_acronym_regex(site_config=sc)
-        # Returns the default list (not crash, not empty)
-        assert isinstance(result, list)
-        assert len(result) > 0
+        # Invalid JSON: no fallback, no crash — returns empty
+        assert result == []
 
 
 # ===========================================================================
@@ -501,44 +507,44 @@ class TestNormalizeForSpeechWordBoundaries:
 
     def test_gb_replaced_standalone(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("256 GB SSD", site_config=_TEST_SC)
+        result = _normalize_for_speech("256 GB SSD", site_config=_TTS_SC)
         assert "gigabyte" in result.lower()
 
     def test_gb_does_not_fire_inside_rgb(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("RGB lighting", site_config=_TEST_SC)
+        result = _normalize_for_speech("RGB lighting", site_config=_TTS_SC)
         assert "gigabyte" not in result.lower()
         assert "rgb" in result.lower()
 
     def test_mb_replaced_standalone(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("The file is 512 MB", site_config=_TEST_SC)
+        result = _normalize_for_speech("The file is 512 MB", site_config=_TTS_SC)
         assert "megabyte" in result.lower()
 
     def test_tb_replaced_standalone(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("4 TB drive", site_config=_TEST_SC)
+        result = _normalize_for_speech("4 TB drive", site_config=_TTS_SC)
         assert "terabyte" in result.lower()
 
     def test_ghz_replaced(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("running at 3.5 GHz", site_config=_TEST_SC)
+        result = _normalize_for_speech("running at 3.5 GHz", site_config=_TTS_SC)
         assert "gigahertz" in result.lower()
 
     def test_mbps_replaced(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("1000 Mbps link", site_config=_TEST_SC)
+        result = _normalize_for_speech("1000 Mbps link", site_config=_TTS_SC)
         assert "megabits per second" in result.lower()
 
     def test_fps_replaced_standalone(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("running at 60 fps", site_config=_TEST_SC)
+        result = _normalize_for_speech("running at 60 fps", site_config=_TTS_SC)
         assert "frames per second" in result.lower()
 
     def test_vs_does_not_corrupt_versus(self):
         # Regression: "vs" fired inside "versus" → "versuserus".
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("Team A versus Team B", site_config=_TEST_SC)
+        result = _normalize_for_speech("Team A versus Team B", site_config=_TTS_SC)
         assert "versuserus" not in result
         assert "versus" in result
 

@@ -19,9 +19,18 @@ from services.site_config import SiteConfig
 
 _SCRIPT = "This is a long enough podcast narration body to render into audio."
 
+# Pronunciation rules now live in the DB (tts_pronunciations), not hardcoded in
+# podcast_service. Tests that exercise pronunciation seed this so the VRAM/SRAM/
+# DRAM rules fire — proving the substitution comes from config, not a constant.
+_TTS_PRONUNCIATIONS = '{"VRAM": "Vee RAM", "SRAM": "Ess RAM", "DRAM": "Dee RAM"}'
+
 
 def _svc(tmp_path: Path) -> PodcastService:
-    sc = SiteConfig(initial_config={"podcast_name": "Test Show", "site_domain": "test.io"})
+    sc = SiteConfig(initial_config={
+        "podcast_name": "Test Show",
+        "site_domain": "test.io",
+        "tts_pronunciations": _TTS_PRONUNCIATIONS,
+    })
     return PodcastService(output_dir=tmp_path, site_config=sc)
 
 
@@ -77,10 +86,15 @@ async def test_synthesize_raises_when_all_voices_fail(tmp_path: Path) -> None:
 
 
 def test_pronunciation_map_includes_memory_acronyms() -> None:
-    """VRAM/SRAM/DRAM are spelled out so TTS says "Vee RAM" not "vram"."""
+    """VRAM/SRAM/DRAM are spelled out so TTS says "Vee RAM" not "vram".
+
+    Pronunciation rules are DB-driven (tts_pronunciations), so this seeds the
+    rules and verifies _normalize_for_speech applies them — not that they're
+    hardcoded.
+    """
     from services.podcast_service import _normalize_for_speech
 
-    sc = SiteConfig(initial_config={})
+    sc = SiteConfig(initial_config={"tts_pronunciations": _TTS_PRONUNCIATIONS})
     out = _normalize_for_speech(
         "Choosing VRAM over SRAM and DRAM matters.", site_config=sc,
     )

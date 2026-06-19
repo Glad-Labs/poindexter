@@ -77,8 +77,12 @@ In addition to the table above, the code always applies these
 formatting transforms, not pronunciation opinions):
 
 - Medium adaptation: "in this post" → "in this episode", "read on" → "stay tuned", etc.
-- Symbols: `&` → "and", em dash → pause, `->` → "to", `==` → "equals", etc.
-- Abbreviations with punctuation: `e.g.` → "for example", `vs.` → "versus", `CI/CD` → "CI CD", etc.
+- Symbols: `&` → "and", em dash/en dash → pause, `->` → "to", `==` → "equals", `>=` → "at least", etc.
+- Format shortcuts: `24/7` → "twenty four seven", `/mo` → "per month", `$0` → "zero dollars"
+
+Everything else — tech brand names, abbreviations (`e.g.`, `vs.`, `CI/CD`), units (GB, GHz), and
+common contractions (`w/`) — lives in `tts_pronunciations` and is fully DB-configurable with **no
+hardcoded fallback**. If `tts_pronunciations` is empty, those substitutions do not fire.
 
 ---
 
