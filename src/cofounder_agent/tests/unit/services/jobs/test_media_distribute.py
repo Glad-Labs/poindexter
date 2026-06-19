@@ -151,7 +151,8 @@ def test_type_to_medium_is_identity():
 @pytest.mark.asyncio
 async def test_link_skips_when_post_already_has_video_asset():
     """A second task-keyed render for a post that already has a video asset must
-    NOT be linked (would violate the unique guard / double the row) — skip + finding."""
+    NOT be linked — it should be self-pruned (DELETE) and a finding emitted so
+    the next cycle doesn't rediscover the orphan and re-alert."""
     job = MediaDistributeJob()
     pool = _FakePool(
         [{"id": "a-dup", "task_id": "abc", "type": "video"}],
@@ -167,7 +168,36 @@ async def test_link_skips_when_post_already_has_video_asset():
             pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
         )
     pending.assert_not_called()  # no second Gate-2 row seeded
-    pool.execute.assert_not_called()  # no back-stamp for the dup render
+    # The orphan row is pruned via pool.execute(_PRUNE_ORPHAN_SQL, asset_id);
+    # no back-stamp execute should follow it.
+    pool.execute.assert_awaited_once()
+    prune_sql = pool.execute.call_args.args[0]
+    assert "DELETE FROM media_assets" in prune_sql
+    assert "post_id IS NULL" in prune_sql
+    assert out.changes_made == 0
+    assert findings and findings[0]["kind"] == "duplicate_video_asset"
+
+
+@pytest.mark.asyncio
+async def test_link_orphan_prune_failure_is_best_effort():
+    """If the orphan DELETE raises, the job still completes ok and the finding
+    is still emitted — a failed prune is non-fatal."""
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        [{"id": "a-dup", "task_id": "abc", "type": "video"}],
+        post_id="post-1",
+        existing_video=1,
+    )
+    pool.execute = AsyncMock(side_effect=RuntimeError("db error"))
+    findings = []
+    pending = AsyncMock(return_value="pending")
+    with patch.object(md, "record_pending", pending), patch.object(
+        md, "emit_finding", Mock(side_effect=lambda **kw: findings.append(kw))
+    ):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    assert out.ok
     assert out.changes_made == 0
     assert findings and findings[0]["kind"] == "duplicate_video_asset"
 

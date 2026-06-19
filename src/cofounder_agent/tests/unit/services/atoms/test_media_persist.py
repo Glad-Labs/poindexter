@@ -14,7 +14,7 @@ the post later (Plan 8 / 8b-2).
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -26,6 +26,39 @@ def _write_tmp(path) -> str:
     """Create a small fake render file and return its path."""
     path.write_bytes(b"\x00" * 2048)
     return str(path)
+
+
+class _FakeConn:
+    """Connection stand-in whose ``fetch`` answers the idempotency-guard query
+    with the configured set of already-recorded asset types."""
+
+    def __init__(self, existing_types):
+        self._existing_types = set(existing_types)
+
+    async def fetch(self, _sql, *_args):
+        return [{"type": t} for t in self._existing_types]
+
+
+class _FakeAcquire:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FakePool:
+    """asyncpg-pool stand-in for media.persist tests. ``existing_types`` seeds the
+    guard query so a flavor already on the task is skipped (idempotency)."""
+
+    def __init__(self, existing_types=()):
+        self._conn = _FakeConn(existing_types)
+
+    def acquire(self):
+        return _FakeAcquire(self._conn)
 
 
 @pytest.fixture
@@ -50,7 +83,7 @@ async def test_persist_moves_renders_and_records_both_assets(
 
     long_src = _write_tmp(tmp_path / "media_t1_long_video_path.mp4")
     short_src = _write_tmp(tmp_path / "media_t1_short_video_path.mp4")
-    pool = MagicMock()
+    pool = _FakePool()
 
     state = {
         "task_id": "t1",
@@ -91,7 +124,7 @@ async def test_persist_derives_dims_and_duration_from_shot_list(
 
     state = {
         "task_id": "t2",
-        "pool": MagicMock(),
+        "pool": _FakePool(),
         "long_video_path": str(tmp_path / "long.mp4"),
         "short_video_path": "",
         "video_shot_list": {"aspect": "9:16", "total_duration_s": 12.5},
@@ -117,7 +150,7 @@ async def test_persist_skips_missing_or_empty_renders(
 
     state = {
         "task_id": "t3",
-        "pool": MagicMock(),
+        "pool": _FakePool(),
         "long_video_path": "",
         "short_video_path": str(tmp_path / "does_not_exist.mp4"),
     }
@@ -149,7 +182,7 @@ async def test_persist_pool_from_database_service(tmp_path, monkeypatch, patched
     durable = tmp_path / "durable_video"
     monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
     _write_tmp(tmp_path / "long.mp4")
-    pool = MagicMock()
+    pool = _FakePool()
 
     state = {
         "task_id": "t5",
@@ -161,6 +194,68 @@ async def test_persist_pool_from_database_service(tmp_path, monkeypatch, patched
     await persist_run(state)
 
     assert patched_recorder.await_args_list[0].kwargs["pool"] is pool
+
+
+@pytest.mark.asyncio
+async def test_persist_skips_flavor_already_recorded(
+    tmp_path, monkeypatch, patched_recorder
+):
+    """Idempotency guard: a graph re-execution for a task that already recorded
+    the long video must NOT re-persist it (no duplicate task-keyed row); the
+    not-yet-recorded short still persists."""
+    durable = tmp_path / "durable_video"
+    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+
+    long_src = _write_tmp(tmp_path / "media_t6_long_video_path.mp4")
+    short_src = _write_tmp(tmp_path / "media_t6_short_video_path.mp4")
+
+    state = {
+        "task_id": "t6",
+        "pool": _FakePool(existing_types={"video"}),  # long already recorded
+        "long_video_path": long_src,
+        "short_video_path": short_src,
+        "video_shot_list": {"aspect": "16:9"},
+        "short_shot_list": {"aspect": "9:16"},
+    }
+    result = await persist_run(state)
+
+    # Only the short was recorded — the long was skipped by the guard.
+    assert patched_recorder.await_count == 1
+    assert patched_recorder.await_args_list[0].kwargs["asset_type"] == "video_short"
+    # The skipped long render was left in temp (not moved into the durable dir).
+    import os
+    assert os.path.exists(long_src)
+    assert not os.path.exists(short_src)
+    assert (durable / "t6_short.mp4").exists()
+    assert not (durable / "t6.mp4").exists()
+    assert result["media_assets_recorded"] == ["asset-long"]
+
+
+@pytest.mark.asyncio
+async def test_persist_skips_all_flavors_when_both_recorded(
+    tmp_path, monkeypatch, patched_recorder
+):
+    """A full re-execution for a task that already has both flavors is a complete
+    no-op — nothing recorded, both renders left untouched in temp."""
+    durable = tmp_path / "durable_video"
+    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+
+    long_src = _write_tmp(tmp_path / "media_t7_long_video_path.mp4")
+    short_src = _write_tmp(tmp_path / "media_t7_short_video_path.mp4")
+
+    state = {
+        "task_id": "t7",
+        "pool": _FakePool(existing_types={"video", "video_short"}),
+        "long_video_path": long_src,
+        "short_video_path": short_src,
+    }
+    result = await persist_run(state)
+
+    patched_recorder.assert_not_awaited()
+    import os
+    assert os.path.exists(long_src)
+    assert os.path.exists(short_src)
+    assert result["media_assets_recorded"] == []
 
 
 @pytest.mark.asyncio

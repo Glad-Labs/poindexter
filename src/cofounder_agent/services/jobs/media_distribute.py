@@ -110,6 +110,14 @@ _EXISTING_VIDEO_SQL = """
      LIMIT 1
 """
 
+# Prune an orphan render row that was blocked by the one-video-per-post guard.
+# The file on disk is the same path as the already-linked asset so no filesystem
+# cleanup is needed — only the DB row. post_id IS NULL guard prevents accidentally
+# deleting a linked asset if the guard check somehow races.
+_PRUNE_ORPHAN_SQL = (
+    "DELETE FROM media_assets WHERE id = $1::uuid AND post_id IS NULL"
+)
+
 # Approved-but-undispatched media_pipeline assets, joined to the durable file
 # path. Post-#1460 the join is identity (mas.type = ma.medium); DISTINCT ON
 # (below) collapses any duplicate video assets to the one canonical render, and
@@ -370,20 +378,30 @@ class MediaDistributeJob:
                 )
                 already = None
             if already:
-                # Redundant render: the post already holds this video type. Leave
-                # the task-keyed asset unlinked (it never reaches dispatch) and
-                # surface it so the operator can prune the orphan render — linking
-                # it would violate the one-video-per-post guard.
+                # Redundant render: the post already holds this video type. The
+                # orphan row (post_id=NULL) is self-pruned so the next cycle
+                # doesn't rediscover and re-alert on it.
+                try:
+                    await pool.execute(_PRUNE_ORPHAN_SQL, asset_id)
+                    logger.info(
+                        "[MEDIA_DISTRIBUTE] pruned orphan render %s (%s) — post %s "
+                        "already has this type",
+                        asset_id, row["type"], post_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[MEDIA_DISTRIBUTE] orphan prune failed for asset %s: %s",
+                        asset_id, exc,
+                    )
                 emit_finding(
                     source="media_distribute",
                     kind="duplicate_video_asset",
                     severity="warning",
-                    title=f"Redundant {row['type']} render for an already-covered post",
+                    title=f"Redundant {row['type']} render pruned for post {post_id}",
                     body=(
-                        f"Post {post_id} already has a {row['type']} media_asset; the "
-                        f"task-keyed render {asset_id} (task {task_id}) was left "
-                        f"unlinked to honor the one-video-per-post guard. Prune the "
-                        f"orphan render."
+                        f"Post {post_id} already had a {row['type']} media_asset; the "
+                        f"duplicate task-keyed render {asset_id} (task {task_id}) was "
+                        f"deleted to honor the one-video-per-post guard."
                     ),
                     dedup_key=f"duplicate_video_asset:{asset_id}",
                     extra={"post_id": str(post_id), "asset_id": str(asset_id), "type": row["type"]},

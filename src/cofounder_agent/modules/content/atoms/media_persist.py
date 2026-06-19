@@ -71,6 +71,41 @@ _TARGETS: tuple[tuple[str, str, str, str, str], ...] = (
     ("short_video_path", "short_shot_list", "video_short", "_short", "9:16"),
 )
 
+# Idempotency guard query: which video-family types has this task already
+# recorded? Used to skip re-persisting a flavor on a media_pipeline graph
+# re-execution (LangGraph checkpoint replay / Prefect retry / manual re-dispatch).
+_EXISTING_TYPES_SQL = (
+    "SELECT DISTINCT type FROM media_assets "
+    "WHERE task_id = $1 AND type = ANY($2::text[])"
+)
+
+
+async def _existing_asset_types(pool: Any, task_id: str) -> set[str]:
+    """Return the video-family ``media_assets`` types this task already recorded.
+
+    :func:`run` consults this to skip re-persisting a flavor when the graph
+    re-executes for an already-rendered task — the render graph has no task-level
+    dedup and :func:`record_media_asset` only upserts when ``post_id`` is set, so
+    task-keyed renders (``post_id=None``) always plain-INSERT. Without the guard
+    each replay strands orphan rows that ``media_distribute`` then re-alerts on
+    every cycle.
+
+    Best-effort: on any query failure returns an empty set so persist proceeds
+    (the ``media_distribute`` orphan-prune is the backstop).
+    """
+    types = [t for _, _, t, _, _ in _TARGETS]
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(_EXISTING_TYPES_SQL, task_id, types)
+        return {r["type"] for r in rows}
+    except Exception as exc:  # noqa: BLE001 — guard failure must not block persist
+        logger.warning(
+            "[media.persist] existing-asset guard query failed for task %s: %s "
+            "— proceeding without dedup",
+            task_id, exc,
+        )
+        return set()
+
 
 def _extract(shot_list: Any, key: str) -> Any:
     """Read ``key`` off a shot-list that may be a dict (JSON) or an object."""
@@ -121,8 +156,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # services.video_service.VIDEO_DIR).
     from services.video_service import VIDEO_DIR
 
+    # Idempotency guard: skip any flavor this task already recorded so a graph
+    # re-execution doesn't strand duplicate task-keyed media_assets rows. See
+    # _existing_asset_types for the full rationale.
+    already_recorded = await _existing_asset_types(pool, str(task_id))
+
     recorded: list[str] = []
     for path_key, shot_key, asset_type, suffix, default_aspect in _TARGETS:
+        if asset_type in already_recorded:
+            logger.info(
+                "[media.persist] task %s already has a %s media_asset — skipping "
+                "re-persist (idempotency guard)",
+                task_id, asset_type,
+            )
+            continue
+
         src = state.get(path_key) or ""
         if not src or not os.path.exists(src):
             # The render atom already emitted a finding on failure; an absent
