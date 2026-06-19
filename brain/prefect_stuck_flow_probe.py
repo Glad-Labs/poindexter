@@ -38,6 +38,17 @@ the probe emits a DISTINCT ``probe.prefect_queue_backlog_detected``
 audit event + page, so the backlog surfaces even before the held run
 crosses the stuck-duration threshold.
 
+Progress-aware (2026-06-19): both the RUNNING-stuck decision and the
+queue-backlog page now consult ``pipeline_tasks.last_progress_at`` — a
+per-node heartbeat the content pipeline stamps on every graph node start. A
+RUNNING run is stuck only when its in_progress task has made NO node progress
+for ``prefect_stuck_flow_progress_stall_minutes`` (default 20), so a legit
+media-heavy run that keeps advancing nodes is never auto-crashed, and the
+backlog page is suppressed while the slot-holder is progressing. When the
+heartbeat is NULL (pre-migration task / write never landed) the probe falls
+back to the flat ``prefect_stuck_flow_threshold_minutes`` age check, so
+detection never regresses.
+
 Why no in-memory dedupe like ``glitchtip_triage_probe``: there should
 never be MORE than one stuck flow run at a time on the
 ``content_generation`` deployment (concurrency=1). If the same run is
@@ -152,6 +163,18 @@ QUEUE_DEPTH_THRESHOLD_DEFAULT = 3
 # strong signal of a held slot.)
 QUEUE_OVERDUE_MIN_MINUTES_SETTING_KEY = "prefect_stuck_flow_queue_overdue_min_minutes"
 QUEUE_OVERDUE_MIN_MINUTES_DEFAULT = 5
+
+# Progress-aware stall threshold. A RUNNING content_generation run with NO
+# graph-node progress (pipeline_tasks.last_progress_at) for this many minutes
+# is stuck — regardless of total RUNNING age. This replaces the flat
+# THRESHOLD_MINUTES check whenever a heartbeat is present, so a legit
+# media-heavy run that keeps advancing nodes is never auto-crashed, and the
+# queue-backlog page is suppressed while the slot-holder is progressing. NULL
+# heartbeat (pre-migration row / write never landed) falls back to the flat
+# THRESHOLD_MINUTES path. Default 20 sits above the longest observed
+# single-node gap (~13m); tune down as confidence builds.
+PROGRESS_STALL_MINUTES_SETTING_KEY = "prefect_stuck_flow_progress_stall_minutes"
+PROGRESS_STALL_MINUTES_DEFAULT = 20
 
 # Probe interval — same 5-minute brain cycle as siblings. Internal
 # behaviour: the probe is cheap (one POST + maybe one set_state per
@@ -389,6 +412,79 @@ def _run_age_minutes(run: dict[str, Any]) -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# Progress-aware stuck detection (reads the pipeline's per-node heartbeat)
+# ---------------------------------------------------------------------------
+
+
+async def _read_inprogress_progress(pool) -> dict[str, Any] | None:
+    """Heartbeat age of the most-recently-progressing ``in_progress`` task.
+
+    Reads ``pipeline_tasks.last_progress_at`` (stamped by the content pipeline
+    on every graph-node start) for the in_progress row that progressed most
+    recently. Returns ``{"task_id": str, "minutes": float | None}`` where
+    ``minutes`` is wall-clock minutes since the last node started, or ``None``
+    for ``minutes`` when the column is NULL (pre-heartbeat task / write never
+    landed). Returns ``None`` (no dict) when nothing is in_progress — i.e. no
+    slot holder at all.
+
+    With the content deployment at concurrency=1 there is at most one
+    in_progress row, so this single read answers "is the slot-holder
+    progressing?" exactly. Best-effort: any DB error returns None and the
+    caller treats "can't tell" as "use the legacy duration threshold."
+    """
+    try:
+        row = await pool.fetchrow(
+            """
+            SELECT task_id,
+                   last_progress_at,
+                   EXTRACT(EPOCH FROM (now() - last_progress_at)) / 60.0 AS minutes
+            FROM pipeline_tasks
+            WHERE status = 'in_progress'
+            ORDER BY last_progress_at DESC NULLS LAST
+            LIMIT 1
+            """
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PREFECT_STUCK_FLOW] in_progress progress read failed: %s", exc,
+        )
+        return None
+    if row is None:
+        return None
+    minutes = row["minutes"]
+    return {
+        "task_id": str(row["task_id"]),
+        "minutes": float(minutes) if minutes is not None else None,
+    }
+
+
+def _running_is_stuck(
+    *,
+    age_minutes: int,
+    flat_threshold_minutes: int,
+    stall_minutes: int,
+    holder: dict[str, Any] | None,
+    running_run_count: int,
+) -> bool:
+    """Decide whether a RUNNING flow run is stuck.
+
+    Progress-aware when a heartbeat is available AND the topology is
+    unambiguous (exactly one RUNNING run, so the single in_progress holder maps
+    to it): stuck iff the holder has made no node progress for
+    ``stall_minutes``. Otherwise — no holder, a NULL heartbeat (pre-migration /
+    write never landed), or >1 RUNNING run (can't map a holder to a specific
+    run) — fall back to the legacy flat duration threshold on the run's RUNNING
+    age, preserving pre-heartbeat behaviour.
+    """
+    holder_minutes = holder.get("minutes") if holder else None
+    # Progress-aware only when a heartbeat exists AND exactly one RUNNING run
+    # (so the single in_progress holder unambiguously maps to it).
+    if holder_minutes is not None and running_run_count == 1:
+        return holder_minutes >= stall_minutes
+    return age_minutes >= flat_threshold_minutes
+
+
+# ---------------------------------------------------------------------------
 # Audit log helper (best-effort; never raises)
 # ---------------------------------------------------------------------------
 
@@ -485,6 +581,14 @@ async def run_prefect_stuck_flow_probe(
     queue_overdue_min_minutes = await _read_int(
         pool, QUEUE_OVERDUE_MIN_MINUTES_SETTING_KEY, QUEUE_OVERDUE_MIN_MINUTES_DEFAULT,
     )
+    progress_stall_minutes = await _read_int(
+        pool, PROGRESS_STALL_MINUTES_SETTING_KEY, PROGRESS_STALL_MINUTES_DEFAULT,
+    )
+    # Single read of the in_progress slot-holder's heartbeat age. With the
+    # content deployment at concurrency=1 there is at most one such row, so
+    # this answers "is the slot-holder progressing?" for both the RUNNING
+    # stuck decision and the queue-backlog gate below.
+    holder = await _read_inprogress_progress(pool)
 
     timeout = httpx.Timeout(HTTP_READ_TIMEOUT_S, connect=HTTP_CONNECT_TIMEOUT_S)
     headers = {
@@ -511,6 +615,11 @@ async def run_prefect_stuck_flow_probe(
             )
             seen = len(watched)
 
+            running_run_count = sum(
+                1 for r in watched
+                if ((r.get("state") or {}).get("type")) == "RUNNING"
+            )
+
             for run in watched:
                 run_id = str(run.get("id") or "")
                 if not run_id:
@@ -524,16 +633,43 @@ async def run_prefect_stuck_flow_probe(
                     # operator.
                     continue
                 age = _run_age_minutes(run)
-                if age is None or age < threshold_for_state:
+                if age is None:
                     continue
+                if state_type == "RUNNING":
+                    if not _running_is_stuck(
+                        age_minutes=age,
+                        flat_threshold_minutes=threshold_for_state,
+                        stall_minutes=progress_stall_minutes,
+                        holder=holder,
+                        running_run_count=running_run_count,
+                    ):
+                        continue
+                else:  # PENDING — never started, no progress signal; flat rule.
+                    if age < threshold_for_state:
+                        continue
+
+                # When the RUNNING run was flagged via the progress-stall rule
+                # (heartbeat present, single holder), surface the stall reason so
+                # the page isn't confusing for a run under the flat age threshold.
+                progress_note = ""
+                if (
+                    state_type == "RUNNING"
+                    and holder is not None
+                    and holder.get("minutes") is not None
+                    and running_run_count == 1
+                ):
+                    progress_note = (
+                        f" No graph-node progress for {holder['minutes']:.0f}m "
+                        f"(stall threshold {progress_stall_minutes}m)."
+                    )
 
                 # Detail string used in both notify_operator + audit_log.
                 detail = (
                     f"Prefect flow run '{name}' (id {run_id[:12]}…) has "
                     f"been in state={state_type} for {age} minutes — threshold "
-                    f"is {threshold_for_state}. While it holds the deployment's "
-                    f"slot, subsequent scheduled runs queue up and the "
-                    f"content pipeline stays idle. Manual unstick: "
+                    f"is {threshold_for_state}.{progress_note} While it holds the "
+                    f"deployment's slot, subsequent scheduled runs queue up and "
+                    f"the content pipeline stays idle. Manual unstick: "
                     f"curl -X POST {base_url}/flow_runs/{run_id}/set_state "
                     f"-H 'Content-Type: application/json' "
                     f'-d \'{{"state":{{"type":"CRASHED","name":"Crashed"}},"force":true}}\''
@@ -601,7 +737,26 @@ async def run_prefect_stuck_flow_probe(
                     if overdue is not None and overdue >= queue_overdue_min_minutes:
                         overdue_scheduled_count += 1
 
-                if overdue_scheduled_count > queue_depth_threshold:
+                holder_minutes = holder.get("minutes") if holder else None
+                holder_progressing = (
+                    holder_minutes is not None
+                    and holder_minutes < progress_stall_minutes
+                )
+                if (
+                    overdue_scheduled_count > queue_depth_threshold
+                    and holder_progressing
+                ):
+                    logger.info(
+                        "[PREFECT_STUCK_FLOW] queue backlog of %d overdue "
+                        "suppressed — slot-holder progressing (%.1fm since last "
+                        "node < %dm stall)",
+                        overdue_scheduled_count, holder_minutes,
+                        progress_stall_minutes,
+                    )
+                if (
+                    overdue_scheduled_count > queue_depth_threshold
+                    and not holder_progressing
+                ):
                     queue_backlog_detected = True
                     backlog_detail = (
                         f"Prefect queue backlog: {overdue_scheduled_count} "
@@ -690,15 +845,19 @@ class PrefectStuckFlowProbe:
 
     name: str = "prefect_stuck_flow"
     description: str = (
-        "Detects Prefect content_generation flow runs stuck in state=RUNNING "
-        "beyond app_settings.prefect_stuck_flow_threshold_minutes (default 30m) "
-        "or PENDING beyond app_settings.prefect_stuck_flow_pending_threshold_minutes "
-        "(default 5m). Pages on every stuck run and auto-crashes by default "
+        "Detects Prefect content_generation flow runs that are genuinely stuck. "
+        "A RUNNING run is stuck when its in_progress task has made no graph-node "
+        "progress (pipeline_tasks.last_progress_at) for "
+        "app_settings.prefect_stuck_flow_progress_stall_minutes (default 20m); "
+        "with no heartbeat it falls back to a flat "
+        "prefect_stuck_flow_threshold_minutes age (default 30m). PENDING runs are "
+        "stuck beyond prefect_stuck_flow_pending_threshold_minutes (default 5m). "
+        "Pages on every stuck run and auto-crashes by default "
         "(prefect_stuck_flow_auto_crash, default true) so subsequent dispatches "
-        "resume without operator intervention. Also pages a DISTINCT signal "
-        "when overdue SCHEDULED runs pile up beyond "
-        "prefect_stuck_flow_queue_depth_threshold (default 3) — the "
-        "queue-backlog symptom of a held concurrency slot."
+        "resume without operator intervention. Also pages a DISTINCT signal when "
+        "overdue SCHEDULED runs pile up beyond "
+        "prefect_stuck_flow_queue_depth_threshold (default 3) AND the slot-holder "
+        "is not progressing — the queue-backlog symptom of a genuinely held slot."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 

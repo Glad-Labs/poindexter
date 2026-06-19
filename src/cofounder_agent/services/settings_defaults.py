@@ -819,6 +819,17 @@ DEFAULTS: dict[str, str] = {
     # backlog symptom of a held concurrency=1 slot.
     'prefect_stuck_flow_queue_depth_threshold': '3',
 
+    # ----- Prefect stuck-flow progress-aware detection -----
+    # Minutes a RUNNING content_generation run may go with NO graph-node
+    # progress (pipeline_tasks.last_progress_at) before the probe treats it as
+    # stuck. Replaces the flat RUNNING-age threshold when a heartbeat exists:
+    # a legit media-heavy run that keeps advancing nodes is never crashed, and
+    # the same signal suppresses the queue-backlog page while the slot-holder
+    # is progressing. Default 20m sits above the longest observed single-node
+    # gap (~13m); tune DOWN as confidence builds. NULL heartbeat (pre-migration
+    # / write never landed) falls back to prefect_stuck_flow_threshold_minutes.
+    'prefect_stuck_flow_progress_stall_minutes': '20',
+
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
     # The native Prefect work-pool concurrency limit caps how many
     # content_generation_flow runs execute simultaneously. Each run loads

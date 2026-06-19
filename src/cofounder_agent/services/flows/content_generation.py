@@ -94,7 +94,7 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
                 return None
             await conn.execute(
                 "UPDATE pipeline_tasks SET status = 'in_progress', "
-                "updated_at = NOW() WHERE task_id = $1",
+                "updated_at = NOW(), last_progress_at = NOW() WHERE task_id = $1",
                 row["task_id"],
             )
     return dict(row)

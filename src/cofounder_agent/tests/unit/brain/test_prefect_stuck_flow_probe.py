@@ -24,8 +24,13 @@ from brain import prefect_stuck_flow_probe as psfp
 # ---------------------------------------------------------------------------
 
 
-def _make_pool(*, setting_values: dict[str, str] | None = None):
-    """asyncpg-style mock pool that returns canned settings + records writes."""
+def _make_pool(
+    *,
+    setting_values: dict[str, str] | None = None,
+    inprogress_row: dict[str, Any] | None = None,
+):
+    """asyncpg-style mock pool: canned settings, recorded writes, and an
+    optional in_progress heartbeat row for _read_inprogress_progress."""
     pool = MagicMock()
     settings = dict(setting_values or {})
 
@@ -40,8 +45,14 @@ def _make_pool(*, setting_values: dict[str, str] | None = None):
         audit_rows.append((query, args))
         return None
 
+    async def _fetchrow(query, *args):
+        if "pipeline_tasks" in query and "in_progress" in query:
+            return inprogress_row
+        return None
+
     pool.fetchval = AsyncMock(side_effect=_fetchval)
     pool.execute = AsyncMock(side_effect=_execute)
+    pool.fetchrow = AsyncMock(side_effect=_fetchrow)
     pool._audit_rows = audit_rows  # type: ignore[attr-defined]
     return pool
 
@@ -185,6 +196,200 @@ def test_age_minutes_parses_z_suffix():
     assert iso.endswith("Z")
     age = psfp._age_minutes(iso)
     assert age is not None and 44 <= age <= 46
+
+
+# ---------------------------------------------------------------------------
+# _running_is_stuck — pure progress-aware decision (Task 4)
+# ---------------------------------------------------------------------------
+
+
+def test_running_is_stuck_progress_below_stall_not_stuck():
+    holder = {"task_id": "t1", "minutes": 3.0}
+    assert psfp._running_is_stuck(
+        age_minutes=40, flat_threshold_minutes=30, stall_minutes=20,
+        holder=holder, running_run_count=1,
+    ) is False  # 40m old but progressed 3m ago → healthy
+
+
+def test_running_is_stuck_progress_past_stall_is_stuck():
+    holder = {"task_id": "t1", "minutes": 25.0}
+    assert psfp._running_is_stuck(
+        age_minutes=26, flat_threshold_minutes=30, stall_minutes=20,
+        holder=holder, running_run_count=1,
+    ) is True  # no node progress for 25m ≥ 20m stall → stuck, even under 30m age
+
+
+def test_running_is_stuck_null_heartbeat_falls_back_to_flat_age():
+    holder = {"task_id": "t1", "minutes": None}  # column NULL
+    assert psfp._running_is_stuck(
+        age_minutes=10, flat_threshold_minutes=30, stall_minutes=20,
+        holder=holder, running_run_count=1,
+    ) is False
+    assert psfp._running_is_stuck(
+        age_minutes=31, flat_threshold_minutes=30, stall_minutes=20,
+        holder=holder, running_run_count=1,
+    ) is True
+
+
+def test_running_is_stuck_no_holder_falls_back_to_flat_age():
+    assert psfp._running_is_stuck(
+        age_minutes=31, flat_threshold_minutes=30, stall_minutes=20,
+        holder=None, running_run_count=1,
+    ) is True
+
+
+def test_running_is_stuck_multiple_runs_falls_back_to_flat_age():
+    # >1 RUNNING run: can't map the single holder to a specific run → legacy.
+    holder = {"task_id": "t1", "minutes": 2.0}
+    assert psfp._running_is_stuck(
+        age_minutes=40, flat_threshold_minutes=30, stall_minutes=20,
+        holder=holder, running_run_count=2,
+    ) is True  # 40m ≥ 30m flat
+
+
+# ---------------------------------------------------------------------------
+# Progress-aware probe — wired behaviour (backlog gate + stall stuck)
+# ---------------------------------------------------------------------------
+
+
+def _overdue_scheduled(n: int, *, minutes: int = 10) -> list[dict[str, Any]]:
+    """n SCHEDULED runs each overdue by ``minutes`` (reuses _scheduled_run)."""
+    return [
+        _scheduled_run(run_id=f"s{i}", name=f"s{i}", minutes=minutes)
+        for i in range(n)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_backlog_suppressed_when_holder_progressing():
+    """The live false-positive: a healthy long run holds concurrency=1, the
+    queue piles up, but the holder progressed recently → NO backlog page."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values={
+            "prefect_stuck_flow_probe_enabled": "true",
+            "prefect_stuck_flow_queue_depth_threshold": "3",
+            "prefect_stuck_flow_queue_overdue_min_minutes": "5",
+            "prefect_stuck_flow_progress_stall_minutes": "20",
+            "prefect_stuck_flow_auto_crash": "false",
+        },
+        inprogress_row={"task_id": "t1", "last_progress_at": "x", "minutes": 3.0},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="amber-goldfish", minutes_ago=27)],
+        ),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=_overdue_scheduled(8)),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["queue_backlog_detected"] is False
+    titles = [c.kwargs.get("title", "") for c in notify.call_args_list]
+    assert not any("queue backlog" in t.lower() for t in titles)
+
+
+@pytest.mark.asyncio
+async def test_backlog_fires_when_holder_stalled():
+    """Same pile-up, but the holder hasn't progressed in 25m (≥20m stall) →
+    backlog page fires (genuinely held/dead slot)."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values={
+            "prefect_stuck_flow_probe_enabled": "true",
+            "prefect_stuck_flow_queue_depth_threshold": "3",
+            "prefect_stuck_flow_queue_overdue_min_minutes": "5",
+            "prefect_stuck_flow_progress_stall_minutes": "20",
+            "prefect_stuck_flow_auto_crash": "false",
+        },
+        inprogress_row={"task_id": "t1", "last_progress_at": "x", "minutes": 25.0},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="amber-goldfish", minutes_ago=27)],
+        ),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=_overdue_scheduled(8)),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["queue_backlog_detected"] is True
+
+
+@pytest.mark.asyncio
+async def test_running_not_crashed_while_progressing_past_flat_threshold():
+    """A run RUNNING 40m but progressing (3m since last node) is NOT stuck —
+    the old flat-30m auto-crash would have killed it."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values={
+            "prefect_stuck_flow_probe_enabled": "true",
+            "prefect_stuck_flow_threshold_minutes": "30",
+            "prefect_stuck_flow_progress_stall_minutes": "20",
+            "prefect_stuck_flow_auto_crash": "true",
+        },
+        inprogress_row={"task_id": "t1", "last_progress_at": "x", "minutes": 3.0},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="amber-goldfish", minutes_ago=40)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 0
+    assert summary["auto_crashed_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_running_stuck_via_stall_under_flat_threshold():
+    """A run RUNNING 22m with NO progress for 22m (≥20m stall) IS stuck even
+    though it is under the flat 30m age threshold."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values={
+            "prefect_stuck_flow_probe_enabled": "true",
+            "prefect_stuck_flow_threshold_minutes": "30",
+            "prefect_stuck_flow_progress_stall_minutes": "20",
+            "prefect_stuck_flow_auto_crash": "false",
+        },
+        inprogress_row={"task_id": "t1", "last_progress_at": "x", "minutes": 22.0},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="amber-goldfish", minutes_ago=22)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_running_null_heartbeat_uses_legacy_flat_threshold():
+    """NULL last_progress_at → legacy flat-threshold path: a 35m RUNNING run is
+    stuck (≥30m), preserving today's behaviour for pre-heartbeat tasks."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values={
+            "prefect_stuck_flow_probe_enabled": "true",
+            "prefect_stuck_flow_threshold_minutes": "30",
+            "prefect_stuck_flow_progress_stall_minutes": "20",
+            "prefect_stuck_flow_auto_crash": "false",
+        },
+        inprogress_row={"task_id": "t1", "last_progress_at": None, "minutes": None},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="romantic-harrier", minutes_ago=35)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
 
 
 def test_age_minutes_parses_plus_zero_suffix():

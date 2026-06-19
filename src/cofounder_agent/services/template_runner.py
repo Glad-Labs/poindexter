@@ -955,12 +955,37 @@ async def _mark_stage_column(pool: Any, task_id: Any, stage_name: str) -> None:
     try:
         async with pool.acquire() as conn:
             await conn.execute(
-                "UPDATE pipeline_tasks SET stage = $1, updated_at = NOW() "
-                "WHERE task_id::text = $2",
+                "UPDATE pipeline_tasks SET stage = $1, updated_at = NOW(), "
+                "last_progress_at = NOW() WHERE task_id::text = $2",
                 stage_name, str(task_id),
             )
     except Exception as exc:  # noqa: BLE001
         logger.debug("template_runner: stage column UPDATE failed: %s", exc)
+
+
+async def _mark_progress(pool: Any, task_id: Any) -> None:
+    """Stamp ``pipeline_tasks.last_progress_at = now()`` for the in-flight task.
+
+    The per-node progress heartbeat the brain's prefect_stuck_flow_probe reads
+    to tell a progressing run from a wedged one. Called on every node start
+    (stage nodes fold this into ``_mark_stage_column``; atom nodes call this
+    directly). Best-effort: a no-op when ``pool``/``task_id`` is missing, and
+    any DB error is swallowed so a heartbeat write can never break the run.
+    """
+    if pool is None or not task_id:
+        return
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE pipeline_tasks SET last_progress_at = NOW() "
+                "WHERE task_id::text = $1",
+                str(task_id),
+            )
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: heartbeat write is best-effort — the brain's probe falls
+        # back to the legacy duration threshold when last_progress_at is missing,
+        # and warning-level here would spam once per node on any DB hiccup.
+        logger.debug("template_runner: progress heartbeat UPDATE failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
